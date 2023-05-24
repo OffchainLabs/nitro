@@ -21,6 +21,7 @@ async function main() {
       redisUrl: { string: true, default: "redis://redis:6379" },
       l1url: { string: true, default: "ws://geth:8546" },
       l2url: { string: true, default: "ws://sequencer:8548" },
+      validationNodeUrl: { string: true, default: "ws://validation_node:8549" },
     })
     .options(stressOptions)
     .command(bridgeFundsCommand)

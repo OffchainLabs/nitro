@@ -6,19 +6,13 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"fmt"
 	"io"
-	"io/fs"
 	"math/big"
-	"net/http"
-	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
-	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -28,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -57,104 +50,11 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func printSampleUsage(name string) {
 	fmt.Printf("Sample usage: %s --help \n", name)
-}
-
-type fileHandlerFactory struct {
-	writer  *lumberjack.Logger
-	records chan *log.Record
-	cancel  context.CancelFunc
-}
-
-// newHandler is not threadsafe
-func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericconf.FileLoggingConfig, pathResolver func(string) string) log.Handler {
-	l.close()
-	l.writer = &lumberjack.Logger{
-		Filename:   pathResolver(config.File),
-		MaxSize:    config.MaxSize,
-		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAge,
-		Compress:   config.Compress,
-	}
-	// capture copy of the pointer
-	writer := l.writer
-	// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
-	unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
-		_, err := writer.Write(logFormat.Format(r))
-		return err
-	}))
-	l.records = make(chan *log.Record, config.BufSize)
-	// capture copy
-	records := l.records
-	var consumerCtx context.Context
-	consumerCtx, l.cancel = context.WithCancel(context.Background())
-	go func() {
-		for {
-			select {
-			case r := <-records:
-				_ = unsafeStreamHandler.Log(r)
-			case <-consumerCtx.Done():
-				return
-			}
-		}
-	}()
-	return log.FuncHandler(func(r *log.Record) error {
-		select {
-		case records <- r:
-			return nil
-		default:
-			return fmt.Errorf("Buffer overflow, dropping record")
-		}
-	})
-}
-
-// close is not threadsafe
-func (l *fileHandlerFactory) close() error {
-	if l.cancel != nil {
-		l.cancel()
-		l.cancel = nil
-	}
-	if l.writer != nil {
-		if err := l.writer.Close(); err != nil {
-			return err
-		}
-		l.writer = nil
-	}
-	return nil
-}
-
-var globalFileHandlerFactory = fileHandlerFactory{}
-
-// initLog is not threadsafe
-func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig, pathResolver func(string) string) error {
-	logFormat, err := genericconf.ParseLogType(logType)
-	if err != nil {
-		flag.Usage()
-		return fmt.Errorf("error parsing log type: %w", err)
-	}
-	var glogger *log.GlogHandler
-	// always close previous instance of file logger
-	if err := globalFileHandlerFactory.close(); err != nil {
-		return fmt.Errorf("failed to close file writer: %w", err)
-	}
-	if fileLoggingConfig.Enable {
-		glogger = log.NewGlogHandler(
-			log.MultiHandler(
-				log.StreamHandler(os.Stderr, logFormat),
-				// on overflow records are dropped silently as MultiHandler ignores errors
-				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig, pathResolver),
-			))
-	} else {
-		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	}
-	glogger.Verbosity(logLevel)
-	log.Root().SetHandler(glogger)
-	return nil
 }
 
 func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.WalletConfig) (common.Address, error) {
@@ -248,32 +148,18 @@ func mainImpl() int {
 	stackConf.Version = vcsRevision
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		fileName := stackConf.ResolvePath("jwtsecret")
-		secret := common.Hash{}
-		_, err := rand.Read(secret[:])
-		if err != nil {
-			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+		filename := stackConf.ResolvePath("jwtsecret")
+		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
+			log.Error("Failed to prepare jwt secret file", "err", err)
+			return 1
 		}
-		err = os.MkdirAll(filepath.Dir(fileName), 0755)
-		if err != nil {
-			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
-		}
-		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
-		if errors.Is(err, fs.ErrExist) {
-			log.Info("using existing jwt file", "fileName", fileName)
-		} else {
-			if err != nil {
-				log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
-			}
-			log.Info("created jwt file", "fileName", fileName)
-		}
-		stackConf.JWTSecret = fileName
+		stackConf.JWTSecret = filename
 	}
 
-	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if nodeConfig.Node.Archive {
 		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
@@ -376,12 +262,15 @@ func mainImpl() int {
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
+	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
+		nodeConfig, _, _, err := ParseNode(ctx, args)
+		return nodeConfig, err
+	})
 
 	var rollupAddrs chaininfo.RollupAddresses
 	var l1Client *ethclient.Client
 	if nodeConfig.Node.L1Reader.Enable {
-		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.get().L1.Connection }
+		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().L1.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
 		err := rpcClient.Start(ctx)
 		if err != nil {
@@ -409,7 +298,7 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
-		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
+		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.L1Reader })
 		if err != nil {
 			log.Crit("failed to get L1 headerreader", "error", err)
 
@@ -484,7 +373,7 @@ func mainImpl() int {
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
 			if nodeConfig.MetricsServer.Pprof {
-				startPprof(address)
+				genericconf.StartPprof(address)
 			} else {
 				exp.Setup(address)
 			}
@@ -497,14 +386,17 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	valNode, err := valnode.CreateValidationNode(
-		func() *valnode.Config { return &liveNodeConfig.get().Validation },
-		stack,
-		fatalErrChan,
-	)
-	if err != nil {
-		valNode = nil
-		log.Warn("couldn't init validation node", "err", err)
+	var valNode *valnode.ValidationNode
+	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
+		valNode, err = valnode.CreateValidationNode(
+			func() *valnode.Config { return &liveNodeConfig.Get().Validation },
+			stack,
+			fatalErrChan,
+		)
+		if err != nil {
+			valNode = nil
+			log.Warn("couldn't init validation node", "err", err)
+		}
 	}
 
 	currentNode, err := arbnode.CreateNode(
@@ -525,7 +417,10 @@ func mainImpl() int {
 		log.Error("failed to create node", "err", err)
 		return 1
 	}
-	liveNodeConfig.setOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, stackConf.ResolvePath); err != nil {
+			return fmt.Errorf("failed to re-init logging: %w", err)
+		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
@@ -556,6 +451,8 @@ func mainImpl() int {
 		err = valNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
+		} else {
+			log.Info("validation node started")
 		}
 	}
 	if err == nil {
@@ -705,6 +602,10 @@ func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
 }
 
+func (c *NodeConfig) GetReloadInterval() time.Duration {
+	return c.Conf.ReloadInterval
+}
+
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
@@ -822,118 +723,10 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	return true, nil
 }
 
-type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
-
-func noopOnReloadHook(_ *NodeConfig, _ *NodeConfig) error {
-	return nil
-}
-
-type LiveNodeConfig struct {
-	stopwaiter.StopWaiter
-
-	mutex        sync.RWMutex
-	args         []string
-	config       *NodeConfig
-	pathResolver func(string) string
-	onReloadHook OnReloadHook
-}
-
-func (c *LiveNodeConfig) get() *NodeConfig {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	return c.config
-}
-
-func (c *LiveNodeConfig) set(config *NodeConfig) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	if err := c.config.CanReload(config); err != nil {
-		return err
-	}
-	if err := initLog(config.LogType, log.Lvl(config.LogLevel), &config.FileLogging, c.pathResolver); err != nil {
-		return err
-	}
-	if err := c.onReloadHook(c.config, config); err != nil {
-		// TODO(magic) panic? return err? only log the error?
-		log.Error("Failed to execute onReloadHook", "err", err)
-	}
-	c.config = config
-	return nil
-}
-
-func (c *LiveNodeConfig) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn, c)
-
-	sigusr1 := make(chan os.Signal, 1)
-	signal.Notify(sigusr1, syscall.SIGUSR1)
-
-	c.LaunchThread(func(ctx context.Context) {
-		for {
-			reloadInterval := c.config.Conf.ReloadInterval
-			if reloadInterval == 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case <-sigusr1:
-					log.Info("Configuration reload triggered by SIGUSR1.")
-				}
-			} else {
-				timer := time.NewTimer(reloadInterval)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return
-				case <-sigusr1:
-					timer.Stop()
-					log.Info("Configuration reload triggered by SIGUSR1.")
-				case <-timer.C:
-				}
-			}
-			nodeConfig, _, _, err := ParseNode(ctx, c.args)
-			if err != nil {
-				log.Error("error parsing live config", "error", err.Error())
-				continue
-			}
-			err = c.set(nodeConfig)
-			if err != nil {
-				log.Error("error updating live config", "error", err.Error())
-				continue
-			}
-		}
-	})
-}
-
-// setOnReloadHook is NOT thread-safe and supports setting only one hook
-func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
-	c.onReloadHook = hook
-}
-
-func NewLiveNodeConfig(args []string, config *NodeConfig, pathResolver func(string) string) *LiveNodeConfig {
-	return &LiveNodeConfig{
-		args:         args,
-		config:       config,
-		pathResolver: pathResolver,
-		onReloadHook: noopOnReloadHook,
-	}
-}
-
 type NodeConfigFetcher struct {
-	*LiveNodeConfig
+	*genericconf.LiveConfig[*NodeConfig]
 }
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {
-	return &f.LiveNodeConfig.get().Node
-}
-
-func startPprof(address string) {
-	exp.Exp(metrics.DefaultRegistry)
-	log.Info("Starting metrics server with pprof", "addr", fmt.Sprintf("http://%s/debug/metrics", address))
-	log.Info("Pprof endpoint", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
-	go func() {
-		// #nosec G114
-		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
-			log.Error("Failure in running pprof server", "err", err)
-		}
-	}()
+	return &f.LiveConfig.Get().Node
 }

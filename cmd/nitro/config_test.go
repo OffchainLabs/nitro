@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -123,29 +124,32 @@ func TestLiveNodeConfig(t *testing.T) {
 	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
+		nodeConfig, _, _, err := ParseNode(ctx, args)
+		return nodeConfig, err
+	})
 
 	// check updating the config
 	update := config.ShallowClone()
 	expected := config.ShallowClone()
 	update.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	expected.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
-	Require(t, liveConfig.set(update))
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	Require(t, liveConfig.Set(update))
+	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to set config")
 	}
 
 	// check that an invalid reload gets rejected
 	update = config.ShallowClone()
 	update.L2.ChainID++
-	if liveConfig.set(update) == nil {
+	if liveConfig.Set(update) == nil {
 		Fail(t, "failed to reject invalid update")
 	}
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "config should not change if its update fails")
 	}
 
-	// starting the LiveNodeConfig after testing LiveNodeConfig.set to avoid race condition in the test
+	// starting the LiveConfig after testing LiveConfig.set to avoid race condition in the test
 	liveConfig.Start(ctx)
 
 	// reload config
@@ -158,7 +162,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check that reloading the config again doesn't change anything
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 	time.Sleep(80 * time.Millisecond)
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "live config differs from expected")
 	}
 
@@ -201,7 +205,10 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
+		nodeConfig, _, _, err := ParseNode(ctx, args)
+		return nodeConfig, err
+	})
 	liveConfig.Start(ctx)
 
 	// test if periodic reload works
@@ -220,7 +227,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	jsonConfig = "{\"conf\":{\"reload-interval\":\"10ms\"}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 	time.Sleep(80 * time.Millisecond)
-	if reflect.DeepEqual(liveConfig.get(), expected) {
+	if reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to disable periodic reload")
 	}
 }
@@ -229,16 +236,16 @@ func WriteToConfigFile(path string, jsonConfig string) error {
 	return os.WriteFile(path, []byte(jsonConfig), 0600)
 }
 
-func PollLiveConfigUntilEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
+func PollLiveConfigUntilEqual(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
 	return PollLiveConfig(liveConfig, expected, true)
 }
-func PollLiveConfigUntilNotEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
+func PollLiveConfigUntilNotEqual(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
 	return PollLiveConfig(liveConfig, expected, false)
 }
 
-func PollLiveConfig(liveConfig *LiveNodeConfig, expected *NodeConfig, equal bool) bool {
+func PollLiveConfig(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig, equal bool) bool {
 	for i := 0; i < 16; i++ {
-		if reflect.DeepEqual(liveConfig.get(), expected) == equal {
+		if reflect.DeepEqual(liveConfig.Get(), expected) == equal {
 			return true
 		}
 		time.Sleep(10 * time.Millisecond)
