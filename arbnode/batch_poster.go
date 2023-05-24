@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -84,9 +86,17 @@ type BatchPosterConfig struct {
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	L1Wallet                           genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound                       string                      `koanf:"l1-block-bound" reload:"hot"`
 
 	gasRefunder common.Address
 }
+
+const (
+	l1BlockBoundSafe      = "safe"
+	l1BlockBoundFinalized = "finalized"
+	l1BlockBoundLatest    = "latest"
+	l1BlockBoundIgnore    = "ignore"
+)
 
 func (c *BatchPosterConfig) Validate() error {
 	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
@@ -95,6 +105,9 @@ func (c *BatchPosterConfig) Validate() error {
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
+	}
+	if c.L1BlockBound != l1BlockBoundSafe && c.L1BlockBound != l1BlockBoundFinalized && c.L1BlockBound != l1BlockBoundLatest && c.L1BlockBound != l1BlockBoundIgnore {
+		return fmt.Errorf("invalid L1 block bound tag \"%v\" (see --help for options)", c.L1BlockBound)
 	}
 	return nil
 }
@@ -114,6 +127,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
+	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post batches not exceeding the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
@@ -133,6 +147,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                       l1BlockBoundSafe,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -156,6 +171,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:            10_000,
 	DataPoster:               dataposter.TestDataPosterConfig,
 	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:             l1BlockBoundLatest,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
@@ -583,10 +599,56 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostDelay
 	haveUsefulMessage := false
 
+	var l1BoundBlockNumber uint64 = math.MaxUint64
+	var l1BoundTimestamp uint64 = math.MaxUint64
+	hasL1Bound := config.L1BlockBound != l1BlockBoundIgnore
+	if hasL1Bound {
+		var l1Bound *types.Header
+		var err error
+		if config.L1BlockBound == l1BlockBoundLatest {
+			l1Bound, err = b.l1Reader.LastHeader(ctx)
+		} else if config.L1BlockBound == l1BlockBoundSafe {
+			l1Bound, err = b.l1Reader.LatestSafeBlockHeader(ctx)
+		} else {
+			if config.L1BlockBound != l1BlockBoundFinalized {
+				log.Error("unknown L1 block bound config value; falling back on using finalized", "l1BlockBound", config.L1BlockBound)
+			}
+			l1Bound, err = b.l1Reader.LatestFinalizedBlockHeader(ctx)
+		}
+		if err != nil {
+			return false, fmt.Errorf("error getting L1 bound block: %w", err)
+		}
+
+		maxTimeVariation, err := b.seqInbox.MaxTimeVariation(&bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: l1Bound.Number,
+		})
+		if err != nil {
+			// This might happen if the latest finalized block is old enough that our L1 node no longer has its state
+			log.Warn("error getting max time variation on L1 bound block; falling back on latest block", "err", err)
+			maxTimeVariation, err = b.seqInbox.MaxTimeVariation(&bind.CallOpts{Context: ctx})
+		}
+		if err != nil {
+			return false, fmt.Errorf("error getting max time variation: %w", err)
+		}
+		l1BoundBlockNumber = arbmath.BigToUintSaturating(arbmath.BigAdd(l1Bound.Number, maxTimeVariation.FutureSeconds))
+		l1BoundTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
+	}
+
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
+			break
+		}
+		if msg.Message.Header.BlockNumber > l1BoundBlockNumber || msg.Message.Header.Timestamp > l1BoundTimestamp {
+			log.Info(
+				"not posting more messages because block number or timestamp exceed L1 bounds",
+				"blockNumber", msg.Message.Header.BlockNumber,
+				"l1BoundBlockNumber", l1BoundBlockNumber,
+				"timestamp", msg.Message.Header.Timestamp,
+				"l1BoundTimestamp", l1BoundTimestamp,
+			)
 			break
 		}
 		success, err := b.building.segments.AddMessage(msg)

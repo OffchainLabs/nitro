@@ -48,7 +48,7 @@ type cachedBlockNumber struct {
 	mutex          sync.Mutex
 	rpcBlockNum    *big.Int
 	headWhenCached *types.Header
-	blockNumber    uint64
+	header         *types.Header
 }
 
 type Config struct {
@@ -380,41 +380,58 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uint64, error) {
+func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (*types.Header, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	currentHead, err := s.LastHeader(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if currentHead == c.headWhenCached {
-		return c.blockNumber, nil
+		return c.header, nil
 	}
 	if !s.config().UseFinalityData || currentHead.Difficulty.Sign() != 0 {
-		return 0, ErrBlockNumberNotSupported
+		return nil, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	c.blockNumber = header.Number.Uint64()
-	return c.blockNumber, nil
+	c.header = header
+	c.headWhenCached = currentHead
+	return c.header, nil
+}
+
+func (s *HeaderReader) LatestSafeBlockHeader(ctx context.Context) (*types.Header, error) {
+	header, err := s.getCached(ctx, &s.safe)
+	if errors.Is(err, ErrBlockNumberNotSupported) {
+		return nil, errors.New("safe block not found")
+	}
+	return header, err
 }
 
 func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.safe)
-	if errors.Is(err, ErrBlockNumberNotSupported) {
-		err = errors.New("safe block not found")
+	header, err := s.LatestSafeBlockHeader(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return blockNum, err
+	return header.Number.Uint64(), nil
+}
+
+func (s *HeaderReader) LatestFinalizedBlockHeader(ctx context.Context) (*types.Header, error) {
+	header, err := s.getCached(ctx, &s.finalized)
+	if errors.Is(err, ErrBlockNumberNotSupported) {
+		return nil, errors.New("finalized block not found")
+	}
+	return header, err
 }
 
 func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.finalized)
-	if errors.Is(err, ErrBlockNumberNotSupported) {
-		err = errors.New("finalized block not found")
+	header, err := s.LatestFinalizedBlockHeader(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return blockNum, err
+	return header.Number.Uint64(), nil
 }
 
 func (s *HeaderReader) Client() arbutil.L1Interface {
