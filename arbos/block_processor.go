@@ -240,6 +240,12 @@ func ProduceBlockAdvanced(
 					options = hooks.ConditionalOptionsForTx[0]
 					hooks.ConditionalOptionsForTx = hooks.ConditionalOptionsForTx[1:]
 				}
+			} else {
+				state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+				if err != nil {
+					return nil, nil, err
+				}
+				header = createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 			}
 		}
 
