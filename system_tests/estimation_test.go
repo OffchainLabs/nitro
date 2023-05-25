@@ -127,6 +127,46 @@ func TestEstimate(t *testing.T) {
 	}
 }
 
+func TestDifficultyForLatestArbOS(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l2info, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	// deploy a test contract
+	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
+	Require(t, err, "could not deploy contract")
+
+	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+	Require(t, err)
+	if difficulty.Uint64() != 1 {
+		Fail(t, "Expected difficulty to be 1 by got:", difficulty)
+	}
+}
+
+func TestDifficultyForArbOSTen(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l2info, node, client := CreateTestL2WithArbOS(t, ctx, 10)
+	defer node.StopAndWait()
+
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	// deploy a test contract
+	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
+	Require(t, err, "could not deploy contract")
+
+	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+	Require(t, err)
+	if difficulty.Uint64() != 1 {
+		Fail(t, "Expected difficulty to be 1 by got:", difficulty)
+	}
+}
+
 func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
