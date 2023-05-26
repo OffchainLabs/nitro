@@ -4,6 +4,7 @@ go_library(
     name = "validator",
     srcs = [
         "challenges.go",
+        "edge_sync.go",
         "edge_tracker.go",
         "edge_tracker_states.go",
         "edge_tracker_transition_table.go",
@@ -21,6 +22,7 @@ go_library(
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_pkg_errors//:errors",
         "@com_github_sirupsen_logrus//:logrus",
     ],

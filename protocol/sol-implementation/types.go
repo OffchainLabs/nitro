@@ -60,6 +60,14 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	return &assertionNode, nil
 }
 
+func (a *Assertion) CreatedAtBlock() (uint64, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return 0, err
+	}
+	return inner.CreatedAtBlock, nil
+}
+
 type SpecEdge struct {
 	id         [32]byte
 	mutualId   [32]byte
