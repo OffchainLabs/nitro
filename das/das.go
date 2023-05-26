@@ -54,8 +54,8 @@ type DataAvailabilityConfig struct {
 	AggregatorConfig              AggregatorConfig              `koanf:"rpc-aggregator"`
 	RestfulClientAggregatorConfig RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
 
-	L1NodeURL                       string `koanf:"l1-node-url"`
-	L1ConnectionAttempts            int    `koanf:"l1-connection-attempts"`
+	L1NodeURL                       string `koanf:"parent-chain-node-url"`
+	L1ConnectionAttempts            int    `koanf:"parent-chain-connection-attempts"`
 	SequencerInboxAddress           string `koanf:"sequencer-inbox-address"`
 	ExtraSignatureCheckingPublicKey string `koanf:"extra-signature-checking-public-key"`
 
@@ -132,8 +132,8 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 	IpfsStorageServiceConfigAddOptions(prefix+".ipfs-storage", f)
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
-	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
-	f.Int(prefix+".l1-connection-attempts", DefaultDataAvailabilityConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 

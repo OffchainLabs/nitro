@@ -177,7 +177,7 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), validationDefault)
+	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -244,7 +244,7 @@ func TestExecutionKeepAlive(t *testing.T) {
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
 	shortTimeoutConfig.ExecRunTimeout = time.Second
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
-	configFetcher := StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig)
+	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
 	clientDefault := server_api.NewExecutionClient(configFetcher, validationDefault)
 	err := clientDefault.Start(ctx)

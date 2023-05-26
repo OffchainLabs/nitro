@@ -222,6 +222,7 @@ services:
     depends_on:
       - sequencer
       - redis
+      - validation_node
 
   poster:
     pid: host # allow debugging
@@ -282,6 +283,17 @@ services:
     command: --conf.file /config/validator_config.json --http.port 8547 --http.api net,web3,arb,debug --ws.port 8548
     depends_on:
       - sequencer
+      - validation_node
+
+  validation_node:
+    pid: host # allow debugging
+    image: nitro-node-dev-testnode
+    ports:
+      - "127.0.0.1:8949:8549"
+    volumes:
+      - "config:/config"
+    command: --conf.file /config/validation_node_config.json
+    entrypoint: /usr/local/bin/nitro-val
 
   testnode-scripts:
     build: testnode-scripts/
