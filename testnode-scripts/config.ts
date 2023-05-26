@@ -146,25 +146,30 @@ function writeGethGenesisConfig(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "geth_genesis.json"), gethConfig)
     const jwt = `0x98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4`
     fs.writeFileSync(path.join(consts.configpath, "jwt.hex"), jwt)
+    const val_jwt = `0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+    fs.writeFileSync(path.join(consts.configpath, "val_jwt.hex"), val_jwt)
 }
 
 function writeConfigs(argv: any) {
-    const deployment = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString('utf-8'));
+    const valJwtSecret = path.join(consts.configpath, "val_jwt.hex")
+	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
     const baseConfig = {
-        "l1": {
-            "rollup": deployment,
-            "url": argv.l1url,
+        "parent-chain": {
+            "connection" : {
+                "url": argv.l1url,
+            },
             "wallet": {
                 "account": "",
                 "password": consts.l1passphrase,
                 "pathname": consts.l1keystore,
             },
         },
-        "l2": {
-            "chain-id": 412346,
+        "chain": {
+            "id": 412346,
             "dev-wallet" : {
                 "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-            }
+            },
+            "info-files": [chainInfoFile],
         },
         "node": {
             "archive": true,
@@ -205,13 +210,16 @@ function writeConfigs(argv: any) {
                     },
                     "wait-for-l1-finality": false
                 }
+            },
+            "block-validator": {
+				"validation-server" : {
+					"url": argv.validationNodeUrl,
+					"jwtsecret": valJwtSecret,
+				}
             }
         },
-        "init": {
-            "dev-init": "true"
-        },
         "persistent": {
-	        "chain": "local"
+            "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0"
@@ -227,7 +235,7 @@ function writeConfigs(argv: any) {
     const baseConfJSON = JSON.stringify(baseConfig)
 
     let validatorConfig = JSON.parse(baseConfJSON)
-    validatorConfig.l1.wallet.account = namedAccount("validator").address
+    validatorConfig["parent-chain"].wallet.account = namedAccount("validator").address
     validatorConfig.node.staker.enable = true
     validatorConfig.node.staker["use-smart-contract-wallet"] = true
     let validconfJSON = JSON.stringify(validatorConfig)
@@ -244,10 +252,64 @@ function writeConfigs(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))
 
     let posterConfig = JSON.parse(baseConfJSON)
-    posterConfig.l1.wallet.account = namedAccount("sequencer").address
+    posterConfig["parent-chain"].wallet.account = namedAccount("sequencer").address
     posterConfig.node["seq-coordinator"].enable = true
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
+
+    let validationNodeConfig = JSON.parse(JSON.stringify({
+        "persistent": {
+            "chain": "local"
+        },
+        "ws": {
+            "addr": "",
+        },
+        "http": {
+            "addr": "",
+        },
+        "validation": {
+            "api-auth": true,
+            "api-public": false,
+        },
+        "auth": {
+            "jwtsecret": valJwtSecret,
+            "addr": "0.0.0.0",
+        },
+    }))
+    fs.writeFileSync(path.join(consts.configpath, "validation_node_config.json"), JSON.stringify(validationNodeConfig))
+}
+
+function writeL2ChainConfig(argv: any) {
+    const l2ChainConfig = {
+		"chainId": 412346,
+		"homesteadBlock": 0,
+		"daoForkSupport": true,
+		"eip150Block": 0,
+		"eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+		"eip155Block": 0,
+		"eip158Block": 0,
+		"byzantiumBlock": 0,
+		"constantinopleBlock": 0,
+		"petersburgBlock": 0,
+		"istanbulBlock": 0,
+		"muirGlacierBlock": 0,
+		"berlinBlock": 0,
+		"londonBlock": 0,
+		"clique": {
+			"period": 0,
+			"epoch": 0
+		},
+		"arbitrum": {
+			"EnableArbOS": true,
+			"AllowDebugPrecompiles": true,
+			"DataAvailabilityCommittee": false,
+			"InitialArbOSVersion": 11,
+			"InitialChainOwner": "0x0000000000000000000000000000000000000000",
+			"GenesisBlockNum": 0
+		}
+    }
+    const l2ChainConfigJSON = JSON.stringify(l2ChainConfig)
+    fs.writeFileSync(path.join(consts.configpath, "l2_chain_config.json"), l2ChainConfigJSON)
 }
 
 export const writeConfigCommand = {
@@ -274,3 +336,10 @@ export const writeGethGenesisCommand = {
     }
 }
 
+export const writeL2ChainConfigCommand = {
+    command: "write-l2-chain-config",
+    describe: "writes l2 chain config file",
+    handler: (argv: any) => {
+        writeL2ChainConfig(argv)
+    }
+}

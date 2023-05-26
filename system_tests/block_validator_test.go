@@ -13,14 +13,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops int, expensiveTx bool, arbitrator bool) {
+type workloadType uint
+
+const (
+	ethSend workloadType = iota
+	smallContract
+	depleteGas
+)
+
+func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops int, workload workloadType, arbitrator bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -29,9 +39,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	var delayEvery int
-	if simpletxloops > 1 {
+	if workloadLoops > 1 {
 		l1NodeConfigA.BatchPoster.MaxBatchPostDelay = time.Millisecond * 500
-		delayEvery = simpletxloops / 3
+		delayEvery = workloadLoops / 3
 	}
 
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
@@ -51,35 +61,48 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 
 	perTransfer := big.NewInt(1e12)
 
-	for i := 0; i < simpletxloops; i++ {
+	for i := 0; i < workloadLoops; i++ {
+		var tx *types.Transaction
 
-		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, perTransfer, nil)
+		if workload == ethSend {
+			tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, perTransfer, nil)
+		} else {
+			var contractCode []byte
+			var gas uint64
+
+			if workload == smallContract {
+				contractCode = []byte{byte(vm.PUSH0)}
+				contractCode = append(contractCode, byte(vm.PUSH0))
+				contractCode = append(contractCode, byte(vm.PUSH1))
+				contractCode = append(contractCode, 8) // the prelude length
+				contractCode = append(contractCode, byte(vm.PUSH0))
+				contractCode = append(contractCode, byte(vm.CODECOPY))
+				contractCode = append(contractCode, byte(vm.PUSH0))
+				contractCode = append(contractCode, byte(vm.RETURN))
+				basefee := GetBaseFee(t, l2client, ctx)
+				var err error
+				gas, err = l2client.EstimateGas(ctx, ethereum.CallMsg{
+					From:     l2info.GetAddress("Owner"),
+					GasPrice: basefee,
+					Value:    big.NewInt(0),
+					Data:     contractCode,
+				})
+				Require(t, err)
+			} else {
+				contractCode = []byte{0x5b} // JUMPDEST
+				for i := 0; i < 20; i++ {
+					contractCode = append(contractCode, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
+				}
+				contractCode = append(contractCode, 0x60, 0x00, 0x56) // JUMP
+				gas = l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6
+			}
+			tx = l2info.PrepareTxTo("Owner", nil, gas, common.Big0, contractCode)
+		}
 
 		err := l2client.SendTransaction(ctx, tx)
 		Require(t, err)
-
-		_, err = EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-
-		if expensiveTx {
-			contractData := []byte{0x5b} // JUMPDEST
-			for i := 0; i < 20; i++ {
-				contractData = append(contractData, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
-			}
-			contractData = append(contractData, 0x60, 0x00, 0x56) // JUMP
-			ownerInfo := l2info.GetInfoWithPrivKey("Owner")
-			tx := l2info.SignTxAs("Owner", &types.DynamicFeeTx{
-				To:        nil,
-				Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6,
-				GasFeeCap: new(big.Int).Set(l2info.GasPrice),
-				Value:     common.Big0,
-				Nonce:     ownerInfo.Nonce,
-				Data:      contractData,
-			})
-			ownerInfo.Nonce++
-			err := l2client.SendTransaction(ctx, tx)
-			Require(t, err)
-			_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
+		if workload != depleteGas {
 			Require(t, err)
 		}
 		if delayEvery > 0 && i%delayEvery == (delayEvery-1) {
@@ -87,29 +110,33 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 		}
 	}
 
-	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, perTransfer, nil)
-	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
-	})
-
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 500)
-
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
+	if workload != depleteGas {
+		delayedTx := l2info.PrepareTx("Owner", "User2", 30002, perTransfer, nil)
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+			WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
 		})
+		// give the inbox reader a bit of time to pick up the delayed message
+		time.Sleep(time.Millisecond * 500)
+
+		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+		for i := 0; i < 30; i++ {
+			SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+				l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+			})
+		}
+
+		_, err := WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
+		Require(t, err)
 	}
 
-	_, err := WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
-	Require(t, err)
+	if workload == ethSend {
+		l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+		Require(t, err)
 
-	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	Require(t, err)
-	expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(simpletxloops+1)))
-	if l2balance.Cmp(expectedBalance) != 0 {
-		Fail(t, "Unexpected balance:", l2balance)
+		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))
+		if l2balance.Cmp(expectedBalance) != 0 {
+			Fail(t, "Unexpected balance:", l2balance)
+		}
 	}
 
 	lastBlock, err := l2clientB.BlockByNumber(ctx, nil)
@@ -146,13 +173,13 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 }
 
 func TestBlockValidatorSimpleOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", 1, false, true)
+	testBlockValidatorSimple(t, "onchain", 1, ethSend, true)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 1, false, true)
+	testBlockValidatorSimple(t, "files", 1, ethSend, true)
 }
 
 func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 20, false, false)
+	testBlockValidatorSimple(t, "files", 8, smallContract, false)
 }

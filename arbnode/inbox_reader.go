@@ -140,13 +140,19 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, err := message.ParseInitMessage()
+			initChainId, initChainConfig, _, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}
-			configChainId := r.tracker.txStreamer.chainConfig.ChainID
+			chainConfig := r.tracker.txStreamer.chainConfig
+			configChainId := chainConfig.ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
+			if initChainConfig != nil {
+				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+					return fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
+				}
 			}
 			break
 		}
@@ -554,11 +560,11 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	msg, err := r.tracker.GetDelayedMessage(delayedCount - 1)
+	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
 	if err != nil {
 		return nil, err
 	}
-	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
+	msgBlock := new(big.Int).SetUint64(parentChainBlockNumber)
 	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
 		msgBlock.Set(r.firstMessageBlock)
 	}
