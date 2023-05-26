@@ -7,7 +7,26 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+func TestUint64SetSplitKeyValue(t *testing.T) {
+	set := Uint64Set{}
+	k, v := set.splitKeyValue(uint64(0x123456789abcdef0))
+	if k != uint64(0x123456789abcde00) {
+		Fail(t, "invalid key, want:", uint64(0x123456789abcde00), "have:", k)
+	}
+	if v != int(0xf0) {
+		Fail(t, "invalid value, want:", uint64(0xf0), "have:", v)
+	}
+	k, v = set.splitKeyValue(uint64(0))
+	if k != uint64(0) {
+		Fail(t, "invalid key, want:", uint64(0), "have:", k)
+	}
+	if v != int(0) {
+		Fail(t, "invalid value, want:", uint64(0), "have:", v)
+	}
+}
+
 func TestUint64Set(t *testing.T) {
+	// TODO(magic) add more complex test
 	testElement := uint64(0x1234)
 	storage := NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	InitializeUint64Set(storage) // called just in case we add some initialization in future

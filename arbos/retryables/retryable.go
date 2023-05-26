@@ -22,22 +22,22 @@ const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
 
 type RetryableState struct {
-	retryables         *storage.Storage
-	TimeoutQueue       *storage.Queue
-	Archive            *merkleAccumulator.MerkleAccumulator
-	RedeemableArchived *storage.Uint64Set
+	retryables            *storage.Storage
+	TimeoutQueue          *storage.Queue
+	Archive               *merkleAccumulator.MerkleAccumulator
+	NonRedeemableArchived *storage.Uint64Set
 }
 
 var (
-	timeoutQueueKey       = []byte{0}
-	calldataKey           = []byte{1}
-	archiveKey            = []byte{2}
-	redeemableArchivedKey = []byte{3}
+	timeoutQueueKey          = []byte{0}
+	calldataKey              = []byte{1}
+	archiveKey               = []byte{2}
+	nonRedeemableArchivedKey = []byte{3}
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(archiveKey))
-	storage.InitializeUint64Set(sto.OpenSubStorage(redeemableArchivedKey))
+	storage.InitializeUint64Set(sto.OpenSubStorage(nonRedeemableArchivedKey))
 	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
@@ -45,8 +45,8 @@ func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableStat
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
-		storage.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
-		storage.OpenPackedSet(sto.OpenSubStorage(redeemableArchivedKey)),
+		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
+		storage.OpenUint64Set(sto.OpenSubStorage(nonRedeemableArchivedKey)),
 	}
 }
 
@@ -159,6 +159,10 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 		return false, err
 	}
 
+	return true, clearRetryable(retStorage)
+}
+
+func clearRetryable(retStorage *Storage) error {
 	_ = retStorage.ClearByUint64(numTriesOffset)
 	_ = retStorage.ClearByUint64(fromOffset)
 	_ = retStorage.ClearByUint64(toOffset)
@@ -166,8 +170,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 	_ = retStorage.ClearByUint64(beneficiaryOffset)
 	_ = retStorage.ClearByUint64(timeoutOffset)
 	_ = retStorage.ClearByUint64(timeoutWindowsLeftOffset)
-	err = retStorage.OpenSubStorage(calldataKey).ClearBytes()
-	return true, err
+	return retStorage.OpenSubStorage(calldataKey).ClearBytes()
 }
 
 func (retryable *Retryable) NumTries() (uint64, error) {
@@ -255,42 +258,6 @@ func (rs *RetryableState) Keepalive(
 	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
 }
 
-func (retryable *Retryable) GetHash() (common.Hash, error) {
-	numTries, err := retryable.numTries.StorageSlot.Get()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	from, err := retryable.from.StorageSlot.Get()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	to, err := retryable.to.StorageSlot.Get()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	callvalue, err := retryable.callvalue.StorageSlot.Get()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	beneficiary, err := retryable.beneficiary.StorageSlot.Get()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	calldata, err := retryable.calldata.Get()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return common.BytesToHash(crypto.Keccak256(
-		id.Bytes(),
-		numTries.Bytes(),
-		from.Bytes(),
-		to.Bytes(),
-		callvalue.Bytes(),
-		beneficiary.Bytes(),
-		calldata,
-	)), nil
-}
-
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing
 	if retryable.id != other.id {
 		return false, nil
@@ -350,6 +317,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	windowsLeftStorage := retryableStorage.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
 	windowsLeft, err := windowsLeftStorage.Get()
+	// TODO(magic) why can't we check the second cond earlier?
 	if err != nil || timeout >= currentTimestamp {
 		return err
 	}
@@ -362,19 +330,11 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
-		retrayable := Retryable{
-			id:                 id,
-			backingStorage:     retryableStorage,
-			numTries:           retryableStorage.OpenStorageBackedUint64(numTriesOffset),
-			from:               retryableStorage.OpenStorageBackedAddress(fromOffset),
-			to:                 retryableStorage.OpenStorageBackedAddressOrNil(toOffset),
-			callvalue:          retryableStorage.OpenStorageBackedBigUint(callvalueOffset),
-			beneficiary:        retryableStorage.OpenStorageBackedAddress(beneficiaryOffset),
-			calldata:           retryableStorage.OpenStorageBackedBytes(calldataKey),
-			timeout:            timeoutStorage,
-			timeoutWindowsLeft: windowsLeftStorage,
+		if err = clearRetryable(retryableStorage); err != nil {
+			return err
 		}
-		return rs.archiveRetryable(retryable)
+		_, err = rs.Archive.Append(id)
+		return err
 	}
 
 	// Consume a window, delaying the timeout one lifetime period
@@ -382,28 +342,6 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		return err
 	}
 	return windowsLeftStorage.Set(windowsLeft - 1)
-}
-
-func (rs *RetryableState) archiveRetryable(retryable *Retryable) error {
-	retrayableHash, err := retrayable.GetHash()
-	if err != nil {
-		return err
-	}
-	deleted, err = rs.DeleteRetryable(*id, evm, scenario)
-	if deleted {
-		events, err := rs.Archive.Append(retrayableHash)
-		if err != nil {
-			return err
-		}
-		var index uint64
-		if len(events) > 0 {
-			index = events[len(events)-1].NumLeaves + 1
-		} else {
-			index = rs.Archive.Size()
-		}
-		err = rs.RedeemableArchived.Add(index)
-	}
-	return err
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {

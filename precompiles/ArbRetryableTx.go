@@ -4,17 +4,20 @@
 package precompiles
 
 import (
+	"bytes"
 	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
 type ArbRetryableTx struct {
@@ -131,18 +134,80 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
 }
 
+func checkValidArchivedAndRedeemable(
+	retrayableState *retryables.RetryableState,
+	evm mech, ticketId bytes32,
+	requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
+	gasLimit uint64, maxSubmissionFee huge,
+	feeRefundAddress, beneficiary, retryTo addr,
+	retryData []byte,
+	rootHash common.Hash,
+	leafIndex uint64,
+	proof []common.Hash,
+) error {
+	chainId := evm.ChainConfig.ChainID
+	txHash := types.NewTx(&types.ArbitrumSubmitRetryableTx{
+		ChainId:          chainId,
+		RequestId:        common.BytesToHash(requestId),
+		From:             header.Poster,
+		L1BaseFee:        header.L1BaseFee,
+		DepositValue:     depositValue.Big(),
+		GasFeeCap:        maxFeePerGas.Big(),
+		Gas:              gasLimitBig.Uint64(),
+		RetryTo:          retryTo,
+		RetryValue:       callvalue,
+		Beneficiary:      beneficiary,
+		MaxSubmissionFee: maxSubmissionFee,
+		FeeRefundAddr:    feeRefundAddress,
+		RetryData:        retryData,
+	}).Hash().Bytes()
+	if !bytes.Equal(ticketId, txHash) {
+		// TODO(magic) err
+		return errors.New("TODO")
+	}
+	retryableState := c.State.RetryableState()
+	archiveRoot, err := retryableState.Archive.Root()
+	if err != nil {
+		return bytes32{}, err
+	}
+	if !bytes.Equal(rootHash.Bytes(), archiveRoot.Bytes()) {
+		// TODO(magic) err
+		return errors.New("TODO")
+	}
+	merkleProof := merkletree.MerkleProof{
+		RootHash:  rootHash,
+		LeafHash:  common.BytesToHash(crypto.Keccak256(ticketId)),
+		LeafIndex: leafIndex,
+		Proof:     proof,
+	}
+	if !merkleProof.IsCorrect() {
+		// TODO(magic) err
+		return errors.New("TODO")
+	}
+	isNonRedeemable, err := retryableState.NonRedeemableArchived.IsMember(leafIndex)
+	if isNonRedeemable {
+		// TODO(magic) err
+		return errors.New("TODO")
+	}
+	return nil
+}
+
 func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
 	requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
 	feeRefundAddress, beneficiary, retryTo addr,
 	retryData []byte,
-	proof []byte, // TODO(magic) add proof to sol declr
+	rootHash common.Hash,
+	leafIndex uint64,
+	proof []common.Hash,
 ) (bytes32, error) {
-	time := evm.Context.Time
-	timeout := time + retryables.RetryableLifetimeSeconds
+	retrayableState := c.State.RetryableState()
+	if err := checkValidArchivedAndRedeemable(
+		retrayableState, evm, ticketId, requestId, l1BaseFee, deposit, callvalue, gasFeeCap, gasLimit,
+		maxSubmissionFee, feeRefundAddress, beneficiary, retryTo, retryData, rootHash, leafIndex, proof); err != nil {
+		return bytes32{}, err
+	}
 	// TODO(magic)
-	// 1. Reconstruct retryable and get its hash
-	// 2. Validate inclusion in retryables.Archived
 	// 3. Check retryables.RedeemableArchived.IsMember(retryableHash)
 
 	// 4. Redeem:
@@ -152,10 +217,7 @@ func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
 	//    retryTxHash := retryTx.Hash()
 	//    err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund, common.Big0)
 	// 5. Handle gas
-	// 6. On succcess: retryables.RedeemableArchived.Remove(retryableHash)
-	// Qs:
-	// * Won't ReddemableArchived require too much storage? (even as a packed set)
-	// * If not, do we need Archived merkle tree accumulator?
+	_, err := retryableState.NonRedeemableArchived.Add(leafIndex)
 	return bytes32{}, nil
 }
 
@@ -251,13 +313,26 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
-func (con ArbRetryableTx) CancelArchived(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
-	// TODO(magic)
-	// * args
-	// 1. Reconstruct retryable and get retryableHash
-	// 2. Validate inclusion in retryables.Archived
-	// 3. remove from retryables.RedeemableArchived (with or without checking if already exists)
-	return bytes32{}, nil
+func (con ArbRetryableTx) CancelArchived(c ctx, evm mech, ticketId bytes32,
+	requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
+	gasLimit uint64, maxSubmissionFee huge,
+	feeRefundAddress, beneficiary, retryTo addr,
+	retryData []byte,
+	rootHash common.Hash,
+	leafIndex uint64,
+	proof []common.Hash,
+) error {
+	retrayableState := c.State.RetryableState()
+	if err := checkValidArchivedAndRedeemable(
+		retrayableState, evm, ticketId, requestId, l1BaseFee, deposit, callvalue, gasFeeCap, gasLimit,
+		maxSubmissionFee, feeRefundAddress, beneficiary, retryTo, retryData, rootHash, leafIndex, proof); err != nil {
+		return err
+	}
+	if _, err := retrayableState.NonRedeemableArchived.Add(ticketId); err != nil {
+		return err
+	}
+	// TODO(magic) verify
+	return con.Canceled(c, evm, ticketId)
 }
 
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
