@@ -198,7 +198,7 @@ func TestConsensusRPC(t *testing.T) {
 
 	mock, stack := createMockConsensusNode(t, ctx)
 
-	client := consensusclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), stack)
+	client := consensusclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), stack)
 	err := client.Start(ctx)
 	Require(t, err)
 	_, err = client.ExpectChosenSequencer().Await(ctx)
