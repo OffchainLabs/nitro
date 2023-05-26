@@ -34,7 +34,7 @@ func main() {
 
 func printSampleUsage(progname string) {
 	fmt.Printf("\n")
-	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --l2.chain-id=<L2 chain id> \n", progname)
+	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --chain.id=<L2 chain id> \n", progname)
 }
 
 func startup() error {
