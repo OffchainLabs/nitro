@@ -87,7 +87,7 @@ func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
-	if err := c.Sequencer.Validate(); err != nil {
+	if err := c.ConsensesServer.Validate(); err != nil {
 		return err
 	}
 	return nil
