@@ -112,7 +112,7 @@ func TestDASRekey(t *testing.T) {
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -142,8 +142,8 @@ func TestDASRekey(t *testing.T) {
 		execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 		Require(t, err)
 
-		execClient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stackA)
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+		execClient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stackA)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
 		Require(t, execA.Initialize(ctx))
 		Require(t, nodeA.Start(ctx))
@@ -194,8 +194,8 @@ func TestDASRekey(t *testing.T) {
 	Require(t, err)
 
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	execClient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stackA)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	execClient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stackA)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 	Require(t, execA.Initialize(ctx))
 	Require(t, nodeA.Start(ctx))
@@ -257,7 +257,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
@@ -331,9 +331,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stackA)
+	execclient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stackA)
 
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execclient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execclient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, feedErrChan)
 	Require(t, err)
 	Require(t, execA.Initialize(ctx))
 	Require(t, nodeA.Start(ctx))
