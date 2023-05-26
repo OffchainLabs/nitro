@@ -108,6 +108,10 @@ func (r *BlockRecorder) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbos
 			if err != nil {
 				return nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
 			}
+			_, err = initialArbosState.ChainConfig()
+			if err != nil {
+				return nil, fmt.Errorf("error getting chain config from initial ArbOS state: %w", err)
+			}
 			expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
 			if genesisNum != expectedNum {
 				return nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
