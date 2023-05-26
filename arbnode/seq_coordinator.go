@@ -647,6 +647,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
 				}
 			}
+			err = c.streamer.PopulateFeedBacklog()
+			if err != nil {
+				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)
+			}
 			c.sequencer.Activate()
 			c.prevChosenSequencer = c.config.MyUrl()
 			return c.noRedisError()

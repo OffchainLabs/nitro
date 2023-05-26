@@ -2,8 +2,10 @@ package rpcclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,6 +27,15 @@ type ClientConfig struct {
 	Retries        uint          `koanf:"retries" reload:"hot"`
 	ConnectionWait time.Duration `koanf:"connection-wait"`
 	ArgLogLimit    uint          `koanf:"arg-log-limit" reload:"hot"`
+	RetryErrors    string        `koanf:"retry-errors" reload:"hot"`
+
+	retryErrors *regexp.Regexp
+}
+
+func (c *ClientConfig) Validate() error {
+	var err error
+	c.retryErrors, err = regexp.Compile(c.RetryErrors)
+	return err
 }
 
 type ClientConfigFetcher func() *ClientConfig
@@ -47,6 +58,7 @@ func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientCo
 	f.Duration(prefix+".timeout", defaultConfig.Timeout, "per-response timeout (0-disabled)")
 	f.Uint(prefix+".arg-log-limit", defaultConfig.ArgLogLimit, "limit size of arguments in log entries")
 	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
+	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
 }
 
 type RpcClient struct {
@@ -64,22 +76,31 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 }
 
 func (c *RpcClient) Close() {
-	c.client.Close()
+	if c.client != nil {
+		c.client.Close()
+	}
 }
 
-func limitString(limit int, str string) string {
+func limitedMarshal(limit int, arg interface{}) string {
+	marshalled, err := json.Marshal(arg)
+	var str string
+	if err != nil {
+		str = "\"CANNOT MARSHALL:" + err.Error() + "\""
+	} else {
+		str = string(marshalled)
+	}
 	if limit == 0 || len(str) <= limit {
 		return str
 	}
 	prefix := str[:limit/2-1]
 	postfix := str[len(str)-limit/2+1:]
-	return fmt.Sprintf("%v...%v", prefix, postfix)
+	return fmt.Sprintf("%v..%v", prefix, postfix)
 }
 
 func logArgs(limit int, args ...interface{}) string {
 	res := "["
 	for i, arg := range args {
-		res += limitString(limit, fmt.Sprintf("%+v", arg))
+		res += limitedMarshal(limit, arg)
 		if i < len(args)-1 {
 			res += ", "
 		}
@@ -115,10 +136,17 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			logger = log.Info
 			limit = 0
 		}
-		logger("rpc response", "method", method, "logId", logId, "result", limitString(limit, fmt.Sprintf("%+v", result)), "attempt", i, "args", logArgs(limit, args...))
-		if !errors.Is(err, context.DeadlineExceeded) {
-			return err
+		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal(limit, result), "attempt", i, "args", logArgs(limit, args...))
+		if err == nil {
+			return nil
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			continue
+		}
+		if c.config().retryErrors.MatchString(err.Error()) {
+			continue
+		}
+		return err
 	}
 	return err
 }
@@ -170,7 +198,7 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		var err error
 		var client *rpc.Client
 		if jwt == nil {
-			client, err = rpc.DialWebsocket(ctx, url, "")
+			client, err = rpc.DialContext(ctx, url)
 		} else {
 			client, err = rpc.DialOptions(ctx, url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*jwt))))
 		}
@@ -179,7 +207,8 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 			c.client = client
 			return nil
 		}
-		if strings.Contains(err.Error(), "parse") {
+		if strings.Contains(err.Error(), "parse") ||
+			strings.Contains(err.Error(), "malformed") {
 			return fmt.Errorf("%w: url %s", err, url)
 		}
 		select {

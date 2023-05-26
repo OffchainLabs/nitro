@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -58,7 +59,12 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	raw := rawdb.NewMemoryDatabase()
 
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
-	stateroot, err := InitializeArbosInDatabase(raw, initReader, params.ArbitrumDevTestChainConfig(), 0, 0)
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		log.Crit("failed to serialize chain config", "error", err)
+	}
+	stateroot, err := InitializeArbosInDatabase(raw, initReader, chainConfig, serializedChainConfig, 0, 0)
 	Require(t, err)
 
 	stateDb, err := state.New(stateroot, state.NewDatabase(raw), nil)
