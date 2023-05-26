@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
@@ -43,7 +44,7 @@ type StakerInfo struct {
 type RollupWatcher struct {
 	*rollupgen.RollupUserLogic
 	address      common.Address
-	fromBlock    uint64
+	fromBlock    *big.Int
 	client       arbutil.L1Interface
 	baseCallOpts bind.CallOpts
 }
@@ -68,23 +69,30 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	return &opts
 }
 
-func (r *RollupWatcher) Initialize(ctx context.Context) error {
-	firstNode, err := r.GetNode(r.getCallOpts(ctx), 0)
+func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64) (*big.Int, error) {
+	callOpts := r.getCallOpts(ctx)
+	createdAtBlock, err := r.GetNodeCreationBlockForLogLookup(callOpts, nodeNum)
 	if err != nil {
-		return err
+		log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
+		node, err := r.GetNode(callOpts, nodeNum)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		createdAtBlock = new(big.Int).SetUint64(node.CreatedAtBlock)
 	}
-	r.fromBlock = firstNode.CreatedAtBlock
-	return nil
+	return createdAtBlock, nil
+}
+
+func (r *RollupWatcher) Initialize(ctx context.Context) error {
+	var err error
+	r.fromBlock, err = r.getNodeCreationBlock(ctx, 0)
+	return err
 }
 
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
-	var toBlock *big.Int
-	if r.fromBlock > 0 {
-		toBlock = new(big.Int).SetUint64(r.fromBlock)
-	}
 	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(r.fromBlock),
-		ToBlock:   toBlock,
+		FromBlock: r.fromBlock,
+		ToBlock:   r.fromBlock,
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{rollupInitializedID}},
 	}
@@ -103,15 +111,15 @@ func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUs
 }
 
 func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInfo, error) {
-	node, err := r.GetNode(r.getCallOpts(ctx), number)
+	createdAtBlock, err := r.getNodeCreationBlock(ctx, number)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	var numberAsHash common.Hash
 	binary.BigEndian.PutUint64(numberAsHash[(32-8):], number)
 	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
-		ToBlock:   new(big.Int).SetUint64(node.CreatedAtBlock),
+		FromBlock: createdAtBlock,
+		ToBlock:   createdAtBlock,
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{nodeCreatedID}, {numberAsHash}},
 	}
@@ -196,11 +204,14 @@ func (r *RollupWatcher) LatestConfirmedCreationBlock(ctx context.Context) (uint6
 	if err != nil {
 		return 0, errors.WithStack(err)
 	}
-	latestConfirmedNode, err := r.GetNode(r.getCallOpts(ctx), latestConfirmed)
+	creation, err := r.getNodeCreationBlock(ctx, latestConfirmed)
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, err
 	}
-	return latestConfirmedNode.CreatedAtBlock, nil
+	if !creation.IsUint64() {
+		return 0, fmt.Errorf("node %v creation block %v is not a uint64", latestConfirmed, creation)
+	}
+	return creation.Uint64(), nil
 }
 
 func (r *RollupWatcher) LookupChallengedNode(ctx context.Context, address common.Address) (uint64, error) {

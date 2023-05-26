@@ -4,13 +4,14 @@
 package arbnode
 
 var (
-	BlockValidatorPrefix       string = "v"         // the prefix for all block validator keys
-	messagePrefix              []byte = []byte("m") // maps a message sequence number to a message
-	messageResultPrefix        []byte = []byte("r") // maps a message sequence number to a message-result
-	legacyDelayedMessagePrefix []byte = []byte("d") // maps a delayed sequence number to an accumulator and a message as serialized on L1
-	rlpDelayedMessagePrefix    []byte = []byte("e") // maps a delayed sequence number to an accumulator and an RLP encoded message
-	sequencerBatchMetaPrefix   []byte = []byte("s") // maps a batch sequence number to BatchMetadata
-	delayedSequencedPrefix     []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
+	BlockValidatorPrefix         string = "v"         // the prefix for all block validator keys
+	messagePrefix                []byte = []byte("m") // maps a message sequence number to a message
+	messageResultPrefix          []byte = []byte("r") // maps a message sequence number to a message-result
+	legacyDelayedMessagePrefix   []byte = []byte("d") // maps a delayed sequence number to an accumulator and a message as serialized on L1
+	rlpDelayedMessagePrefix      []byte = []byte("e") // maps a delayed sequence number to an accumulator and an RLP encoded message
+	parentChainBlockNumberPrefix []byte = []byte("p") // maps a delayed sequence number to a parent chain block number
+	sequencerBatchMetaPrefix     []byte = []byte("s") // maps a batch sequence number to BatchMetadata
+	delayedSequencedPrefix       []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
 
 	messageCountKey        []byte = []byte("_messageCount")        // contains the current message count
 	messageResultCountKey  []byte = []byte("_messageResultCount")  // contains the current message count

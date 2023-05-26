@@ -16,18 +16,18 @@ func TestLogArgs(t *testing.T) {
 	t.Parallel()
 
 	str := logArgs(0, 1, 2, 3, "hello, world")
-	if str != "[1, 2, 3, hello, world]" {
+	if str != "[1, 2, 3, \"hello, world\"]" {
 		Fail(t, "unexpected logs limit 0 got:", str)
 	}
 
 	str = logArgs(100, 1, 2, 3, "hello, world")
-	if str != "[1, 2, 3, hello, world]" {
+	if str != "[1, 2, 3, \"hello, world\"]" {
 		Fail(t, "unexpected logs limit 100 got:", str)
 	}
 
-	str = logArgs(4, 1, 2, 3, "hello, world")
-	if str != "[1, 2, 3, h...d]" {
-		Fail(t, "unexpected logs limit 4 got:", str)
+	str = logArgs(6, 1, 2, 3, "hello, world")
+	if str != "[1, 2, 3, \"h..d\"]" {
+		Fail(t, "unexpected logs limit 6 got:", str)
 	}
 
 }
@@ -92,13 +92,14 @@ func TestRpcClientRetry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 	defer cancel()
 
-	configFetcher := func() *ClientConfig {
-		return &ClientConfig{
-			URL:     "self",
-			Timeout: time.Second * 5,
-			Retries: 2,
-		}
+	config := &ClientConfig{
+		URL:         "self",
+		Timeout:     time.Second * 5,
+		Retries:     2,
+		RetryErrors: "b.*",
 	}
+	Require(t, config.Validate())
+	configFetcher := func() *ClientConfig { return config }
 
 	serverGood := createTestNode(t, ctx, 0)
 	clientGood := NewRpcClient(configFetcher, serverGood)
@@ -132,6 +133,30 @@ func TestRpcClientRetry(t *testing.T) {
 	}
 	err = clientRetry.CallContext(ctx, nil, "test_stuckAtFirst")
 	Require(t, err)
+
+	retryConfig := &ClientConfig{
+		URL:         "self",
+		Timeout:     time.Second * 5,
+		Retries:     2,
+		RetryErrors: "er.*",
+	}
+	Require(t, retryConfig.Validate())
+	retryErrConfigFetcher := func() *ClientConfig { return retryConfig }
+
+	serverWorkWithRetry := createTestNode(t, ctx, 1)
+	clientWorkWithRetry := NewRpcClient(retryErrConfigFetcher, serverWorkWithRetry)
+	err = clientWorkWithRetry.Start(ctx)
+	Require(t, err)
+	err = clientWorkWithRetry.CallContext(ctx, nil, "test_failAtFirst")
+	Require(t, err)
+
+	clientFailsWithRetry := NewRpcClient(retryErrConfigFetcher, serverBad)
+	err = clientFailsWithRetry.Start(ctx)
+	Require(t, err)
+	err = clientFailsWithRetry.CallContext(ctx, nil, "test_failAtFirst")
+	if err == nil {
+		Fail(t, "no error for failAtFirst")
+	}
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

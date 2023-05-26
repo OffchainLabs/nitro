@@ -14,30 +14,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestSeqConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestUnsafeStakerConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null --node.staker.dangerous.without-block-validator", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null --node.staker.dangerous.without-block-validator", " ")
 	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestValidatorConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null", " ")
 	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestAggregatorConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
 	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
@@ -97,37 +98,40 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// create a config file
 	configFile := filepath.Join(t.TempDir(), "config.json")
-	jsonConfig := "{\"l2\":{\"chain-id\":421613}}"
+	jsonConfig := "{\"chain\":{\"id\":421613}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
-	args := strings.Split("--file-logging.enable=false --persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--file-logging.enable=false --persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
 	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
+		nodeConfig, _, _, err := ParseNode(ctx, args)
+		return nodeConfig, err
+	})
 
 	// check updating the config
 	update := config.ShallowClone()
 	expected := config.ShallowClone()
 	update.Node.BatchPoster.BatchPollDelay += 2 * time.Millisecond
 	expected.Node.BatchPoster.BatchPollDelay += 2 * time.Millisecond
-	Require(t, liveConfig.set(update))
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	Require(t, liveConfig.Set(update))
+	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to set config")
 	}
 
 	// check that an invalid reload gets rejected
 	update = config.ShallowClone()
 	update.L2.ChainID++
-	if liveConfig.set(update) == nil {
+	if liveConfig.Set(update) == nil {
 		Fail(t, "failed to reject invalid update")
 	}
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "config should not change if its update fails")
 	}
 
-	// starting the LiveNodeConfig after testing LiveNodeConfig.set to avoid race condition in the test
+	// starting the LiveConfig after testing LiveConfig.set to avoid race condition in the test
 	liveConfig.Start(ctx)
 
 	// reload config
@@ -140,14 +144,14 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check that reloading the config again doesn't change anything
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 	time.Sleep(80 * time.Millisecond)
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "live config differs from expected")
 	}
 
 	// change the config file
 	expected = config.ShallowClone()
 	expected.Node.BatchPoster.BatchPollDelay += time.Millisecond
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"poll-delay\":\"%s\"}}, \"l2\":{\"chain-id\":421613}}", expected.Node.BatchPoster.BatchPollDelay.String())
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"poll-delay\":\"%s\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.BatchPollDelay.String())
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
@@ -157,8 +161,8 @@ func TestLiveNodeConfig(t *testing.T) {
 		Fail(t, "failed to update config", config.Node.BatchPoster.BatchPollDelay, update.Node.BatchPoster.BatchPollDelay)
 	}
 
-	// change l2.chain-id in the config file (currently non-reloadable)
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"poll-delay\":\"%s\"}}, \"l2\":{\"chain-id\":421703}}", expected.Node.BatchPoster.BatchPollDelay.String())
+	// change chain.id in the config file (currently non-reloadable)
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"poll-delay\":\"%s\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.BatchPollDelay.String())
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
@@ -178,12 +182,15 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	jsonConfig := "{\"conf\":{\"reload-interval\":\"20ms\"}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
 	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
+		nodeConfig, _, _, err := ParseNode(ctx, args)
+		return nodeConfig, err
+	})
 	liveConfig.Start(ctx)
 
 	// test if periodic reload works
@@ -202,7 +209,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	jsonConfig = "{\"conf\":{\"reload-interval\":\"10ms\"}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 	time.Sleep(80 * time.Millisecond)
-	if reflect.DeepEqual(liveConfig.get(), expected) {
+	if reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to disable periodic reload")
 	}
 }
@@ -211,16 +218,16 @@ func WriteToConfigFile(path string, jsonConfig string) error {
 	return os.WriteFile(path, []byte(jsonConfig), 0600)
 }
 
-func PollLiveConfigUntilEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
+func PollLiveConfigUntilEqual(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
 	return PollLiveConfig(liveConfig, expected, true)
 }
-func PollLiveConfigUntilNotEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
+func PollLiveConfigUntilNotEqual(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
 	return PollLiveConfig(liveConfig, expected, false)
 }
 
-func PollLiveConfig(liveConfig *LiveNodeConfig, expected *NodeConfig, equal bool) bool {
+func PollLiveConfig(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig, equal bool) bool {
 	for i := 0; i < 16; i++ {
-		if reflect.DeepEqual(liveConfig.get(), expected) == equal {
+		if reflect.DeepEqual(liveConfig.Get(), expected) == equal {
 			return true
 		}
 		time.Sleep(10 * time.Millisecond)
