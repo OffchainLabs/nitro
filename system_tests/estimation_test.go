@@ -142,7 +142,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
-	if difficulty.Uint64() != 1 {
+	if arbmath.BigEquals(difficulty, common.Big1) {
 		Fail(t, "Expected difficulty to be 1 by got:", difficulty)
 	}
 }
@@ -162,7 +162,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
-	if difficulty.Uint64() != 1 {
+	if arbmath.BigEquals(difficulty, common.Big1) {
 		Fail(t, "Expected difficulty to be 1 by got:", difficulty)
 	}
 }
