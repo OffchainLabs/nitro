@@ -6,13 +6,16 @@ import (
 
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"strconv"
-	"strings"
+	"math/big"
 )
 
 func TestAddEdge(t *testing.T) {
@@ -55,15 +58,15 @@ func TestAddEdge(t *testing.T) {
 			assertionErr: nil,
 			assertionId:  ht.topLevelAssertionId,
 		}
-		ht.histChecker = &mockHistChecker{
-			agreesErr: errors.New("bad request"),
+		ht.histChecker = &mocks.MockStateManager{
+			AgreeErr: true,
 		}
 		err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not check if agrees with")
 	})
 	t.Run("fully disagrees with edge", func(t *testing.T) {
-		ht.histChecker = &mockHistChecker{
-			agreement: Agreement{
+		ht.histChecker = &mocks.MockStateManager{
+			Agreement: protocol.Agreement{
 				IsHonestEdge:          false,
 				AgreesWithStartCommit: false,
 			},
@@ -79,8 +82,8 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, false, ok)
 	})
 	t.Run("agrees with edge but is not a level zero edge", func(t *testing.T) {
-		ht.histChecker = &mockHistChecker{
-			agreement: Agreement{
+		ht.histChecker = &mocks.MockStateManager{
+			Agreement: protocol.Agreement{
 				IsHonestEdge: true,
 			},
 		}
@@ -116,8 +119,8 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, false, ht.honestBlockChalLevelZeroEdge.IsNone())
 	})
 	t.Run("edge is not honest but we agree with start commit and keep it as a rival", func(t *testing.T) {
-		ht.histChecker = &mockHistChecker{
-			agreement: Agreement{
+		ht.histChecker = &mocks.MockStateManager{
+			Agreement: protocol.Agreement{
 				IsHonestEdge:          false,
 				AgreesWithStartCommit: true,
 			},
@@ -140,7 +143,7 @@ func TestAddEdge(t *testing.T) {
 type mockMetadataReader struct {
 	assertionId     protocol.AssertionId
 	assertionErr    error
-	claimHeights    *ClaimHeights
+	claimHeights    *protocol.OriginHeights
 	claimHeightsErr error
 }
 
@@ -156,24 +159,22 @@ func (*mockMetadataReader) AssertionUnrivaledTime(
 	return 0, nil
 }
 
-func (m *mockMetadataReader) ClaimHeights(
+func (m *mockMetadataReader) TopLevelClaimHeights(
 	_ context.Context, _ protocol.EdgeId,
-) (*ClaimHeights, error) {
+) (*protocol.OriginHeights, error) {
 	return m.claimHeights, m.claimHeightsErr
 }
 
-type mockHistChecker struct {
-	agreement Agreement
-	agreesErr error
+func (m *mockMetadataReader) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+	return nil, nil
 }
-
-func (m *mockHistChecker) AgreesWithHistoryCommitment(
-	_ context.Context,
-	_ *ClaimHeights,
-	_,
-	_ util.HistoryCommitment,
-) (Agreement, error) {
-	return m.agreement, m.agreesErr
+func (m *mockMetadataReader) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionId) (protocol.AssertionSequenceNumber, error) {
+	return 0, nil
+}
+func (m *mockMetadataReader) ReadAssertionCreationInfo(
+	ctx context.Context, seqNum protocol.AssertionSequenceNumber,
+) (*protocol.AssertionCreatedInfo, error) {
+	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
 }
 
 var _ = protocol.ReadOnlyEdge(&edge{})

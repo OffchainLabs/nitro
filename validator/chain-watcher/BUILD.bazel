@@ -1,36 +1,34 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "challenge-tree",
-    srcs = [
-        "ancestors.go",
-        "path_timer.go",
-        "tree.go",
-    ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/validator/challenge-tree",
+    name = "chain-watcher",
+    srcs = ["watcher.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/validator/chain-watcher",
     visibility = ["//visibility:public"],
     deps = [
         "//protocol",
+        "//solgen/go/challengeV2gen",
         "//state-manager",
         "//util",
         "//util/threadsafe",
+        "//validator/challenge-tree",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_pkg_errors//:errors",
+        "@com_github_sirupsen_logrus//:logrus",
     ],
 )
 
 go_test(
-    name = "challenge-tree_test",
-    srcs = [
-        "ancestors_test.go",
-        "path_timer_test.go",
-        "tree_test.go",
-    ],
-    embed = [":challenge-tree"],
+    name = "chain-watcher_test",
+    srcs = ["watcher_test.go"],
+    embed = [":chain-watcher"],
     deps = [
         "//protocol",
+        "//solgen/go/challengeV2gen",
         "//testing/mocks",
         "//util",
         "//util/threadsafe",
+        "//validator/challenge-tree",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",
     ],

@@ -120,6 +120,18 @@ type Manager interface {
 		fromSmallStep,
 		toSmallStep uint64,
 	) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error)
+	HistoryChecker
+}
+
+type HistoryChecker interface {
+	AgreesWithHistoryCommitment(
+		ctx context.Context,
+		edgeType protocol.EdgeType,
+		prevAssertionInboxMaxCount uint64,
+		heights *protocol.OriginHeights,
+		startCommit,
+		endCommit util.HistoryCommitment,
+	) (protocol.Agreement, error)
 }
 
 // Simulated defines a very naive state manager that is initialized from a list of predetermined
@@ -364,6 +376,17 @@ func (s *Simulated) HistoryCommitmentUpToBatch(_ context.Context, blockStart, bl
 		blockEnd-blockStart,
 		states,
 	)
+}
+
+func (s *Simulated) AgreesWithHistoryCommitment(
+	ctx context.Context,
+	edgeType protocol.EdgeType,
+	prevAssertionInboxMaxCount uint64,
+	heights *protocol.OriginHeights,
+	startCommit,
+	endCommit util.HistoryCommitment,
+) (protocol.Agreement, error) {
+	return protocol.Agreement{}, errors.New("unimplemented")
 }
 
 func (s *Simulated) BigStepLeafCommitment(

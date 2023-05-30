@@ -6,6 +6,7 @@ go_library(
         "commitments.go",
         "fsm.go",
         "option_type.go",
+        "retry.go",
         "simulated_backend_wrapper.go",
         "time_reference.go",
         "util.go",
@@ -20,6 +21,7 @@ go_library(
         "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_pkg_errors//:errors",
+        "@com_github_sirupsen_logrus//:logrus",
     ],
 )
 
@@ -28,6 +30,7 @@ go_test(
     srcs = [
         "commitments_test.go",
         "fsm_test.go",
+        "retry_test.go",
         "time_reference_test.go",
         "util_test.go",
     ],

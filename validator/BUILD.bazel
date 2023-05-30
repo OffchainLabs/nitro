@@ -31,6 +31,7 @@ go_library(
 go_test(
     name = "validator_test",
     srcs = [
+        "edge_sync_test.go",
         "edge_tracker_test.go",
         "validator_example_test.go",
         "validator_test.go",

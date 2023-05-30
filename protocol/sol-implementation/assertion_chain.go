@@ -215,6 +215,42 @@ func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Sp
 	)
 }
 
+// TODO: Implement this logic.
+func (ac *AssertionChain) AssertionUnrivaledTime(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
+	return 0, nil
+}
+
+func (ac *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error) {
+	cm, err := ac.SpecChallengeManager(ctx)
+	if err != nil {
+		return protocol.AssertionId{}, err
+	}
+	edgeOpt, err := cm.GetEdge(ctx, edgeId)
+	if err != nil {
+		return protocol.AssertionId{}, err
+	}
+	if edgeOpt.IsNone() {
+		return protocol.AssertionId{}, errors.New("edge was nil")
+	}
+	return edgeOpt.Unwrap().PrevAssertionId(ctx)
+}
+
+func (ac *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
+	cm, err := ac.SpecChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	edgeOpt, err := cm.GetEdge(ctx, edgeId)
+	if err != nil {
+		return nil, err
+	}
+	if edgeOpt.IsNone() {
+		return nil, errors.New("edge was nil")
+	}
+	edge := edgeOpt.Unwrap()
+	return edge.TopLevelClaimHeight(ctx)
+}
+
 // Confirm creates a confirmation for an assertion at the block hash and send root.
 func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
 	receipt, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {

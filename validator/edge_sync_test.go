@@ -29,22 +29,6 @@ func Test_getEdgeTrackers(t *testing.T) {
 	require.Equal(t, uint64(0x64), trackers[0].topLevelClaimEndBatchCount)
 }
 
-func Test_retryUntilSucceeds(t *testing.T) {
-	hello := func() (string, error) {
-		return "hello", nil
-	}
-
-	ctx := context.Background()
-	got, err := retryUntilSucceeds(ctx, hello)
-	require.NoError(t, err)
-	require.Equal(t, "hello", got)
-
-	newCtx, cancel := context.WithCancel(ctx)
-	cancel()
-	_, err = retryUntilSucceeds(newCtx, hello)
-	require.ErrorContains(t, err, "context canceled")
-}
-
 func TestValidator_getConfirmedBlockNum(t *testing.T) {
 	ctx := context.Background()
 	v, m, _ := setupValidator(t)

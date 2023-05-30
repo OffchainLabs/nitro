@@ -68,6 +68,10 @@ type AssertionChain interface {
 		ctx context.Context, seqNum AssertionSequenceNumber,
 	) (*AssertionCreatedInfo, error)
 
+	AssertionUnrivaledTime(ctx context.Context, assertionId AssertionId) (uint64, error)
+	TopLevelAssertion(ctx context.Context, edgeId EdgeId) (AssertionId, error)
+	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (*OriginHeights, error)
+
 	// Mutating methods.
 	CreateAssertion(
 		ctx context.Context,
@@ -77,6 +81,13 @@ type AssertionChain interface {
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
+}
+
+// Agreement encompasses whether or not a local node agrees with a edge's commitments.
+// Either the edge is honest, we agree with its start commit, or disagree entirely.
+type Agreement struct {
+	IsHonestEdge          bool
+	AgreesWithStartCommit bool
 }
 
 // EdgeType corresponds to the three different challenge
@@ -209,7 +220,8 @@ type OriginHeights struct {
 	BigStepChallengeOriginHeight Height
 }
 
-// ReadOnlyEdge defines the read-only methods of an edge onchain.
+// ReadOnlyEdge defines methods that only retrieve data from the chain
+// regarding for a given edge.
 type ReadOnlyEdge interface {
 	// The unique identifier for an edge.
 	Id() EdgeId
