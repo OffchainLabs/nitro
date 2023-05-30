@@ -142,27 +142,7 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 	return 6*32 + calldata, err
 }
 
-func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
-	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
-	timeout, err := retStorage.GetByUint64(timeoutOffset)
-	if timeout == (common.Hash{}) || err != nil {
-		return false, err
-	}
-
-	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
-	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
-	escrowAddress := RetryableEscrowAddress(id)
-	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
-	amount := evm.StateDB.GetBalance(escrowAddress)
-	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, "escrow")
-	if err != nil {
-		return false, err
-	}
-
-	return true, clearRetryable(retStorage)
-}
-
-func clearRetryable(retStorage *Storage) error {
+func clearRetryable(retStorage *storage.Storage) error {
 	_ = retStorage.ClearByUint64(numTriesOffset)
 	_ = retStorage.ClearByUint64(fromOffset)
 	_ = retStorage.ClearByUint64(toOffset)
@@ -171,6 +151,29 @@ func clearRetryable(retStorage *Storage) error {
 	_ = retStorage.ClearByUint64(timeoutOffset)
 	_ = retStorage.ClearByUint64(timeoutWindowsLeftOffset)
 	return retStorage.OpenSubStorage(calldataKey).ClearBytes()
+}
+
+func moveFundsLeftInEscrowToBeneficiary(id common.Hash, retStorage *storage.Storage, evm *vm.EVM, scenario util.TracingScenario) error {
+	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
+	escrowAddress := RetryableEscrowAddress(id)
+	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
+	amount := evm.StateDB.GetBalance(escrowAddress)
+	return util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, "escrow")
+}
+
+func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
+	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
+	timeout, err := retStorage.GetByUint64(timeoutOffset)
+	if timeout == (common.Hash{}) || err != nil {
+		return false, err
+	}
+
+	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
+	if err := moveFundsLeftInEscrowToBeneficiary(id, retStorage, evm, scenario); err != nil {
+		return false, err
+	}
+
+	return true, clearRetryable(retStorage)
 }
 
 func (retryable *Retryable) NumTries() (uint64, error) {
