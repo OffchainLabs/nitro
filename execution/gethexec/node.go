@@ -122,26 +122,6 @@ var ConfigDefault = Config{
 	Caching:              DefaultCachingConfig,
 }
 
-func ConfigDefaultNonSequencerTest() *Config {
-	config := ConfigDefault
-	config.Sequencer.Enable = false
-	config.Forwarder = DefaultTestForwarderConfig
-	config.ExecRPC = ExecRPCConfigTest
-	config.ConsensesServer = rpcclient.TestClientConfig
-
-	return &config
-}
-
-func ConfigDefaultTest() *Config {
-	config := ConfigDefault
-	config.Sequencer = TestSequencerConfig
-	config.L1Reader = headerreader.TestConfig
-	config.ExecRPC = ExecRPCConfigTest
-	config.ConsensesServer = rpcclient.TestClientConfig
-
-	return &config
-}
-
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
