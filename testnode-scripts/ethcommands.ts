@@ -27,6 +27,30 @@ async function sendTransaction(argv: any, threadId: number) {
     }
 }
 
+async function bridgeFunds(argv: any, parentChainUrl: string, chainUrl: string, inboxAddr: string) {
+  argv.provider = new ethers.providers.WebSocketProvider(parentChainUrl);
+
+  argv.to = "address_" + inboxAddr;
+  argv.data =
+    "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000";
+
+  await runStress(argv, sendTransaction);
+
+  argv.provider.destroy();
+  if (argv.wait) {
+    const l2provider = new ethers.providers.WebSocketProvider(chainUrl);
+    const account = namedAccount(argv.from, argv.threadId).connect(l2provider)
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+    while (true) {
+      const balance = await account.getBalance()
+      if (balance >= ethers.utils.parseEther(argv.ethamount)) {
+        return
+      }
+      await sleep(100)
+    }
+  }
+}
+
 export const bridgeFundsCommand = {
   command: "bridge-funds",
   describe: "sends funds from l1 to l2",
@@ -48,33 +72,47 @@ export const bridgeFundsCommand = {
     },
   },
   handler: async (argv: any) => {
-    argv.provider = new ethers.providers.WebSocketProvider(argv.l1url);
-
     const deploydata = JSON.parse(
       fs
         .readFileSync(path.join(consts.configpath, "deployment.json"))
         .toString()
     );
     const inboxAddr = ethers.utils.hexlify(deploydata.inbox);
-    argv.to = "address_" + inboxAddr;
-    argv.data =
-      "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000";
+  
+    await bridgeFunds(argv, argv.l1url, argv.l2url, inboxAddr)
+  },
+};
 
-    await runStress(argv, sendTransaction);
 
-    argv.provider.destroy();
-    if (argv.wait) {
-      const l2provider = new ethers.providers.WebSocketProvider(argv.l2url);
-      const account = namedAccount(argv.from, argv.threadId).connect(l2provider)
-      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-      while (true) {
-        const balance = await account.getBalance()
-        if (balance >= ethers.utils.parseEther(argv.ethamount)) {
-          return
-        }
-        await sleep(100)
-      }
-    }
+export const bridgeToL3Command = {
+  command: "bridge-to-l3",
+  describe: "sends funds from l2 to l3",
+  builder: {
+    ethamount: {
+      string: true,
+      describe: "amount to transfer (in eth)",
+      default: "10",
+    },
+    from: {
+      string: true,
+      describe: "account (see general help)",
+      default: "funnel",
+    },
+    wait: {
+      boolean: true,
+      describe: "wait till l3 has balance of ethamount",
+      default: false,
+    },
+  },
+  handler: async (argv: any) => {
+    const deploydata = JSON.parse(
+      fs
+        .readFileSync(path.join(consts.configpath, "l3deployment.json"))
+        .toString()
+    );
+    const inboxAddr = ethers.utils.hexlify(deploydata.inbox);
+
+    await bridgeFunds(argv, argv.l2url, argv.l3url, inboxAddr)
   },
 };
 
@@ -148,9 +186,44 @@ export const sendL2Command = {
   },
 };
 
+export const sendL3Command = {
+  command: "send-l3",
+  describe: "sends funds between l2 accounts",
+  builder: {
+    ethamount: {
+      string: true,
+      describe: "amount to transfer (in eth)",
+      default: "10",
+    },
+    from: {
+      string: true,
+      describe: "account (see general help)",
+      default: "funnel",
+    },
+    to: {
+      string: true,
+      describe: "address (see general help)",
+      default: "funnel",
+    },
+    wait: {
+      boolean: true,
+      describe: "wait for transaction to complete",
+      default: false,
+    },
+    data: { string: true, describe: "data" },
+  },
+  handler: async (argv: any) => {
+    argv.provider = new ethers.providers.WebSocketProvider(argv.l3url);
+
+    await runStress(argv, sendTransaction);
+
+    argv.provider.destroy();
+  },
+};
+
 export const sendRPCCommand = {
     command: "send-rpc",
-    describe: "sends funds to l2 node",
+    describe: "sends rpc command",
     builder: {
         method: { string: true, describe: "rpc method to call", default: "eth_syncing" },
         url: { string: true, describe: "url to send rpc call", default: "http://sequencer:8547"},

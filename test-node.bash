@@ -35,6 +35,7 @@ validate=false
 detach=false
 blockscout=false
 tokenbridge=true
+l3node=false
 consensusclient=false
 redundantsequencers=0
 dev_build_nitro=false
@@ -110,6 +111,10 @@ while [[ $# -gt 0 ]]; do
         --pos)
             consensusclient=true
             l1chainid=32382
+            shift
+            ;;
+        --l3node)
+            l3node=true
             shift
             ;;
         --redundantsequencers)
@@ -188,6 +193,9 @@ if $validate; then
     NODES="$NODES validator"
 else
     NODES="$NODES staker-unsafe"
+fi
+if $l3node; then
+    NODES="$NODES l3node"
 fi
 if $blockscout; then
     NODES="$NODES blockscout"
@@ -304,6 +312,33 @@ if $force_init; then
         docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
         docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
         echo
+    fi
+
+    if $l3node; then
+        echo == Funding l3 users
+        docker-compose run testnode-scripts send-l2 --ethamount 1000 --to l3owner --wait
+        docker-compose run testnode-scripts send-l2 --ethamount 1000 --to l3sequencer --wait
+
+
+        echo == create l2 traffic
+        docker-compose run testnode-scripts send-l2 --ethamount 100 --to user_l2user --wait
+        docker-compose run testnode-scripts send-l2 --ethamount 0.0001 --from user_l2user --to user_l2user_b --wait --delay 500 --times 500 > /dev/null &
+
+        echo == Writing l3 chain config
+        docker-compose run testnode-scripts write-l3-chain-config
+
+        echo == Deploying L3
+        l3owneraddress=`docker-compose run testnode-scripts print-address --account l3owner | tail -n 1 | tr -d '\r\n'`
+
+        l3sequenceraddress=`docker-compose run testnode-scripts print-address --account l3sequencer | tail -n 1 | tr -d '\r\n'`
+
+        docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://sequencer:8548 --l1keystore /home/user/l1keystore --sequencerAddress $l3sequenceraddress --ownerAddress $l3owneraddress --l1DeployAccount $l3owneraddress --l1deployment /config/l3deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=412346 --l2chainconfig /config/l3_chain_config.json --l2chainname orbit-dev-test --l2chaininfo /config/deployed_l3_chain_info.json
+        docker-compose run --entrypoint sh poster -c "jq [.[]] /config/deployed_l3_chain_info.json > /config/l3_chain_info.json"
+
+        echo == Funding l3 funnel
+        docker-compose up -d l3node poster
+        docker-compose run testnode-scripts bridge-to-l3 --ethamount 50000 --wait
+
     fi
 fi
 

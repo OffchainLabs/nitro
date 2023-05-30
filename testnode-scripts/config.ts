@@ -166,9 +166,6 @@ function writeConfigs(argv: any) {
         },
         "chain": {
             "id": 412346,
-            "dev-wallet" : {
-                "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-            },
             "info-files": [chainInfoFile],
         },
         "node": {
@@ -185,7 +182,10 @@ function writeConfigs(argv: any) {
                 "strategy": "MakeNodes",
             },
             "sequencer": {
-                "enable": false
+                "enable": false,
+                "dangerous": {
+                    "no-coordinator": false
+                }
             },
             "delayed-sequencer": {
                 "enable": false
@@ -257,6 +257,21 @@ function writeConfigs(argv: any) {
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
 
+    let l3Config = JSON.parse(baseConfJSON)
+    l3Config["parent-chain"].connection.url = argv.l2url 
+    l3Config["parent-chain"].wallet.account = namedAccount("l3sequencer").address
+    l3Config.chain.id = 333333
+    const l3ChainInfoFile = path.join(consts.configpath, "l3_chain_info.json")
+    l3Config.chain["info-files"] = [l3ChainInfoFile]
+    l3Config.node.staker.enable = true
+    l3Config.node.staker["use-smart-contract-wallet"] = true
+    l3Config.node.sequencer.enable = true
+    l3Config.node.sequencer.dangerous["no-coordinator"] = true
+    l3Config.node["delayed-sequencer"].enable = true
+    l3Config.node["batch-poster"].enable = true
+    l3Config.node["batch-poster"]["redis-url"] = ""
+    fs.writeFileSync(path.join(consts.configpath, "l3node_config.json"), JSON.stringify(l3Config))
+
     let validationNodeConfig = JSON.parse(JSON.stringify({
         "persistent": {
             "chain": "local"
@@ -312,6 +327,39 @@ function writeL2ChainConfig(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "l2_chain_config.json"), l2ChainConfigJSON)
 }
 
+function writeL3ChainConfig(argv: any) {
+    const l3ChainConfig = {
+		"chainId": 333333,
+		"homesteadBlock": 0,
+		"daoForkSupport": true,
+		"eip150Block": 0,
+		"eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+		"eip155Block": 0,
+		"eip158Block": 0,
+		"byzantiumBlock": 0,
+		"constantinopleBlock": 0,
+		"petersburgBlock": 0,
+		"istanbulBlock": 0,
+		"muirGlacierBlock": 0,
+		"berlinBlock": 0,
+		"londonBlock": 0,
+		"clique": {
+			"period": 0,
+			"epoch": 0
+		},
+		"arbitrum": {
+			"EnableArbOS": true,
+			"AllowDebugPrecompiles": true,
+			"DataAvailabilityCommittee": false,
+			"InitialArbOSVersion": 11,
+			"InitialChainOwner": "0x0000000000000000000000000000000000000000",
+			"GenesisBlockNum": 0
+		}
+    }
+    const l3ChainConfigJSON = JSON.stringify(l3ChainConfig)
+    fs.writeFileSync(path.join(consts.configpath, "l3_chain_config.json"), l3ChainConfigJSON)
+}
+
 export const writeConfigCommand = {
     command: "write-config",
     describe: "writes config files",
@@ -341,5 +389,13 @@ export const writeL2ChainConfigCommand = {
     describe: "writes l2 chain config file",
     handler: (argv: any) => {
         writeL2ChainConfig(argv)
+    }
+}
+
+export const writeL3ChainConfigCommand = {
+    command: "write-l3-chain-config",
+    describe: "writes l3 chain config file",
+    handler: (argv: any) => {
+        writeL3ChainConfig(argv)
     }
 }

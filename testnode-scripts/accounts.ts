@@ -5,7 +5,7 @@ import * as crypto from "crypto";
 import { runStress } from "./stress";
 const path = require("path");
 
-const specialAccounts = 3;
+const specialAccounts = 5;
 
 async function writeAccounts() {
   for (let i = 0; i < specialAccounts; i++) {
@@ -37,6 +37,12 @@ export function namedAccount(
   }
   if (name == "validator") {
     return specialAccount(2);
+  }
+  if (name == "l3owner") {
+    return specialAccount(3);
+  }
+  if (name == "l3sequencer") {
+    return specialAccount(4);
   }
   if (name.startsWith("user_")) {
     return new ethers.Wallet(
