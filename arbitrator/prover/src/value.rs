@@ -1,13 +1,14 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{binary::FloatType, console::Color, utils::Bytes32};
+use crate::{binary::FloatType, utils::Bytes32};
+use arbutil::Color;
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use sha3::Keccak256;
-use std::convert::TryFrom;
+use std::{convert::TryFrom, fmt::Display};
 use wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
@@ -111,6 +112,21 @@ impl ProgramCounter {
     }
 }
 
+impl Display for ProgramCounter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}{}{}",
+            "inst".grey(),
+            self.inst.pink(),
+            "in".grey(),
+            self.module.pink(),
+            ":".grey(),
+            self.func.pink()
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
@@ -209,22 +225,25 @@ impl Value {
             }
         }
     }
+}
 
-    pub fn pretty_print(&self) -> String {
-        let lparem = Color::grey("(");
-        let rparem = Color::grey(")");
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lparem = "(".grey();
+        let rparem = ")".grey();
 
         macro_rules! single {
             ($ty:expr, $value:expr) => {{
-                format!("{}{}{}{}", Color::grey($ty), lparem, $value, rparem)
+                write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
-                let eq = Color::grey("=");
-                format!(
+                let eq = "=".grey();
+                write!(
+                    f,
                     "{}{}{} {} {}{}",
-                    Color::grey($ty),
+                    $ty.grey(),
                     lparem,
                     $left,
                     eq,
@@ -250,9 +269,9 @@ impl Value {
             }
             Value::F32(value) => single!("f32", *value),
             Value::F64(value) => single!("f64", *value),
-            Value::RefNull => "null".into(),
-            Value::FuncRef(func) => format!("func {}", func),
-            Value::InternalRef(pc) => format!("inst {} in {}-{}", pc.inst, pc.module, pc.func),
+            Value::RefNull => write!(f, "null"),
+            Value::FuncRef(func) => write!(f, "func {func}"),
+            Value::InternalRef(pc) => write!(f, "{pc}"),
         }
     }
 }

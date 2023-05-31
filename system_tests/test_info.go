@@ -4,7 +4,6 @@
 package arbtest
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"errors"
@@ -70,13 +69,9 @@ func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
 }
 
 func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {
-	nameBytes := []byte(name)
-	seedBytes := make([]byte, 0, 128)
-	for len(seedBytes) < 64 {
-		seedBytes = append(seedBytes, nameBytes...)
-	}
-	seedReader := bytes.NewReader(seedBytes)
-	privateKey, err := ecdsa.GenerateKey(crypto.S256(), seedReader)
+	keyBytes := crypto.Keccak256([]byte(name))
+	keyBytes[0] = 0
+	privateKey, err := crypto.ToECDSA(keyBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +177,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string, ctx context.Con
 			if err != nil {
 				return nil, err
 			}
-			info.Nonce += 1 // we don't set Nonce, but try to keep track..
+			atomic.AddUint64(&info.Nonce, 1) // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%

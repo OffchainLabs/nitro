@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
@@ -118,14 +117,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
 		from := p.msg.From()
-		start := time.Now()
 		tracer.CaptureStart(evm, from, *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
-			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
+			tracer.CaptureEnd(nil, p.state.Burner.Burned(), nil)
 			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingAfterEVM)
@@ -227,7 +225,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, callValueErr, nil
 		}
 
-		time := evm.Context.Time.Uint64()
+		time := evm.Context.Time
 		timeout := time + retryables.RetryableLifetimeSeconds
 
 		// we charge for creating the retryable and reaping the next expired one on L1
@@ -351,6 +349,27 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
+func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode types.MessageRunMode, posterCost *big.Int) uint64 {
+	if runMode == types.MessageGasEstimationMode {
+		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
+		// This will help the user pad the total they'll pay in case the price rises a bit.
+		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
+
+		minGasPrice, _ := state.L2PricingState().MinBaseFeeWei()
+
+		adjustedPrice := arbmath.BigMulByFrac(baseFee, 7, 8) // assume congestion
+		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
+			adjustedPrice = minGasPrice
+		}
+		baseFee = adjustedPrice
+
+		// Pad the L1 cost in case the L1 gas price rises
+		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
+	}
+
+	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
+}
+
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
@@ -366,33 +385,16 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
-	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
-	if calldataUnits > 0 {
-		p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
-	}
-
-	if p.msg.RunMode() == types.MessageGasEstimationMode {
-		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
-		// This will help the user pad the total they'll pay in case the price rises a bit.
-		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
-
-		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
-
-		adjustedPrice := arbmath.BigMulByFrac(basefee, 7, 8) // assume congestion
-		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
-			adjustedPrice = minGasPrice
-		}
-		basefee = adjustedPrice
-
-		// Pad the L1 cost in case the L1 gas price rises
-		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
-	}
 
 	if basefee.Sign() > 0 {
 		// Since tips go to the network, and not to the poster, we use the basefee.
 		// Note, this only determines the amount of gas bought, not the price per gas.
 
-		p.posterGas = arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, basefee))
+		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+		if calldataUnits > 0 {
+			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
+		}
+		p.posterGas = GetPosterGas(p.state, basefee, p.msg.RunMode(), posterCost)
 		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
@@ -563,7 +565,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	scheduled := types.Transactions{}
-	time := p.evm.Context.Time.Uint64()
+	time := p.evm.Context.Time
 	basefee := p.evm.Context.BaseFee
 	chainID := p.evm.ChainConfig().ChainID
 
@@ -658,4 +660,12 @@ func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
+}
+
+func (p *TxProcessor) MsgIsNonMutating() bool {
+	if p.msg == nil {
+		return false
+	}
+	mode := p.msg.RunMode()
+	return mode == types.MessageGasEstimationMode || mode == types.MessageEthcallMode
 }

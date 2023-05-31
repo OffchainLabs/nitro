@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -105,9 +105,10 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint6
 }
 
 type DelayedInboxMessage struct {
-	BlockHash      common.Hash
-	BeforeInboxAcc common.Hash
-	Message        *arbos.L1IncomingMessage
+	BlockHash              common.Hash
+	BeforeInboxAcc         common.Hash
+	Message                *arbostypes.L1IncomingMessage
+	ParentChainBlockNumber uint64
 }
 
 func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
@@ -123,7 +124,7 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
 }
 
-func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbos.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
+func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: from,
@@ -152,7 +153,7 @@ func (l sortableMessageList) Less(i, j int) bool {
 	return bytes.Compare(l[i].Message.Header.RequestId.Bytes(), l[j].Message.Header.RequestId.Bytes()) < 0
 }
 
-func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbos.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
+func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbostypes.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
 	if len(logs) == 0 {
 		return nil, nil
 	}
@@ -195,22 +196,27 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
+		parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, b.client, parsedLog.Raw.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
-			Message: &arbos.L1IncomingMessage{
-				Header: &arbos.L1IncomingMessageHeader{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: parsedLog.Raw.BlockNumber,
+					BlockNumber: parentChainBlockNumber,
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
 				},
 				L2msg: data,
 			},
+			ParentChainBlockNumber: parentChainBlockNumber,
 		}
-		err := msg.Message.FillInBatchGasCost(batchFetcher)
+		err = msg.Message.FillInBatchGasCost(batchFetcher)
 		if err != nil {
 			return nil, err
 		}

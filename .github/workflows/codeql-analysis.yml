@@ -31,6 +31,7 @@ jobs:
       security-events: write
     env:
       CODEQL_EXTRACTOR_GO_BUILD_TRACING: 'on'
+      WABT_VERSION: 1.0.32
 
     strategy:
       fail-fast: false
@@ -53,7 +54,7 @@ jobs:
         # If you wish to specify custom queries, you can do so here or in a config file.
         # By default, queries listed here will override any specified in a config file.
         # Prefix the list here with "+" to use these queries and those in the config file.
-        
+
         # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
         # queries: security-extended,security-and-quality
         config-file: ./.github/codeql/codeql-config.yml
@@ -68,14 +69,14 @@ jobs:
     - name: Install go
       uses: actions/setup-go@v2
       with:
-        go-version: 1.18.x
+        go-version: 1.19.x
 
     - name: Install rust stable
       uses: actions-rs/toolchain@v1
       id: install-rust
       with:
         profile: minimal
-        toolchain: "1.66.1"
+        toolchain: "stable"
         override: true
 
     - name: Cache Rust Build Products
@@ -90,6 +91,13 @@ jobs:
           target/etc/initial-machine-cache/
         key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+
+    - name: Cache wabt build
+      id: cache-wabt
+      uses: actions/cache@v3
+      with:
+        path: ~/wabt-prefix
+        key: ${{ runner.os }}-wabt-codeql-${{ env.WABT_VERSION }}
 
     - name: Cache cbrotli
       uses: actions/cache@v3
@@ -123,7 +131,7 @@ jobs:
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
 
-    #   If the Autobuild fails above, remove it and uncomment the following three lines. 
+    #   If the Autobuild fails above, remove it and uncomment the following three lines.
     #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
 
     # - run: |

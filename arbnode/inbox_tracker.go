@@ -6,6 +6,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"time"
@@ -14,9 +15,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
@@ -34,7 +36,8 @@ type InboxTracker struct {
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
-	if txStreamer.bc.Config().ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
+	// We support a nil txStreamer for the pruning code
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	tracker := &InboxTracker{
@@ -84,7 +87,12 @@ func (t *InboxTracker) Initialize() error {
 		log.Info("InboxTracker", "SequencerBatchCount", 0)
 	}
 
-	return batch.Write()
+	err = batch.Write()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 var AccumulatorNotFoundErr = errors.New("accumulator not found")
@@ -188,7 +196,43 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
+func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return fmt.Errorf("error getting batch count: %w", err)
+	}
+	var startMessage arbutil.MessageIndex
+	if batchCount >= 2 {
+		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
+		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
+		// `batchCount - 2` is the index of the batch before the last batch.
+		batchIndex := batchCount - 2
+		startMessage, err = t.GetBatchMessageCount(batchIndex)
+		if err != nil {
+			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
+		}
+	}
+	messageCount, err := t.txStreamer.GetMessageCount()
+	if err != nil {
+		return fmt.Errorf("error getting tx streamer message count: %w", err)
+	}
+	var feedMessages []*broadcaster.BroadcastFeedMessage
+	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
+		message, err := t.txStreamer.GetMessage(seqNum)
+		if err != nil {
+			return fmt.Errorf("error getting message %v: %w", seqNum, err)
+		}
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum)
+		if err != nil {
+			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
+		}
+		feedMessages = append(feedMessages, feedMessage)
+	}
+	broadcastServer.BroadcastFeedMessages(feedMessages)
+	return nil
+}
+
+func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(legacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -199,35 +243,54 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*ar
 	}
 	var acc common.Hash
 	copy(acc[:], data[:32])
-	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
 	return msg, acc, err
 }
 
-func (t *InboxTracker) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
-	key := dbKey(rlpDelayedMessagePrefix, seqNum)
-	exists, err := t.db.Has(key)
+func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
+	delayedMessageKey := dbKey(rlpDelayedMessagePrefix, seqNum)
+	exists, err := t.db.Has(delayedMessageKey)
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, 0, err
 	}
 	if !exists {
-		return t.legacyGetDelayedMessageAndAccumulator(seqNum)
+		msg, acc, err := t.legacyGetDelayedMessageAndAccumulator(seqNum)
+		return msg, acc, 0, err
 	}
-	data, err := t.db.Get(key)
+	data, err := t.db.Get(delayedMessageKey)
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, 0, err
 	}
 	if len(data) < 32 {
-		return nil, common.Hash{}, errors.New("delayed message new entry missing accumulator")
+		return nil, common.Hash{}, 0, errors.New("delayed message new entry missing accumulator")
 	}
 	var acc common.Hash
 	copy(acc[:], data[:32])
-	var msg *arbos.L1IncomingMessage
+	var msg *arbostypes.L1IncomingMessage
 	err = rlp.DecodeBytes(data[32:], &msg)
-	return msg, acc, err
+	if err != nil {
+		return msg, acc, 0, err
+	}
+
+	parentChainBlockNumberKey := dbKey(parentChainBlockNumberPrefix, seqNum)
+	exists, err = t.db.Has(parentChainBlockNumberKey)
+	if err != nil {
+		return msg, acc, 0, err
+	}
+	if !exists {
+		return msg, acc, msg.Header.BlockNumber, nil
+	}
+	data, err = t.db.Get(parentChainBlockNumberKey)
+	if err != nil {
+		return msg, acc, 0, err
+	}
+
+	return msg, acc, binary.BigEndian.Uint64(data), nil
+
 }
 
-func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
-	msg, _, err := t.GetDelayedMessageAndAccumulator(seqNum)
+func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
+	msg, _, _, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(seqNum)
 	return msg, err
 }
 
@@ -293,7 +356,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 		nextAcc = message.AfterInboxAcc()
 
-		msgKey := dbKey(rlpDelayedMessagePrefix, seqNum)
+		delayedMsgKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 
 		msgData, err := rlp.EncodeToBytes(message.Message)
 		if err != nil {
@@ -301,9 +364,19 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 		data := nextAcc.Bytes()
 		data = append(data, msgData...)
-		err = batch.Put(msgKey, data)
+		err = batch.Put(delayedMsgKey, data)
 		if err != nil {
 			return err
+		}
+
+		if message.ParentChainBlockNumber != message.Message.Header.BlockNumber {
+			parentChainBlockNumberKey := dbKey(parentChainBlockNumberPrefix, seqNum)
+			parentChainBlockNumberByte := make([]byte, 8)
+			binary.BigEndian.PutUint64(parentChainBlockNumberByte, message.ParentChainBlockNumber)
+			err = batch.Put(parentChainBlockNumberKey, parentChainBlockNumberByte)
+			if err != nil {
+				return err
+			}
 		}
 
 		pos++
@@ -323,6 +396,10 @@ func (t *InboxTracker) clearBatchMetaCache() {
 // Also deletes any future delayed messages.
 func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64, canReorgBatches bool) error {
 	err := deleteStartingAt(t.db, batch, rlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
+	if err != nil {
+		return err
+	}
+	err = deleteStartingAt(t.db, batch, parentChainBlockNumberPrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
 	}
@@ -442,7 +519,7 @@ func (b *multiplexerBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	if len(b.batches) == 0 || seqNum >= b.batches[0].AfterDelayedCount {
 		return nil, errors.New("attempted to read past end of sequencer batch delayed messages")
 	}
@@ -504,7 +581,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		pos++
 	}
 
-	var messages []arbstate.MessageWithMetadata
+	var messages []arbostypes.MessageWithMetadata
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,

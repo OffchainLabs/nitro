@@ -11,11 +11,13 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -38,6 +40,20 @@ var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
+type L1Info struct {
+	poster        common.Address
+	l1BlockNumber uint64
+	l1Timestamp   uint64
+}
+
+func (info *L1Info) Equals(o *L1Info) bool {
+	return info.poster == o.poster && info.l1BlockNumber == o.l1BlockNumber && info.l1Timestamp == o.l1Timestamp
+}
+
+func (info *L1Info) L1BlockNumber() uint64 {
+	return info.l1BlockNumber
+}
+
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.BaseFeeWei()
@@ -51,12 +67,16 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		timestamp = l1info.l1Timestamp
 		coinbase = l1info.poster
 	}
+	extra := common.Hash{}.Bytes()
+	mixDigest := common.Hash{}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
 		blockNumber.Add(prevHeader.Number, big.NewInt(1))
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}
+		copy(extra, prevHeader.Extra)
+		mixDigest = prevHeader.MixDigest
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
@@ -71,46 +91,48 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
-		Extra:       []byte{},   // Unused; Post-merge Ethereum will limit the size of this to 32 bytes
-		MixDigest:   [32]byte{}, // Post-merge Ethereum will require this to be zero
-		Nonce:       [8]byte{},  // Filled in later; post-merge Ethereum will require this to be zero
+		Extra:       extra,     // used by NewEVMBlockContext
+		MixDigest:   mixDigest, // used by NewEVMBlockContext
+		Nonce:       [8]byte{}, // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
 }
 
+type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
+
 type SequencingHooks struct {
-	TxErrors               []error
-	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	TxErrors                []error
+	DiscardInvalidTxsEarly  bool
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 }
 
-func noopSequencingHooks() *SequencingHooks {
+func NoopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
 			return nil
 		},
 		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
+		nil,
 	}
 }
 
-type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
-
 func ProduceBlock(
-	message *L1IncomingMessage,
+	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-	batchFetcher FallibleBatchFetcher,
+	batchFetcher arbostypes.FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
@@ -131,18 +153,15 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	hooks := noopSequencingHooks()
+	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
-// A marker for the sequencer that an ErrGasLimitReached is permanent
-var ErrMaxGasLimitReached = fmt.Errorf("%w", core.ErrGasLimitReached)
-
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
-	l1Header *L1IncomingMessageHeader,
+	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
@@ -174,7 +193,6 @@ func ProduceBlockAdvanced(
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
-	initialBlockGasLeft := blockGasLeft
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -196,7 +214,8 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
-		hooks := noopSequencingHooks()
+		var options *arbitrum_types.ConditionalOptions
+		hooks := NoopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
 			tx = redeems[0]
@@ -217,6 +236,10 @@ func ProduceBlockAdvanced(
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
+				if len(hooks.ConditionalOptionsForTx) > 0 {
+					options = hooks.ConditionalOptionsForTx[0]
+					hooks.ConditionalOptionsForTx = hooks.ConditionalOptionsForTx[1:]
+				}
 			}
 		}
 
@@ -239,7 +262,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
+			if err = hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
@@ -270,14 +293,11 @@ func ProduceBlockAdvanced(
 			}
 
 			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
-				if computeGas > initialBlockGasLeft {
-					return nil, nil, ErrMaxGasLimitReached
-				}
 				return nil, nil, core.ErrGasLimitReached
 			}
 
 			snap := statedb.Snapshot()
-			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
+			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
