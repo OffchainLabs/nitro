@@ -10,13 +10,13 @@
 [submodule "brotli"]
 	path = brotli
 	url = https://github.com/google/brotli.git
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/OffchainLabs/nitro-contracts.git
+	branch = develop
 [submodule "blockscout"]
 	path = blockscout
         url = https://github.com/OffchainLabs/blockscout.git
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
-[submodule "contracts/lib/forge-std"]
-	path = contracts/lib/forge-std
-	url = https://github.com/foundry-rs/forge-std
-	branch = v1.3.0

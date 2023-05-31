@@ -5,11 +5,8 @@ on:
   pull_request:
     paths:
       - 'arbitrator/**'
-      - 'contracts/src/osp/**'
-      - 'contracts/src/mock/**'
-      - 'contracts/test/**'
-      - 'contracts/hardhat.config.ts'
       - '.github/workflows/arbitrator-ci.yml'
+      - 'contracts'
       - 'Makefile'
   push:
     branches:
