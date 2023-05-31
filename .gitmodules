@@ -13,7 +13,7 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/OffchainLabs/nitro-contracts.git
-	branch = develop
+	branch = feature-orbit-bridge
 [submodule "blockscout"]
 	path = blockscout
         url = https://github.com/OffchainLabs/blockscout.git
