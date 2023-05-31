@@ -26,6 +26,7 @@ type RetryableState struct {
 	TimeoutQueue          *storage.Queue
 	Archive               *merkleAccumulator.MerkleAccumulator
 	NonRedeemableArchived *storage.Uint64Set
+	numArchiveTries       storage.StorageBackedUint64
 }
 
 var (
@@ -33,6 +34,10 @@ var (
 	calldataKey              = []byte{1}
 	archiveKey               = []byte{2}
 	nonRedeemableArchivedKey = []byte{3}
+)
+
+const (
+	numArchiveTriesOffset = iota
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
@@ -47,6 +52,7 @@ func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableStat
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
 		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
 		storage.OpenUint64Set(sto.OpenSubStorage(nonRedeemableArchivedKey)),
+		sto.OpenStorageBackedUint64(numArchiveTriesOffset),
 	}
 }
 
@@ -132,14 +138,18 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	}, nil
 }
 
-func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64) (uint64, error) {
+func CalculateRetryableSizeWords(calldataSize uint64) uint64 {
+	calldata := 32 + 32*arbmath.WordsForBytes(calldataSize) // length + contents
+	return arbmath.WordsForBytes(6*32 + calldata)
+}
+
+func (rs *RetryableState) RetryableSizeWords(id common.Hash, currentTime uint64) (uint64, error) {
 	retryable, err := rs.OpenRetryable(id, currentTime)
 	if retryable == nil || err != nil {
 		return 0, err
 	}
 	size, err := retryable.CalldataSize()
-	calldata := 32 + 32*arbmath.WordsForBytes(size) // length + contents
-	return 6*32 + calldata, err
+	return CalculateRetryableSizeWords(size), err
 }
 
 func clearRetryable(retStorage *storage.Storage) error {
@@ -153,12 +163,10 @@ func clearRetryable(retStorage *storage.Storage) error {
 	return retStorage.OpenSubStorage(calldataKey).ClearBytes()
 }
 
-func moveFundsLeftInEscrowToBeneficiary(id common.Hash, retStorage *storage.Storage, evm *vm.EVM, scenario util.TracingScenario) error {
-	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
-	escrowAddress := RetryableEscrowAddress(id)
-	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
+func MoveFundsLeftInEscrowToBeneficiary(ticketId common.Hash, beneficiary common.Address, evm *vm.EVM, scenario util.TracingScenario) error {
+	escrowAddress := RetryableEscrowAddress(ticketId)
 	amount := evm.StateDB.GetBalance(escrowAddress)
-	return util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, "escrow")
+	return util.TransferBalance(&escrowAddress, &beneficiary, amount, evm, scenario, "escrow")
 }
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
@@ -169,7 +177,8 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 	}
 
 	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
-	if err := moveFundsLeftInEscrowToBeneficiary(id, retStorage, evm, scenario); err != nil {
+	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
+	if err := MoveFundsLeftInEscrowToBeneficiary(id, common.BytesToAddress(beneficiary), evm, scenario); err != nil {
 		return false, err
 	}
 
@@ -378,6 +387,14 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 		MaxRefund:           maxRefund,
 		SubmissionFeeRefund: submissionFeeRefund,
 	}, nil
+}
+
+func (rs *RetryableState) NumArchiveTries() (uint64, error) {
+	return rs.numArchiveTries.Get()
+}
+
+func (rs *RetryableState) IncrementNumArchiveTries() (uint64, error) {
+	return rs.numArchiveTries.Increment()
 }
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {

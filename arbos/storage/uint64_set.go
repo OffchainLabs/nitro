@@ -1,6 +1,9 @@
 package storage
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/util/arbmath"
+)
 
 type Uint64Set struct {
 	storage *Storage
@@ -28,6 +31,18 @@ func (s *Uint64Set) Remove(element uint64) (bool, error) {
 	return s.setBit(element, 0)
 }
 
+func (s *Uint64Set) AddMaxGasCost() uint64 {
+	return s.setBitMaxGasCost()
+}
+
+func (s *Uint64Set) RemoveMaxGasCost() uint64 {
+	return s.setBitMaxGasCost()
+}
+
+func (s *Uint64Set) setBitMaxGasCost() uint64 {
+	return StorageReadCost + arbmath.MaxInt(StorageWriteCost, StorageWriteZeroCost)
+}
+
 func (s *Uint64Set) setBit(element uint64, to uint) (bool, error) {
 	k, v := s.splitKeyValue(element)
 	bitset, err := s.storage.GetByUint64(k)
@@ -39,11 +54,7 @@ func (s *Uint64Set) setBit(element uint64, to uint) (bool, error) {
 		return false, nil
 	}
 	bits.SetBit(bits, v, to)
-	if bits.Sign() == 0 {
-		err = s.storage.ClearByUint64(k)
-	} else {
-		err = s.storage.SetByUint64(k, common.BigToHash(bits))
-	}
+	err = s.storage.SetByUint64(k, common.BigToHash(bits))
 	return err == nil, err
 }
 
