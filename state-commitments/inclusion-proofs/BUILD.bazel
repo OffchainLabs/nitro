@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "inclusion-proofs",
+    srcs = ["inclusion_proofs.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/inclusion-proofs",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//state-commitments/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_pkg_errors//:errors",
+    ],
+)
+
+go_test(
+    name = "inclusion-proofs_test",
+    srcs = ["inclusion_proofs_test.go"],
+    embed = [":inclusion-proofs"],
+    deps = [
+        "//state-commitments/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_stretchr_testify//require",
+    ],
+)

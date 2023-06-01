@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	validator "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	"github.com/OffchainLabs/challenge-protocol-v2/validator"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/testing/toys"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -112,10 +113,10 @@ func setupValidator(
 	chain protocol.AssertionChain,
 	backend bind.ContractBackend,
 	rollup common.Address,
-	sm statemanager.Manager,
+	sm l2stateprovider.Provider,
 	name string,
 	addr common.Address,
-) (*validator.Validator, error) {
+) (*validator.Manager, error) {
 	v, err := validator.New(
 		ctx,
 		chain,

@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "math",
+    srcs = ["math.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/math",
+    visibility = ["//visibility:public"],
+    deps = ["//containers/option"],
+)
+
+go_test(
+    name = "math_test",
+    srcs = ["math_test.go"],
+    embed = [":math"],
+    deps = [
+        "//containers/option",
+        "@com_github_stretchr_testify//require",
+    ],
+)

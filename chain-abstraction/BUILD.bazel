@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "protocol",
+    srcs = [
+        "execution_state.go",
+        "interfaces.go",
+    ],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//containers/option",
+        "//solgen/go/challengegen",
+        "//solgen/go/rollupgen",
+        "//state-commitments/history",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+    ],
+)

@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
-	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 )
@@ -16,7 +16,7 @@ var (
 	_ = protocol.SpecChallengeManager(&MockSpecChallengeManager{})
 	_ = protocol.SpecEdge(&MockSpecEdge{})
 	_ = protocol.AssertionChain(&MockProtocol{})
-	_ = statemanager.Manager(&MockStateManager{})
+	_ = l2stateprovider.Provider(&MockStateManager{})
 )
 
 type MockAssertion struct {

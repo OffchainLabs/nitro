@@ -1,17 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "mocks",
-    testonly = 1,
-    srcs = ["mocks.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/mocks",
+    name = "layer2-state-provider",
+    srcs = ["manager.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
-        "//containers/option",
-        "//layer2-state-provider",
         "//state-commitments/history",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_stretchr_testify//mock",
     ],
 )

@@ -3,7 +3,7 @@ package challenge_testing
 import (
 	"math/big"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 )

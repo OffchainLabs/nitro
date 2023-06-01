@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "toys",
+    srcs = [
+        "execution_engine.go",
+        "layer2_state_provider.go",
+    ],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/toys",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//state-commitments/history",
+        "//state-commitments/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
+        "@com_github_ethereum_go_ethereum//common",
+    ],
+)
+
+go_test(
+    name = "toys_test",
+    srcs = [
+        "execution_engine_test.go",
+        "layer2_state_provider_test.go",
+    ],
+    embed = [":toys"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//layer2-state-provider",
+        "//state-commitments/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_stretchr_testify//require",
+    ],
+)

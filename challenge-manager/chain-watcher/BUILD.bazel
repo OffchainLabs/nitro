@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "chain-watcher",
+    srcs = ["watcher.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//challenge-manager/challenge-tree",
+        "//containers/threadsafe",
+        "//layer2-state-provider",
+        "//runtime",
+        "//solgen/go/challengeV2gen",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_sirupsen_logrus//:logrus",
+    ],
+)
+
+go_test(
+    name = "chain-watcher_test",
+    srcs = ["watcher_test.go"],
+    embed = [":chain-watcher"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//challenge-manager/challenge-tree",
+        "//containers/option",
+        "//containers/threadsafe",
+        "//solgen/go/challengeV2gen",
+        "//testing/mocks",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_stretchr_testify//require",
+    ],
+)

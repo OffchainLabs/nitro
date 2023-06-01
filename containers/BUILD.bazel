@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "containers",
+    srcs = ["slice.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/containers",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "containers_test",
+    srcs = ["slice_test.go"],
+    embed = [":containers"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

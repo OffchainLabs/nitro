@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/endtoend/internal/backend"
 )
 

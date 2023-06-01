@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "challenge-tree",
+    srcs = [
+        "ancestors.go",
+        "path_timer.go",
+        "tree.go",
+    ],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//containers",
+        "//containers/option",
+        "//containers/threadsafe",
+        "//layer2-state-provider",
+        "//math",
+        "//state-commitments/history",
+        "@com_github_pkg_errors//:errors",
+    ],
+)
+
+go_test(
+    name = "challenge-tree_test",
+    srcs = [
+        "ancestors_test.go",
+        "path_timer_test.go",
+        "tree_test.go",
+    ],
+    embed = [":challenge-tree"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//containers/option",
+        "//containers/threadsafe",
+        "//testing/mocks",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_stretchr_testify//require",
+    ],
+)
