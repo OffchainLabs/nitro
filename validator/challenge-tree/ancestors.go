@@ -268,7 +268,7 @@ func (ht *HonestChallengeTree) findAncestorsInChallenge(
 }
 
 // Gets the edge a specified edge claims, if any.
-func (ht *HonestChallengeTree) getClaimedEdge(edge protocol.ReadOnlyEdge) (protocol.ReadOnlyEdge, error) {
+func (ht *HonestChallengeTree) getClaimedEdge(edge protocol.ReadOnlyEdge) (protocol.SpecEdge, error) {
 	if edge.ClaimId().IsNone() {
 		return nil, errors.New("does not claim any edge")
 	}

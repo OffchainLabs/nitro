@@ -19,7 +19,7 @@ import (
 
 func TestAddEdge(t *testing.T) {
 	ht := &HonestChallengeTree{
-		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.ReadOnlyEdge](),
+		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
 		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
@@ -295,6 +295,26 @@ func (*edge) HasLengthOneRival(_ context.Context) (bool, error) {
 // This is used at subchallenge creation boundaries.
 func (*edge) TopLevelClaimHeight(_ context.Context) (*protocol.OriginHeights, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (*edge) Bisect(
+	_ context.Context,
+	_ common.Hash,
+	_ []byte,
+) (protocol.SpecEdge, protocol.SpecEdge, error) {
+	return nil, nil, errors.New("unimplemented")
+}
+
+func (*edge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
+	return errors.New("unimplemented")
+}
+
+func (*edge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
+	return errors.New("unimplemented")
+}
+
+func (*edge) ConfirmByChildren(ctx context.Context) error {
+	return errors.New("unimplemented")
 }
 
 type newCfg struct {
