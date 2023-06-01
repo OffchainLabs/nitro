@@ -2,14 +2,13 @@ package watcher
 
 import (
 	"context"
-	"testing"
-
 	"math/big"
+	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	challengetree "github.com/OffchainLabs/challenge-protocol-v2/validator/challenge-tree"
 	"github.com/ethereum/go-ethereum/common"
@@ -31,9 +30,9 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 
 	mockChallengeManager.On(
 		"GetEdge", ctx, edgeId,
-	).Return(util.Some(protocol.SpecEdge(edge)), nil)
+	).Return(option.Some(protocol.SpecEdge(edge)), nil)
 
-	edge.On("ClaimId").Return(util.Some(protocol.ClaimId(assertionId)))
+	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionId)))
 	edge.On(
 		"PrevAssertionId",
 		ctx,
@@ -102,11 +101,11 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 
 	mockChallengeManager.On(
 		"GetEdge", ctx, edgeId,
-	).Return(util.Some(protocol.SpecEdge(edge)), nil)
+	).Return(option.Some(protocol.SpecEdge(edge)), nil)
 
 	edge.On("Id").Return(edgeId)
 	edge.On("CreatedAtBlock").Return(uint64(0))
-	edge.On("ClaimId").Return(util.Some(protocol.ClaimId(assertionId)))
+	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionId)))
 	edge.On("MutualId").Return(protocol.MutualId{})
 	edge.On("GetType").Return(protocol.BlockChallengeEdge)
 	startCommit := common.BytesToHash([]byte("nyan"))

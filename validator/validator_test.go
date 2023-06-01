@@ -12,7 +12,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
@@ -127,7 +127,7 @@ func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockSt
 		MockSeqNum:    0,
 		MockHeight:    0,
 		MockStateHash: common.Hash{},
-		Prev:          util.None[*mocks.MockAssertion](),
+		Prev:          option.None[*mocks.MockAssertion](),
 	}
 	assertions := []protocol.Assertion{genesis}
 	for i := 1; i <= num; i++ {
@@ -136,7 +136,7 @@ func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockSt
 			MockSeqNum:     protocol.AssertionSequenceNumber(i),
 			MockHeight:     uint64(i),
 			MockStateHash:  mockHash,
-			Prev:           util.Some(assertions[i-1].(*mocks.MockAssertion)),
+			Prev:           option.Some(assertions[i-1].(*mocks.MockAssertion)),
 			MockPrevSeqNum: protocol.AssertionSequenceNumber(i - 1),
 		})
 		assertions = append(assertions, assertion)

@@ -1,8 +1,9 @@
-package util
+package bisection
 
 import (
 	"testing"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func TestBisectionPoint(t *testing.T) {
 		{13, 9, 0},
 	}
 	for _, testCase := range errorTestCases {
-		_, err := BisectionPoint(testCase.pre, testCase.post)
+		_, err := Point(testCase.pre, testCase.post)
 		require.ErrorIs(t, err, ErrUnableToBisect, testCase)
 	}
 	testCases := []bpTestCase{
@@ -35,7 +36,7 @@ func TestBisectionPoint(t *testing.T) {
 		{15, 31, 16},
 	}
 	for _, testCase := range testCases {
-		res, err := BisectionPoint(testCase.pre, testCase.post)
+		res, err := Point(testCase.pre, testCase.post)
 		require.NoError(t, err, testCase)
 		require.Equal(t, testCase.expected, res)
 	}
@@ -94,7 +95,7 @@ func TestMin(t *testing.T) {
 	for _, tt := range testCases {
 		res := Min(tt.items)
 		if tt.wantedNone {
-			require.Equal(t, None[uint64](), res)
+			require.Equal(t, option.None[uint64](), res)
 		} else {
 			require.Equal(t, tt.wanted, res.Unwrap())
 		}
@@ -128,7 +129,7 @@ func TestMax(t *testing.T) {
 	for _, tt := range testCases {
 		res := Max(tt.items)
 		if tt.wantedNone {
-			require.Equal(t, None[uint64](), res)
+			require.Equal(t, option.None[uint64](), res)
 		} else {
 			require.Equal(t, tt.wanted, res.Unwrap())
 		}

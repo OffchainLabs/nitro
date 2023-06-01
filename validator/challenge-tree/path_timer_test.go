@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	"github.com/stretchr/testify/require"
 )
@@ -102,7 +102,7 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 	idd = id("blk-4.a-8.b")
 	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
 
-	ht.honestBlockChalLevelZeroEdge = util.Some(ht.edges.Get(id("blk-0.a-16.a")))
+	ht.honestBlockChalLevelZeroEdge = option.Some(ht.edges.Get(id("blk-0.a-16.a")))
 	ctx := context.Background()
 
 	t.Run("querying path timer before creation should return zero", func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestPathTimer_AllChallengeLevels(t *testing.T) {
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
 	setupBlockChallengeTreeSnapshot(t, ht)
-	ht.honestBlockChalLevelZeroEdge = util.Some(ht.edges.Get(id("blk-0.a-16.a")))
+	ht.honestBlockChalLevelZeroEdge = option.Some(ht.edges.Get(id("blk-0.a-16.a")))
 	claimId := "blk-4.a-5.a"
 	setupBigStepChallengeSnapshot(t, ht, claimId)
 	ht.honestBigStepLevelZeroEdges.Push(ht.edges.Get(id("big-0.a-16.a")))
@@ -356,7 +356,7 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 	t.Run("no rivals", func(t *testing.T) {
 		res := ct.earliestCreatedRivalBlockNumber(edgeA)
 
-		require.Equal(t, util.None[uint64](), res)
+		require.Equal(t, option.None[uint64](), res)
 	})
 	t.Run("one rival", func(t *testing.T) {
 		mutual := edgeA.MutualId()

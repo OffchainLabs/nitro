@@ -3,8 +3,9 @@ package challengetree
 import (
 	"context"
 	"fmt"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/bisection"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	"github.com/pkg/errors"
 )
@@ -78,7 +79,7 @@ func (ht *HonestChallengeTree) HonestPathTimer(
 		}
 		// The solidity confirmations function expects a child-to-parent ordering,
 		// which is the reverse of our computed list.
-		util.Reverse(ancestry)
+		bisection.Reverse(ancestry)
 		pathTimer += blockChalTimer
 		return pathTimer, ancestry, nil
 	case protocol.BigStepChallengeEdge:
@@ -124,7 +125,7 @@ func (ht *HonestChallengeTree) HonestPathTimer(
 		ancestry = append(ancestry, claimedEdge.Id())
 		ancestry = append(ancestry, bigStepAncestry...)
 
-		util.Reverse(ancestry)
+		bisection.Reverse(ancestry)
 		return pathTimer, ancestry, nil
 	case protocol.SmallStepChallengeEdge:
 		ancestry := make([]protocol.EdgeId, 0)
@@ -190,7 +191,7 @@ func (ht *HonestChallengeTree) HonestPathTimer(
 		ancestry = append(ancestry, bigStepAncestry...)
 		ancestry = append(ancestry, claimedBigStepEdge.Id())
 		ancestry = append(ancestry, smallStepAncestry...)
-		util.Reverse(ancestry)
+		bisection.Reverse(ancestry)
 		return pathTimer, ancestry, nil
 	default:
 		return 0, nil, fmt.Errorf("edge with type %v not supported", wantedEdge.GetType())
@@ -228,7 +229,7 @@ func (ht *HonestChallengeTree) findAncestorsInChallenge(
 
 		currStart, _ := curr.StartCommitment()
 		currEnd, _ := curr.EndCommitment()
-		bisectTo, err := util.BisectionPoint(uint64(currStart), uint64(currEnd))
+		bisectTo, err := bisection.Point(uint64(currStart), uint64(currEnd))
 		if err != nil {
 			return 0, nil, errors.Wrapf(err, "could not bisect start=%d, end=%d", currStart, currEnd)
 		}

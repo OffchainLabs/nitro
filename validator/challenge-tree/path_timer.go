@@ -2,8 +2,10 @@ package challengetree
 
 import (
 	"fmt"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/bisection"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 )
 
@@ -34,13 +36,13 @@ func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint
 
 // Gets the minimum creation block number across all of an edge's rivals. If an edge
 // has no rivals, this minimum is undefined.
-func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) util.Option[uint64] {
+func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) option.Option[uint64] {
 	rivals := ht.rivalsWithCreationTimes(e)
 	creationBlocks := make([]uint64, len(rivals))
 	for i, r := range rivals {
 		creationBlocks[i] = uint64(r.createdAtBlock)
 	}
-	return util.Min(creationBlocks)
+	return bisection.Min(creationBlocks)
 }
 
 // Determines if an edge was unrivaled at a block num T. If any rival existed

@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//execution",
         "//protocol",
-        "//util",
+        "//util/commitments",
         "//util/prefix-proofs",
         "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",

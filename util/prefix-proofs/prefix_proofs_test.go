@@ -9,8 +9,8 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/simulated-backend"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -435,7 +435,7 @@ func setupMerkleTreeContract(t testing.TB) (*mocksgen.MerkleTreeAccess, *backend
 	ctx := context.Background()
 	numChains := uint64(1)
 	accs, backend := setupAccounts(t, numChains)
-	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
+	headerReader := headerreader.New(simulated_backend.Wrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
 	headerReader.Start(ctx)
 	_, _, merkleTreeContract, err := mocksgen.DeployMerkleTreeAccess(accs[0].txOpts, backend)
 	if err != nil {

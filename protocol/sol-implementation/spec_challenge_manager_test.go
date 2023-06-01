@@ -3,15 +3,14 @@ package solimpl_test
 import (
 	"context"
 	"fmt"
-	"testing"
-
 	"math/big"
+	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -677,8 +676,8 @@ type bisectionScenario struct {
 	evilStateManager    statemanager.Manager
 	honestLevelZeroEdge protocol.SpecEdge
 	evilLevelZeroEdge   protocol.SpecEdge
-	honestStartCommit   util.HistoryCommitment
-	evilStartCommit     util.HistoryCommitment
+	honestStartCommit   commitments.History
+	evilStartCommit     commitments.History
 }
 
 func setupBisectionScenario(
@@ -693,7 +692,7 @@ func setupBisectionScenario(
 	require.NoError(t, err)
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager statemanager.Manager, leaf protocol.Assertion) (util.HistoryCommitment, protocol.SpecEdge) {
+	leafAdder := func(stateManager statemanager.Manager, leaf protocol.Assertion) (commitments.History, protocol.SpecEdge) {
 		startCommit, err := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 		require.NoError(t, err)
 		endCommit, err := stateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)

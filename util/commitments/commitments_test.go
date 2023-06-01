@@ -1,4 +1,4 @@
-package util
+package commitments
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ func TestHistoryCommitment_LeafProofs(t *testing.T) {
 		leaves[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
 	height := uint64(7)
-	history, err := NewHistoryCommitment(height, leaves)
+	history, err := New(height, leaves)
 	require.NoError(t, err)
 	require.Equal(t, history.FirstLeaf, leaves[0])
 	require.Equal(t, history.LastLeaf, leaves[height])

@@ -2,20 +2,19 @@ package challengetree
 
 import (
 	"context"
-	"testing"
-
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
+	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
 func TestAddEdge(t *testing.T) {
@@ -238,32 +237,32 @@ func (e *edge) computeMutualId() string {
 }
 
 // The claim id of the edge, if any
-func (e *edge) ClaimId() util.Option[protocol.ClaimId] {
+func (e *edge) ClaimId() option.Option[protocol.ClaimId] {
 	if e.claimId == "" {
-		return util.None[protocol.ClaimId]()
+		return option.None[protocol.ClaimId]()
 	}
-	return util.Some(protocol.ClaimId(common.BytesToHash([]byte(e.claimId))))
+	return option.Some(protocol.ClaimId(common.BytesToHash([]byte(e.claimId))))
 }
 
 // The lower child of the edge, if any.
-func (e *edge) LowerChild(_ context.Context) (util.Option[protocol.EdgeId], error) {
+func (e *edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
 	if e.lowerChildId == "" {
-		return util.None[protocol.EdgeId](), nil
+		return option.None[protocol.EdgeId](), nil
 	}
-	return util.Some(protocol.EdgeId(common.BytesToHash([]byte(e.lowerChildId)))), nil
+	return option.Some(protocol.EdgeId(common.BytesToHash([]byte(e.lowerChildId)))), nil
 }
 
 // The upper child of the edge, if any.
-func (e *edge) UpperChild(_ context.Context) (util.Option[protocol.EdgeId], error) {
+func (e *edge) UpperChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
 	if e.upperChildId == "" {
-		return util.None[protocol.EdgeId](), nil
+		return option.None[protocol.EdgeId](), nil
 	}
-	return util.Some(protocol.EdgeId(common.BytesToHash([]byte(e.upperChildId)))), nil
+	return option.Some(protocol.EdgeId(common.BytesToHash([]byte(e.upperChildId)))), nil
 }
 
 // The ministaker of an edge. Only existing for level zero edges.
-func (*edge) MiniStaker() util.Option[common.Address] {
-	return util.None[common.Address]()
+func (*edge) MiniStaker() option.Option[common.Address] {
+	return option.None[common.Address]()
 }
 
 // The assertion id of the parent assertion that originated the challenge

@@ -1,4 +1,4 @@
-package util
+package fsm
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ var (
 
 // FsmEvent defines an event in the finite state machine, which includes
 // a type, a set of source states, and a destination state
-type FsmEvent[E, T fmt.Stringer] struct {
+type Event[E, T fmt.Stringer] struct {
 	Typ  E
 	From []T
 	To   T
@@ -41,19 +41,19 @@ type Fsm[E, T fmt.Stringer] struct {
 }
 
 // FsmOpt defines a configuration option for the fsm.
-type FsmOpt[E, T fmt.Stringer] func(f *Fsm[E, T])
+type Opt[E, T fmt.Stringer] func(f *Fsm[E, T])
 
 // WithTrackedTransitions configures the fsm to track all executed state
 // transitions in an slice.
 // NOTE: The growth of this slice is unbounded so this method is NOT
 // recommended in production.
-func WithTrackedTransitions[E, T fmt.Stringer]() FsmOpt[E, T] {
+func WithTrackedTransitions[E, T fmt.Stringer]() Opt[E, T] {
 	return func(f *Fsm[E, T]) {
 		f.trackingTransitions = true
 	}
 }
 
-// NewFsm initializes an FSM from a list of valid events / states type
+// New initializes an FSM from a list of valid events / states type
 // in a transition table.
 //
 //	var startState doorState
@@ -62,14 +62,14 @@ func WithTrackedTransitions[E, T fmt.Stringer]() FsmOpt[E, T] {
 //		{Typ: Open{}, From: []doorState{doorStateClosed}, To: doorStateOpened},
 //		{Typ: Close{}, From: []doorState{doorStateOpened}, To: doorStateClosed},
 //	}
-//	fsm, err := NewFsm(startState, transitions)
+//	fsm, err := New(startState, transitions)
 //
 // the example above showcases how to define an fsm for a simple door
 // that can be opened and closed as long.
-func NewFsm[E, T fmt.Stringer](
+func New[E, T fmt.Stringer](
 	startState T,
-	transitionTable []*FsmEvent[E, T],
-	opts ...FsmOpt[E, T],
+	transitionTable []*Event[E, T],
+	opts ...Opt[E, T],
 ) (*Fsm[E, T], error) {
 	f := &Fsm[E, T]{
 		curr: &CurrentState[E, T]{

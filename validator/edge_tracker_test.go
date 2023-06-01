@@ -8,7 +8,9 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/time"
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
@@ -23,10 +25,10 @@ func Test_act(t *testing.T) {
 	ctx := context.Background()
 	t.Run("logs one-step-fork and returns", func(t *testing.T) {
 		hook := test.NewGlobal()
-		history := util.HistoryCommitment{
+		history := commitments.History{
 			Height: 1,
 		}
-		parentHistory := util.HistoryCommitment{
+		parentHistory := commitments.History{
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
@@ -53,7 +55,7 @@ func Test_act(t *testing.T) {
 			nil,
 		)
 		manager.On("GetEdge", ctx, edge.Id()).Return(
-			util.Some(protocol.SpecEdge(edge)),
+			option.Some(protocol.SpecEdge(edge)),
 			nil,
 		)
 		tkr, err := newEdgeTracker(
@@ -75,10 +77,10 @@ func Test_act(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at start height 0")
 	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
-		history := util.HistoryCommitment{
+		history := commitments.History{
 			Height: 2,
 		}
-		parentHistory := util.HistoryCommitment{
+		parentHistory := commitments.History{
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
@@ -105,7 +107,7 @@ func Test_act(t *testing.T) {
 			nil,
 		)
 		manager.On("GetEdge", ctx, edge.Id()).Return(
-			util.Some(protocol.SpecEdge(edge)),
+			option.Some(protocol.SpecEdge(edge)),
 			nil,
 		)
 
@@ -180,7 +182,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgeTracker, *edgeTr
 	tracker1, err := newEdgeTracker(
 		ctx,
 		&edgeTrackerConfig{
-			timeRef:          util.NewArtificialTimeReference(),
+			timeRef:          time.NewArtificialTimeReference(),
 			chain:            honestValidator.chain,
 			stateManager:     honestValidator.stateManager,
 			validatorName:    honestValidator.name,
@@ -195,7 +197,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgeTracker, *edgeTr
 	tracker2, err := newEdgeTracker(
 		ctx,
 		&edgeTrackerConfig{
-			timeRef:          util.NewArtificialTimeReference(),
+			timeRef:          time.NewArtificialTimeReference(),
 			chain:            evilValidator.chain,
 			stateManager:     evilValidator.stateManager,
 			validatorName:    evilValidator.name,

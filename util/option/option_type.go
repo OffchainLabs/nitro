@@ -1,4 +1,4 @@
-package util
+package option
 
 type Option[T any] struct {
 	value *T

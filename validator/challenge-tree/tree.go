@@ -5,7 +5,8 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	"github.com/pkg/errors"
 )
@@ -30,7 +31,7 @@ type HonestChallengeTree struct {
 	edges                         *threadsafe.Map[protocol.EdgeId, protocol.ReadOnlyEdge]
 	mutualIds                     *threadsafe.Map[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
 	topLevelAssertionId           protocol.AssertionId
-	honestBlockChalLevelZeroEdge  util.Option[protocol.ReadOnlyEdge]
+	honestBlockChalLevelZeroEdge  option.Option[protocol.ReadOnlyEdge]
 	honestBigStepLevelZeroEdges   *threadsafe.Slice[protocol.ReadOnlyEdge]
 	honestSmallStepLevelZeroEdges *threadsafe.Slice[protocol.ReadOnlyEdge]
 	metadataReader                MetadataReader
@@ -48,7 +49,7 @@ func New(
 		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.ReadOnlyEdge](),
 		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 		topLevelAssertionId:           prevAssertionId,
-		honestBlockChalLevelZeroEdge:  util.None[protocol.ReadOnlyEdge](),
+		honestBlockChalLevelZeroEdge:  option.None[protocol.ReadOnlyEdge](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		metadataReader:                metadataReader,
@@ -89,11 +90,11 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.ReadOnly
 		eg.GetType(),
 		prevCreationInfo.InboxMaxCount.Uint64(),
 		heights,
-		util.HistoryCommitment{
+		commitments.History{
 			Height: uint64(startHeight),
 			Merkle: startCommit,
 		},
-		util.HistoryCommitment{
+		commitments.History{
 			Height: uint64(endHeight),
 			Merkle: endCommit,
 		},
@@ -110,7 +111,7 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.ReadOnly
 		if !eg.ClaimId().IsNone() {
 			switch eg.GetType() {
 			case protocol.BlockChallengeEdge:
-				ht.honestBlockChalLevelZeroEdge = util.Some(eg)
+				ht.honestBlockChalLevelZeroEdge = option.Some(eg)
 			case protocol.BigStepChallengeEdge:
 				ht.honestBigStepLevelZeroEdges.Push(eg)
 			case protocol.SmallStepChallengeEdge:

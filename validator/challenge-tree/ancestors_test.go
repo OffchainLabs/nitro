@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/util/threadsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -45,7 +45,7 @@ func TestAncestors_AllChallengeLevels(t *testing.T) {
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
 	setupBlockChallengeTreeSnapshot(t, tree)
-	tree.honestBlockChalLevelZeroEdge = util.Some(tree.edges.Get(id("blk-0.a-16.a")))
+	tree.honestBlockChalLevelZeroEdge = option.Some(tree.edges.Get(id("blk-0.a-16.a")))
 	claimId := "blk-4.a-5.a"
 	setupBigStepChallengeSnapshot(t, tree, claimId)
 	tree.honestBigStepLevelZeroEdges.Push(tree.edges.Get(id("big-0.a-16.a")))

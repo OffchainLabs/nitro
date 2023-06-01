@@ -1,4 +1,4 @@
-package util
+package commitments
 
 import (
 	"encoding/binary"
@@ -11,28 +11,28 @@ import (
 )
 
 var (
-	emptyCommit = HistoryCommitment{}
+	emptyCommit = History{}
 )
 
-// StateCommitment is a type used to represent the state commitment of an assertion.
-type StateCommitment struct {
+// State is a type used to represent the state commitment of an assertion.
+type State struct {
 	Height    uint64      `json:"height"`
 	StateRoot common.Hash `json:"state_root"`
 }
 
 // Hash returns the hash of the state commitment.
-func (comm StateCommitment) Hash() common.Hash {
+func (comm State) Hash() common.Hash {
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.StateRoot.Bytes())
 }
 
-// HistoryCommitment defines a Merkle accumulator over a list of leaves, which
+// History defines a Merkle accumulator over a list of leaves, which
 // are understood to be state roots in the goimpl. A history commitment contains
 // a "height" value, which can refer to a height of an assertion in the assertions
 // tree, or a "step" of WAVM states in a big step or small step subchallenge.
 // A commitment contains a Merkle root over the list of leaves, and can optionally
 // provide a proof that the last leaf in the accumulator Merkleizes into the
 // specified root hash, which is required when verifying challenge creation invariants.
-type HistoryCommitment struct {
+type History struct {
 	Height         uint64
 	Range          uint64
 	Merkle         common.Hash
@@ -42,19 +42,19 @@ type HistoryCommitment struct {
 	LastLeaf       common.Hash
 }
 
-// Hash of a HistoryCommitment encompasses its height value and its Merkle root.
-func (comm HistoryCommitment) Hash() common.Hash {
+// Hash of a History encompasses its height value and its Merkle root.
+func (comm History) Hash() common.Hash {
 	return crypto.Keccak256Hash(
 		binary.BigEndian.AppendUint64([]byte{}, comm.Height),
 		comm.Merkle.Bytes(),
 	)
 }
 
-// NewHistoryCommitment constructs a commitment from a height and list of leaves.
-func NewHistoryCommitment(
+// New constructs a commitment from a height and list of leaves.
+func New(
 	height uint64,
 	leaves []common.Hash,
-) (HistoryCommitment, error) {
+) (History, error) {
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
@@ -80,7 +80,7 @@ func NewHistoryCommitment(
 	if err != nil {
 		return emptyCommit, err
 	}
-	return HistoryCommitment{
+	return History{
 		Merkle:         root,
 		Height:         height,
 		FirstLeaf:      leaves[0],

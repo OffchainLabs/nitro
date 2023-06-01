@@ -1,4 +1,4 @@
-package util
+package retry
 
 import (
 	"context"
@@ -11,8 +11,8 @@ const sleepTime = time.Second * 5
 
 var log = logrus.WithField("prefix", "util")
 
-// RetryUntilSucceeds retries the given function until it succeeds or the context is cancelled.
-func RetryUntilSucceeds[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+// UntilSucceeds retries the given function until it succeeds or the context is cancelled.
+func UntilSucceeds[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 	for {
 		if ctx.Err() != nil {
 			return zeroVal[T](), ctx.Err()

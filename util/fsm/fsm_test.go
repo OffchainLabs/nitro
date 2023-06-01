@@ -1,4 +1,4 @@
-package util
+package fsm
 
 import (
 	"fmt"
@@ -66,11 +66,11 @@ func (d doorState) String() string {
 // Creates a simple test where we have a door open/closed state machine.
 func TestFSM_OpenClose(t *testing.T) {
 	var startState doorState = doorStateClosed
-	transitions := []*FsmEvent[doorEvent, doorState]{
+	transitions := []*Event[doorEvent, doorState]{
 		{Typ: Open{}, From: []doorState{doorStateClosed}, To: doorStateOpened},
 		{Typ: Close{}, From: []doorState{doorStateOpened}, To: doorStateClosed},
 	}
-	fsm, err := NewFsm(startState, transitions)
+	fsm, err := New(startState, transitions)
 	require.NoError(t, err)
 
 	t.Run("assert state", func(t *testing.T) {
@@ -112,11 +112,11 @@ func TestFSM_OpenClose(t *testing.T) {
 // Checks if our FSM can correctly track state transitions when configured to do so.
 func TestFSM_TrackTransitions(t *testing.T) {
 	var startState doorState = doorStateClosed
-	transitions := []*FsmEvent[doorEvent, doorState]{
+	transitions := []*Event[doorEvent, doorState]{
 		{Typ: Open{}, From: []doorState{doorStateClosed}, To: doorStateOpened},
 		{Typ: Close{}, From: []doorState{doorStateOpened}, To: doorStateClosed},
 	}
-	fsm, err := NewFsm(
+	fsm, err := New(
 		startState,
 		transitions,
 		WithTrackedTransitions[doorEvent, doorState](),
@@ -219,13 +219,13 @@ func (Cool) String() string {
 // Tests a more complex fsm that describes an HVAC system which includes cycles.
 func TestFSM_ComplexWithCycles(t *testing.T) {
 	var startState hvacState = hvacOff
-	transitions := []*FsmEvent[hvacEvent, hvacState]{
+	transitions := []*Event[hvacEvent, hvacState]{
 		{Typ: On{}, From: []hvacState{hvacOff}, To: hvacOn},
 		{Typ: Off{}, From: []hvacState{hvacOn, hvacHeating, hvacCooling}, To: hvacOff},
 		{Typ: Heat{}, From: []hvacState{hvacOn, hvacHeating, hvacCooling}, To: hvacHeating},
 		{Typ: Cool{}, From: []hvacState{hvacOn, hvacHeating, hvacCooling}, To: hvacCooling},
 	}
-	fsm, err := NewFsm(startState, transitions)
+	fsm, err := New(startState, transitions)
 	require.NoError(t, err)
 
 	err = fsm.Do(On{})

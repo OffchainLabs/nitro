@@ -11,7 +11,8 @@ go_library(
     deps = [
         "//solgen/go/challengegen",
         "//solgen/go/rollupgen",
-        "//util",
+        "//util/commitments",
+        "//util/option",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
     ],

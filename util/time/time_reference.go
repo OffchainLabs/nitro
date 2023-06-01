@@ -1,11 +1,11 @@
-package util
+package time
 
 import (
 	"sync"
 	"time"
 )
 
-type TimeReference interface {
+type Reference interface {
 	Get() time.Time
 	Sleep(duration time.Duration)
 	SleepUntil(wakeTime time.Time)
@@ -19,7 +19,7 @@ type GenericTimeTicker interface {
 
 type realTimeReference struct{}
 
-func NewRealTimeReference() TimeReference {
+func NewRealTimeReference() Reference {
 	return realTimeReference{}
 }
 

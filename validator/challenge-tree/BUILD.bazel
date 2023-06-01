@@ -12,7 +12,9 @@ go_library(
     deps = [
         "//protocol",
         "//state-manager",
-        "//util",
+        "//util/bisection",
+        "//util/commitments",
+        "//util/option",
         "//util/threadsafe",
         "@com_github_pkg_errors//:errors",
     ],
@@ -29,7 +31,7 @@ go_test(
     deps = [
         "//protocol",
         "//testing/mocks",
-        "//util",
+        "//util/option",
         "//util/threadsafe",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",

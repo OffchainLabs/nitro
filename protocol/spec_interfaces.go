@@ -5,7 +5,8 @@ import (
 	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -160,7 +161,7 @@ type SpecChallengeManager interface {
 	// Duration of the challenge period in blocks.
 	ChallengePeriodBlocks(ctx context.Context) (uint64, error)
 	// Gets an edge by its id.
-	GetEdge(ctx context.Context, edgeId EdgeId) (util.Option[SpecEdge], error)
+	GetEdge(ctx context.Context, edgeId EdgeId) (option.Option[SpecEdge], error)
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(
 		ctx context.Context,
@@ -176,7 +177,7 @@ type SpecChallengeManager interface {
 		ctx context.Context,
 		assertion Assertion,
 		startCommit,
-		endCommit util.HistoryCommitment,
+		endCommit commitments.History,
 		startEndPrefixProof []byte,
 	) (SpecEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
@@ -184,7 +185,7 @@ type SpecChallengeManager interface {
 		ctx context.Context,
 		challengedEdge SpecEdge,
 		startCommit,
-		endCommit util.HistoryCommitment,
+		endCommit commitments.History,
 		startParentInclusionProof []common.Hash,
 		endParentInclusionProof []common.Hash,
 		startEndPrefixProof []byte,
@@ -238,13 +239,13 @@ type ReadOnlyEdge interface {
 	// The origin id of the edge.
 	OriginId() OriginId
 	// The claim id of the edge, if any
-	ClaimId() util.Option[ClaimId]
+	ClaimId() option.Option[ClaimId]
 	// The lower child of the edge, if any.
-	LowerChild(ctx context.Context) (util.Option[EdgeId], error)
+	LowerChild(ctx context.Context) (option.Option[EdgeId], error)
 	// The upper child of the edge, if any.
-	UpperChild(ctx context.Context) (util.Option[EdgeId], error)
+	UpperChild(ctx context.Context) (option.Option[EdgeId], error)
 	// The ministaker of an edge. Only existing for level zero edges.
-	MiniStaker() util.Option[common.Address]
+	MiniStaker() option.Option[common.Address]
 	// The assertion id of the parent assertion that originated the challenge
 	// at the top-level.
 	PrevAssertionId(ctx context.Context) (AssertionId, error)

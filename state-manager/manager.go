@@ -9,7 +9,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -32,7 +32,7 @@ type Manager interface {
 	// Otherwise, returns false.
 	ExecutionStateBlockHeight(ctx context.Context, state *protocol.ExecutionState) (uint64, bool)
 	// Produces a block challenge history commitment up to and including a certain height.
-	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error)
+	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (commitments.History, error)
 	// Produces a block challenge history commitment in a certain inclusive block range,
 	// but padding states with duplicates after the first state with a
 	// batch count of at least the specified max.
@@ -41,14 +41,14 @@ type Manager interface {
 		blockStart,
 		blockEnd,
 		batchCount uint64,
-	) (util.HistoryCommitment, error)
+	) (commitments.History, error)
 	// Produces a big step history commitment for all big steps within block
 	// challenge heights H to H+1.
 	BigStepLeafCommitment(
 		ctx context.Context,
 		fromBlockChallengeHeight,
 		toBlockChallengeHeight uint64,
-	) (util.HistoryCommitment, error)
+	) (commitments.History, error)
 	// Produces a big step history commitment from big step 0 to N within block
 	// challenge heights A and B where B = A + 1.
 	BigStepCommitmentUpTo(
@@ -56,7 +56,7 @@ type Manager interface {
 		fromBlockChallengeHeight,
 		toBlockChallengeHeight,
 		toBigStep uint64,
-	) (util.HistoryCommitment, error)
+	) (commitments.History, error)
 	// Produces a small step history commitment for all small steps between
 	// big steps S to S+1 within block challenge heights H to H+1.
 	SmallStepLeafCommitment(
@@ -65,7 +65,7 @@ type Manager interface {
 		toBlockChallengeHeight,
 		fromBigStep,
 		toBigStep uint64,
-	) (util.HistoryCommitment, error)
+	) (commitments.History, error)
 	// Produces a small step history commitment from small step 0 to N between
 	// big steps S to S+1 within block challenge heights H to H+1.
 	SmallStepCommitmentUpTo(
@@ -75,7 +75,7 @@ type Manager interface {
 		fromBigStep,
 		toBigStep,
 		toSmallStep uint64,
-	) (util.HistoryCommitment, error)
+	) (commitments.History, error)
 	// Produces a prefix proof in a block challenge from height A to B.
 	PrefixProof(
 		ctx context.Context,
@@ -130,7 +130,7 @@ type HistoryChecker interface {
 		prevAssertionInboxMaxCount uint64,
 		heights *protocol.OriginHeights,
 		startCommit,
-		endCommit util.HistoryCommitment,
+		endCommit commitments.History,
 	) (protocol.Agreement, error)
 }
 
@@ -323,11 +323,11 @@ func (s *Simulated) ExecutionStateBlockHeight(_ context.Context, state *protocol
 	return 0, false
 }
 
-func (s *Simulated) HistoryCommitmentUpTo(_ context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error) {
+func (s *Simulated) HistoryCommitmentUpTo(_ context.Context, blockChallengeHeight uint64) (commitments.History, error) {
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
 	size := blockChallengeHeight + 1
-	return util.NewHistoryCommitment(
+	return commitments.New(
 		blockChallengeHeight,
 		s.stateRoots[:size],
 	)
@@ -367,12 +367,12 @@ func (s *Simulated) statesUpTo(blockStart, blockEnd, nextBatchCount uint64) ([]c
 	return states, nil
 }
 
-func (s *Simulated) HistoryCommitmentUpToBatch(_ context.Context, blockStart, blockEnd, nextBatchCount uint64) (util.HistoryCommitment, error) {
+func (s *Simulated) HistoryCommitmentUpToBatch(_ context.Context, blockStart, blockEnd, nextBatchCount uint64) (commitments.History, error) {
 	states, err := s.statesUpTo(blockStart, blockEnd, nextBatchCount)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
-	return util.NewHistoryCommitment(
+	return commitments.New(
 		blockEnd-blockStart,
 		states,
 	)
@@ -384,7 +384,7 @@ func (s *Simulated) AgreesWithHistoryCommitment(
 	prevAssertionInboxMaxCount uint64,
 	heights *protocol.OriginHeights,
 	startCommit,
-	endCommit util.HistoryCommitment,
+	endCommit commitments.History,
 ) (protocol.Agreement, error) {
 	return protocol.Agreement{}, errors.New("unimplemented")
 }
@@ -393,7 +393,7 @@ func (s *Simulated) BigStepLeafCommitment(
 	ctx context.Context,
 	fromAssertionHeight,
 	toAssertionHeight uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	// Number of big steps between assertion heights A and B will be
 	// fixed in this simulated state manager. It is simply the max number of opcodes
 	// per block divided by the size of a big step.
@@ -411,9 +411,9 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	fromAssertionHeight,
 	toAssertionHeight,
 	toBigStep uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	if fromAssertionHeight+1 != toAssertionHeight {
-		return util.HistoryCommitment{}, fmt.Errorf(
+		return commitments.History{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
 			fromAssertionHeight,
 			toAssertionHeight,
@@ -427,9 +427,9 @@ func (s *Simulated) BigStepCommitmentUpTo(
 		toBigStep,
 	)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
-	return util.NewHistoryCommitment(toBigStep, leaves)
+	return commitments.New(toBigStep, leaves)
 }
 
 func (s *Simulated) maybeDivergeState(state *protocol.ExecutionState, block uint64, step uint64) {
@@ -496,7 +496,7 @@ func (s *Simulated) SmallStepLeafCommitment(
 	toAssertionHeight,
 	fromBigStep,
 	toBigStep uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	return s.SmallStepCommitmentUpTo(
 		ctx,
 		fromAssertionHeight,
@@ -514,16 +514,16 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 	fromBigStep,
 	toBigStep,
 	toSmallStep uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
-		return util.HistoryCommitment{}, fmt.Errorf(
+		return commitments.History{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
 			fromBlockChallengeHeight,
 			toBlockChallengeHeight,
 		)
 	}
 	if fromBigStep+1 != toBigStep {
-		return util.HistoryCommitment{}, fmt.Errorf(
+		return commitments.History{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
 			fromBigStep,
 			toBigStep,
@@ -540,9 +540,9 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 		toSmall,
 	)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
-	return util.NewHistoryCommitment(toSmallStep, leaves)
+	return commitments.New(toSmallStep, leaves)
 }
 
 func (s *Simulated) intermediateSmallStepLeaves(

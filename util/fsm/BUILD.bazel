@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "fsm",
+    srcs = ["fsm.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/util/fsm",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_pkg_errors//:errors"],
+)
+
+go_test(
+    name = "fsm_test",
+    srcs = ["fsm_test.go"],
+    embed = [":fsm"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

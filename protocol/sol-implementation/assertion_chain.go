@@ -6,15 +6,14 @@ package solimpl
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math/big"
 	"strings"
 
-	"encoding/binary"
-
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -134,7 +133,7 @@ func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum pro
 	return &Assertion{
 		id:    uint64(seqNum),
 		chain: ac,
-		StateCommitment: util.StateCommitment{
+		StateCommitment: commitments.State{
 			Height: res.CreatedAtBlock - genesis.CreatedAtBlock,
 		},
 	}, nil

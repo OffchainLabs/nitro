@@ -2,11 +2,12 @@ package mocks
 
 import (
 	"context"
-
 	"errors"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 )
@@ -19,7 +20,7 @@ var (
 )
 
 type MockAssertion struct {
-	Prev                  util.Option[*MockAssertion]
+	Prev                  option.Option[*MockAssertion]
 	MockHeight            uint64
 	MockSeqNum            protocol.AssertionSequenceNumber
 	MockPrevSeqNum        protocol.AssertionSequenceNumber
@@ -71,9 +72,9 @@ func (m *MockStateManager) LatestExecutionState(ctx context.Context) (*protocol.
 	return args.Get(0).(*protocol.ExecutionState), args.Error(1)
 }
 
-func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uint64) (commitments.History, error) {
 	args := m.Called(ctx, height)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) AgreesWithHistoryCommitment(
@@ -82,7 +83,7 @@ func (m *MockStateManager) AgreesWithHistoryCommitment(
 	prevAssertionMaxInboxCount uint64,
 	heights *protocol.OriginHeights,
 	startCommit,
-	endCommit util.HistoryCommitment,
+	endCommit commitments.History,
 ) (protocol.Agreement, error) {
 	if m.AgreeErr {
 		return protocol.Agreement{}, errors.New("failed")
@@ -90,9 +91,9 @@ func (m *MockStateManager) AgreesWithHistoryCommitment(
 	return m.Agreement, nil
 }
 
-func (m *MockStateManager) HistoryCommitmentUpToBatch(ctx context.Context, startBlock, endBlock, batchCount uint64) (util.HistoryCommitment, error) {
+func (m *MockStateManager) HistoryCommitmentUpToBatch(ctx context.Context, startBlock, endBlock, batchCount uint64) (commitments.History, error) {
 	args := m.Called(ctx, startBlock, endBlock, batchCount)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]byte, error) {
@@ -138,9 +139,9 @@ func (m *MockStateManager) BigStepLeafCommitment(
 	ctx context.Context,
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	args := m.Called(ctx, fromBlockChallengeHeight, toBlockChallengeHeight)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) BigStepCommitmentUpTo(
@@ -148,9 +149,9 @@ func (m *MockStateManager) BigStepCommitmentUpTo(
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight,
 	toBigStep uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	args := m.Called(ctx, fromBlockChallengeHeight, toBlockChallengeHeight, toBigStep)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepLeafCommitment(
@@ -159,9 +160,9 @@ func (m *MockStateManager) SmallStepLeafCommitment(
 	toBlockChallengeHeight,
 	fromBigStep,
 	toBigStep uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	args := m.Called(ctx, fromBlockChallengeHeight, toBlockChallengeHeight, fromBigStep, toBigStep)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepCommitmentUpTo(
@@ -171,9 +172,9 @@ func (m *MockStateManager) SmallStepCommitmentUpTo(
 	fromBigStep,
 	toBigStep,
 	toSmallStep uint64,
-) (util.HistoryCommitment, error) {
+) (commitments.History, error) {
 	args := m.Called(ctx, fromBlockChallengeHeight, toBlockChallengeHeight, fromBigStep, toBigStep, toSmallStep)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) OneStepProofData(
@@ -222,9 +223,9 @@ func (m *MockSpecChallengeManager) ChallengePeriodBlocks(ctx context.Context) (u
 func (m *MockSpecChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
-) (util.Option[protocol.SpecEdge], error) {
+) (option.Option[protocol.SpecEdge], error) {
 	args := m.Called(ctx, edgeId)
-	return args.Get(0).(util.Option[protocol.SpecEdge]), args.Error(1)
+	return args.Get(0).(option.Option[protocol.SpecEdge]), args.Error(1)
 }
 
 func (m *MockSpecChallengeManager) CalculateMutualId(
@@ -256,7 +257,7 @@ func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
 	startCommit,
-	endCommit util.HistoryCommitment,
+	endCommit commitments.History,
 	startEndPrefixProof []byte,
 ) (protocol.SpecEdge, error) {
 	args := m.Called(ctx, assertion, startCommit, endCommit, startEndPrefixProof)
@@ -267,7 +268,7 @@ func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
 	startCommit,
-	endCommit util.HistoryCommitment,
+	endCommit commitments.History,
 	startParentInclusionProof []common.Hash,
 	endParentInclusionProof []common.Hash,
 	startEndPrefixProof []byte,
@@ -299,9 +300,9 @@ func (m *MockSpecEdge) GetType() protocol.EdgeType {
 	args := m.Called()
 	return args.Get(0).(protocol.EdgeType)
 }
-func (m *MockSpecEdge) MiniStaker() util.Option[common.Address] {
+func (m *MockSpecEdge) MiniStaker() option.Option[common.Address] {
 	args := m.Called()
-	return args.Get(0).(util.Option[common.Address])
+	return args.Get(0).(option.Option[common.Address])
 }
 func (m *MockSpecEdge) StartCommitment() (protocol.Height, common.Hash) {
 	args := m.Called()
@@ -343,25 +344,25 @@ func (m *MockSpecEdge) OriginId() protocol.OriginId {
 	args := m.Called()
 	return args.Get(0).(protocol.OriginId)
 }
-func (m *MockSpecEdge) ClaimId() util.Option[protocol.ClaimId] {
+func (m *MockSpecEdge) ClaimId() option.Option[protocol.ClaimId] {
 	args := m.Called()
-	return args.Get(0).(util.Option[protocol.ClaimId])
+	return args.Get(0).(option.Option[protocol.ClaimId])
 }
-func (m *MockSpecEdge) LowerChild(ctx context.Context) (util.Option[protocol.EdgeId], error) {
+func (m *MockSpecEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
 	args := m.Called(ctx)
-	return args.Get(0).(util.Option[protocol.EdgeId]), args.Error(1)
+	return args.Get(0).(option.Option[protocol.EdgeId]), args.Error(1)
 }
-func (m *MockSpecEdge) UpperChild(ctx context.Context) (util.Option[protocol.EdgeId], error) {
+func (m *MockSpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
 	args := m.Called(ctx)
-	return args.Get(0).(util.Option[protocol.EdgeId]), args.Error(1)
+	return args.Get(0).(option.Option[protocol.EdgeId]), args.Error(1)
 }
-func (m *MockSpecEdge) LowerChildSnapshot() util.Option[protocol.EdgeId] {
+func (m *MockSpecEdge) LowerChildSnapshot() option.Option[protocol.EdgeId] {
 	args := m.Called()
-	return args.Get(0).(util.Option[protocol.EdgeId])
+	return args.Get(0).(option.Option[protocol.EdgeId])
 }
-func (m *MockSpecEdge) UpperChildSnapshot() util.Option[protocol.EdgeId] {
+func (m *MockSpecEdge) UpperChildSnapshot() option.Option[protocol.EdgeId] {
 	args := m.Called()
-	return args.Get(0).(util.Option[protocol.EdgeId])
+	return args.Get(0).(option.Option[protocol.EdgeId])
 }
 func (m *MockSpecEdge) Bisect(
 	ctx context.Context,

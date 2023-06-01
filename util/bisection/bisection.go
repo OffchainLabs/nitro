@@ -1,10 +1,12 @@
-package util
+package bisection
 
 import (
 	"errors"
 	"fmt"
 	"math"
 	"math/bits"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 )
 
 var ErrUnableToBisect = errors.New("unable to bisect")
@@ -14,7 +16,7 @@ type Unsigned interface {
 	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
 }
 
-func BisectionPoint(pre, post uint64) (uint64, error) {
+func Point(pre, post uint64) (uint64, error) {
 	if pre+2 > post {
 		return 0, ErrUnableToBisect
 	}
@@ -43,9 +45,9 @@ func Reverse[T any](s []T) {
 
 // Computes the min value of a slice of unsigned elements.
 // Returns none if the slice is empty.
-func Min[T Unsigned](items []T) Option[T] {
+func Min[T Unsigned](items []T) option.Option[T] {
 	if len(items) == 0 {
-		return None[T]()
+		return option.None[T]()
 	}
 	var m T
 	if len(items) > 0 {
@@ -56,14 +58,14 @@ func Min[T Unsigned](items []T) Option[T] {
 			m = items[i]
 		}
 	}
-	return Some(m)
+	return option.Some(m)
 }
 
 // Computes the max value of a slice of unsigned elements.
 // Returns none if the slice is empty.
-func Max[T Unsigned](items []T) Option[T] {
+func Max[T Unsigned](items []T) option.Option[T] {
 	if len(items) == 0 {
-		return None[T]()
+		return option.None[T]()
 	}
 	var m T
 	if len(items) > 0 {
@@ -74,5 +76,5 @@ func Max[T Unsigned](items []T) Option[T] {
 			m = items[i]
 		}
 	}
-	return Some(m)
+	return option.Some(m)
 }

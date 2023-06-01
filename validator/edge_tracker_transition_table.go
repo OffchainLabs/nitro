@@ -1,14 +1,14 @@
 package validator
 
 import (
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/fsm"
 )
 
 func newEdgeTrackerFsm(
 	startState edgeTrackerState,
-	fsmOpts ...util.FsmOpt[edgeTrackerAction, edgeTrackerState],
-) (*util.Fsm[edgeTrackerAction, edgeTrackerState], error) {
-	transitions := []*util.FsmEvent[edgeTrackerAction, edgeTrackerState]{
+	fsmOpts ...fsm.Opt[edgeTrackerAction, edgeTrackerState],
+) (*fsm.Fsm[edgeTrackerAction, edgeTrackerState], error) {
+	transitions := []*fsm.Event[edgeTrackerAction, edgeTrackerState]{
 		{
 			// Returns the tracker to the very beginning. Several states can cause
 			// this, including challenge moves.
@@ -71,5 +71,5 @@ func newEdgeTrackerFsm(
 			To:   edgeConfirmed,
 		},
 	}
-	return util.NewFsm(startState, transitions, fsmOpts...)
+	return fsm.New(startState, transitions, fsmOpts...)
 }

@@ -15,7 +15,7 @@ go_library(
         "//solgen/go/rollupgen",
         "//state-manager",
         "//testing",
-        "//util",
+        "//util/simulated-backend",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",

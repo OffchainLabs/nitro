@@ -1,9 +1,10 @@
-package util
+package retry
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRetryUntilSucceeds(t *testing.T) {
@@ -12,12 +13,12 @@ func TestRetryUntilSucceeds(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	got, err := RetryUntilSucceeds(ctx, hello)
+	got, err := UntilSucceeds(ctx, hello)
 	require.NoError(t, err)
 	require.Equal(t, "hello", got)
 
 	newCtx, cancel := context.WithCancel(ctx)
 	cancel()
-	_, err = RetryUntilSucceeds(newCtx, hello)
+	_, err = UntilSucceeds(newCtx, hello)
 	require.ErrorContains(t, err, "context canceled")
 }

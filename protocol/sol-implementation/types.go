@@ -6,7 +6,8 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/commitments"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/option"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -17,7 +18,7 @@ import (
 // to have a smaller API surface area and attach useful
 // methods that callers can use directly.
 type Assertion struct {
-	StateCommitment util.StateCommitment
+	StateCommitment commitments.State
 	chain           *AssertionChain
 	id              uint64
 }
@@ -72,6 +73,6 @@ type SpecEdge struct {
 	id         [32]byte
 	mutualId   [32]byte
 	manager    *SpecChallengeManager
-	miniStaker util.Option[common.Address]
+	miniStaker option.Option[common.Address]
 	inner      challengeV2gen.ChallengeEdge
 }
