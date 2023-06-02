@@ -571,30 +571,55 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 
 	logs := p.evm.StateDB.GetCurrentTxLogs()
 	for _, log := range logs {
-		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
+		if log.Address != ArbRetryableTxAddress {
 			continue
 		}
-		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
-		err := util.ParseRedeemScheduledLog(event, log)
-		if err != nil {
-			glog.Error("Failed to parse RedeemScheduled log", "err", err)
-			continue
+		switch log.Topics[0] {
+		case RedeemScheduledEventID:
+			event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+			err := util.ParseRedeemScheduledLog(event, log)
+			if err != nil {
+				glog.Error("Failed to parse RedeemScheduled log", "err", err)
+				continue
+			}
+			retryable, err := p.state.RetryableState().OpenRetryable(event.TicketId, time)
+			if err != nil || retryable == nil {
+				continue
+			}
+			redeem, _ := retryable.MakeTx(
+				chainID,
+				event.SequenceNum,
+				basefee,
+				event.DonatedGas,
+				event.TicketId,
+				event.GasDonor,
+				event.MaxRefund,
+				event.SubmissionFeeRefund,
+			)
+			scheduled = append(scheduled, types.NewTx(redeem))
+		case RedeemArchivedScheduledEventID:
+			event := &precompilesgen.ArbRetryableTxRedeemArchivedScheduled{}
+			err := util.ParseRedeemArchivedScheduledLog(event, log)
+			if err != nil {
+				glog.Error("Failed to parse RedeemScheduled log", "err", err)
+				continue
+			}
+			redeem := &types.ArbitrumRetryTx{
+				ChainId:             chainID,
+				Nonce:               event.SequenceNum,
+				From:                event.RetryFrom,
+				GasFeeCap:           basefee,
+				Gas:                 event.DonatedGas,
+				To:                  event.RetryTo,
+				Value:               event.CallValue,
+				Data:                event.CallData,
+				TicketId:            event.TicketId,
+				RefundTo:            event.GasDonor,
+				MaxRefund:           event.MaxRefund,
+				SubmissionFeeRefund: event.SubmissionFeeRefund,
+			}
+			scheduled = append(scheduled, types.NewTx(redeem))
 		}
-		retryable, err := p.state.RetryableState().OpenRetryable(event.TicketId, time)
-		if err != nil || retryable == nil {
-			continue
-		}
-		redeem, _ := retryable.MakeTx(
-			chainID,
-			event.SequenceNum,
-			basefee,
-			event.DonatedGas,
-			event.TicketId,
-			event.GasDonor,
-			event.MaxRefund,
-			event.SubmissionFeeRefund,
-		)
-		scheduled = append(scheduled, types.NewTx(redeem))
 	}
 	return scheduled
 }

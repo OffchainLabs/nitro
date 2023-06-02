@@ -21,15 +21,17 @@ import (
 )
 
 type ArbRetryableTx struct {
-	Address                 addr
-	TicketCreated           func(ctx, mech, bytes32) error
-	LifetimeExtended        func(ctx, mech, bytes32, huge) error
-	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
-	Canceled                func(ctx, mech, bytes32) error
-	TicketCreatedGasCost    func(bytes32) (uint64, error)
-	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
-	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
-	CanceledGasCost         func(bytes32) (uint64, error)
+	Address                        addr
+	TicketCreated                  func(ctx, mech, bytes32) error
+	LifetimeExtended               func(ctx, mech, bytes32, huge) error
+	RedeemScheduled                func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
+	RedeemArchivedScheduled        func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge, addr, huge, []byte) (uint64, error)
+	Canceled                       func(ctx, mech, bytes32) error
+	TicketCreatedGasCost           func(bytes32) (uint64, error)
+	LifetimeExtendedGasCost        func(bytes32, huge) (uint64, error)
+	RedeemScheduledGasCost         func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
+	RedeemArchivedScheduledGasCost func(bytes32, bytes32, uint64, uint64, addr, huge, huge, addr, addr, huge, []byte) (uint64, error)
+	CanceledGasCost                func(bytes32) (uint64, error)
 
 	// deprecated event
 	Redeemed        func(ctx, mech, bytes32) error
@@ -49,31 +51,17 @@ func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
 	}
 }
 
-func (con ArbRetryableTx) calculateRedeemFutureGasCost() (uint64, error) {
-	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
-	//     by that much, so that we'll donate the correct amount of gas
-	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0)
-	if err != nil {
-		return 0, err
-	}
-	// Result is 32 bytes long which is 1 word
-	gasCostToReturnResult := params.CopyGas
-	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
-	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
-	return futureGasCosts, nil
-}
-
 // Redeem schedules an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
 	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
 		return bytes32{}, ErrSelfModifyingRetryable
 	}
 	retryableState := c.State.RetryableState()
-	byteCount, err := retryableState.RetryableSizeWords(ticketId, evm.Context.Time)
+	writeWords, err := retryableState.RetryableSizeWords(ticketId, evm.Context.Time)
 	if err != nil {
 		return hash{}, err
 	}
-	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
+	if err := c.Burn(params.SloadGas * writeWords); err != nil {
 		return hash{}, err
 	}
 
@@ -105,10 +93,16 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err != nil {
 		return hash{}, err
 	}
-	futureGasCosts, err := con.calculateRedeemFutureGasCost()
+	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
+	//     by that much, so that we'll donate the correct amount of gas
+	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0)
 	if err != nil {
 		return hash{}, err
 	}
+	// Result is 32 bytes long which is 1 word
+	gasCostToReturnResult := params.CopyGas
+	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
+	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.gasLeft < futureGasCosts {
 		return hash{}, c.Burn(futureGasCosts) // this will error
 	}
@@ -141,7 +135,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 }
 
 func checkValidArchivedAndRedeemable(
-	c ctx, from addr, l1BaseFee *big.Int,
+	c ctx, retryFrom addr, l1BaseFee *big.Int,
 	chainId *big.Int, ticketId bytes32,
 	requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
@@ -154,7 +148,7 @@ func checkValidArchivedAndRedeemable(
 	txHash := types.NewTx(&types.ArbitrumSubmitRetryableTx{
 		ChainId:          chainId,
 		RequestId:        common.BytesToHash(requestId),
-		From:             from,
+		From:             retryFrom,
 		L1BaseFee:        l1BaseFee,
 		DepositValue:     deposit,
 		GasFeeCap:        gasFeeCap,
@@ -197,11 +191,11 @@ func checkValidArchivedAndRedeemable(
 	return nil
 }
 
-func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
-	from addr, l1BaseFee *big.Int,
+func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech,
+	ticketId bytes32,
 	requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
-	feeRefundAddress, beneficiary, retryTo addr,
+	retryFrom, feeRefundAddress, beneficiary, retryTo addr,
 	retryData []byte,
 	rootHash common.Hash,
 	leafIndex uint64,
@@ -216,15 +210,10 @@ func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
 	}
 	chainId := evm.ChainConfig.ChainID
 	if err := checkValidArchivedAndRedeemable(
-		c, from, l1BaseFee, chainId, ticketId, requestId, l1BaseFee, deposit, callValue, gasFeeCap, gasLimit,
+		c, retryFrom, l1BaseFee, chainId, ticketId, requestId, l1BaseFee, deposit, callValue, gasFeeCap, gasLimit,
 		maxSubmissionFee, feeRefundAddress, beneficiary, retryTo, retryData, rootHash, leafIndex, proof); err != nil {
 		return bytes32{}, err
 	}
-	// TODO(magic) ?
-	//writeWords := retryables.CalculateRetryableSizeWords(len(retryData))
-	//if err := c.Burn(params.SloadGas * writeWords); err != nil {
-	//	return hash{}, err
-	//}
 	maxRefund := new(big.Int).Exp(common.Big2, common.Big256, nil)
 	maxRefund.Sub(maxRefund, common.Big1)
 
@@ -234,7 +223,16 @@ func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
 		return hash{}, err
 	}
 	nonce := nextNonce - 1
-	futureGasCosts, err := con.calculateRedeemFutureGasCost()
+	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
+	//     by that much, so that we'll donate the correct amount of gas
+	eventCost, err := con.RedeemArchivedScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0, addr{}, addr{}, common.Big0, byte[len(callData)]{})
+	if err != nil {
+		return hash{}, err
+	}
+	// Result is 32 bytes long which is 1 word
+	gasCostToReturnResult := params.CopyGas
+	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
+	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if err != nil {
 		return hash{}, err
 	}
@@ -251,7 +249,7 @@ func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
 	retryTxInner := &types.ArbitrumRetryTx{
 		ChainId:             chainId,
 		Nonce:               nonce,
-		From:                from,
+		From:                retryFrom,
 		GasFeeCap:           evm.Context.BaseFee,
 		Gas:                 gasToDonate,
 		To:                  retryTo,
@@ -265,7 +263,8 @@ func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
 	retryTx := types.NewTx(retryTxInner)
 	retryTxHash := retryTx.Hash()
 
-	if err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund, common.Big0); err != nil {
+	// TODO(magic) do we need retryTx hash if we are passing all the data?
+	if err = con.RedeemArchivedScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund, common.Big0, retryFrom, callValue, callData); err != nil {
 		return hash{}, err
 	}
 	if _, err = retryableState.NonRedeemableArchived.Add(leafIndex); err != nil {
@@ -375,11 +374,11 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
-func (con ArbRetryableTx) CancelArchived(c ctx, evm mech, ticketId bytes32,
-	from addr, l1BaseFee *big.Int,
+func (con ArbRetryableTx) CancelArchived(c ctx, evm mech,
+	ticketId bytes32,
 	requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
-	feeRefundAddress, beneficiary, retryTo addr,
+	retryFrom, feeRefundAddress, beneficiary, retryTo addr,
 	retryData []byte,
 	rootHash common.Hash,
 	leafIndex uint64,
@@ -387,9 +386,12 @@ func (con ArbRetryableTx) CancelArchived(c ctx, evm mech, ticketId bytes32,
 ) error {
 	chainId := evm.ChainConfig.ChainID
 	if err := checkValidArchivedAndRedeemable(
-		c, from, l1BaseFee, chainId, ticketId, requestId, l1BaseFee, deposit, callValue, gasFeeCap, gasLimit,
+		c, retryFrom, l1BaseFee, chainId, ticketId, requestId, l1BaseFee, deposit, callValue, gasFeeCap, gasLimit,
 		maxSubmissionFee, feeRefundAddress, beneficiary, retryTo, retryData, rootHash, leafIndex, proof); err != nil {
 		return err
+	}
+	if c.caller != beneficiary {
+		return errors.New("only the beneficiary may cancel a retryable")
 	}
 	retrayableState := c.State.RetryableState()
 	if _, err := retrayableState.NonRedeemableArchived.Add(leafIndex); err != nil {

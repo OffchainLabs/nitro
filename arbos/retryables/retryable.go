@@ -26,7 +26,6 @@ type RetryableState struct {
 	TimeoutQueue          *storage.Queue
 	Archive               *merkleAccumulator.MerkleAccumulator
 	NonRedeemableArchived *storage.Uint64Set
-	numArchiveTries       storage.StorageBackedUint64
 }
 
 var (
@@ -34,10 +33,6 @@ var (
 	calldataKey              = []byte{1}
 	archiveKey               = []byte{2}
 	nonRedeemableArchivedKey = []byte{3}
-)
-
-const (
-	numArchiveTriesOffset = iota
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
@@ -52,7 +47,6 @@ func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableStat
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
 		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
 		storage.OpenUint64Set(sto.OpenSubStorage(nonRedeemableArchivedKey)),
-		sto.OpenStorageBackedUint64(numArchiveTriesOffset),
 	}
 }
 

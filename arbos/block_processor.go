@@ -35,9 +35,11 @@ var ArbSysAddress common.Address
 var InternalTxStartBlockMethodID [4]byte
 var InternalTxBatchPostingReportMethodID [4]byte
 var RedeemScheduledEventID common.Hash
+var RedeemArchivedScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
+var EmitReedeemArchivedScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int, common.Address, *big.Int, []byte) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 type L1Info struct {
