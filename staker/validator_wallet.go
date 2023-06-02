@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"strings"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/pkg/errors"
 )
 
 var validatorABI abi.ABI
@@ -319,7 +319,7 @@ func GetValidatorWalletContract(
 	// TODO: If we just save a mapping in the wallet creator we won't need log search
 	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
@@ -330,7 +330,7 @@ func GetValidatorWalletContract(
 	}
 	logs, err := client.FilterLogs(ctx, query)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	if len(logs) > 1 {
 		return nil, errors.New("more than one validator wallet created for address")
@@ -360,7 +360,7 @@ func GetValidatorWalletContract(
 	}
 	ev, err := walletCreator.ParseWalletCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	log.Info("created validator smart contract wallet", "address", ev.WalletAddress)
 	return &ev.WalletAddress, nil
