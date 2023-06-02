@@ -20,7 +20,7 @@ type AddressTable struct {
 }
 
 func Initialize(sto *storage.Storage) {
-	// no initialization needed
+	// No initialization needed.
 }
 
 func Open(sto *storage.Storage) *AddressTable {
@@ -34,24 +34,22 @@ func (atab *AddressTable) Register(addr common.Address) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if rev == (common.Hash{}) {
-		// addr isn't in the table, so add it
-		newNumItems, err := atab.numItems.Increment()
-		if err != nil {
-			return 0, err
-		}
-		err = atab.backingStorage.SetByUint64(newNumItems, addrAsHash)
-		if err != nil {
-			return 0, err
-		}
-		err = atab.byAddress.Set(addrAsHash, util.UintToHash(newNumItems))
-		if err != nil {
-			return 0, err
-		}
-		return newNumItems - 1, nil
-	} else {
+
+	if rev != (common.Hash{}) {
 		return rev.Big().Uint64() - 1, nil
 	}
+	// Addr isn't in the table, so add it.
+	newNumItems, err := atab.numItems.Increment()
+	if err != nil {
+		return 0, err
+	}
+	if err := atab.backingStorage.SetByUint64(newNumItems, addrAsHash); err != nil {
+		return 0, err
+	}
+	if err := atab.byAddress.Set(addrAsHash, util.UintToHash(newNumItems)); err != nil {
+		return 0, err
+	}
+	return newNumItems - 1, nil
 }
 
 func (atab *AddressTable) Lookup(addr common.Address) (uint64, bool, error) {

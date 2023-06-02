@@ -784,9 +784,8 @@ func createNodeImpl(
 	if err != nil {
 		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
-		} else {
-			log.Warn("validation not supported", "err", err)
 		}
+		log.Warn("validation not supported", "err", err)
 		statelessBlockValidator = nil
 	}
 
@@ -1051,9 +1050,8 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			if n.configFetcher.Get().ValidatorRequired() {
 				return fmt.Errorf("error initializing stateless block validator: %w", err)
-			} else {
-				log.Info("validation not set up", "err", err)
 			}
+			log.Info("validation not set up", "err", err)
 			n.StatelessBlockValidator = nil
 			n.BlockValidator = nil
 		}

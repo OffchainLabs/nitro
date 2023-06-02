@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"math/big"
 	"os"
 	"regexp"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/offchainlabs/nitro/cmd/util"
 
 	"github.com/cavaliergopher/grab/v3"
 	extract "github.com/codeclysm/extract/v3"
@@ -244,12 +245,11 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
-		if overwrite {
-			r.roots = r.roots[:len(r.roots)-1]
-			r.heights = r.heights[:len(r.heights)-1]
-		} else {
+		if !overwrite {
 			return nil
 		}
+		r.roots = r.roots[:len(r.roots)-1]
+		r.heights = r.heights[:len(r.heights)-1]
 	}
 	if len(r.heights) > 0 && r.heights[len(r.heights)-1]+minRootDistance > height {
 		return nil

@@ -290,10 +290,9 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		if latestHeader.Number.Int64() < expectedBlockHeight {
 			log.Info("catching up to chain blocks", "localBlocks", latestHeader.Number, "target", expectedBlockHeight)
 			return nil, false, nil
-		} else {
-			log.Error("unknown start block hash", "hash", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
-			return nil, false, errors.New("unknown start block hash")
 		}
+		log.Error("unknown start block hash", "hash", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
+		return nil, false, errors.New("unknown start block hash")
 	}
 
 	var lastBlockValidated uint64
