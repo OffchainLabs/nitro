@@ -362,12 +362,12 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
             // participant. This can be arranged out of bound by the excess stake receiver.
             // the assertion chain can disable challenge staking by setting a zero stake token or amount
-            if (address(edgeStakeToken) != address(0) && stakeAmount != 0) {
+            if (address(edgeStakeToken) != address(0) && edgeStakeAmount != 0) {
                 // since only one edge in a group of rivals can ever be confirmed, we know that we
                 // will never need to refund more than one edge. Therefore we can immediately send
                 // all stakes provided after the first one to an excess stake receiver.
                 address receiver = edgeAdded.hasRival ? excessStakeReceiver : address(this);
-                edgeStakeToken.safeTransferFrom(msg.sender, receiver, stakeAmount);
+                edgeStakeToken.safeTransferFrom(msg.sender, receiver, edgeStakeAmount);
             }
         } else {
             edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
