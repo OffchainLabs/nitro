@@ -21,17 +21,15 @@ import (
 )
 
 type ArbRetryableTx struct {
-	Address                        addr
-	TicketCreated                  func(ctx, mech, bytes32) error
-	LifetimeExtended               func(ctx, mech, bytes32, huge) error
-	RedeemScheduled                func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
-	RedeemArchivedScheduled        func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge, addr, huge, []byte) (uint64, error)
-	Canceled                       func(ctx, mech, bytes32) error
-	TicketCreatedGasCost           func(bytes32) (uint64, error)
-	LifetimeExtendedGasCost        func(bytes32, huge) (uint64, error)
-	RedeemScheduledGasCost         func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
-	RedeemArchivedScheduledGasCost func(bytes32, bytes32, uint64, uint64, addr, huge, huge, addr, addr, huge, []byte) (uint64, error)
-	CanceledGasCost                func(bytes32) (uint64, error)
+	Address                 addr
+	TicketCreated           func(ctx, mech, bytes32) error
+	LifetimeExtended        func(ctx, mech, bytes32, huge) error
+	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
+	Canceled                func(ctx, mech, bytes32) error
+	TicketCreatedGasCost    func(bytes32) (uint64, error)
+	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
+	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
+	CanceledGasCost         func(bytes32) (uint64, error)
 
 	// deprecated event
 	Redeemed        func(ctx, mech, bytes32) error
