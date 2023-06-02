@@ -5,6 +5,8 @@ package execution
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -268,7 +269,7 @@ func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 	var err error
 	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.config.RedisUrl)
 	if err != nil {
-		return errors.Wrap(err, "unable to create redis coordinator")
+		return fmt.Errorf("unable to create redis coordinator: %w", err)
 	}
 	f.update(ctx)
 	return nil
@@ -369,7 +370,7 @@ func (f *RedisTxForwarder) Start(ctx context.Context) error {
 		return err
 	}
 	if err := f.CallIterativelySafe(f.update); err != nil {
-		return errors.Wrap(err, "failed to start forwarder update thread")
+		return fmt.Errorf("failed to start forwarder update thread: %w", err)
 	}
 	return nil
 }

@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/pkg/errors"
 )
 
 // ValidatorTxBuilder combines any transactions sent to it via SendTransaction into one batch,
@@ -72,7 +71,7 @@ func (b *ValidatorTxBuilder) SendTransaction(ctx context.Context, tx *types.Tran
 	if err != nil {
 		// Remove the bad tx
 		b.transactions = b.transactions[:len(b.transactions)-1]
-		return errors.WithStack(err)
+		return err
 	}
 	return nil
 }

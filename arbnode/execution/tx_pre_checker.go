@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -175,7 +174,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			if oldHeader != header {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
-					return errors.Wrap(err, "failed to get old state")
+					return fmt.Errorf("failed to get old state: %w", err)
 				}
 				oldExtraInfo := types.DeserializeHeaderExtraInformation(oldHeader)
 				if err := options.Check(oldExtraInfo.L1BlockNumber, oldHeader.Time, secondOldStatedb); err != nil {
