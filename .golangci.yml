@@ -22,7 +22,6 @@ linters:
     - gosec       # check for security concerns
     - nilerr      # ensure errors aren't mishandled
     - staticcheck # check for suspicious constructs
-    - structcheck # check that struct fields are used
     - unused      # check for unused constructs
 
 linters-settings:
