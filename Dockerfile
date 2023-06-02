@@ -155,10 +155,11 @@ COPY ./testnode-scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v4 0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876
 #RUN ./download-machine.sh consensus-v5 0x1e09e6d9e35b93f33ed22b2bc8dc10bbcf63fdde5e8a1fb8cc1bcd1a52f14bd0
 #RUN ./download-machine.sh consensus-v6 0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab
-RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
+#RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
 #RUN ./download-machine.sh consensus-v7.1 0x2b20e1490d1b06299b222f3239b0ae07e750d8f3b4dedd19f500a815c1548bbc
-RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
+#RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
 RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
+RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
@@ -199,6 +200,7 @@ FROM debian:bullseye-slim as nitro-node-slim
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \

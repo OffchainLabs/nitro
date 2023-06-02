@@ -186,3 +186,15 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 	// WATCH works with sorted sets: https://redis.io/docs/manual/transactions/#using-watch-to-implement-zpop
 	return s.client.Watch(ctx, action, s.key)
 }
+
+func (s *RedisStorage[Item]) Length(ctx context.Context) (int, error) {
+	count, err := s.client.ZCount(ctx, s.key, "-inf", "+inf").Result()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+func (s *RedisStorage[Item]) IsPersistent() bool {
+	return true
+}
