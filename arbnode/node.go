@@ -301,22 +301,15 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 	if nativeERC20Token == (common.Address{}) {
 		/// deploy standard Eth rollup
-		rollupCreator, rollupCreatorAddress, _validatorUtils, _validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+		rollupCreator, _, _validatorUtils, _validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 		if err != nil {
 			return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 		}
 		validatorUtils, validatorWalletCreator = _validatorUtils, _validatorWalletCreator
 
-		nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
-		if err != nil {
-			return nil, fmt.Errorf("error getting pending nonce: %w", err)
-		}
-
-		expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 		tx, err := rollupCreator.CreateRollup(
 			deployAuth,
 			config,
-			expectedRollupAddr,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -336,22 +329,15 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		bridgeAddr, inboxAddr, sequencerInboxAddr, rollupAddr = info.Bridge, info.InboxAddress, info.SequencerInbox, info.RollupAddress
 	} else {
 		/// deploy ERC20 rollup
-		rollupCreator, rollupCreatorAddress, _validatorUtils, _validatorWalletCreator, err := deployERC20RollupCreator(ctx, l1Reader, deployAuth, nativeERC20Token)
+		rollupCreator, _, _validatorUtils, _validatorWalletCreator, err := deployERC20RollupCreator(ctx, l1Reader, deployAuth, nativeERC20Token)
 		if err != nil {
 			return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 		}
 		validatorUtils, validatorWalletCreator = _validatorUtils, _validatorWalletCreator
 
-		nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
-		if err != nil {
-			return nil, fmt.Errorf("error getting pending nonce: %w", err)
-		}
-
-		expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 		tx, err := rollupCreator.CreateRollup(
 			deployAuth,
 			config,
-			expectedRollupAddr,
 			nativeERC20Token,
 		)
 		if err != nil {
@@ -362,6 +348,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		if err != nil {
 			return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 		}
+		deployedAt = receipt.BlockNumber.Uint64()
 
 		info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
 		if err != nil {
