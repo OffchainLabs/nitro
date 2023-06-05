@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -163,10 +164,21 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetBigStepCommitmentUpTo(pos uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
+func (r *ExecutionClientRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
 	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](r, func(ctx context.Context) (util.HistoryCommitment, error) {
 		var resJson util.HistoryCommitment
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getBigStepCommitmentUpTo", r.id, pos, numOpcodesPerBigStep)
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getBigStepCommitmentUpTo", r.id, toBigStep, numOpcodesPerBigStep)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		return resJson, err
+	})
+}
+
+func (r *ExecutionClientRun) GetSmallStepCommitmentUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
+	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](r, func(ctx context.Context) (util.HistoryCommitment, error) {
+		var resJson util.HistoryCommitment
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getSmallStepCommitmentUpTo", r.id, bigStep, toSmallStep, numOpcodesPerBigStep)
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}

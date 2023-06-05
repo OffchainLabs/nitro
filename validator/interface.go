@@ -30,6 +30,7 @@ type ExecutionSpawner interface {
 type ExecutionRun interface {
 	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
 	GetBigStepCommitmentUpTo(uint64, uint64) containers.PromiseInterface[util.HistoryCommitment]
+	GetSmallStepCommitmentUpTo(uint64, uint64, uint64) containers.PromiseInterface[util.HistoryCommitment]
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]

@@ -118,6 +118,11 @@ func (r *mockExecRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBi
 	return containers.NewReadyPromise[util.HistoryCommitment](util.HistoryCommitment{}, nil)
 }
 
+func (r *mockExecRun) GetSmallStepCommitmentUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
+	// TODO: Add mock implementation for GetSmallStepCommitmentUpTo
+	return containers.NewReadyPromise[util.HistoryCommitment](util.HistoryCommitment{}, nil)
+}
+
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }

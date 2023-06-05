@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -144,13 +145,26 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetBigStepCommitmentUpTo(ctx context.Context, execid uint64, position uint64, numOpcodesPerBigStep uint64) (util.HistoryCommitment, error) {
+func (a *ExecServerAPI) GetBigStepCommitmentUpTo(ctx context.Context, execid uint64, toBigStep uint64, numOpcodesPerBigStep uint64) (util.HistoryCommitment, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	step := run.GetBigStepCommitmentUpTo(position, numOpcodesPerBigStep)
-	res, err := step.Await(ctx)
+	bigStepCommitmentUpTo := run.GetBigStepCommitmentUpTo(toBigStep, numOpcodesPerBigStep)
+	res, err := bigStepCommitmentUpTo.Await(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return res, nil
+}
+
+func (a *ExecServerAPI) GetSmallStepCommitmentUpTo(ctx context.Context, execid uint64, bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) (util.HistoryCommitment, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	smallStepCommitmentUpTo := run.GetSmallStepCommitmentUpTo(bigStep, toSmallStep, numOpcodesPerBigStep)
+	res, err := smallStepCommitmentUpTo.Await(ctx)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}

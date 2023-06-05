@@ -75,6 +75,29 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 	return result, nil
 }
 
+// SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
+// big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
+func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (util.HistoryCommitment, error) {
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	smallStepCommitment := execRun.GetSmallStepCommitmentUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
+	result, err := smallStepCommitment.Await(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return result, nil
+}
+
 func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
