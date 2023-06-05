@@ -3,6 +3,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"math/big"
 	"testing"
 	"time"
@@ -110,6 +111,11 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 		Status:      status,
 		GlobalState: resState,
 	}, nil)
+}
+
+func (r *mockExecRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
+	// TODO: Add mock implementation for GetBigStepCommitmentUpTo
+	return containers.NewReadyPromise[util.HistoryCommitment](util.HistoryCommitment{}, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {

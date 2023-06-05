@@ -6,6 +6,8 @@ package server_arb
 import (
 	"context"
 	"fmt"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 	"sync"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -76,6 +78,36 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 			Hash:        machine.Hash(),
 		}
 		return result, nil
+	})
+}
+
+func (e *executionRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
+	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](e, func(ctx context.Context) (util.HistoryCommitment, error) {
+		var stateRoots []common.Hash
+		for i := uint64(0); i < toBigStep; i++ {
+			position := i * numOpcodesPerBigStep
+			var machine MachineInterface
+			var err error
+			if position == ^uint64(0) {
+				machine, err = e.cache.GetFinalMachine(ctx)
+			} else {
+				// todo cache last machine
+				machine, err = e.cache.GetMachineAt(ctx, position)
+			}
+			if err != nil {
+				return util.HistoryCommitment{}, err
+			}
+			machineStep := machine.GetStepCount()
+			if position != machineStep {
+				machineRunning := machine.IsRunning()
+				if machineRunning || machineStep > position {
+					return util.HistoryCommitment{}, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+				}
+
+			}
+			stateRoots = append(stateRoots, machine.GetGlobalState().Hash())
+		}
+		return util.NewHistoryCommitment(toBigStep, stateRoots)
 	})
 }
 

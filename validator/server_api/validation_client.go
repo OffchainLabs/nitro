@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -159,6 +160,17 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 			return nil, err
 		}
 		return res, err
+	})
+}
+
+func (r *ExecutionClientRun) GetBigStepCommitmentUpTo(pos uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
+	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](r, func(ctx context.Context) (util.HistoryCommitment, error) {
+		var resJson util.HistoryCommitment
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getBigStepCommitmentUpTo", r.id, pos, numOpcodesPerBigStep)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		return resJson, err
 	})
 }
 

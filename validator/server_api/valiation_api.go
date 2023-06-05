@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"math/rand"
 	"sync"
 	"time"
@@ -141,6 +142,19 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 		return nil, err
 	}
 	return MachineStepResultToJson(res), nil
+}
+
+func (a *ExecServerAPI) GetBigStepCommitmentUpTo(ctx context.Context, execid uint64, position uint64, numOpcodesPerBigStep uint64) (util.HistoryCommitment, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	step := run.GetBigStepCommitmentUpTo(position, numOpcodesPerBigStep)
+	res, err := step.Await(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return res, nil
 }
 
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {

@@ -17,14 +17,14 @@ import (
 var AccumulatorNotFoundErr = errors.New("accumulator not found")
 
 type StateManager struct {
-	streamer     TransactionStreamerInterface
-	inboxTracker InboxTrackerInterface
+	validator            *StatelessBlockValidator
+	numOpcodesPerBigStep uint64
 }
 
-func NewStateManager(streamer TransactionStreamerInterface, inboxTracker InboxTrackerInterface) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64) (*StateManager, error) {
 	return &StateManager{
-		streamer:     streamer,
-		inboxTracker: inboxTracker,
+		validator:            val,
+		numOpcodesPerBigStep: numOpcodesPerBigStep,
 	}, nil
 }
 
@@ -36,7 +36,7 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount u
 	}
 	var stateRoots []common.Hash
 	for i := arbutil.MessageIndex(0); i <= arbutil.MessageIndex(messageCount); i++ {
-		batchMsgCount, err := s.inboxTracker.GetBatchMessageCount(batch)
+		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
@@ -50,6 +50,29 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount u
 		stateRoots = append(stateRoots, root)
 	}
 	return util.NewHistoryCommitment(messageCount, stateRoots)
+}
+
+// BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
+// challenge heights blockHeight and blockHeight+1.
+func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) (util.HistoryCommitment, error) {
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	bigStepCommitment := execRun.GetBigStepCommitmentUpTo(toBigStep, s.numOpcodesPerBigStep)
+	result, err := bigStepCommitment.Await(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return result, nil
 }
 
 func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
@@ -67,7 +90,7 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 			return 0, fmt.Errorf("when attempting to find batch for message count %v high %v < low %v", msgCount, high, low)
 		}
 		mid := (low + high) / 2
-		batchMsgCount, err := s.inboxTracker.GetBatchMessageCount(mid)
+		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(mid)
 		if err != nil {
 			if errors.Is(err, AccumulatorNotFoundErr) {
 				high = mid
@@ -107,7 +130,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batch > 0 {
-		prevBatchMsgCount, err = s.inboxTracker.GetBatchMessageCount(batch - 1)
+		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(batch - 1)
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
@@ -115,7 +138,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 			return validator.GoGlobalState{}, errors.New("bad batch provided")
 		}
 	}
-	res, err := s.streamer.ResultAtCount(count)
+	res, err := s.validator.streamer.ResultAtCount(count)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
