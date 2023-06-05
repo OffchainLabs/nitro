@@ -18,6 +18,8 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
+import "../precompiles/ArbSys.sol";
+
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
@@ -76,6 +78,18 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     bool public validatorWhitelistDisabled;
 
+    // If the chain this RollupCore is deployed on is an Arbitrum chain.
+    bool internal immutable _hostChainIsArbitrum;
+    // If the chain RollupCore is deployed on, this will contain the ArbSys.blockNumber() at each node's creation.
+    mapping(uint64 => uint256) internal _nodeCreatedAtArbSysBlock;
+
+    constructor() {
+        (bool ok, bytes memory data) = address(100).staticcall(
+            abi.encodeWithSelector(ArbSys.arbOSVersion.selector)
+        );
+        _hostChainIsArbitrum = ok && data.length == 32;
+    }
+
     /**
      * @notice Get a storage reference to the Node for the given node index
      * @param nodeNum Index of the node
@@ -90,6 +104,30 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function getNode(uint64 nodeNum) public view override returns (Node memory) {
         return getNodeStorage(nodeNum);
+    }
+
+    /**
+     * @notice Returns the block in which the given node was created for looking up its creation event.
+     * Unlike the Node's createdAtBlock field, this will be the ArbSys blockNumber if the host chain is an Arbitrum chain.
+     * That means that the block number returned for this is usable for event queries.
+     * This function will revert if the given node number does not exist.
+     * @dev This function is meant for internal use only and has no stability guarantees.
+     */
+    function getNodeCreationBlockForLogLookup(uint64 nodeNum)
+        external
+        view
+        override
+        returns (uint256)
+    {
+        if (_hostChainIsArbitrum) {
+            uint256 blockNum = _nodeCreatedAtArbSysBlock[nodeNum];
+            require(blockNum > 0, "NO_NODE");
+            return blockNum;
+        } else {
+            Node storage node = getNodeStorage(nodeNum);
+            require(node.deadlineBlock != 0, "NO_NODE");
+            return node.createdAtBlock;
+        }
     }
 
     /**
@@ -250,6 +288,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         __Pausable_init();
         _nodes[GENESIS_NODE] = initialNode;
         _firstUnresolvedNode = GENESIS_NODE + 1;
+        if (_hostChainIsArbitrum) {
+            _nodeCreatedAtArbSysBlock[GENESIS_NODE] = ArbSys(address(100)).arbBlockNumber();
+        }
     }
 
     /**
@@ -259,6 +300,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function nodeCreated(Node memory node) internal {
         _latestNodeCreated++;
         _nodes[_latestNodeCreated] = node;
+        if (_hostChainIsArbitrum) {
+            _nodeCreatedAtArbSysBlock[_latestNodeCreated] = ArbSys(address(100)).arbBlockNumber();
+        }
     }
 
     /// @notice Reject the next unresolved node

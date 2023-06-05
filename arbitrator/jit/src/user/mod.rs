@@ -123,7 +123,7 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 /// Creates an `EvmData` from its component parts.
 /// go side: λ(
 ///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
-///     block_gas_limit u64, block_number, block_timestamp *[32]byte, contract_address, msg_sender *[20]byte,
+///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
 ///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
@@ -135,7 +135,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         block_difficulty: sp.read_bytes32().into(),
         block_gas_limit: sp.read_u64(),
         block_number: sp.read_bytes32().into(),
-        block_timestamp: sp.read_bytes32().into(),
+        block_timestamp: sp.read_u64(),
         contract_address: sp.read_bytes20().into(),
         msg_sender: sp.read_bytes20().into(),
         msg_value: sp.read_bytes32().into(),

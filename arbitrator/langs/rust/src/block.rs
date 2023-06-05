@@ -11,7 +11,7 @@ extern "C" {
     pub(crate) fn block_difficulty(difficulty: *mut u8);
     pub(crate) fn block_gas_limit() -> u64;
     pub(crate) fn block_number(number: *mut u8);
-    pub(crate) fn block_timestamp(timestamp: *mut u8);
+    pub(crate) fn block_timestamp() -> u64;
 }
 
 pub fn basefee() -> Bytes32 {
@@ -48,8 +48,6 @@ pub fn number() -> Bytes32 {
     Bytes32(data)
 }
 
-pub fn timestamp() -> Bytes32 {
-    let mut data = [0; 32];
-    unsafe { block_timestamp(data.as_mut_ptr()) };
-    Bytes32(data)
+pub fn timestamp() -> u64 {
+    unsafe { block_timestamp() }
 }

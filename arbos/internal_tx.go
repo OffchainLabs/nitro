@@ -80,7 +80,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber-1, prevHash, state.ArbOSVersion()))
 		}
 
-		currentTime := evm.Context.Time.Uint64()
+		currentTime := evm.Context.Time
 
 		// Try to reap 2 retryables
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
@@ -111,7 +111,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			evm,
 			state.ArbOSVersion(),
 			batchTimestamp.Uint64(),
-			evm.Context.Time.Uint64(),
+			evm.Context.Time,
 			batchPosterAddress,
 			weiSpent,
 			l1BaseFeeWei,

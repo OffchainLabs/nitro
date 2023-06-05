@@ -141,10 +141,10 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			if err != nil {
 				Fail(t, err)
 			}
-		}
-		_, err := EnsureTxSucceeded(ctx, l1client, tx)
-		if err != nil {
-			Fail(t, err)
+			_, err = EnsureTxSucceeded(ctx, l1client, tx)
+			if err != nil {
+				Fail(t, err)
+			}
 		}
 	}
 

@@ -324,7 +324,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "block_difficulty" => stub!(|_: u32|),
             "block_gas_limit" => stub!(u64 <- ||),
             "block_number" => stub!(|_: u32|),
-            "block_timestamp" => stub!(|_: u32|),
+            "block_timestamp" => stub!(u64 <- ||),
             "contract_address" => stub!(|_: u32|),
             "msg_sender" => stub!(|_: u32|),
             "msg_value" => stub!(|_: u32|),

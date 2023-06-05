@@ -298,11 +298,10 @@ pub(crate) fn block_number<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> Maybe
     Ok(())
 }
 
-pub(crate) fn block_timestamp<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn block_timestamp<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::TIMESTAMP_GAS)?;
-    env.write_bytes32(ptr, env.evm_data.block_timestamp)?;
-    Ok(())
+    Ok(env.evm_data.block_timestamp)
 }
 
 pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {

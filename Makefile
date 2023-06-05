@@ -133,7 +133,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val)
 	@printf $(done)
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
@@ -238,6 +238,10 @@ $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
+$(output_root)/bin/nitro-val: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro-val"
+
+# recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
@@ -260,7 +264,7 @@ $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
 
-$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go $(arbitrator_cases)/go/go.mod $(arbitrator_cases)/go/go.sum
+$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go
 	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
 
 $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
@@ -291,7 +295,8 @@ arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/w
 $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a .make/machines
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a \
+		.make/wasm-lib .make/machines
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
@@ -445,19 +450,23 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
-	test -f target/include/brotli/encode.h
-	test -f target/include/brotli/decode.h
-	test -f target/lib/libbrotlicommon-static.a
-	test -f target/lib/libbrotlienc-static.a
-	test -f target/lib/libbrotlidec-static.a
+	test -f target/include/brotli/encode.h || ./build-brotli.sh -l
+	test -f target/include/brotli/decode.h || ./build-brotli.sh -l
+	test -f target/lib/libbrotlicommon-static.a || ./build-brotli.sh -l
+	test -f target/lib/libbrotlienc-static.a || ./build-brotli.sh -l
+	test -f target/lib/libbrotlidec-static.a || ./build-brotli.sh -l
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	@printf "%btesting cbrotli wasm build exists. If this step fails, run ./build-brotli.sh -w%b\n" $(color_pink) $(color_reset)
-	test -f target/lib-wasm/libbrotlicommon-static.a
-	test -f target/lib-wasm/libbrotlienc-static.a
-	test -f target/lib-wasm/libbrotlidec-static.a
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlienc-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
+	@touch $@
+
+.make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./build-brotli.sh -f -d -t .
 	@touch $@
 
 .make/machines: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

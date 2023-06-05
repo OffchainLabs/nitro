@@ -285,11 +285,10 @@ pub unsafe extern "C" fn user_host__block_number(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_timestamp(ptr: usize) {
+pub unsafe extern "C" fn user_host__block_timestamp() -> u64 {
     let program = Program::start();
     program.buy_gas(evm::TIMESTAMP_GAS).unwrap();
-    let block_timestamp = program.evm_data.block_timestamp.as_ref();
-    wavm::write_slice_usize(block_timestamp, ptr)
+    program.evm_data.block_timestamp
 }
 
 #[no_mangle]

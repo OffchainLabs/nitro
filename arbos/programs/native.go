@@ -318,7 +318,7 @@ func (data *evmData) encode() C.EvmData {
 		block_difficulty: hashToBytes32(data.blockDifficulty),
 		block_gas_limit:  u64(data.blockGasLimit),
 		block_number:     hashToBytes32(data.blockNumber),
-		block_timestamp:  hashToBytes32(data.blockTimestamp),
+		block_timestamp:  u64(data.blockTimestamp),
 		contract_address: addressToBytes20(data.contractAddress),
 		msg_sender:       addressToBytes20(data.msgSender),
 		msg_value:        hashToBytes32(data.msgValue),

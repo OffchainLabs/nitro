@@ -4,6 +4,7 @@
 package arbosState
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -48,6 +49,7 @@ type ArbosState struct {
 	programs          *programs.Programs
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
+	chainConfig       storage.StorageBackedBytes
 	genesisBlockNum   storage.StorageBackedUint64
 	infraFeeAccount   storage.StorageBackedAddress
 	backingStorage    *storage.Storage
@@ -80,6 +82,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		programs.Open(backingStorage.OpenSubStorage(programsSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
+		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(infraFeeAccountOffset)),
 		backingStorage,
@@ -111,7 +114,12 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	newState, err := InitializeArbosState(statedb, burner, params.ArbitrumDevTestChainConfig())
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		log.Crit("failed to serialize chain config", "error", err)
+	}
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, serializedChainConfig)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
@@ -150,12 +158,13 @@ var (
 	chainOwnerSubspace   SubspaceID = []byte{4}
 	sendMerkleSubspace   SubspaceID = []byte{5}
 	blockhashesSubspace  SubspaceID = []byte{6}
-	programsSubspace     SubspaceID = []byte{7}
+	chainConfigSubspace  SubspaceID = []byte{7}
+	programsSubspace     SubspaceID = []byte{8}
 )
 
 // Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
-func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Address {
-	rules := chainConfig.Rules(big.NewInt(0), false)
+func getArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common.Address {
+	rules := chainConfig.Rules(big.NewInt(0), false, 0, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
 	arbPrecompiles := vm.ActivePrecompiles(rules)
 	rules.IsArbitrum = false
 	ethPrecompiles := vm.ActivePrecompiles(rules)
@@ -174,7 +183,12 @@ func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Addres
 	return arbOnlyPrecompiles
 }
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig) (*ArbosState, error) {
+func InitializeArbosState(
+	stateDB vm.StateDB,
+	burner burn.Burner,
+	chainConfig *params.ChainConfig,
+	serializedChainConfig []byte,
+) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -191,8 +205,8 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	// Solidity requires call targets have code, but precompiles don't.
 	// To work around this, we give precompiles fake code.
-	for _, precompile := range getArbitrumOnlyPrecompiles(chainConfig) {
-		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
+	for _, genesisPrecompile := range getArbitrumOnlyGenesisPrecompiles(chainConfig) {
+		stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
 	}
 
 	// may be the zero address
@@ -207,6 +221,8 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
+	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
+	_ = chainConfigStorage.Set(serializedChainConfig)
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 
 	initialRewardsRecipient := l1pricing.BatchPosterAddress
@@ -287,10 +303,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
 			)))
-		case 10:
+
 			// TODO: move to the first version that introduces stylus
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
-
+		case 10:
 			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
 				return fmt.Errorf(
@@ -419,6 +435,14 @@ func (state *ArbosState) KeccakHash(data ...[]byte) (common.Hash, error) {
 
 func (state *ArbosState) ChainId() (*big.Int, error) {
 	return state.chainId.Get()
+}
+
+func (state *ArbosState) ChainConfig() ([]byte, error) {
+	return state.chainConfig.Get()
+}
+
+func (state *ArbosState) SetChainConfig(serializedChainConfig []byte) error {
+	return state.chainConfig.Set(serializedChainConfig)
 }
 
 func (state *ArbosState) GenesisBlockNum() (uint64, error) {
