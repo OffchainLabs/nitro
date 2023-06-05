@@ -3,7 +3,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"math/big"
 	"testing"
 	"time"
@@ -12,6 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
