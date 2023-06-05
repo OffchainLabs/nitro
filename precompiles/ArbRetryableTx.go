@@ -126,155 +126,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err := c.Burn(gasToDonate); err != nil {
 		return hash{}, err
 	}
-
-	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
-	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
-}
-
-func checkValidArchivedAndRedeemable(
-	c ctx, retryFrom addr, l1BaseFee *big.Int,
-	chainId *big.Int, ticketId bytes32,
-	requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
-	gasLimit uint64, maxSubmissionFee huge,
-	feeRefundAddress, beneficiary, retryTo addr,
-	retryData []byte,
-	rootHash common.Hash,
-	leafIndex uint64,
-	proof []common.Hash,
-) error {
-	txHash := types.NewTx(&types.ArbitrumSubmitRetryableTx{
-		ChainId:          chainId,
-		RequestId:        common.BytesToHash(requestId),
-		From:             retryFrom,
-		L1BaseFee:        l1BaseFee,
-		DepositValue:     deposit,
-		GasFeeCap:        gasFeeCap,
-		Gas:              gasLimit,
-		RetryTo:          retryTo,
-		RetryValue:       callValue,
-		Beneficiary:      beneficiary,
-		MaxSubmissionFee: maxSubmissionFee,
-		FeeRefundAddr:    feeRefundAddress,
-		RetryData:        retryData,
-	}).Hash().Bytes()
-	if !bytes.Equal(ticketId, txHash) {
-		// TODO(magic) err
-		return errors.New("TODO")
-	}
-	retryableState := c.State.RetryableState()
-	archiveRoot, err := retryableState.Archive.Root()
-	if err != nil {
-		return bytes32{}, err
-	}
-	if !bytes.Equal(rootHash.Bytes(), archiveRoot.Bytes()) {
-		// TODO(magic) err
-		return errors.New("TODO")
-	}
-	merkleProof := merkletree.MerkleProof{
-		RootHash:  rootHash,
-		LeafHash:  common.BytesToHash(crypto.Keccak256(ticketId)),
-		LeafIndex: leafIndex,
-		Proof:     proof,
-	}
-	if !merkleProof.IsCorrect() {
-		// TODO(magic) err
-		return errors.New("TODO")
-	}
-	isNonRedeemable, err := retryableState.NonRedeemableArchived.IsMember(leafIndex)
-	if isNonRedeemable {
-		// TODO(magic) err
-		return errors.New("TODO")
-	}
-	return nil
-}
-
-func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech,
-	ticketId bytes32,
-	requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
-	gasLimit uint64, maxSubmissionFee huge,
-	retryFrom, feeRefundAddress, beneficiary, retryTo addr,
-	retryData []byte,
-	rootHash common.Hash,
-	leafIndex uint64,
-	proof []common.Hash,
-) (bytes32, error) {
-	// TODO(magic) verify gas accounting
-	// TODO(magic) verify addresses
-
-	// TODO(magic) is it ok to check ticketId before verifying if it's valid?
-	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
-		return bytes32{}, ErrSelfModifyingRetryable
-	}
-	chainId := evm.ChainConfig.ChainID
-	if err := checkValidArchivedAndRedeemable(
-		c, retryFrom, l1BaseFee, chainId, ticketId, requestId, l1BaseFee, deposit, callValue, gasFeeCap, gasLimit,
-		maxSubmissionFee, feeRefundAddress, beneficiary, retryTo, retryData, rootHash, leafIndex, proof); err != nil {
-		return bytes32{}, err
-	}
-	maxRefund := new(big.Int).Exp(common.Big2, common.Big256, nil)
-	maxRefund.Sub(maxRefund, common.Big1)
-
-	// TODO(magic) fix nonce collision with previous attempts to redeem the retryable before its expiry
-	nextNonce, err := retrayableState.IncrementNumArchiveTries()
-	if err != nil {
-		return hash{}, err
-	}
-	nonce := nextNonce - 1
-	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
-	//     by that much, so that we'll donate the correct amount of gas
-	eventCost, err := con.RedeemArchivedScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0, addr{}, addr{}, common.Big0, byte[len(callData)]{})
-	if err != nil {
-		return hash{}, err
-	}
-	// Result is 32 bytes long which is 1 word
-	gasCostToReturnResult := params.CopyGas
-	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
-	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
-	if err != nil {
-		return hash{}, err
-	}
-	retryableState := c.State.RetryableState()
-	// account for marking the retryable as no longer redeemable
-	futureGasCosts += retrayableState.NonRedeemableArchived.AddMaxGasCost()
-	if c.gasLeft < futureGasCosts {
-		return hash{}, c.Burn(futureGasCosts) // this will error
-	}
-	gasToDonate := c.gasLeft - futureGasCosts
-	if gasToDonate < params.TxGas {
-		return hash{}, errors.New("not enough gas to run redeem attempt")
-	}
-	retryTxInner := &types.ArbitrumRetryTx{
-		ChainId:             chainId,
-		Nonce:               nonce,
-		From:                retryFrom,
-		GasFeeCap:           evm.Context.BaseFee,
-		Gas:                 gasToDonate,
-		To:                  retryTo,
-		Value:               callValue,
-		Data:                callData,
-		TicketId:            ticketId,
-		RefundTo:            feeRefundAddress,
-		MaxRefund:           maxRefund,
-		SubmissionFeeRefund: common.Big0,
-	}
-	retryTx := types.NewTx(retryTxInner)
-	retryTxHash := retryTx.Hash()
-
-	// TODO(magic) do we need retryTx hash if we are passing all the data?
-	if err = con.RedeemArchivedScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund, common.Big0, retryFrom, callValue, callData); err != nil {
-		return hash{}, err
-	}
-	if _, err = retryableState.NonRedeemableArchived.Add(leafIndex); err != nil {
-		return hash{}, err
-	}
-	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
-	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
-	// We burn as much gas as we can, leaving only enough to pay for copying out the return data.
-	if err := c.Burn(gasToDonate); err != nil {
-		return hash{}, err
-	}
-
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
@@ -330,6 +181,56 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 	return big.NewInt(int64(newTimeout)), err
 }
 
+func (con ArbRetryableTx) Revive(c ctx, evm mech,
+	ticketId bytes32,
+	numTries uint64,
+	from, to addr,
+	callvalue huge,
+	beneficiary addr,
+	calldata []byte,
+	rootHash bytes32,
+	leafIndex uint64,
+	proof []bytes32,
+) (huge, error) {
+	// TODO(magic) verify gas accounting
+	retryableHash := retryables.RetryableHash(ticketId, numTries, from, to, callvalue, beneficiary, calldata)
+	retryableState := c.State.RetryableState()
+	expiredRoot, err := retryableState.Expired.Root()
+	if err != nil {
+		return big.NewInt(0), err
+	}
+	if !bytes.Equal(rootHash[:], expiredRoot.Bytes()) {
+		return big.NewInt(0), errors.New("invalid root hash")
+	}
+	proofHashes := make([]common.Hash, len(proof))
+	for i, proofBytes := range proof {
+		proofHashes[i] = proofBytes
+	}
+	merkleProof := merkletree.MerkleProof{
+		RootHash:  common.BytesToHash(rootHash[:]),
+		LeafHash:  common.BytesToHash(crypto.Keccak256(retryableHash.Bytes())),
+		LeafIndex: leafIndex,
+		Proof:     proofHashes,
+	}
+	if !merkleProof.IsCorrect() {
+		return big.NewInt(0), errors.New("wrong proof")
+	}
+	inserted, err := retryableState.Revived.Add(leafIndex)
+	if err != nil {
+		return big.NewInt(0), err
+	}
+	if !inserted {
+		return big.NewInt(0), errors.New("already revived")
+	}
+	currentTime := evm.Context.Time
+	newTimeout, err := retryableState.Revive(ticketId, numTries, from, &to, callvalue, beneficiary, calldata, currentTime, retryables.RetryableLifetimeSeconds)
+	if err != nil {
+		return big.NewInt(0), err
+	}
+	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
+	return big.NewInt(int64(newTimeout)), err
+}
+
 // GetBeneficiary gets the beneficiary of the ticket
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.State.RetryableState()
@@ -369,33 +270,6 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	if err != nil {
 		return err
 	}
-	return con.Canceled(c, evm, ticketId)
-}
-
-func (con ArbRetryableTx) CancelArchived(c ctx, evm mech,
-	ticketId bytes32,
-	requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
-	gasLimit uint64, maxSubmissionFee huge,
-	retryFrom, feeRefundAddress, beneficiary, retryTo addr,
-	retryData []byte,
-	rootHash common.Hash,
-	leafIndex uint64,
-	proof []common.Hash,
-) error {
-	chainId := evm.ChainConfig.ChainID
-	if err := checkValidArchivedAndRedeemable(
-		c, retryFrom, l1BaseFee, chainId, ticketId, requestId, l1BaseFee, deposit, callValue, gasFeeCap, gasLimit,
-		maxSubmissionFee, feeRefundAddress, beneficiary, retryTo, retryData, rootHash, leafIndex, proof); err != nil {
-		return err
-	}
-	if c.caller != beneficiary {
-		return errors.New("only the beneficiary may cancel a retryable")
-	}
-	retrayableState := c.State.RetryableState()
-	if _, err := retrayableState.NonRedeemableArchived.Add(leafIndex); err != nil {
-		return err
-	}
-	retryables.MoveFundsLeftInEscrowToBeneficiary(ticketId, beneficiary, evm, scenario)
 	return con.Canceled(c, evm, ticketId)
 }
 

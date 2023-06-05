@@ -22,22 +22,22 @@ const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
 
 type RetryableState struct {
-	retryables            *storage.Storage
-	TimeoutQueue          *storage.Queue
-	Archive               *merkleAccumulator.MerkleAccumulator
-	NonRedeemableArchived *storage.Uint64Set
+	retryables   *storage.Storage
+	TimeoutQueue *storage.Queue
+	Expired      *merkleAccumulator.MerkleAccumulator
+	Revived      *storage.Uint64Set
 }
 
 var (
-	timeoutQueueKey          = []byte{0}
-	calldataKey              = []byte{1}
-	archiveKey               = []byte{2}
-	nonRedeemableArchivedKey = []byte{3}
+	timeoutQueueKey = []byte{0}
+	calldataKey     = []byte{1}
+	archiveKey      = []byte{2}
+	revivedKey      = []byte{3}
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(archiveKey))
-	storage.InitializeUint64Set(sto.OpenSubStorage(nonRedeemableArchivedKey))
+	storage.InitializeUint64Set(sto.OpenSubStorage(revivedKey))
 	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
@@ -46,7 +46,7 @@ func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableStat
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
 		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
-		storage.OpenUint64Set(sto.OpenSubStorage(nonRedeemableArchivedKey)),
+		storage.OpenUint64Set(sto.OpenSubStorage(revivedKey)),
 	}
 }
 
@@ -132,6 +132,22 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	}, nil
 }
 
+func (rs *RetryableState) OpenPotentialyExpiredRetryable(id common.Hash) *Retryable {
+	sto := rs.retryables.OpenSubStorage(id.Bytes())
+	return &Retryable{
+		id:                 id,
+		backingStorage:     sto,
+		numTries:           sto.OpenStorageBackedUint64(numTriesOffset),
+		from:               sto.OpenStorageBackedAddress(fromOffset),
+		to:                 sto.OpenStorageBackedAddressOrNil(toOffset),
+		callvalue:          sto.OpenStorageBackedBigUint(callvalueOffset),
+		beneficiary:        sto.OpenStorageBackedAddress(beneficiaryOffset),
+		calldata:           sto.OpenStorageBackedBytes(calldataKey),
+		timeout:            sto.OpenStorageBackedUint64(timeoutOffset),
+		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
+	}
+}
+
 func CalculateRetryableSizeWords(calldataSize uint64) uint64 {
 	calldata := 32 + 32*arbmath.WordsForBytes(calldataSize) // length + contents
 	return arbmath.WordsForBytes(6*32 + calldata)
@@ -172,7 +188,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 
 	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
 	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
-	if err := MoveFundsLeftInEscrowToBeneficiary(id, common.BytesToAddress(beneficiary), evm, scenario); err != nil {
+	if err := MoveFundsLeftInEscrowToBeneficiary(id, common.BytesToAddress(beneficiary.Bytes()), evm, scenario); err != nil {
 		return false, err
 	}
 
@@ -229,6 +245,50 @@ func (retryable *Retryable) CalldataSize() (uint64, error) {
 	return retryable.calldata.Size()
 }
 
+func RetryableHash(id common.Hash, numTries uint64, from, to common.Address, callvalue *big.Int, beneficiary common.Address, calldata []byte) common.Hash {
+	return common.BytesToHash(crypto.Keccak256(
+		id.Bytes(),
+		arbmath.UintToBig(numTries).Bytes(),
+		from.Bytes(),
+		to.Bytes(),
+		callvalue.Bytes(),
+		beneficiary.Bytes(),
+		calldata,
+	))
+}
+
+func (retryable *Retryable) GetHash() (common.Hash, error) {
+	numTries, err := retryable.numTries.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	from, err := retryable.from.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	to, err := retryable.to.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if to == nil {
+		nilAddr := common.BytesToAddress(storage.NilAddressRepresentation.Bytes())
+		to = &nilAddr
+	}
+	callvalue, err := retryable.callvalue.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	beneficiary, err := retryable.beneficiary.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	calldata, err := retryable.calldata.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return RetryableHash(retryable.id, numTries, from, *to, callvalue, beneficiary, calldata), nil
+}
+
 func (rs *RetryableState) Keepalive(
 	ticketId common.Hash,
 	currentTimestamp,
@@ -261,6 +321,59 @@ func (rs *RetryableState) Keepalive(
 	newTimeout := timeout + RetryableLifetimeSeconds
 
 	// Pay in advance for the work needed to reap the duplicate from the timeout queue
+	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
+}
+
+func (rs *RetryableState) Revive(
+	ticketId common.Hash,
+	numTries uint64,
+	from common.Address,
+	to *common.Address,
+	callvalue *big.Int,
+	beneficiary common.Address,
+	calldata []byte,
+	currentTimestamp,
+	timeToAdd uint64,
+) (uint64, error) {
+	ret := rs.OpenPotentialyExpiredRetryable(ticketId)
+	timeout, err := ret.timeout.Get()
+	if err != nil {
+		return 0, err
+	}
+	// TODO(magic) do we want to skip this check?
+	if timeout != 0 {
+		// shouldn't ever happen
+		return 0, errors.New("already exists")
+	}
+	newTimeout := currentTimestamp + timeToAdd
+	if err = ret.numTries.Set(numTries); err != nil {
+		return 0, err
+	}
+	if err = ret.from.Set(from); err != nil {
+		return 0, err
+	}
+	if err = ret.to.Set(to); err != nil {
+		return 0, err
+	}
+	if err = ret.callvalue.SetChecked(callvalue); err != nil {
+		return 0, err
+	}
+	if err = ret.beneficiary.Set(beneficiary); err != nil {
+		return 0, err
+	}
+	if err = ret.calldata.Set(calldata); err != nil {
+		return 0, err
+	}
+	if err = ret.timeout.Set(newTimeout); err != nil {
+		return 0, err
+	}
+	if err = ret.timeoutWindowsLeft.Set(0); err != nil {
+		return 0, err
+	}
+	if err = rs.TimeoutQueue.Put(ret.id); err != nil {
+		return 0, err
+	}
+	// Pay in advance for the work needed to reap the retryable from the timeout queue
 	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
 }
 
@@ -336,10 +449,14 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
+		retryableHash, err := rs.OpenPotentialyExpiredRetryable(*id).GetHash()
+		if err != nil {
+			return err
+		}
 		if err = clearRetryable(retryableStorage); err != nil {
 			return err
 		}
-		_, err = rs.Archive.Append(id)
+		_, err = rs.Expired.Append(retryableHash)
 		return err
 	}
 
@@ -381,14 +498,6 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 		MaxRefund:           maxRefund,
 		SubmissionFeeRefund: submissionFeeRefund,
 	}, nil
-}
-
-func (rs *RetryableState) NumArchiveTries() (uint64, error) {
-	return rs.numArchiveTries.Get()
-}
-
-func (rs *RetryableState) IncrementNumArchiveTries() (uint64, error) {
-	return rs.numArchiveTries.Increment()
 }
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
