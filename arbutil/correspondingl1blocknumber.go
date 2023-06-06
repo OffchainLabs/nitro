@@ -19,7 +19,6 @@ func CorrespondingL1BlockNumber(ctx context.Context, client L1Interface, blockNu
 	headerInfo := types.DeserializeHeaderExtraInformation(header)
 	if headerInfo.L1BlockNumber != 0 {
 		return headerInfo.L1BlockNumber, nil
-	} else {
-		return blockNumber, nil
 	}
+	return blockNumber, nil
 }

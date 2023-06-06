@@ -85,17 +85,18 @@ type L1ValidatorConfig struct {
 }
 
 func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
-	if strings.ToLower(c.Strategy) == "watchtower" {
+	switch strings.ToLower(c.Strategy) {
+	case "watchtower":
 		return WatchtowerStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "defensive" {
+	case "defensive":
 		return DefensiveStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "stakelatest" {
+	case "stakelatest":
 		return StakeLatestStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "resolvenodes" {
+	case "resolvenodes":
 		return ResolveNodesStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "makenodes" {
+	case "makenodes":
 		return MakeNodesStrategy, nil
-	} else {
+	default:
 		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", c.Strategy)
 	}
 }
@@ -209,8 +210,8 @@ func NewStaker(
 	statelessBlockValidator *StatelessBlockValidator,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
-	err := config.Validate()
-	if err != nil {
+
+	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 	client := l1Reader.Client()
@@ -377,9 +378,8 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 			"highGasBuffer", s.highGasBlocksBuffer,
 		)
 		return false
-	} else {
-		return true
 	}
+	return true
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {

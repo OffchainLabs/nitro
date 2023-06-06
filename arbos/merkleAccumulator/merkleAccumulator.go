@@ -67,17 +67,15 @@ func (acc *MerkleAccumulator) NonPersistentClone() (*MerkleAccumulator, error) {
 func (acc *MerkleAccumulator) Keccak(data ...[]byte) ([]byte, error) {
 	if acc.backingStorage != nil {
 		return acc.backingStorage.Keccak(data...)
-	} else {
-		return crypto.Keccak256(data...), nil
 	}
+	return crypto.Keccak256(data...), nil
 }
 
 func (acc *MerkleAccumulator) KeccakHash(data ...[]byte) (common.Hash, error) {
 	if acc.backingStorage != nil {
 		return acc.backingStorage.KeccakHash(data...)
-	} else {
-		return crypto.Keccak256Hash(data...), nil
 	}
+	return crypto.Keccak256Hash(data...), nil
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) (*common.Hash, error) {
@@ -87,10 +85,9 @@ func (acc *MerkleAccumulator) getPartial(level uint64) (*common.Hash, error) {
 			acc.partials[level] = &h
 		}
 		return acc.partials[level], nil
-	} else {
-		ret, err := acc.backingStorage.GetByUint64(2 + level)
-		return &ret, err
 	}
+	ret, err := acc.backingStorage.GetByUint64(2 + level)
+	return &ret, err
 }
 
 func (acc *MerkleAccumulator) GetPartials() ([]*common.Hash, error) {
