@@ -90,10 +90,9 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 		oldPool := new(big.Int).Set(pool)
 		pool.Set(common.Big0)
 		return oldPool
-	} else {
-		pool.Sub(pool, take)
-		return new(big.Int).Set(take)
 	}
+	pool.Sub(pool, take)
+	return new(big.Int).Set(take)
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
@@ -660,4 +659,12 @@ func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
+}
+
+func (p *TxProcessor) MsgIsNonMutating() bool {
+	if p.msg == nil {
+		return false
+	}
+	mode := p.msg.RunMode()
+	return mode == types.MessageGasEstimationMode || mode == types.MessageEthcallMode
 }
