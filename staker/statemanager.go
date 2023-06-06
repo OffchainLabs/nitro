@@ -19,12 +19,14 @@ var AccumulatorNotFoundErr = errors.New("accumulator not found")
 type StateManager struct {
 	validator            *StatelessBlockValidator
 	numOpcodesPerBigStep uint64
+	maxWavmOpcodes       uint64
 }
 
-func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
 	return &StateManager{
 		validator:            val,
 		numOpcodesPerBigStep: numOpcodesPerBigStep,
+		maxWavmOpcodes:       maxWavmOpcodes,
 	}, nil
 }
 
@@ -139,6 +141,28 @@ func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStar
 		stateRoots = append(stateRoots, lastStateRoot)
 	}
 	return util.NewHistoryCommitment(blockEnd-blockStart, stateRoots)
+}
+
+// BigStepLeafCommitment Produces a big step history commitment for all big steps within block
+// challenge heights blockHeight to blockHeight+1.
+func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64) (util.HistoryCommitment, error) {
+	// Number of big steps between assertion heights A and B will be
+	// fixed. It is simply the max number of opcodes
+	// per block divided by the size of a big step.
+	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
+	return s.BigStepCommitmentUpTo(ctx, wasmModuleRoot, blockHeight, numBigSteps)
+}
+
+// SmallStepLeafCommitment Produces a small step history commitment for all small steps between
+// big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
+func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (util.HistoryCommitment, error) {
+	return s.SmallStepCommitmentUpTo(
+		ctx,
+		wasmModuleRoot,
+		blockHeight,
+		bigStep,
+		s.numOpcodesPerBigStep,
+	)
 }
 
 func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
