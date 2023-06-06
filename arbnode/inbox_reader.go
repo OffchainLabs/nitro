@@ -140,13 +140,19 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, err := message.ParseInitMessage()
+			initChainId, initChainConfig, _, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}
-			configChainId := r.tracker.txStreamer.chainConfig.ChainID
+			chainConfig := r.tracker.txStreamer.chainConfig
+			configChainId := chainConfig.ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
+			if initChainConfig != nil {
+				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+					return fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
+				}
 			}
 			break
 		}
@@ -392,9 +398,8 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					idx := int(batchNum - sequencerBatches[0].SequenceNumber)
 					if idx < len(sequencerBatches) {
 						return sequencerBatches[idx].Serialize(ctx, r.l1Reader.Client())
-					} else {
-						log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 					}
+					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
 				return r.GetSequencerMessageBytes(ctx, batchNum)
 			})

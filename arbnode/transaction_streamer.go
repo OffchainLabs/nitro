@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"errors"
 
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -456,6 +458,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 
 // AddFakeInitMessage should only be used for testing or running a local dev node
 func (s *TransactionStreamer) AddFakeInitMessage() error {
+	chainConfigJson, err := json.Marshal(s.chainConfig)
+	if err != nil {
+		return fmt.Errorf("failed to serialize chain config: %w", err)
+	}
+	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
@@ -463,7 +470,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 				RequestId: &common.Hash{},
 				L1BaseFee: common.Big0,
 			},
-			L2msg: math.U256Bytes(s.chainConfig.ChainID),
+			L2msg: msg,
 		},
 		DelayedMessagesRead: 1,
 	}})
@@ -549,45 +556,43 @@ func (s *TransactionStreamer) countDuplicateMessages(
 		if !bytes.Equal(haveMessage, wantMessage) {
 			// Current message does not exactly match message in database
 			var dbMessageParsed arbostypes.MessageWithMetadata
-			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
-			if err != nil {
+
+			if err := rlp.DecodeBytes(haveMessage, &dbMessageParsed); err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)",
 					"pos", pos,
 					"err", err,
 				)
 				return curMsg, true, nil, nil
-			} else {
-				var duplicateMessage bool
-				if nextMessage.Message != nil {
-					if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
-						// Remove both of the batch gas costs and see if the messages still differ
-						nextMessageCopy := nextMessage
-						nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
-						*nextMessageCopy.Message = *nextMessage.Message
-						batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-						dbMessageParsed.Message.BatchGasCost = nil
-						nextMessageCopy.Message.BatchGasCost = nil
-						if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
-							// Actually this isn't a reorg; only the batch gas costs differed
-							duplicateMessage = true
-							// If possible - update the message in the database to add the gas cost cache.
-							if batch != nil && nextMessage.Message.BatchGasCost != nil {
-								if *batch == nil {
-									*batch = s.db.NewBatch()
-								}
-								err = s.writeMessage(pos, nextMessage, *batch)
-								if err != nil {
-									return 0, false, nil, err
-								}
+			}
+			var duplicateMessage bool
+			if nextMessage.Message != nil {
+				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+					// Remove both of the batch gas costs and see if the messages still differ
+					nextMessageCopy := nextMessage
+					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
+					*nextMessageCopy.Message = *nextMessage.Message
+					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
+					dbMessageParsed.Message.BatchGasCost = nil
+					nextMessageCopy.Message.BatchGasCost = nil
+					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
+						// Actually this isn't a reorg; only the batch gas costs differed
+						duplicateMessage = true
+						// If possible - update the message in the database to add the gas cost cache.
+						if batch != nil && nextMessage.Message.BatchGasCost != nil {
+							if *batch == nil {
+								*batch = s.db.NewBatch()
+							}
+							if err := s.writeMessage(pos, nextMessage, *batch); err != nil {
+								return 0, false, nil, err
 							}
 						}
-						dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 					}
+					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 				}
+			}
 
-				if !duplicateMessage {
-					return curMsg, true, &dbMessageParsed, nil
-				}
+			if !duplicateMessage {
+				return curMsg, true, &dbMessageParsed, nil
 			}
 		}
 

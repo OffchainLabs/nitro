@@ -81,9 +81,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	accountName := func(x int) string {
 		if x == 0 {
 			return "Owner"
-		} else {
-			return fmt.Sprintf("Account%v", x)
 		}
+		return fmt.Sprintf("Account%v", x)
 	}
 
 	accounts := []string{"ReorgPadding"}

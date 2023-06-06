@@ -67,12 +67,16 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		timestamp = l1info.l1Timestamp
 		coinbase = l1info.poster
 	}
+	extra := common.Hash{}.Bytes()
+	mixDigest := common.Hash{}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
 		blockNumber.Add(prevHeader.Number, big.NewInt(1))
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}
+		copy(extra, prevHeader.Extra)
+		mixDigest = prevHeader.MixDigest
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
@@ -87,9 +91,9 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
-		Extra:       []byte{},   // Unused; Post-merge Ethereum will limit the size of this to 32 bytes
-		MixDigest:   [32]byte{}, // Post-merge Ethereum will require this to be zero
-		Nonce:       [8]byte{},  // Filled in later; post-merge Ethereum will require this to be zero
+		Extra:       extra,     // used by NewEVMBlockContext
+		MixDigest:   mixDigest, // used by NewEVMBlockContext
+		Nonce:       [8]byte{}, // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
 }
@@ -439,10 +443,9 @@ func ProduceBlockAdvanced(
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
 			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
-		} else {
-			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
-			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 		}
+		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
+		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 	}
 
 	return block, receipts, nil

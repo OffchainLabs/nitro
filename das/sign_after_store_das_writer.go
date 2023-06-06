@@ -162,9 +162,8 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		extraBpVerifier = func(message []byte, timeout uint64, sig []byte) bool {
 			if len(sig) >= 64 {
 				return crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
-			} else {
-				return false
 			}
+			return false
 		}
 	}
 

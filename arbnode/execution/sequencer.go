@@ -184,9 +184,8 @@ func (c *nonceCache) matches(header *types.Header) bool {
 		// The header is updated as the block is built,
 		// so instead of checking its hash, we do a pointer comparison.
 		return c.dirty == header
-	} else {
-		return c.block == header.ParentHash
 	}
+	return c.block == header.ParentHash
 }
 
 func (c *nonceCache) Reset(block common.Hash) {
@@ -982,10 +981,9 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
-		} else {
-			// If we didn't make a block, try again immediately.
-			return 0
 		}
+		// If we didn't make a block, try again immediately.
+		return 0
 	})
 
 	return nil

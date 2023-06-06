@@ -585,6 +585,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
+	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
@@ -741,10 +742,9 @@ func (p *Precompile) Call(
 		// nolint:errorlint
 		if arbosVersion >= 11 || errRet == vm.ErrExecutionReverted {
 			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
-		} else {
-			// Preserve behavior with old versions which would zero out gas on this type of error
-			return nil, 0, errRet
 		}
+		// Preserve behavior with old versions which would zero out gas on this type of error
+		return nil, 0, errRet
 	}
 	result := make([]interface{}, resultCount)
 	for i := 0; i < resultCount; i++ {
