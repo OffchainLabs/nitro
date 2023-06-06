@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -17,9 +18,7 @@ import (
 	"time"
 
 	"github.com/knadh/koanf"
-
 	"github.com/knadh/koanf/providers/confmap"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 

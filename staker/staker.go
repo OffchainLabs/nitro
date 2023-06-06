@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"runtime/debug"
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -291,7 +291,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
-			err = errors.Wrap(err, "error waiting for tx receipt")
+			err = fmt.Errorf("error waiting for tx receipt: %w", err)
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
 			}

@@ -170,7 +170,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	hash0 := bytes32{}
 
 	currentBlock := n.backend.CurrentBlock()
-	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock.Header())
+	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock)
 	if leaf > currentBlockInfo.SendCount {
 		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
@@ -297,7 +297,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		}
 	}
 
-	search(0, currentBlock.NumberU64(), query)
+	search(0, currentBlock.Number.Uint64(), query)
 
 	if searchErr != nil {
 		return hash0, hash0, nil, searchErr

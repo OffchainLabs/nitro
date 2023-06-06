@@ -5,6 +5,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -34,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -632,7 +632,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 // There's no guarantee that returned tx nonces will be correct
 func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	bc := s.execEngine.bc
-	latestHeader := bc.CurrentBlock().Header()
+	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
 		log.Error("failed to get current state to pre-check nonces", "err", err)
