@@ -69,20 +69,7 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount u
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
 // challenge heights blockHeight and blockHeight+1.
 func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) (util.HistoryCommitment, error) {
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	bigStepLeaves := execRun.GetBigStepLeavesUpTo(toBigStep, s.numOpcodesPerBigStep)
-	result, err := bigStepLeaves.Await(ctx)
+	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, blockHeight, toBigStep)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
@@ -92,20 +79,7 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
 // big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
 func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (util.HistoryCommitment, error) {
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	smallStepLeaves := execRun.GetSmallStepLeavesUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
-	result, err := smallStepLeaves.Await(ctx)
+	result, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, blockHeight, bigStep, toSmallStep)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
@@ -159,14 +133,48 @@ func (s *StateManager) PrefixProofUpToBatch(
 	}
 	loSize := fromBlockChallengeHeight + 1 - startHeight
 	hiSize := toBlockChallengeHeight + 1 - startHeight
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(states[:loSize])
+	return s.getPrefixProof(loSize, hiSize, states)
+}
+
+// BigStepPrefixProof Produces a big step prefix proof from height A to B for heights fromBlockChallengeHeight to H+1
+// within a block challenge.
+func (s *StateManager) BigStepPrefixProof(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	blockHeight uint64,
+	fromBigStep uint64,
+	toBigStep uint64,
+) ([]byte, error) {
+	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, blockHeight, toBigStep)
+	if err != nil {
+		return nil, err
+	}
+	loSize := fromBigStep + 1
+	hiSize := toBigStep + 1
+	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
+}
+
+// SmallStepPrefixProof Produces a small step prefix proof from height A to B for big step S to S+1 and
+// block challenge height heights H to H+1.
+func (s *StateManager) SmallStepPrefixProof(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) ([]byte, error) {
+	prefixLeaves, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, blockHeight, bigStep, toSmallStep)
+	if err != nil {
+		return nil, err
+	}
+	loSize := fromSmallStep + 1
+	hiSize := toSmallStep + 1
+	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
+}
+
+func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(leaves[:loSize])
 	if err != nil {
 		return nil, err
 	}
 	prefixProof, err := prefixproofs.GeneratePrefixProof(
 		loSize,
 		prefixExpansion,
-		states[loSize:hiSize],
+		leaves[loSize:hiSize],
 		prefixproofs.RootFetcherFromExpansion,
 	)
 	if err != nil {
@@ -175,6 +183,48 @@ func (s *StateManager) PrefixProofUpToBatch(
 	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
 	onlyProof := prefixProof[numRead:]
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+}
+
+func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) ([]common.Hash, error) {
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bigStepLeaves := execRun.GetBigStepLeavesUpTo(toBigStep, s.numOpcodesPerBigStep)
+	result, err := bigStepLeaves.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) ([]common.Hash, error) {
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	smallStepLeaves := execRun.GetSmallStepLeavesUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
+	result, err := smallStepLeaves.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchCount uint64) ([]common.Hash, error) {
