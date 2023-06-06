@@ -177,7 +177,7 @@ func TestDASRekey(t *testing.T) {
 	l2arbDb, err := l2stackA.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	l2blockchain, err := execution.GetBlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit)
+	l2blockchain, err := execution.BlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit)
 	Require(t, err)
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
 	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain, l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)

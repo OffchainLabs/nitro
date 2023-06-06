@@ -506,7 +506,7 @@ func (s *Sequencer) ForwardTo(url string) error {
 		s.forwarder.Disable()
 	}
 	s.forwarder = NewForwarder(url, &s.config().Forwarder)
-	err := s.forwarder.Initialize(s.GetContext())
+	err := s.forwarder.Initialize(s.Context())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil

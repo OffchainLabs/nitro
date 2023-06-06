@@ -168,7 +168,7 @@ func (s *validationStatus) setStatus(val valStatusField) {
 	atomic.StoreUint32(&s.Status, uint32(val))
 }
 
-func (s *validationStatus) getStatus() valStatusField {
+func (s *validationStatus) status() valStatusField {
 	uintStat := atomic.LoadUint32(&s.Status)
 	return valStatusField(uintStat)
 }
@@ -365,7 +365,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		if mustDeref {
 			v.recordingDatabase.Dereference(prevHeader)
 		}
-		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
+		return errors.Errorf("failed status check for send record. Status: %v", s.status())
 	}
 	v.LaunchThread(func(ctx context.Context) {
 		if mustDeref {
@@ -377,13 +377,13 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		}
 		if err != nil {
 			s.replaceStatus(RecordSent, RecordFailed) // after that - could be removed from validations map
-			log.Error("Error while recording", "err", err, "status", s.getStatus())
+			log.Error("Error while recording", "err", err, "status", s.status())
 			return
 		}
 		v.recentStateComputed(prevHeader)
 		v.recordingDatabase.Dereference(prevHeader) // removes the reference added by ValidationEntryRecord
 		if !s.replaceStatus(RecordSent, Prepared) {
-			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
+			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.status())
 			return
 		}
 		v.triggerSendValidations()
@@ -456,7 +456,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	_, err = v.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(v.GetContext())
+	_, err = v.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(v.Context())
 	return err
 }
 
@@ -496,7 +496,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	var batchCount uint64
-	wasmRoots := v.GetModuleRootsToValidate()
+	wasmRoots := v.ModuleRootsToValidate()
 	room := 100 // even if there is more room then that it's fine
 	for _, spawner := range v.validationSpawners {
 		here := spawner.Room() / len(wasmRoots)
@@ -513,7 +513,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		if batchCount <= v.globalPosNextSend.BatchNumber {
 			var err error
-			batchCount, err = v.inboxTracker.GetBatchCount()
+			batchCount, err = v.inboxTracker.BatchCount()
 			if err != nil {
 				log.Error("validator failed to get message count", "err", err)
 				return
@@ -531,7 +531,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			seqBatchEntry, haveBatch = v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		}
 		if !haveBatch {
-			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
+			seqMsg, err := v.inboxReader.SequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
 			if err != nil {
 				log.Error("validator failed to read sequencer message", "err", err)
 				return
@@ -545,7 +545,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			firstMsgInBatch := arbutil.MessageIndex(0)
 			if v.globalPosNextSend.BatchNumber > 0 {
 				var err error
-				firstMsgInBatch, err = v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber - 1)
+				firstMsgInBatch, err = v.inboxTracker.BatchMessageCount(v.globalPosNextSend.BatchNumber - 1)
 				if err != nil {
 					v.lastBlockValidatedMutex.Unlock()
 					v.blockMutex.Unlock()
@@ -573,7 +573,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		if validationStatus.getStatus() < Prepared {
+		if validationStatus.status() < Prepared {
 			return
 		}
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
@@ -591,7 +591,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("sequencer message bad format", "blockNr", nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
-		msgCountInBatch, err := v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber)
+		msgCountInBatch, err := v.inboxTracker.BatchMessageCount(v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed to get batch message count", "err", err, "batch", v.globalPosNextSend.BatchNumber)
 			return
@@ -657,7 +657,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 				return
 			}
 			msgNum := arbutil.BlockNumberToMessageCount(nextRecord, v.genesisBlockNum) - 1
-			msg, err := v.streamer.GetMessage(msgNum)
+			msg, err := v.streamer.Message(msgNum)
 			if err != nil {
 				log.Warn("failed to get message in block validator", "err", err)
 				return
@@ -680,7 +680,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 			log.Error("bad entry trying to send recordings")
 			return
 		}
-		currentStatus := validationStatus.getStatus()
+		currentStatus := validationStatus.status()
 		if currentStatus == RecordFailed {
 			// retry
 			v.validations.Delete(nextRecord)
@@ -745,7 +745,7 @@ func (v *BlockValidator) progressValidated() {
 			log.Error("bad entry trying to advance validated counter")
 			return
 		}
-		if validationStatus.getStatus() < ValidationSent {
+		if validationStatus.status() < ValidationSent {
 			return
 		}
 		validationEntry := validationStatus.Entry
@@ -868,7 +868,7 @@ func (v *BlockValidator) LastBlockValidatedAndHash() (blockNumber uint64, blockH
 	v.lastBlockValidatedMutex.Unlock()
 
 	// things can be removed from, but not added to, moduleRootsToValidate. By taking root hashes fter the block we know result is valid
-	moduleRootsValidated := v.GetModuleRootsToValidate()
+	moduleRootsValidated := v.ModuleRootsToValidate()
 
 	return blockValidated, blockValidatedHash, moduleRootsValidated
 }
@@ -956,7 +956,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 		return nil
 	}
 	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
-	batchCount, err := v.inboxTracker.GetBatchCount()
+	batchCount, err := v.inboxTracker.BatchCount()
 	if err != nil {
 		return err
 	}
@@ -971,7 +971,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 			BatchNumber: batch,
 			PosInBatch:  0,
 		}
-		msgCount, err := v.inboxTracker.GetBatchMessageCount(batch - 1)
+		msgCount, err := v.inboxTracker.BatchMessageCount(batch - 1)
 		if err != nil {
 			return err
 		}

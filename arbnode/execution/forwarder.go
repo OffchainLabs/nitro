@@ -236,8 +236,8 @@ type RedisTxForwarder struct {
 	currentTarget    string
 	redisCoordinator *redisutil.RedisCoordinator
 
-	mtx       sync.RWMutex
-	forwarder *TxForwarder
+	mtx sync.RWMutex
+	fwd *TxForwarder
 }
 
 func NewRedisTxForwarder(fallbackTarget string, config *ForwarderConfig) *RedisTxForwarder {
@@ -248,7 +248,7 @@ func NewRedisTxForwarder(fallbackTarget string, config *ForwarderConfig) *RedisT
 }
 
 func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	forwarder := f.getForwarder()
+	forwarder := f.forwarder()
 	if forwarder == nil {
 		return ErrNoSequencer
 	}
@@ -256,7 +256,7 @@ func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Tra
 }
 
 func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
-	forwarder := f.getForwarder()
+	forwarder := f.forwarder()
 	if forwarder == nil {
 		return ErrNoSequencer
 	}
@@ -294,19 +294,19 @@ func (f *RedisTxForwarder) noError() time.Duration {
 	return f.config.UpdateInterval
 }
 
-func (f *RedisTxForwarder) getForwarder() *TxForwarder {
+func (f *RedisTxForwarder) forwarder() *TxForwarder {
 	f.mtx.RLock()
 	defer f.mtx.RUnlock()
-	return f.forwarder
+	return f.fwd
 }
 
 func (f *RedisTxForwarder) setForwarder(forwarder *TxForwarder) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
-	if f.forwarder != nil {
-		f.forwarder.Disable()
+	if f.fwd != nil {
+		f.fwd.Disable()
 	}
-	f.forwarder = forwarder
+	f.fwd = forwarder
 }
 
 // not thread safe vs initialize and itself
@@ -379,7 +379,7 @@ func (f *RedisTxForwarder) StopAndWait() {
 	if err != nil {
 		log.Error("Failed to stop forwarder", "err", err)
 	}
-	oldForwarder := f.getForwarder()
+	oldForwarder := f.forwarder()
 	if oldForwarder != nil {
 		oldForwarder.StopAndWait()
 	}

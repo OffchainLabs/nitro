@@ -22,21 +22,21 @@ func NewPseudoRandomDataSource(_ *testing.T, seed int64) *PseudoRandomDataSource
 	}
 }
 
-func (r *PseudoRandomDataSource) GetHash() common.Hash {
+func (r *PseudoRandomDataSource) Hash() common.Hash {
 	var outHash common.Hash
 	r.rand.Read(outHash[:])
 	return outHash
 }
 
-func (r *PseudoRandomDataSource) GetAddress() common.Address {
-	return common.BytesToAddress(r.GetHash().Bytes()[:20])
+func (r *PseudoRandomDataSource) Address() common.Address {
+	return common.BytesToAddress(r.Hash().Bytes()[:20])
 }
 
-func (r *PseudoRandomDataSource) GetUint64() uint64 {
+func (r *PseudoRandomDataSource) Uint64() uint64 {
 	return r.rand.Uint64()
 }
 
-func (r *PseudoRandomDataSource) GetData(size int) []byte {
+func (r *PseudoRandomDataSource) Data(size int) []byte {
 	outArray := make([]byte, size)
 	r.rand.Read(outArray)
 	return outArray

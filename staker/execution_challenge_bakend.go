@@ -28,7 +28,7 @@ func (b *ExecutionChallengeBackend) SetRange(ctx context.Context, start uint64, 
 }
 
 func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error) {
-	step := b.exec.GetStepAt(position)
+	step := b.exec.StepAt(position)
 	result, err := step.Await(ctx)
 	if err != nil {
 		return common.Hash{}, err
@@ -40,11 +40,11 @@ func (b *ExecutionChallengeBackend) GetProofAt(
 	ctx context.Context,
 	position uint64,
 ) ([]byte, error) {
-	return b.exec.GetProofAt(position).Await(ctx)
+	return b.exec.ProofAt(position).Await(ctx)
 }
 
 func (b *ExecutionChallengeBackend) GetFinalState(ctx context.Context) (uint64, validator.GoGlobalState, uint8, error) {
-	step := b.exec.GetLastStep()
+	step := b.exec.LastStep()
 	res, err := step.Await(ctx)
 	if err != nil {
 		return 0, validator.GoGlobalState{}, 0, err

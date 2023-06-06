@@ -268,7 +268,7 @@ func serializeMessage(cm *ClientManager, bm interface{}, enableNonCompressedOutp
 	if enableCompressedOutput {
 		if cm.flateWriter == nil {
 			var err error
-			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
+			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, StaticCompressorDictionary())
 			if err != nil {
 				return bytes.Buffer{}, bytes.Buffer{}, errors.Wrap(err, "unable to create flate writer")
 			}
@@ -312,7 +312,7 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 	// Send ping to all connected clients
 	log.Debug("pinging clients", "count", len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
-		diff := time.Since(client.GetLastHeard())
+		diff := time.Since(client.LastHeard())
 		if diff > cm.config().ClientTimeout {
 			log.Debug("disconnecting because connection timed out", "client", client.Name)
 			clientDeleteList = append(clientDeleteList, client)

@@ -271,7 +271,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	a.StopWaiter.Start(ctx, a)
-	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
+	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.Context(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
 	updateRestfulDasClients := func(urls []string) {
 		a.readersMutex.Lock()
@@ -330,7 +330,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 
 func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
 	a.StopWaiter.StopOnly()
-	waitChan, err := a.StopWaiter.GetWaitChannel()
+	waitChan, err := a.StopWaiter.WaitChannel()
 	if err != nil {
 		return err
 	}

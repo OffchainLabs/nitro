@@ -283,7 +283,7 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
-		data, err := arbutil.GetLogEmitterTxData(ctx, b.client, ethLog)
+		data, err := arbutil.LogEmitterTxData(ctx, b.client, ethLog)
 		if err != nil {
 			return nil, nil, err
 		}

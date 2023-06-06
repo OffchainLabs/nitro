@@ -372,7 +372,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		if err != nil {
 			return nil, err
 		}
-		batch, err := tracker.GetBatchCount()
+		batch, err := tracker.BatchCount()
 		if err != nil {
 			return nil, err
 		}
@@ -442,7 +442,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
+				l2BlockChain, err := execution.BlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -525,7 +525,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
+		l2BlockChain, err = execution.BlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -545,13 +545,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		}
 		combinedL2ChainInfoFiles := config.L2.ChainInfoFiles
 		if config.L2.ChainInfoIpfsUrl != "" {
-			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, config.L2.ChainInfoIpfsUrl, config.L2.ChainInfoIpfsDownloadPath)
+			l2ChainInfoIpfsFile, err := util.L2ChainInfoIpfsFile(ctx, config.L2.ChainInfoIpfsUrl, config.L2.ChainInfoIpfsDownloadPath)
 			if err != nil {
 				log.Error("error getting l2 chain info file from ipfs", "err", err)
 			}
 			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
 		}
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, combinedL2ChainInfoFiles, config.L2.ChainInfoJson)
+		chainConfig, err = chaininfo.ChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, combinedL2ChainInfoFiles, config.L2.ChainInfoJson)
 		if err != nil {
 			return chainDb, nil, err
 		}

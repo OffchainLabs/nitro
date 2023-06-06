@@ -53,7 +53,7 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 	}
 	go func() {
 		zeroStepMachine, err := initialMachineGetter(ctx)
-		if err == nil && zeroStepMachine.GetStepCount() != 0 {
+		if err == nil && zeroStepMachine.StepCount() != 0 {
 			zeroStepMachine.Destroy()
 			err = errors.New("initialMachine not at step count 0")
 		}
@@ -90,7 +90,7 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 		lastMachine := cache.machines[len(cache.machines)-1]
 		cache.machines = cache.machines[:len(cache.machines)-1]
 		cache.finalMachine = lastMachine
-		cache.finalMachineStep = lastMachine.GetStepCount()
+		cache.finalMachineStep = lastMachine.StepCount()
 		cache.unlockBuild(nil)
 	}()
 	return cache
@@ -157,8 +157,8 @@ func (c *MachineCache) setRangeLocked(ctx context.Context, start uint64, end uin
 	if start == c.firstMachineStep && newInterval == c.machineStepInterval {
 		return nil
 	}
-	closestIndex, closest := c.getClosestMachine(start)
-	closestStep := closest.GetStepCount()
+	closestIndex, closest := c.closestMachine(start)
+	closestStep := closest.StepCount()
 	if closestStep > start {
 		return fmt.Errorf("initial machine step too large %d > %d", closestStep, start)
 	}
@@ -209,7 +209,7 @@ func (c *MachineCache) populateCache(ctx context.Context) error {
 		if !nextMachine.IsRunning() {
 			break
 		}
-		if nextMachine.GetStepCount()+c.machineStepInterval >= c.finalMachineStep {
+		if nextMachine.StepCount()+c.machineStepInterval >= c.finalMachineStep {
 			break
 		}
 		if len(c.machines) >= c.config.CachedChallengeMachines {
@@ -227,7 +227,7 @@ func (c *MachineCache) populateCache(ctx context.Context) error {
 }
 
 // Warning: don't mutate the result of this!
-func (c *MachineCache) getClosestMachine(stepCount uint64) (int, MachineInterface) {
+func (c *MachineCache) closestMachine(stepCount uint64) (int, MachineInterface) {
 	if stepCount < c.firstMachineStep {
 		return -1, c.zeroStepMachine
 	}
@@ -244,7 +244,7 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (int, MachineInterfac
 	return index, c.machines[index]
 }
 
-func (c *MachineCache) getLastMachine() MachineInterface {
+func (c *MachineCache) fetchAndUnset() MachineInterface {
 	c.lastMachineLock.Lock()
 	defer c.lastMachineLock.Unlock()
 	last := c.lastMachine
@@ -262,33 +262,33 @@ func (c *MachineCache) setLastMachine(machine MachineInterface) {
 	}
 }
 
-// GetMachineAt a given step count, optionally using a passed in machine if that's the best option.
-func (c *MachineCache) GetMachineAt(ctx context.Context, stepCount uint64) (MachineInterface, error) {
+// MachineAt a given step count, optionally using a passed in machine if that's the best option.
+func (c *MachineCache) MachineAt(ctx context.Context, stepCount uint64) (MachineInterface, error) {
 	err := c.lockBuild(ctx)
 	if err != nil {
 		return nil, err
 	}
-	_, closestMachine := c.getClosestMachine(stepCount)
-	lastMachine := c.getLastMachine()
-	if lastMachine != nil && lastMachine.GetStepCount() >= closestMachine.GetStepCount() && lastMachine.GetStepCount() <= stepCount {
+	_, closestMachine := c.closestMachine(stepCount)
+	lastMachine := c.fetchAndUnset()
+	if lastMachine != nil && lastMachine.StepCount() >= closestMachine.StepCount() && lastMachine.StepCount() <= stepCount {
 		closestMachine = lastMachine
 	} else {
 		closestMachine = closestMachine.CloneMachineInterface()
 	}
 	c.unlockBuild(nil)
 
-	err = closestMachine.Step(ctx, stepCount-closestMachine.GetStepCount())
+	err = closestMachine.Step(ctx, stepCount-closestMachine.StepCount())
 	if err != nil {
 		return nil, err
 	}
 	if !closestMachine.ValidForStep(stepCount) {
-		return nil, errors.Errorf("internal error: got machine with wrong step count %v looking for step count %v", closestMachine.GetStepCount(), stepCount)
+		return nil, errors.Errorf("internal error: got machine with wrong step count %v looking for step count %v", closestMachine.StepCount(), stepCount)
 	}
 	c.setLastMachine(closestMachine)
 	return closestMachine, nil
 }
 
-func (c *MachineCache) GetFinalMachine(ctx context.Context) (MachineInterface, error) {
+func (c *MachineCache) FinalMachine(ctx context.Context) (MachineInterface, error) {
 	err := c.lockBuild(ctx)
 	if err != nil {
 		return nil, err

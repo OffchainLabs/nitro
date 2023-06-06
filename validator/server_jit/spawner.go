@@ -65,7 +65,7 @@ func (v *JitSpawner) Start(ctx_in context.Context) error {
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {
-	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
+	machine, err := v.machineLoader.Machine(ctx, moduleRoot)
 	if err != nil {
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
@@ -92,7 +92,7 @@ func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.
 	atomic.AddInt32(&v.count, 1)
 	run := server_common.NewValRun(moduleRoot)
 	go func() {
-		run.ConsumeResult(v.execute(v.GetContext(), entry, moduleRoot))
+		run.ConsumeResult(v.execute(v.Context(), entry, moduleRoot))
 		atomic.AddInt32(&v.count, -1)
 	}()
 	return run

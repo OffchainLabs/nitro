@@ -7,7 +7,7 @@ package genericconf
 
 import "runtime/debug"
 
-func GetVersion(definedVersion string, definedTime string, definedModified string) (string, string) {
+func Version(definedVersion string, definedTime string, definedModified string) (string, string) {
 	vcsVersion := "development"
 	vcsTime := "development"
 	vcsModified := "false"

@@ -122,6 +122,6 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	return nil
 }
 
-func (v *ValidationNode) GetExec() validator.ExecutionSpawner {
+func (v *ValidationNode) Exec() validator.ExecutionSpawner {
 	return v.arbSpawner
 }

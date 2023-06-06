@@ -172,18 +172,18 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 	return metadata, nil
 }
 
-func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
+func (t *InboxTracker) BatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.MessageCount, err
 }
 
-// GetBatchAcc is a convenience function wrapping GetBatchMetadata
-func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+// BatchAcc is a convenience function wrapping GetBatchMetadata
+func (t *InboxTracker) BatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.Accumulator, err
 }
 
-func (t *InboxTracker) GetBatchCount() (uint64, error) {
+func (t *InboxTracker) BatchCount() (uint64, error) {
 	data, err := t.db.Get(sequencerBatchCountKey)
 	if err != nil {
 		return 0, err
@@ -197,7 +197,7 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 }
 
 func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
-	batchCount, err := t.GetBatchCount()
+	batchCount, err := t.BatchCount()
 	if err != nil {
 		return fmt.Errorf("error getting batch count: %w", err)
 	}
@@ -207,7 +207,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
 		// `batchCount - 2` is the index of the batch before the last batch.
 		batchIndex := batchCount - 2
-		startMessage, err = t.GetBatchMessageCount(batchIndex)
+		startMessage, err = t.BatchMessageCount(batchIndex)
 		if err != nil {
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
@@ -218,7 +218,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 	}
 	var feedMessages []*broadcaster.BroadcastFeedMessage
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
-		message, err := t.txStreamer.GetMessage(seqNum)
+		message, err := t.txStreamer.Message(seqNum)
 		if err != nil {
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
@@ -294,7 +294,7 @@ func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbostypes.L1IncomingM
 	return msg, err
 }
 
-func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
+func (t *InboxTracker) DelayedMessageBytes(seqNum uint64) ([]byte, error) {
 	msg, err := t.GetDelayedMessage(seqNum)
 	if err != nil {
 		return nil, err
@@ -468,7 +468,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	}
 	var prevMesssageCount arbutil.MessageIndex
 	if count > 0 {
-		prevMesssageCount, err = t.GetBatchMessageCount(count - 1)
+		prevMesssageCount, err = t.BatchMessageCount(count - 1)
 		if err != nil {
 			return err
 		}

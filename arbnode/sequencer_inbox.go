@@ -112,7 +112,7 @@ type SequencerInboxBatch struct {
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
-		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
+		data, err := arbutil.LogEmitterTxData(ctx, client, m.rawLog)
 		if err != nil {
 			return nil, err
 		}

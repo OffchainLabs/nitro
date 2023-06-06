@@ -37,7 +37,7 @@ func NewMachineLoader[M any](
 	}
 }
 
-func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Hash) (*M, error) {
+func (l *MachineLoader[M]) Machine(ctx context.Context, moduleRoot common.Hash) (*M, error) {
 	if moduleRoot == (common.Hash{}) {
 		moduleRoot = l.locator.LatestWasmModuleRoot()
 		if (moduleRoot == common.Hash{}) {

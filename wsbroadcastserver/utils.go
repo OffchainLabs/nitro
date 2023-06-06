@@ -70,7 +70,7 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 
 func NewFlateReader() *wsflate.Reader {
 	return wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
-		return flate.NewReaderDict(r, GetStaticCompressorDictionary())
+		return flate.NewReaderDict(r, StaticCompressorDictionary())
 	})
 }
 

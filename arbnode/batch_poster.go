@@ -553,7 +553,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
-	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	nonce, batchPosition, err := b.dataPoster.NextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -573,7 +573,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// There's nothing after the newest batch, therefore batch posting was not required
 		return false, nil
 	}
-	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
+	firstMsg, err := b.streamer.Message(batchPosition.MessageCount)
 	if err != nil {
 		return false, err
 	}
@@ -584,7 +584,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	haveUsefulMessage := false
 
 	for b.building.msgCount < msgCount {
-		msg, err := b.streamer.GetMessage(b.building.msgCount)
+		msg, err := b.streamer.Message(b.building.msgCount)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
 			break

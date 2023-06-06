@@ -199,9 +199,9 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	start := time.Now()
 	for {
 		time.Sleep(time.Second)
-		batches, err := nodeA.InboxTracker.GetBatchCount()
+		batches, err := nodeA.InboxTracker.BatchCount()
 		Require(t, err)
-		postedMessages, err := nodeA.InboxTracker.GetBatchMessageCount(batches - 1)
+		postedMessages, err := nodeA.InboxTracker.BatchMessageCount(batches - 1)
 		Require(t, err)
 		haveMessages, err := nodeA.TxStreamer.GetMessageCount()
 		Require(t, err)

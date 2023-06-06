@@ -47,7 +47,7 @@ type L1Validator struct {
 	client             arbutil.L1Interface
 	builder            *ValidatorTxBuilder
 	wallet             ValidatorWalletInterface
-	callOpts           bind.CallOpts
+	copts              bind.CallOpts
 	genesisBlockNumber uint64
 
 	l2Blockchain       *core.BlockChain
@@ -84,7 +84,7 @@ func NewL1Validator(
 	if err != nil {
 		return nil, err
 	}
-	genesisBlockNumber, err := txStreamer.GetGenesisBlockNumber()
+	genesisBlockNumber, err := txStreamer.GenesisBlockNumber()
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func NewL1Validator(
 		client:             client,
 		builder:            builder,
 		wallet:             wallet,
-		callOpts:           callOpts,
+		copts:              callOpts,
 		genesisBlockNumber: genesisBlockNumber,
 		l2Blockchain:       l2Blockchain,
 		das:                das,
@@ -105,8 +105,8 @@ func NewL1Validator(
 	}, nil
 }
 
-func (v *L1Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
-	opts := v.callOpts
+func (v *L1Validator) callOpts(ctx context.Context) *bind.CallOpts {
+	opts := v.copts
 	opts.Context = ctx
 	return &opts
 }
@@ -123,7 +123,7 @@ func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error 
 	if v.blockValidator == nil {
 		return nil
 	}
-	moduleRoot, err := v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
+	moduleRoot, err := v.rollup.WasmModuleRoot(v.callOpts(ctx))
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error 
 }
 
 func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
-	challengesToEliminate, _, err := v.validatorUtils.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, 0, 10)
+	challengesToEliminate, _, err := v.validatorUtils.TimedOutChallenges(v.callOpts(ctx), v.rollupAddress, 0, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Tra
 }
 
 func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, latestConfirmedNode *uint64) (bool, error) {
-	callOpts := v.getCallOpts(ctx)
+	callOpts := v.callOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
 		return false, err
@@ -190,7 +190,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 }
 
 func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
-	callOpts := v.getCallOpts(ctx)
+	callOpts := v.callOpts(ctx)
 	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
 		return false, err
@@ -229,7 +229,7 @@ func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (in
 	var batchHeight arbutil.MessageIndex
 	if gs.Batch > 0 {
 		var err error
-		batchHeight, err = v.inboxTracker.GetBatchMessageCount(gs.Batch - 1)
+		batchHeight, err = v.inboxTracker.BatchMessageCount(gs.Batch - 1)
 		if err != nil {
 			return 0, false, err
 		}
@@ -237,7 +237,7 @@ func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (in
 
 	// Validate the PosInBatch if it's non-zero
 	if gs.PosInBatch > 0 {
-		nextBatchHeight, err := v.inboxTracker.GetBatchMessageCount(gs.Batch)
+		nextBatchHeight, err := v.inboxTracker.BatchMessageCount(gs.Batch)
 		if err != nil {
 			return 0, false, err
 		}
@@ -267,7 +267,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	v.txStreamer.PauseReorgs()
 	defer v.txStreamer.ResumeReorgs()
 
-	localBatchCount, err := v.inboxTracker.GetBatchCount()
+	localBatchCount, err := v.inboxTracker.BatchCount()
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting batch count from inbox tracker: %w", err)
 	}
@@ -321,7 +321,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		lastBlockValidated = v.l2Blockchain.CurrentBlock().Header().Number.Uint64()
 
 		if localBatchCount > 0 {
-			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
+			messageCount, err := v.inboxTracker.BatchMessageCount(localBatchCount - 1)
 			if err != nil {
 				return nil, false, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
 			}
@@ -345,7 +345,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, err
 	}
 
-	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
+	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.callOpts(ctx))
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
@@ -378,7 +378,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion batches: %v/%v", localBatchCount, requiredBatches)
 			}
 			if requiredBatches > 0 {
-				haveAcc, err := v.inboxTracker.GetBatchAcc(requiredBatches - 1)
+				haveAcc, err := v.inboxTracker.BatchAcc(requiredBatches - 1)
 				if err != nil {
 					return nil, false, fmt.Errorf("error getting batch %v accumulator: %w", requiredBatches-1, err)
 				}
@@ -501,11 +501,11 @@ func (v *L1Validator) createNewNodeAction(
 	var afterGsBatch uint64
 	var afterGsPosInBatch uint64
 	for i := localBatchCount - 1; i+1 >= minBatchCount && i > 0; i-- {
-		batchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i)
+		batchMessageCount, err := v.inboxTracker.BatchMessageCount(i)
 		if err != nil {
 			return nil, fmt.Errorf("error getting batch %v message count: %w", i, err)
 		}
-		prevBatchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i - 1)
+		prevBatchMessageCount, err := v.inboxTracker.BatchMessageCount(i - 1)
 		if err != nil {
 			return nil, fmt.Errorf("error getting previous batch %v message count: %w", i-1, err)
 		}
@@ -536,7 +536,7 @@ func (v *L1Validator) createNewNodeAction(
 		// we haven't validated the next batch completely
 		return nil, nil
 	}
-	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(assertionCoversBatch)
+	validatedBatchAcc, err := v.inboxTracker.BatchAcc(assertionCoversBatch)
 	if err != nil {
 		return nil, fmt.Errorf("error getting batch %v accumulator: %w", assertionCoversBatch, err)
 	}
@@ -576,7 +576,7 @@ func (v *L1Validator) createNewNodeAction(
 
 	wasmModuleRoot := v.lastWasmModuleRoot
 	if v.blockValidator == nil {
-		wasmModuleRoot, err = v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
+		wasmModuleRoot, err = v.rollup.WasmModuleRoot(v.callOpts(ctx))
 		if err != nil {
 			return nil, fmt.Errorf("error rollup wasm module root: %w", err)
 		}

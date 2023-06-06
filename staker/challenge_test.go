@@ -63,7 +63,7 @@ func CreateChallenge(
 	Require(t, machine.Step(ctx, ^uint64(0)))
 
 	endMachineHash := machine.Hash()
-	endMachineSteps := machine.GetStepCount()
+	endMachineSteps := machine.StepCount()
 
 	var startHashBytes [32]byte
 	var endHashBytes [32]byte

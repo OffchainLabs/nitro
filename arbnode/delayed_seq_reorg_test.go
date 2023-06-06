@@ -25,7 +25,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	err = streamer.Start(ctx)
 	Require(t, err)
 	exec.Start(ctx)
-	init, err := streamer.GetMessage(0)
+	init, err := streamer.Message(0)
 	Require(t, err)
 
 	initMsgDelayed := &DelayedInboxMessage{
@@ -116,7 +116,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		Fail(t, "Unexpected tracker delayed message count", delayedCount, "(expected 1)")
 	}
 
-	batchCount, err := tracker.GetBatchCount()
+	batchCount, err := tracker.BatchCount()
 	Require(t, err)
 	if batchCount != 1 {
 		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 1)")
@@ -145,7 +145,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		Fail(t, "Unexpected tx streamer message count", msgCount, "(expected 2)")
 	}
 
-	batchCount, err = tracker.GetBatchCount()
+	batchCount, err = tracker.BatchCount()
 	Require(t, err)
 	if batchCount != 2 {
 		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 2)")

@@ -187,7 +187,7 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	}
 
 	if s.requiresPendingCallUpdates > 0 {
-		pendingCallBlockNr, err := s.getPendingCallBlockNumber()
+		pendingCallBlockNr, err := s.pendingCallBlockNumber()
 		if err == nil && pendingCallBlockNr.IsUint64() {
 			pendingU64 := pendingCallBlockNr.Uint64()
 			if pendingU64 > s.lastPendingCallBlockNr {
@@ -220,11 +220,11 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	}
 }
 
-func (s *HeaderReader) getPendingCallBlockNumber() (*big.Int, error) {
+func (s *HeaderReader) pendingCallBlockNumber() (*big.Int, error) {
 	if s.isParentChainArbitrum {
-		return s.arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.GetContext(), Pending: true})
+		return s.arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.Context(), Pending: true})
 	}
-	return arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
+	return arbutil.GetPendingCallBlockNumber(s.Context(), s.client)
 }
 
 func (s *HeaderReader) setError(err error) {
@@ -380,7 +380,7 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uint64, error) {
+func (s *HeaderReader) cached(ctx context.Context, c *cachedBlockNumber) (uint64, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	currentHead, err := s.LastHeader(ctx)
@@ -402,7 +402,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uin
 }
 
 func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.safe)
+	blockNum, err := s.cached(ctx, &s.safe)
 	if errors.Is(err, ErrBlockNumberNotSupported) {
 		err = errors.New("safe block not found")
 	}
@@ -410,7 +410,7 @@ func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
 }
 
 func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.finalized)
+	blockNum, err := s.cached(ctx, &s.finalized)
 	if errors.Is(err, ErrBlockNumberNotSupported) {
 		err = errors.New("finalized block not found")
 	}

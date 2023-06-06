@@ -63,7 +63,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	if err != nil {
 		return 0, err
 	}
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+	genesis, err := node.TxStreamer.GenesisBlockNumber()
 	if err != nil {
 		return 0, err
 	}
@@ -84,7 +84,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 		return 0, errors.New("unknown block hash")
 	}
 	blockNum := header.Number.Uint64()
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+	genesis, err := node.TxStreamer.GenesisBlockNumber()
 	if err != nil {
 		return 0, err
 	}
@@ -536,12 +536,12 @@ func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) 
 		return 0, fmt.Errorf("%wblock %v is part of genesis", blockInGenesis, block)
 	}
 	pos := arbutil.BlockNumberToMessageCount(block, genesis) - 1
-	high, err := node.InboxTracker.GetBatchCount()
+	high, err := node.InboxTracker.BatchCount()
 	if err != nil {
 		return 0, err
 	}
 	high--
-	latestCount, err := node.InboxTracker.GetBatchMessageCount(high)
+	latestCount, err := node.InboxTracker.BatchMessageCount(high)
 	if err != nil {
 		return 0, err
 	}
@@ -566,7 +566,7 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 		err = errors.New("this node doesnt support classicLookupMessageBatchProof")
 		return
 	}
-	msg, err := node.ClassicOutboxRetriever.GetMsg(batchNum, index)
+	msg, err := node.ClassicOutboxRetriever.Msg(batchNum, index)
 	if err != nil {
 		return
 	}

@@ -319,7 +319,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 }
 
 func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
-	callOpts := s.getCallOpts(ctx)
+	callOpts := s.callOpts(ctx)
 	whitelistDisabled, err := s.rollup.ValidatorWhitelistDisabled(callOpts)
 	if err != nil {
 		return false, err
@@ -396,7 +396,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		// The fact that we're delaying acting is already logged in `shouldAct`
 		return nil, nil
 	}
-	callOpts := s.getCallOpts(ctx)
+	callOpts := s.callOpts(ctx)
 	s.builder.ClearTransactions()
 	var rawInfo *StakerInfo
 	walletAddressOrZero := s.wallet.AddressOrZero()
@@ -658,7 +658,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 
 		// If we have no stake yet, we'll put one down
-		stakeAmount, err := s.rollup.CurrentRequiredStake(s.getCallOpts(ctx))
+		stakeAmount, err := s.rollup.CurrentRequiredStake(s.callOpts(ctx))
 		if err != nil {
 			return fmt.Errorf("error getting current required stake: %w", err)
 		}
@@ -700,7 +700,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 
 		// If we have no stake yet, we'll put one down
-		stakeAmount, err := s.rollup.CurrentRequiredStake(s.getCallOpts(ctx))
+		stakeAmount, err := s.rollup.CurrentRequiredStake(s.callOpts(ctx))
 		if err != nil {
 			return fmt.Errorf("error getting current required stake: %w", err)
 		}
@@ -724,7 +724,7 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 		return nil
 	}
 
-	callOpts := s.getCallOpts(ctx)
+	callOpts := s.callOpts(ctx)
 	stakers, moreStakers, err := s.validatorUtils.GetStakers(callOpts, s.rollupAddress, 0, 1024)
 	if err != nil {
 		return fmt.Errorf("error getting stakers list: %w", err)

@@ -158,7 +158,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, txLookupLimit uint64) (*core.BlockChain, error) {
+func BlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, txLookupLimit uint64) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
@@ -179,7 +179,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+	return BlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
 }
 
 // Don't preserve reorg'd out blocks

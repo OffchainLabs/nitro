@@ -42,7 +42,7 @@ func TestArbCompress(t *testing.T) {
 	testCompressDecompress(t, asciiData)
 
 	source := testhelpers.NewPseudoRandomDataSource(t, 0)
-	randData := source.GetData(2500)
+	randData := source.Data(2500)
 	testCompressDecompress(t, randData)
 
 	// test empty data:

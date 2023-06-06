@@ -14,7 +14,7 @@ import (
 
 type ConfigConstrain[T any] interface {
 	CanReload(T) error
-	GetReloadInterval() time.Duration
+	ReloadInterval() time.Duration
 }
 
 type OnReloadHook[T ConfigConstrain[T]] func(old T, new T) error
@@ -64,7 +64,7 @@ func (c *LiveConfig[T]) Start(ctxIn context.Context) {
 
 	c.LaunchThread(func(ctx context.Context) {
 		for {
-			reloadInterval := c.config.GetReloadInterval()
+			reloadInterval := c.config.ReloadInterval()
 			if reloadInterval == 0 {
 				select {
 				case <-ctx.Done():

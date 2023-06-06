@@ -119,7 +119,7 @@ func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *ValidationIn
 
 var errRunNotFound error = errors.New("run not found")
 
-func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
+func (a *ExecServerAPI) run(id uint64) (validator.ExecutionRun, error) {
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	entry := a.runs[id]
@@ -130,12 +130,12 @@ func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
 	return entry.run, nil
 }
 
-func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*MachineStepResultJson, error) {
-	run, err := a.getRun(execid)
+func (a *ExecServerAPI) StepAt(ctx context.Context, execid uint64, position uint64) (*MachineStepResultJson, error) {
+	run, err := a.run(execid)
 	if err != nil {
 		return nil, err
 	}
-	step := run.GetStepAt(position)
+	step := run.StepAt(position)
 	res, err := step.Await(ctx)
 	if err != nil {
 		return nil, err
@@ -143,12 +143,12 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
-	run, err := a.getRun(execid)
+func (a *ExecServerAPI) ProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
+	run, err := a.run(execid)
 	if err != nil {
 		return "", err
 	}
-	promise := run.GetProofAt(position)
+	promise := run.ProofAt(position)
 	res, err := promise.Await(ctx)
 	if err != nil {
 		return "", err
@@ -157,7 +157,7 @@ func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position 
 }
 
 func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {
-	run, err := a.getRun(execid)
+	run, err := a.run(execid)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, 
 }
 
 func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error {
-	_, err := a.getRun(execid)
+	_, err := a.run(execid)
 	if err != nil {
 		return err
 	}

@@ -66,7 +66,7 @@ func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chai
 	return txOpts, signer, nil
 }
 
-func openKeystore(ks *keystore.KeyStore, description string, walletConfig *genericconf.WalletConfig, getPassword func() (string, error)) (*accounts.Account, error) {
+func openKeystore(ks *keystore.KeyStore, description string, walletConfig *genericconf.WalletConfig, password func() (string, error)) (*accounts.Account, error) {
 	creatingNew := len(ks.Accounts()) == 0
 	if creatingNew && !walletConfig.OnlyCreateKey {
 		return nil, fmt.Errorf("no wallet exists, re-run with --%s.wallet.only-create-key to create a wallet", description)
@@ -75,9 +75,9 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 		return nil, fmt.Errorf("wallet key already created, backup key (%s) and remove --%s.wallet.only-create-key to run normally", walletConfig.Pathname, description)
 	}
 	passOpt := walletConfig.Password()
-	var password string
+	var pwd string
 	if passOpt != nil {
-		password = *passOpt
+		pwd = *passOpt
 	} else {
 		if creatingNew {
 			fmt.Print("Enter new account password: ")
@@ -85,7 +85,7 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 			fmt.Print("Enter account password: ")
 		}
 		var err error
-		password, err = getPassword()
+		pwd, err = password()
 		if err != nil {
 			return nil, err
 		}
@@ -94,7 +94,7 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 	var account accounts.Account
 	if creatingNew {
 		var err error
-		account, err = ks.NewAccount(password)
+		account, err = ks.NewAccount(pwd)
 		if err != nil {
 			return &accounts.Account{}, err
 		}
@@ -126,7 +126,7 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 		return nil, fmt.Errorf("wallet key created with address %s, backup wallet (%s) and remove --%s.wallet.only-create-key to run normally", account.Address.Hex(), walletConfig.Pathname, description)
 	}
 
-	err := ks.Unlock(account, password)
+	err := ks.Unlock(account, pwd)
 	if err != nil {
 		return nil, err
 	}

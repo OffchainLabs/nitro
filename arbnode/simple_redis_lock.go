@@ -196,6 +196,6 @@ func (l *SimpleRedisLock) StopAndWait() {
 	l.mutex.Lock()
 	l.stopping = true
 	l.mutex.Unlock()
-	l.Release(l.GetContext())
+	l.Release(l.Context())
 	l.StopWaiter.StopAndWait()
 }

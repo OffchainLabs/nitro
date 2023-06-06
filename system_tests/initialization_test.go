@@ -22,14 +22,14 @@ func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.
 	storageMap := make(map[common.Hash]common.Hash)
 	code := []byte{0x60, 0x0} // PUSH1 0
 	sum := big.NewInt(0)
-	numCells := int(prand.GetUint64() % 1000)
+	numCells := int(prand.Uint64() % 1000)
 	for i := 0; i < numCells; i++ {
-		storageAddr := prand.GetHash()
-		storageVal := prand.GetAddress().Hash() // 20 bytes so sum won't overflow
-		code = append(code, 0x7f)               // PUSH32
-		code = append(code, storageAddr[:]...)  // storageAdr
-		code = append(code, 0x54)               // SLOAD
-		code = append(code, 0x01)               // ADD
+		storageAddr := prand.Hash()
+		storageVal := prand.Address().Hash()   // 20 bytes so sum won't overflow
+		code = append(code, 0x7f)              // PUSH32
+		code = append(code, storageAddr[:]...) // storageAdr
+		code = append(code, 0x54)              // SLOAD
+		code = append(code, 0x01)              // ADD
 		storageMap[storageAddr] = storageVal
 		sum.Add(sum, storageVal.Big())
 	}
@@ -53,7 +53,7 @@ func TestInitContract(t *testing.T) {
 	l2info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 	for i := 0; i < 50; i++ {
 		contractData, sum := InitOneContract(prand)
-		accountAddress := prand.GetAddress()
+		accountAddress := prand.Address()
 		accountInfo := statetransfer.AccountInitializationInfo{
 			Addr:         accountAddress,
 			EthBalance:   big.NewInt(0),

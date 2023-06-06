@@ -129,7 +129,7 @@ func (r *Relay) Start(ctx context.Context) error {
 	return nil
 }
 
-func (r *Relay) GetListenerAddr() net.Addr {
+func (r *Relay) ListenerAddr() net.Addr {
 	return r.broadcaster.ListenerAddr()
 }
 

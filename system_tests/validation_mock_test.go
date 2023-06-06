@@ -98,7 +98,7 @@ type mockExecRun struct {
 	endState   validator.GoGlobalState
 }
 
-func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
+func (r *mockExecRun) StepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	status := validator.MachineStatusRunning
 	resState := r.startState
 	if position >= mockExecLastPos {
@@ -114,13 +114,13 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
-	return r.GetStepAt(mockExecLastPos)
+func (r *mockExecRun) LastStep() containers.PromiseInterface[*validator.MachineStepResult] {
+	return r.StepAt(mockExecLastPos)
 }
 
 var mockProof []byte = []byte("friendly jab at competitors")
 
-func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
+func (r *mockExecRun) ProofAt(uint64) containers.PromiseInterface[[]byte] {
 	return containers.NewReadyPromise[[]byte](mockProof, nil)
 }
 
@@ -218,19 +218,19 @@ func TestValidationServerAPI(t *testing.T) {
 	}
 	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput).Await(ctx)
 	Require(t, err)
-	step0 := execRun.GetStepAt(0)
+	step0 := execRun.StepAt(0)
 	step0Res, err := step0.Await(ctx)
 	Require(t, err)
 	if step0Res.GlobalState != startState {
 		t.Error("unexpected globalstate on execution start")
 	}
-	lasteStep := execRun.GetLastStep()
+	lasteStep := execRun.LastStep()
 	lasteStepRes, err := lasteStep.Await(ctx)
 	Require(t, err)
 	if lasteStepRes.GlobalState != endState {
 		t.Error("unexpected globalstate on execution end")
 	}
-	proofPromise := execRun.GetProofAt(0)
+	proofPromise := execRun.ProofAt(0)
 	proof, err := proofPromise.Await(ctx)
 	Require(t, err)
 	if !bytes.Equal(proof, mockProof) {
@@ -264,8 +264,8 @@ func TestExecutionKeepAlive(t *testing.T) {
 	runShortTO, err := clientShortTO.CreateExecutionRun(wasmRoot, &valInput).Await(ctx)
 	Require(t, err)
 	<-time.After(time.Second * 10)
-	stepDefault := runDefault.GetStepAt(0)
-	stepTO := runShortTO.GetStepAt(0)
+	stepDefault := runDefault.StepAt(0)
+	stepTO := runShortTO.StepAt(0)
 
 	_, err = stepDefault.Await(ctx)
 	Require(t, err)

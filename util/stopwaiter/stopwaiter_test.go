@@ -56,7 +56,7 @@ func TestStopWaiterStopAndWaitBeforeStart(t *testing.T) {
 func TestStopWaiterStopAndWaitAfterStop(t *testing.T) {
 	sw := StopWaiter{}
 	sw.Start(context.Background(), &TestStruct{})
-	ctx := sw.GetContext()
+	ctx := sw.Context()
 	sw.StopOnly()
 	<-ctx.Done()
 	sw.StopAndWait()

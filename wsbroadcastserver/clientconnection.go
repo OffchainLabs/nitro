@@ -131,7 +131,7 @@ func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {
 	return cc.requestedSeqNum
 }
 
-func (cc *ClientConnection) GetLastHeard() time.Time {
+func (cc *ClientConnection) LastHeard() time.Time {
 	return time.Unix(atomic.LoadInt64(&cc.lastHeardUnix), 0)
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func getTempFileWithData(t *testing.T, data []byte) string {
+func tmpFileWithData(t *testing.T, data []byte) string {
 	path := filepath.Join(t.TempDir(), "config.json")
 	err := os.WriteFile(path, []byte(data), 0600)
 	testhelpers.RequireImpl(t, err)
@@ -33,11 +33,11 @@ func TestIpfsHelper(t *testing.T) {
 	testData := make([]byte, 1024*1024)
 	_, err = rand.Read(testData)
 	testhelpers.RequireImpl(t, err)
-	testFile := getTempFileWithData(t, testData)
+	testFile := tmpFileWithData(t, testData)
 	ipfsTestFilePath, err := ipfsA.AddFile(ctx, testFile, false)
 	testhelpers.RequireImpl(t, err)
 	testFileCid := ipfsTestFilePath.Cid().String()
-	addrsA, err := ipfsA.GetPeerHostAddresses()
+	addrsA, err := ipfsA.PeerHostAddresses()
 	testhelpers.RequireImpl(t, err)
 	// create node B connected to node A
 	ipfsB, err := createIpfsHelperImpl(ctx, t.TempDir(), false, addrsA, "test")
@@ -52,7 +52,7 @@ func TestIpfsHelper(t *testing.T) {
 	err = ipfsA.Close()
 	os.RemoveAll(ipfsA.repoPath)
 	testhelpers.RequireImpl(t, err)
-	addrsB, err := ipfsB.GetPeerHostAddresses()
+	addrsB, err := ipfsB.PeerHostAddresses()
 	testhelpers.RequireImpl(t, err)
 	ipfsC, err := createIpfsHelperImpl(ctx, t.TempDir(), false, addrsB, "test")
 	testhelpers.RequireImpl(t, err)

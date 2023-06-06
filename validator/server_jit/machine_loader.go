@@ -22,7 +22,7 @@ var DefaultJitMachineConfig = JitMachineConfig{
 	ProverBinPath: "replay.wasm",
 }
 
-func getJitPath() (string, error) {
+func jitPath() (string, error) {
 	var jitBinary string
 	executable, err := os.Executable()
 	if err == nil {
@@ -51,13 +51,13 @@ type JitMachineLoader struct {
 }
 
 func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, fatalErrChan chan error) (*JitMachineLoader, error) {
-	jitPath, err := getJitPath()
+	jp, err := jitPath()
 	if err != nil {
 		return nil, err
 	}
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*JitMachine, error) {
-		binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.ProverBinPath)
-		return createJitMachine(jitPath, binPath, config.JitCranelift, moduleRoot, fatalErrChan)
+		binPath := filepath.Join(locator.MachinePath(moduleRoot), config.ProverBinPath)
+		return createJitMachine(jp, binPath, config.JitCranelift, moduleRoot, fatalErrChan)
 	}
 	return &JitMachineLoader{
 		MachineLoader: *server_common.NewMachineLoader[JitMachine](locator, createMachineThreadFunc),

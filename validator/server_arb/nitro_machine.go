@@ -23,7 +23,7 @@ import (
 )
 
 func createArbMachine(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash) (*arbMachines, error) {
-	binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.WavmBinaryPath)
+	binPath := filepath.Join(locator.MachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
 	log.Info("creating nitro machine", "binpath", binPath)
@@ -32,7 +32,7 @@ func createArbMachine(ctx context.Context, locator *server_common.MachineLocator
 		return nil, errors.New("failed to load base machine")
 	}
 	machine := machineFromPointer(baseMachine)
-	machineModuleRoot := machine.GetModuleRoot()
+	machineModuleRoot := machine.ModuleRoot()
 	if machineModuleRoot != moduleRoot {
 		return nil, fmt.Errorf("attempting to load module root %v got machine with module root %v", moduleRoot, machineModuleRoot)
 	}
@@ -44,7 +44,7 @@ func createArbMachine(ctx context.Context, locator *server_common.MachineLocator
 
 	// We try to store/load state before first host_io to a file.
 	// We will chicken out of that if something fails, but still try to calculate the machine
-	statePath := filepath.Join(locator.GetMachinePath(moduleRoot), config.UntilHostIoStatePath)
+	statePath := filepath.Join(locator.MachinePath(moduleRoot), config.UntilHostIoStatePath)
 	_, err := os.Stat(statePath)
 	if err == nil {
 		log.Info("found cached machine until host io state", "moduleRoot", moduleRoot)

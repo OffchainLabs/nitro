@@ -66,7 +66,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 	return nil, ErrMachineNotFound
 }
 
-func (l MachineLocator) GetMachinePath(moduleRoot common.Hash) string {
+func (l MachineLocator) MachinePath(moduleRoot common.Hash) string {
 	if moduleRoot == (common.Hash{}) || moduleRoot == l.latest {
 		return filepath.Join(l.rootPath, "latest")
 	} else {

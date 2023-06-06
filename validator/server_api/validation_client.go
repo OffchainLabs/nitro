@@ -44,7 +44,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
-	ctx := c.GetContext()
+	ctx := c.Context()
 	err := c.client.Start(ctx)
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (c *ValidationClient) Name() string {
 
 func (c *ValidationClient) Room() int {
 	var res int
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_room")
+	err := c.client.CallContext(c.Context(), &res, Namespace+"_room")
 	if err != nil {
 		log.Error("error contacting validation server", "name", c.name, "err", err)
 		return 0
@@ -106,7 +106,7 @@ func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *
 			client: c,
 			id:     res,
 		}
-		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		run.Start(c.Context()) // note: not this temporary thread's context!
 		return run, nil
 	})
 }
@@ -149,10 +149,10 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 	r.CallIteratively(r.SendKeepAlive)
 }
 
-func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
+func (r *ExecutionClientRun) StepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](r, func(ctx context.Context) (*validator.MachineStepResult, error) {
 		var resJson MachineStepResultJson
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_stepAt", r.id, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -164,10 +164,10 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
+func (r *ExecutionClientRun) ProofAt(pos uint64) containers.PromiseInterface[[]byte] {
 	return stopwaiter.LaunchPromiseThread[[]byte](r, func(ctx context.Context) ([]byte, error) {
 		var resString string
-		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
+		err := r.client.client.CallContext(ctx, &resString, Namespace+"_proofAt", r.id, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -175,8 +175,8 @@ func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[
 	})
 }
 
-func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
-	return r.GetStepAt(^uint64(0))
+func (r *ExecutionClientRun) LastStep() containers.PromiseInterface[*validator.MachineStepResult] {
+	return r.StepAt(^uint64(0))
 }
 
 func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseInterface[struct{}] {
@@ -192,7 +192,7 @@ func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseI
 func (r *ExecutionClientRun) Close() {
 	r.StopOnly()
 	r.LaunchUntrackedThread(func() {
-		err := r.client.client.CallContext(r.GetParentContext(), nil, Namespace+"_closeExec", r.id)
+		err := r.client.client.CallContext(r.ParentContext(), nil, Namespace+"_closeExec", r.id)
 		if err != nil {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}

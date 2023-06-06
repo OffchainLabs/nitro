@@ -76,7 +76,7 @@ type ipStringAndLimit struct {
 	limit    int
 }
 
-func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit {
+func (l *ConnectionLimiter) ipStringsAndLimits(ip net.IP) []ipStringAndLimit {
 	var result []ipStringAndLimit
 	if ip == nil || ip.IsPrivate() || ip.IsLoopback() {
 		log.Warn("Ignoring private, looback, or unparseable IP. Please check relay and network configuration to ensure client IP addresses are detected correctly", "ip", ip)
@@ -105,7 +105,7 @@ func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit 
 }
 
 func (l *ConnectionLimiter) isAllowedImpl(ip net.IP) bool {
-	for _, item := range l.getIpStringsAndLimits(ip) {
+	for _, item := range l.ipStringsAndLimits(ip) {
 		if res := l.ipConnectionCounts[item.ipString]; res >= item.limit {
 			clientsLimitedCounter.Inc(1)
 			return false
@@ -125,7 +125,7 @@ func (l *ConnectionLimiter) updateUsage(ip net.IP, increment bool) {
 		updateAmount = 1
 	}
 
-	for _, item := range l.getIpStringsAndLimits(ip) {
+	for _, item := range l.ipStringsAndLimits(ip) {
 		l.ipConnectionCounts[item.ipString] += updateAmount
 		if l.ipConnectionCounts[item.ipString] < 0 {
 			log.Error("BUG: Unbalanced ConnectionLimiter.updateUsage(..., false) calls", "ip", item.ipString)

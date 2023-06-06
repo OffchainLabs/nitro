@@ -130,7 +130,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 
 	// Ensure we read the init message before other things start up
 	for i := 0; ; i++ {
-		batchCount, err := r.tracker.GetBatchCount()
+		batchCount, err := r.tracker.BatchCount()
 		if err != nil {
 			return err
 		}
@@ -167,7 +167,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 
 // assumes l1block is recent so we could do a simple-search from the end
 func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (arbutil.MessageIndex, error) {
-	batch, err := r.tracker.GetBatchCount()
+	batch, err := r.tracker.BatchCount()
 	if err != nil {
 		return 0, err
 	}
@@ -189,7 +189,7 @@ func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (a
 	}
 }
 
-func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) SafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	l1block, err := r.l1Reader.LatestSafeBlockNr(ctx)
 	if err != nil {
 		return 0, err
@@ -197,7 +197,7 @@ func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex
 	return r.recentL1BlockToMsg(ctx, l1block)
 }
 
-func (r *InboxReader) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) FinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	l1block, err := r.l1Reader.LatestFinalizedBlockNr(ctx)
 	if err != nil {
 		return 0, err
@@ -218,7 +218,7 @@ func (r *InboxReader) CaughtUp() chan struct{} {
 }
 
 func (r *InboxReader) run(ctx context.Context, hadError bool) error {
-	from, err := r.getNextBlockToRead()
+	from, err := r.nextBlockToRead()
 	if err != nil {
 		return err
 	}
@@ -320,7 +320,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 		}
 		checkingBatchCount := seenBatchCount
 		{
-			ourLatestBatchCount, err := r.tracker.GetBatchCount()
+			ourLatestBatchCount, err := r.tracker.BatchCount()
 			if err != nil {
 				return err
 			}
@@ -339,7 +339,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if err != nil {
 					return err
 				}
-				dbBatchAcc, err := r.tracker.GetBatchAcc(checkingBatchSeqNum)
+				dbBatchAcc, err := r.tracker.BatchAcc(checkingBatchSeqNum)
 				if err != nil {
 					return err
 				}
@@ -401,7 +401,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					}
 					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
-				return r.GetSequencerMessageBytes(ctx, batchNum)
+				return r.SequencerMessageBytes(ctx, batchNum)
 			})
 			if err != nil {
 				return err
@@ -415,7 +415,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				reorgingSequencer = false
 				firstBatch := sequencerBatches[0]
 				if firstBatch.SequenceNumber > 0 {
-					haveAcc, err := r.tracker.GetBatchAcc(firstBatch.SequenceNumber - 1)
+					haveAcc, err := r.tracker.BatchAcc(firstBatch.SequenceNumber - 1)
 					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingSequencer = true
 					} else if err != nil {
@@ -428,7 +428,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					// Skip any batches we already have in the database
 					for len(sequencerBatches) > 0 {
 						batch := sequencerBatches[0]
-						haveAcc, err := r.tracker.GetBatchAcc(batch.SequenceNumber)
+						haveAcc, err := r.tracker.BatchAcc(batch.SequenceNumber)
 						if errors.Is(err, AccumulatorNotFoundErr) {
 							// This batch is new
 							break
@@ -495,7 +495,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 			}
 			if reorgingDelayed || reorgingSequencer {
-				from, err = r.getPrevBlockForReorg(from)
+				from, err = r.prevBlockForReorg(from)
 				if err != nil {
 					return err
 				}
@@ -540,7 +540,7 @@ func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*Seque
 	return false, nil
 }
 
-func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
+func (r *InboxReader) prevBlockForReorg(from *big.Int) (*big.Int, error) {
 	if from.Cmp(r.firstMessageBlock) <= 0 {
 		return nil, errors.New("can't get older messages")
 	}
@@ -551,7 +551,7 @@ func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
 	return newFrom, nil
 }
 
-func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
+func (r *InboxReader) nextBlockToRead() (*big.Int, error) {
 	delayedCount, err := r.tracker.GetDelayedCount()
 	if err != nil {
 		return nil, err
@@ -570,7 +570,7 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	return msgBlock, nil
 }
 
-func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+func (r *InboxReader) SequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
 	metadata, err := r.tracker.GetBatchMetadata(seqNum)
 	if err != nil {
 		return nil, err

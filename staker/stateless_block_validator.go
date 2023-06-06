@@ -54,22 +54,22 @@ type BlockValidatorRegistrer interface {
 
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
-	GetDelayedMessageBytes(uint64) ([]byte, error)
-	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
-	GetBatchAcc(seqNum uint64) (common.Hash, error)
-	GetBatchCount() (uint64, error)
+	DelayedMessageBytes(uint64) ([]byte, error)
+	BatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+	BatchAcc(seqNum uint64) (common.Hash, error)
+	BatchCount() (uint64, error)
 }
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
-	GetGenesisBlockNumber() (uint64, error)
+	Message(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
+	GenesisBlockNumber() (uint64, error)
 	PauseReorgs()
 	ResumeReorgs()
 }
 
 type InboxReaderInterface interface {
-	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+	SequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
 }
 
 type L1ReaderInterface interface {
@@ -88,13 +88,13 @@ func GlobalStatePositionsFor(
 	pos arbutil.MessageIndex,
 	batch uint64,
 ) (GlobalStatePosition, GlobalStatePosition, error) {
-	msgCountInBatch, err := tracker.GetBatchMessageCount(batch)
+	msgCountInBatch, err := tracker.BatchMessageCount(batch)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
 	var firstInBatch arbutil.MessageIndex
 	if batch > 0 {
-		firstInBatch, err = tracker.GetBatchMessageCount(batch - 1)
+		firstInBatch, err = tracker.BatchMessageCount(batch - 1)
 		if err != nil {
 			return GlobalStatePosition{}, GlobalStatePosition{}, err
 		}
@@ -124,7 +124,7 @@ func FindBatchContainingMessageIndex(
 	for high > low {
 		// Due to integer rounding, mid >= low && mid < high
 		mid := (low + high) / 2
-		count, err := tracker.GetBatchMessageCount(mid)
+		count, err := tracker.BatchMessageCount(mid)
 		if err != nil {
 			return 0, err
 		}
@@ -279,7 +279,7 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
+	genesisBlockNum, err := streamer.GenesisBlockNumber()
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func NewStatelessBlockValidator(
 	return validator, nil
 }
 
-func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
+func (v *StatelessBlockValidator) ModuleRootsToValidate() []common.Hash {
 	v.moduleMutex.Lock()
 	defer v.moduleMutex.Unlock()
 
@@ -378,7 +378,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	var readBatchInfo []validator.BatchInfo
 	if msg != nil {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			data, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+			data, err := v.inboxReader.SequencerMessageBytes(ctx, batchNum)
 			if err != nil {
 				return nil, err
 			}
@@ -432,7 +432,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		return fmt.Errorf("recording failed: blockNum %d, hash expected %v, got %v", e.BlockNumber, e.BlockHash, blockhash)
 	}
 	if e.HasDelayedMsg {
-		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
+		delayedMsg, err := v.inboxTracker.DelayedMessageBytes(e.DelayedMsgNr)
 		if err != nil {
 			log.Error(
 				"error while trying to read delayed msg for proving",
@@ -500,7 +500,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if prevHeader == nil && blockNum > 0 {
 		return nil, fmt.Errorf("prev header not found for block number %v with hash %s and parent hash %s", blockNum, header.Hash(), header.ParentHash)
 	}
-	msg, err := v.streamer.GetMessage(msgIndex)
+	msg, err := v.streamer.Message(msgIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +518,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		}
 	}
 
-	batchCount, err := v.inboxTracker.GetBatchCount()
+	batchCount, err := v.inboxTracker.BatchCount()
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +535,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	usingDelayed, delaydNr := usingDelayedMsg(prevHeader, header)
 	var delayed []byte
 	if usingDelayed {
-		delayed, err = v.inboxTracker.GetDelayedMessageBytes(delaydNr)
+		delayed, err = v.inboxTracker.DelayedMessageBytes(delaydNr)
 		if err != nil {
 			return nil, fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
@@ -545,7 +545,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, fmt.Errorf("failed to create validation entry %w", err)
 	}
 
-	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
+	seqMsg, err := v.inboxReader.SequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
 		return nil, err
 	}

@@ -99,7 +99,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	defer currentRelay.StopAndWait()
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
-	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
+	port = currentRelay.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
 	defer nodeC.StopAndWait()

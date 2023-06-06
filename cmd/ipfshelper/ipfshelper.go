@@ -132,7 +132,7 @@ func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 	return nil
 }
 
-func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
+func (h *IpfsHelper) PeerHostAddresses() ([]string, error) {
 	addresses, err := peer.AddrInfoToP2pAddrs(host.InfoFromHost(h.node.PeerHost))
 	if err != nil {
 		return []string{}, err
@@ -275,6 +275,6 @@ func CanBeIpfsPath(pathString string) bool {
 }
 
 // TODO break abstraction for now til we figure out what fns are needed
-func (h *IpfsHelper) GetAPI() coreiface.CoreAPI {
+func (h *IpfsHelper) API() coreiface.CoreAPI {
 	return h.api
 }

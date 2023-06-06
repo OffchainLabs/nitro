@@ -30,7 +30,7 @@ type ChainInfo struct {
 	RollupAddresses *RollupAddresses    `json:"rollup"`
 }
 
-func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
+func ChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
 	chainInfo, err := ProcessChainInfo(chainId.Uint64(), chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, 
 	return nil, fmt.Errorf("missing chain config for L2 chain name %v", chainName)
 }
 
-func GetRollupAddressesConfig(chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) (RollupAddresses, error) {
+func RollupAddressesConfig(chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) (RollupAddresses, error) {
 	chainInfo, err := ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return RollupAddresses{}, err

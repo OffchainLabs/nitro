@@ -348,7 +348,7 @@ func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmda
 }
 
 func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
-	return c.getRemoteMsgCountImpl(c.GetContext(), c.Client)
+	return c.getRemoteMsgCountImpl(c.Context(), c.Client)
 }
 
 func (c *SeqCoordinator) wantsLockoutUpdate(ctx context.Context) error {
@@ -576,7 +576,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 			lastDelayedMsg := uint64(0)
 			if msgToRead > 0 {
-				prevMsg, err := c.streamer.GetMessage(msgToRead - 1)
+				prevMsg, err := c.streamer.Message(msgToRead - 1)
 				if err != nil {
 					log.Error("coordinator failed to get msg", "pos", msgToRead-1)
 					break
@@ -749,7 +749,7 @@ func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) bool {
 }
 
 func (c *SeqCoordinator) PrepareForShutdown() {
-	ctx := c.StopWaiter.GetContext()
+	ctx := c.StopWaiter.Context()
 	// Any errors/failures here are logged in these methods
 	c.AvoidLockout(ctx)
 	c.TryToHandoffChosenOne(ctx)
@@ -758,7 +758,7 @@ func (c *SeqCoordinator) PrepareForShutdown() {
 func (c *SeqCoordinator) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 	// We've just stopped our normal context so we need to use our parent's context.
-	parentCtx := c.StopWaiter.GetParentContext()
+	parentCtx := c.StopWaiter.ParentContext()
 	for i := 0; i <= c.config.ReleaseRetries || c.config.ReleaseRetries < 0; i++ {
 		log.Info("releasing wants lockout key", "myUrl", c.config.MyUrl(), "attempt", i)
 		err := c.wantsLockoutRelease(parentCtx)
@@ -792,7 +792,7 @@ func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbost
 	if !c.CurrentlyChosen() {
 		return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 	}
-	if err := c.acquireLockoutAndWriteMessage(c.GetContext(), pos, pos+1, msg); err != nil {
+	if err := c.acquireLockoutAndWriteMessage(c.Context(), pos, pos+1, msg); err != nil {
 		return err
 	}
 	return nil

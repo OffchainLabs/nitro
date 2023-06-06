@@ -223,7 +223,7 @@ func main() {
 			}
 		} else {
 			log.Info("Falling back to hardcoded chain config.")
-			chainConfig, err = chaininfo.GetChainConfig(chainId, "", genesisBlockNum, []string{}, "")
+			chainConfig, err = chaininfo.ChainConfig(chainId, "", genesisBlockNum, []string{}, "")
 			if err != nil {
 				panic(err)
 			}
@@ -251,7 +251,7 @@ func main() {
 		}
 		if chainConfig == nil {
 			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
-			chainConfig, err = chaininfo.GetChainConfig(chainId, "", 0, []string{}, "")
+			chainConfig, err = chaininfo.ChainConfig(chainId, "", 0, []string{}, "")
 			if err != nil {
 				panic(err)
 			}

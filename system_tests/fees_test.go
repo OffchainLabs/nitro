@@ -159,7 +159,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	lastEstimate, err := arbGasInfo.GetL1BaseFeeEstimate(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	lastBatchCount, err := node.InboxTracker.GetBatchCount()
+	lastBatchCount, err := node.InboxTracker.BatchCount()
 	Require(t, err)
 	l1Header, err := l1client.HeaderByNumber(ctx, nil)
 	Require(t, err)
@@ -232,7 +232,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			// see that the inbox advances
 
 			for j := 16; j > 0; j-- {
-				newBatchCount, err := node.InboxTracker.GetBatchCount()
+				newBatchCount, err := node.InboxTracker.BatchCount()
 				Require(t, err)
 				if newBatchCount > lastBatchCount {
 					colors.PrintGrey("posted new batch ", newBatchCount)

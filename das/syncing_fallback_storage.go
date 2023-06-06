@@ -269,7 +269,7 @@ func FindDASDataFromLog(
 		}
 		data = dataEvent.Data
 	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
-		txData, err := arbutil.GetLogEmitterTxData(ctx, l1Client, batchDeliveredLog)
+		txData, err := arbutil.LogEmitterTxData(ctx, l1Client, batchDeliveredLog)
 		if err != nil {
 			return nil, err
 		}

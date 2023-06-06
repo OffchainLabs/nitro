@@ -25,13 +25,13 @@ import (
 
 type MachineInterface interface {
 	CloneMachineInterface() MachineInterface
-	GetStepCount() uint64
+	StepCount() uint64
 	IsRunning() bool
 	ValidForStep(uint64) bool
 	Status() uint8
 	Step(context.Context, uint64) error
 	Hash() common.Hash
-	GetGlobalState() validator.GoGlobalState
+	GlobalState() validator.GoGlobalState
 	ProveNextStep() []byte
 	Freeze()
 	Destroy()
@@ -120,7 +120,7 @@ func (m *ArbitratorMachine) SetGlobalState(globalState validator.GoGlobalState) 
 	return nil
 }
 
-func (m *ArbitratorMachine) GetGlobalState() validator.GoGlobalState {
+func (m *ArbitratorMachine) GlobalState() validator.GoGlobalState {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -128,7 +128,7 @@ func (m *ArbitratorMachine) GetGlobalState() validator.GoGlobalState {
 	return GlobalStateFromC(cGlobalState)
 }
 
-func (m *ArbitratorMachine) GetStepCount() uint64 {
+func (m *ArbitratorMachine) StepCount() uint64 {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -157,7 +157,7 @@ func (m *ArbitratorMachine) Status() uint8 {
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
-	haveStep := m.GetStepCount()
+	haveStep := m.StepCount()
 	if haveStep > requestedStep {
 		return false
 	} else if haveStep == requestedStep {
@@ -239,7 +239,7 @@ func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 	return
 }
 
-func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
+func (m *ArbitratorMachine) ModuleRoot() (hash common.Hash) {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()

@@ -5,6 +5,6 @@
 
 package genericconf
 
-func GetVersion() (string, string) {
+func Version() (string, string) {
 	return "development", "development"
 }

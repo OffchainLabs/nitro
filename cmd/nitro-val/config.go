@@ -133,7 +133,7 @@ func (c *ValidationNodeConfig) CanReload(new *ValidationNodeConfig) error {
 	return err
 }
 
-func (c *ValidationNodeConfig) GetReloadInterval() time.Duration {
+func (c *ValidationNodeConfig) ReloadInterval() time.Duration {
 	return c.Conf.ReloadInterval
 }
 

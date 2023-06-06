@@ -48,7 +48,7 @@ func (s *RedisStorage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	return data[32:], nil
 }
 
-func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *RedisStorage[Item]) Contents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:     s.key,
 		ByScore: true,
@@ -75,7 +75,7 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	return items, nil
 }
 
-func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *RedisStorage[Item]) Last(ctx context.Context) (*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,
 		Start: 0,
@@ -87,7 +87,7 @@ func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 		return nil, err
 	}
 	if len(itemStrings) > 1 {
-		return nil, fmt.Errorf("expected only one return value for GetLast but got %v", len(itemStrings))
+		return nil, fmt.Errorf("expected only one return value for Last but got %v", len(itemStrings))
 	}
 	var ret *Item
 	if len(itemStrings) > 0 {

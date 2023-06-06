@@ -35,7 +35,7 @@ func msgBatchKey(batchNum *big.Int) []byte {
 	return crypto.Keccak256(append([]byte("msgBatch"), batchNum.Bytes()...))
 }
 
-func (m *ClassicOutboxRetriever) GetMsg(batchNum *big.Int, index uint64) (*ClassicOutboxMsg, error) {
+func (m *ClassicOutboxRetriever) Msg(batchNum *big.Int, index uint64) (*ClassicOutboxMsg, error) {
 	batchHeader, err := m.db.Get(msgBatchKey(batchNum))
 	if err != nil {
 		return nil, fmt.Errorf("%w: batch %d not found", err, batchNum)

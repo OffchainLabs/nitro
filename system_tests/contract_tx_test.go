@@ -38,7 +38,7 @@ func TestContractTxDeploy(t *testing.T) {
 		Require(t, err)
 		var delayedMessagesRead uint64
 		if pos > 0 {
-			lastMessage, err := node.TxStreamer.GetMessage(pos - 1)
+			lastMessage, err := node.TxStreamer.Message(pos - 1)
 			Require(t, err)
 			delayedMessagesRead = lastMessage.DelayedMessagesRead
 		}

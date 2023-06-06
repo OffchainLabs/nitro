@@ -43,21 +43,21 @@ func (s *StopWaiterSafe) Stopped() bool {
 	return s.stopped
 }
 
-func (s *StopWaiterSafe) GetContextSafe() (context.Context, error) {
+func (s *StopWaiterSafe) ContextSafe() (context.Context, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.getContext()
+	return s.context()
 }
 
 // this context is not cancelled even after someone calls Stop
-func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
+func (s *StopWaiterSafe) ParentContextSafe() (context.Context, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.getParentContext()
+	return s.parentContext()
 }
 
 // Only call this internally with the mutex held.
-func (s *StopWaiterSafe) getContext() (context.Context, error) {
+func (s *StopWaiterSafe) context() (context.Context, error) {
 	if s.started {
 		return s.ctx, nil
 	}
@@ -65,14 +65,14 @@ func (s *StopWaiterSafe) getContext() (context.Context, error) {
 }
 
 // Only call this internally with the mutex held.
-func (s *StopWaiterSafe) getParentContext() (context.Context, error) {
+func (s *StopWaiterSafe) parentContext() (context.Context, error) {
 	if s.started {
 		return s.parentCtx, nil
 	}
 	return nil, errors.New("not started")
 }
 
-func getParentName(parent any) string {
+func parentName(parent any) string {
 	// remove asterisk in case the type is a pointer
 	return strings.Replace(reflect.TypeOf(parent).String(), "*", "", 1)
 }
@@ -85,7 +85,7 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 		return errors.New("start after start")
 	}
 	s.started = true
-	s.name = getParentName(parent)
+	s.name = parentName(parent)
 	s.parentCtx = ctx
 	s.ctx, s.stopFunc = context.WithCancel(s.parentCtx)
 	if s.stopped {
@@ -116,7 +116,7 @@ func (s *StopWaiterSafe) StopAndWait() error {
 	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
 
-func getAllStackTraces() string {
+func allStackTraces() string {
 	buf := make([]byte, 64*1024*1024)
 	size := runtime.Stack(buf, true)
 	builder := strings.Builder{}
@@ -128,7 +128,7 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	if !s.stopOnly() {
 		return nil
 	}
-	waitChan, err := s.GetWaitChannel()
+	waitChan, err := s.WaitChannel()
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 
 	select {
 	case <-timer.C:
-		traces := getAllStackTraces()
+		traces := allStackTraces()
 		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
@@ -147,11 +147,11 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	return nil
 }
 
-func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
+func (s *StopWaiterSafe) WaitChannel() (<-chan interface{}, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.waitChan == nil {
-		ctx, err := s.getContext()
+		ctx, err := s.context()
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +168,7 @@ func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
 
 // If stop was already called, thread might silently not be launched
 func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
-	ctx, err := s.GetContextSafe()
+	ctx, err := s.ContextSafe()
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (s *StopWaiterSafe) CallIterativelySafe(foo func(context.Context) time.Dura
 }
 
 type ThreadLauncher interface {
-	GetContextSafe() (context.Context, error)
+	ContextSafe() (context.Context, error)
 	LaunchThreadSafe(foo func(context.Context)) error
 	LaunchUntrackedThread(foo func())
 	Stopped() bool
@@ -249,7 +249,7 @@ func LaunchPromiseThread[T any](
 	s ThreadLauncher,
 	foo func(context.Context) (T, error),
 ) containers.PromiseInterface[T] {
-	ctx, err := s.GetContextSafe()
+	ctx, err := s.ContextSafe()
 	if err != nil {
 		promise := containers.NewPromise[T](nil)
 		promise.ProduceError(err)
@@ -333,16 +333,16 @@ func (s *StopWaiter) CallIteratively(foo func(context.Context) time.Duration) {
 	}
 }
 
-func (s *StopWaiter) GetContext() context.Context {
-	ctx, err := s.StopWaiterSafe.GetContextSafe()
+func (s *StopWaiter) Context() context.Context {
+	ctx, err := s.StopWaiterSafe.ContextSafe()
 	if err != nil {
 		panic(err)
 	}
 	return ctx
 }
 
-func (s *StopWaiter) GetParentContext() context.Context {
-	ctx, err := s.StopWaiterSafe.GetParentContextSafe()
+func (s *StopWaiter) ParentContext() context.Context {
+	ctx, err := s.StopWaiterSafe.ParentContextSafe()
 	if err != nil {
 		panic(err)
 	}

@@ -37,8 +37,8 @@ type queuedTransaction[Meta any] struct {
 }
 
 type QueueStorage[Item any] interface {
-	GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
-	GetLast(ctx context.Context) (*Item, error)
+	Contents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
+	Last(ctx context.Context) (*Item, error)
 	Prune(ctx context.Context, keepStartingAt uint64) error
 	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
 	Length(ctx context.Context) (int, error)
@@ -160,7 +160,7 @@ func (p *DataPoster[Meta]) From() common.Address {
 	return p.auth.From
 }
 
-func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
+func (p *DataPoster[Meta]) NextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
 	config := p.config()
 	var emptyMeta Meta
 	p.mutex.Lock()
@@ -169,7 +169,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 	if err != nil {
 		return 0, emptyMeta, err
 	}
-	lastQueueItem, err := p.queue.GetLast(ctx)
+	lastQueueItem, err := p.queue.Last(ctx)
 	if err != nil {
 		return 0, emptyMeta, err
 	}
@@ -216,7 +216,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+func (p *DataPoster[Meta]) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
@@ -294,7 +294,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return fmt.Errorf("failed to update data poster balance: %w", err)
 	}
-	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
+	feeCap, tipCap, err := p.feeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
 		return err
 	}
@@ -356,7 +356,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, err := p.feeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
@@ -499,7 +499,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
-		queueContents, err := p.queue.GetContents(ctx, unconfirmedNonce, maxTxsToRbf)
+		queueContents, err := p.queue.Contents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
 			log.Warn("failed to get tx queue contents", "err", err)
 			return minWait

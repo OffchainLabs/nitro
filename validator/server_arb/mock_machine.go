@@ -35,18 +35,18 @@ func (m *IncorrectMachine) CloneMachineInterface() MachineInterface {
 	}
 }
 
-func (m *IncorrectMachine) GetGlobalState() validator.GoGlobalState {
-	if m.GetStepCount() >= m.incorrectStep {
+func (m *IncorrectMachine) GlobalState() validator.GoGlobalState {
+	if m.StepCount() >= m.incorrectStep {
 		return badGlobalState
 	}
-	return m.inner.GetGlobalState()
+	return m.inner.GlobalState()
 }
 
-func (m *IncorrectMachine) GetStepCount() uint64 {
+func (m *IncorrectMachine) StepCount() uint64 {
 	if !m.IsRunning() {
 		endStep := m.incorrectStep
-		if endStep < m.inner.GetStepCount() {
-			endStep = m.inner.GetStepCount()
+		if endStep < m.inner.StepCount() {
+			endStep = m.inner.StepCount()
 		}
 		return endStep
 	}
@@ -80,11 +80,11 @@ func (m *IncorrectMachine) Status() uint8 {
 }
 
 func (m *IncorrectMachine) Hash() common.Hash {
-	if m.GetStepCount() >= m.incorrectStep {
+	if m.StepCount() >= m.incorrectStep {
 		if m.inner.IsErrored() {
 			return common.HexToHash("0xbad00000bad00000bad00000bad00000")
 		}
-		beforeGs := m.inner.GetGlobalState()
+		beforeGs := m.inner.GlobalState()
 		if beforeGs != badGlobalState {
 			if err := m.inner.SetGlobalState(badGlobalState); err != nil {
 				panic(err)

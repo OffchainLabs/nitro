@@ -35,16 +35,16 @@ func NewArbMachineLoader(config *ArbitratorMachineConfig, locator *server_common
 	}
 }
 
-func (a *ArbMachineLoader) GetHostIoMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
-	machines, err := a.GetMachine(ctx, moduleRoot)
+func (a *ArbMachineLoader) HostIoMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
+	machines, err := a.Machine(ctx, moduleRoot)
 	if err != nil {
 		return nil, err
 	}
 	return machines.hostIo, nil
 }
 
-func (a *ArbMachineLoader) GetZeroStepMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
-	machines, err := a.GetMachine(ctx, moduleRoot)
+func (a *ArbMachineLoader) ZeroStepMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
+	machines, err := a.Machine(ctx, moduleRoot)
 	if err != nil {
 		return nil, err
 	}

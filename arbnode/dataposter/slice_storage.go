@@ -18,7 +18,7 @@ func NewSliceStorage[Item any]() *SliceStorage[Item] {
 	return &SliceStorage[Item]{}
 }
 
-func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *SliceStorage[Item]) Contents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	ret := s.queue
 	if startingIndex >= s.firstNonce+uint64(len(s.queue)) {
 		ret = nil
@@ -31,7 +31,7 @@ func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	return ret, nil
 }
 
-func (s *SliceStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *SliceStorage[Item]) Last(ctx context.Context) (*Item, error) {
 	if len(s.queue) == 0 {
 		return nil, nil
 	}

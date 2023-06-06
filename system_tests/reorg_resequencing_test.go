@@ -56,7 +56,7 @@ func TestReorgResequencing(t *testing.T) {
 
 	verifyBalances("after empty reorg")
 
-	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
+	prevMessage, err := node.TxStreamer.Message(startMsgCount - 1)
 	Require(t, err)
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbostypes.L1IncomingMessage{

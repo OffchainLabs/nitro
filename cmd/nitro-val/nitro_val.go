@@ -52,7 +52,7 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
+	vcsRevision, vcsTime := confighelpers.Version()
 	stackConf.Version = vcsRevision
 
 	pathResolver := func(workdir string) func(string) string {

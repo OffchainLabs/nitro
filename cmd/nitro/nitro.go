@@ -144,7 +144,7 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
+	vcsRevision, vcsTime := confighelpers.Version()
 	stackConf.Version = vcsRevision
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
@@ -241,7 +241,7 @@ func mainImpl() int {
 
 	combinedL2ChainInfoFile := nodeConfig.L2.ChainInfoFiles
 	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
+		l2ChainInfoIpfsFile, err := util.L2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
 		if err != nil {
 			log.Error("error getting chain info file from ipfs", "err", err)
 		}
@@ -287,7 +287,7 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.Connection.URL, "l1chainid", nodeConfig.L1.ChainID)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
+		rollupAddrs, err = chaininfo.RollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -305,7 +305,7 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
+		deployInfo, err := chaininfo.RollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -596,7 +596,7 @@ func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
 }
 
-func (c *NodeConfig) GetReloadInterval() time.Duration {
+func (c *NodeConfig) ReloadInterval() time.Duration {
 	return c.Conf.ReloadInterval
 }
 
@@ -680,7 +680,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
 	combinedL2ChainInfoFiles := l2ChainInfoFiles
 	if l2ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+		l2ChainInfoIpfsFile, err := util.L2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 		if err != nil {
 			log.Error("error getting l2 chain info file from ipfs", "err", err)
 		}

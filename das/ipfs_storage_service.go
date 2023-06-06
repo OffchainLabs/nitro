@@ -73,7 +73,7 @@ func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig)
 	if err != nil {
 		return nil, err
 	}
-	addrs, err := ipfsHelper.GetPeerHostAddresses()
+	addrs, err := ipfsHelper.PeerHostAddresses()
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig)
 	return &IpfsStorageService{
 		config:     config,
 		ipfsHelper: ipfsHelper,
-		ipfsApi:    ipfsHelper.GetAPI(),
+		ipfsApi:    ipfsHelper.API(),
 	}, nil
 }
 

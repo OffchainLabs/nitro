@@ -8,7 +8,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 )
 
-func GetL2ChainInfoIpfsFile(ctx context.Context, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (string, error) {
+func L2ChainInfoIpfsFile(ctx context.Context, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (string, error) {
 	ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, l2ChainInfoIpfsDownloadPath, false, []string{}, ipfshelper.DefaultIpfsProfiles)
 	if err != nil {
 		return "", err

@@ -50,12 +50,12 @@ func (c *Caller) Start(ctx context.Context) {
 }
 
 func (c *Caller) ShortCaller() error {
-	_, err := c.calee.ShortFunc().Await(c.GetContext())
+	_, err := c.calee.ShortFunc().Await(c.Context())
 	return err
 }
 
 func (c *Caller) LongCaller(delay time.Duration) error {
-	_, err := c.calee.LongFunc(delay).Await(c.GetContext())
+	_, err := c.calee.LongFunc(delay).Await(c.Context())
 	return err
 }
 

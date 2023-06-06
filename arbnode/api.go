@@ -57,7 +57,7 @@ func (a *BlockValidatorDebugAPI) ValidateBlock(
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
 	} else {
-		moduleRoots := a.val.GetModuleRootsToValidate()
+		moduleRoots := a.val.ModuleRootsToValidate()
 		if len(moduleRoots) == 0 {
 			return result, errors.New("no current WasmModuleRoot configured, must provide parameter")
 		}

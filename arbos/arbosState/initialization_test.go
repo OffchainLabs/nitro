@@ -23,7 +23,7 @@ func TestJsonMarshalUnmarshal(t *testing.T) {
 	prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
-			AddressTableContents: []common.Address{prand.GetAddress()},
+			AddressTableContents: []common.Address{prand.Address()},
 			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(prand)},
 			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(prand)},
 		},
@@ -79,39 +79,39 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 
 func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
 	return statetransfer.InitializationDataForRetryable{
-		Id:          prand.GetHash(),
-		Timeout:     prand.GetUint64(),
-		From:        prand.GetAddress(),
-		To:          prand.GetAddress(),
-		Callvalue:   new(big.Int).SetBytes(prand.GetHash().Bytes()[1:]),
-		Beneficiary: prand.GetAddress(),
-		Calldata:    prand.GetData(256),
+		Id:          prand.Hash(),
+		Timeout:     prand.Uint64(),
+		From:        prand.Address(),
+		To:          prand.Address(),
+		Callvalue:   new(big.Int).SetBytes(prand.Hash().Bytes()[1:]),
+		Beneficiary: prand.Address(),
+		Calldata:    prand.Data(256),
 	}
 }
 
 func pseudorandomAccountInitInfoForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.AccountInitializationInfo {
-	aggToPay := prand.GetAddress()
+	aggToPay := prand.Address()
 	return statetransfer.AccountInitializationInfo{
-		Addr:       prand.GetAddress(),
-		Nonce:      prand.GetUint64(),
-		EthBalance: prand.GetHash().Big(),
+		Addr:       prand.Address(),
+		Nonce:      prand.Uint64(),
+		EthBalance: prand.Hash().Big(),
 		ContractInfo: &statetransfer.AccountInitContractInfo{
-			Code:            prand.GetData(256),
+			Code:            prand.Data(256),
 			ContractStorage: pseudorandomHashHashMapForTesting(prand, 16),
 		},
 		AggregatorInfo: &statetransfer.AccountInitAggregatorInfo{
-			FeeCollector: prand.GetAddress(),
-			BaseFeeL1Gas: prand.GetHash().Big(),
+			FeeCollector: prand.Address(),
+			BaseFeeL1Gas: prand.Hash().Big(),
 		},
 		AggregatorToPay: &aggToPay,
 	}
 }
 
 func pseudorandomHashHashMapForTesting(prand *testhelpers.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
-	size := int(prand.GetUint64() % maxItems)
+	size := int(prand.Uint64() % maxItems)
 	ret := make(map[common.Hash]common.Hash)
 	for i := 0; i < size; i++ {
-		ret[prand.GetHash()] = prand.GetHash()
+		ret[prand.Hash()] = prand.Hash()
 	}
 	return ret
 }

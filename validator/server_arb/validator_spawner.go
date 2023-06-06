@@ -148,7 +148,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 func (v *ArbitratorSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {
-	basemachine, err := v.machineLoader.GetHostIoMachine(ctx, moduleRoot)
+	basemachine, err := v.machineLoader.HostIoMachine(ctx, moduleRoot)
 	if err != nil {
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
@@ -175,7 +175,7 @@ func (v *ArbitratorSpawner) execute(
 		log.Error("machine entered errored state during attempted validation", "block", entry.Id)
 		return validator.GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
 	}
-	return mach.GetGlobalState(), nil
+	return mach.GlobalState(), nil
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
@@ -224,7 +224,7 @@ func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.Va
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", expOut.Batch, expOut.PosInBatch, expOut.BlockHash) +
-		"MACHPATH=\"" + v.locator.GetMachinePath(moduleRoot) + "\"\n" +
+		"MACHPATH=\"" + v.locator.MachinePath(moduleRoot) + "\"\n" +
 		rootPathAssign +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-m\" ]]; then\n" +
@@ -329,7 +329,7 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 
 func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	getMachine := func(ctx context.Context) (MachineInterface, error) {
-		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
+		initialFrozenMachine, err := v.machineLoader.ZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -343,7 +343,7 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 	}
 	currentExecConfig := v.config().Execution
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {
-		return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
+		return NewExecutionRun(v.Context(), getMachine, &currentExecConfig)
 	})
 }
 

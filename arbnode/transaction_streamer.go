@@ -226,7 +226,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		targetMsgCount = maxResequenceMsgCount
 	}
 	for i := count; i < targetMsgCount; i++ {
-		oldMessage, err := s.GetMessage(i)
+		oldMessage, err := s.Message(i)
 		if err != nil {
 			log.Error("unable to lookup old message for re-sequencing", "position", i, "err", err)
 			break
@@ -260,7 +260,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 					continue
 				}
 				msgBlockNum := new(big.Int).SetUint64(oldMessage.Message.Header.BlockNumber)
-				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.GetContext(), msgBlockNum, msgBlockNum, nil)
+				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.Context(), msgBlockNum, msgBlockNum, nil)
 				if err != nil {
 					log.Error("reorg-resequence: failed to serialize old delayed message from database", "err", err)
 					continue
@@ -324,7 +324,7 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
+func (s *TransactionStreamer) Message(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
@@ -438,7 +438,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 	}
 
 	if broadcastStartPos > 0 {
-		_, err := s.GetMessage(broadcastStartPos - 1)
+		_, err := s.Message(broadcastStartPos - 1)
 		if err != nil {
 			if !errors.Is(err, leveldb.ErrNotFound) {
 				return err
@@ -516,7 +516,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (uint64, error) {
 	var prevDelayedRead uint64
 	if pos > 0 {
-		prevMsg, err := s.GetMessage(pos - 1)
+		prevMsg, err := s.Message(pos - 1)
 		if err != nil {
 			return 0, fmt.Errorf("failed to get previous message for pos %d: %w", pos, err)
 		}
@@ -740,7 +740,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 }
 
 func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
-	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
+	return s.inboxReader.SequencerMessageBytes(context.TODO(), batchNum)
 }
 
 // The caller must hold the insertionMutex
@@ -790,7 +790,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	return nil
 }
 
-func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
+func (s *TransactionStreamer) GenesisBlockNumber() (uint64, error) {
 	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
 }
 
@@ -874,7 +874,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 	if pos >= msgCount {
 		return false
 	}
-	msg, err := s.GetMessage(pos)
+	msg, err := s.Message(pos)
 	if err != nil {
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
