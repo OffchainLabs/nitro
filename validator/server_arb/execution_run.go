@@ -10,8 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -83,8 +81,8 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
-	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](e, func(ctx context.Context) (util.HistoryCommitment, error) {
+func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		var stateRoots []common.Hash
 		for i := uint64(0); i <= toBigStep; i++ {
 			position := i * numOpcodesPerBigStep
@@ -97,24 +95,24 @@ func (e *executionRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerB
 				machine, err = e.cache.GetMachineAt(ctx, position)
 			}
 			if err != nil {
-				return util.HistoryCommitment{}, err
+				return nil, err
 			}
 			machineStep := machine.GetStepCount()
 			if position != machineStep {
 				machineRunning := machine.IsRunning()
 				if machineRunning || machineStep > position {
-					return util.HistoryCommitment{}, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
 				}
 
 			}
 			stateRoots = append(stateRoots, machine.GetGlobalState().Hash())
 		}
-		return util.NewHistoryCommitment(toBigStep, stateRoots)
+		return stateRoots, nil
 	})
 }
 
-func (e *executionRun) GetSmallStepCommitmentUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
-	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](e, func(ctx context.Context) (util.HistoryCommitment, error) {
+func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		var stateRoots []common.Hash
 		fromSmall := bigStep * numOpcodesPerBigStep
 		toSmall := fromSmall + toSmallStep
@@ -128,19 +126,19 @@ func (e *executionRun) GetSmallStepCommitmentUpTo(bigStep uint64, toSmallStep ui
 				machine, err = e.cache.GetMachineAt(ctx, i)
 			}
 			if err != nil {
-				return util.HistoryCommitment{}, err
+				return nil, err
 			}
 			machineStep := machine.GetStepCount()
 			if i != machineStep {
 				machineRunning := machine.IsRunning()
 				if machineRunning || machineStep > i {
-					return util.HistoryCommitment{}, fmt.Errorf("machine is in wrong position want: %d, got: %d", i, machine.GetStepCount())
+					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", i, machine.GetStepCount())
 				}
 
 			}
 			stateRoots = append(stateRoots, machine.GetGlobalState().Hash())
 		}
-		return util.NewHistoryCommitment(toSmallStep, stateRoots)
+		return stateRoots, nil
 	})
 }
 

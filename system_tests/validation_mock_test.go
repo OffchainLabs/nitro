@@ -12,8 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -115,14 +113,14 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
-	// TODO: Add mock implementation for GetBigStepCommitmentUpTo
-	return containers.NewReadyPromise[util.HistoryCommitment](util.HistoryCommitment{}, nil)
+func (r *mockExecRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetBigStepLeavesUpTo
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
-func (r *mockExecRun) GetSmallStepCommitmentUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
-	// TODO: Add mock implementation for GetSmallStepCommitmentUpTo
-	return containers.NewReadyPromise[util.HistoryCommitment](util.HistoryCommitment{}, nil)
+func (r *mockExecRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetSmallStepLeavesUpTo
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {

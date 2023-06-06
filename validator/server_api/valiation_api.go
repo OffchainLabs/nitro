@@ -10,8 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -145,28 +143,28 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetBigStepCommitmentUpTo(ctx context.Context, execid uint64, toBigStep uint64, numOpcodesPerBigStep uint64) (util.HistoryCommitment, error) {
+func (a *ExecServerAPI) GetBigStepLeavesUpTo(ctx context.Context, execid uint64, toBigStep uint64, numOpcodesPerBigStep uint64) ([]common.Hash, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return nil, err
 	}
-	bigStepCommitmentUpTo := run.GetBigStepCommitmentUpTo(toBigStep, numOpcodesPerBigStep)
-	res, err := bigStepCommitmentUpTo.Await(ctx)
+	bigStepLeavesUpTo := run.GetBigStepLeavesUpTo(toBigStep, numOpcodesPerBigStep)
+	res, err := bigStepLeavesUpTo.Await(ctx)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return nil, err
 	}
 	return res, nil
 }
 
-func (a *ExecServerAPI) GetSmallStepCommitmentUpTo(ctx context.Context, execid uint64, bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) (util.HistoryCommitment, error) {
+func (a *ExecServerAPI) GetSmallStepLeavesUpTo(ctx context.Context, execid uint64, bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) ([]common.Hash, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return nil, err
 	}
-	smallStepCommitmentUpTo := run.GetSmallStepCommitmentUpTo(bigStep, toSmallStep, numOpcodesPerBigStep)
-	res, err := smallStepCommitmentUpTo.Await(ctx)
+	smallStepLeavesUpTo := run.GetSmallStepLeavesUpTo(bigStep, toSmallStep, numOpcodesPerBigStep)
+	res, err := smallStepLeavesUpTo.Await(ctx)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return nil, err
 	}
 	return res, nil
 }

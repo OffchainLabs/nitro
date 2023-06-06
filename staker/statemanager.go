@@ -81,12 +81,12 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	bigStepCommitment := execRun.GetBigStepCommitmentUpTo(toBigStep, s.numOpcodesPerBigStep)
-	result, err := bigStepCommitment.Await(ctx)
+	bigStepLeaves := execRun.GetBigStepLeavesUpTo(toBigStep, s.numOpcodesPerBigStep)
+	result, err := bigStepLeaves.Await(ctx)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	return result, nil
+	return util.NewHistoryCommitment(toBigStep, result)
 }
 
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
@@ -104,12 +104,12 @@ func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRo
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	smallStepCommitment := execRun.GetSmallStepCommitmentUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
-	result, err := smallStepCommitment.Await(ctx)
+	smallStepLeaves := execRun.GetSmallStepLeavesUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
+	result, err := smallStepLeaves.Await(ctx)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	return result, nil
+	return util.NewHistoryCommitment(toSmallStep, result)
 }
 
 // HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,

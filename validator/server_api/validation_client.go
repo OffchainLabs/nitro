@@ -10,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -164,23 +162,23 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetBigStepCommitmentUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
-	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](r, func(ctx context.Context) (util.HistoryCommitment, error) {
-		var resJson util.HistoryCommitment
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getBigStepCommitmentUpTo", r.id, toBigStep, numOpcodesPerBigStep)
+func (r *ExecutionClientRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
+		var resJson []common.Hash
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getBigStepLeavesUpTo", r.id, toBigStep, numOpcodesPerBigStep)
 		if err != nil {
-			return util.HistoryCommitment{}, err
+			return nil, err
 		}
 		return resJson, err
 	})
 }
 
-func (r *ExecutionClientRun) GetSmallStepCommitmentUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[util.HistoryCommitment] {
-	return stopwaiter.LaunchPromiseThread[util.HistoryCommitment](r, func(ctx context.Context) (util.HistoryCommitment, error) {
-		var resJson util.HistoryCommitment
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getSmallStepCommitmentUpTo", r.id, bigStep, toSmallStep, numOpcodesPerBigStep)
+func (r *ExecutionClientRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
+		var resJson []common.Hash
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getSmallStepLeavesUpTo", r.id, bigStep, toSmallStep, numOpcodesPerBigStep)
 		if err != nil {
-			return util.HistoryCommitment{}, err
+			return nil, err
 		}
 		return resJson, err
 	})
