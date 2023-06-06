@@ -35,6 +35,8 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
+require github.com/gofrs/flock v0.8.1 // indirect
+
 require (
 	bazil.org/fuse v0.0.0-20200117225306-7b5117fecadc // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
@@ -300,7 +302,6 @@ require (
 	github.com/mitchellh/mapstructure v1.4.2
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
-	github.com/prometheus/tsdb v0.7.1 // indirect
 	github.com/rs/cors v1.7.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/status-im/keycard-go v0.2.0 // indirect

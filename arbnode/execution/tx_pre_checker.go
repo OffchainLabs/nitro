@@ -198,7 +198,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 
 func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	block := c.bc.CurrentBlock()
-	statedb, err := c.bc.StateAt(block.Root())
+	statedb, err := c.bc.StateAt(block.Root)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block.Header(), statedb, arbos, tx, options, c.config())
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, options, c.config())
 	if err != nil {
 		return err
 	}
