@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"math"
 
 	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
@@ -43,62 +42,62 @@ func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64, 
 }
 
 // HistoryCommitmentUpTo Produces a block history commitment up to and including messageCount.
-func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount uint64) (util.HistoryCommitment, error) {
+func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount uint64) (commitments.History, error) {
 	batch, err := s.findBatchAfterMessageCount(0)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
 	var stateRoots []common.Hash
 	for i := arbutil.MessageIndex(0); i <= arbutil.MessageIndex(messageCount); i++ {
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
-			return util.HistoryCommitment{}, err
+			return commitments.History{}, err
 		}
 		if batchMsgCount <= i {
 			batch++
 		}
 		root, err := s.getHashAtMessageCountAndBatch(ctx, i, batch)
 		if err != nil {
-			return util.HistoryCommitment{}, err
+			return commitments.History{}, err
 		}
 		stateRoots = append(stateRoots, root)
 	}
-	return util.NewHistoryCommitment(messageCount, stateRoots)
+	return commitments.New(messageCount, stateRoots)
 }
 
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
 // challenge heights blockHeight and blockHeight+1.
-func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) (util.HistoryCommitment, error) {
+func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) (commitments.History, error) {
 	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, blockHeight, toBigStep)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
-	return util.NewHistoryCommitment(toBigStep, result)
+	return commitments.New(toBigStep, result)
 }
 
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
 // big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (util.HistoryCommitment, error) {
+func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (commitments.History, error) {
 	result, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, blockHeight, bigStep, toSmallStep)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
-	return util.NewHistoryCommitment(toSmallStep, result)
+	return commitments.New(toSmallStep, result)
 }
 
 // HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,
 // but padding states with duplicates after the first state with a batch count of at least the specified max.
-func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStart uint64, blockEnd uint64, nextBatchCount uint64) (util.HistoryCommitment, error) {
+func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStart uint64, blockEnd uint64, nextBatchCount uint64) (commitments.History, error) {
 	stateRoots, err := s.statesUpTo(blockStart, blockEnd, nextBatchCount)
 	if err != nil {
-		return util.HistoryCommitment{}, err
+		return commitments.History{}, err
 	}
-	return util.NewHistoryCommitment(blockEnd-blockStart, stateRoots)
+	return commitments.New(blockEnd-blockStart, stateRoots)
 }
 
 // BigStepLeafCommitment Produces a big step history commitment for all big steps within block
 // challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64) (util.HistoryCommitment, error) {
+func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64) (commitments.History, error) {
 	// Number of big steps between assertion heights A and B will be
 	// fixed. It is simply the max number of opcodes
 	// per block divided by the size of a big step.
@@ -108,7 +107,7 @@ func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot
 
 // SmallStepLeafCommitment Produces a small step history commitment for all small steps between
 // big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (util.HistoryCommitment, error) {
+func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (commitments.History, error) {
 	return s.SmallStepCommitmentUpTo(
 		ctx,
 		wasmModuleRoot,
