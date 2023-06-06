@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"math"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,6 +14,16 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
+)
+
+// Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
+var (
+	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
+	// ProofArgs for submission to the protocol.
+	ProofArgs = abi.Arguments{
+		{Type: b32Arr, Name: "prefixExpansion"},
+		{Type: b32Arr, Name: "prefixProof"},
+	}
 )
 
 var AccumulatorNotFoundErr = errors.New("accumulator not found")
@@ -103,42 +115,9 @@ func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRo
 // HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,
 // but padding states with duplicates after the first state with a batch count of at least the specified max.
 func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStart uint64, blockEnd uint64, nextBatchCount uint64) (util.HistoryCommitment, error) {
-	if blockEnd < blockStart {
-		return util.HistoryCommitment{}, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
-	}
-	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(blockStart))
+	stateRoots, err := s.statesUpTo(blockStart, blockEnd, nextBatchCount)
 	if err != nil {
 		return util.HistoryCommitment{}, err
-	}
-	// The size is the number of elements being committed to. For example, if the height is 7, there will
-	// be 8 elements being committed to from [0, 7] inclusive.
-	desiredStatesLen := int(blockEnd - blockStart + 1)
-	var stateRoots []common.Hash
-	var lastStateRoot common.Hash
-	for i := blockStart; i <= blockEnd; i++ {
-		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
-		if err != nil {
-			return util.HistoryCommitment{}, err
-		}
-		if batchMsgCount <= arbutil.MessageIndex(i) {
-			batch++
-		}
-		gs, err := s.getInfoAtMessageCountAndBatch(arbutil.MessageIndex(i), batch)
-		if err != nil {
-			return util.HistoryCommitment{}, err
-		}
-		stateRoot := gs.Hash()
-		stateRoots = append(stateRoots, stateRoot)
-		lastStateRoot = stateRoot
-		if gs.Batch >= nextBatchCount {
-			if gs.Batch > nextBatchCount || gs.PosInBatch > 0 {
-				return util.HistoryCommitment{}, fmt.Errorf("overran next batch count %v with global state batch %v position %v", nextBatchCount, gs.Batch, gs.PosInBatch)
-			}
-			break
-		}
-	}
-	for len(stateRoots) < desiredStatesLen {
-		stateRoots = append(stateRoots, lastStateRoot)
 	}
 	return util.NewHistoryCommitment(blockEnd-blockStart, stateRoots)
 }
@@ -163,6 +142,80 @@ func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRo
 		bigStep,
 		s.numOpcodesPerBigStep,
 	)
+}
+
+// PrefixProofUpToBatch Produces a prefix proof in a block challenge from height A to B,
+// but padding states with duplicates after the first state with a batch count of at least the specified max.
+func (s *StateManager) PrefixProofUpToBatch(
+	ctx context.Context,
+	startHeight,
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	batchCount uint64,
+) ([]byte, error) {
+	states, err := s.statesUpTo(startHeight, toBlockChallengeHeight, batchCount)
+	if err != nil {
+		return nil, err
+	}
+	loSize := fromBlockChallengeHeight + 1 - startHeight
+	hiSize := toBlockChallengeHeight + 1 - startHeight
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(states[:loSize])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
+		loSize,
+		prefixExpansion,
+		states[loSize:hiSize],
+		prefixproofs.RootFetcherFromExpansion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+}
+
+func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchCount uint64) ([]common.Hash, error) {
+	if blockEnd < blockStart {
+		return nil, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
+	}
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(blockStart))
+	if err != nil {
+		return nil, err
+	}
+	// The size is the number of elements being committed to. For example, if the height is 7, there will
+	// be 8 elements being committed to from [0, 7] inclusive.
+	desiredStatesLen := int(blockEnd - blockStart + 1)
+	var stateRoots []common.Hash
+	var lastStateRoot common.Hash
+	for i := blockStart; i <= blockEnd; i++ {
+		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
+		if err != nil {
+			return nil, err
+		}
+		if batchMsgCount <= arbutil.MessageIndex(i) {
+			batch++
+		}
+		gs, err := s.getInfoAtMessageCountAndBatch(arbutil.MessageIndex(i), batch)
+		if err != nil {
+			return nil, err
+		}
+		stateRoot := gs.Hash()
+		stateRoots = append(stateRoots, stateRoot)
+		lastStateRoot = stateRoot
+		if gs.Batch >= nextBatchCount {
+			if gs.Batch > nextBatchCount || gs.PosInBatch > 0 {
+				return nil, fmt.Errorf("overran next batch count %v with global state batch %v position %v", nextBatchCount, gs.Batch, gs.PosInBatch)
+			}
+			break
+		}
+	}
+	for len(stateRoots) < desiredStatesLen {
+		stateRoots = append(stateRoots, lastStateRoot)
+	}
+	return stateRoots, nil
 }
 
 func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
