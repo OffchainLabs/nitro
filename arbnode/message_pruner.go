@@ -136,7 +136,7 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 			}
 		}
 	}
-	if endBatchMetadata.MessageCount > 1 {
+	if uint64(endBatchMetadata.MessageCount) > startMessageCount {
 		err := deleteFromRange(transactionStreamerDb, messagePrefix, startMessageCount, uint64(endBatchMetadata.MessageCount)-1)
 		if err != nil {
 			log.Error("error deleting last batch messages: %w", err)
@@ -168,7 +168,7 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 			}
 		}
 	}
-	if endBatchMetadata.DelayedMessageCount > 1 {
+	if endBatchMetadata.DelayedMessageCount > startDelayedMessageCount {
 		err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, startDelayedMessageCount, endBatchMetadata.DelayedMessageCount-1)
 		if err != nil {
 			log.Error("error deleting last batch delayed messages: %w", err)
