@@ -39,9 +39,8 @@ func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes
 	if !arbBlockNumber.IsUint64() {
 		if c.State.ArbOSVersion() >= 11 {
 			return bytes32{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
-		} else {
-			return bytes32{}, errors.New("invalid block number")
 		}
+		return bytes32{}, errors.New("invalid block number")
 	}
 	requestedBlockNum := arbBlockNumber.Uint64()
 
@@ -49,9 +48,8 @@ func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes
 	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
 		if c.State.ArbOSVersion() >= 11 {
 			return common.Hash{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
-		} else {
-			return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
 		}
+		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
 	}
 
 	return evm.Context.GetHash(requestedBlockNum), nil

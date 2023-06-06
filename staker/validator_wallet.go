@@ -334,7 +334,8 @@ func GetValidatorWalletContract(
 	}
 	if len(logs) > 1 {
 		return nil, errors.New("more than one validator wallet created for address")
-	} else if len(logs) == 1 {
+	}
+	if len(logs) == 1 {
 		rawLog := logs[0]
 		parsed, err := walletCreator.ParseWalletCreated(rawLog)
 		if err != nil {

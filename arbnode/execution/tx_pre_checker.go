@@ -79,34 +79,33 @@ type NonceError struct {
 func (e NonceError) Error() string {
 	if e.txNonce < e.stateNonce {
 		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooLow, e.sender, e.txNonce, e.stateNonce)
-	} else if e.txNonce > e.stateNonce {
-		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooHigh, e.sender, e.txNonce, e.stateNonce)
-	} else {
-		// This should be unreachable
-		return fmt.Sprintf("invalid nonce error for address %v nonce %v", e.sender, e.txNonce)
 	}
+	if e.txNonce > e.stateNonce {
+		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooHigh, e.sender, e.txNonce, e.stateNonce)
+	}
+	// This should be unreachable
+	return fmt.Sprintf("invalid nonce error for address %v nonce %v", e.sender, e.txNonce)
 }
 
 func (e NonceError) Unwrap() error {
 	if e.txNonce < e.stateNonce {
 		return core.ErrNonceTooLow
-	} else if e.txNonce > e.stateNonce {
-		return core.ErrNonceTooHigh
-	} else {
-		// This should be unreachable
-		return nil
 	}
+	if e.txNonce > e.stateNonce {
+		return core.ErrNonceTooHigh
+	}
+	// This should be unreachable
+	return nil
 }
 
 func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) error {
-	if txNonce != stateNonce {
-		return NonceError{
-			sender:     sender,
-			txNonce:    txNonce,
-			stateNonce: stateNonce,
-		}
-	} else {
+	if txNonce == stateNonce {
 		return nil
+	}
+	return NonceError{
+		sender:     sender,
+		txNonce:    txNonce,
+		stateNonce: stateNonce,
 	}
 }
 

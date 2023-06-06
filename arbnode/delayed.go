@@ -271,13 +271,14 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		}
 		b.messageProviders[ethLog.Address] = con
 	}
-	if ethLog.Topics[0] == inboxMessageDeliveredID {
+	switch {
+	case ethLog.Topics[0] == inboxMessageDeliveredID:
 		parsedLog, err := con.ParseInboxMessageDelivered(ethLog)
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
-	} else if ethLog.Topics[0] == inboxMessageFromOriginID {
+	case ethLog.Topics[0] == inboxMessageFromOriginID:
 		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
@@ -292,7 +293,7 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 			return nil, nil, errors.WithStack(err)
 		}
 		return parsedLog.MessageNum, args["messageData"].([]byte), nil
-	} else {
+	default:
 		return nil, nil, errors.New("unexpected log type")
 	}
 }
