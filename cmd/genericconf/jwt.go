@@ -21,7 +21,8 @@ func TryCreatingJWTSecret(filename string) error {
 	if errors.Is(err, fs.ErrExist) {
 		log.Info("using existing jwt file", "filename", filename)
 		return nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return fmt.Errorf("couldn't create file: %w", err)
 	}
 	defer func() {

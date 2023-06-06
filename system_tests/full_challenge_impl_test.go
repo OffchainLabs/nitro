@@ -317,7 +317,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		Batch:      2,
 		PosInBatch: 0,
 	}
-	numBlocks := asserterLatestBlock.NumberU64() - asserterGenesis.NumberU64()
+	numBlocks := asserterLatestBlock.Number.Uint64() - asserterGenesis.NumberU64()
 
 	resultReceiver, challengeManagerAddr := CreateChallenge(
 		t,
