@@ -125,6 +125,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
             github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),
             github!("arbos/programs.rustEvmDataImpl") => func!(user::evm_data_impl),
+            github!("arbos/programs.rustStartPagesImpl") => func!(user::start_pages_impl),
 
             github!("arbcompress.brotliCompress") => func!(arbcompress::brotli_compress),
             github!("arbcompress.brotliDecompress") => func!(arbcompress::brotli_decompress),

@@ -336,6 +336,18 @@ impl PartialEq for Value {
     }
 }
 
+impl From<u8> for Value {
+    fn from(value: u8) -> Self {
+        Value::I32(value.into())
+    }
+}
+
+impl From<u16> for Value {
+    fn from(value: u16) -> Self {
+        Value::I32(value.into())
+    }
+}
+
 impl From<u32> for Value {
     fn from(value: u32) -> Self {
         Value::I32(value)

@@ -348,8 +348,9 @@ pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
 pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let model = env.config().pricing.memory_model;
+
     let (open, ever) = env.evm_api.add_pages(pages);
-    env.buy_gas(model.gas_cost(open, ever, pages))?;
+    env.buy_gas(model.gas_cost(pages, open, ever))?;
     Ok(())
 }
 

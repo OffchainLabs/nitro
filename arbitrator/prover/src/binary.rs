@@ -4,8 +4,8 @@
 use crate::{
     programs::{
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware,
-        StylusGlobals,
+        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
+        StylusData,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -527,7 +527,7 @@ impl<'a> Debug for WasmBinary<'a> {
 
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
-    pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusGlobals> {
+    pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusData> {
         let meter = Meter::new(compile.pricing.costs);
         let dygas = DynamicMeter::new(&compile.pricing);
         let depth = DepthChecker::new(compile.bounds);
@@ -582,12 +582,16 @@ impl<'a> WasmBinary<'a> {
             code.expr = build;
         }
 
+        // 4GB maximum implies `footprint` fits in a u16
+        let footprint = self.memory_size()?.map(|x| x.initial).unwrap_or_default() as u16;
+
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
-        Ok(StylusGlobals {
+        Ok(StylusData {
             ink_left,
             ink_status,
             depth_left,
+            footprint,
         })
     }
 
@@ -595,7 +599,7 @@ impl<'a> WasmBinary<'a> {
         wasm: &'a [u8],
         page_limit: u16,
         compile: &CompileConfig,
-    ) -> Result<(WasmBinary<'a>, StylusGlobals, u16)> {
+    ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
 

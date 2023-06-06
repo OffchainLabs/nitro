@@ -13,7 +13,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use super::TestInstance;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct TestEvmApi {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
     storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
@@ -53,6 +53,12 @@ impl TestEvmApi {
         self.contracts.lock().insert(address, module);
         self.configs.lock().insert(address, config);
         Ok(())
+    }
+
+    pub fn set_pages(&mut self, open: u16) {
+        let mut pages = self.pages.lock();
+        pages.0 = open;
+        pages.1 = open.max(pages.0);
     }
 }
 

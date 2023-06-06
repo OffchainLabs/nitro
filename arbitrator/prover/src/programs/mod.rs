@@ -362,14 +362,16 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 }
 
-pub struct StylusGlobals {
+#[derive(Clone, Copy)]
+pub struct StylusData {
     pub ink_left: GlobalIndex,
     pub ink_status: GlobalIndex,
     pub depth_left: GlobalIndex,
+    pub footprint: u16,
 }
 
-impl StylusGlobals {
-    pub fn offsets(&self) -> (u64, u64, u64) {
+impl StylusData {
+    pub fn global_offsets(&self) -> (u64, u64, u64) {
         (
             self.ink_left.as_u32() as u64,
             self.ink_status.as_u32() as u64,

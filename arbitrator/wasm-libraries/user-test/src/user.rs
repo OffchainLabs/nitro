@@ -5,7 +5,7 @@
 
 use crate::{Program, ARGS, CONFIG, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{evm, wavm, Bytes32};
-use prover::programs::prelude::GasMeteredMachine;
+use prover::programs::prelude::{GasMeteredMachine, MeteredMachine};
 
 #[no_mangle]
 pub unsafe extern "C" fn forward__read_args(ptr: usize) {
@@ -61,5 +61,5 @@ pub unsafe extern "C" fn forward__memory_grow(pages: u16) {
     let (open, ever) = (OPEN_PAGES, EVER_PAGES);
     OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
     EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
-    program.buy_gas(model.gas_cost(open, ever, pages)).unwrap();
+    program.buy_gas(model.gas_cost(pages, open, ever)).unwrap();
 }

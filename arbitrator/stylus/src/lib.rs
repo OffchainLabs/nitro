@@ -6,7 +6,7 @@ use arbutil::evm::{
     user::{UserOutcome, UserOutcomeKind},
     EvmData,
 };
-use eyre::{eyre, ErrReport};
+use eyre::ErrReport;
 use native::NativeInstance;
 use prover::{binary::WasmBinary, programs::prelude::*};
 use run::RunProgram;
@@ -67,8 +67,15 @@ impl RustVec {
         mem::forget(vec);
     }
 
-    unsafe fn write_err(&mut self, err: ErrReport) {
+    unsafe fn write_err(&mut self, err: ErrReport) -> UserOutcomeKind {
         self.write(format!("{err:?}").into_bytes());
+        UserOutcomeKind::Failure
+    }
+
+    unsafe fn write_outcome(&mut self, outcome: UserOutcome) -> UserOutcomeKind {
+        let (status, outs) = outcome.into_data();
+        self.write(outs);
+        status
     }
 }
 
@@ -91,24 +98,14 @@ pub unsafe extern "C" fn stylus_compile(
     let output = &mut *output;
     let compile = CompileConfig::version(version, debug_mode != 0);
 
-    macro_rules! error {
-        ($text:expr, $error:expr) => {
-            error!($error.wrap_err($text))
-        };
-        ($error:expr) => {{
-            output.write_err($error);
-            return UserOutcomeKind::Failure;
-        }};
-    }
-
     // ensure the wasm compiles during proving
-    *footprint = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
+    *footprint = match WasmBinary::parse_user(wasm, page_limit, &compile) {
         Ok((.., pages)) => pages,
-        Err(error) => error!("failed to parse program", error),
+        Err(err) => return output.write_err(err.wrap_err("failed to parse program")),
     };
     let module = match native::module(wasm, compile) {
         Ok(module) => module,
-        Err(error) => error!(error),
+        Err(err) => return output.write_err(err),
     };
     output.write(module);
     UserOutcomeKind::Success
@@ -135,8 +132,14 @@ pub unsafe extern "C" fn stylus_call(
     let calldata = calldata.slice().to_vec();
     let compile = CompileConfig::version(config.version, debug_chain != 0);
     let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(*gas);
     let output = &mut *output;
+
+    // charge for memory before creating the instance
+    let gas_cost = pricing.memory_model.start_cost(&evm_data);
+    let Some(ink) = (*gas).checked_sub(gas_cost).map(|x| pricing.gas_to_ink(x)) else {
+        *gas = 0;
+        return output.write_outcome(UserOutcome::OutOfInk);
+    };
 
     // Safety: module came from compile_user_wasm
     let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
@@ -146,15 +149,8 @@ pub unsafe extern "C" fn stylus_call(
     };
 
     let status = match instance.run_main(&calldata, config, ink) {
-        Err(err) | Ok(UserOutcome::Failure(err)) => {
-            output.write_err(err.wrap_err(eyre!("failed to execute program")));
-            UserOutcomeKind::Failure
-        }
-        Ok(outcome) => {
-            let (status, outs) = outcome.into_data();
-            output.write(outs);
-            status
-        }
+        Err(e) | Ok(UserOutcome::Failure(e)) => output.write_err(e.wrap_err("call failed")),
+        Ok(outcome) => output.write_outcome(outcome),
     };
     let ink_left = match status {
         UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack

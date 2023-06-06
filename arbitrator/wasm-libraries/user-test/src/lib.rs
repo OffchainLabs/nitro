@@ -33,12 +33,21 @@ pub unsafe extern "C" fn user_test__prepare(
     max_depth: u32,
     ink_price: u64,
     hostio_ink: u64,
+    free_pages: u16,
+    page_gas: u32,
+    page_ramp: u32,
 ) -> *const u8 {
-    let memory_model = MemoryModel::default();
+    let memory_model = MemoryModel::new(free_pages, page_gas, page_ramp);
     let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink, memory_model);
     CONFIG = Some(config);
     ARGS = vec![0; len];
     ARGS.as_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_test__set_pages(pages: u16) {
+    OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
+    EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
 }
 
 #[no_mangle]

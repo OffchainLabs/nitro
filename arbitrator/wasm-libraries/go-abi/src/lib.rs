@@ -53,6 +53,10 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    pub unsafe fn unbox<T>(&mut self) -> T {
+        *Box::from_raw(self.read_ptr_mut())
+    }
+
     pub unsafe fn read_go_ptr(&mut self) -> usize {
         self.read_u64().try_into().expect("go pointer doesn't fit")
     }

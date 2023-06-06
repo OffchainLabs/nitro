@@ -7,13 +7,9 @@ use crate::{
     user::evm_api::exec_wasm,
 };
 use arbutil::{
-    evm::{
-        user::{UserOutcome, UserOutcomeKind},
-        EvmData,
-    },
+    evm::{user::UserOutcome, EvmData, StartPages},
     heapify,
 };
-use eyre::eyre;
 use prover::{
     binary::WasmBinary,
     programs::{
@@ -67,27 +63,35 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 ///     -> (status byte, out *Vec<u8>)
 pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let sp = &mut GoStack::simple(sp, &env);
-    macro_rules! unbox {
-        () => {
-            unsafe { *Box::from_raw(sp.read_ptr_mut()) }
-        };
-    }
-    use UserOutcomeKind::*;
+    use UserOutcome::*;
 
     // move inputs
-    let module: Vec<u8> = unbox!();
+    let module: Vec<u8> = sp.unbox();
     let calldata = sp.read_go_slice_owned();
-    let (compile, config): (CompileConfig, StylusConfig) = unbox!();
+    let (compile, config): (CompileConfig, StylusConfig) = sp.unbox();
     let evm_api = sp.read_go_slice_owned();
-    let evm_data: EvmData = unbox!();
-
-    // buy ink
+    let evm_data: EvmData = sp.unbox();
     let pricing = config.pricing;
     let gas = sp.read_go_ptr();
-    let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
     // skip the root since we don't use these
     sp.skip_u64();
+
+    macro_rules! done {
+        ($outcome:expr, $ink:expr) => {{
+            let (status, outs) = $outcome.into_data();
+            sp.write_u8(status.into()).skip_space();
+            sp.write_ptr(heapify(outs));
+            sp.write_u64_raw(gas, pricing.ink_to_gas($ink));
+            return Ok(());
+        }};
+    }
+
+    // charge for memory before creating the instance
+    let gas_cost = pricing.memory_model.start_cost(&evm_data);
+    let Some(ink) = sp.read_u64_raw(gas).checked_sub(gas_cost).map(|x| pricing.gas_to_ink(x)) else {
+        done!(OutOfInk, 0);
+    };
 
     let result = exec_wasm(
         sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
@@ -95,19 +99,9 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
     match outcome {
-        Err(err) | Ok(UserOutcome::Failure(err)) => {
-            let outs = format!("{:?}", err.wrap_err(eyre!("failed to execute program")));
-            sp.write_u8(Failure.into()).skip_space();
-            sp.write_ptr(heapify(outs.into_bytes()));
-        }
-        Ok(outcome) => {
-            let (status, outs) = outcome.into_data();
-            sp.write_u8(status.into()).skip_space();
-            sp.write_ptr(heapify(outs));
-        }
+        Err(e) | Ok(Failure(e)) => done!(Failure(e.wrap_err("call failed")), ink_left),
+        Ok(outcome) => done!(outcome, ink_left),
     }
-    sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left));
-    Ok(())
 }
 
 /// Reads the length of a rust `Vec`
@@ -148,9 +142,9 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 
 /// Creates an `EvmData` from its component parts.
 /// go side: λ(
-///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
-///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
-///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte, footprint u16
+///     blockBasefee, blockChainid *[32]byte, blockCoinbase *[20]byte, blockDifficulty *[32]byte,
+///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, startPages *StartPages,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
@@ -167,9 +161,23 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
-        footprint: sp.read_u16(),
+        start_pages: sp.unbox(),
         return_data_len: 0,
     };
-    sp.skip_space();
+    println!("EvmData {:?}", evm_data);
     sp.write_ptr(heapify(evm_data));
+}
+
+/// Creates an `EvmData` from its component parts.
+/// Safety: λ(need, open, ever u16) *StartPages
+pub fn start_pages_impl(env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &env);
+    let start_pages = StartPages {
+        need: sp.read_u16(),
+        open: sp.read_u16(),
+        ever: sp.read_u16(),
+    };
+    println!("StartPages {:?}", start_pages);
+    sp.skip_space();
+    sp.write_ptr(heapify(start_pages));
 }

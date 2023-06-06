@@ -3,7 +3,7 @@
 
 use crate::{evm_api::ApiCaller, Program, PROGRAMS};
 use arbutil::{
-    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
+    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData, StartPages},
     heapify, wavm,
 };
 use fnv::FnvHashMap as HashMap;
@@ -42,8 +42,6 @@ struct MemoryLeaf([u8; 32]);
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
 ) {
-    println!("COMPILE");
-
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
     let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
@@ -85,7 +83,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     );
     let machine = match machine {
         Ok(machine) => machine,
-        Err(err) => error!("failed to instrument user program", err),
+        Err(err) => error!("failed to instrument program", err),
     };
     sp.write_ptr(heapify(machine));
     sp.write_u16(footprint).skip_space();
@@ -100,18 +98,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    macro_rules! unbox {
-        () => {
-            *Box::from_raw(sp.read_ptr_mut())
-        };
-    }
-    let machine: Machine = unbox!();
+    let machine: Machine = sp.unbox();
     let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = unbox!();
+    let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
-    let evm_data: EvmData = unbox!();
-
-    println!("CALL");
+    let evm_data: EvmData = sp.unbox();
 
     // buy ink
     let pricing = config.pricing;
@@ -185,7 +176,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let vec: Vec<u8> = *Box::from_raw(sp.read_ptr_mut());
+    let vec: Vec<u8> = sp.unbox();
     let ptr: *mut u8 = sp.read_ptr_mut();
     wavm::write_slice(&vec, ptr as u64);
     mem::drop(vec)
@@ -213,9 +204,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(
-///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
-///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
-///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte, footprint u16
+///     blockBasefee, blockChainid *[32]byte, blockCoinbase *[20]byte, blockDifficulty *[32]byte,
+///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, startPages *StartPages,
 ///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
@@ -236,10 +227,26 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
         msg_value: read_bytes32(sp.read_go_ptr()).into(),
         tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
         tx_origin: read_bytes20(sp.read_go_ptr()).into(),
-        footprint: sp.read_u16(),
+        start_pages: sp.unbox(),
         return_data_len: 0,
     };
-    println!("EvmData {}", evm_data.footprint);
-    sp.skip_space();
+    println!("EvmData {:?}", evm_data.start_pages);
     sp.write_ptr(heapify(evm_data));
+}
+
+/// Creates an `EvmData` from its component parts.
+/// Safety: λ(need, open, ever u16) *StartPages
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustStartPagesImpl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+    let start_pages = StartPages{
+        need: sp.read_u16(),
+        open: sp.read_u16(),
+        ever: sp.read_u16(),
+    };
+    println!("StartPages {:?}", start_pages);
+    sp.skip_space();
+    sp.write_ptr(heapify(start_pages));
 }

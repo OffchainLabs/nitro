@@ -136,6 +136,10 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    pub fn unbox<T>(&mut self) -> T {
+        unsafe { *Box::from_raw(self.read_ptr_mut()) }
+    }
+
     pub fn write_u8(&mut self, x: u8) -> &mut Self {
         let ptr = self.advance(1);
         self.write_u8_raw(ptr, x)

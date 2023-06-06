@@ -214,6 +214,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
+	open, ever := statedb.GetStylusPages()
 
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
@@ -228,7 +229,11 @@ func (p Programs) CallProgram(
 		msgValue:        common.BigToHash(contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
-		footprint:       program.footprint,
+		startPages: startPages{
+			need: program.footprint,
+			open: *open,
+			ever: *ever,
+		},
 	}
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
@@ -338,7 +343,13 @@ type evmData struct {
 	msgValue        common.Hash
 	txGasPrice      common.Hash
 	txOrigin        common.Address
-	footprint       uint16
+	startPages      startPages
+}
+
+type startPages struct {
+	need uint16
+	open uint16
+	ever uint16
 }
 
 type userStatus uint8
@@ -347,7 +358,7 @@ const (
 	userSuccess userStatus = iota
 	userRevert
 	userFailure
-	userOutOfGas
+	userOutOfInk
 	userOutOfStack
 )
 
@@ -359,7 +370,7 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 		return data, vm.ErrExecutionReverted
 	case userFailure:
 		return nil, vm.ErrExecutionReverted
-	case userOutOfGas:
+	case userOutOfInk:
 		return nil, vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, vm.ErrDepth

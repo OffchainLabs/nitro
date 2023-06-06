@@ -3,6 +3,7 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
+use arbutil::evm::EvmData;
 use derivative::Derivative;
 use fixed::types::U32F32;
 use std::fmt::Debug;
@@ -129,7 +130,7 @@ impl MemoryModel {
     }
 
     /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
-    pub fn gas_cost(&self, open: u16, ever: u16, new: u16) -> u64 {
+    pub fn gas_cost(&self, new: u16, open: u16, ever: u16) -> u64 {
         let ramp = U32F32::from_bits(self.page_ramp.into()) + U32F32::lit("1");
         let size = ever.max(open.saturating_add(new));
 
@@ -158,6 +159,11 @@ impl MemoryModel {
         let linear = (new as u64).saturating_mul(self.page_gas.into());
         let expand = curve(size) - curve(ever);
         linear.saturating_add(expand)
+    }
+
+    pub fn start_cost(&self, evm_data: &EvmData) -> u64 {
+        let start = evm_data.start_pages;
+        self.gas_cost(start.need, start.open, start.ever)
     }
 }
 

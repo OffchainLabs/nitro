@@ -32,6 +32,7 @@ type rustVec byte
 type rustConfig byte
 type rustMachine byte
 type rustEvmData byte
+type rustStartPages byte
 
 func compileUserWasmRustImpl(
 	wasm []byte, version, debugMode u32, pageLimit u16,
@@ -45,6 +46,7 @@ func callUserWasmRustImpl(
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
+func rustStartPagesImpl(need, open, ever u16) *rustStartPages
 func rustEvmDataImpl(
 	blockBasefee *hash,
 	blockChainId *hash,
@@ -58,12 +60,13 @@ func rustEvmDataImpl(
 	msgValue *hash,
 	txGasPrice *hash,
 	txOrigin *addr,
-	footprint u16,
+	startPages *rustStartPages,
 ) *rustEvmData
 
 func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version u32, debug bool) (u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
 	_, footprint, err := compileMachine(db, program, wasm, version, debugMode)
+	println("FOOTPRINT", footprint)
 	return footprint, err
 }
 
@@ -139,6 +142,10 @@ func (d *evmData) encode() *rustEvmData {
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
-		u16(d.footprint),
+		d.startPages.encode(),
 	)
+}
+
+func (d *startPages) encode() *rustStartPages {
+	return rustStartPagesImpl(d.need, d.open, d.ever)
 }
