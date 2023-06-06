@@ -98,6 +98,49 @@ func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRo
 	return result, nil
 }
 
+// HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,
+// but padding states with duplicates after the first state with a batch count of at least the specified max.
+func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStart uint64, blockEnd uint64, nextBatchCount uint64) (util.HistoryCommitment, error) {
+	if blockEnd < blockStart {
+		return util.HistoryCommitment{}, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
+	}
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(blockStart))
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	// The size is the number of elements being committed to. For example, if the height is 7, there will
+	// be 8 elements being committed to from [0, 7] inclusive.
+	desiredStatesLen := int(blockEnd - blockStart + 1)
+	var stateRoots []common.Hash
+	var lastStateRoot common.Hash
+	for i := blockStart; i <= blockEnd; i++ {
+		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		if batchMsgCount <= arbutil.MessageIndex(i) {
+			batch++
+		}
+		gs, err := s.getInfoAtMessageCountAndBatch(arbutil.MessageIndex(i), batch)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		stateRoot := gs.Hash()
+		stateRoots = append(stateRoots, stateRoot)
+		lastStateRoot = stateRoot
+		if gs.Batch >= nextBatchCount {
+			if gs.Batch > nextBatchCount || gs.PosInBatch > 0 {
+				return util.HistoryCommitment{}, fmt.Errorf("overran next batch count %v with global state batch %v position %v", nextBatchCount, gs.Batch, gs.PosInBatch)
+			}
+			break
+		}
+	}
+	for len(stateRoots) < desiredStatesLen {
+		stateRoots = append(stateRoots, lastStateRoot)
+	}
+	return util.NewHistoryCommitment(blockEnd-blockStart, stateRoots)
+}
+
 func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
