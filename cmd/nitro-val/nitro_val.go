@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
@@ -133,7 +132,7 @@ func mainImpl() int {
 	}
 	err = stack.Start()
 	if err != nil {
-		fatalErrChan <- errors.Wrap(err, "error starting stack")
+		fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
 	}
 	defer stack.Close()
 
