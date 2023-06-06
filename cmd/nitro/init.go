@@ -201,7 +201,7 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 		if currentBlock == nil {
 			return errors.New("failed to get current block")
 		}
-		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.NumberU64(), currentBlock.Time()); err != nil {
+		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.Number.Uint64(), currentBlock.Time); err != nil {
 			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
 		}
 	}
