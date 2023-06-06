@@ -90,10 +90,9 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 		oldPool := new(big.Int).Set(pool)
 		pool.Set(common.Big0)
 		return oldPool
-	} else {
-		pool.Sub(pool, take)
-		return new(big.Int).Set(take)
 	}
+	pool.Sub(pool, take)
+	return new(big.Int).Set(take)
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
