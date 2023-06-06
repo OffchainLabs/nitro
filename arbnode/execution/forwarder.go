@@ -78,7 +78,7 @@ func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderCon
 }
 
 type TxForwarder struct {
-	enabled   int32
+	enabled   atomic.Bool
 	target    string
 	timeout   time.Duration
 	transport *http.Transport
@@ -129,7 +129,7 @@ func (f *TxForwarder) ctxWithTimeout(inctx context.Context) (context.Context, co
 }
 
 func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if atomic.LoadInt32(&f.enabled) == 0 {
+	if !f.enabled.Load() {
 		return ErrNoSequencer
 	}
 	ctx, cancelFunc := f.ctxWithTimeout(inctx)
@@ -144,7 +144,7 @@ const cacheUpstreamHealth = 2 * time.Second
 const maxHealthTimeout = 10 * time.Second
 
 func (f *TxForwarder) CheckHealth(inctx context.Context) error {
-	if atomic.LoadInt32(&f.enabled) == 0 {
+	if !f.enabled.Load() {
 		return ErrNoSequencer
 	}
 	f.healthMutex.Lock()
@@ -166,7 +166,7 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	if f.target == "" {
 		f.rpcClient = nil
 		f.ethClient = nil
-		f.enabled = 0
+		f.enabled.Store(false)
 		return nil
 	}
 	ctx, cancelFunc := f.ctxWithTimeout(inctx)
@@ -177,13 +177,13 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	}
 	f.rpcClient = rpcClient
 	f.ethClient = ethclient.NewClient(rpcClient)
-	f.enabled = 1
+	f.enabled.Store(true)
 	return nil
 }
 
 // Disable is not thread-safe vs. Initialize
 func (f *TxForwarder) Disable() {
-	atomic.StoreInt32(&f.enabled, 0)
+	f.enabled.Store(false)
 }
 
 func (f *TxForwarder) Start(ctx context.Context) error {
