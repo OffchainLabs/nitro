@@ -4,32 +4,31 @@
 package precompiles
 
 import (
-	"bytes"
 	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
 type ArbRetryableTx struct {
-	Address                 addr
-	TicketCreated           func(ctx, mech, bytes32) error
-	LifetimeExtended        func(ctx, mech, bytes32, huge) error
-	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
-	Canceled                func(ctx, mech, bytes32) error
-	TicketCreatedGasCost    func(bytes32) (uint64, error)
-	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
-	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
-	CanceledGasCost         func(bytes32) (uint64, error)
+	Address                    addr
+	TicketCreated              func(ctx, mech, bytes32) error
+	LifetimeExtended           func(ctx, mech, bytes32, huge) error
+	RedeemScheduled            func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
+	Canceled                   func(ctx, mech, bytes32) error
+	ExpiredMerkleUpdate        func(ctx, mech, bytes32, huge) error
+	TicketCreatedGasCost       func(bytes32) (uint64, error)
+	LifetimeExtendedGasCost    func(bytes32, huge) (uint64, error)
+	RedeemScheduledGasCost     func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
+	CanceledGasCost            func(bytes32) (uint64, error)
+	ExpiredMerkleUpdateGasCost func(bytes32, huge) (uint64, error)
 
 	// deprecated event
 	Redeemed        func(ctx, mech, bytes32) error
@@ -193,37 +192,12 @@ func (con ArbRetryableTx) Revive(c ctx, evm mech,
 	proof []bytes32,
 ) (huge, error) {
 	// TODO(magic) verify gas accounting
-	retryableHash := retryables.RetryableHash(ticketId, numTries, from, to, callvalue, beneficiary, calldata)
-	retryableState := c.State.RetryableState()
-	expiredRoot, err := retryableState.Expired.Root()
-	if err != nil {
-		return big.NewInt(0), err
-	}
-	if !bytes.Equal(rootHash[:], expiredRoot.Bytes()) {
-		return big.NewInt(0), errors.New("invalid root hash")
-	}
 	proofHashes := make([]common.Hash, len(proof))
 	for i, proofBytes := range proof {
 		proofHashes[i] = proofBytes
 	}
-	merkleProof := merkletree.MerkleProof{
-		RootHash:  common.BytesToHash(rootHash[:]),
-		LeafHash:  common.BytesToHash(crypto.Keccak256(retryableHash.Bytes())),
-		LeafIndex: leafIndex,
-		Proof:     proofHashes,
-	}
-	if !merkleProof.IsCorrect() {
-		return big.NewInt(0), errors.New("wrong proof")
-	}
-	inserted, err := retryableState.Revived.Add(leafIndex)
-	if err != nil {
-		return big.NewInt(0), err
-	}
-	if !inserted {
-		return big.NewInt(0), errors.New("already revived")
-	}
-	currentTime := evm.Context.Time
-	newTimeout, err := retryableState.Revive(ticketId, numTries, from, &to, callvalue, beneficiary, calldata, currentTime, retryables.RetryableLifetimeSeconds)
+	retryableState := c.State.RetryableState()
+	newTimeout, err := retryableState.Revive(ticketId, numTries, from, to, callvalue, beneficiary, calldata, common.BytesToHash(rootHash[:]), leafIndex, proofHashes, evm.Context.Time, retryables.RetryableLifetimeSeconds)
 	if err != nil {
 		return big.NewInt(0), err
 	}

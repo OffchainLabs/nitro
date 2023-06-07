@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/merkletree"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -83,8 +84,17 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		currentTime := evm.Context.Time
 
 		// Try to reap 2 retryables
-		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
-		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		merkleUpdateEvents, _ := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		merklaUpdateEvents1, _ := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		merkleUpdateEvents = append(merkleUpdateEvents, merklaUpdateEvents1...)
+		for _, merkleUpdateEvent := range merkleUpdateEvents {
+			position := merkletree.LevelAndLeaf{
+				Level: merkleUpdateEvent.Level,
+				Leaf:  merkleUpdateEvent.NumLeaves,
+			}
+			// TODO(magic) how should we handle errors here?
+			_ = EmitExpiredMerkleUpdateEvent(evm, merkleUpdateEvent.Hash, position.ToBigInt())
+		}
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 

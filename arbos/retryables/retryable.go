@@ -16,7 +16,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
+
+// set by the precompile module, to avoid a package dependence cycle
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
@@ -24,8 +27,8 @@ const RetryableReapPrice = 58000
 type RetryableState struct {
 	retryables   *storage.Storage
 	TimeoutQueue *storage.Queue
-	Expired      *merkleAccumulator.MerkleAccumulator
-	Revived      *storage.Uint64Set
+	expired      *merkleAccumulator.MerkleAccumulator
+	revived      *storage.Uint64Set
 }
 
 var (
@@ -173,12 +176,6 @@ func clearRetryable(retStorage *storage.Storage) error {
 	return retStorage.OpenSubStorage(calldataKey).ClearBytes()
 }
 
-func MoveFundsLeftInEscrowToBeneficiary(ticketId common.Hash, beneficiary common.Address, evm *vm.EVM, scenario util.TracingScenario) error {
-	escrowAddress := RetryableEscrowAddress(ticketId)
-	amount := evm.StateDB.GetBalance(escrowAddress)
-	return util.TransferBalance(&escrowAddress, &beneficiary, amount, evm, scenario, "escrow")
-}
-
 func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
 	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
 	timeout, err := retStorage.GetByUint64(timeoutOffset)
@@ -188,7 +185,10 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 
 	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
 	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
-	if err := MoveFundsLeftInEscrowToBeneficiary(id, common.BytesToAddress(beneficiary.Bytes()), evm, scenario); err != nil {
+	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
+	escrowAddress := RetryableEscrowAddress(id)
+	amount := evm.StateDB.GetBalance(escrowAddress)
+	if err := util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, "escrow"); err != nil {
 		return false, err
 	}
 
@@ -328,13 +328,40 @@ func (rs *RetryableState) Revive(
 	ticketId common.Hash,
 	numTries uint64,
 	from common.Address,
-	to *common.Address,
+	to common.Address,
 	callvalue *big.Int,
 	beneficiary common.Address,
 	calldata []byte,
+	rootHash common.Hash,
+	leafIndex uint64,
+	proof []common.Hash,
 	currentTimestamp,
 	timeToAdd uint64,
 ) (uint64, error) {
+	retryableHash := RetryableHash(ticketId, numTries, from, to, callvalue, beneficiary, calldata)
+	expiredRoot, err := rs.expired.Root()
+	if err != nil {
+		return 0, err
+	}
+	if !bytes.Equal(rootHash.Bytes(), expiredRoot.Bytes()) {
+		return 0, errors.New("invalid root hash")
+	}
+	merkleProof := merkletree.MerkleProof{
+		RootHash:  rootHash,
+		LeafHash:  common.BytesToHash(crypto.Keccak256(retryableHash.Bytes())),
+		LeafIndex: leafIndex,
+		Proof:     proof,
+	}
+	if !merkleProof.IsCorrect() {
+		return 0, errors.New("wrong proof")
+	}
+	inserted, err := rs.revived.Add(leafIndex)
+	if err != nil {
+		return 0, err
+	}
+	if !inserted {
+		return 0, errors.New("already revived")
+	}
 	ret := rs.OpenPotentialyExpiredRetryable(ticketId)
 	timeout, err := ret.timeout.Get()
 	if err != nil {
@@ -352,7 +379,7 @@ func (rs *RetryableState) Revive(
 	if err = ret.from.Set(from); err != nil {
 		return 0, err
 	}
-	if err = ret.to.Set(to); err != nil {
+	if err = ret.to.Set(&to); err != nil {
 		return 0, err
 	}
 	if err = ret.callvalue.SetChecked(callvalue); err != nil {
@@ -417,54 +444,57 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	return true, err
 }
 
-func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) error {
+func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) ([]merkleAccumulator.MerkleTreeNodeEvent, error) {
 	id, err := rs.TimeoutQueue.Peek()
 	if err != nil || id == nil {
-		return err
+		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 	}
 	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes())
 	timeoutStorage := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
 	timeout, err := timeoutStorage.Get()
 	if err != nil {
-		return err
+		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 	}
 	if timeout == 0 {
 		// The retryable has already been deleted, so discard the peeked entry
 		_, err = rs.TimeoutQueue.Get()
-		return err
+		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 	}
 
 	windowsLeftStorage := retryableStorage.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
 	windowsLeft, err := windowsLeftStorage.Get()
 	// TODO(magic) why can't we check the second cond earlier?
 	if err != nil || timeout >= currentTimestamp {
-		return err
+		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 	}
 
 	// Either the retryable has expired, or it's lost a lifetime's worth of time
 	_, err = rs.TimeoutQueue.Get()
 	if err != nil {
-		return err
+		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 	}
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
 		retryableHash, err := rs.OpenPotentialyExpiredRetryable(*id).GetHash()
 		if err != nil {
-			return err
+			return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 		}
 		if err = clearRetryable(retryableStorage); err != nil {
-			return err
+			return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 		}
-		_, err = rs.Expired.Append(retryableHash)
-		return err
+		merkleUpdateEvents, err := rs.expired.Append(retryableHash)
+		if err != nil {
+			return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		}
+		return merkleUpdateEvents, nil
 	}
 
 	// Consume a window, delaying the timeout one lifetime period
 	if err := timeoutStorage.Set(timeout + RetryableLifetimeSeconds); err != nil {
-		return err
+		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
 	}
-	return windowsLeftStorage.Set(windowsLeft - 1)
+	return []merkleAccumulator.MerkleTreeNodeEvent{}, windowsLeftStorage.Set(windowsLeft - 1)
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {
