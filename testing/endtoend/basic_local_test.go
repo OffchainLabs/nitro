@@ -22,8 +22,9 @@ type ChallengeScenario struct {
 	Name string
 
 	// Validator knowledge
-	AliceStateManager l2stateprovider.Provider
-	BobStateManager   l2stateprovider.Provider
+	AliceStateManager   l2stateprovider.Provider
+	BobStateManager     l2stateprovider.Provider
+	CharlieStateManager l2stateprovider.Provider
 
 	// Expectations
 	Expectations []expect
@@ -127,7 +128,75 @@ func TestChallengeProtocol_AliceAndBob_AnvilLocal(t *testing.T) {
 	for _, scenario := range scenarios {
 		testChallengeProtocol_AliceAndBob(t, be, scenario)
 	}
+}
 
+func TestChallengeProtocol_AliceAndBobAndCharlie_AnvilLocal(t *testing.T) {
+	be, err := backend.NewAnvilLocal(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := be.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := be.Stop(); err != nil {
+			t.Log(fmt.Errorf("error stopping backend: %v", err))
+		}
+	}()
+
+	scenarios := []*ChallengeScenario{
+		{
+			Name: "forked assertion at different heights",
+			AliceStateManager: func() l2stateprovider.Provider {
+				sm, err := statemanager.NewForSimpleMachine()
+				if err != nil {
+					t.Fatal(err)
+				}
+				return sm
+			}(),
+			BobStateManager: func() l2stateprovider.Provider {
+				cfg := &challengeProtocolTestConfig{
+					assertionDivergenceHeight: 4,
+					bigStepDivergenceHeight:   4,
+					smallStepDivergenceHeight: 4,
+				}
+				sm, err := statemanager.NewForSimpleMachine(
+					statemanager.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*protocol.LevelZeroSmallStepEdgeHeight+cfg.smallStepDivergenceHeight),
+					statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
+					statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return sm
+			}(),
+			CharlieStateManager: func() l2stateprovider.Provider {
+				cfg := &challengeProtocolTestConfig{
+					assertionDivergenceHeight: 5,
+					bigStepDivergenceHeight:   5,
+					smallStepDivergenceHeight: 5,
+				}
+				sm, err := statemanager.NewForSimpleMachine(
+					statemanager.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*protocol.LevelZeroSmallStepEdgeHeight+cfg.smallStepDivergenceHeight),
+					statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
+					statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return sm
+
+			}(),
+			Expectations: []expect{
+				expectChallengeCompletedByOneStepProof,
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		testChallengeProtocol_AliceAndBobAndCharlie(t, be, scenario)
+	}
 }
 
 func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenario *ChallengeScenario) {
@@ -151,6 +220,47 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 
 		a.Start(ctx)
 		b.Start(ctx)
+
+		g, ctx := errgroup.WithContext(ctx)
+		for _, e := range scenario.Expectations {
+			fn := e // loop closure
+			g.Go(func() error {
+				return fn(t, ctx, be)
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func testChallengeProtocol_AliceAndBobAndCharlie(t *testing.T, be backend.Backend, scenario *ChallengeScenario) {
+	t.Run(scenario.Name, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+		defer cancel()
+
+		rollup, err := be.DeployRollup()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		a, err := setupValidator(ctx, be, rollup, scenario.AliceStateManager, be.Alice(), "alice")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := setupValidator(ctx, be, rollup, scenario.BobStateManager, be.Bob(), "bob")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := setupValidator(ctx, be, rollup, scenario.CharlieStateManager, be.Charlie(), "charlie")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		a.Start(ctx)
+		b.Start(ctx)
+		c.Start(ctx)
 
 		g, ctx := errgroup.WithContext(ctx)
 		for _, e := range scenario.Expectations {

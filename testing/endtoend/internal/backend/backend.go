@@ -21,6 +21,8 @@ type Backend interface {
 	Alice() *bind.TransactOpts
 	// Bob represents the transactor for Bob's account.
 	Bob() *bind.TransactOpts
+	// Charlie represents the transactor for Charlie's account.
+	Charlie() *bind.TransactOpts
 
 	// Deployer functions
 	// DeployRollup contract, if not already deployed.

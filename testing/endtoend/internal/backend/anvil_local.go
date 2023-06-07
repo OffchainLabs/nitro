@@ -25,8 +25,9 @@ var _ Backend = &AnvilLocal{}
 type AnvilLocal struct {
 	cancel context.CancelFunc
 
-	alice *bind.TransactOpts
-	bob   *bind.TransactOpts
+	alice   *bind.TransactOpts
+	bob     *bind.TransactOpts
+	charlie *bind.TransactOpts
 
 	ctx    context.Context
 	client *ethclient.Client
@@ -103,6 +104,18 @@ func (a *AnvilLocal) loadAccounts() error {
 		return err
 	}
 	a.bob = bobOpts
+
+	// Load Charlie from fourth account in test mnemonic.
+	charliePK, err := crypto.HexToECDSA("6de4211afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
+	if err != nil {
+		return err
+	}
+	charlieOpts, err := bind.NewKeyedTransactorWithChainID(charliePK, anvilLocalChainID)
+	if err != nil {
+		return err
+	}
+	a.charlie = charlieOpts
+
 	return nil
 }
 
@@ -190,6 +203,11 @@ func (a *AnvilLocal) Alice() *bind.TransactOpts {
 // Bob returns the transactor for Bob's account.`s`
 func (a *AnvilLocal) Bob() *bind.TransactOpts {
 	return a.bob
+}
+
+// Charlie returns the transactor for Charlie's account.`s`
+func (a *AnvilLocal) Charlie() *bind.TransactOpts {
+	return a.charlie
 }
 
 func (a *AnvilLocal) DeployRollup() (common.Address, error) {

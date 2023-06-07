@@ -20,6 +20,9 @@ func TestLocalAnvilLoadAccounts(t *testing.T) {
 	if a.bob == nil {
 		t.Error("Bob is nil")
 	}
+	if a.charlie == nil {
+		t.Error("Charlie is nil")
+	}
 	if a.deployer == nil {
 		t.Error("Deployer is nil")
 	}
