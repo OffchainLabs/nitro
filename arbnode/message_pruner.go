@@ -117,8 +117,10 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 }
 
 func deleteFromLastPrunedUptoEndKey(db ethdb.Database, prefix []byte, endMinKey uint64) ([][]byte, error) {
-	startIter := db.NewIterator(prefix, nil)
-	startIter.Next()
+	startIter := db.NewIterator(prefix, uint64ToKey(1))
+	if !startIter.Next() {
+		return nil, nil
+	}
 	startMinKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
 	startIter.Release()
 	if endMinKey > startMinKey {
