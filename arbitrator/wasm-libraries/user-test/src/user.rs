@@ -5,7 +5,7 @@
 
 use crate::{Program, ARGS, CONFIG, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{evm, wavm, Bytes32};
-use prover::programs::prelude::{GasMeteredMachine, MeteredMachine};
+use prover::programs::prelude::GasMeteredMachine;
 
 #[no_mangle]
 pub unsafe extern "C" fn forward__read_args(ptr: usize) {

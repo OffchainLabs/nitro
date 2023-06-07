@@ -594,6 +594,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
+	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))

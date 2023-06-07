@@ -104,6 +104,9 @@ interface ArbOwner {
     // @notice sets the ramp that drives exponential wasm memory costs
     function setWasmPageRamp(uint32 ramp) external;
 
+    /// @notice Sets serialized chain config in ArbOS state
+    function setChainConfig(string calldata chainConfig) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

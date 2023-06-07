@@ -195,6 +195,7 @@ fn main() -> Result<()> {
         opts.always_merkleize,
         opts.allow_hostapi,
         opts.debug_funcs,
+        true,
         global_state,
         inbox_contents,
         preimage_resolver,

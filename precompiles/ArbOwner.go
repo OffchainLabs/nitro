@@ -4,13 +4,17 @@
 package precompiles
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbOwner precompile provides owners with tools for managing the rollup.
@@ -187,4 +191,52 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint32) error {
 // Sets the ramp that drives exponential wasm memory costs
 func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint32) error {
 	return c.State.Programs().SetPageRamp(ramp)
+}
+
+func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
+	if c == nil {
+		return errors.New("nil context")
+	}
+	if c.txProcessor == nil {
+		return errors.New("uninitialized tx processor")
+	}
+	if c.txProcessor.MsgIsNonMutating() {
+		var newConfig params.ChainConfig
+		err := json.Unmarshal(serializedChainConfig, &newConfig)
+		if err != nil {
+			return fmt.Errorf("invalid chain config, can't deserialize: %w", err)
+		}
+		if newConfig.ChainID == nil {
+			return errors.New("invalid chain config, missing chain id")
+		}
+		chainId, err := c.State.ChainId()
+		if err != nil {
+			return fmt.Errorf("failed to get chain id from ArbOS state: %w", err)
+		}
+		if newConfig.ChainID.Cmp(chainId) != 0 {
+			return fmt.Errorf("invalid chain config, chain id mismatch, want: %v, have: %v", chainId, newConfig.ChainID)
+		}
+		oldSerializedConfig, err := c.State.ChainConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get old chain config from ArbOS state: %w", err)
+		}
+		if bytes.Equal(oldSerializedConfig, serializedChainConfig) {
+			return errors.New("new chain config is the same as old one in ArbOS state")
+		}
+		if len(oldSerializedConfig) != 0 {
+			var oldConfig params.ChainConfig
+			err = json.Unmarshal(oldSerializedConfig, &oldConfig)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize old chain config: %w", err)
+			}
+			if err := oldConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
+				return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
+			}
+		}
+		currentConfig := evm.ChainConfig()
+		if err := currentConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
+			return fmt.Errorf("invalid chain config, not compatible with EVM's chain config: %w", err)
+		}
+	}
+	return c.State.SetChainConfig(serializedChainConfig)
 }

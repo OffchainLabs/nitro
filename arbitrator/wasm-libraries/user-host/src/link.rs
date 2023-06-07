@@ -44,11 +44,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 ) {
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
-    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
+    let version = sp.read_u32();
+    let debug = sp.read_u32() != 0;
     let page_limit = sp.read_u16();
     sp.skip_space();
-
-    println!("COMPILE {}", page_limit);
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -61,6 +60,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         }};
     }
 
+    let compile = CompileConfig::version(version, debug);
     let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
         Ok(parse) => parse,
         Err(error) => error!("failed to parse program", error),
@@ -76,6 +76,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         false,
         false,
         compile.debug.debug_funcs,
+        debug,
         prover::machine::GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("user program tried to read preimage")),

@@ -834,6 +834,7 @@ pub struct Machine {
     stylus_modules: HashMap<Bytes32, Module>, // Not part of machine hash
     initial_hash: Bytes32,
     context: u64,
+    debug_info: bool, // Not part of machine hash
 }
 
 type FrameStackHash = Bytes32;
@@ -1010,6 +1011,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1034,6 +1036,7 @@ impl Machine {
             always_merkleize,
             allow_hostapi_from_main,
             debug_funcs,
+            debug_info,
             global_state,
             inbox_contents,
             preimage_resolver,
@@ -1063,6 +1066,7 @@ impl Machine {
             false,
             false,
             compile.debug.debug_funcs,
+            true,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1080,11 +1084,11 @@ impl Machine {
         &mut self,
         wasm: &[u8],
         version: u32,
-        debug_chain: bool,
+        debug_funcs: bool,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
-        let config = CompileConfig::version(version, debug_chain);
+        let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
         let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
@@ -1096,7 +1100,8 @@ impl Machine {
             false,
             false,
             false,
-            debug_chain,
+            debug_funcs,
+            self.debug_info,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1116,6 +1121,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1397,6 +1403,7 @@ impl Machine {
             guards: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
+            debug_info,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1451,6 +1458,7 @@ impl Machine {
             guards: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
+            debug_info: false,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1752,12 +1760,17 @@ impl Machine {
             };
             ($format:expr $(,$message:expr)*) => {{
                 flush_module!();
-                println!("\n{} {}", "error on line".grey(), line!().pink());
-                println!($format, $($message.pink()),*);
-                println!("{}", "Backtrace:".grey());
-                self.print_backtrace(true);
+                let print_debug_info = |machine: &Self| {
+                    println!("\n{} {}", "error on line".grey(), line!().pink());
+                    println!($format, $($message.pink()),*);
+                    println!("{}", "Backtrace:".grey());
+                    machine.print_backtrace(true);
+                };
 
                 if let Some(guard) = self.guards.pop() {
+                    if self.debug_info {
+                        print_debug_info(self);
+                    }
                     println!("{}", "Recovering...".pink());
 
                     // recover at the previous stack heights
@@ -1773,6 +1786,8 @@ impl Machine {
                     self.value_stack.push(0_u32.into());
                     reset_refs!();
                     continue;
+                } else {
+                    print_debug_info(self);
                 }
                 self.status = MachineStatus::Errored;
                 module = &mut self.modules[self.pc.module()];

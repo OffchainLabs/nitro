@@ -2,7 +2,7 @@ import { hideBin } from "yargs/helpers";
 import Yargs from "yargs/yargs";
 import { stressOptions } from "./stress";
 import { redisReadCommand, redisInitCommand } from "./redis";
-import { writeConfigCommand, writeGethGenesisCommand, writePrysmCommand } from "./config";
+import { writeConfigCommand, writeGethGenesisCommand, writePrysmCommand, writeL2ChainConfigCommand } from "./config";
 import {
   printAddressCommand,
   namedAccountHelpString,
@@ -21,6 +21,7 @@ async function main() {
       redisUrl: { string: true, default: "redis://redis:6379" },
       l1url: { string: true, default: "ws://geth:8546" },
       l2url: { string: true, default: "ws://sequencer:8548" },
+      validationNodeUrl: { string: true, default: "ws://validation_node:8549" },
     })
     .options(stressOptions)
     .command(bridgeFundsCommand)
@@ -29,6 +30,7 @@ async function main() {
     .command(sendRPCCommand)
     .command(writeConfigCommand)
     .command(writeGethGenesisCommand)
+    .command(writeL2ChainConfigCommand)
     .command(writePrysmCommand)
     .command(writeAccountsCommand)
     .command(printAddressCommand)
