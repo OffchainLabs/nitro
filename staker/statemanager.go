@@ -315,6 +315,81 @@ func (s *StateManager) OneStepProofData(ctx context.Context, parentAssertionCrea
 	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil
 }
 
+func (s *StateManager) AgreesWithHistoryCommitment(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	edgeType protocol.EdgeType,
+	prevAssertionInboxMaxCount uint64,
+	heights *protocol.OriginHeights,
+	startCommit,
+	endCommit commitments.History,
+) (protocol.Agreement, error) {
+	agreement := protocol.Agreement{}
+	var localStartCommit commitments.History
+	var localEndCommit commitments.History
+	var err error
+	switch edgeType {
+	case protocol.BlockChallengeEdge:
+		localStartCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(startCommit.Height), prevAssertionInboxMaxCount)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+		localEndCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(endCommit.Height), prevAssertionInboxMaxCount)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+	case protocol.BigStepChallengeEdge:
+		localStartCommit, err = s.BigStepCommitmentUpTo(
+			ctx,
+			wasmModuleRoot,
+			uint64(heights.BlockChallengeOriginHeight),
+			startCommit.Height,
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+		localEndCommit, err = s.BigStepCommitmentUpTo(
+			ctx,
+			wasmModuleRoot,
+			uint64(heights.BlockChallengeOriginHeight),
+			endCommit.Height,
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+	case protocol.SmallStepChallengeEdge:
+		localStartCommit, err = s.SmallStepCommitmentUpTo(
+			ctx,
+			wasmModuleRoot,
+			uint64(heights.BlockChallengeOriginHeight),
+			uint64(heights.BigStepChallengeOriginHeight),
+			startCommit.Height,
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+		localEndCommit, err = s.SmallStepCommitmentUpTo(
+			ctx,
+			wasmModuleRoot,
+			uint64(heights.BlockChallengeOriginHeight),
+			uint64(heights.BigStepChallengeOriginHeight),
+			endCommit.Height,
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+	default:
+		return agreement, errors.New("unsupported edge type")
+	}
+	if localStartCommit.Height == startCommit.Height && localStartCommit.Merkle == startCommit.Merkle {
+		agreement.AgreesWithStartCommit = true
+	}
+	if localEndCommit.Height == endCommit.Height && localEndCommit.Merkle == endCommit.Merkle {
+		agreement.IsHonestEdge = true
+	}
+	return agreement, nil
+}
+
 func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
 	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(leaves[:loSize])
 	if err != nil {
