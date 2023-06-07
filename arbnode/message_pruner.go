@@ -90,43 +90,39 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 
 func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
 	var allPrunedKeys [][]byte
-	startBatchCountIter := inboxTrackerDb.NewIterator(sequencerBatchMetaPrefix, nil)
-	startBatchCountIter.Next()
-	startBatchCount := binary.BigEndian.Uint64(bytes.TrimPrefix(startBatchCountIter.Key(), sequencerBatchMetaPrefix))
-	startBatchCountIter.Release()
-	if endBatchCount > startBatchCount {
-		prunedKeys, err := deleteFromRange(inboxTrackerDb, sequencerBatchMetaPrefix, startBatchCount, endBatchCount-1)
-		if err != nil {
-			log.Error("error deleting batch metadata: %w", err)
-			return
-		}
-		allPrunedKeys = append(allPrunedKeys, prunedKeys...)
+	prunedKeys, err := deleteFromLastPrunedUptoEndKey(inboxTrackerDb, sequencerBatchMetaPrefix, endBatchCount)
+	if err != nil {
+		log.Error("error deleting batch metadata: %w", err)
+		return
 	}
+	allPrunedKeys = append(allPrunedKeys, prunedKeys...)
 
-	startMessageCountIter := transactionStreamerDb.NewIterator(messagePrefix, nil)
-	startMessageCountIter.Next()
-	startMessageCount := binary.BigEndian.Uint64(bytes.TrimPrefix(startMessageCountIter.Key(), messagePrefix))
-	startMessageCountIter.Release()
-	if uint64(endBatchMetadata.MessageCount) > startMessageCount {
-		prunedKeys, err := deleteFromRange(transactionStreamerDb, messagePrefix, startMessageCount, uint64(endBatchMetadata.MessageCount)-1)
-		if err != nil {
-			log.Error("error deleting last batch messages: %w", err)
-		}
-		allPrunedKeys = append(allPrunedKeys, prunedKeys...)
+	prunedKeys, err = deleteFromLastPrunedUptoEndKey(transactionStreamerDb, messagePrefix, uint64(endBatchMetadata.MessageCount))
+	if err != nil {
+		log.Error("error deleting batch metadata: %w", err)
+		return
 	}
+	allPrunedKeys = append(allPrunedKeys, prunedKeys...)
 
-	startDelayedMessageCountIter := inboxTrackerDb.NewIterator(rlpDelayedMessagePrefix, nil)
-	startDelayedMessageCountIter.Next()
-	startDelayedMessageCount := binary.BigEndian.Uint64(bytes.TrimPrefix(startDelayedMessageCountIter.Key(), rlpDelayedMessagePrefix))
-	startDelayedMessageCountIter.Release()
-	if endBatchMetadata.DelayedMessageCount > startDelayedMessageCount {
-		prunedKeys, err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, startDelayedMessageCount, endBatchMetadata.DelayedMessageCount-1)
-		if err != nil {
-			log.Error("error deleting last batch delayed messages: %w", err)
-		}
-		allPrunedKeys = append(allPrunedKeys, prunedKeys...)
+	prunedKeys, err = deleteFromLastPrunedUptoEndKey(inboxTrackerDb, rlpDelayedMessagePrefix, endBatchMetadata.DelayedMessageCount)
+	if err != nil {
+		log.Error("error deleting batch metadata: %w", err)
+		return
 	}
+	allPrunedKeys = append(allPrunedKeys, prunedKeys...)
+
 	if len(allPrunedKeys) > 0 {
 		log.Info("Pruned keys:", allPrunedKeys)
 	}
+}
+
+func deleteFromLastPrunedUptoEndKey(db ethdb.Database, prefix []byte, endMinKey uint64) ([][]byte, error) {
+	startIter := db.NewIterator(prefix, nil)
+	startIter.Next()
+	startMinKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+	startIter.Release()
+	if endMinKey > startMinKey {
+		return deleteFromRange(db, prefix, startMinKey, endMinKey-1)
+	}
+	return nil, nil
 }
