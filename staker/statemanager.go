@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
-	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"math"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
@@ -163,6 +165,154 @@ func (s *StateManager) SmallStepPrefixProof(ctx context.Context, wasmModuleRoot 
 	loSize := fromSmallStep + 1
 	hiSize := toSmallStep + 1
 	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
+}
+
+// Like abi.NewType but panics if it fails for use in constants
+func newStaticType(t string, internalType string, components []abi.ArgumentMarshaling) abi.Type {
+	ty, err := abi.NewType(t, internalType, components)
+	if err != nil {
+		panic(err)
+	}
+	return ty
+}
+
+var bytes32Type = newStaticType("bytes32", "", nil)
+var uint64Type = newStaticType("uint64", "", nil)
+var uint8Type = newStaticType("uint8", "", nil)
+
+var WasmModuleProofAbi = abi.Arguments{
+	{
+		Name: "lastHash",
+		Type: bytes32Type,
+	},
+	{
+		Name: "assertionExecHash",
+		Type: bytes32Type,
+	},
+	{
+		Name: "inboxAcc",
+		Type: bytes32Type,
+	},
+}
+
+var ExecutionStateAbi = abi.Arguments{
+	{
+		Name: "b1",
+		Type: bytes32Type,
+	},
+	{
+		Name: "b2",
+		Type: bytes32Type,
+	},
+	{
+		Name: "u1",
+		Type: uint64Type,
+	},
+	{
+		Name: "u2",
+		Type: uint64Type,
+	},
+	{
+		Name: "status",
+		Type: uint8Type,
+	},
+}
+
+func (s *StateManager) OneStepProofData(ctx context.Context, parentAssertionCreationInfo *protocol.AssertionCreatedInfo, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
+	execState := parentAssertionCreationInfo.AfterState
+	inboxMaxCountProof, err := ExecutionStateAbi.Pack(
+		execState.GlobalState.Bytes32Vals[0],
+		execState.GlobalState.Bytes32Vals[1],
+		execState.GlobalState.U64Vals[0],
+		execState.GlobalState.U64Vals[1],
+		execState.MachineStatus,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	wasmModuleRootProof, err := WasmModuleProofAbi.Pack(
+		parentAssertionCreationInfo.ParentAssertionHash,
+		parentAssertionCreationInfo.ExecutionHash(),
+		parentAssertionCreationInfo.AfterInboxBatchAcc,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+
+	}
+
+	startCommit, err := s.SmallStepCommitmentUpTo(
+		ctx,
+		parentAssertionCreationInfo.WasmModuleRoot,
+		blockHeight,
+		bigStep,
+		fromSmallStep,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+
+	}
+	endCommit, err := s.SmallStepCommitmentUpTo(
+		ctx,
+		parentAssertionCreationInfo.WasmModuleRoot,
+		blockHeight,
+		bigStep,
+		toSmallStep,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	step := bigStep*s.numOpcodesPerBigStep + fromSmallStep
+
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(parentAssertionCreationInfo.WasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	oneStepProofPromise := execRun.GetProofAt(step)
+	oneStepProof, err := oneStepProofPromise.Await(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	machineStepPromise := execRun.GetStepAt(step)
+	machineStep, err := machineStepPromise.Await(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	beforeHash := machineStep.Hash
+	if beforeHash != startCommit.LastLeaf {
+		return nil, nil, nil, fmt.Errorf("machine executed to start step %v hash %v but expected %v", step, beforeHash, startCommit.LastLeaf)
+	}
+
+	machineStepPromise = execRun.GetStepAt(step + 1)
+	machineStep, err = machineStepPromise.Await(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	afterHash := machineStep.Hash
+	if afterHash != endCommit.LastLeaf {
+		return nil, nil, nil, fmt.Errorf("machine executed to end step %v hash %v but expected %v", step+1, afterHash, endCommit.LastLeaf)
+	}
+
+	data := &protocol.OneStepData{
+		BeforeHash:             startCommit.LastLeaf,
+		Proof:                  oneStepProof,
+		InboxMsgCountSeen:      parentAssertionCreationInfo.InboxMaxCount,
+		InboxMsgCountSeenProof: inboxMaxCountProof,
+		WasmModuleRoot:         parentAssertionCreationInfo.WasmModuleRoot,
+		WasmModuleRootProof:    wasmModuleRootProof,
+	}
+	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil
 }
 
 func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
