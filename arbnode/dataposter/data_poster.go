@@ -476,7 +476,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
 		if !p.redisLock.AttemptLock(ctx) {
-			return p.replacementTimes[0]
+			return minWait
 		}
 		err := p.updateBalance(ctx)
 		if err != nil {
