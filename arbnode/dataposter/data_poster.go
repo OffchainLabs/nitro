@@ -408,7 +408,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	if p.lastBlock != nil && arbmath.BigEquals(p.lastBlock, header.Number) {
 		return nil
 	}
-	nonce, err := p.client.NonceAt(ctx, p.auth.From, p.lastBlock)
+	nonce, err := p.client.NonceAt(ctx, p.auth.From, header.Number)
 	if err != nil {
 		if p.lastBlock != nil {
 			log.Warn("failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
@@ -417,7 +417,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 		return err
 	}
 	if nonce > p.nonce {
-		log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "l1Block", p.lastBlock)
+		log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 		if len(p.errorCount) > 0 {
 			for x := p.nonce; x < nonce; x++ {
 				delete(p.errorCount, x)
