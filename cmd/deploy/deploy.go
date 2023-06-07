@@ -146,8 +146,8 @@ func main() {
 	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
 		panic(err)
 	}
-	chainsInfo := map[uint64]chaininfo.ChainInfo{
-		chainConfig.ChainID.Uint64(): {
+	chainsInfo := []chaininfo.ChainInfo{
+		{
 			ChainId:         chainConfig.ChainID.Uint64(),
 			ChainName:       *l2ChainName,
 			ParentChainId:   l1ChainId.Uint64(),

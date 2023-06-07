@@ -6,10 +6,9 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math/big"
 	"sort"
-
-	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -88,7 +87,7 @@ func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.In
 	}
 	bigRes, err := b.con.DelayedMessageCount(opts)
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, err
 	}
 	if !bigRes.IsUint64() {
 		return 0, errors.New("DelayedBridge MessageCount doesn't make sense!")
@@ -134,7 +133,7 @@ func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big
 	}
 	logs, err := b.client.FilterLogs(ctx, query)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	return b.logsToDeliveredMessages(ctx, logs, batchFetcher)
 }
@@ -171,7 +170,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 		parsedLog, err := b.con.ParseMessageDelivered(ethLog)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		messageKey := common.BigToHash(parsedLog.MessageIndex)
 		parsedLogs = append(parsedLogs, parsedLog)
@@ -181,7 +180,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 
 	messageData := make(map[common.Hash][]byte)
 	if err := b.fillMessageData(ctx, inboxAddresses, messageIds, messageData, minBlockNum, maxBlockNum); err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
@@ -249,7 +248,7 @@ func (b *DelayedBridge) fillMessageData(
 	}
 	logs, err := b.client.FilterLogs(ctx, query)
 	if err != nil {
-		return errors.WithStack(err)
+		return err
 	}
 	for _, ethLog := range logs {
 		msgNum, msg, err := b.parseMessage(ctx, ethLog)
@@ -267,20 +266,21 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		var err error
 		con, err = bridgegen.NewIDelayedMessageProvider(ethLog.Address, b.client)
 		if err != nil {
-			return nil, nil, errors.WithStack(err)
+			return nil, nil, err
 		}
 		b.messageProviders[ethLog.Address] = con
 	}
-	if ethLog.Topics[0] == inboxMessageDeliveredID {
+	switch {
+	case ethLog.Topics[0] == inboxMessageDeliveredID:
 		parsedLog, err := con.ParseInboxMessageDelivered(ethLog)
 		if err != nil {
-			return nil, nil, errors.WithStack(err)
+			return nil, nil, err
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
-	} else if ethLog.Topics[0] == inboxMessageFromOriginID {
+	case ethLog.Topics[0] == inboxMessageFromOriginID:
 		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
 		if err != nil {
-			return nil, nil, errors.WithStack(err)
+			return nil, nil, err
 		}
 		data, err := arbutil.GetLogEmitterTxData(ctx, b.client, ethLog)
 		if err != nil {
@@ -289,10 +289,10 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		args := make(map[string]interface{})
 		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
-			return nil, nil, errors.WithStack(err)
+			return nil, nil, err
 		}
 		return parsedLog.MessageNum, args["messageData"].([]byte), nil
-	} else {
+	default:
 		return nil, nil, errors.New("unexpected log type")
 	}
 }

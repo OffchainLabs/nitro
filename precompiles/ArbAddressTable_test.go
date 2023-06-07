@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -154,9 +154,9 @@ func newMockEVMForTesting() *vm.EVM {
 	return newMockEVMForTestingWithVersion(nil)
 }
 
-func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode types.MessageRunMode) *vm.EVM {
+func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode core.MessageRunMode) *vm.EVM {
 	evm := newMockEVMForTestingWithVersion(version)
-	evm.ProcessingHook = arbos.NewTxProcessor(evm, types.Message{TxRunMode: runMode})
+	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunMode: runMode})
 	return evm
 }
 

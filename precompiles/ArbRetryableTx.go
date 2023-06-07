@@ -43,9 +43,8 @@ var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
 func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
 	if c.State.ArbOSVersion() >= 3 {
 		return con.NoTicketWithIDError()
-	} else {
-		return errors.New("ticketId not found")
 	}
+	return errors.New("ticketId not found")
 }
 
 // Redeem schedules an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
@@ -250,9 +249,8 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
 	if c.txProcessor.CurrentRefundTo != nil {
 		return *c.txProcessor.CurrentRefundTo, nil
-	} else {
-		return common.Address{}, nil
 	}
+	return common.Address{}, nil
 }
 
 func (con ArbRetryableTx) SubmitRetryable(

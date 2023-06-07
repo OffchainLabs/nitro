@@ -52,9 +52,8 @@ func (cr *chainedReader) Read(b []byte) (n int, err error) {
 					// If this isn't the last reader, return the data without the EOF since this
 					// may not be the end of all the readers.
 					return n, nil
-				} else {
-					return
 				}
+				return
 			}
 		}
 		break

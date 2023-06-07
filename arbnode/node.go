@@ -6,11 +6,11 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -315,7 +315,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config              `koanf:"rpc"`
 	Sequencer            execution.SequencerConfig    `koanf:"sequencer" reload:"hot"`
-	L1Reader             headerreader.Config          `koanf:"l1-reader" reload:"hot"`
+	L1Reader             headerreader.Config          `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader          InboxReaderConfig            `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer     DelayedSequencerConfig       `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster          BatchPosterConfig            `koanf:"batch-poster" reload:"hot"`
@@ -344,6 +344,9 @@ func (c *Config) Validate() error {
 		return errors.New("cannot enable delayed sequencer without enabling sequencer")
 	}
 	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.BlockValidator.Validate(); err != nil {
 		return err
 	}
 	if err := c.Maintenance.Validate(); err != nil {
@@ -385,7 +388,7 @@ func (c *Config) ValidatorRequired() bool {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	execution.SequencerConfigAddOptions(prefix+".sequencer", f)
-	headerreader.AddOptions(prefix+".l1-reader", f)
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -450,6 +453,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.Forwarder = execution.DefaultTestForwarderConfig
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
@@ -466,6 +470,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -761,7 +766,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.URL != "" {
+	if config.BlockValidator.ValidationServer.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
@@ -770,7 +775,8 @@ func createNodeImpl(
 			chainDb,
 			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
-			&configFetcher.Get().BlockValidator,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			stack,
 		)
 	} else {
 		err = errors.New("no validator url specified")
@@ -778,9 +784,8 @@ func createNodeImpl(
 	if err != nil {
 		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
-		} else {
-			log.Warn("validation not supported", "err", err)
 		}
+		log.Warn("validation not supported", "err", err)
 		statelessBlockValidator = nil
 	}
 
@@ -1045,9 +1050,8 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			if n.configFetcher.Get().ValidatorRequired() {
 				return fmt.Errorf("error initializing stateless block validator: %w", err)
-			} else {
-				log.Info("validation not set up", "err", err)
 			}
+			log.Info("validation not set up", "err", err)
 			n.StatelessBlockValidator = nil
 			n.BlockValidator = nil
 		}
