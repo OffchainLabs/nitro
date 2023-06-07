@@ -869,10 +869,8 @@ func createNodeImpl(
 		}
 	}
 	var messagePruner *MessagePruner
-	if config.MessagePruner.Enable && !config.Caching.Archive {
+	if config.MessagePruner.Enable && !config.Caching.Archive && stakerObj != nil {
 		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
-	} else if config.MessagePruner.Enable {
-		return nil, errors.New("message pruning is not allowed for archive nodes")
 	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
 	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec.ExecEngine, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })

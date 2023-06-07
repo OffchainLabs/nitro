@@ -4,8 +4,9 @@
 package arbnode
 
 import (
+	"bytes"
 	"context"
-	"github.com/ethereum/go-ethereum/rlp"
+	"encoding/binary"
 	"math/big"
 	"time"
 
@@ -36,7 +37,7 @@ type MessagePrunerConfig struct {
 type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 
 var DefaultMessagePrunerConfig = MessagePrunerConfig{
-	Enable:               false,
+	Enable:               true,
 	MessagePruneInterval: time.Minute,
 }
 
@@ -88,100 +89,44 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 }
 
 func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
-	startBatchCount := uint64(1)
-	hasKey, err := inboxTrackerDb.Has(lastPrunedSequencerBatchMetaKey)
-	if err != nil {
-		log.Warn("error checking last pruned batch metadata: %w", err)
-	} else if hasKey {
-		data, err := inboxTrackerDb.Get(lastPrunedSequencerBatchMetaKey)
-		if err != nil {
-			log.Warn("error fetching last pruned batch metadata: %w", err)
-		} else {
-			err = rlp.DecodeBytes(data, &startBatchCount)
-			if err != nil {
-				log.Warn("error decoding last pruned batch metadata: %w", err)
-			}
-		}
-	}
+	var allPrunedKeys [][]byte
+	startBatchCountIter := inboxTrackerDb.NewIterator(sequencerBatchMetaPrefix, nil)
+	startBatchCountIter.Next()
+	startBatchCount := binary.BigEndian.Uint64(bytes.TrimPrefix(startBatchCountIter.Key(), sequencerBatchMetaPrefix))
+	startBatchCountIter.Release()
 	if endBatchCount > startBatchCount {
-		err := deleteFromRange(inboxTrackerDb, sequencerBatchMetaPrefix, startBatchCount, endBatchCount-1)
+		prunedKeys, err := deleteFromRange(inboxTrackerDb, sequencerBatchMetaPrefix, startBatchCount, endBatchCount-1)
 		if err != nil {
 			log.Error("error deleting batch metadata: %w", err)
 			return
 		}
-		endBatchCountValue, err := rlp.EncodeToBytes(endBatchCount - 1)
-		if err != nil {
-			log.Error("error encoding end batch count: %w", err)
-			return
-		}
-		err = inboxTrackerDb.Put(lastPrunedSequencerBatchMetaKey, endBatchCountValue)
-		if err != nil {
-			log.Error("error storing last pruned batch metadata: %w", err)
-			return
-		}
+		allPrunedKeys = append(allPrunedKeys, prunedKeys...)
 	}
 
-	startMessageCount := uint64(1)
-	hasKey, err = transactionStreamerDb.Has(lastPrunedMessageKey)
-	if err != nil {
-		log.Warn("error checking last pruned message: %w", err)
-	} else if hasKey {
-		data, err := transactionStreamerDb.Get(lastPrunedMessageKey)
-		if err != nil {
-			log.Warn("error fetching last pruned message: %w", err)
-		} else {
-			err = rlp.DecodeBytes(data, &startMessageCount)
-			if err != nil {
-				log.Warn("error decoding last pruned message: %w", err)
-			}
-		}
-	}
+	startMessageCountIter := transactionStreamerDb.NewIterator(messagePrefix, nil)
+	startMessageCountIter.Next()
+	startMessageCount := binary.BigEndian.Uint64(bytes.TrimPrefix(startMessageCountIter.Key(), messagePrefix))
+	startMessageCountIter.Release()
 	if uint64(endBatchMetadata.MessageCount) > startMessageCount {
-		err := deleteFromRange(transactionStreamerDb, messagePrefix, startMessageCount, uint64(endBatchMetadata.MessageCount)-1)
+		prunedKeys, err := deleteFromRange(transactionStreamerDb, messagePrefix, startMessageCount, uint64(endBatchMetadata.MessageCount)-1)
 		if err != nil {
 			log.Error("error deleting last batch messages: %w", err)
 		}
-		endMessageCountValue, err := rlp.EncodeToBytes(uint64(endBatchMetadata.MessageCount) - 1)
-		if err != nil {
-			log.Error("error encoding end message count: %w", err)
-			return
-		}
-		err = transactionStreamerDb.Put(lastPrunedMessageKey, endMessageCountValue)
-		if err != nil {
-			log.Error("error storing last pruned message: %w", err)
-			return
-		}
+		allPrunedKeys = append(allPrunedKeys, prunedKeys...)
 	}
 
-	startDelayedMessageCount := uint64(1)
-	hasKey, err = inboxTrackerDb.Has(lastPrunedDelayedMessageKey)
-	if err != nil {
-		log.Warn("error checking last pruned delayed message: %w", err)
-	} else if hasKey {
-		data, err := inboxTrackerDb.Get(lastPrunedDelayedMessageKey)
-		if err != nil {
-			log.Warn("error fetching last pruned delayed message: %w", err)
-		} else {
-			err = rlp.DecodeBytes(data, &startDelayedMessageCount)
-			if err != nil {
-				log.Warn("error decoding last pruned delayed message: %w", err)
-			}
-		}
-	}
+	startDelayedMessageCountIter := inboxTrackerDb.NewIterator(rlpDelayedMessagePrefix, nil)
+	startDelayedMessageCountIter.Next()
+	startDelayedMessageCount := binary.BigEndian.Uint64(bytes.TrimPrefix(startDelayedMessageCountIter.Key(), rlpDelayedMessagePrefix))
+	startDelayedMessageCountIter.Release()
 	if endBatchMetadata.DelayedMessageCount > startDelayedMessageCount {
-		err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, startDelayedMessageCount, endBatchMetadata.DelayedMessageCount-1)
+		prunedKeys, err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, startDelayedMessageCount, endBatchMetadata.DelayedMessageCount-1)
 		if err != nil {
 			log.Error("error deleting last batch delayed messages: %w", err)
 		}
-		endDelayedMessageCountValue, err := rlp.EncodeToBytes(uint64(endBatchMetadata.DelayedMessageCount) - 1)
-		if err != nil {
-			log.Error("error encoding end delayed message count: %w", err)
-			return
-		}
-		err = inboxTrackerDb.Put(lastPrunedDelayedMessageKey, endDelayedMessageCountValue)
-		if err != nil {
-			log.Error("error storing last pruned delayed message: %w", err)
-			return
-		}
+		allPrunedKeys = append(allPrunedKeys, prunedKeys...)
+	}
+	if len(allPrunedKeys) > 0 {
+		log.Info("Pruned keys:", allPrunedKeys)
 	}
 }

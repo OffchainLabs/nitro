@@ -199,32 +199,34 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 }
 
 // deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
-func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) error {
+func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([][]byte, error) {
 	batch := db.NewBatch()
 	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
 	endKey := dbKey(prefix, endMinKey)
 	defer startIter.Release()
+	var prunedKeys [][]byte
 	for startIter.Next() {
 		if bytes.Equal(startIter.Key(), endKey) {
 			break
 		}
+		prunedKeys = append(prunedKeys, startIter.Key())
 		err := batch.Delete(startIter.Key())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if batch.ValueSize() >= ethdb.IdealBatchSize {
 			if err := batch.Write(); err != nil {
-				return err
+				return nil, err
 			}
 			batch.Reset()
 		}
 	}
 	if batch.ValueSize() > 0 {
 		if err := batch.Write(); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return prunedKeys, nil
 }
 
 // The insertion mutex must be held. This acquires the reorg mutex.
