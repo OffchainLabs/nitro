@@ -68,6 +68,7 @@ func CreateTwoValidatorFork(
 		},
 		MachineStatus: protocol.MachineStatusFinished,
 	}
+	_ = genesisState
 
 	honestStateManager, err := statemanager.NewForSimpleMachine()
 	if err != nil {
@@ -90,6 +91,12 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
+	genesisCreationInfo := &protocol.AssertionCreatedInfo{
+		AfterState: (&protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
+		}).AsSolidityStruct(),
+	}
 
 	honestPostState, err := honestStateManager.LatestExecutionState(ctx)
 	if err != nil {
@@ -97,7 +104,7 @@ func CreateTwoValidatorFork(
 	}
 	assertion, err := setup.Chains[0].CreateAssertion(
 		ctx,
-		genesisState,
+		genesisCreationInfo,
 		honestPostState,
 	)
 	if err != nil {
@@ -110,7 +117,7 @@ func CreateTwoValidatorFork(
 	}
 	forkedAssertion, err := setup.Chains[1].CreateAssertion(
 		ctx,
-		genesisState,
+		genesisCreationInfo,
 		evilPostState,
 	)
 	if err != nil {
@@ -455,15 +462,6 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, errors.Wrap(err, "rollupgen.DeployRollupCreator")
 	}
 
-	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, backend)
-	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
-	}
-	err = challenge_testing.TxSucceeded(ctx, tx, validatorUtils, backend, err)
-	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, errors.Wrap(err, "rollupgen.DeployValidatorUtils")
-	}
-
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, backend)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
@@ -480,7 +478,7 @@ func deployRollupCreator(
 		challengeManagerAddr,
 		rollupAdminLogic,
 		rollupUserLogic,
-		validatorUtils,
+		common.Address{},
 		validatorWalletCreator,
 	)
 	if err != nil {
@@ -489,7 +487,7 @@ func deployRollupCreator(
 	if err := challenge_testing.WaitForTx(ctx, backend, tx); err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, errors.Wrap(err, "failed waiting for rollupCreator.SetTemplates transaction")
 	}
-	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
+	return rollupCreator, rollupUserLogic, rollupCreatorAddress, common.Address{}, validatorWalletCreator, nil
 }
 
 // Represents a test EOA account in the simulated backend,

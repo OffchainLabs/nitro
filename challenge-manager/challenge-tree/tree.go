@@ -17,9 +17,8 @@ type MetadataReader interface {
 	TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error)
 	TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error)
 	SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error)
-	GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionId) (protocol.AssertionSequenceNumber, error)
 	ReadAssertionCreationInfo(
-		ctx context.Context, seqNum protocol.AssertionSequenceNumber,
+		ctx context.Context, id protocol.AssertionId,
 	) (*protocol.AssertionCreatedInfo, error)
 }
 
@@ -61,19 +60,15 @@ func New(
 // AddEdge to the honest challenge tree. Only honest edges are tracked, but we also keep track
 // of rival ids in a mutual ids mapping internally for extra book-keeping.
 func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge) error {
-	prevAssertionId, err := ht.metadataReader.TopLevelAssertion(ctx, eg.Id())
+	assertionId, err := ht.metadataReader.TopLevelAssertion(ctx, eg.Id())
 	if err != nil {
 		return errors.Wrapf(err, "could not get top level assertion for edge %#x", eg.Id())
 	}
-	if ht.topLevelAssertionId != prevAssertionId {
+	if ht.topLevelAssertionId != assertionId {
 		// Do nothing - this edge should not be part of this challenge tree.
 		return nil
 	}
-	prevAssertionSeqNum, err := ht.metadataReader.GetAssertionNum(ctx, prevAssertionId)
-	if err != nil {
-		return err
-	}
-	prevCreationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, prevAssertionSeqNum)
+	prevCreationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, assertionId)
 	if err != nil {
 		return err
 	}

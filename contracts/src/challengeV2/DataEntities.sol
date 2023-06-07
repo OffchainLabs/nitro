@@ -9,7 +9,6 @@ import "../osp/IOneStepProofEntry.sol";
 interface IAssertionChain {
     function bridge() external view returns (IBridge);
     function getPredecessorId(bytes32 assertionId) external view returns (bytes32);
-    function getHeight(bytes32 assertionId) external view returns (uint256);
     function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof)
         external
         view

@@ -73,11 +73,6 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		edgeId,
 	).Return(assertionId, nil)
-	mockChain.On(
-		"GetAssertionNum",
-		ctx,
-		assertionId,
-	).Return(protocol.AssertionSequenceNumber(0), nil)
 
 	info := &protocol.AssertionCreatedInfo{
 		InboxMaxCount: big.NewInt(1),
@@ -85,7 +80,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	mockChain.On(
 		"ReadAssertionCreationInfo",
 		ctx,
-		protocol.AssertionSequenceNumber(0),
+		assertionId,
 	).Return(info, nil)
 	heights := &protocol.OriginHeights{}
 	mockChain.On(

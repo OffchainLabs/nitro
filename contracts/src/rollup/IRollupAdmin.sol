@@ -13,8 +13,7 @@ import "./Config.sol";
 interface IRollupAdmin {
     event OwnerFunctionCalled(uint256 indexed id);
 
-    function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
-        external;
+    function initialize(Config calldata config, ContractDependencies calldata connectedContracts) external;
 
     /**
      * @notice Add a contract authorized to put messages into this rollup's inbox
@@ -73,12 +72,6 @@ interface IRollupAdmin {
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external;
 
     /**
-     * @notice Set number of extra blocks after a challenge
-     * @param newExtraTimeBlocks new number of blocks
-     */
-    function setExtraChallengeTimeBlocks(uint64 newExtraTimeBlocks) external;
-
-    /**
      * @notice Set base stake required for an assertion
      * @param newBaseStake maximum avmgas to be used per block
      */
@@ -92,27 +85,16 @@ interface IRollupAdmin {
      */
     function setStakeToken(address newStakeToken) external;
 
-    /**
-     * @notice Upgrades the implementation of a beacon controlled by the rollup
-     * @param beacon address of beacon to be upgraded
-     * @param newImplementation new address of implementation
-     */
-    function upgradeBeacon(address beacon, address newImplementation) external;
-
-    function forceResolveChallenge(address[] memory stackerA, address[] memory stackerB) external;
-
     function forceRefundStaker(address[] memory stacker) external;
 
-    function forceCreateAssertion(
-        uint64 prevAssertion,
-        AssertionInputs memory assertion,
-        bytes32 expectedAssertionHash
-    ) external;
+    function forceCreateAssertion(bytes32 prevAssertionId, AssertionInputs memory assertion, bytes32 expectedAssertionHash)
+        external;
 
     function forceConfirmAssertion(
-        uint64 assertionNum,
-        bytes32 blockHash,
-        bytes32 sendRoot
+        bytes32 assertionId,
+        bytes32 parentAssertionHash,
+        ExecutionState calldata confirmState,
+        bytes32 inboxAcc
     ) external;
 
     function setLoserStakeEscrow(address newLoserStakerEscrow) external;

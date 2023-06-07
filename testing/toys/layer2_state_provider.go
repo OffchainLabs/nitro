@@ -8,6 +8,8 @@ import (
 	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -480,19 +482,21 @@ func newStaticType(t string, internalType string, components []abi.ArgumentMarsh
 var bytes32Type = newStaticType("bytes32", "", nil)
 var uint64Type = newStaticType("uint64", "", nil)
 var uint8Type = newStaticType("uint8", "", nil)
+var addressType = newStaticType("address", "", nil)
+var uint256Type = newStaticType("uint256", "", nil)
 
 var WasmModuleProofAbi = abi.Arguments{
 	{
-		Name: "lastHash",
-		Type: bytes32Type,
+		Name: "requiredStake",
+		Type: uint256Type,
 	},
 	{
-		Name: "assertionExecHash",
-		Type: bytes32Type,
+		Name: "challengeManager",
+		Type: addressType,
 	},
 	{
-		Name: "inboxAcc",
-		Type: bytes32Type,
+		Name: "confirmPeriodBlocks",
+		Type: uint64Type,
 	},
 }
 
@@ -521,7 +525,8 @@ var ExecutionStateAbi = abi.Arguments{
 
 func (s *L2StateBackend) OneStepProofData(
 	ctx context.Context,
-	parentAssertionCreationInfo *protocol.AssertionCreatedInfo,
+	cfgSnapshot *l2stateprovider.ConfigSnapshot,
+	postState rollupgen.ExecutionState,
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight,
 	fromBigStep,
@@ -529,13 +534,12 @@ func (s *L2StateBackend) OneStepProofData(
 	fromSmallStep,
 	toSmallStep uint64,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
-	execState := parentAssertionCreationInfo.AfterState
 	inboxMaxCountProof, packErr := ExecutionStateAbi.Pack(
-		execState.GlobalState.Bytes32Vals[0],
-		execState.GlobalState.Bytes32Vals[1],
-		execState.GlobalState.U64Vals[0],
-		execState.GlobalState.U64Vals[1],
-		execState.MachineStatus,
+		postState.GlobalState.Bytes32Vals[0],
+		postState.GlobalState.Bytes32Vals[1],
+		postState.GlobalState.U64Vals[0],
+		postState.GlobalState.U64Vals[1],
+		postState.MachineStatus,
 	)
 	if packErr != nil {
 		err = packErr
@@ -543,9 +547,9 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 
 	wasmModuleRootProof, packErr := WasmModuleProofAbi.Pack(
-		parentAssertionCreationInfo.ParentAssertionHash,
-		parentAssertionCreationInfo.ExecutionHash(),
-		parentAssertionCreationInfo.AfterInboxBatchAcc,
+		cfgSnapshot.RequiredStake,
+		cfgSnapshot.ChallengeManagerAddress,
+		cfgSnapshot.ConfirmPeriodBlocks,
 	)
 	if packErr != nil {
 		err = packErr
@@ -609,9 +613,9 @@ func (s *L2StateBackend) OneStepProofData(
 	data = &protocol.OneStepData{
 		BeforeHash:             startCommit.LastLeaf,
 		Proof:                  osp,
-		InboxMsgCountSeen:      parentAssertionCreationInfo.InboxMaxCount,
+		InboxMsgCountSeen:      cfgSnapshot.InboxMaxCount,
 		InboxMsgCountSeenProof: inboxMaxCountProof,
-		WasmModuleRoot:         parentAssertionCreationInfo.WasmModuleRoot,
+		WasmModuleRoot:         cfgSnapshot.WasmModuleRoot,
 		WasmModuleRootProof:    wasmModuleRootProof,
 	}
 	startLeafInclusionProof = startCommit.LastLeafProof

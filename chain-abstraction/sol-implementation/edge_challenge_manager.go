@@ -207,22 +207,6 @@ func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 	return err
 }
 
-func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
-	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByOneStepProof(
-			e.manager.txOpts,
-			e.id,
-			// TODO: Fill in.
-			challengeV2gen.OneStepData{},
-			// TODO: Add pre/post proofs.
-			challengeV2gen.WasmModuleData{},
-			nil,
-			nil,
-		)
-	})
-	return err
-}
-
 // TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.
 // For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
 // If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
@@ -529,29 +513,13 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	endCommit commitments.History,
 	startEndPrefixProof []byte,
 ) (protocol.SpecEdge, error) {
-	assertionId, err := cm.assertionChain.GetAssertionId(ctx, assertion.SeqNum())
+	assertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"could not get id for assertion with sequence num %d",
-			assertion.SeqNum(),
-		)
+		return nil, fmt.Errorf("failed to read assertion %#x creation info: %w", assertion.Id(), err)
 	}
-	assertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.SeqNum())
+	parentAssertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.PrevId())
 	if err != nil {
-		return nil, fmt.Errorf("failed to read assertion %v creation info: %w", assertion.SeqNum(), err)
-	}
-	parentAssertionSeqNum, err := assertion.PrevSeqNum()
-	if err != nil {
-		return nil, fmt.Errorf("failed to query assertion %v parent sequence number: %w", assertion.SeqNum(), err)
-	}
-	parentAssertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, parentAssertionSeqNum)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read parent assertion %v creation info: %w", parentAssertionSeqNum, err)
-	}
-	parentAssertionId, err := cm.assertionChain.GetAssertionId(ctx, parentAssertionSeqNum)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read parent assertion %#x creation info: %w", assertion.PrevId(), err)
 	}
 	if endCommit.Height != protocol.LevelZeroBlockEdgeHeight {
 		return nil, fmt.Errorf(
@@ -597,7 +565,7 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 				EdgeType:       uint8(protocol.BlockChallengeEdge),
 				EndHistoryRoot: endCommit.Merkle,
 				EndHeight:      big.NewInt(int64(endCommit.Height)),
-				ClaimId:        assertionId,
+				ClaimId:        assertionCreation.AssertionHash,
 				PrefixProof:    startEndPrefixProof,
 				Proof:          blockEdgeProof,
 			},
@@ -610,7 +578,7 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	edgeId, err := cm.CalculateEdgeId(
 		ctx,
 		protocol.BlockChallengeEdge,
-		protocol.OriginId(parentAssertionId),
+		protocol.OriginId(assertionCreation.ParentAssertionHash),
 		protocol.Height(startCommit.Height),
 		startCommit.Merkle,
 		protocol.Height(endCommit.Height),

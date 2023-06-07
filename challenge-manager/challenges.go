@@ -13,19 +13,10 @@ import (
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Manager) challengeAssertion(ctx context.Context, parentSeqNum protocol.AssertionSequenceNumber) error {
-	num, err := v.validChildFromParent(ctx, parentSeqNum)
+func (v *Manager) challengeAssertion(ctx context.Context, id protocol.AssertionId) error {
+	assertion, err := v.chain.GetAssertion(ctx, id)
 	if err != nil {
-		return err
-	}
-	assertion, err := v.chain.AssertionBySequenceNum(ctx, num)
-	if err != nil {
-		return err
-	}
-
-	assertionPrevSeqNum, err := assertion.PrevSeqNum()
-	if err != nil {
-		return err
+		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
 
 	// We then add a level zero edge to initiate a challenge.
@@ -35,20 +26,20 @@ func (v *Manager) challengeAssertion(ctx context.Context, parentSeqNum protocol.
 			// TODO: Should we return error here instead of a log and nil?
 			log.Infof(
 				"Attempted to add a challenge leaf that already exists on assertion with sequence num %d",
-				assertionPrevSeqNum,
+				id,
 			)
 			return nil
 		}
 		return fmt.Errorf("failed to created block challenge layer zero edge: %w", err)
 	}
 
-	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, assertionPrevSeqNum)
+	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, id)
 	if err != nil {
 		return err
 	}
 	assertionPrevHeight, ok := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(prevCreationInfo.AfterState))
 	if !ok {
-		return fmt.Errorf("missing previous assertion %v after execution %+v in local state manager", assertionPrevSeqNum, prevCreationInfo.AfterState)
+		return fmt.Errorf("missing previous assertion %v after execution %+v in local state manager", id, prevCreationInfo.AfterState)
 	}
 
 	// Start tracking the challenge.
@@ -73,7 +64,7 @@ func (v *Manager) challengeAssertion(ctx context.Context, parentSeqNum protocol.
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"] = assertionPrevSeqNum
+	logFields["assertionId"] = id
 	log.WithFields(logFields).Info("Successfully created level zero edge for block challenge, now tracking")
 	return nil
 }
@@ -82,14 +73,10 @@ func (v *Manager) addBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
 ) (protocol.SpecEdge, error) {
-	prevAssertionSeqNum, err := assertion.PrevSeqNum()
+	prevId := assertion.PrevId()
+	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, prevId)
 	if err != nil {
-		return nil, err
-	}
-
-	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, prevAssertionSeqNum)
-	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get assertion creation info")
 	}
 	startCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, 0)
 	if err != nil {

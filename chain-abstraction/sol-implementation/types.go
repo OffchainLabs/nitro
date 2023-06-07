@@ -1,13 +1,10 @@
 package solimpl
 
 import (
-	"bytes"
-
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -18,24 +15,17 @@ import (
 // to have a smaller API surface area and attach useful
 // methods that callers can use directly.
 type Assertion struct {
-	StateCommitment commitments.State
-	chain           *AssertionChain
-	id              uint64
+	chain  *AssertionChain
+	id     protocol.AssertionId
+	prevId protocol.AssertionId
 }
 
-func (a *Assertion) SeqNum() protocol.AssertionSequenceNumber {
-	return protocol.AssertionSequenceNumber(a.id)
+func (a *Assertion) Id() protocol.AssertionId {
+	return a.id
 }
 
-func (a *Assertion) PrevSeqNum() (protocol.AssertionSequenceNumber, error) {
-	inner, err := a.inner()
-	if err != nil {
-		return 0, err
-	}
-	if inner.PrevNum == 0 {
-		return protocol.AssertionSequenceNumber(1), nil
-	}
-	return protocol.AssertionSequenceNumber(inner.PrevNum), nil
+func (a *Assertion) PrevId() protocol.AssertionId {
+	return a.prevId
 }
 
 func (a *Assertion) IsFirstChild() (bool, error) {
@@ -51,10 +41,10 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(assertionNode.AssertionHash[:], make([]byte, 32)) {
+	if assertionNode.Status == uint8(0) {
 		return nil, errors.Wrapf(
 			ErrNotFound,
-			"assertion with id %d",
+			"assertion with id %#x",
 			a.id,
 		)
 	}

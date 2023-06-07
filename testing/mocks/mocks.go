@@ -3,10 +3,12 @@ package mocks
 import (
 	"context"
 	"errors"
+	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -20,10 +22,10 @@ var (
 )
 
 type MockAssertion struct {
+	MockId                protocol.AssertionId
+	MockPrevId            protocol.AssertionId
 	Prev                  option.Option[*MockAssertion]
 	MockHeight            uint64
-	MockSeqNum            protocol.AssertionSequenceNumber
-	MockPrevSeqNum        protocol.AssertionSequenceNumber
 	MockStateHash         common.Hash
 	MockInboxMsgCountSeen uint64
 	MockCreatedAtBlock    uint64
@@ -31,12 +33,12 @@ type MockAssertion struct {
 	CreatedAt             uint64
 }
 
-func (m *MockAssertion) SeqNum() protocol.AssertionSequenceNumber {
-	return m.MockSeqNum
+func (m *MockAssertion) Id() protocol.AssertionId {
+	return m.MockId
 }
 
-func (m *MockAssertion) PrevSeqNum() (protocol.AssertionSequenceNumber, error) {
-	return m.MockPrevSeqNum, nil
+func (m *MockAssertion) PrevId() protocol.AssertionId {
+	return m.MockPrevId
 }
 
 func (m *MockAssertion) StateHash() (common.Hash, error) {
@@ -179,7 +181,8 @@ func (m *MockStateManager) SmallStepCommitmentUpTo(
 
 func (m *MockStateManager) OneStepProofData(
 	ctx context.Context,
-	parentAssertionCreationInfo *protocol.AssertionCreatedInfo,
+	cfgSnapshot *l2stateprovider.ConfigSnapshot,
+	postState rollupgen.ExecutionState,
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight,
 	fromBigStep,
@@ -187,7 +190,7 @@ func (m *MockStateManager) OneStepProofData(
 	fromSmallStep,
 	toSmallStep uint64,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
-	args := m.Called(ctx, parentAssertionCreationInfo, fromBlockChallengeHeight, toBlockChallengeHeight, fromBigStep, toBigStep, fromSmallStep, toSmallStep)
+	args := m.Called(ctx, cfgSnapshot, postState, fromBlockChallengeHeight, toBlockChallengeHeight, fromBigStep, toBigStep, fromSmallStep, toSmallStep)
 	return args.Get(0).(*protocol.OneStepData), args.Get(1).([]common.Hash), args.Get(2).([]common.Hash), args.Error(3)
 }
 
@@ -403,25 +406,19 @@ func (m *MockProtocol) NumAssertions(ctx context.Context) (uint64, error) {
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockProtocol) AssertionBySequenceNum(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Assertion, error) {
-	args := m.Called(ctx, seqNum)
-	return args.Get(0).(protocol.Assertion), args.Error(1)
-}
-
-func (m *MockProtocol) GetAssertionId(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.AssertionId, error) {
-	args := m.Called(ctx, seqNum)
-	return args.Get(0).(protocol.AssertionId), args.Error(1)
-}
-
-func (m *MockProtocol) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionId) (protocol.AssertionSequenceNumber, error) {
-	args := m.Called(ctx, assertionHash)
-	return args.Get(0).(protocol.AssertionSequenceNumber), args.Error(1)
-}
-func (m *MockProtocol) GenesisAssertionHashes(
-	ctx context.Context,
-) (common.Hash, common.Hash, common.Hash, error) {
+func (m *MockProtocol) BaseStake(ctx context.Context) (*big.Int, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(common.Hash), args.Get(1).(common.Hash), args.Get(2).(common.Hash), args.Error(3)
+	return args.Get(0).(*big.Int), args.Error(1)
+}
+
+func (m *MockProtocol) WasmModuleRoot(ctx context.Context) ([32]byte, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([32]byte), args.Error(1)
+}
+
+func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionId) (protocol.Assertion, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 
 func (m *MockProtocol) AssertionUnrivaledTime(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
@@ -439,36 +436,36 @@ func (m *MockProtocol) TopLevelClaimHeights(ctx context.Context, edgeId protocol
 	return args.Get(0).(*protocol.OriginHeights), args.Error(1)
 }
 
+func (m *MockProtocol) LatestCreatedAssertion(ctx context.Context) (protocol.Assertion, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.Assertion), args.Error(1)
+}
+
 func (m *MockProtocol) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 
 func (m *MockProtocol) ReadAssertionCreationInfo(
-	ctx context.Context, seqNum protocol.AssertionSequenceNumber,
+	ctx context.Context, id protocol.AssertionId,
 ) (*protocol.AssertionCreatedInfo, error) {
-	args := m.Called(ctx, seqNum)
+	args := m.Called(ctx, id)
 	return args.Get(0).(*protocol.AssertionCreatedInfo), args.Error(1)
 }
 
 // Mutating methods.
 func (m *MockProtocol) CreateAssertion(
 	ctx context.Context,
-	prevAssertionState *protocol.ExecutionState,
+	prevAssertionCreationInfo *protocol.AssertionCreatedInfo,
 	postState *protocol.ExecutionState,
 ) (protocol.Assertion, error) {
-	args := m.Called(ctx, prevAssertionState, postState)
+	args := m.Called(ctx, prevAssertionCreationInfo, postState)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 
 func (m *MockProtocol) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.SpecChallengeManager), args.Error(1)
-}
-
-func (m *MockProtocol) CreateSpecChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) error {
-	args := m.Called(ctx, seqNum)
-	return args.Error(0)
 }
 
 func (m *MockProtocol) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {

@@ -24,15 +24,14 @@ func GenerateRollupConfig(
 	}
 
 	return rollupgen.Config{
-		MiniStakeValue:           miniStakeValue,
-		ConfirmPeriodBlocks:      confirmPeriod,
-		ExtraChallengeTimeBlocks: 200,
-		StakeToken:               common.Address{},
-		BaseStake:                big.NewInt(100),
-		WasmModuleRoot:           wasmModuleRoot,
-		Owner:                    rollupOwner,
-		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainId,
+		MiniStakeValue:      miniStakeValue,
+		ConfirmPeriodBlocks: confirmPeriod,
+		StakeToken:          common.Address{},
+		BaseStake:           big.NewInt(100),
+		WasmModuleRoot:      wasmModuleRoot,
+		Owner:               rollupOwner,
+		LoserStakeEscrow:    loserStakeEscrow,
+		ChainId:             chainId,
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),

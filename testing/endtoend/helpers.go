@@ -8,6 +8,8 @@ import (
 
 // edgeManager fetches the challenge manager contract address from the rollup contract and returns
 // a challenge manager instance.
+//
+//nolint:unused
 func edgeManager(be backend.Backend) (*challengeV2gen.EdgeChallengeManager, error) {
 	rc, err := rollupgen.NewRollupCore(be.ContractAddresses().Rollup, be.Client())
 	if err != nil {

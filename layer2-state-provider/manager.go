@@ -2,11 +2,21 @@ package l2stateprovider
 
 import (
 	"context"
+	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 )
+
+type ConfigSnapshot struct {
+	RequiredStake           *big.Int
+	ChallengeManagerAddress common.Address
+	ConfirmPeriodBlocks     uint64
+	WasmModuleRoot          [32]byte
+	InboxMaxCount           *big.Int
+}
 
 type Provider interface {
 	// Produces the latest state to assert to L1 from the local state manager's perspective.
@@ -95,7 +105,8 @@ type Provider interface {
 	) ([]byte, error)
 	OneStepProofData(
 		ctx context.Context,
-		parentAssertionCreationInfo *protocol.AssertionCreatedInfo,
+		cfgSnapshot *ConfigSnapshot,
+		postState rollupgen.ExecutionState,
 		fromBlockChallengeHeight,
 		toBlockChallengeHeight,
 		fromBigStep,

@@ -3142,8 +3142,8 @@ func (_OutboxWithoutOptTester *OutboxWithoutOptTesterFilterer) ParseSendRootUpda
 
 // RollupMockMetaData contains all meta data concerning the RollupMock contract.
 var RollupMockMetaData = &bind.MetaData{
-	ABI: "[{\"anonymous\":false,\"inputs\":[],\"name\":\"WithdrawTriggered\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"ZombieTriggered\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"removeOldZombies\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"withdrawStakerFunds\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
-	Bin: "0x608060405234801561001057600080fd5b5061010b806100206000396000f3fe6080604052348015600f57600080fd5b506004361060325760003560e01c806361373919146037578063edfd03ed14604f575b600080fd5b603d6060565b60405190815260200160405180910390f35b605e605a36600460bd565b6091565b005b6040516000907f1c09fbbf7cfd024f5e4e5472dd87afd5d67ee5db6a0ca715bf508d96abce309f908290a150600090565b6040517fb774f793432a37585a7638b9afe49e91c478887a2c0fef32877508bf2f76429d90600090a150565b60006020828403121560ce57600080fd5b503591905056fea2646970667358221220b0df8532c01c38a29e3fda56045c3af060fc6a843e9ac0824da0fbca3e55587364736f6c63430008110033",
+	ABI: "[{\"anonymous\":false,\"inputs\":[],\"name\":\"WithdrawTriggered\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"ZombieTriggered\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"withdrawStakerFunds\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	Bin: "0x6080604052348015600f57600080fd5b5060ac8061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c80636137391914602d575b600080fd5b60336045565b60405190815260200160405180910390f35b6040516000907f1c09fbbf7cfd024f5e4e5472dd87afd5d67ee5db6a0ca715bf508d96abce309f908290a15060009056fea26469706673582212200c381a66ae752e9391ce76844eaa921604d2065753c359d47e6e1ef4563bedba64736f6c63430008110033",
 }
 
 // RollupMockABI is the input ABI used to generate the binding from.
@@ -3311,27 +3311,6 @@ func (_RollupMock *RollupMockTransactorRaw) Transfer(opts *bind.TransactOpts) (*
 // Transact invokes the (paid) contract method with params as input values.
 func (_RollupMock *RollupMockTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _RollupMock.Contract.contract.Transact(opts, method, params...)
-}
-
-// RemoveOldZombies is a paid mutator transaction binding the contract method 0xedfd03ed.
-//
-// Solidity: function removeOldZombies(uint256 ) returns()
-func (_RollupMock *RollupMockTransactor) RemoveOldZombies(opts *bind.TransactOpts, arg0 *big.Int) (*types.Transaction, error) {
-	return _RollupMock.contract.Transact(opts, "removeOldZombies", arg0)
-}
-
-// RemoveOldZombies is a paid mutator transaction binding the contract method 0xedfd03ed.
-//
-// Solidity: function removeOldZombies(uint256 ) returns()
-func (_RollupMock *RollupMockSession) RemoveOldZombies(arg0 *big.Int) (*types.Transaction, error) {
-	return _RollupMock.Contract.RemoveOldZombies(&_RollupMock.TransactOpts, arg0)
-}
-
-// RemoveOldZombies is a paid mutator transaction binding the contract method 0xedfd03ed.
-//
-// Solidity: function removeOldZombies(uint256 ) returns()
-func (_RollupMock *RollupMockTransactorSession) RemoveOldZombies(arg0 *big.Int) (*types.Transaction, error) {
-	return _RollupMock.Contract.RemoveOldZombies(&_RollupMock.TransactOpts, arg0)
 }
 
 // WithdrawStakerFunds is a paid mutator transaction binding the contract method 0x61373919.

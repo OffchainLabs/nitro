@@ -16,7 +16,6 @@ import "../challengeV2/EdgeChallengeManager.sol";
 
 struct Config {
     uint64 confirmPeriodBlocks;
-    uint64 extraChallengeTimeBlocks;
     address stakeToken;
     uint256 baseStake;
     bytes32 wasmModuleRoot;

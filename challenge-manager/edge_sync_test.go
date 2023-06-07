@@ -16,8 +16,7 @@ func Test_getEdgeTrackers(t *testing.T) {
 	v, m, s := setupValidator(t)
 	edge := &mocks.MockSpecEdge{}
 	edge.On("PrevAssertionId", ctx).Return(protocol.AssertionId{}, nil)
-	m.On("GetAssertionNum", ctx, protocol.AssertionId{}).Return(protocol.AssertionSequenceNumber(1), nil)
-	m.On("ReadAssertionCreationInfo", ctx, protocol.AssertionSequenceNumber(1)).Return(&protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(100)}, nil)
+	m.On("ReadAssertionCreationInfo", ctx, protocol.AssertionId{}).Return(&protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(100)}, nil)
 	s.On("ExecutionStateBlockHeight", ctx, &protocol.ExecutionState{}).Return(uint64(1), true)
 
 	trackers, err := v.getEdgeTrackers(ctx, []protocol.SpecEdge{protocol.SpecEdge(edge)})

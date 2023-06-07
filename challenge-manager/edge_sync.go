@@ -61,17 +61,9 @@ func (v *Manager) getEdgeTrackers(ctx context.Context, edges []protocol.SpecEdge
 		var assertionHeight uint64
 		var inboxMsgCount uint64
 		if !ok {
-			// Retry until you get the assertion number.
-			assertionNum, assertionErr := retry.UntilSucceeds(ctx, func() (protocol.AssertionSequenceNumber, error) {
-				return v.chain.GetAssertionNum(ctx, assertionId)
-			})
-			if assertionErr != nil {
-				return nil, assertionErr
-			}
-
 			// Retry until you get the assertion creation info.
 			assertionCreationInfo, creationErr := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
-				return v.chain.ReadAssertionCreationInfo(ctx, assertionNum)
+				return v.chain.ReadAssertionCreationInfo(ctx, assertionId)
 			})
 			if creationErr != nil {
 				return nil, creationErr

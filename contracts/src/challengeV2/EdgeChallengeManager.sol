@@ -52,6 +52,8 @@ interface IEdgeChallengeManager {
         address _excessStakeReceiver
     ) external;
 
+    function challengePeriodBlocks() external view returns (uint256);
+
     /// @notice The one step proof resolver used to decide between rival SmallStep edges of length 1
     function oneStepProofEntry() external view returns (IOneStepProofEntry);
 

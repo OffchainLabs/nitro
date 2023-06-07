@@ -167,11 +167,8 @@ func (m *mockMetadataReader) TopLevelClaimHeights(
 func (m *mockMetadataReader) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
 	return nil, nil
 }
-func (m *mockMetadataReader) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionId) (protocol.AssertionSequenceNumber, error) {
-	return 0, nil
-}
 func (m *mockMetadataReader) ReadAssertionCreationInfo(
-	ctx context.Context, seqNum protocol.AssertionSequenceNumber,
+	ctx context.Context, seqNum protocol.AssertionId,
 ) (*protocol.AssertionCreatedInfo, error) {
 	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
 }

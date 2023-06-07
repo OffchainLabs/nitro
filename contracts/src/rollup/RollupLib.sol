@@ -4,7 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IOldChallengeManager.sol";
 import "../challenge/OldChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
@@ -50,18 +49,6 @@ library RollupLib {
             );
     }
 
-    function confirmHash(AssertionInputs memory assertion) internal pure returns (bytes32) {
-        return
-            confirmHash(
-                assertion.afterState.globalState.getBlockHash(),
-                assertion.afterState.globalState.getSendRoot()
-            );
-    }
-
-    function confirmHash(bytes32 blockHash, bytes32 sendRoot) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(blockHash, sendRoot));
-    }
-
     // Not the same as a machine hash for a given execution state
     function executionStateHash(ExecutionState memory state) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(state.machineStatus, state.globalState.hash()));
@@ -72,8 +59,7 @@ library RollupLib {
     function assertionHash(
         bytes32 parentAssertionHash,
         ExecutionState memory afterState,
-        bytes32 inboxAcc,
-        bytes32 wasmModuleRoot
+        bytes32 inboxAcc
     ) internal pure returns (bytes32) {
         // we can no longer have `hasSibling` in the assertion hash as it would allow identical assertions
         // uint8 hasSiblingInt = hasSibling ? 1 : 0;
@@ -82,8 +68,7 @@ library RollupLib {
                 abi.encodePacked(
                     parentAssertionHash,
                     executionStateHash(afterState),
-                    inboxAcc,
-                    wasmModuleRoot
+                    inboxAcc
                 )
             );
     }
@@ -92,8 +77,7 @@ library RollupLib {
     function assertionHash(
         bytes32 parentAssertionHash,
         bytes32 afterStateHash,
-        bytes32 inboxAcc,
-        bytes32 wasmModuleRoot
+        bytes32 inboxAcc
     ) internal pure returns (bytes32) {
         // we can no longer have `hasSibling` in the assertion hash as it would allow identical assertions
         // uint8 hasSiblingInt = hasSibling ? 1 : 0;
@@ -102,9 +86,42 @@ library RollupLib {
                 abi.encodePacked(
                     parentAssertionHash,
                     afterStateHash,
-                    inboxAcc,
-                    wasmModuleRoot
+                    inboxAcc
                 )
             );
+    }
+
+    // All these should be emited in AssertionCreated event
+    function configHash(
+        bytes32 wasmModuleRoot,
+        uint256 requiredStake,
+        address challengeManager,
+        uint64 confirmPeriodBlocks
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encodePacked(
+                    wasmModuleRoot, // TODO: we might not need this here, since it is defined in the challenge manager
+                    requiredStake,
+                    challengeManager,
+                    confirmPeriodBlocks
+                )
+            );
+    }
+
+    function validateConfigHash(
+        BeforeStateData calldata bsd,
+        bytes32 _configHash
+    ) internal pure {
+        require(
+            _configHash
+                == configHash(
+                    bsd.wasmRoot,
+                    bsd.requiredStake,
+                    bsd.challengeManager,
+                    bsd.confirmPeriodBlocks
+                ),
+            "CONFIG_HASH_MISMATCH"
+        );
     }
 }

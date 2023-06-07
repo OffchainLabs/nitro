@@ -9,7 +9,6 @@ import "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
-import "../challenge/IOldChallengeManager.sol";
 import "../libraries/DoubleLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
@@ -24,7 +23,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     {
         rollupDeploymentBlock = block.number;
         bridge = connectedContracts.bridge;
-        sequencerInbox = connectedContracts.sequencerInbox;
         connectedContracts.bridge.setDelayedInbox(address(connectedContracts.inbox), true);
         connectedContracts.bridge.setSequencerInbox(address(connectedContracts.sequencerInbox));
 
@@ -41,11 +39,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
         challengeManager = connectedContracts.challengeManager;
 
-        AssertionNode memory assertion = createInitialAssertion();
-        initializeCore(assertion);
-
         confirmPeriodBlocks = config.confirmPeriodBlocks;
-        extraChallengeTimeBlocks = config.extraChallengeTimeBlocks;
         chainId = config.chainId;
         baseStake = config.baseStake;
         wasmModuleRoot = config.wasmModuleRoot;
@@ -61,29 +55,46 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         stakeToken = config.stakeToken;
 
-        emit RollupInitialized(config.wasmModuleRoot, config.chainId);
-    }
-
-    function createInitialAssertion() private view returns (AssertionNode memory) {
         GlobalState memory emptyGlobalState;
         ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
+        bytes32 parentAssertionHash = bytes32(0);
+        bytes32 inboxAcc = bytes32(0);
         bytes32 genesisHash = RollupLib.assertionHash({
-            parentAssertionHash: bytes32(0),
+            parentAssertionHash: parentAssertionHash,
             afterState: emptyExecutionState,
-            inboxAcc: bytes32(0),
-            // CHRIS: TODO: we have a bug here in that this is 0 upon startup
-            // CHRIS: TODO: this means the assertionHash is unexpected, and out of sync with genesisAssertionHashes
-            // CHRIS: TODO: it would also lead to an invalid first assertion, will fix this in a future PR
-            wasmModuleRoot: wasmModuleRoot
+            inboxAcc: inboxAcc
         });
-        return AssertionNodeLib.createAssertion(
-            1, // inboxMaxCount - force the first assertion to read a message
-            0, // confirm data
+
+        uint64 inboxMaxCount = 1; // force the first assertion to read a message
+        AssertionNode memory initialAssertion = AssertionNodeLib.createAssertion(
+            inboxMaxCount,
             0, // prev assertion
             uint64(block.number), // deadline block (not challengeable)
-            genesisHash,
-            true
+            true,
+            RollupLib.configHash({
+                wasmModuleRoot: wasmModuleRoot,
+                requiredStake: baseStake,
+                challengeManager: address(challengeManager),
+                confirmPeriodBlocks: confirmPeriodBlocks
+            })
         );
+        initializeCore(initialAssertion, genesisHash);
+
+        AssertionInputs memory assertionInputs;
+        assertionInputs.afterState = emptyExecutionState;
+        emit AssertionCreated(
+            genesisHash,
+            parentAssertionHash,
+            assertionInputs,
+            inboxAcc,
+            inboxMaxCount,
+            wasmModuleRoot,
+            baseStake,
+            address(challengeManager),
+            confirmPeriodBlocks
+        );
+
+        emit RollupInitialized(config.wasmModuleRoot, config.chainId);
     }
 
     /**
@@ -198,15 +209,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     }
 
     /**
-     * @notice Set number of extra blocks after a challenge
-     * @param newExtraTimeBlocks new number of blocks
-     */
-    function setExtraChallengeTimeBlocks(uint64 newExtraTimeBlocks) external override {
-        extraChallengeTimeBlocks = newExtraTimeBlocks;
-        emit OwnerFunctionCalled(10);
-    }
-
-    /**
      * @notice Set base stake required for an assertion
      * @param newBaseStake minimum amount of stake required
      */
@@ -230,6 +232,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
          * Note: To avoid loss of funds stakers must remove their funds and claim all the
          * available withdrawable funds before the system is paused.
          */
+        // TODO: HN: should we drop this function?
         bool expectERC20Support = newStakeToken != address(0);
         // this assumes the rollup isn't its own admin. if needed, instead use a ProxyAdmin by OZ!
         bool actualERC20Support = IRollupUser(address(this)).isERC20Enabled();
@@ -240,63 +243,44 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(13);
     }
 
-    /**
-     * @notice Upgrades the implementation of a beacon controlled by the rollup
-     * @param beacon address of beacon to be upgraded
-     * @param newImplementation new address of implementation
-     */
-    function upgradeBeacon(address beacon, address newImplementation) external override {
-        UpgradeableBeacon(beacon).upgradeTo(newImplementation);
-        emit OwnerFunctionCalled(20);
-    }
-
-    function forceResolveChallenge(address[] calldata stakerA, address[] calldata stakerB)
-        external
-        override
-        whenPaused
-    {
-        require(stakerA.length > 0, "EMPTY_ARRAY");
-        require(stakerA.length == stakerB.length, "WRONG_LENGTH");
-        for (uint256 i = 0; i < stakerA.length; i++) {
-            uint64 chall = inChallenge(stakerA[i], stakerB[i]);
-
-            require(chall != NO_CHAL_INDEX, "NOT_IN_CHALL");
-            clearChallenge(stakerA[i]);
-            clearChallenge(stakerB[i]);
-            oldChallengeManager.clearChallenge(chall);
-        }
-        emit OwnerFunctionCalled(21);
-    }
-
     function forceRefundStaker(address[] calldata staker) external override whenPaused {
         require(staker.length > 0, "EMPTY_ARRAY");
         for (uint256 i = 0; i < staker.length; i++) {
-            require(_stakerMap[staker[i]].currentChallenge == NO_CHAL_INDEX, "STAKER_IN_CHALL");
+            requireInactiveStaker(staker[i]);
             reduceStakeTo(staker[i], 0);
-            turnIntoZombie(staker[i]);
         }
         emit OwnerFunctionCalled(22);
     }
 
     function forceCreateAssertion(
-        uint64 prevAssertion,
+        bytes32 prevAssertionId,
         AssertionInputs calldata assertion,
         bytes32 expectedAssertionHash
     ) external override whenPaused {
-        require(prevAssertion == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
+        // CHRIS: TODO: update this comment
+        // We've removed this in favour of the following flow:
+        // 1. Pause the rollup
+        // 2. Update the wasm module root
+        // 3. Create an alternative prev
+        // 4. Refund the stake to the party that created the correct but ERRORED assertion
+        // 5. Unpause the rollup
+        // require(prevAssertionId == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
-        createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
+        // Normally, a new assertion is created using its prev's confirmPeriodBlocks
+        // in the case of a force create, we use the rollup's current confirmPeriodBlocks
+        createNewAssertion(assertion, prevAssertionId, confirmPeriodBlocks, expectedAssertionHash);
 
         emit OwnerFunctionCalled(23);
     }
 
-    function forceConfirmAssertion(uint64 assertionNum, bytes32 blockHash, bytes32 sendRoot)
-        external
-        override
-        whenPaused
-    {
+    function forceConfirmAssertion(
+        bytes32 assertionId,
+        bytes32 parentAssertionHash,
+        ExecutionState calldata confirmState,
+        bytes32 inboxAcc
+    ) external override whenPaused {
         // this skips deadline, staker and zombie validation
-        confirmAssertion(assertionNum, blockHash, sendRoot);
+        confirmAssertionInternal(assertionId, parentAssertionHash, confirmState, inboxAcc);
         emit OwnerFunctionCalled(24);
     }
 
@@ -331,27 +315,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
      * @param newInbox new address of inbox
      */
     function setInbox(IInbox newInbox) external {
+        // TODO: HN: this is not synced with the bridge
         inbox = newInbox;
         emit OwnerFunctionCalled(28);
-    }
-
-    // CHRIS: TODO: remove this now?
-    function createNitroMigrationGenesis(AssertionInputs calldata assertion) external whenPaused {
-        bytes32 expectedSendRoot = bytes32(0);
-        uint64 expectedInboxCount = 1;
-
-        require(latestAssertionCreated() == 0, "NON_GENESIS_NODES_EXIST");
-        require(GlobalStateLib.isEmpty(assertion.beforeState.globalState), "NOT_EMPTY_BEFORE");
-        require(assertion.beforeState.machineStatus == MachineStatus.FINISHED, "BEFORE_MACHINE_NOT_FINISHED");
-        // accessors such as state.getSendRoot not available for calldata structs, only memory
-        require(assertion.afterState.globalState.bytes32Vals[1] == expectedSendRoot, "NOT_ZERO_SENDROOT");
-        require(assertion.afterState.globalState.u64Vals[0] == expectedInboxCount, "INBOX_NOT_AT_ONE");
-        require(assertion.afterState.globalState.u64Vals[1] == 0, "POSITION_IN_MESSAGE_NOT_ZERO");
-        require(assertion.afterState.machineStatus == MachineStatus.FINISHED, "AFTER_MACHINE_NOT_FINISHED");
-        bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
-        createNewAssertion(assertion, 0, bytes32(0));
-        confirmAssertion(1, genesisBlockHash, expectedSendRoot);
-        emit OwnerFunctionCalled(29);
     }
 
     /**

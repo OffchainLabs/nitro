@@ -24,24 +24,22 @@ func Test_onLeafCreation(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, _ := setupValidator(t)
 
-		parentSeqNum := protocol.AssertionSequenceNumber(1)
-		seqNum := parentSeqNum + 1
 		prev := &mocks.MockAssertion{
-			MockPrevSeqNum:   1,
-			MockSeqNum:       parentSeqNum,
+			MockPrevId:       mockId(1),
+			MockId:           mockId(1),
 			MockStateHash:    common.Hash{},
 			MockIsFirstChild: true,
 		}
 		ev := &mocks.MockAssertion{
-			MockPrevSeqNum:   parentSeqNum,
-			MockSeqNum:       seqNum,
+			MockPrevId:       mockId(1),
+			MockId:           mockId(2),
 			MockStateHash:    common.BytesToHash([]byte("bar")),
 			MockIsFirstChild: true,
 		}
 
 		p := &mocks.MockProtocol{}
 		p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
-		p.On("AssertionBySequenceNum", ctx, prev.SeqNum()).Return(prev, nil)
+		p.On("GetAssertion", ctx, mockId(0)).Return(prev, nil)
 		v.chain = p
 
 		err := v.onLeafCreated(ctx, ev)
@@ -97,7 +95,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		p.On("LatestConfirmed", ctx).Return(0, nil)
 		latestValid, err := v.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, protocol.AssertionSequenceNumber(0), latestValid)
+		require.Equal(t, mockId(0), latestValid)
 	})
 	t.Run("all are valid, latest one is picked", func(t *testing.T) {
 		v, p, s := setupValidator(t)
@@ -106,7 +104,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 
 		latestValid, err := v.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, protocol.AssertionSequenceNumber(numAssertions), latestValid)
+		require.Equal(t, mockId(10), latestValid)
 	})
 	t.Run("latest valid is behind", func(t *testing.T) {
 		v, p, s := setupValidator(t)
@@ -115,8 +113,12 @@ func Test_findLatestValidAssertion(t *testing.T) {
 
 		latestValid, err := v.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, protocol.AssertionSequenceNumber(5), latestValid)
+		require.Equal(t, mockId(5), latestValid)
 	})
+}
+
+func mockId(x uint64) protocol.AssertionId {
+	return protocol.AssertionId(common.BytesToHash([]byte(fmt.Sprintf("%d", x))))
 }
 
 func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockStateManager, num int, validity func(int) bool) []protocol.Assertion {
@@ -124,26 +126,32 @@ func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockSt
 		return make([]protocol.Assertion, 0)
 	}
 	genesis := &mocks.MockAssertion{
-		MockSeqNum:    0,
+		MockId:        mockId(0),
+		MockPrevId:    mockId(0),
 		MockHeight:    0,
 		MockStateHash: common.Hash{},
 		Prev:          option.None[*mocks.MockAssertion](),
 	}
+	p.On(
+		"GetAssertion",
+		ctx,
+		mockId(uint64(0)),
+	).Return(genesis, nil)
 	assertions := []protocol.Assertion{genesis}
 	for i := 1; i <= num; i++ {
 		mockHash := common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 		assertion := protocol.Assertion(&mocks.MockAssertion{
-			MockSeqNum:     protocol.AssertionSequenceNumber(i),
-			MockHeight:     uint64(i),
-			MockStateHash:  mockHash,
-			Prev:           option.Some(assertions[i-1].(*mocks.MockAssertion)),
-			MockPrevSeqNum: protocol.AssertionSequenceNumber(i - 1),
+			MockId:        mockId(uint64(i)),
+			MockPrevId:    mockId(uint64(i - 1)),
+			MockHeight:    uint64(i),
+			MockStateHash: mockHash,
+			Prev:          option.Some(assertions[i-1].(*mocks.MockAssertion)),
 		})
 		assertions = append(assertions, assertion)
 		p.On(
-			"AssertionBySequenceNum",
+			"GetAssertion",
 			ctx,
-			protocol.AssertionSequenceNumber(i),
+			mockId(uint64(i)),
 		).Return(assertion, nil)
 		mockState := rollupgen.ExecutionState{
 			MachineStatus: uint8(protocol.MachineStatusFinished),
@@ -157,7 +165,7 @@ func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockSt
 		p.On(
 			"ReadAssertionCreationInfo",
 			ctx,
-			protocol.AssertionSequenceNumber(i),
+			mockId(uint64(i)),
 		).Return(mockAssertionCreationInfo, nil)
 		valid := validity(i)
 		s.On("ExecutionStateBlockHeight", ctx, protocol.GoExecutionStateFromSolidity(mockState)).Return(uint64(i), valid)
@@ -170,7 +178,8 @@ func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockSt
 			p.On("LatestConfirmed", ctx).Return(firstValid, nil)
 		}
 	}
-	p.On("NumAssertions", ctx).Return(uint64(num+1), nil)
+	p.On("LatestConfirmed", ctx).Return(assertions[0], nil)
+	p.On("LatestCreatedAssertion", ctx).Return(assertions[len(assertions)-1], nil)
 	return assertions
 }
 
@@ -178,11 +187,6 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	t.Helper()
 	p := &mocks.MockProtocol{}
 	ctx := context.Background()
-	p.On(
-		"AssertionBySequenceNum",
-		ctx,
-		protocol.AssertionSequenceNumber(1),
-	).Return(&mocks.MockAssertion{}, nil)
 	p.On("CurrentChallengeManager", ctx).Return(&mocks.MockChallengeManager{}, nil)
 	p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
 	s := &mocks.MockStateManager{}

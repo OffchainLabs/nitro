@@ -10,52 +10,40 @@ import "../bridge/IOutbox.sol";
 import "../bridge/IInbox.sol";
 import "./IRollupEventInbox.sol";
 import "../challengeV2/EdgeChallengeManager.sol";
-import "../challenge/IOldChallengeManager.sol";
 
 interface IRollupCore is IAssertionChain {
     struct Staker {
         uint256 amountStaked;
+        bytes32 latestStakedAssertion;
         uint64 index;
-        uint64 latestStakedAssertion;
-        // currentChallenge is 0 if staker is not in a challenge
-        uint64 currentChallenge;
         bool isStaked;
     }
 
     event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
     event AssertionCreated(
-        uint64 indexed assertionNum,
-        bytes32 indexed parentAssertionHash,
         bytes32 indexed assertionHash,
+        bytes32 indexed parentAssertionHash,
         AssertionInputs assertion,
         bytes32 afterInboxBatchAcc,
+        uint256 inboxMaxCount,
         bytes32 wasmModuleRoot,
-        uint256 inboxMaxCount
+        uint256 requiredStake,
+        address challengeManager,
+        uint64 confirmPeriodBlocks
     );
 
-    event AssertionConfirmed(uint64 indexed assertionNum, bytes32 blockHash, bytes32 sendRoot);
-
-    event AssertionRejected(uint64 indexed assertionNum);
+    event AssertionConfirmed(bytes32 indexed assertionId, bytes32 blockHash, bytes32 sendRoot);
 
     event RollupChallengeStarted(
-        uint64 indexed challengeIndex,
-        address asserter,
-        address challenger,
-        uint64 challengedAssertion
+        uint64 indexed challengeIndex, address asserter, address challenger, uint64 challengedAssertion
     );
 
     event UserStakeUpdated(address indexed user, uint256 initialBalance, uint256 finalBalance);
 
-    event UserWithdrawableFundsUpdated(
-        address indexed user,
-        uint256 initialBalance,
-        uint256 finalBalance
-    );
+    event UserWithdrawableFundsUpdated(address indexed user, uint256 initialBalance, uint256 finalBalance);
 
     function confirmPeriodBlocks() external view returns (uint64);
-
-    function extraChallengeTimeBlocks() external view returns (uint64);
 
     function chainId() external view returns (uint256);
 
@@ -71,8 +59,6 @@ interface IRollupCore is IAssertionChain {
 
     function rollupEventInbox() external view returns (IRollupEventInbox);
 
-    function oldChallengeManager() external view returns (IOldChallengeManager);
-
     function loserStakeEscrow() external view returns (address);
 
     function stakeToken() external view returns (address);
@@ -83,16 +69,12 @@ interface IRollupCore is IAssertionChain {
 
     function validatorWhitelistDisabled() external view returns (bool);
 
-    /**
-     * @notice Get the Assertion for the given index.
-     */
-    function getAssertion(uint64 assertionNum) external view returns (AssertionNode memory);
+    function genesisAssertionId() external pure returns (bytes32);
 
     /**
-     * @notice Check if the specified assertion has been staked on by the provided staker.
-     * Only accurate at the latest confirmed assertion and afterwards.
+     * @notice Get the Assertion for the given id.
      */
-    function assertionHasStaker(uint64 assertionNum, address staker) external view returns (bool);
+    function getAssertion(bytes32 assertionId) external view returns (AssertionNode memory);
 
     /**
      * @notice Get the address of the staker at the given index
@@ -113,14 +95,7 @@ interface IRollupCore is IAssertionChain {
      * @param staker Staker address to lookup
      * @return Latest assertion staked of the staker
      */
-    function latestStakedAssertion(address staker) external view returns (uint64);
-
-    /**
-     * @notice Get the current challenge of the given staker
-     * @param staker Staker address to lookup
-     * @return Current challenge of the staker
-     */
-    function currentChallenge(address staker) external view returns (uint64);
+    function latestStakedAssertion(address staker) external view returns (bytes32);
 
     /**
      * @notice Get the amount staked of the given staker
@@ -137,49 +112,14 @@ interface IRollupCore is IAssertionChain {
     function getStaker(address staker) external view returns (Staker memory);
 
     /**
-     * @notice Get the original staker address of the zombie at the given index
-     * @param zombieNum Index of the zombie to lookup
-     * @return Original staker address of the zombie
-     */
-    function zombieAddress(uint256 zombieNum) external view returns (address);
-
-    /**
-     * @notice Get Latest assertion that the given zombie at the given index is staked on
-     * @param zombieNum Index of the zombie to lookup
-     * @return Latest assertion that the given zombie is staked on
-     */
-    function zombieLatestStakedAssertion(uint256 zombieNum) external view returns (uint64);
-
-    /// @return Current number of un-removed zombies
-    function zombieCount() external view returns (uint256);
-
-    function isZombie(address staker) external view returns (bool);
-
-    /**
      * @notice Get the amount of funds withdrawable by the given address
      * @param owner Address to check the funds of
      * @return Amount of funds withdrawable by owner
      */
     function withdrawableFunds(address owner) external view returns (uint256);
-
-    /**
-     * @return Index of the first unresolved assertion
-     * @dev If all assertions have been resolved, this will be latestAssertionCreated + 1
-     */
-    function firstUnresolvedAssertion() external view returns (uint64);
-
     /// @return Index of the latest confirmed assertion
-    function latestConfirmed() external view returns (uint64);
-
-    /// @return Index of the latest rollup assertion created
-    function latestAssertionCreated() external view returns (uint64);
-
-    /// @return Ethereum block that the most recent stake was created
-    function lastStakeBlock() external view returns (uint64);
+    function latestConfirmed() external view returns (bytes32);
 
     /// @return Number of active stakers currently staked
     function stakerCount() external view returns (uint64);
-
-    /// @return genesis end state hash, assertion hash, and wasm module root
-    function genesisAssertionHashes() external view returns (bytes32, bytes32, bytes32);
 }

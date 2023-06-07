@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
@@ -162,9 +161,6 @@ func (v *Manager) Start(ctx context.Context) {
 		log.WithError(err).Fatal("Could not sync with onchain edges")
 	}
 
-	// Poll for newly created assertions in the background.
-	go v.pollForAssertions(ctx)
-
 	// Post assertions periodically to the chain.
 	go v.postAssertionsPeriodically(ctx)
 }
@@ -210,7 +206,7 @@ func (v *Manager) postLatestAssertion(ctx context.Context) (protocol.Assertion, 
 	}
 	assertion, err := v.chain.CreateAssertion(
 		ctx,
-		protocol.GoExecutionStateFromSolidity(parentAssertionCreationInfo.AfterState),
+		parentAssertionCreationInfo,
 		newState,
 	)
 	switch {
@@ -230,73 +226,35 @@ func (v *Manager) postLatestAssertion(ctx context.Context) (protocol.Assertion, 
 // Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
-func (v *Manager) findLatestValidAssertion(ctx context.Context) (protocol.AssertionSequenceNumber, error) {
-	numAssertions, err := v.chain.NumAssertions(ctx)
+func (v *Manager) findLatestValidAssertion(ctx context.Context) (protocol.AssertionId, error) {
+	latestConfirmed, err := v.chain.LatestConfirmed(ctx)
 	if err != nil {
-		return 0, err
+		return protocol.AssertionId{}, err
 	}
-	latestConfirmedFetched, err := v.chain.LatestConfirmed(ctx)
+	latestCreated, err := v.chain.LatestCreatedAssertion(ctx)
 	if err != nil {
-		return 0, err
+		return protocol.AssertionId{}, err
 	}
-	latestConfirmed := latestConfirmedFetched.SeqNum()
-	bestAssertion := latestConfirmed
-	for s := latestConfirmed + 1; s < protocol.AssertionSequenceNumber(numAssertions); s++ {
-		a, err := v.chain.AssertionBySequenceNum(ctx, s)
+	if latestConfirmed == latestCreated {
+		return latestConfirmed.Id(), nil
+	}
+	curr := latestCreated
+	for curr.Id() != latestConfirmed.Id() {
+		info, err := v.chain.ReadAssertionCreationInfo(ctx, curr.Id())
 		if err != nil {
-			return 0, err
-		}
-		parent, err := a.PrevSeqNum()
-		if err != nil {
-			return 0, err
-		}
-		if parent != bestAssertion {
-			continue
-		}
-		info, err := v.chain.ReadAssertionCreationInfo(ctx, s)
-		if err != nil {
-			return 0, err
+			return protocol.AssertionId{}, err
 		}
 		_, hasState := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
 		if hasState {
-			bestAssertion = s
+			return curr.Id(), nil
 		}
-	}
-	return bestAssertion, nil
-}
-
-// validChildFromParent returns the assertion number of a child of the parent assertion number.
-// The assertion must be valid and exists in state manager by `ExecutionStateBlockHeight` validation.
-// It returns the first assertion number that is a child of the parent assertion number. This assumes there's no two children of the same parent.
-// If no such assertion exists, an error gets returned.
-func (v *Manager) validChildFromParent(ctx context.Context, parentAssertionNumber protocol.AssertionSequenceNumber) (protocol.AssertionSequenceNumber, error) {
-	numAssertions, err := v.chain.NumAssertions(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	for s := parentAssertionNumber + 1; s < protocol.AssertionSequenceNumber(numAssertions); s++ {
-		a, err := v.chain.AssertionBySequenceNum(ctx, s)
+		prev, err := v.chain.GetAssertion(ctx, curr.PrevId())
 		if err != nil {
-			return 0, err
+			return protocol.AssertionId{}, err
 		}
-		n, err := a.PrevSeqNum()
-		if err != nil {
-			return 0, err
-		}
-		if n != parentAssertionNumber {
-			continue
-		}
-		info, err := v.chain.ReadAssertionCreationInfo(ctx, s)
-		if err != nil {
-			return 0, err
-		}
-		_, hasState := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
-		if hasState {
-			return a.SeqNum(), nil
-		}
+		curr = prev
 	}
-	return 0, fmt.Errorf("no valid assertion found from parent %v", parentAssertionNumber)
+	return latestConfirmed.Id(), nil
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
@@ -307,24 +265,16 @@ func (v *Manager) onLeafCreated(
 	log.WithFields(logrus.Fields{
 		"name": v.name,
 	}).Info("New assertion appended to protocol")
-
 	isFirstChild, err := assertion.IsFirstChild()
 	if err != nil {
 		return err
 	}
-
 	// If this leaf is the first child, we have nothing else to do.
 	if isFirstChild {
 		log.Info("No fork detected in assertion tree upon leaf creation")
 		return nil
 	}
-
-	psn, err := assertion.PrevSeqNum()
-	if err != nil {
-		return err
-	}
-
-	return v.challengeAssertion(ctx, psn)
+	return v.challengeAssertion(ctx, assertion.Id())
 }
 
 // waitForSync waits for a notificataion that initial sync of onchain edges is complete.
