@@ -423,7 +423,9 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 				delete(p.errorCount, x)
 			}
 		}
-		// nonce > 0 is implied by nonce > p.nonce, so this won't underflow
+		// We don't prune the most recent transaction in order to ensure that the data poster
+		// always has a reference point in its queue of the latest transaction nonce and metadata.
+		// nonce > 0 is implied by nonce > p.nonce, so this won't underflow.
 		err := p.queue.Prune(ctx, nonce-1)
 		if err != nil {
 			return err
