@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -49,7 +50,7 @@ type ArbitratorMachine struct {
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
-var preimageResolvers sync.Map
+var preimageResolvers containers.Map[int64, GoPreimageResolver]
 var lastPreimageResolverId int64 // atomic
 
 // Any future calls to this machine will result in a panic
@@ -342,15 +343,8 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 	var hash common.Hash
 	input := (*[1 << 30]byte)(ptr)[:32]
 	copy(hash[:], input)
-	resolver, ok := preimageResolvers.Load(int64(context))
+	resolverFunc, ok := preimageResolvers.Load(int64(context))
 	if !ok {
-		return C.ResolvedPreimage{
-			len: -1,
-		}
-	}
-	resolverFunc, ok := resolver.(GoPreimageResolver)
-	if !ok {
-		log.Warn("preimage resolver has wrong type")
 		return C.ResolvedPreimage{
 			len: -1,
 		}

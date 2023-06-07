@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -38,8 +39,8 @@ type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
 
-	validations      sync.Map
-	sequencerBatches sync.Map
+	validations      containers.Map[uint64, *validationStatus]
+	sequencerBatches containers.Map[uint64, []byte]
 
 	// acquiring multiple Mutexes must be done in order:
 	reorgMutex              sync.Mutex
@@ -435,8 +436,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		return
 	}
 	// It's fine to separately load and then store as we have the blockMutex acquired
-	_, present := v.validations.Load(blockNum)
-	if present {
+	if _, present := v.validations.Load(blockNum); present {
 		return
 	}
 	v.validations.Store(blockNum, status)
@@ -522,22 +522,22 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				return
 			}
 		}
-		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		seqMsg, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		if !haveBatch && batchCount == v.globalPosNextSend.BatchNumber+1 {
 			// This is the latest batch.
 			// Wait a bit to see if the inbox tracker populates this sequencer batch,
 			// but if it's still missing after this wait, we'll query it from the inbox reader.
 			time.Sleep(time.Second)
-			seqBatchEntry, haveBatch = v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+			seqMsg, haveBatch = v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		}
 		if !haveBatch {
-			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
+			sMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
 			if err != nil {
 				log.Error("validator failed to read sequencer message", "err", err)
 				return
 			}
 			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
-			seqBatchEntry = seqMsg
+			seqMsg = sMsg
 		}
 		v.blockMutex.Lock()
 		v.lastBlockValidatedMutex.Lock()
@@ -564,13 +564,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		v.blockMutex.Unlock()
 		nextMsg := arbutil.BlockNumberToMessageCount(nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
-		entry, found := v.validations.Load(nextBlockToValidate)
+		validationStatus, found := v.validations.Load(nextBlockToValidate)
 		if !found {
-			return
-		}
-		validationStatus, ok := entry.(*validationStatus)
-		if !ok || (validationStatus == nil) {
-			log.Error("bad entry trying to validate batch")
 			return
 		}
 		if validationStatus.getStatus() < Prepared {
@@ -583,12 +578,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		if startPos != v.globalPosNextSend {
 			log.Error("inconsistent pos mapping", "msg", nextMsg, "expected", v.globalPosNextSend, "found", startPos)
-			return
-		}
-		seqMsg, ok := seqBatchEntry.([]byte)
-		if !ok {
-			batchNum := validationStatus.Entry.StartPosition.BatchNumber
-			log.Error("sequencer message bad format", "blockNr", nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
 		msgCountInBatch, err := v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber)
@@ -644,7 +633,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		if nextRecord >= v.nextBlockToValidate+v.config().PrerecordedBlocks {
 			return
 		}
-		entry, found := v.validations.Load(nextRecord)
+		validationStatus, found := v.validations.Load(nextRecord)
 		if !found {
 			header := v.blockchain.GetHeaderByNumber(nextRecord)
 			if header == nil {
@@ -668,17 +657,12 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 				return
 			}
 			v.blockMutex.Lock()
-			entry, found = v.validations.Load(nextRecord)
+			validationStatus, found = v.validations.Load(nextRecord)
 			if !found {
 				v.validations.Store(nextRecord, status)
-				entry = status
+				validationStatus = status
 			}
 			v.blockMutex.Unlock()
-		}
-		validationStatus, ok := entry.(*validationStatus)
-		if !ok || (validationStatus == nil) {
-			log.Error("bad entry trying to send recordings")
-			return
 		}
 		currentStatus := validationStatus.getStatus()
 		if currentStatus == RecordFailed {
@@ -736,13 +720,8 @@ func (v *BlockValidator) progressValidated() {
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		// Reads from blocksValidated can be non-atomic as all writes hold reorgMutex
 		checkingBlock := v.lastBlockValidated + 1
-		entry, found := v.validations.Load(checkingBlock)
+		validationStatus, found := v.validations.Load(checkingBlock)
 		if !found {
-			return
-		}
-		validationStatus, ok := entry.(*validationStatus)
-		if !ok || (validationStatus == nil) {
-			log.Error("bad entry trying to advance validated counter")
 			return
 		}
 		if validationStatus.getStatus() < ValidationSent {
@@ -935,17 +914,11 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 // must hold reorgMutex, blockMutex, and lastBlockValidatedMutex
 func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash) error {
 	for b := blockNum + 1; b <= v.lastValidationEntryBlock; b++ {
-		entry, found := v.validations.Load(b)
+		validationStatus, found := v.validations.Load(b)
 		if !found {
 			continue
 		}
 		v.validations.Delete(b)
-
-		validationStatus, ok := entry.(*validationStatus)
-		if !ok || (validationStatus == nil) {
-			log.Error("bad entry trying to reorg block validator")
-			continue
-		}
 		log.Debug("canceling validation due to reorg", "block", b)
 		if validationStatus.Cancel != nil {
 			validationStatus.Cancel()
