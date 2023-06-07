@@ -52,32 +52,7 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) containers.Promise
 
 func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](e, func(ctx context.Context) (*validator.MachineStepResult, error) {
-		var machine MachineInterface
-		var err error
-		if position == ^uint64(0) {
-			machine, err = e.cache.GetFinalMachine(ctx)
-		} else {
-			// todo cache last machine
-			machine, err = e.cache.GetMachineAt(ctx, position)
-		}
-		if err != nil {
-			return nil, err
-		}
-		machineStep := machine.GetStepCount()
-		if position != machineStep {
-			machineRunning := machine.IsRunning()
-			if machineRunning || machineStep > position {
-				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
-			}
-
-		}
-		result := &validator.MachineStepResult{
-			Position:    machineStep,
-			Status:      validator.MachineStatus(machine.Status()),
-			GlobalState: machine.GetGlobalState(),
-			Hash:        machine.Hash(),
-		}
-		return result, nil
+		return e.intermediateGetStepAt(ctx, position)
 	})
 }
 
@@ -86,26 +61,11 @@ func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigSt
 		var stateRoots []common.Hash
 		for i := uint64(0); i <= toBigStep; i++ {
 			position := i * numOpcodesPerBigStep
-			var machine MachineInterface
-			var err error
-			if position == ^uint64(0) {
-				machine, err = e.cache.GetFinalMachine(ctx)
-			} else {
-				// todo cache last machine
-				machine, err = e.cache.GetMachineAt(ctx, position)
-			}
+			machineStep, err := e.intermediateGetStepAt(ctx, position)
 			if err != nil {
 				return nil, err
 			}
-			machineStep := machine.GetStepCount()
-			if position != machineStep {
-				machineRunning := machine.IsRunning()
-				if machineRunning || machineStep > position {
-					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
-				}
-
-			}
-			stateRoots = append(stateRoots, machine.GetGlobalState().Hash())
+			stateRoots = append(stateRoots, machineStep.Hash)
 		}
 		return stateRoots, nil
 	})
@@ -117,29 +77,43 @@ func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64
 		fromSmall := bigStep * numOpcodesPerBigStep
 		toSmall := fromSmall + toSmallStep
 		for i := fromSmall; i <= toSmall; i++ {
-			var machine MachineInterface
-			var err error
-			if i == ^uint64(0) {
-				machine, err = e.cache.GetFinalMachine(ctx)
-			} else {
-				// todo cache last machine
-				machine, err = e.cache.GetMachineAt(ctx, i)
-			}
+			machineStep, err := e.intermediateGetStepAt(ctx, i)
 			if err != nil {
 				return nil, err
 			}
-			machineStep := machine.GetStepCount()
-			if i != machineStep {
-				machineRunning := machine.IsRunning()
-				if machineRunning || machineStep > i {
-					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", i, machine.GetStepCount())
-				}
-
-			}
-			stateRoots = append(stateRoots, machine.GetGlobalState().Hash())
+			stateRoots = append(stateRoots, machineStep.Hash)
 		}
 		return stateRoots, nil
 	})
+}
+
+func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint64) (*validator.MachineStepResult, error) {
+	var machine MachineInterface
+	var err error
+	if position == ^uint64(0) {
+		machine, err = e.cache.GetFinalMachine(ctx)
+	} else {
+		// todo cache last machine
+		machine, err = e.cache.GetMachineAt(ctx, position)
+	}
+	if err != nil {
+		return nil, err
+	}
+	machineStep := machine.GetStepCount()
+	if position != machineStep {
+		machineRunning := machine.IsRunning()
+		if machineRunning || machineStep > position {
+			return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+		}
+
+	}
+	result := &validator.MachineStepResult{
+		Position:    machineStep,
+		Status:      validator.MachineStatus(machine.Status()),
+		GlobalState: machine.GetGlobalState(),
+		Hash:        machine.Hash(),
+	}
+	return result, nil
 }
 
 func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
