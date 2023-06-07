@@ -423,7 +423,8 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 				delete(p.errorCount, x)
 			}
 		}
-		err := p.queue.Prune(ctx, nonce)
+		// nonce > 0 is implied by nonce > p.nonce, so this won't underflow
+		err := p.queue.Prune(ctx, nonce-1)
 		if err != nil {
 			return err
 		}
