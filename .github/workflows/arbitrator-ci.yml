@@ -1,4 +1,4 @@
-name: CI
+name: "Arbitrator CI"
 
 on:
   workflow_dispatch:

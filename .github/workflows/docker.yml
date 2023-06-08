@@ -1,4 +1,4 @@
-name: CI
+name: "Docker build CI"
 
 on:
   workflow_dispatch:

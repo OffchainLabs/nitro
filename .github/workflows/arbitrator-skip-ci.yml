@@ -1,4 +1,4 @@
-name: CI
+name: "Arbitrator skip CI"
 
 on:
   pull_request:
