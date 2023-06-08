@@ -13,7 +13,7 @@ import (
 
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
-	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
+	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 	backend := cfg.Backend
@@ -75,7 +75,7 @@ func TestCreateAssertion(t *testing.T) {
 
 func TestAssertionBySequenceNum(t *testing.T) {
 	ctx := context.Background()
-	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
+	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 	latestConfirmed, err := chain.LatestConfirmed(ctx)
@@ -89,7 +89,7 @@ func TestAssertionBySequenceNum(t *testing.T) {
 
 func TestChallengePeriodBlocks(t *testing.T) {
 	ctx := context.Background()
-	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
+	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 

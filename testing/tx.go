@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	errors "github.com/pkg/errors"
+	"github.com/pkg/errors"
 )
 
 func TxSucceeded(

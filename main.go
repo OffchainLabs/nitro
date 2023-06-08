@@ -43,7 +43,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 
-	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
+	setupCfg, err := setup.ChainsWithEdgeChallengeManager()
 	if err != nil {
 		panic(err)
 	}

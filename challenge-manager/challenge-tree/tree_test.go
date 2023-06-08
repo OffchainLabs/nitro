@@ -164,11 +164,11 @@ func (m *mockMetadataReader) TopLevelClaimHeights(
 	return m.claimHeights, m.claimHeightsErr
 }
 
-func (m *mockMetadataReader) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+func (m *mockMetadataReader) SpecChallengeManager(_ context.Context) (protocol.SpecChallengeManager, error) {
 	return nil, nil
 }
 func (m *mockMetadataReader) ReadAssertionCreationInfo(
-	ctx context.Context, seqNum protocol.AssertionId,
+	_ context.Context, _ protocol.AssertionId,
 ) (*protocol.AssertionCreatedInfo, error) {
 	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
 }
@@ -302,15 +302,15 @@ func (*edge) Bisect(
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (*edge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
+func (*edge) ConfirmByTimer(_ context.Context, _ []protocol.EdgeId) error {
 	return errors.New("unimplemented")
 }
 
-func (*edge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
+func (*edge) ConfirmByClaim(_ context.Context, _ protocol.ClaimId) error {
 	return errors.New("unimplemented")
 }
 
-func (*edge) ConfirmByChildren(ctx context.Context) error {
+func (*edge) ConfirmByChildren(_ context.Context) error {
 	return errors.New("unimplemented")
 }
 

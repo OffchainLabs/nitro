@@ -271,12 +271,12 @@ func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, blockStar
 }
 
 func (s *L2StateBackend) AgreesWithHistoryCommitment(
-	ctx context.Context,
-	edgeType protocol.EdgeType,
-	prevAssertionInboxMaxCount uint64,
-	heights *protocol.OriginHeights,
-	startCommit,
-	endCommit commitments.History,
+	_ context.Context,
+	_ protocol.EdgeType,
+	_ uint64,
+	_ *protocol.OriginHeights,
+	_,
+	_ commitments.History,
 ) (protocol.Agreement, error) {
 	return protocol.Agreement{}, errors.New("unimplemented")
 }
@@ -422,7 +422,7 @@ func (s *L2StateBackend) SmallStepCommitmentUpTo(
 		)
 	}
 
-	fromSmall := (fromBigStep * s.numOpcodesPerBigStep)
+	fromSmall := fromBigStep * s.numOpcodesPerBigStep
 	toSmall := fromSmall + toSmallStep
 	leaves, err := s.intermediateSmallStepLeaves(
 		ctx,
@@ -757,7 +757,7 @@ func (s *L2StateBackend) smallStepPrefixProofCalculation(
 	fromSmallStep,
 	toSmallStep uint64,
 ) ([]byte, error) {
-	fromSmall := (fromBigStep * s.numOpcodesPerBigStep)
+	fromSmall := fromBigStep * s.numOpcodesPerBigStep
 	toSmall := fromSmall + toSmallStep
 	prefixLeaves, err := s.intermediateSmallStepLeaves(
 		ctx,

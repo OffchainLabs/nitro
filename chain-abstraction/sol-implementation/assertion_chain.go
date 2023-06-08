@@ -106,8 +106,8 @@ func NewAssertionChain(
 	return chain, nil
 }
 
-func (ac *AssertionChain) GetAssertion(ctx context.Context, assertionId protocol.AssertionId) (protocol.Assertion, error) {
-	res, err := ac.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionId)
+func (a *AssertionChain) GetAssertion(ctx context.Context, assertionId protocol.AssertionId) (protocol.Assertion, error) {
+	res, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionId)
 	if err != nil {
 		return nil, err
 	}
@@ -121,41 +121,41 @@ func (ac *AssertionChain) GetAssertion(ctx context.Context, assertionId protocol
 	return &Assertion{
 		id:     assertionId,
 		prevId: res.PrevId,
-		chain:  ac,
+		chain:  a,
 	}, nil
 }
 
-func (ac *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
-	res, err := ac.rollup.LatestConfirmed(&bind.CallOpts{Context: ctx})
+func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
+	res, err := a.rollup.LatestConfirmed(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, err
 	}
-	return ac.GetAssertion(ctx, res)
+	return a.GetAssertion(ctx, res)
 }
 
-func (ac *AssertionChain) BaseStake(ctx context.Context) (*big.Int, error) {
-	return ac.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
+func (a *AssertionChain) BaseStake(ctx context.Context) (*big.Int, error) {
+	return a.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
 }
 
-func (ac *AssertionChain) WasmModuleRoot(ctx context.Context) ([32]byte, error) {
-	return ac.userLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+func (a *AssertionChain) WasmModuleRoot(ctx context.Context) ([32]byte, error) {
+	return a.userLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
 }
 
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
 // and a commitment to a post-state.
-func (ac *AssertionChain) CreateAssertion(
+func (a *AssertionChain) CreateAssertion(
 	ctx context.Context,
 	prevAssertionCreationInfo *protocol.AssertionCreatedInfo,
 	postState *protocol.ExecutionState,
 ) (protocol.Assertion, error) {
-	stake, err := ac.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
+	stake, err := a.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get current required stake")
 	}
-	newOpts := copyTxOpts(ac.txOpts)
+	newOpts := copyTxOpts(a.txOpts)
 	newOpts.Value = stake
 
-	chalManager, err := ac.SpecChallengeManager(ctx)
+	chalManager, err := a.SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -163,13 +163,13 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, err
 	}
-	wasmModuleRoot, err := ac.userLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+	wasmModuleRoot, err := a.userLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get current required stake")
 	}
 
-	receipt, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
-		return ac.userLogic.NewStakeOnNewAssertion(
+	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
+		return a.userLogic.NewStakeOnNewAssertion(
 			newOpts,
 			rollupgen.AssertionInputs{
 				BeforeStateData: rollupgen.BeforeStateData{
@@ -196,7 +196,7 @@ func (ac *AssertionChain) CreateAssertion(
 	var assertionCreated *rollupgen.RollupCoreAssertionCreated
 	var found bool
 	for _, log := range receipt.Logs {
-		creationEvent, err := ac.rollup.ParseAssertionCreated(*log)
+		creationEvent, err := a.rollup.ParseAssertionCreated(*log)
 		if err == nil {
 			assertionCreated = creationEvent
 			found = true
@@ -206,12 +206,12 @@ func (ac *AssertionChain) CreateAssertion(
 	if !found {
 		return nil, errors.New("could not find assertion created event in logs")
 	}
-	return ac.GetAssertion(ctx, assertionCreated.AssertionHash)
+	return a.GetAssertion(ctx, assertionCreated.AssertionHash)
 }
 
 // SpecChallengeManager creates a new spec challenge manager
-func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	challengeManagerAddr, err := ac.userLogic.RollupUserLogicCaller.ChallengeManager(
+func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+	challengeManagerAddr, err := a.userLogic.RollupUserLogicCaller.ChallengeManager(
 		&bind.CallOpts{Context: ctx},
 	)
 	if err != nil {
@@ -220,20 +220,20 @@ func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Sp
 	return NewSpecChallengeManager(
 		ctx,
 		challengeManagerAddr,
-		ac,
-		ac.backend,
-		ac.headerReader,
-		ac.txOpts,
+		a,
+		a.backend,
+		a.headerReader,
+		a.txOpts,
 	)
 }
 
 // TODO: Implement this logic.
-func (ac *AssertionChain) AssertionUnrivaledTime(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
+func (a *AssertionChain) AssertionUnrivaledTime(_ context.Context, _ protocol.AssertionId) (uint64, error) {
 	return 0, nil
 }
 
-func (ac *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error) {
-	cm, err := ac.SpecChallengeManager(ctx)
+func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error) {
+	cm, err := a.SpecChallengeManager(ctx)
 	if err != nil {
 		return protocol.AssertionId{}, err
 	}
@@ -247,8 +247,8 @@ func (ac *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol
 	return edgeOpt.Unwrap().PrevAssertionId(ctx)
 }
 
-func (ac *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
-	cm, err := ac.SpecChallengeManager(ctx)
+func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
+	cm, err := a.SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, err
 	}

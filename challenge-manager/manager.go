@@ -58,11 +58,6 @@ func WithAddress(addr common.Address) Opt {
 }
 
 // WithTimeReference adds a time reference interface to the validator.
-func WithTimeReference(ref utilTime.Reference) Opt {
-	return func(val *Manager) {
-		val.timeRef = ref
-	}
-}
 
 // WithPostAssertionsInterval specifies how often the validator should try to post assertions.
 func WithPostAssertionsInterval(d time.Duration) Opt {
@@ -88,11 +83,6 @@ func WithNewAssertionCheckInterval(d time.Duration) Opt {
 }
 
 // WithChainWatcherInterval specifies how often the chain watcher will scan for edge events.
-func WithChainWatcherInterval(d time.Duration) Opt {
-	return func(val *Manager) {
-		val.chainWatcherInterval = d
-	}
-}
 
 // New sets up a validator client instances provided a protocol, state manager,
 // and additional options.

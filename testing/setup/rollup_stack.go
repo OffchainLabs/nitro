@@ -51,7 +51,7 @@ func CreateTwoValidatorFork(
 	ctx context.Context,
 	cfg *CreateForkConfig,
 ) (*CreatedValidatorFork, error) {
-	setup, err := SetupChainsWithEdgeChallengeManager()
+	setup, err := ChainsWithEdgeChallengeManager()
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +144,9 @@ type ChainSetup struct {
 	L1Reader *headerreader.HeaderReader
 }
 
-func SetupChainsWithEdgeChallengeManager() (*ChainSetup, error) {
+func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 	ctx := context.Background()
-	accs, backend, err := SetupAccounts(3)
+	accs, backend, err := Accounts(3)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +496,7 @@ type TestAccount struct {
 	TxOpts      *bind.TransactOpts
 }
 
-func SetupAccounts(numAccounts uint64) ([]*TestAccount, *backends.SimulatedBackend, error) {
+func Accounts(numAccounts uint64) ([]*TestAccount, *backends.SimulatedBackend, error) {
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
 

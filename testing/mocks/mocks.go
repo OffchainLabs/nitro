@@ -80,12 +80,12 @@ func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uin
 }
 
 func (m *MockStateManager) AgreesWithHistoryCommitment(
-	ctx context.Context,
-	edgeType protocol.EdgeType,
-	prevAssertionMaxInboxCount uint64,
-	heights *protocol.OriginHeights,
-	startCommit,
-	endCommit commitments.History,
+	_ context.Context,
+	_ protocol.EdgeType,
+	_ uint64,
+	_ *protocol.OriginHeights,
+	_,
+	_ commitments.History,
 ) (protocol.Agreement, error) {
 	if m.AgreeErr {
 		return protocol.Agreement{}, errors.New("failed")
