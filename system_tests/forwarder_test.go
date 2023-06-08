@@ -16,7 +16,6 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
@@ -188,7 +187,6 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 			return fmt.Errorf("no sequencer was chosen")
 		default:
 			if c, err := node.SeqCoordinator.CurrentChosenSequencer(ctx); err == nil && c != "" {
-				log.Error("anodar currently chosen sequencer:", c)
 				return nil
 			}
 			time.Sleep(100 * time.Millisecond)
