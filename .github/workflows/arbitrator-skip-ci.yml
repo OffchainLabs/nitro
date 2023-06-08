@@ -1,4 +1,5 @@
-name: "Arbitrator skip CI"
+name: Arbitrator skip CI
+run-name: Arbitrator skip CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   pull_request:

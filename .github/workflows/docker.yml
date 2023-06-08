@@ -1,4 +1,5 @@
-name: "Docker build CI"
+name: Docker build CI
+run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:

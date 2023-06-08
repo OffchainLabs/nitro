@@ -1,4 +1,5 @@
-name: "Arbitrator CI"
+name: Arbitrator CI
+run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
