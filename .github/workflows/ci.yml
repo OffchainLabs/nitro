@@ -1,4 +1,5 @@
-name: CI
+name: Go tests CI
+run-name: Go tests CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
