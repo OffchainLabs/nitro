@@ -339,7 +339,6 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         AssertionReferenceData memory ard;
         if (args.edgeType == EdgeType.Block) {
             // for block type edges we need to provide some extra assertion data context
-
             bytes32 predecessorId = assertionChain.getPredecessorId(args.claimId);
             require(args.proof.length != 0, "Block edge specific proof is empty");
             (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
@@ -356,23 +355,23 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             );
 
             edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
-
-            IERC20 edgeStakeToken = stakeToken;
-            uint256 edgeStakeAmount = stakeAmount;
-            // when a zero layer block edge is created it must include a stake. Each time a zero layer block
-            // edge is created it forces the honest participants to do some work, so we want to discentivise
-            // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
-            // participant. This can be arranged out of bound by the excess stake receiver.
-            // the assertion chain can disable challenge staking by setting a zero stake token or amount
-            if (address(edgeStakeToken) != address(0) && edgeStakeAmount != 0) {
-                // since only one edge in a group of rivals can ever be confirmed, we know that we
-                // will never need to refund more than one edge. Therefore we can immediately send
-                // all stakes provided after the first one to an excess stake receiver.
-                address receiver = edgeAdded.hasRival ? excessStakeReceiver : address(this);
-                edgeStakeToken.safeTransferFrom(msg.sender, receiver, edgeStakeAmount);
-            }
         } else {
             edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
+        }
+
+        IERC20 st = stakeToken;
+        uint256 sa = stakeAmount;
+        // when a zero layer edge is created it must include a stake. Each time a zero layer
+        // edge is created it forces the honest participants to do some work, so we want to discentivise
+        // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
+        // participant. This can be arranged out of bound by the excess stake receiver.
+        // the assertion chain can disable challenge staking by setting a zero stake token or amount
+        if (address(st) != address(0) && sa != 0) {
+            // since only one edge in a group of rivals can ever be confirmed, we know that we
+            // will never need to refund more than one edge. Therefore we can immediately send
+            // all stakes provided after the first one to an excess stake receiver.
+            address receiver = edgeAdded.hasRival ? excessStakeReceiver : address(this);
+            st.safeTransferFrom(msg.sender, receiver, sa);
         }
 
         emit EdgeAdded(

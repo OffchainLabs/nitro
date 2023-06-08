@@ -1340,7 +1340,7 @@ contract EdgeChallengeManagerTest is Test {
     function testExcessStakeReceived() external {
         (EdgeInitData memory ei, BisectionChildren[] memory allWinners) = testCanConfirmByOneStep();
         IERC20 stakeToken = ei.challengeManager.stakeToken();
-        assertEq(stakeToken.balanceOf(excessStakeReceiver), ei.challengeManager.stakeAmount(), "Excess stake received");
+        assertEq(stakeToken.balanceOf(excessStakeReceiver), ei.challengeManager.stakeAmount() * 3, "Excess stake received");
     }
 
     function testCanRefundStake() external {
