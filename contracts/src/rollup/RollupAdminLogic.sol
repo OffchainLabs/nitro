@@ -217,32 +217,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(12);
     }
 
-    /**
-     * @notice Set the token used for stake, where address(0) == eth
-     * @dev Before changing the base stake token, you might need to change the
-     * implementation of the Rollup User facet!
-     * @param newStakeToken address of token used for staking
-     */
-    function setStakeToken(address newStakeToken) external override whenPaused {
-        /*
-         * To change the stake token without breaking consistency one would need to:
-         * Pause the system, have all stakers remove their funds,
-         * update the user logic to handle ERC20s, change the stake token, then resume.
-         *
-         * Note: To avoid loss of funds stakers must remove their funds and claim all the
-         * available withdrawable funds before the system is paused.
-         */
-        // TODO: HN: should we drop this function?
-        bool expectERC20Support = newStakeToken != address(0);
-        // this assumes the rollup isn't its own admin. if needed, instead use a ProxyAdmin by OZ!
-        bool actualERC20Support = IRollupUser(address(this)).isERC20Enabled();
-        require(actualERC20Support == expectERC20Support, "NO_USER_LOGIC_SUPPORT");
-        require(stakerCount() == 0, "NO_ACTIVE_STAKERS");
-        require(totalWithdrawableFunds == 0, "NO_PENDING_WITHDRAW");
-        stakeToken = newStakeToken;
-        emit OwnerFunctionCalled(13);
-    }
-
     function forceRefundStaker(address[] calldata staker) external override whenPaused {
         require(staker.length > 0, "EMPTY_ARRAY");
         for (uint256 i = 0; i < staker.length; i++) {
@@ -257,13 +231,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         AssertionInputs calldata assertion,
         bytes32 expectedAssertionHash
     ) external override whenPaused {
-        // CHRIS: TODO: update this comment
-        // We've removed this in favour of the following flow:
-        // 1. Pause the rollup
-        // 2. Update the wasm module root
-        // 3. Create an alternative prev
-        // 4. Refund the stake to the party that created the correct but ERRORED assertion
-        // 5. Unpause the rollup
+        // CHRIS: TODO: the process should be (and ideally done in a single tx):
+        // 0. update the wasm module root var in the contract
+        // 1. remove the assertion previous to the one that we want to replace from
+        // 2. recreate that same assertion - it will have the new correct wasm root now
+        // 3. force confirm that assertion
+        // 4. delete any now obsolete downstream assertions, and refund any relevant stakes
+        // 5. continue as normal from the last confirmed node
+
         // require(prevAssertionId == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
         // Normally, a new assertion is created using its prev's confirmPeriodBlocks
@@ -315,7 +290,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
      * @param newInbox new address of inbox
      */
     function setInbox(IInbox newInbox) external {
-        // TODO: HN: this is not synced with the bridge
         inbox = newInbox;
         emit OwnerFunctionCalled(28);
     }

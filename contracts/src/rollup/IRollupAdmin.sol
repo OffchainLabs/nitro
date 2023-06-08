@@ -77,14 +77,6 @@ interface IRollupAdmin {
      */
     function setBaseStake(uint256 newBaseStake) external;
 
-    /**
-     * @notice Set the token used for stake, where address(0) == eth
-     * @dev Before changing the base stake token, you might need to change the
-     * implementation of the Rollup User logic!
-     * @param newStakeToken address of token used for staking
-     */
-    function setStakeToken(address newStakeToken) external;
-
     function forceRefundStaker(address[] memory stacker) external;
 
     function forceCreateAssertion(bytes32 prevAssertionId, AssertionInputs memory assertion, bytes32 expectedAssertionHash)

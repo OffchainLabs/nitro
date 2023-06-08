@@ -30,7 +30,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // An assertion can be confirmed after confirmPeriodBlocks when it is unchallenged
     uint64 public confirmPeriodBlocks;
     uint256 public baseStake;
-    bytes32 public wasmModuleRoot; // TODO: HN: does it make more sense to move this into challengeManager?
+    bytes32 public wasmModuleRoot;
     // When there is a challenge, we trust the challenge manager to determine the winner
     IEdgeChallengeManager public challengeManager;
 
@@ -328,30 +328,28 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
             require(afterInboxPosition >= prevInboxPosition, "INBOX_BACKWARDS");
             if (assertion.afterState.machineStatus == MachineStatus.ERRORED) {
+                // the errored position must still be within the correct message bounds
+                require(afterInboxPosition <= prevAssertion.nextInboxPosition, "ERRORED_INBOX_TOO_FAR");
+
+                // and cannot go backwards
+                require(afterInboxPosition >= prevInboxPosition, "ERRORED_INBOX_TOO_FEW");
+
                 // See validator/assertion.go ExecutionState RequiredBatches() for
                 // for why we move forward in the batch when the machine ends in an errored state
+                // CHRIS: TODO: remove this
                 afterInboxPosition++;
-
-                // We make an exception if the machine enters the errored state,
-                // as it can't consume future batches.
-                // CHRIS: TODO: should we check that it's less than then? Since it should be possible to consume all of those messages
-                //              if we errored on the way right?
-                // require(assertion.afterState.globalState.getInboxPosition() == prevAssertion.nextInboxPosition, "INCORRECT_INBOX_POS");
             } else if (assertion.afterState.machineStatus == MachineStatus.FINISHED) {
                 // Assertions must consume exactly all inbox messages
                 // that were in the inbox at the time the previous assertion was created
-                require(
-                    assertion.afterState.globalState.getInboxPosition() == prevAssertion.nextInboxPosition,
-                    "INCORRECT_INBOX_POS"
-                );
+                require(afterInboxPosition == prevAssertion.nextInboxPosition, "INCORRECT_INBOX_POS");
                 // Assertions that finish correctly completely consume the message
                 // Therefore their position in the message is 0
                 require(assertion.afterState.globalState.getPositionInMessage() == 0, "FINISHED_NON_ZERO_POS");
-            }
 
-            // We enforce that at least one inbox message is always consumed
-            // so the after inbox position is always strictly greater than previous
-            require(afterInboxPosition > prevInboxPosition, "INBOX_BACKWARDS");
+                // We enforce that at least one inbox message is always consumed
+                // so the after inbox position is always strictly greater than previous
+                require(afterInboxPosition > prevInboxPosition, "INBOX_BACKWARDS");
+            }
 
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
             // Cannot read more messages than currently exist in the inbox
