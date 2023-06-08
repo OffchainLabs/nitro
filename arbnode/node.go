@@ -1097,6 +1097,7 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	log.Info("anodar stopping node: ", n.Stack.Config().IPCPath)
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}

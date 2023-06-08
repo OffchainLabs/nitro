@@ -18,7 +18,7 @@ func TestIpcRpc(t *testing.T) {
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
 
-	stackConf := getTestStackConfig(t)
+	stackConf := testStackConfig(t)
 	ipcConfig.Apply(stackConf)
 
 	ctx, cancel := context.WithCancel(context.Background())
