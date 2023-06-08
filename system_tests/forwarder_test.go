@@ -93,18 +93,24 @@ func initRedis(ctx context.Context, t *testing.T, nodeNames []string) (*miniredi
 	return redisServer, redisUrl
 }
 
-func createFallbackSequencer(
-	ctx context.Context, t *testing.T, ipcPath string, redisUrl string,
+type fallbackSequencerOpts struct {
+	ipcPath              string
+	redisUrl             string
+	enableSecCoordinator bool
+}
+
+func fallbackSequencer(
+	ctx context.Context, t *testing.T, opts *fallbackSequencerOpts,
 ) (l2info info, currentNode *arbnode.Node, l2client *ethclient.Client,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
 	stackConfig := testStackConfig(t)
 	ipcConfig := genericconf.IPCConfigDefault
-	ipcConfig.Path = ipcPath
+	ipcConfig.Path = opts.ipcPath
 	ipcConfig.Apply(stackConfig)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
-	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
+	nodeConfig.SeqCoordinator.Enable = opts.enableSecCoordinator
+	nodeConfig.SeqCoordinator.RedisUrl = opts.redisUrl
+	nodeConfig.SeqCoordinator.MyUrlImpl = opts.ipcPath
 	return createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, stackConfig)
 }
 
@@ -215,7 +221,6 @@ func user(suffix string, idx int) string {
 }
 
 // tryWithTimeout calls function f() repeatedly foruntil it succeeds.
-// Returns an error if
 func tryWithTimeout(ctx context.Context, f func() error, duration time.Duration) error {
 	for {
 		select {
@@ -225,7 +230,6 @@ func tryWithTimeout(ctx context.Context, f func() error, duration time.Duration)
 			if err := f(); err == nil {
 				return nil
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }
@@ -238,7 +242,12 @@ func TestRedisForwarder(t *testing.T) {
 	redisServer, redisUrl := initRedis(ctx, t, append(nodePaths, fbNodePath))
 	defer redisServer.Close()
 
-	l2info, fallbackNode, fallbackClient, l1info, _, _, l1stack := createFallbackSequencer(ctx, t, fbNodePath, redisUrl)
+	l2info, fallbackNode, fallbackClient, l1info, _, _, l1stack := fallbackSequencer(ctx, t,
+		&fallbackSequencerOpts{
+			ipcPath:              fbNodePath,
+			redisUrl:             redisUrl,
+			enableSecCoordinator: true,
+		})
 	defer requireClose(t, l1stack)
 	defer fallbackNode.StopAndWait()
 
@@ -305,7 +314,12 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	redisServer, redisUrl := initRedis(ctx, t, nodePaths)
 	redisServer.Close()
 
-	l2info, fallbackNode, fallbackClient, l1info, _, _, l1stack := createFallbackSequencer(ctx, t, fallbackIpcPath, redisUrl)
+	l2info, fallbackNode, fallbackClient, l1info, _, _, l1stack := fallbackSequencer(ctx, t,
+		&fallbackSequencerOpts{
+			ipcPath:              fallbackIpcPath,
+			redisUrl:             redisUrl,
+			enableSecCoordinator: false,
+		})
 	defer requireClose(t, l1stack)
 	defer fallbackNode.StopAndWait()
 
