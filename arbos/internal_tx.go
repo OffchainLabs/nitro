@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -83,17 +84,30 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		currentTime := evm.Context.Time
 
-		// Try to reap 2 retryables
-		merkleUpdateEvents, _ := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
-		merklaUpdateEvents1, _ := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
-		merkleUpdateEvents = append(merkleUpdateEvents, merklaUpdateEvents1...)
-		for _, merkleUpdateEvent := range merkleUpdateEvents {
-			position := merkletree.LevelAndLeaf{
-				Level: merkleUpdateEvent.Level,
-				Leaf:  merkleUpdateEvent.NumLeaves,
+		// Try to reap 2 retryables, revert the state on failure
+		snapshot := evm.StateDB.Snapshot()
+		var merkleUpdateEvents []merkleAccumulator.MerkleTreeNodeEvent
+		tryToReap := func() error {
+			events, err := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+			merkleUpdateEvents = append(merkleUpdateEvents, events...)
+			return err
+		}
+		if err = tryToReap(); err == nil {
+			err = tryToReap()
+		}
+		if err == nil {
+			for _, merkleUpdateEvent := range merkleUpdateEvents {
+				position := merkletree.LevelAndLeaf{
+					Level: merkleUpdateEvent.Level,
+					Leaf:  merkleUpdateEvent.NumLeaves,
+				}
+				if err = EmitExpiredMerkleUpdateEvent(evm, merkleUpdateEvent.Hash, position.ToBigInt()); err != nil {
+					break
+				}
 			}
-			// TODO(magic) how should we handle errors here?
-			_ = EmitExpiredMerkleUpdateEvent(evm, merkleUpdateEvent.Hash, position.ToBigInt())
+		}
+		if err != nil {
+			evm.StateDB.RevertToSnapshot(snapshot)
 		}
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
