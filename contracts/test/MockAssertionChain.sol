@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
-import {IAssertionChain} from "../src/challengeV2/DataEntities.sol";
+import {IAssertionChain} from "../src/challengeV2/IAssertionChain.sol";
 import { IEdgeChallengeManager } from "../src/challengeV2/EdgeChallengeManager.sol";
 import "../src/bridge/IBridge.sol";
 import "../src/rollup/RollupLib.sol";
@@ -12,7 +12,6 @@ import "./challengeV2/StateTools.sol";
 struct MockAssertion {
     bytes32 predecessorId;
     uint256 height;
-    uint64 nextInboxPosition;
     ExecutionState state;
     bytes32 successionChallenge;
     uint256 firstChildCreationBlock;
@@ -43,12 +42,7 @@ contract MockAssertionChain is IAssertionChain {
         return assertions[assertionId].predecessorId;
     }
 
-    function getNextInboxPosition(bytes32 assertionId) external view returns(uint64) {
-        require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].nextInboxPosition;
-    }
-
-    function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof) external view returns (ExecutionState memory) {
+    function proveExecutionState(bytes32 assertionId, ExecutionState calldata state, bytes calldata proof) external view returns (ExecutionState memory) {
         require(assertionExists(assertionId), "Assertion does not exist");
         return assertions[assertionId].state;
     }
@@ -68,19 +62,20 @@ contract MockAssertionChain is IAssertionChain {
         return assertions[assertionId].secondChildCreationBlock;
     }
 
-    function proveWasmModuleRoot(bytes32 assertionId, bytes32 root, bytes memory proof) external view returns (bytes32){
-        (uint256 requiredStake, address _challengeManager, uint64 _confirmPeriodBlocks) =
-            abi.decode(proof, (uint256, address, uint64));
+    function validateConfig(
+        bytes32 assertionId,
+        ConfigData calldata configData
+    ) external view {
         require(
             RollupLib.configHash({
-                wasmModuleRoot: root,
-                requiredStake: requiredStake,
-                challengeManager: _challengeManager,
-                confirmPeriodBlocks: _confirmPeriodBlocks
+                wasmModuleRoot: configData.wasmModuleRoot,
+                requiredStake: configData.requiredStake,
+                challengeManager: configData.challengeManager,
+                confirmPeriodBlocks: configData.confirmPeriodBlocks,
+                nextInboxPosition: configData.nextInboxPosition
             }) == assertions[assertionId].configHash,
-            "BAD_WASM_MODULE_ROOT_PROOF"
+            "BAD_CONFIG"
         );
-        return root;
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool) {
@@ -127,7 +122,6 @@ contract MockAssertionChain is IAssertionChain {
         assertions[assertionId] = MockAssertion({
             predecessorId: predecessorId,
             height: height,
-            nextInboxPosition: nextInboxPosition,
             state: afterState,
             successionChallenge: successionChallenge,
             firstChildCreationBlock: 0,
@@ -138,7 +132,8 @@ contract MockAssertionChain is IAssertionChain {
                 wasmModuleRoot: wasmModuleRoot,
                 requiredStake: baseStake,
                 challengeManager: challengeManager,
-                confirmPeriodBlocks: confirmPeriodBlocks
+                confirmPeriodBlocks: confirmPeriodBlocks,
+                nextInboxPosition: nextInboxPosition
             })
         });
         childCreated(predecessorId);
@@ -158,7 +153,6 @@ contract MockAssertionChain is IAssertionChain {
         require(!assertionExists(assertionId), "Assertion already exists");
         require(assertionExists(predecessorId), "Predecessor does not exists");
         require(height > assertions[predecessorId].height, "Height too low");
-        require(nextInboxPosition >= assertions[predecessorId].nextInboxPosition, "Inbox count seen too low");
         require(beforeStateHash == StateToolsLib.hash(assertions[predecessorId].state), "Before state hash does not match predecessor");
 
         return addAssertionUnsafe(predecessorId, height, nextInboxPosition, afterState, successionChallenge);

@@ -334,9 +334,13 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function createNewAssertion(
         AssertionInputs calldata assertion,
         bytes32 prevAssertionId,
-        uint64 prevConfirmPeriodBlocks,
         bytes32 expectedAssertionHash
     ) internal returns (bytes32) {
+        // Validate the config hash
+        RollupLib.validateConfigHash(
+            assertion.beforeStateData.configData, getAssertionStorage(prevAssertionId).configHash
+        );
+
         // reading inbox messages always terminates in either a finished or errored state
         // although the challenge protocol that any invalid terminal state will be proven incorrect
         // we can do a quick sanity check here
@@ -372,7 +376,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             require(afterInboxPosition >= prevInboxPosition, "INBOX_BACKWARDS");
             if (assertion.afterState.machineStatus == MachineStatus.ERRORED) {
                 // the errored position must still be within the correct message bounds
-                require(afterInboxPosition <= prevAssertion.nextInboxPosition, "ERRORED_INBOX_TOO_FAR");
+                require(
+                    afterInboxPosition <= assertion.beforeStateData.configData.nextInboxPosition,
+                    "ERRORED_INBOX_TOO_FAR"
+                );
 
                 // and cannot go backwards
                 require(afterInboxPosition >= prevInboxPosition, "ERRORED_INBOX_TOO_FEW");
@@ -384,7 +391,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             } else if (assertion.afterState.machineStatus == MachineStatus.FINISHED) {
                 // Assertions must consume exactly all inbox messages
                 // that were in the inbox at the time the previous assertion was created
-                require(afterInboxPosition == prevAssertion.nextInboxPosition, "INCORRECT_INBOX_POS");
+                require(
+                    assertion.afterState.globalState.getInboxPosition()
+                        == assertion.beforeStateData.configData.nextInboxPosition,
+                    "INCORRECT_INBOX_POS"
+                );
                 // Assertions that finish correctly completely consume the message
                 // Therefore their position in the message is 0
                 require(assertion.afterState.globalState.getPositionInMessage() == 0, "FINISHED_NON_ZERO_POS");
@@ -435,21 +446,20 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
         // state updates
         AssertionNode memory newAssertion = AssertionNodeLib.createAssertion(
-            uint64(nextInboxPosition),
             prevAssertionId,
-            uint64(block.number) + confirmPeriodBlocks,
             prevAssertion.firstChildBlock == 0, // assumes block 0 is impossible
             RollupLib.configHash({
                 wasmModuleRoot: wasmModuleRoot,
                 requiredStake: baseStake,
                 challengeManager: address(challengeManager),
-                confirmPeriodBlocks: confirmPeriodBlocks
+                confirmPeriodBlocks: confirmPeriodBlocks,
+                nextInboxPosition: uint64(nextInboxPosition)
             })
         );
 
         // Fetch a storage reference to prevAssertion since we copied our other one into memory
         // and we don't have enough stack available to keep to keep the previous storage reference around
-        prevAssertion.childCreated(prevConfirmPeriodBlocks);
+        prevAssertion.childCreated();
         _assertions[newAssertionHash] = newAssertion;
 
         emit AssertionCreated(
@@ -484,7 +494,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         return prevId;
     }
 
-    function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof)
+    function proveExecutionState(bytes32 assertionId, ExecutionState calldata state, bytes calldata proof)
         external
         pure
         returns (ExecutionState memory)
@@ -494,10 +504,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         require(assertionId == RollupLib.assertionHash(parentAssertionHash, state, inboxAcc), "Invalid assertion hash");
 
         return state;
-    }
-
-    function getNextInboxPosition(bytes32 assertionId) external view returns (uint64) {
-        return getAssertionStorage(assertionId).nextInboxPosition;
     }
 
     function hasSibling(bytes32 assertionId) external view returns (bool) {
@@ -512,23 +518,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         return getAssertionStorage(assertionId).secondChildBlock;
     }
 
-    function proveWasmModuleRoot(bytes32 assertionId, bytes32 root, bytes memory proof)
-        external
-        view
-        returns (bytes32)
-    {
-        (uint256 requiredStake, address _challengeManager, uint64 _confirmPeriodBlocks) =
-            abi.decode(proof, (uint256, address, uint64));
-        require(
-            RollupLib.configHash({
-                wasmModuleRoot: root,
-                requiredStake: requiredStake,
-                challengeManager: _challengeManager,
-                confirmPeriodBlocks: _confirmPeriodBlocks
-            }) == getAssertionStorage(assertionId).configHash,
-            "BAD_WASM_MODULE_ROOT_PROOF"
-        );
-        return root;
+    function validateConfig(bytes32 assertionId, ConfigData calldata configData) external view {
+        RollupLib.validateConfigHash(configData, getAssertionStorage(assertionId).configHash);
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool) {

@@ -96,6 +96,7 @@ func CreateTwoValidatorFork(
 			GlobalState:   protocol.GoGlobalState{},
 			MachineStatus: protocol.MachineStatusFinished,
 		}).AsSolidityStruct(),
+		InboxMaxCount: big.NewInt(1),
 	}
 
 	honestPostState, err := honestStateManager.LatestExecutionState(ctx)

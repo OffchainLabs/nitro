@@ -11,7 +11,7 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
 
     function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
         external
-        view
+        pure
         returns (bytes32 afterHash)
     {
         return bytes32(proof);
@@ -143,7 +143,7 @@ contract EdgeChallengeManagerLibTest is Test {
 
         bytes32 edgeId = edge.idMem();
 
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, edgeId));
         store.get(edgeId);
     }
 
@@ -200,7 +200,8 @@ contract EdgeChallengeManagerLibTest is Test {
             ChallengeEdgeLib.newChildEdge(rand.hash(), rand.hash(), 0, rand.hash(), 10, EdgeType.Block);
 
         store.add(edge);
-        vm.expectRevert("Edge already exists");
+
+        vm.expectRevert(abi.encodeWithSelector(EdgeAlreadyExists.selector, edge.idMem()));
         store.add(edge);
     }
 
@@ -245,7 +246,7 @@ contract EdgeChallengeManagerLibTest is Test {
         store.add(edge1);
 
         bytes32 edge2Id = edge2.idMem();
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, edge2Id));
         store.hasRival(edge2Id);
     }
 
@@ -304,7 +305,7 @@ contract EdgeChallengeManagerLibTest is Test {
         store.add(edge1);
 
         bytes32 edge2Id = edge2.idMem();
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, edge2Id));
         store.hasLengthOneRival(edge2Id);
     }
 
@@ -323,7 +324,7 @@ contract EdgeChallengeManagerLibTest is Test {
         vm.roll(block.number + 3);
 
         bytes32 id1 = edge1.idMem();
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, id1));
         assertEq(store.timeUnrivaled(id1), 3, "Time unrivaled");
     }
 
@@ -361,7 +362,7 @@ contract EdgeChallengeManagerLibTest is Test {
     }
 
     function testMandatoryBisectHeightSizeOne() public {
-        vm.expectRevert("Height difference not two or more");
+        vm.expectRevert(abi.encodeWithSelector(HeightDiffLtTwo.selector, 1, 2));
         EdgeChallengeManagerLib.mandatoryBisectionHeight(1, 2);
     }
 
@@ -736,7 +737,7 @@ contract EdgeChallengeManagerLibTest is Test {
                 bisectionPoint + 1, ArrayUtilsLib.slice(states1, bisectionPoint + 1, states1.length)
             )
         );
-        vm.expectRevert("Cannot bisect an unrivaled edge");
+        vm.expectRevert(abi.encodeWithSelector(EdgeUnrivaled.selector, edgeId));
         store.bisectEdge(edgeId, bisectionRoot1, proof);
     }
 
@@ -762,7 +763,7 @@ contract EdgeChallengeManagerLibTest is Test {
         );
         store.bisectEdge(edgeId, bisectionRoot1, proof);
 
-        vm.expectRevert("Edge already exists");
+        vm.expectRevert(abi.encodeWithSelector(EdgeAlreadyExists.selector, store.edges[edgeId].upperChildId));
         store.bisectEdge(edgeId, bisectionRoot1, proof);
     }
 
@@ -812,7 +813,7 @@ contract EdgeChallengeManagerLibTest is Test {
             )
         );
         bytes32 edgeId = edge1.idMem();
-        vm.expectRevert("Edge not pending");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotPending.selector, edgeId, EdgeStatus.Confirmed));
         store.bisectEdge(edgeId, bisectionRoot1, proof);
     }
 
@@ -833,7 +834,7 @@ contract EdgeChallengeManagerLibTest is Test {
         store.add(edge2);
 
         bytes32 edgeId = edge1.idMem();
-        vm.expectRevert("Height difference not two or more");
+        vm.expectRevert(abi.encodeWithSelector(HeightDiffLtTwo.selector, start, end));
         store.bisectEdge(edgeId, edge1.endHistoryRoot, "");
     }
 
@@ -886,14 +887,14 @@ contract EdgeChallengeManagerLibTest is Test {
         store.edges[upperChildId].setConfirmed();
 
         store.confirmEdgeByChildren(parentEdgeId);
-        vm.expectRevert("Edge not pending");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotPending.selector, parentEdgeId, EdgeStatus.Confirmed));
         store.confirmEdgeByChildren(parentEdgeId);
     }
 
     function testConfirmEdgeByChildrenNotExist() public {
         bytes32 randId = rand.hash();
 
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, randId));
         store.confirmEdgeByChildren(randId);
     }
 
@@ -904,7 +905,7 @@ contract EdgeChallengeManagerLibTest is Test {
         store.edges[upperChildId].setConfirmed();
 
         delete store.edges[lowerChildId];
-        vm.expectRevert("Lower child does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, lowerChildId));
         store.confirmEdgeByChildren(parentEdgeId);
     }
 
@@ -915,25 +916,25 @@ contract EdgeChallengeManagerLibTest is Test {
         store.edges[upperChildId].setConfirmed();
 
         delete store.edges[upperChildId];
-        vm.expectRevert("Upper child does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, upperChildId));
         store.confirmEdgeByChildren(parentEdgeId);
     }
 
     function testConfirmEdgeByChildrenLowerChildPending() public {
-        (bytes32 parentEdgeId,, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
+        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
 
         store.edges[upperChildId].setConfirmed();
 
-        vm.expectRevert("Lower child not confirmed");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotConfirmed.selector, lowerChildId, EdgeStatus.Pending));
         store.confirmEdgeByChildren(parentEdgeId);
     }
 
     function testConfirmEdgeByChildrenUpperChildPending() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId,) = addParentAndChildren(3, 5, 11);
+        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
 
         store.edges[lowerChildId].setConfirmed();
 
-        vm.expectRevert("Upper child not confirmed");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotConfirmed.selector, upperChildId, EdgeStatus.Pending));
         store.confirmEdgeByChildren(parentEdgeId);
     }
 
@@ -977,7 +978,13 @@ contract EdgeChallengeManagerLibTest is Test {
         store.add(ce);
         bytes32 eid = ce.idMem();
         store.edges[eid].setConfirmed();
-        vm.expectRevert("Origin id-mutual id mismatch");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OriginIdMutualIdMismatch.selector,
+                store.edges[bargs.upperChildId1].mutualId(),
+                store.edges[eid].originId
+            )
+        );
         store.confirmEdgeByClaim(bargs.upperChildId1, eid);
     }
 
@@ -998,7 +1005,15 @@ contract EdgeChallengeManagerLibTest is Test {
         store.add(ce);
         bytes32 eid = ce.idMem();
         store.edges[eid].setConfirmed();
-        vm.expectRevert("Edge type does not match claiming edge type");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EdgeTypeInvalid.selector,
+                bargs.upperChildId1,
+                eid,
+                EdgeChallengeManagerLib.nextEdgeType(store.edges[bargs.upperChildId1].eType),
+                store.edges[eid].eType
+            )
+        );
         store.confirmEdgeByClaim(bargs.upperChildId1, eid);
     }
 
@@ -1019,7 +1034,9 @@ contract EdgeChallengeManagerLibTest is Test {
         store.add(ce);
         bytes32 eid = ce.idMem();
         store.edges[eid].setConfirmed();
-        vm.expectRevert("Claim does not match edge");
+        vm.expectRevert(
+            abi.encodeWithSelector(EdgeClaimMismatch.selector, bargs.upperChildId1, store.edges[eid].claimId)
+        );
         store.confirmEdgeByClaim(bargs.upperChildId1, eid);
     }
 
@@ -1039,7 +1056,7 @@ contract EdgeChallengeManagerLibTest is Test {
 
         bytes32 eid = ce.idMem();
         bytes32 randId = rand.hash();
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, randId));
         store.confirmEdgeByClaim(randId, eid);
     }
 
@@ -1061,7 +1078,7 @@ contract EdgeChallengeManagerLibTest is Test {
         bytes32 eid = ce.idMem();
         store.edges[eid].setConfirmed();
         store.edges[bargs.upperChildId1].setConfirmed();
-        vm.expectRevert("Edge not pending");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotPending.selector, bargs.upperChildId1, EdgeStatus.Confirmed));
         store.confirmEdgeByClaim(bargs.upperChildId1, eid);
     }
 
@@ -1080,7 +1097,7 @@ contract EdgeChallengeManagerLibTest is Test {
         );
 
         bytes32 eid = ce.idMem();
-        vm.expectRevert("Claiming edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, bargs.upperChildId1));
         store.confirmEdgeByClaim(bargs.upperChildId1, eid);
     }
 
@@ -1100,7 +1117,7 @@ contract EdgeChallengeManagerLibTest is Test {
 
         store.add(ce);
         bytes32 eid = ce.idMem();
-        vm.expectRevert("Claiming edge not confirmed");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotConfirmed.selector, eid, EdgeStatus.Pending));
         store.confirmEdgeByClaim(bargs.upperChildId1, eid);
     }
 
@@ -1142,10 +1159,10 @@ contract EdgeChallengeManagerLibTest is Test {
         uint256 timeAfterParent1,
         uint256 timeAfterParent2,
         uint256 timeAfterZeroLayer,
-        uint256 claimedAssertionBlocks,
-        string memory revertArg
+        uint256 claimedAssertionBlocks
     ) internal {
         BArgs memory pc = addParentsAndChildren(2, 5, 8);
+        bytes memory revertArg;
         bytes32 lowerChildId148;
         {
             (, bytes32 bisectionRoot, bytes memory bisectionProof) = bisectArgs(pc.states1, 4, 8);
@@ -1187,6 +1204,8 @@ contract EdgeChallengeManagerLibTest is Test {
             );
             if (timeAfterParent1 != 139) {
                 store.add(bigStepZero);
+            } else {
+                revertArg = abi.encodeWithSelector(EdgeNotExists.selector, bigStepZero.idMem());
             }
             bsId = bigStepZero.idMem();
         }
@@ -1205,18 +1224,40 @@ contract EdgeChallengeManagerLibTest is Test {
             store.add(childE1);
 
             ancestorIds[1] = childE1.idMem();
+
+            revertArg = abi.encodeWithSelector(
+                EdgeNotAncestor.selector,
+                ancestorIds[0],
+                store.edges[bsId].lowerChildId,
+                store.edges[bsId].upperChildId,
+                ancestorIds[1],
+                store.edges[ancestorIds[0]].claimId
+            );
         }
 
         if (timeAfterParent1 == 138) {
             store.edges[bsId].claimId = rand.hash();
+            revertArg = abi.encodeWithSelector(
+                EdgeNotAncestor.selector,
+                bsId,
+                store.edges[bsId].lowerChildId,
+                store.edges[bsId].upperChildId,
+                ancestorIds[0],
+                store.edges[bsId].claimId
+            );
         }
 
         if (timeAfterParent1 == 140) {
             store.edges[bsId].setConfirmed();
+            revertArg = abi.encodeWithSelector(EdgeNotPending.selector, bsId, EdgeStatus.Confirmed);
         }
 
-        if (bytes(revertArg).length != 0) {
-            vm.expectRevert(bytes(revertArg));
+        if (timeAfterParent1 + timeAfterParent2 + timeAfterZeroLayer + claimedAssertionBlocks == 4) {
+            revertArg = abi.encodeWithSelector(InsufficientConfirmationBlocks.selector, 4, challengePeriodSec);
+        }
+
+        if (revertArg.length != 0) {
+            vm.expectRevert(revertArg);
         }
         uint256 totalTime = store.confirmEdgeByTime(bsId, ancestorIds, claimedAssertionBlocks, challengePeriodSec);
 
@@ -1229,50 +1270,51 @@ contract EdgeChallengeManagerLibTest is Test {
     }
 
     function testConfirmByTimeGrandParent() public {
-        claimWithMixedAncestors(10, 11, 0, 0, 0, "");
+        claimWithMixedAncestors(10, 11, 0, 0, 0);
     }
 
     function testConfirmByTimeParent() public {
-        claimWithMixedAncestors(10, 0, 11, 0, 0, "");
+        claimWithMixedAncestors(10, 0, 11, 0, 0);
     }
 
     function testConfirmByTimeSelf() public {
-        claimWithMixedAncestors(10, 0, 0, 11, 0, "");
+        claimWithMixedAncestors(10, 0, 0, 11, 0);
     }
 
     function testConfirmByTimeAssertion() public {
-        claimWithMixedAncestors(10, 0, 0, 0, 11, "");
+        claimWithMixedAncestors(10, 0, 0, 0, 11);
     }
 
     function testConfirmByTimeCombined() public {
-        claimWithMixedAncestors(10, 5, 6, 0, 0, "");
+        claimWithMixedAncestors(10, 5, 6, 0, 0);
     }
 
     function testConfirmByTimeCombinedClaimAll() public {
-        claimWithMixedAncestors(10, 3, 3, 3, 3, "");
+        claimWithMixedAncestors(10, 3, 3, 3, 3);
     }
 
     function testConfirmByTimeNoTime() public {
-        claimWithMixedAncestors(10, 1, 1, 1, 1, "Total time unrivaled not greater than confirmation threshold");
+        claimWithMixedAncestors(10, 1, 1, 1, 1);
     }
 
     function testConfirmByTimeBrokenAncestor() public {
-        claimWithMixedAncestors(10, 137, 1, 1, 1, "Current is not a child of ancestor");
+        claimWithMixedAncestors(10, 137, 1, 1, 1);
     }
 
     function testConfirmByTimeBrokenClaim() public {
-        claimWithMixedAncestors(10, 138, 1, 1, 1, "Current is not a child of ancestor");
+        claimWithMixedAncestors(10, 138, 1, 1, 1);
     }
 
     function testConfirmByTimeEdgeNotExist() public {
-        claimWithMixedAncestors(10, 139, 1, 1, 1, "Edge does not exist");
+        claimWithMixedAncestors(10, 139, 1, 1, 1);
     }
 
     function testConfirmByTimeEdgeNotPending() public {
-        claimWithMixedAncestors(10, 140, 1, 1, 1, "Edge not pending");
+        claimWithMixedAncestors(10, 140, 1, 1, 1);
     }
 
-    function confirmByOneStep(uint256 flag, string memory revertArg) internal {
+    function confirmByOneStep(uint256 flag) internal {
+        bytes memory revertArg;
         uint256 startHeight = 5;
         (bytes32[] memory states1, bytes32[] memory states2) = rivalStates(startHeight, startHeight, startHeight + 1);
 
@@ -1292,16 +1334,19 @@ contract EdgeChallengeManagerLibTest is Test {
             startHeight + 1,
             EdgeType.SmallStep
         );
-        if (flag == 2) {
-            e1.status = EdgeStatus.Confirmed;
-        }
         if (flag == 3) {
             e1.eType = EdgeType.BigStep;
+            revertArg = abi.encodeWithSelector(EdgeTypeNotSmallStep.selector, e1.eType);
         }
         if (flag == 5) {
             e1.endHeight = e1.endHeight + 1;
+            revertArg = abi.encodeWithSelector(EdgeNotLengthOne.selector, 2);
         }
         bytes32 eid = e1.idMem();
+        if (flag == 2) {
+            e1.status = EdgeStatus.Confirmed;
+            revertArg = abi.encodeWithSelector(EdgeNotPending.selector, eid, e1.status);
+        }
 
         MockOneStepProofEntry entry = new MockOneStepProofEntry();
         // confirm by one step makes external calls to the mock one step proof entry
@@ -1313,6 +1358,8 @@ contract EdgeChallengeManagerLibTest is Test {
 
         if (flag != 1) {
             a.add(e1);
+        } else {
+            revertArg = abi.encodeWithSelector(EdgeNotExists.selector, eid);
         }
         if (flag != 4) {
             a.add(e2);
@@ -1326,17 +1373,20 @@ contract EdgeChallengeManagerLibTest is Test {
         );
         if (flag == 6) {
             beforeProof[0] = rand.hash();
+            revertArg = "Invalid inclusion proof";
         }
         bytes32[] memory afterProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), startHeight + 1);
         if (flag == 7) {
             afterProof[0] = rand.hash();
+            revertArg = "Invalid inclusion proof";
         }
         if (flag == 8) {
             d.proof = abi.encodePacked(rand.hash());
+            revertArg = "Invalid inclusion proof";
         }
 
-        if (bytes(revertArg).length != 0) {
-            vm.expectRevert(bytes(revertArg));
+        if (revertArg.length != 0) {
+            vm.expectRevert(revertArg);
         }
         a.confirmEdgeByOneStepProof(eid, entry, d, e, beforeProof, afterProof);
 
@@ -1352,35 +1402,35 @@ contract EdgeChallengeManagerLibTest is Test {
     }
 
     function testConfirmByOneStep() public {
-        confirmByOneStep(0, "");
+        confirmByOneStep(0);
     }
 
     function testConfirmByOneStepNotExist() public {
-        confirmByOneStep(1, "Edge does not exist");
+        confirmByOneStep(1);
     }
 
     function testConfirmByOneStepNotPending() public {
-        confirmByOneStep(2, "Edge not pending");
+        confirmByOneStep(2);
     }
 
     function testConfirmByOneStepNotSmallStep() public {
-        confirmByOneStep(3, "Edge is not a small step");
+        confirmByOneStep(3);
     }
 
     function testConfirmByOneStepNotLengthOne() public {
-        confirmByOneStep(5, "Edge does not have single step");
+        confirmByOneStep(5);
     }
 
     function testConfirmByOneStepBadStartProof() public {
-        confirmByOneStep(6, "Invalid inclusion proof");
+        confirmByOneStep(6);
     }
 
     function testConfirmByOneStepBadAfterProof() public {
-        confirmByOneStep(7, "Invalid inclusion proof");
+        confirmByOneStep(7);
     }
 
     function testConfirmByOneStepBadOneStepReturn() public {
-        confirmByOneStep(8, "Invalid inclusion proof");
+        confirmByOneStep(8);
     }
 
     function testPowerOfTwo() public {
@@ -1461,33 +1511,61 @@ contract EdgeChallengeManagerLibTest is Test {
         return ExecStateVars(execState, machineHash, stateHash);
     }
 
-    function createZeroBlockEdge(uint256 mode, string memory revertArg) internal {
+    function createZeroBlockEdge(uint256 mode) internal {
+        bytes memory revertArg;
         MockOneStepProofEntry entry = new MockOneStepProofEntry();
-        uint256 expectedEndHeight = mode == 139 ? 2 ** 5 - 1 : 2 ** 2;
+        uint256 expectedEndHeight = 2 ** 2;
+        if (mode == 139) {
+            expectedEndHeight = 2 ** 5 - 1;
+            revertArg = abi.encodeWithSelector(NotPowerOfTwo.selector, expectedEndHeight);
+        }
+
         ExecStateVars memory startExec = randomExecutionState(entry, 10);
         ExecStateVars memory endExec = randomExecutionState(entry, 20);
         ExpsAndProofs memory roots = newRootsAndProofs(0, expectedEndHeight, startExec.machineHash, endExec.machineHash);
         bytes32 claimId = rand.hash();
-        bytes32 endRoot = mode == 137 ? rand.hash() : MerkleTreeLib.root(roots.endExp);
+        bytes32 endRoot;
+        if (mode == 137) {
+            endRoot = rand.hash();
+            revertArg = "Invalid inclusion proof";
+        } else {
+            endRoot = MerkleTreeLib.root(roots.endExp);
+        }
         AssertionReferenceData memory ard;
         if (mode != 144) {
             ard = AssertionReferenceData({
-                assertionId: mode == 141 ? rand.hash() : claimId,
+                assertionId: claimId,
                 predecessorId: rand.hash(),
-                isPending: mode == 142 ? false : true,
-                hasSibling: mode == 143 ? false : true,
+                isPending: true,
+                hasSibling: true,
                 startState: startExec.execState,
                 endState: endExec.execState
             });
+            if (mode == 141) {
+                ard.assertionId = rand.hash();
+                revertArg = abi.encodeWithSelector(AssertionIdMismatch.selector, ard.assertionId, claimId);
+            }
+            if (mode == 142) {
+                ard.isPending = false;
+                revertArg = abi.encodeWithSelector(AssertionNotPending.selector);
+            }
+            if (mode == 143) {
+                ard.hasSibling = false;
+                revertArg = abi.encodeWithSelector(AssertionNoSibling.selector);
+            }
+        } else {
+            revertArg = abi.encodeWithSelector(AssertionIdEmpty.selector);
         }
 
         if (mode == 145) {
             ExecutionState memory s;
             ard.startState = s;
+            revertArg = abi.encodeWithSelector(EmptyStartMachineStatus.selector);
         }
         if (mode == 146) {
             ExecutionState memory e;
             ard.endState = e;
+            revertArg = abi.encodeWithSelector(EmptyEndMachineStatus.selector);
         }
 
         bytes memory proof = abi.encode(
@@ -1499,71 +1577,72 @@ contract EdgeChallengeManagerLibTest is Test {
             bytes32[] memory b = new bytes32[](1);
             b[0] = rand.hash();
             roots.prefixProof = ArrayUtilsLib.concat(roots.prefixProof, b);
+            revertArg = bytes("Incomplete proof usage");
         }
 
         EdgeChallengeManagerLibAccess a = new EdgeChallengeManagerLibAccess();
-        if (bytes(revertArg).length != 0) {
-            vm.expectRevert(bytes(revertArg));
+
+        CreateEdgeArgs memory args = CreateEdgeArgs({
+            edgeType: EdgeType.Block,
+            endHistoryRoot: endRoot,
+            endHeight: expectedEndHeight,
+            claimId: claimId,
+            prefixProof: abi.encode(roots.startExp, roots.prefixProof),
+            proof: proof
+        });
+        if (mode == 138) {
+            args.endHeight = 2 ** 4;
+            revertArg = abi.encodeWithSelector(InvalidEndHeight.selector, 2 ** 4, expectedEndHeight);
         }
-        a.createLayerZeroEdge(
-            CreateEdgeArgs({
-                edgeType: EdgeType.Block,
-                endHistoryRoot: endRoot,
-                endHeight: mode == 138 ? 2 ** 4 : expectedEndHeight,
-                claimId: claimId,
-                prefixProof: abi.encode(roots.startExp, roots.prefixProof),
-                proof: proof
-            }),
-            ard,
-            entry,
-            expectedEndHeight,
-            challengePeriodBlocks,
-            stakeAmount
-        );
+
+        if (revertArg.length != 0) {
+            vm.expectRevert(revertArg);
+        }
+        a.createLayerZeroEdge(args, ard, entry, expectedEndHeight, challengePeriodBlocks, stakeAmount);
     }
 
     function testCreateLayerZeroEdgeBlockA() public {
-        createZeroBlockEdge(0, "");
+        createZeroBlockEdge(0);
     }
 
     function testCreateLayerZeroEdgeBlockInvalidInclusionProof() public {
-        createZeroBlockEdge(137, "Invalid inclusion proof");
+        createZeroBlockEdge(137);
     }
 
     function testCreateLayerZeroEdgeBlockEndHeight() public {
-        createZeroBlockEdge(138, "Invalid edge size");
+        createZeroBlockEdge(138);
     }
 
     function testCreateLayerZeroEdgeBlockPowerHeight() public {
-        createZeroBlockEdge(139, "End height is not a power of 2");
+        createZeroBlockEdge(139);
     }
 
     function testCreateLayerZeroEdgeInvalidPrefixProof() public {
-        createZeroBlockEdge(140, "Incomplete proof usage");
+        createZeroBlockEdge(140);
     }
 
     function testCreateLayerZeroEdgeClaimId() public {
-        createZeroBlockEdge(141, "Mismatched claim id");
+        createZeroBlockEdge(141);
     }
 
     function testCreateLayerZeroEdgeIsPending() public {
-        createZeroBlockEdge(142, "Claim assertion is not pending");
+        createZeroBlockEdge(142);
     }
 
     function testCreateLayerZeroEdgeHasSibling() public {
-        createZeroBlockEdge(143, "Assertion is not in a fork");
+        createZeroBlockEdge(143);
     }
 
     function testCreateLayerZeroEdgeEmptyAssertion() public {
-        createZeroBlockEdge(144, "Empty assertion id");
+        createZeroBlockEdge(144);
     }
 
     function testCreateLayerZeroEdgeEmptyStartState() public {
-        createZeroBlockEdge(145, "Empty start state");
+        createZeroBlockEdge(145);
     }
 
     function testCreateLayerZeroEdgeEmptyEndState() public {
-        createZeroBlockEdge(146, "Empty end state");
+        createZeroBlockEdge(146);
     }
 
     function createClaimEdge(EdgeChallengeManagerLibAccess c, uint256 start, uint256 end, bool includeRival)
@@ -1593,13 +1672,21 @@ contract EdgeChallengeManagerLibTest is Test {
         return (ce.idMem(), claimRoots);
     }
 
-    function createSmallStepEdge(uint256 mode, string memory revertArg) internal {
+    function createSmallStepEdge(uint256 mode) internal {
+        bytes memory revertArg;
         uint256 claimStartHeight = 4;
         uint256 claimEndHeight = mode == 161 ? 6 : 5;
+
         uint256 expectedEndHeight = 2 ** 5;
         EdgeChallengeManagerLibAccess c = new EdgeChallengeManagerLibAccess();
         (bytes32 claimId, ExpsAndProofs memory claimRoots) =
             createClaimEdge(c, claimStartHeight, claimEndHeight, mode == 160 ? false : true);
+        if (mode == 160) {
+            revertArg = abi.encodeWithSelector(ClaimEdgeNotLengthOneRival.selector, claimId);
+        }
+        if (mode == 161) {
+            revertArg = abi.encodeWithSelector(ClaimEdgeNotLengthOneRival.selector, claimId);
+        }
 
         ExpsAndProofs memory roots = newRootsAndProofs(
             0, expectedEndHeight, claimRoots.states[claimStartHeight], claimRoots.states[claimEndHeight]
@@ -1608,11 +1695,13 @@ contract EdgeChallengeManagerLibTest is Test {
             bytes32[] memory b = new bytes32[](1);
             b[0] = rand.hash();
             claimRoots.startInclusionProof = ArrayUtilsLib.concat(claimRoots.startInclusionProof, b);
+            revertArg = "Invalid inclusion proof";
         }
         if (mode == 165) {
             bytes32[] memory b = new bytes32[](1);
             b[0] = rand.hash();
             claimRoots.endInclusionProof = ArrayUtilsLib.concat(claimRoots.endInclusionProof, b);
+            revertArg = "Invalid inclusion proof";
         }
         bytes memory proof = abi.encode(
             roots.states[0],
@@ -1623,12 +1712,17 @@ contract EdgeChallengeManagerLibTest is Test {
         );
         if (mode == 162) {
             c.setConfirmed(claimId);
+            revertArg = abi.encodeWithSelector(ClaimEdgeNotPending.selector);
         }
 
         MockOneStepProofEntry a = new MockOneStepProofEntry();
         AssertionReferenceData memory emptyArd;
-        if (bytes(revertArg).length != 0) {
-            vm.expectRevert(bytes(revertArg));
+
+        if (mode == 163) {
+            revertArg = abi.encodeWithSelector(ClaimEdgeInvalidType.selector, EdgeType.BigStep, EdgeType.BigStep);
+        }
+        if (revertArg.length != 0) {
+            vm.expectRevert(revertArg);
         }
         c.createLayerZeroEdge(
             CreateEdgeArgs({
@@ -1648,30 +1742,30 @@ contract EdgeChallengeManagerLibTest is Test {
     }
 
     function testCreateLayerZeroEdgeSmallStep() public {
-        createSmallStepEdge(0, "");
+        createSmallStepEdge(0);
     }
 
     function testCreateLayerZeroEdgeSmallStepNoRival() public {
-        createSmallStepEdge(160, "Claim does not have length 1 rival");
+        createSmallStepEdge(160);
     }
 
     function testCreateLayerZeroEdgeSmallStepNotLength1() public {
-        createSmallStepEdge(161, "Claim does not have length 1 rival");
+        createSmallStepEdge(161);
     }
 
     function testCreateLayerZeroEdgeSmallStepEdgeType() public {
-        createSmallStepEdge(162, "Claim is not pending");
+        createSmallStepEdge(162);
     }
 
     function testCreateLayerZeroEdgeSmallStepNotPending() public {
-        createSmallStepEdge(163, "Invalid claim edge type");
+        createSmallStepEdge(163);
     }
 
     function testCreateLayerZeroEdgeSmallStepStartInclusion() public {
-        createSmallStepEdge(164, "Invalid inclusion proof");
+        createSmallStepEdge(164);
     }
 
     function testCreateLayerZeroEdgeSmallStepEndInclusion() public {
-        createSmallStepEdge(165, "Invalid inclusion proof");
+        createSmallStepEdge(165);
     }
 }

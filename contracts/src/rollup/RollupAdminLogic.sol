@@ -67,15 +67,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         uint64 inboxMaxCount = 1; // force the first assertion to read a message
         AssertionNode memory initialAssertion = AssertionNodeLib.createAssertion(
-            inboxMaxCount,
             0, // prev assertion
-            uint64(block.number), // deadline block (not challengeable)
             true,
             RollupLib.configHash({
                 wasmModuleRoot: wasmModuleRoot,
                 requiredStake: baseStake,
                 challengeManager: address(challengeManager),
-                confirmPeriodBlocks: confirmPeriodBlocks
+                confirmPeriodBlocks: confirmPeriodBlocks,
+                nextInboxPosition: inboxMaxCount
             })
         );
         initializeCore(initialAssertion, genesisHash);
@@ -241,9 +240,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         // require(prevAssertionId == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
-        // Normally, a new assertion is created using its prev's confirmPeriodBlocks
-        // in the case of a force create, we use the rollup's current confirmPeriodBlocks
-        createNewAssertion(assertion, prevAssertionId, confirmPeriodBlocks, expectedAssertionHash);
+        // TODO: HN: Normally, a new assertion is created using its prev's confirmPeriodBlocks
+        //           in the case of a force create, we use the rollup's current confirmPeriodBlocks
+        createNewAssertion(assertion, prevAssertionId, expectedAssertionHash);
 
         emit OwnerFunctionCalled(23);
     }

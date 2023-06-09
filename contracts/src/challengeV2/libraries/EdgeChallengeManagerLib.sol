@@ -7,6 +7,7 @@ import "./ChallengeEdgeLib.sol";
 import "../../osp/IOneStepProofEntry.sol";
 import "../../libraries/Constants.sol";
 import "../../rollup/RollupLib.sol";
+import "./ChallengeErrors.sol";
 
 /// @notice Data for creating a layer zero edge
 struct CreateEdgeArgs {
@@ -110,7 +111,9 @@ library EdgeChallengeManagerLib {
     /// @param store    The edge store to fetch an id from
     /// @param edgeId   The id of the edge to fetch
     function get(EdgeStore storage store, bytes32 edgeId) internal view returns (ChallengeEdge storage) {
-        require(store.edges[edgeId].exists(), "Edge does not exist");
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
         return store.edges[edgeId];
     }
 
@@ -129,7 +132,9 @@ library EdgeChallengeManagerLib {
     function add(EdgeStore storage store, ChallengeEdge memory edge) internal returns (EdgeAddedData memory) {
         bytes32 eId = edge.idMem();
         // add the edge if it doesnt exist already
-        require(!store.edges[eId].exists(), "Edge already exists");
+        if (store.edges[eId].exists()) {
+            revert EdgeAlreadyExists(eId);
+        }
         store.edges[eId] = edge;
 
         // edges that are rivals share the same mutual id
@@ -192,24 +197,38 @@ library EdgeChallengeManagerLib {
             // Sanity check: The assertion reference data should be related to the claim
             // Of course the caller can provide whatever args they wish, so this is really just a helpful
             // check to avoid mistakes
-            require(ard.assertionId != 0, "Empty assertion id");
-            require(ard.assertionId == args.claimId, "Mismatched claim id");
+            if (ard.assertionId == 0) {
+                revert AssertionIdEmpty();
+            }
+            if (ard.assertionId != args.claimId) {
+                revert AssertionIdMismatch(ard.assertionId, args.claimId);
+            }
 
             // if the assertion is already confirmed or rejected then it cant be referenced as a claim
-            require(ard.isPending, "Claim assertion is not pending");
+            if (!ard.isPending) {
+                revert AssertionNotPending();
+            }
 
             // if the claim doesnt have a sibling then it is undisputed, there's no need
             // to open challenge edges for it
-            require(ard.hasSibling, "Assertion is not in a fork");
+            if (!ard.hasSibling) {
+                revert AssertionNoSibling();
+            }
 
             // parse the inclusion proof for later use
-            require(args.proof.length > 0, "Block edge specific proof is empty");
+            if (args.proof.length == 0) {
+                revert EmptyEdgeSpecificProof();
+            }
             (bytes32[] memory inclusionProof,,) =
                 abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
 
             // check the start and end execution states exist, the block hash entry should be non zero
-            require(ard.startState.machineStatus != MachineStatus.RUNNING, "Empty start state");
-            require(ard.endState.machineStatus != MachineStatus.RUNNING, "Empty end state");
+            if (ard.startState.machineStatus == MachineStatus.RUNNING) {
+                revert EmptyStartMachineStatus();
+            }
+            if (ard.endState.machineStatus == MachineStatus.RUNNING) {
+                revert EmptyEndMachineStatus();
+            }
 
             // Create machine hashes out of the proven state
             bytes32 startStateHash = oneStepProofEntry.getMachineHash(ard.startState);
@@ -226,17 +245,25 @@ library EdgeChallengeManagerLib {
 
             // once a claim is confirmed it's status can never become pending again, so there is no point
             // opening a challenge that references it
-            require(claimEdge.status == EdgeStatus.Pending, "Claim is not pending");
+            if (claimEdge.status != EdgeStatus.Pending) {
+                revert ClaimEdgeNotPending();
+            }
 
             // Claim must be length one. If it is unrivaled then its unrivaled time is ticking up, so there's
             // no need to create claims against it
-            require(hasLengthOneRival(store, args.claimId), "Claim does not have length 1 rival");
+            if (!hasLengthOneRival(store, args.claimId)) {
+                revert ClaimEdgeNotLengthOneRival(args.claimId);
+            }
 
             // the edge must be a level down from the claim
-            require(args.edgeType == EdgeChallengeManagerLib.nextEdgeType(claimEdge.eType), "Invalid claim edge type");
+            if (args.edgeType != EdgeChallengeManagerLib.nextEdgeType(claimEdge.eType)) {
+                revert ClaimEdgeInvalidType(args.edgeType, claimEdge.eType);
+            }
 
             // parse the proofs
-            require(args.proof.length > 0, "Edge type specific proof is empty");
+            if (args.proof.length == 0) {
+                revert EmptyEdgeSpecificProof();
+            }
             (
                 bytes32 startState,
                 bytes32 endState,
@@ -295,13 +322,17 @@ library EdgeChallengeManagerLib {
 
         // all end heights are expected to be a power of 2, the specific power is defined by the
         // edge challenge manager itself
-        require(isPowerOfTwo(expectedEndHeight), "End height is not a power of 2");
+        if (!isPowerOfTwo(expectedEndHeight)) {
+            revert NotPowerOfTwo(expectedEndHeight);
+        }
 
         // It isnt strictly necessary to pass in the end height, we know what it
         // should be so we could just use the end height that we get from getLayerZeroEndHeight
         // However it's a nice sanity check for the calling code to check that their local edge
         // will have the same height as the one created here
-        require(args.endHeight == expectedEndHeight, "Invalid edge size");
+        if (args.endHeight != expectedEndHeight) {
+            revert InvalidEndHeight(args.endHeight, expectedEndHeight);
+        }
 
         // the end state is checked/determined as part of the specific edge type
         // We then ensure that that same end state is part of the end history root we're creating
@@ -314,7 +345,9 @@ library EdgeChallengeManagerLib {
         // start root must always be a prefix of end root, we ensure that
         // this new edge adheres to this. Future bisections will ensure that this
         // property is conserved
-        require(args.prefixProof.length > 0, "Prefix proof is empty");
+        if (args.prefixProof.length == 0) {
+            revert EmptyPrefixProof();
+        }
         (bytes32[] memory preExpansion, bytes32[] memory preProof) =
             abi.decode(args.prefixProof, (bytes32[], bytes32[]));
         MerkleTreeLib.verifyPrefixProof(
@@ -379,7 +412,9 @@ library EdgeChallengeManagerLib {
         }
 
         // Sanity Check: should never be hit for validly constructed edges
-        require(edge.eType == EdgeType.Block, "Edge not block type after traversal");
+        if (edge.eType != EdgeType.Block) {
+            revert EdgeTypeNotBlock(edge.eType);
+        }
 
         // For Block type edges the origin id is the assertion id of claim prev
         return edge.originId;
@@ -391,13 +426,17 @@ library EdgeChallengeManagerLib {
     /// @param store    The edge store containing the edge
     /// @param edgeId   The edge if to test if it is unrivaled
     function hasRival(EdgeStore storage store, bytes32 edgeId) internal view returns (bool) {
-        require(store.edges[edgeId].exists(), "Edge does not exist");
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
 
         // rivals have the same mutual id
         bytes32 mutualId = store.edges[edgeId].mutualId();
         bytes32 firstRival = store.firstRivals[mutualId];
         // Sanity check: it should never be possible to create an edge without having an entry in firstRivals
-        require(firstRival != 0, "Empty first rival");
+        if (firstRival == 0) {
+            revert EmptyFirstRival();
+        }
 
         // can only have no rival if the firstRival is the UNRIVALED magic hash
         return firstRival != UNRIVALED;
@@ -416,12 +455,16 @@ library EdgeChallengeManagerLib {
     ///         it is fixed. If an edge has rivals from the moment it is created then it will have
     ///         a zero time unrivaled
     function timeUnrivaled(EdgeStore storage store, bytes32 edgeId) internal view returns (uint256) {
-        require(store.edges[edgeId].exists(), "Edge does not exist");
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
 
         bytes32 mutualId = store.edges[edgeId].mutualId();
         bytes32 firstRival = store.firstRivals[mutualId];
         // Sanity check: it's not possible to have a 0 first rival for an edge that exists
-        require(firstRival != 0, "Empty rival record");
+        if (firstRival == 0) {
+            revert EmptyFirstRival();
+        }
 
         // this edge has no rivals, the time is still going up
         // we give the current amount of time unrivaled
@@ -429,7 +472,9 @@ library EdgeChallengeManagerLib {
             return block.number - store.edges[edgeId].createdAtBlock;
         } else {
             // Sanity check: it's not possible an edge does not exist for a first rival record
-            require(store.edges[firstRival].exists(), "Rival edge does not exist");
+            if (!store.edges[firstRival].exists()) {
+                revert EdgeNotExists(firstRival);
+            }
 
             // rivals exist for this edge
             uint256 firstRivalCreatedAtBlock = store.edges[firstRival].createdAtBlock;
@@ -449,7 +494,9 @@ library EdgeChallengeManagerLib {
     /// @notice Given a start and an endpoint determine the bisection height
     /// @dev    Returns the highest power of 2 in the differing lower bits of start and end
     function mandatoryBisectionHeight(uint256 start, uint256 end) internal pure returns (uint256) {
-        require(end - start >= 2, "Height difference not two or more");
+        if (end - start < 2) {
+            revert HeightDiffLtTwo(start, end);
+        }
         if (end - start == 2) {
             return start + 1;
         }
@@ -478,8 +525,12 @@ library EdgeChallengeManagerLib {
         internal
         returns (bytes32, EdgeAddedData memory, EdgeAddedData memory)
     {
-        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
-        require(hasRival(store, edgeId), "Cannot bisect an unrivaled edge");
+        if (store.edges[edgeId].status != EdgeStatus.Pending) {
+            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
+        }
+        if (!hasRival(store, edgeId)) {
+            revert EdgeUnrivaled(edgeId);
+        }
 
         // cannot bisect an edge twice
         // has rival above checks the edge - so no need to check again
@@ -527,18 +578,30 @@ library EdgeChallengeManagerLib {
 
     /// @notice Confirm an edge if both its children are already confirmed
     function confirmEdgeByChildren(EdgeStore storage store, bytes32 edgeId) internal {
-        require(store.edges[edgeId].exists(), "Edge does not exist");
-        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
+        if (store.edges[edgeId].status != EdgeStatus.Pending) {
+            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
+        }
 
         bytes32 lowerChildId = store.edges[edgeId].lowerChildId;
         // Sanity check: it bisect should already enforce that this child exists
-        require(store.edges[lowerChildId].exists(), "Lower child does not exist");
-        require(store.edges[lowerChildId].status == EdgeStatus.Confirmed, "Lower child not confirmed");
+        if (!store.edges[lowerChildId].exists()) {
+            revert EdgeNotExists(lowerChildId);
+        }
+        if (store.edges[lowerChildId].status != EdgeStatus.Confirmed) {
+            revert EdgeNotConfirmed(lowerChildId, store.edges[lowerChildId].status);
+        }
 
         bytes32 upperChildId = store.edges[edgeId].upperChildId;
         // Sanity check: it bisect should already enforce that this child exists
-        require(store.edges[upperChildId].exists(), "Upper child does not exist");
-        require(store.edges[upperChildId].status == EdgeStatus.Confirmed, "Upper child not confirmed");
+        if (!store.edges[upperChildId].exists()) {
+            revert EdgeNotExists(upperChildId);
+        }
+        if (store.edges[upperChildId].status != EdgeStatus.Confirmed) {
+            revert EdgeNotConfirmed(upperChildId, store.edges[upperChildId].status);
+        }
 
         store.edges[edgeId].setConfirmed();
     }
@@ -567,12 +630,15 @@ library EdgeChallengeManagerLib {
         // satisfy the checks below, but we conduct these checks anyway for double safety
 
         // the origin id of an edge should be the mutual id of the edge in the level above
-        require(store.edges[edgeId].mutualId() == store.edges[claimingEdgeId].originId, "Origin id-mutual id mismatch");
+        if (store.edges[edgeId].mutualId() != store.edges[claimingEdgeId].originId) {
+            revert OriginIdMutualIdMismatch(store.edges[edgeId].mutualId(), store.edges[claimingEdgeId].originId);
+        }
         // the claiming edge must be exactly one level below
-        require(
-            nextEdgeType(store.edges[edgeId].eType) == store.edges[claimingEdgeId].eType,
-            "Edge type does not match claiming edge type"
-        );
+        if (nextEdgeType(store.edges[edgeId].eType) != store.edges[claimingEdgeId].eType) {
+            revert EdgeTypeInvalid(
+                edgeId, claimingEdgeId, nextEdgeType(store.edges[edgeId].eType), store.edges[claimingEdgeId].eType
+            );
+        }
     }
 
     /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
@@ -583,14 +649,25 @@ library EdgeChallengeManagerLib {
     /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
     function confirmEdgeByClaim(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) internal {
         // this edge is pending
-        require(store.edges[edgeId].exists(), "Edge does not exist");
-        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
+
+        if (store.edges[edgeId].status != EdgeStatus.Pending) {
+            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
+        }
         // the claiming edge is confirmed
-        require(store.edges[claimingEdgeId].exists(), "Claiming edge does not exist");
-        require(store.edges[claimingEdgeId].status == EdgeStatus.Confirmed, "Claiming edge not confirmed");
+        if (!store.edges[claimingEdgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
+        if (store.edges[claimingEdgeId].status != EdgeStatus.Confirmed) {
+            revert EdgeNotConfirmed(claimingEdgeId, store.edges[claimingEdgeId].status);
+        }
 
         checkClaimIdLink(store, edgeId, claimingEdgeId);
-        require(edgeId == store.edges[claimingEdgeId].claimId, "Claim does not match edge");
+        if (edgeId != store.edges[claimingEdgeId].claimId) {
+            revert EdgeClaimMismatch(edgeId, store.edges[claimingEdgeId].claimId);
+        }
 
         store.edges[edgeId].setConfirmed();
     }
@@ -615,8 +692,12 @@ library EdgeChallengeManagerLib {
         uint256 claimedAssertionUnrivaledBlocks,
         uint256 confirmationThresholdBlock
     ) internal returns (uint256) {
-        require(store.edges[edgeId].exists(), "Edge does not exist");
-        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
+        if (store.edges[edgeId].status != EdgeStatus.Pending) {
+            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
+        }
 
         bytes32 currentEdgeId = edgeId;
         uint256 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
@@ -634,7 +715,13 @@ library EdgeChallengeManagerLib {
                 totalTimeUnrivaled += timeUnrivaled(store, e.id());
                 currentEdgeId = ancestorEdgeIds[i];
             } else {
-                revert("Current is not a child of ancestor");
+                revert EdgeNotAncestor(
+                    currentEdgeId,
+                    e.lowerChildId,
+                    e.upperChildId,
+                    ancestorEdgeIds[i],
+                    store.edges[currentEdgeId].claimId
+                );
             }
         }
 
@@ -644,10 +731,9 @@ library EdgeChallengeManagerLib {
         // second assertion is made.
         totalTimeUnrivaled += claimedAssertionUnrivaledBlocks;
 
-        require(
-            totalTimeUnrivaled > confirmationThresholdBlock,
-            "Total time unrivaled not greater than confirmation threshold"
-        );
+        if (totalTimeUnrivaled < confirmationThresholdBlock) {
+            revert InsufficientConfirmationBlocks(totalTimeUnrivaled, confirmationThresholdBlock);
+        }
 
         store.edges[edgeId].setConfirmed();
 
@@ -673,11 +759,17 @@ library EdgeChallengeManagerLib {
     ) internal {
         // get checks existence
         uint256 machineStep = get(store, edgeId).startHeight;
-        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+        if (store.edges[edgeId].status != EdgeStatus.Pending) {
+            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
+        }
 
         // edge must be length one and be of type SmallStep
-        require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
-        require(store.edges[edgeId].length() == 1, "Edge does not have single step");
+        if (store.edges[edgeId].eType != EdgeType.SmallStep) {
+            revert EdgeTypeNotSmallStep(store.edges[edgeId].eType);
+        }
+        if (store.edges[edgeId].length() != 1) {
+            revert EdgeNotLengthOne(store.edges[edgeId].length());
+        }
 
         // the state in the onestep data must be committed to by the startHistoryRoot
         MerkleTreeLib.verifyInclusionProof(

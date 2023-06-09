@@ -97,7 +97,6 @@ func main() {
 	}
 
 	for module, info := range modules {
-
 		code, err := bind.Bind(
 			info.contractNames,
 			info.abis,

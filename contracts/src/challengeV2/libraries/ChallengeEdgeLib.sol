@@ -1,26 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-/// @notice The status of the edge
-/// - Pending: Yet to be confirmed. Not all edges can be confirmed.
-/// - Confirmed: Once confirmed it cannot transition back to pending
-enum EdgeStatus {
-    Pending,
-    Confirmed
-}
-
-/// @notice The type of the edge. Challenges are decomposed into 3 types of subchallenge
-///         represented here by the edge type. Edges are initially created of type Block
-///         and are then bisected until they have length one. After that new BigStep edges are
-///         added that claim a Block type edge, and are then bisected until they have length one.
-///         Then a SmallStep edge is added that claims a length one BigStep edge, and these
-///         SmallStep edges are bisected until they reach length one. A length one small step edge
-///         can then be directly executed using a one-step proof.
-enum EdgeType {
-    Block,
-    BigStep,
-    SmallStep
-}
+import "./Enums.sol";
+import "./ChallengeErrors.sol";
 
 /// @notice An edge committing to a range of states. These edges will be bisected, slowly
 ///         reducing them in length until they reach length one. At that point new edges of a different
@@ -81,10 +63,18 @@ library ChallengeEdgeLib {
         bytes32 endHistoryRoot,
         uint256 endHeight
     ) internal pure {
-        require(originId != 0, "Empty origin id");
-        require(endHeight - startHeight > 0, "Invalid heights");
-        require(startHistoryRoot != 0, "Empty start history root");
-        require(endHistoryRoot != 0, "Empty end history root");
+        if (originId == 0) {
+            revert EmptyOriginId();
+        }
+        if (endHeight <= startHeight) {
+            revert InvalidHeights(startHeight, endHeight);
+        }
+        if (startHistoryRoot == 0) {
+            revert EmptyStartRoot();
+        }
+        if (endHistoryRoot == 0) {
+            revert EmptyEndRoot();
+        }
     }
 
     /// @notice Create a new layer zero edge. These edges make claims about length one edges in the level
@@ -100,8 +90,12 @@ library ChallengeEdgeLib {
         address staker,
         EdgeType eType
     ) internal view returns (ChallengeEdge memory) {
-        require(staker != address(0), "Empty staker");
-        require(claimId != 0, "Empty claim id");
+        if (staker == address(0)) {
+            revert EmptyStaker();
+        }
+        if (claimId == 0) {
+            revert EmptyClaimId();
+        }
 
         newEdgeChecks(originId, startHistoryRoot, startHeight, endHistoryRoot, endHeight);
 
@@ -216,14 +210,18 @@ library ChallengeEdgeLib {
     function length(ChallengeEdge storage edge) internal view returns (uint256) {
         uint256 len = edge.endHeight - edge.startHeight;
         // It's impossible for a zero length edge to exist
-        require(len > 0, "Edge does not exist");
+        if (len == 0) {
+            revert EdgeNotExists(ChallengeEdgeLib.id(edge));
+        }
         return len;
     }
 
     /// @notice Set the children of an edge
     /// @dev    Children can only be set once
     function setChildren(ChallengeEdge storage edge, bytes32 lowerChildId, bytes32 upperChildId) internal {
-        require(edge.lowerChildId == 0 && edge.upperChildId == 0, "Children already set");
+        if (edge.lowerChildId != 0 || edge.upperChildId != 0) {
+            revert ChildrenAlreadySet(ChallengeEdgeLib.id(edge), edge.lowerChildId, edge.upperChildId);
+        }
         edge.lowerChildId = lowerChildId;
         edge.upperChildId = upperChildId;
     }
@@ -231,7 +229,9 @@ library ChallengeEdgeLib {
     /// @notice Set the status of an edge to Confirmed
     /// @dev    Only Pending edges can be confirmed
     function setConfirmed(ChallengeEdge storage edge) internal {
-        require(edge.status == EdgeStatus.Pending, "Only Pending edges can be Confirmed");
+        if (edge.status != EdgeStatus.Pending) {
+            revert EdgeNotPending(ChallengeEdgeLib.id(edge), edge.status);
+        }
         edge.status = EdgeStatus.Confirmed;
     }
 
@@ -243,10 +243,18 @@ library ChallengeEdgeLib {
     /// @notice Set the refunded flag of an edge
     /// @dev    Checks internally that edge is confirmed, Block type, layer zero edge and hasnt been refunded already
     function setRefunded(ChallengeEdge storage edge) internal {
-        require(edge.status == EdgeStatus.Confirmed, "Status not Confirmed");
-        require(edge.eType == EdgeType.Block, "Not Block edge type");
-        require(isLayerZero(edge), "Not layer zero edge");
-        require(edge.refunded == false, "Already refunded");
+        if (edge.status != EdgeStatus.Confirmed) {
+            revert EdgeNotConfirmed(ChallengeEdgeLib.id(edge), edge.status);
+        }
+        if (edge.eType != EdgeType.Block) {
+            revert EdgeTypeNotBlock(edge.eType);
+        }
+        if (!isLayerZero(edge)) {
+            revert EdgeNotLayerZero(ChallengeEdgeLib.id(edge), edge.staker, edge.claimId);
+        }
+        if (edge.refunded == true) {
+            revert EdgeAlreadyRefunded(ChallengeEdgeLib.id(edge));
+        }
 
         edge.refunded = true;
     }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -22,14 +21,6 @@ func (v *Manager) challengeAssertion(ctx context.Context, id protocol.AssertionI
 	// We then add a level zero edge to initiate a challenge.
 	levelZeroEdge, err := v.addBlockChallengeLevelZeroEdge(ctx, assertion)
 	if err != nil {
-		if errors.Is(err, solimpl.ErrAlreadyExists) {
-			// TODO: Should we return error here instead of a log and nil?
-			log.Infof(
-				"Attempted to add a challenge leaf that already exists on assertion with sequence num %d",
-				id,
-			)
-			return nil
-		}
 		return fmt.Errorf("failed to created block challenge layer zero edge: %w", err)
 	}
 
@@ -37,9 +28,16 @@ func (v *Manager) challengeAssertion(ctx context.Context, id protocol.AssertionI
 	if err != nil {
 		return err
 	}
-	assertionPrevHeight, ok := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(prevCreationInfo.AfterState))
+	assertionPrevHeight, ok := v.stateManager.ExecutionStateBlockHeight(
+		ctx,
+		protocol.GoExecutionStateFromSolidity(prevCreationInfo.AfterState),
+	)
 	if !ok {
-		return fmt.Errorf("missing previous assertion %v after execution %+v in local state manager", id, prevCreationInfo.AfterState)
+		return fmt.Errorf(
+			"missing previous assertion %v after execution %+v in local state manager",
+			id,
+			prevCreationInfo.AfterState,
+		)
 	}
 
 	// Start tracking the challenge.

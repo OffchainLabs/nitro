@@ -19,31 +19,31 @@ contract ChallengeEdgeLibTest is Test {
 
     function testEdgeChecksZeroOrigin() public {
         (, bytes32 startRoot, bytes32 endRoot) = randCheckArgs();
-        vm.expectRevert("Empty origin id");
+        vm.expectRevert(abi.encodeWithSelector(EmptyOriginId.selector));
         ChallengeEdgeLib.newEdgeChecks(0, startRoot, 10, endRoot, 15);
     }
 
     function testEdgeChecksStartRoot() public {
         (bytes32 originId,, bytes32 endRoot) = randCheckArgs();
-        vm.expectRevert("Empty start history root");
+        vm.expectRevert(abi.encodeWithSelector(EmptyStartRoot.selector));
         ChallengeEdgeLib.newEdgeChecks(originId, 0, 10, endRoot, 15);
     }
 
     function testEdgeChecksEndRoot() public {
         (bytes32 originId, bytes32 startRoot,) = randCheckArgs();
-        vm.expectRevert("Empty end history root");
+        vm.expectRevert(abi.encodeWithSelector(EmptyEndRoot.selector));
         ChallengeEdgeLib.newEdgeChecks(originId, startRoot, 10, 0, 15);
     }
 
     function testEdgeChecksHeightLessThan() public {
         (bytes32 originId, bytes32 startRoot, bytes32 endRoot) = randCheckArgs();
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(InvalidHeights.selector, 10, 5));
         ChallengeEdgeLib.newEdgeChecks(originId, startRoot, 10, endRoot, 5);
     }
 
     function testEdgeChecksHeightEqual() public {
         (bytes32 originId, bytes32 startRoot, bytes32 endRoot) = randCheckArgs();
-        vm.expectRevert("Invalid heights");
+        vm.expectRevert(abi.encodeWithSelector(InvalidHeights.selector, 10, 10));
         ChallengeEdgeLib.newEdgeChecks(originId, startRoot, 10, endRoot, 10);
     }
 
@@ -71,14 +71,14 @@ contract ChallengeEdgeLibTest is Test {
     function testNewLayerZeroEdgeZeroStaker() public {
         (bytes32 originId, bytes32 startRoot, bytes32 endRoot) = randCheckArgs();
         bytes32 claimId = rand.hash();
-        vm.expectRevert("Empty staker");
+        vm.expectRevert(abi.encodeWithSelector(EmptyStaker.selector));
         ChallengeEdgeLib.newLayerZeroEdge(originId, startRoot, 10, endRoot, 15, claimId, address(0), EdgeType.BigStep);
     }
 
     function testNewLayerZeroEdgeZeroClaimId() public {
         (bytes32 originId, bytes32 startRoot, bytes32 endRoot) = randCheckArgs();
         address staker = rand.addr();
-        vm.expectRevert("Empty claim id");
+        vm.expectRevert(abi.encodeWithSelector(EmptyClaimId.selector));
         ChallengeEdgeLib.newLayerZeroEdge(originId, startRoot, 10, endRoot, 15, 0, staker, EdgeType.BigStep);
     }
 
@@ -140,10 +140,10 @@ contract ChallengeEdgeLibTest is Test {
         delete layerZero;
         delete child;
 
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, ChallengeEdgeLib.id(layerZero)));
         ChallengeEdgeLib.length(layerZero);
 
-        vm.expectRevert("Edge does not exist");
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, ChallengeEdgeLib.id(child)));
         ChallengeEdgeLib.length(child);
     }
 
@@ -168,7 +168,9 @@ contract ChallengeEdgeLibTest is Test {
         bytes32 lowerChildId = rand.hash();
         bytes32 upperChildId = rand.hash();
         ChallengeEdgeLib.setChildren(child, lowerChildId, upperChildId);
-        vm.expectRevert("Children already set");
+        vm.expectRevert(
+            abi.encodeWithSelector(ChildrenAlreadySet.selector, ChallengeEdgeLib.id(child), lowerChildId, upperChildId)
+        );
         ChallengeEdgeLib.setChildren(child, lowerChildId, upperChildId);
     }
 
@@ -185,7 +187,9 @@ contract ChallengeEdgeLibTest is Test {
         child = ChallengeEdgeLib.newChildEdge(originId, startRoot, 10, endRoot, 17, EdgeType.BigStep);
 
         ChallengeEdgeLib.setConfirmed(child);
-        vm.expectRevert("Only Pending edges can be Confirmed");
+        vm.expectRevert(
+            abi.encodeWithSelector(EdgeNotPending.selector, ChallengeEdgeLib.id(child), EdgeStatus.Confirmed)
+        );
         ChallengeEdgeLib.setConfirmed(child);
     }
 }

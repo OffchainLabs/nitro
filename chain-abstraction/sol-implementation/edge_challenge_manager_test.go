@@ -188,12 +188,11 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("OK", func(t *testing.T) {
-		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1, start, end, prefixProof)
+		created, err := challengeManager.AddBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1, start, end, prefixProof)
 		require.NoError(t, err)
-	})
-	t.Run("already exists", func(t *testing.T) {
-		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1, start, end, prefixProof)
-		require.ErrorContains(t, err, "already exists")
+		existing, err := challengeManager.AddBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1, start, end, prefixProof)
+		require.NoError(t, err)
+		require.Equal(t, created, existing)
 	})
 }
 
@@ -262,7 +261,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			make([]common.Hash, 0),
 			make([]common.Hash, 0),
 		)
-		require.ErrorContains(t, err, "Edge does not exist")
+		require.ErrorContains(t, err, "execution reverted")
 	})
 	// t.Run("edge not pending", func(t *testing.T) {
 	// 	bisectionScenario := setupBisectionScenario(t)
@@ -683,7 +682,7 @@ func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 	}
 
 	t.Run("confirmed by timer", func(t *testing.T) {
-		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{protocol.EdgeId(common.Hash{1})}), "execution reverted: Edge does not exist")
+		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{protocol.EdgeId(common.Hash{1})}), "execution reverted")
 	})
 	t.Run("confirmed by timer", func(t *testing.T) {
 		require.NoError(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}))

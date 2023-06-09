@@ -97,22 +97,21 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
         AssertionNode storage assertion = getAssertionStorage(assertionHash);
         // The assertion's must exists and be pending and will be checked in RollupCore
 
+        AssertionNode storage prevAssertion = getAssertionStorage(assertion.prevId);
+        RollupLib.validateConfigHash(beforeStateData.configData, prevAssertion.configHash);
+
         // Check that deadline has passed
-        // TODO: HN: do we need to check this? can we simply relies on the prev's ChildConfirmDeadline?
-        //           ChildConfirmDeadline is set to 1 confirmPeriod after first child is created
-        assertion.requirePastDeadline();
+        require(
+            block.number >= assertion.createdAtBlock + beforeStateData.configData.confirmPeriodBlocks, "BEFORE_DEADLINE"
+        );
 
         // Check that prev is latest confirmed
         assert(assertion.prevId == latestConfirmed());
 
-        AssertionNode storage prevAssertion = getAssertionStorage(assertion.prevId);
-        // Check that prev's child confirm deadline has passed
-        prevAssertion.requirePastChildConfirmDeadline();
-
         if (prevAssertion.secondChildBlock > 0) {
             // if the prev has more than 1 child, check if this assertion is the challenge winner
-            RollupLib.validateConfigHash(beforeStateData, prevAssertion.configHash);
-            ChallengeEdge memory winningEdge = IEdgeChallengeManager(beforeStateData.challengeManager).getEdge(winningEdgeId);
+            RollupLib.validateConfigHash(beforeStateData.configData, prevAssertion.configHash);
+            ChallengeEdge memory winningEdge = challengeManager.getEdge(winningEdgeId);
             require(winningEdge.claimId == assertionHash, "NOT_WINNER");
             require(winningEdge.status == EdgeStatus.Confirmed, "EDGE_NOT_CONFIRMED");
         }
@@ -155,7 +154,7 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
         // the staker may have more than enough stake, and the entire stake will be locked
         // we cannot do a refund here because the staker may be staker on an unconfirmed ancestor that requires more stake
         // excess stake can be removed by calling reduceDeposit when the staker is inactive
-        require(amountStaked(msg.sender) >= assertion.beforeStateData.requiredStake, "INSUFFICIENT_STAKE");
+        require(amountStaked(msg.sender) >= assertion.beforeStateData.configData.requiredStake, "INSUFFICIENT_STAKE");
 
         bytes32 prevAssertion = RollupLib.assertionHash(
             assertion.beforeStateData.prevPrevAssertionHash,
@@ -173,23 +172,20 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
             "STAKED_ON_ANOTHER_BRANCH"
         );
 
-        // Validate the config hash
-        RollupLib.validateConfigHash(assertion.beforeStateData, getAssertionStorage(prevAssertion).configHash);
+        // We assume assertion.beforeStateData is valid here as it will be validated in createNewAssertion
 
         uint256 timeSincePrev = block.number - getAssertionStorage(prevAssertion).createdAtBlock;
         // Verify that assertion meets the minimum Delta time requirement
         require(timeSincePrev >= minimumAssertionPeriod, "TIME_DELTA");
 
-        bytes32 newAssertionHash = createNewAssertion(
-            assertion, prevAssertion, assertion.beforeStateData.confirmPeriodBlocks, expectedAssertionHash
-        );
+        bytes32 newAssertionHash = createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
         _stakerMap[msg.sender].latestStakedAssertion = newAssertionHash;
 
         if (!getAssertionStorage(newAssertionHash).isFirstChild) {
             // only 1 of the children can be confirmed and get their stake refunded
             // so we send the other children's stake to the loserStakeEscrow
             // NOTE: if the losing staker have staked more than requiredStake, the excess stake will be stuck
-            increaseWithdrawableFunds(loserStakeEscrow, assertion.beforeStateData.requiredStake);
+            increaseWithdrawableFunds(loserStakeEscrow, assertion.beforeStateData.configData.requiredStake);
         }
     }
 

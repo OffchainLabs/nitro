@@ -2,6 +2,7 @@ package solimpl_test
 
 import (
 	"context"
+	"math/big"
 	"testing"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
@@ -29,6 +30,7 @@ func TestCreateAssertion(t *testing.T) {
 				GlobalState:   protocol.GoGlobalState{},
 				MachineStatus: protocol.MachineStatusFinished,
 			}).AsSolidityStruct(),
+			InboxMaxCount: big.NewInt(1),
 		}
 		postState := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
@@ -58,6 +60,7 @@ func TestCreateAssertion(t *testing.T) {
 				GlobalState:   protocol.GoGlobalState{},
 				MachineStatus: protocol.MachineStatusFinished,
 			}).AsSolidityStruct(),
+			InboxMaxCount: big.NewInt(1),
 		}
 		postState := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{

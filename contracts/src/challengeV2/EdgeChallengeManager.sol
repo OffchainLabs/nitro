@@ -3,21 +3,13 @@ pragma solidity ^0.8.17;
 
 import "../rollup/Assertion.sol";
 import "./libraries/UintUtilsLib.sol";
-import "./DataEntities.sol";
+import "./IAssertionChain.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
 import "../libraries/Constants.sol";
 import "../state/Machine.sol";
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-///@notice A wasm module root and proof to show that it's valid
-struct WasmModuleData {
-    /// @notice A wasm module root value
-    bytes32 wasmModuleRoot;
-    /// @notice Used to prove wasm module root
-    bytes wasmModuleRootProof;
-}
 
 /// @notice An execution state and proof to show that it's valid
 struct ExecutionStateData {
@@ -103,12 +95,13 @@ interface IEdgeChallengeManager {
     /// @dev    One step proofs can only be executed against edges that have length one and of type SmallStep
     /// @param edgeId                       The id of the edge to confirm
     /// @param oneStepData                  Input data to the one step proof
+    /// @param prevConfig                     Data about the config set in prev
     /// @param beforeHistoryInclusionProof  Proof that the state which is the start of the edge is committed to by the startHistoryRoot
     /// @param afterHistoryInclusionProof   Proof that the state which is the end of the edge is committed to by the endHistoryRoot
     function confirmEdgeByOneStepProof(
         bytes32 edgeId,
         OneStepData calldata oneStepData,
-        WasmModuleData calldata wasmData,
+        ConfigData calldata prevConfig,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) external;
@@ -307,24 +300,37 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         uint256 _stakeAmount,
         address _excessStakeReceiver
     ) public initializer {
-        require(address(assertionChain) == address(0), "ALREADY_INIT");
-        require(address(_assertionChain) != address(0), "Empty assertion chain");
+        if (address(_assertionChain) == address(0)) {
+            revert EmptyAssertionChain();
+        }
         assertionChain = _assertionChain;
-        require(address(_oneStepProofEntry) != address(0), "Empty one step proof");
+        if (address(_oneStepProofEntry) == address(0)) {
+            revert EmptyOneStepProofEntry();
+        }
         oneStepProofEntry = _oneStepProofEntry;
-        require(_challengePeriodBlocks != 0, "Empty challenge period");
+        if (_challengePeriodBlocks == 0) {
+            revert EmptyChallengePeriod();
+        }
         challengePeriodBlocks = _challengePeriodBlocks;
 
         stakeToken = _stakeToken;
         stakeAmount = _stakeAmount;
-        require(_excessStakeReceiver != address(0), "Empty excess stake receiver");
+        if (_excessStakeReceiver == address(0)) {
+            revert EmptyStakeReceiver();
+        }
         excessStakeReceiver = _excessStakeReceiver;
 
-        require(EdgeChallengeManagerLib.isPowerOfTwo(layerZeroBlockEdgeHeight), "Block height not power of 2");
+        if (!EdgeChallengeManagerLib.isPowerOfTwo(layerZeroBlockEdgeHeight)) {
+            revert NotPowerOfTwo(layerZeroBlockEdgeHeight);
+        }
         LAYERZERO_BLOCKEDGE_HEIGHT = layerZeroBlockEdgeHeight;
-        require(EdgeChallengeManagerLib.isPowerOfTwo(layerZeroBigStepEdgeHeight), "Big step height not power of 2");
+        if (!EdgeChallengeManagerLib.isPowerOfTwo(layerZeroBigStepEdgeHeight)) {
+            revert NotPowerOfTwo(layerZeroBigStepEdgeHeight);
+        }
         LAYERZERO_BIGSTEPEDGE_HEIGHT = layerZeroBigStepEdgeHeight;
-        require(EdgeChallengeManagerLib.isPowerOfTwo(layerZeroSmallStepEdgeHeight), "Small step height not power of 2");
+        if (!EdgeChallengeManagerLib.isPowerOfTwo(layerZeroSmallStepEdgeHeight)) {
+            revert NotPowerOfTwo(layerZeroSmallStepEdgeHeight);
+        }
         LAYERZERO_SMALLSTEPEDGE_HEIGHT = layerZeroSmallStepEdgeHeight;
     }
 
@@ -340,7 +346,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         if (args.edgeType == EdgeType.Block) {
             // for block type edges we need to provide some extra assertion data context
             bytes32 predecessorId = assertionChain.getPredecessorId(args.claimId);
-            require(args.proof.length != 0, "Block edge specific proof is empty");
+            if (args.proof.length == 0) {
+                revert EmptyEdgeSpecificProof();
+            }
             (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
                 abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
             ard = AssertionReferenceData(
@@ -447,7 +455,12 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32 lastEdgeId = ancestorEdges.length > 0 ? ancestorEdges[ancestorEdges.length - 1] : edgeId;
         ChallengeEdge storage topEdge = store.get(lastEdgeId);
 
-        require(topEdge.eType == EdgeType.Block && topEdge.claimId != 0, "Layer zero block edge not supplied");
+        if (topEdge.eType != EdgeType.Block) {
+            revert EdgeTypeNotBlock(topEdge.eType);
+        }
+        if (!topEdge.isLayerZero()) {
+            revert EdgeNotLayerZero(topEdge.id(), topEdge.staker, topEdge.claimId);
+        }
 
         uint256 assertionBlocks;
         // if the assertion being claiming against was the first child of its predecessor
@@ -474,17 +487,18 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     function confirmEdgeByOneStepProof(
         bytes32 edgeId,
         OneStepData calldata oneStepData,
-        WasmModuleData calldata wasmData,
+        ConfigData calldata prevConfig,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public {
         bytes32 prevAssertionId = store.getPrevAssertionId(edgeId);
+
+        assertionChain.validateConfig(prevAssertionId, prevConfig);
+
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: assertionChain.getNextInboxPosition(prevAssertionId),
+            maxInboxMessagesRead: prevConfig.nextInboxPosition,
             bridge: assertionChain.bridge(),
-            initialWasmModuleRoot: assertionChain.proveWasmModuleRoot(
-                prevAssertionId, wasmData.wasmModuleRoot, wasmData.wasmModuleRootProof
-                )
+            initialWasmModuleRoot: prevConfig.wasmModuleRoot
         });
 
         store.confirmEdgeByOneStepProof(

@@ -27,7 +27,7 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
         BeforeStateData calldata beforeStateData
     ) external;
 
-    function stakeOnNewAssertion(AssertionInputs memory assertion, bytes32 expectedAssertionHash) external;
+    function stakeOnNewAssertion(AssertionInputs calldata assertion, bytes32 expectedAssertionHash) external;
 
     function returnOldDeposit() external;
 
