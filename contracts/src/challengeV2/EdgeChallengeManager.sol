@@ -32,7 +32,7 @@ interface IEdgeChallengeManager {
     /// @notice Initialize the EdgeChallengeManager. EdgeChallengeManagers are upgradeable
     ///         so use the initializer paradigm
     /// @param _assertionChain              The assertion chain contract
-    /// @param _challengePeriodBlocks       The amount of cumalitive time an edge must spend unrivaled before it can be confirmed
+    /// @param _challengePeriodBlocks       The amount of cumulative time an edge must spend unrivaled before it can be confirmed
     /// @param _oneStepProofEntry           The one step proof logic
     /// @param layerZeroBlockEdgeHeight     The end height of layer zero edges of type Block
     /// @param layerZeroBigStepEdgeHeight   The end height of layer zero edges of type BigStep
@@ -61,7 +61,7 @@ interface IEdgeChallengeManager {
     /// @param args             Edge creation args
     function createLayerZeroEdge(CreateEdgeArgs calldata args) external returns (bytes32);
 
-    /// @notice Bisect and edge. This creates two child edges:
+    /// @notice Bisect an edge. This creates two child edges:
     ///         lowerChild: has the same start root and height as this edge, but a different end root and height
     ///         upperChild: has the same end root and height as this edge, but a different start root and height
     ///         The lower child end root and height are equal to the upper child start root and height. This height
@@ -85,7 +85,7 @@ interface IEdgeChallengeManager {
     /// @dev    Edges inherit time from their parents, so the sum of unrivaled timers is compared against the threshold.
     ///         Given that an edge cannot become unrivaled after becoming rivaled, once the threshold is passed
     ///         it will always remain passed. The direct ancestors of an edge are linked by parent-child links for edges
-    ///         of the same edgeType, and claimId-edgeid links for zero layer edges that claim an edge in the level above.
+    ///         of the same edgeType, and claimId-edgeId links for zero layer edges that claim an edge in the level above.
     ///         This method also includes the amount of time the assertion being claimed spent without a sibling
     /// @param edgeId                   The id of the edge to confirm
     /// @param ancestorEdgeIds          The ids of the direct ancestors of an edge. These are ordered from the parent first, then going to grand-parent,
@@ -362,7 +362,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         IERC20 st = stakeToken;
         uint256 sa = stakeAmount;
         // when a zero layer edge is created it must include a stake. Each time a zero layer
-        // edge is created it forces the honest participants to do some work, so we want to discentivise
+        // edge is created it forces the honest participants to do some work, so we want to disincentive
         // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
         // participant. This can be arranged out of bound by the excess stake receiver.
         // the assertion chain can disable challenge staking by setting a zero stake token or amount

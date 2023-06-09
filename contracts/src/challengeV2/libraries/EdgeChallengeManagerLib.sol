@@ -43,7 +43,7 @@ struct ProofData {
     bytes32 startState;
     /// @notice The last state being committed to by an edge
     bytes32 endState;
-    /// @notice A proof that the end state is included in the egde
+    /// @notice A proof that the end state is included in the edge
     bytes32[] inclusionProof;
 }
 
@@ -303,7 +303,7 @@ library EdgeChallengeManagerLib {
         // will have the same height as the one created here
         require(args.endHeight == expectedEndHeight, "Invalid edge size");
 
-        // the end state is checked/detemined as part of the specific edge type
+        // the end state is checked/determined as part of the specific edge type
         // We then ensure that that same end state is part of the end history root we're creating
         // This ensures continuity of states between levels - the state is present in both this
         // level and the one above
@@ -600,7 +600,7 @@ library EdgeChallengeManagerLib {
     /// @dev    Edges inherit time from their parents, so the sum of unrivaled timer is compared against the threshold.
     ///         Given that an edge cannot become unrivaled after becoming rivaled, once the threshold is passed
     ///         it will always remain passed. The direct ancestors of an edge are linked by parent-child links for edges
-    ///         of the same edgeType, and claimId-edgeid links for zero layer edges that claim an edge in the level above.
+    ///         of the same edgeType, and claimId-edgeId links for zero layer edges that claim an edge in the level above.
     /// @param store                            The edge store containing all edges and rival data
     /// @param edgeId                           The id of the edge to confirm
     /// @param ancestorEdgeIds                  The ids of the direct ancestors of an edge. These are ordered from the parent first, then going to grand-parent,
