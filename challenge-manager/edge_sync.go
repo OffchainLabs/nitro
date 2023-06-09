@@ -49,7 +49,7 @@ func (v *Manager) getEdgeTrackers(ctx context.Context, edges []protocol.SpecEdge
 	for i, edge := range edges {
 		// Retry until you get the previous assertion ID.
 		assertionId, err = retry.UntilSucceeds(ctx, func() (protocol.AssertionId, error) {
-			return edge.PrevAssertionId(ctx)
+			return edge.AssertionId(ctx)
 		})
 		if err != nil {
 			return nil, err

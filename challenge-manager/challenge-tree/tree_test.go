@@ -264,7 +264,7 @@ func (*edge) MiniStaker() option.Option[common.Address] {
 
 // The assertion id of the parent assertion that originated the challenge
 // at the top-level.
-func (*edge) PrevAssertionId(_ context.Context) (protocol.AssertionId, error) {
+func (*edge) AssertionId(_ context.Context) (protocol.AssertionId, error) {
 	return protocol.AssertionId{}, errors.New("unimplemented")
 }
 

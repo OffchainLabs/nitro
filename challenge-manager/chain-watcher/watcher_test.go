@@ -34,7 +34,7 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 
 	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionId)))
 	edge.On(
-		"PrevAssertionId",
+		"AssertionId",
 		ctx,
 	).Return(assertionId, nil)
 
@@ -108,7 +108,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	edge.On("StartCommitment").Return(protocol.Height(0), startCommit)
 	edge.On("EndCommitment").Return(protocol.Height(4), endCommit)
 	edge.On(
-		"PrevAssertionId",
+		"AssertionId",
 		ctx,
 	).Return(assertionId, nil)
 

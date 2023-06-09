@@ -357,11 +357,11 @@ func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
 	toBigStep := fromBigStep + 1
 	pc, _ := et.edge.StartCommitment()
 
-	prevAssertionId, err := et.edge.PrevAssertionId(ctx)
+	assertionId, err := et.edge.AssertionId(ctx)
 	if err != nil {
 		return err
 	}
-	parentAssertionCreationInfo, err := et.cfg.chain.ReadAssertionCreationInfo(ctx, prevAssertionId)
+	parentAssertionCreationInfo, err := et.cfg.chain.ReadAssertionCreationInfo(ctx, assertionId)
 	if err != nil {
 		return err
 	}

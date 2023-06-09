@@ -319,7 +319,7 @@ func (m *MockSpecEdge) TopLevelClaimHeight(ctx context.Context) (*protocol.Origi
 	args := m.Called(ctx)
 	return args.Get(0).(*protocol.OriginHeights), args.Error(1)
 }
-func (m *MockSpecEdge) PrevAssertionId(ctx context.Context) (protocol.AssertionId, error) {
+func (m *MockSpecEdge) AssertionId(ctx context.Context) (protocol.AssertionId, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.AssertionId), args.Error(1)
 }
@@ -456,10 +456,10 @@ func (m *MockProtocol) ReadAssertionCreationInfo(
 // Mutating methods.
 func (m *MockProtocol) CreateAssertion(
 	ctx context.Context,
-	prevAssertionCreationInfo *protocol.AssertionCreatedInfo,
+	assertionCreationInfo *protocol.AssertionCreatedInfo,
 	postState *protocol.ExecutionState,
 ) (protocol.Assertion, error) {
-	args := m.Called(ctx, prevAssertionCreationInfo, postState)
+	args := m.Called(ctx, assertionCreationInfo, postState)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 

@@ -39,7 +39,7 @@ type HonestChallengeTree struct {
 }
 
 func New(
-	prevAssertionId protocol.AssertionId,
+	assertionId protocol.AssertionId,
 	metadataReader MetadataReader,
 	histChecker l2stateprovider.HistoryChecker,
 	validatorName string,
@@ -47,7 +47,7 @@ func New(
 	return &HonestChallengeTree{
 		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
 		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		topLevelAssertionId:           prevAssertionId,
+		topLevelAssertionId:           assertionId,
 		honestBlockChalLevelZeroEdge:  option.None[protocol.ReadOnlyEdge](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),

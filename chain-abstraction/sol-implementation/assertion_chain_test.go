@@ -24,7 +24,7 @@ func TestCreateAssertion(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevCreationInfo := &protocol.AssertionCreatedInfo{
+		createdInfo := &protocol.AssertionCreatedInfo{
 			AfterState: (&protocol.ExecutionState{
 				GlobalState:   protocol.GoGlobalState{},
 				MachineStatus: protocol.MachineStatusFinished,
@@ -39,10 +39,10 @@ func TestCreateAssertion(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		_, err := chain.CreateAssertion(ctx, prevCreationInfo, postState)
+		_, err := chain.CreateAssertion(ctx, createdInfo, postState)
 		require.NoError(t, err)
 
-		_, err = chain.CreateAssertion(ctx, prevCreationInfo, postState)
+		_, err = chain.CreateAssertion(ctx, createdInfo, postState)
 		require.ErrorContains(t, err, "ALREADY_STAKED")
 	})
 	t.Run("can create fork", func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestCreateAssertion(t *testing.T) {
 			backend.Commit()
 		}
 
-		prevCreationInfo := &protocol.AssertionCreatedInfo{
+		creationInfo := &protocol.AssertionCreatedInfo{
 			AfterState: (&protocol.ExecutionState{
 				GlobalState:   protocol.GoGlobalState{},
 				MachineStatus: protocol.MachineStatusFinished,
@@ -68,7 +68,7 @@ func TestCreateAssertion(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		_, err := assertionChain.CreateAssertion(ctx, prevCreationInfo, postState)
+		_, err := assertionChain.CreateAssertion(ctx, creationInfo, postState)
 		require.NoError(t, err)
 	})
 }

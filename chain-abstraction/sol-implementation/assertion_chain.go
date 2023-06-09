@@ -145,7 +145,7 @@ func (a *AssertionChain) WasmModuleRoot(ctx context.Context) ([32]byte, error) {
 // and a commitment to a post-state.
 func (a *AssertionChain) CreateAssertion(
 	ctx context.Context,
-	prevAssertionCreationInfo *protocol.AssertionCreatedInfo,
+	assertionCreationInfo *protocol.AssertionCreatedInfo,
 	postState *protocol.ExecutionState,
 ) (protocol.Assertion, error) {
 	stake, err := a.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
@@ -173,14 +173,14 @@ func (a *AssertionChain) CreateAssertion(
 			newOpts,
 			rollupgen.AssertionInputs{
 				BeforeStateData: rollupgen.BeforeStateData{
-					PrevPrevAssertionHash: prevAssertionCreationInfo.ParentAssertionHash,
-					SequencerBatchAcc:     prevAssertionCreationInfo.AfterInboxBatchAcc,
+					PrevPrevAssertionHash: assertionCreationInfo.ParentAssertionHash,
+					SequencerBatchAcc:     assertionCreationInfo.AfterInboxBatchAcc,
 					RequiredStake:         stake,
 					ChallengeManager:      chalManager.Address(),
 					ConfirmPeriodBlocks:   chalPeriodBlocks,
 					WasmRoot:              wasmModuleRoot,
 				},
-				BeforeState: prevAssertionCreationInfo.AfterState,
+				BeforeState: assertionCreationInfo.AfterState,
 				AfterState:  postState.AsSolidityStruct(),
 			},
 			// TODO(RJ): Use the expected assertion hash as a sanity check.
@@ -244,7 +244,7 @@ func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.
 	if edgeOpt.IsNone() {
 		return protocol.AssertionId{}, errors.New("edge was nil")
 	}
-	return edgeOpt.Unwrap().PrevAssertionId(ctx)
+	return edgeOpt.Unwrap().AssertionId(ctx)
 }
 
 func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
@@ -364,7 +364,7 @@ func handleCreateAssertionError(err error, blockHash common.Hash) error {
 			"commit block hash %#x",
 			blockHash,
 		)
-	case strings.Contains(errS, "Previous assertion does not exist"):
+	case strings.Contains(errS, "Assertion does not exist"):
 		return ErrPrevDoesNotExist
 	case strings.Contains(errS, "Too late to create sibling"):
 		return ErrTooLate

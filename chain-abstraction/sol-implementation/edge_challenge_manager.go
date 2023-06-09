@@ -39,7 +39,7 @@ func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.inner.EndHeight.Uint64()), e.inner.EndHistoryRoot
 }
 
-func (e *SpecEdge) PrevAssertionId(ctx context.Context) (protocol.AssertionId, error) {
+func (e *SpecEdge) AssertionId(ctx context.Context) (protocol.AssertionId, error) {
 	return e.manager.caller.GetPrevAssertionId(&bind.CallOpts{Context: ctx}, e.id)
 }
 

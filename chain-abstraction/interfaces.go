@@ -69,7 +69,7 @@ type AssertionChain interface {
 	// Mutating methods.
 	CreateAssertion(
 		ctx context.Context,
-		prevAssertionCreationInfo *AssertionCreatedInfo,
+		assertionCreationInfo *AssertionCreatedInfo,
 		postState *ExecutionState,
 	) (Assertion, error)
 
@@ -241,7 +241,7 @@ type ReadOnlyEdge interface {
 	MiniStaker() option.Option[common.Address]
 	// The assertion id of the parent assertion that originated the challenge
 	// at the top-level.
-	PrevAssertionId(ctx context.Context) (AssertionId, error)
+	AssertionId(ctx context.Context) (AssertionId, error)
 	// The time in seconds an edge has been unrivaled.
 	TimeUnrivaled(ctx context.Context) (uint64, error)
 	// Whether or not an edge has rivals.

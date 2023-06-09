@@ -311,7 +311,7 @@ func (w *Watcher) processEdgeAddedEvent(
 	}
 	edge := edgeOpt.Unwrap()
 
-	assertionId, err := edge.PrevAssertionId(ctx)
+	assertionId, err := edge.AssertionId(ctx)
 	if err != nil {
 		return err
 	}
@@ -491,7 +491,7 @@ func (w *Watcher) processEdgeConfirmation(
 		return errors.New("no edge found")
 	}
 	edge := edgeOpt.Unwrap()
-	prevAssertionId, err := edge.PrevAssertionId(ctx)
+	assertionId, err := edge.AssertionId(ctx)
 	if err != nil {
 		return err
 	}
@@ -499,12 +499,12 @@ func (w *Watcher) processEdgeConfirmation(
 		return nil
 	}
 	claimId := edge.ClaimId().Unwrap()
-	chal, ok := w.challenges.TryGet(prevAssertionId)
+	chal, ok := w.challenges.TryGet(assertionId)
 	if !ok {
 		return nil
 	}
 	chal.confirmedLevelZeroEdgeClaimIds.Insert(claimId)
-	w.challenges.Put(prevAssertionId, chal)
+	w.challenges.Put(assertionId, chal)
 	return nil
 }
 

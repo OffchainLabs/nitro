@@ -541,9 +541,9 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		fromSmallStep := uint64(0)
 		toSmallStep := uint64(1)
 
-		prevId, err := honestEdge.PrevAssertionId(ctx)
+		id, err := honestEdge.AssertionId(ctx)
 		require.NoError(t, err)
-		parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, prevId)
+		parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, id)
 		require.NoError(t, err)
 
 		requiredStake, err := chain.BaseStake(ctx)
