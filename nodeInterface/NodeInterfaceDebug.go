@@ -18,9 +18,9 @@ type NodeInterfaceDebug struct {
 	backend       core.NodeInterfaceBackendAPI
 	context       context.Context
 	header        *types.Header
-	sourceMessage types.Message
+	sourceMessage *core.Message
 	returnMessage struct {
-		message *types.Message
+		message *core.Message
 		changed *bool
 	}
 }
