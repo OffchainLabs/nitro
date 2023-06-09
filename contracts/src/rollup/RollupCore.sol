@@ -29,7 +29,50 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // These 4 config should be stored into the prev and not used directly
     // An assertion can be confirmed after confirmPeriodBlocks when it is unchallenged
     uint64 public confirmPeriodBlocks;
+
+    // ------------------------------
+    // STAKING
+    // ------------------------------
+    
+    // Overall
+    // ------------------------------
+    // In order to create a new assertion the validator creating it must be staked. Only one stake
+    // is needed per consistent lineage of assertions, so additional stakes must be placed when 
+    // lineages diverge.
+    // As an example, for the following chain only one stake would be locked up in the C assertion
+    // A -- B -- C
+    // However for the following chain 2 stakes would be locked up, in C and in D
+    // A -- B -- C
+    //       \-- D
+    // Since we know that only one assertion chain can be correct, we only need one stake available
+    // to be refunded at any one time, and any more than one stake can be immediately consficated.
+    // So in the above situation although 2 stakes are not available to be withdrawn as they are locked
+    // by C and D, only 1 stake needs to remain in the contract since one of the stakes will eventually
+    // be confiscated anyway.
+    // In practice, what we do here is increase the withdrawable amount of an escrow address that is
+    // expected to be controlled by the DAO, whenever the lineage forks.
+
+    // Moving stake
+    // ------------------------------
+    // Since we only need one stake per lineage we can lock the stake of the validator that last extended that
+    // lineage. All other stakes within that lineage are then free to be moved to other lineages, or be withdrawn.
+    // Additionally, it's inconsistent for a validator to stake on two different lineages, and as a validator
+    // should only need to have one stake in the system at any one time.
+    // In order to create a new assertion a validator needs to have free stake. Since stake is freed from an assertion
+    // when another assertion builds on it, we know that if the assertion that was last staked on by a validator
+    // has children, then that validator has free stake. Likewise, if the last staked assertion does not have children
+    // but it is the parent of the assertion the validator is trying to create, then we know that by the time the assertion
+    // is created it will have children, so we can allow this condition as well.
+
+    // Updating stake amount
+    // ------------------------------
+    // The stake required to create an assertion can be updated by the DAO. A required stake value is stored on each
+    // assertion, and shows how much stake is required to create the next assertion it. Since we only store the last
+    // assertion made by a validator, we don't know if it has previously staked on lower/higher amounts and
+    // therefore offer partial withdrawals due to this difference. Instead we enforce that either all of the
+    // validators stake is locked, or none of it.
     uint256 public baseStake;
+
     bytes32 public wasmModuleRoot;
     // When there is a challenge, we trust the challenge manager to determine the winner
     IEdgeChallengeManager public challengeManager;
