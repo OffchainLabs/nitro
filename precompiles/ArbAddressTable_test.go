@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -151,6 +152,12 @@ func TestAddressTableCompressInTable(t *testing.T) {
 
 func newMockEVMForTesting() *vm.EVM {
 	return newMockEVMForTestingWithVersion(nil)
+}
+
+func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode core.MessageRunMode) *vm.EVM {
+	evm := newMockEVMForTestingWithVersion(version)
+	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunMode: runMode})
+	return evm
 }
 
 func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
