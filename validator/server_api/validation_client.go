@@ -9,27 +9,25 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/node"
 )
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client    *rpc.Client
-	url       string
-	name      string
-	jwtSecret []byte
+	client *rpcclient.RpcClient
+	name   string
 }
 
-func NewValidationClient(url string, jwtSecret []byte) *ValidationClient {
+func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		url:       url,
-		jwtSecret: jwtSecret,
+		client: rpcclient.NewRpcClient(config, stack),
 	}
 }
 
@@ -47,26 +45,19 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	var client *rpc.Client
-	var err error
-	if len(c.jwtSecret) == 0 {
-		client, err = rpc.DialWebsocket(ctx, c.url, "")
-	} else {
-		client, err = rpc.DialWebsocketJWT(ctx, c.url, "", c.jwtSecret)
-	}
+	err := c.client.Start(ctx)
 	if err != nil {
 		return err
 	}
 	var name string
-	err = client.CallContext(ctx, &name, Namespace+"_name")
+	err = c.client.CallContext(ctx, &name, Namespace+"_name")
 	if err != nil {
 		return err
 	}
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	c.client = client
-	c.name = name + " on " + c.url
+	c.name = name
 	return nil
 }
 
@@ -81,7 +72,7 @@ func (c *ValidationClient) Name() string {
 	if c.Started() {
 		return c.name
 	}
-	return "(not started) on " + c.url
+	return "(not started)"
 }
 
 func (c *ValidationClient) Room() int {
@@ -98,24 +89,26 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
-		ValidationClient: *NewValidationClient(url, jwtSecret),
+		ValidationClient: *NewValidationClient(config, stack),
 	}
 }
 
-func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
-	var res uint64
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
-	if err != nil {
-		return nil, err
-	}
-	run := &ExecutionClientRun{
-		client: c,
-		id:     res,
-	}
-	run.Start(c.GetContext())
-	return run, nil
+func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
+		if err != nil {
+			return nil, err
+		}
+		run := &ExecutionClientRun{
+			client: c,
+			id:     res,
+		}
+		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		return run, nil
+	})
 }
 
 type ExecutionClientRun struct {
@@ -124,21 +117,23 @@ type ExecutionClientRun struct {
 	id     uint64
 }
 
-func (c *ExecutionClient) LatestWasmModuleRoot() (common.Hash, error) {
-	var res common.Hash
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_latestWasmModuleRoot")
-	return res, err
+func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
+	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
+		var res common.Hash
+		err := c.client.CallContext(ctx, &res, Namespace+"_latestWasmModuleRoot")
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return res, nil
+	})
 }
 
-func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	jsonInput := ValidationInputToJson(input)
-	err := c.client.CallContext(c.GetContext(), nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
-	return err
-}
-
-type ExecutionClientStep struct {
-	containers.Promise[validator.MachineStepResult]
-	cancel context.CancelFunc
+	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
+		return struct{}{}, err
+	})
 }
 
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
@@ -154,67 +149,43 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 	r.CallIteratively(r.SendKeepAlive)
 }
 
-func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
-	step := &ExecutionClientStep{
-		Promise: containers.NewPromise[validator.MachineStepResult](),
-	}
-	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
+func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
+	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](r, func(ctx context.Context) (*validator.MachineStepResult, error) {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
-			step.ProduceError(err)
-			return
+			return nil, err
 		}
 		res, err := MachineStepResultFromJson(&resJson)
 		if err != nil {
-			step.ProduceError(err)
-			return
+			return nil, err
 		}
-		step.Produce(*res)
+		return res, err
 	})
-	step.cancel = cancel
-	return step
 }
 
-type asyncProof struct {
-	containers.Promise[[]byte]
-	cancel func()
-}
-
-func (a *asyncProof) Close() { a.cancel() }
-
-func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
-	proof := &asyncProof{
-		Promise: containers.NewPromise[[]byte](),
-	}
-	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
+func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
+	return stopwaiter.LaunchPromiseThread[[]byte](r, func(ctx context.Context) ([]byte, error) {
 		var resString string
 		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
 		if err != nil {
-			proof.ProduceError(err)
-			return
+			return nil, err
 		}
-		res, err := base64.StdEncoding.DecodeString(resString)
-		if err != nil {
-			proof.ProduceError(err)
-			return
-		}
-		proof.Produce(res)
+		return base64.StdEncoding.DecodeString(resString)
 	})
-	proof.cancel = cancel
-	return proof
 }
 
-func (r *ExecutionClientRun) GetLastStep() validator.MachineStep {
+func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(^uint64(0))
 }
 
-func (r *ExecutionClientRun) PrepareRange(start, end uint64) {
-	r.LaunchUntrackedThread(func() {
-		err := r.client.client.CallContext(r.client.GetContext(), nil, Namespace+"_prepareRange", r.id, start, end)
-		if err != nil {
+func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](r, func(ctx context.Context) (struct{}, error) {
+		err := r.client.client.CallContext(ctx, nil, Namespace+"_prepareRange", r.id, start, end)
+		if err != nil && ctx.Err() == nil {
 			log.Warn("prepare execution got error", "err", err)
 		}
+		return struct{}{}, err
 	})
 }
 
@@ -226,8 +197,4 @@ func (r *ExecutionClientRun) Close() {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
 	})
-}
-
-func (f *ExecutionClientStep) Close() {
-	f.cancel()
 }

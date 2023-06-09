@@ -32,11 +32,10 @@ func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 }
 
 func (s *SliceStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
-	if len(s.queue) > 0 {
-		return s.queue[len(s.queue)-1], nil
-	} else {
+	if len(s.queue) == 0 {
 		return nil, nil
 	}
+	return s.queue[len(s.queue)-1], nil
 }
 
 func (s *SliceStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
@@ -77,4 +76,12 @@ func (s *SliceStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		return fmt.Errorf("attempted to set too low index %v in queue starting at %v", index, s.firstNonce)
 	}
 	return nil
+}
+
+func (s *SliceStorage[Item]) Length(ctx context.Context) (int, error) {
+	return len(s.queue), nil
+}
+
+func (s *SliceStorage[Item]) IsPersistent() bool {
+	return false
 }

@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -11,19 +12,19 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
 const fuzzGas uint64 = 1200000
 
 func FuzzPrecompiles(f *testing.F) {
-	arbstate.RequireHookedGeth()
+	gethhook.RequireHookedGeth()
 
 	f.Fuzz(func(t *testing.T, precompileSelector byte, methodSelector byte, input []byte) {
 		// Create a StateDB
@@ -32,7 +33,12 @@ func FuzzPrecompiles(f *testing.F) {
 			panic(err)
 		}
 		burner := burn.NewSystemBurner(nil, false)
-		_, err = arbosState.InitializeArbosState(sdb, burner, params.ArbitrumDevTestChainConfig())
+		chainConfig := params.ArbitrumDevTestChainConfig()
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		if err != nil {
+			log.Crit("failed to serialize chain config", "error", err)
+		}
+		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, serializedChainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -48,7 +54,7 @@ func FuzzPrecompiles(f *testing.F) {
 			GetHash:     nil,
 			Coinbase:    common.Address{},
 			BlockNumber: new(big.Int),
-			Time:        new(big.Int),
+			Time:        0,
 			Difficulty:  new(big.Int),
 			GasLimit:    fuzzGas,
 			BaseFee:     common.Big1,
@@ -71,19 +77,18 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 
 		// Create and apply a message
-		msg := types.NewMessage(
-			common.Address{},
-			&addr,
-			0,
-			new(big.Int),
-			fuzzGas,
-			new(big.Int),
-			new(big.Int),
-			new(big.Int),
-			input,
-			nil,
-			true,
-		)
+		msg := &core.Message{
+			From:       common.Address{},
+			To:         &addr,
+			Nonce:      0,
+			Value:      new(big.Int),
+			GasLimit:   fuzzGas,
+			GasPrice:   new(big.Int),
+			GasFeeCap:  new(big.Int),
+			GasTipCap:  new(big.Int),
+			Data:       input,
+			AccessList: nil,
+		}
 		_, _ = core.ApplyMessage(evm, msg, &gp)
 	})
 }
