@@ -35,8 +35,8 @@ struct AssertionNode {
     // changes we need to know that previous assertions were made under a different root, so that we can understand that they
     // were valid at the time. So when resolving a challenge by one step, the edge challenge manager finds the wasm module root
     // that was recorded on the prev of the assertions being disputed and uses it to resolve the one step proof.
-    // Id of the assertion previous to this one
     bytes32 configHash;
+    // Id of the assertion previous to this one
     bytes32 prevId;
 }
 
