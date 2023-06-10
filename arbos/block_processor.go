@@ -189,7 +189,7 @@ func ProduceBlockAdvanced(
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number)
+	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
