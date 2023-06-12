@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -929,15 +930,11 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 func (s *Sequencer) updateLatestL1Block(header *types.Header) {
 	s.L1BlockAndTimeMutex.Lock()
 	defer s.L1BlockAndTimeMutex.Unlock()
-	if s.l1Timestamp < header.Time {
-		s.l1Timestamp = header.Time
 
-		arbosInfo := types.DeserializeHeaderExtraInformation(header)
-		if arbosInfo.ArbOSFormatVersion > 0 {
-			s.l1BlockNumber = arbosInfo.L1BlockNumber
-		} else {
-			s.l1BlockNumber = header.Number.Uint64()
-		}
+	l1BlockNumber := arbutil.HeaderL1BlockNumber(header)
+	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber) {
+		s.l1Timestamp = header.Time
+		s.l1BlockNumber = l1BlockNumber
 	}
 }
 
