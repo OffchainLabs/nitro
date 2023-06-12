@@ -60,8 +60,8 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		_, err := EnsureTxSucceeded(ctx, l2client, tx)
 		testhelpers.RequireImpl(t, err)
 	}
-	bc = node.Backend.ArbInterface().BlockChain()
-	db = node.Backend.ChainDb()
+	bc = node.Execution.Backend.ArbInterface().BlockChain()
+	db = node.Execution.Backend.ChainDb()
 
 	return
 }
