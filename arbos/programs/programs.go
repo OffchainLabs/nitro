@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package programs
 
@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type Programs struct {
@@ -26,7 +27,8 @@ type Programs struct {
 	wasmHostioInk  storage.StorageBackedUint64
 	freePages      storage.StorageBackedUint16
 	pageGas        storage.StorageBackedUint32
-	pageRamp       storage.StorageBackedUint32
+	pageRamp       storage.StorageBackedUint64
+	pageLimit      storage.StorageBackedUint16
 	version        storage.StorageBackedUint32
 }
 
@@ -46,6 +48,7 @@ const (
 	freePagesOffset
 	pageGasOffset
 	pageRampOffset
+	pageLimitOffset
 )
 
 var ProgramNotCompiledError func() error
@@ -55,8 +58,8 @@ var ProgramUpToDateError func() error
 const MaxWasmSize = 64 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
-const initialPageRamp = 620674314   // targets 8MB costing 32 million gas, minus the linear term
-const initialMachinePageLimit = 128 // reject wasms with memories larger than 8MB
+const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
+const initialPageLimit = 128      // reject wasms with memories larger than 8MB
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
@@ -64,7 +67,8 @@ func Initialize(sto *storage.Storage) {
 	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
 	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
 	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
-	pageRamp := sto.OpenStorageBackedUint32(pageRampOffset)
+	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
+	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = inkPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
@@ -72,6 +76,7 @@ func Initialize(sto *storage.Storage) {
 	_ = freePages.Set(initialFreePages)
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
+	_ = pageLimit.Set(initialPageLimit)
 	_ = version.Set(1)
 }
 
@@ -84,7 +89,8 @@ func Open(sto *storage.Storage) *Programs {
 		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
 		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
-		pageRamp:       sto.OpenStorageBackedUint32(pageRampOffset),
+		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
+		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
 		version:        sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
@@ -136,24 +142,34 @@ func (p Programs) SetPageGas(gas uint32) error {
 	return p.pageGas.Set(gas)
 }
 
-func (p Programs) PageRamp() (uint32, error) {
+func (p Programs) PageRamp() (uint64, error) {
 	return p.pageRamp.Get()
 }
 
-func (p Programs) SetPageRamp(ramp uint32) error {
+func (p Programs) SetPageRamp(ramp uint64) error {
 	return p.pageRamp.Set(ramp)
+}
+
+func (p Programs) PageLimit() (uint16, error) {
+	return p.pageLimit.Get()
+}
+
+func (p Programs) SetPageLimit(limit uint16) error {
+	return p.pageLimit.Set(limit)
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
 	return p.programs.GetUint32(program.Hash())
 }
 
-func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
+func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, error) {
+	statedb := evm.StateDB
+
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, err
 	}
-	latest, err := p.programs.GetUint32(program.Hash())
+	latest, err := p.ProgramVersion(program)
 	if err != nil {
 		return 0, err
 	}
@@ -166,10 +182,29 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 		return 0, err
 	}
 
-	footprint, err := compileUserWasm(statedb, program, wasm, version, debugMode)
+	// require the program's footprint not exceed the remaining memory budget
+	pageLimit, err := p.PageLimit()
 	if err != nil {
 		return 0, err
 	}
+	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
+
+	open, _ := statedb.GetStylusPages()
+	if !evm.ProcessingHook.MsgIsGasEstimation() {
+		colors.PrintPink(
+			"Compile ", evm.Depth(), ": ", *open, " open ", pageLimit, " limit",
+		)
+	}
+
+	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
+	if err != nil {
+		return 0, err
+	}
+
+	// reflect the fact that, briefly, the footprint was allocated
+	// note: the actual payment for the expansion happens in Rust
+	statedb.AddStylusPagesEver(footprint)
+
 	programData := Program{
 		footprint: footprint,
 		version:   version,
@@ -214,7 +249,31 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
+
+	// pay for program init
 	open, ever := statedb.GetStylusPages()
+	model, err := p.memoryModel()
+	if err != nil {
+		return nil, err
+	}
+	cost := model.GasCost(program.footprint, *open, *ever)
+	burner := p.backingStorage.Burner()
+	if err := contract.BurnGas(cost); err != nil {
+		return nil, err // TODO: why is this not being hit?
+	}
+	openBefore, _ := statedb.AddStylusPages(program.footprint)
+	if !evm.ProcessingHook.MsgIsGasEstimation() {
+		defer func() {
+			colors.PrintPink("After: ", *open, " open ", *ever, " ever")
+		}()
+	}
+	defer statedb.SetStylusPagesOpen(openBefore)
+	if !evm.ProcessingHook.MsgIsGasEstimation() {
+		colors.PrintPink(
+			"Start ", evm.Depth(), ": ", openBefore, " open + ", program.footprint,
+			" new => ", *open, " open ", *ever, " ever ", cost, " cost ", burner.Burned(), " burned",
+		)
+	}
 
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
@@ -230,11 +289,11 @@ func (p Programs) CallProgram(
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		startPages: startPages{
-			need: program.footprint,
 			open: *open,
 			ever: *ever,
 		},
 	}
+
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
 
@@ -276,13 +335,7 @@ type goParams struct {
 	inkPrice    uint64
 	hostioInk   uint64
 	debugMode   uint32
-	memoryModel goMemoryModel
-}
-
-type goMemoryModel struct {
-	freePages uint16 // number of pages the tx gets for free
-	pageGas   uint32 // base gas to charge per wasm page
-	pageRamp  uint32 // ramps up exponential memory costs
+	memoryModel *GoMemoryModel
 }
 
 func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goParams, error) {
@@ -307,22 +360,13 @@ func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goP
 	if err != nil {
 		return nil, err
 	}
-	pageRamp, err := p.PageRamp()
-	if err != nil {
-		return nil, err
-	}
-	memParams := goMemoryModel{
-		freePages: freePages,
-		pageGas:   pageGas,
-		pageRamp:  pageRamp,
-	}
 
 	config := &goParams{
 		version:     version,
 		maxDepth:    maxDepth,
 		inkPrice:    inkPrice.Uint64(),
 		hostioInk:   hostioInk,
-		memoryModel: memParams,
+		memoryModel: NewMemoryModel(freePages, pageGas),
 	}
 	if debug {
 		config.debugMode = 1
@@ -347,7 +391,6 @@ type evmData struct {
 }
 
 type startPages struct {
-	need uint16
 	open uint16
 	ever uint16
 }

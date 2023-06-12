@@ -38,6 +38,6 @@ func TestProgramArbitratorEvmData(t *testing.T) {
 	testEvmData(t, false)
 }
 
-func TestProgramArbitratorMemoryCharging(t *testing.T) {
-	testMemoryCharging(t, false)
+func TestProgramArbitratorMemory(t *testing.T) {
+	testMemory(t, false)
 }

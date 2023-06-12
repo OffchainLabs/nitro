@@ -102,7 +102,10 @@ interface ArbOwner {
     function setWasmPageGas(uint32 gas) external;
 
     // @notice sets the ramp that drives exponential wasm memory costs
-    function setWasmPageRamp(uint32 ramp) external;
+    function setWasmPageRamp(uint64 ramp) external;
+
+    // @notice sets the maximum number of pages a wasm may allocate
+    function setWasmPageLimit(uint16 limit) external view;
 
     /// @notice Sets serialized chain config in ArbOS state
     function setChainConfig(string calldata chainConfig) external;

@@ -27,10 +27,10 @@
 
             ;; grow by $step, shrinking if needed
             (i32.add (local.get $step) (memory.size))
-            i32.const 128
+            local.get $size
             i32.gt_u
             (if (then
-                    (i32.sub (i32.const 128) (memory.size))
+                    (i32.sub (local.get $size) (memory.size))
                     local.set $step
             ))
 

@@ -1,11 +1,10 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(clippy::field_reassign_with_default)]
 
-use arbutil::evm::EvmData;
+use super::memory::MemoryModel;
 use derivative::Derivative;
-use fixed::types::U32F32;
 use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
@@ -43,17 +42,6 @@ pub struct PricingParams {
     pub memory_model: MemoryModel,
 }
 
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct MemoryModel {
-    /// Number of pages a tx gets for free
-    pub free_pages: u16,
-    /// Base cost of each additional wasm page
-    pub page_gas: u32,
-    /// Ramps up exponential memory costs
-    pub page_ramp: u32,
-}
-
 impl Default for StylusConfig {
     fn default() -> Self {
         Self {
@@ -70,16 +58,6 @@ impl Default for PricingParams {
             ink_price: 1,
             hostio_ink: 0,
             memory_model: MemoryModel::default(),
-        }
-    }
-}
-
-impl Default for MemoryModel {
-    fn default() -> Self {
-        Self {
-            free_pages: u16::MAX,
-            page_gas: 0,
-            page_ramp: 0,
         }
     }
 }
@@ -117,53 +95,6 @@ impl PricingParams {
 
     pub fn ink_to_gas(&self, ink: u64) -> u64 {
         ink.saturating_mul(self.ink_price) / 100_00
-    }
-}
-
-impl MemoryModel {
-    pub const fn new(free_pages: u16, page_gas: u32, page_ramp: u32) -> Self {
-        Self {
-            free_pages,
-            page_gas,
-            page_ramp,
-        }
-    }
-
-    /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
-    pub fn gas_cost(&self, new: u16, open: u16, ever: u16) -> u64 {
-        let ramp = U32F32::from_bits(self.page_ramp.into()) + U32F32::lit("1");
-        let size = ever.max(open.saturating_add(new));
-
-        // free until expansion beyond the first few
-        if size <= self.free_pages {
-            return 0;
-        }
-
-        // exponentiates ramp by squaring
-        let curve = |mut exponent| {
-            let mut result = U32F32::from_num(1);
-            let mut base = ramp;
-
-            while exponent > 0 {
-                if exponent & 1 == 1 {
-                    result = result.saturating_mul(base);
-                }
-                exponent /= 2;
-                if exponent > 0 {
-                    base = base.saturating_mul(base);
-                }
-            }
-            result.to_num::<u64>()
-        };
-
-        let linear = (new as u64).saturating_mul(self.page_gas.into());
-        let expand = curve(size) - curve(ever);
-        linear.saturating_add(expand)
-    }
-
-    pub fn start_cost(&self, evm_data: &EvmData) -> u64 {
-        let start = evm_data.start_pages;
-        self.gas_cost(start.need, start.open, start.ever)
     }
 }
 

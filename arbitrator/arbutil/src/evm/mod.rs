@@ -84,8 +84,6 @@ pub struct EvmData {
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct StartPages {
-    /// Minimum pages needed to execute program
-    pub need: u16,
     /// Open pages as of the start of the call
     pub open: u16,
     /// Largest number of pages ever open as of the start of the call

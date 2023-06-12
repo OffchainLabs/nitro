@@ -31,6 +31,7 @@ pub mod counter;
 pub mod depth;
 pub mod dynamic;
 pub mod heap;
+pub mod memory;
 pub mod meter;
 pub mod prelude;
 pub mod start;

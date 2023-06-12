@@ -8,6 +8,7 @@ package programs
 
 import (
 	"errors"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -46,7 +47,7 @@ func callUserWasmRustImpl(
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
-func rustStartPagesImpl(need, open, ever u16) *rustStartPages
+func rustStartPagesImpl(open, ever u16) *rustStartPages
 func rustEvmDataImpl(
 	blockBasefee *hash,
 	blockChainId *hash,
@@ -63,10 +64,9 @@ func rustEvmDataImpl(
 	startPages *rustStartPages,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version u32, debug bool) (u16, error) {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, footprint, err := compileMachine(db, program, wasm, version, debugMode)
-	println("FOOTPRINT", footprint)
+	_, footprint, err := compileMachine(db, program, wasm, pageLimit, version, debugMode)
 	return footprint, err
 }
 
@@ -80,11 +80,14 @@ func callUserWasm(
 	evmData *evmData,
 	params *goParams,
 ) ([]byte, error) {
+	// since the program has previously passed compilation, don't limit memory
+	pageLimit := uint16(math.MaxUint16)
+
 	wasm, err := getWasm(db, program.address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, _, err := compileMachine(db, program.address, wasm, params.version, params.debugMode)
+	machine, _, err := compileMachine(db, program.address, wasm, pageLimit, params.version, params.debugMode)
 	if err != nil {
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
@@ -106,10 +109,9 @@ func callUserWasm(
 	return status.output(result)
 }
 
-func compileMachine(db vm.StateDB, program addr, wasm []byte, version, debugMode u32) (*rustMachine, u16, error) {
-	open, _ := db.GetStylusPages()
-	pageLimit := arbmath.SaturatingUSub(initialMachinePageLimit, *open)
-
+func compileMachine(
+	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
+) (*rustMachine, u16, error) {
 	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
 	if err != nil {
 		return nil, footprint, errors.New(string(err.intoSlice()))
@@ -147,5 +149,5 @@ func (d *evmData) encode() *rustEvmData {
 }
 
 func (d *startPages) encode() *rustStartPages {
-	return rustStartPagesImpl(d.need, d.open, d.ever)
+	return rustStartPagesImpl(d.open, d.ever)
 }

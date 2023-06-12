@@ -14,7 +14,7 @@ type ArbWasm struct {
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error) {
 	// TODO: pay for gas by some compilation pricing formula
-	return c.State.Programs().CompileProgram(evm.StateDB, program, evm.ChainConfig().DebugMode())
+	return c.State.Programs().CompileProgram(evm, program, evm.ChainConfig().DebugMode())
 }
 
 // Gets the latest stylus version
@@ -49,8 +49,13 @@ func (con ArbWasm) PageGas(c ctx, _ mech) (uint32, error) {
 }
 
 // Gets the ramp that drives exponential memory costs
-func (con ArbWasm) PageRamp(c ctx, _ mech) (uint32, error) {
+func (con ArbWasm) PageRamp(c ctx, _ mech) (uint64, error) {
 	return c.State.Programs().PageRamp()
+}
+
+// Gets the maximum initial number of pages a wasm may allocate
+func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().PageLimit()
 }
 
 // Gets the current program version

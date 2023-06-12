@@ -39,8 +39,12 @@ interface ArbWasm {
     function pageGas() external view returns (uint32 gas);
 
     // @notice gets the ramp that drives exponential memory costs
-    // @return ramp bits representing the fractional part of the exponential
-    function pageRamp() external view returns (uint32 ramp);
+    // @return ramp bits representing the floating point value
+    function pageRamp() external view returns (uint64 ramp);
+
+    // @notice gets the maximum number of pages a wasm may allocate
+    // @return limit the number of pages
+    function pageLimit() external view returns (uint16 limit);
 
     // @notice gets the stylus version the program was most recently compiled against.
     // @return version the program version (0 for EVM contracts)

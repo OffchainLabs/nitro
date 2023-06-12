@@ -103,6 +103,8 @@ pub unsafe extern "C" fn stylus_compile(
         Ok((.., pages)) => pages,
         Err(err) => return output.write_err(err.wrap_err("failed to parse program")),
     };
+
+    // TODO: compilation pricing, including memory charges
     let module = match native::module(wasm, compile) {
         Ok(module) => module,
         Err(err) => return output.write_err(err),
@@ -133,15 +135,9 @@ pub unsafe extern "C" fn stylus_call(
     let compile = CompileConfig::version(config.version, debug_chain != 0);
     let pricing = config.pricing;
     let output = &mut *output;
+    let ink = pricing.gas_to_ink(*gas);
 
-    // charge for memory before creating the instance
-    let gas_cost = pricing.memory_model.start_cost(&evm_data);
-    let Some(ink) = (*gas).checked_sub(gas_cost).map(|x| pricing.gas_to_ink(x)) else {
-        *gas = 0;
-        return output.write_outcome(UserOutcome::OutOfInk);
-    };
-
-    // Safety: module came from compile_user_wasm
+    // Safety: module came from compile_user_wasm and we've paid for memory expansion
     let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,

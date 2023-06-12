@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -39,11 +40,11 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) (uint16, error) {
-	open, _ := db.GetStylusPages()
-	pageLimit := arbmath.SaturatingUSub(initialMachinePageLimit, *open)
+func compileUserWasm(
+	db vm.StateDB, program common.Address, wasm []byte, pageLimit uint16, version uint32, debug bool,
+) (uint16, error) {
+	colors.PrintMint("Compile ", pageLimit)
 	footprint := uint16(0)
-
 	output := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
@@ -60,6 +61,7 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	} else {
 		data := arbutil.ToStringOrHex(data)
 		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
+		colors.PrintPink("compile failure", data)
 	}
 	return footprint, err
 }
@@ -326,11 +328,10 @@ func (params *goParams) encode() C.StylusConfig {
 	}
 }
 
-func (model *goMemoryModel) encode() C.MemoryModel {
+func (model *GoMemoryModel) encode() C.MemoryModel {
 	return C.MemoryModel{
 		free_pages: u16(model.freePages),
 		page_gas:   u32(model.pageGas),
-		page_ramp:  u32(model.pageRamp),
 	}
 }
 
@@ -349,7 +350,6 @@ func (data *evmData) encode() C.EvmData {
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
 		start_pages: C.StartPages{
-			need: u16(data.startPages.need),
 			open: u16(data.startPages.open),
 			ever: u16(data.startPages.ever),
 		},

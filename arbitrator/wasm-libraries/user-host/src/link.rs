@@ -10,7 +10,7 @@ use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
     binary::WasmBinary,
-    programs::config::{CompileConfig, MemoryModel, PricingParams, StylusConfig},
+    programs::{config::{CompileConfig, PricingParams, StylusConfig}, memory::MemoryModel},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -236,14 +236,13 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(need, open, ever u16) *StartPages
+/// Safety: λ(open, ever u16) *StartPages
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustStartPagesImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
     let start_pages = StartPages{
-        need: sp.read_u16(),
         open: sp.read_u16(),
         ever: sp.read_u16(),
     };

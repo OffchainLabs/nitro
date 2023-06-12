@@ -12,10 +12,7 @@ use arbutil::{
 };
 use prover::{
     binary::WasmBinary,
-    programs::{
-        config::{MemoryModel, PricingParams},
-        prelude::*,
-    },
+    programs::{config::PricingParams, memory::MemoryModel, prelude::*},
 };
 use std::mem;
 use stylus::native;
@@ -71,37 +68,29 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (compile, config): (CompileConfig, StylusConfig) = sp.unbox();
     let evm_api = sp.read_go_slice_owned();
     let evm_data: EvmData = sp.unbox();
+
+    // buy ink
     let pricing = config.pricing;
     let gas = sp.read_go_ptr();
+    let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
     // skip the root since we don't use these
     sp.skip_u64();
-
-    macro_rules! done {
-        ($outcome:expr, $ink:expr) => {{
-            let (status, outs) = $outcome.into_data();
-            sp.write_u8(status.into()).skip_space();
-            sp.write_ptr(heapify(outs));
-            sp.write_u64_raw(gas, pricing.ink_to_gas($ink));
-            return Ok(());
-        }};
-    }
-
-    // charge for memory before creating the instance
-    let gas_cost = pricing.memory_model.start_cost(&evm_data);
-    let Some(ink) = sp.read_u64_raw(gas).checked_sub(gas_cost).map(|x| pricing.gas_to_ink(x)) else {
-        done!(OutOfInk, 0);
-    };
 
     let result = exec_wasm(
         sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
     );
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
-    match outcome {
-        Err(e) | Ok(Failure(e)) => done!(Failure(e.wrap_err("call failed")), ink_left),
-        Ok(outcome) => done!(outcome, ink_left),
-    }
+    let outcome = match outcome {
+        Err(e) | Ok(Failure(e)) => Failure(e.wrap_err("call failed")),
+        Ok(outcome) => outcome,
+    };
+    let (kind, outs) = outcome.into_data();
+    sp.write_u8(kind.into()).skip_space();
+    sp.write_ptr(heapify(outs));
+    sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left));
+    Ok(())
 }
 
 /// Reads the length of a rust `Vec`
@@ -169,11 +158,10 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(need, open, ever u16) *StartPages
+/// Safety: λ(open, ever u16) *StartPages
 pub fn start_pages_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let start_pages = StartPages {
-        need: sp.read_u16(),
         open: sp.read_u16(),
         ever: sp.read_u16(),
     };

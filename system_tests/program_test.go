@@ -25,12 +25,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
 func TestProgramKeccak(t *testing.T) {
@@ -169,7 +171,7 @@ func testCalls(t *testing.T, jit bool) {
 		}
 		expected := fmt.Sprintf("execution reverted%v", errMsg)
 		if err.Error() != expected {
-			Fail(t, "wrong error", err.Error(), expected)
+			Fail(t, "wrong error", err.Error(), " ", expected)
 		}
 
 		// execute onchain for proving's sake
@@ -192,30 +194,6 @@ func testCalls(t *testing.T, jit bool) {
 	kinds[vm.CALL] = 0x00
 	kinds[vm.DELEGATECALL] = 0x01
 	kinds[vm.STATICCALL] = 0x02
-
-	makeCalldata := func(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
-		args := []byte{0x01}
-		length := 21 + len(calldata)
-		if opcode == vm.CALL {
-			length += 32
-		}
-		args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
-		args = append(args, kinds[opcode])
-		if opcode == vm.CALL {
-			if value == nil {
-				value = common.Big0
-			}
-			args = append(args, common.BigToHash(value).Bytes()...)
-		}
-		args = append(args, address.Bytes()...)
-		args = append(args, calldata...)
-		return args
-	}
-	appendCall := func(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
-		calls[0] += 1 // add another call
-		calls = append(calls, makeCalldata(opcode, address, nil, inner)[1:]...)
-		return calls
-	}
 
 	checkTree := func(opcode vm.OpCode, dest common.Address) map[common.Hash]common.Hash {
 		colors.PrintBlue("Checking storage after call tree with ", opcode)
@@ -273,7 +251,7 @@ func testCalls(t *testing.T, jit bool) {
 	calldata := []byte{0}
 	expected := []byte{}
 	for key, value := range slots {
-		calldata = appendCall(calldata, vm.STATICCALL, storeAddr, argsForStorageRead(key))
+		calldata = multicallAppend(calldata, vm.STATICCALL, storeAddr, argsForStorageRead(key))
 		expected = append(expected, value[:]...)
 	}
 	values := sendContractCall(t, ctx, callsAddr, l2client, calldata)
@@ -286,7 +264,7 @@ func testCalls(t *testing.T, jit bool) {
 	colors.PrintBlue("Checking static call write protection")
 	writeKey := append([]byte{0x1}, testhelpers.RandomHash().Bytes()...)
 	writeKey = append(writeKey, testhelpers.RandomHash().Bytes()...)
-	expectFailure(callsAddr, makeCalldata(vm.STATICCALL, storeAddr, nil, writeKey), "")
+	expectFailure(callsAddr, argsForMulticall(vm.STATICCALL, storeAddr, nil, writeKey), "")
 
 	// mechanisms for creating calldata
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
@@ -301,7 +279,8 @@ func testCalls(t *testing.T, jit bool) {
 	colors.PrintBlue("Calling the ArbosTest precompile (Rust => precompile)")
 	testPrecompile := func(gas uint64) uint64 {
 		// Call the burnArbGas() precompile from Rust
-		args := makeCalldata(vm.CALL, types.ArbosTestAddress, nil, pack(burnArbGas(big.NewInt(int64(gas)))))
+		burn := pack(burnArbGas(big.NewInt(int64(gas))))
+		args := argsForMulticall(vm.CALL, types.ArbosTestAddress, nil, burn)
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, args)
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 		return receipt.GasUsed - receipt.GasUsedForL1
@@ -318,24 +297,24 @@ func testCalls(t *testing.T, jit bool) {
 	}
 
 	colors.PrintBlue("Checking consensus revert data (Rust => precompile)")
-	args := makeCalldata(vm.CALL, types.ArbDebugAddress, nil, pack(customRevert(uint64(32))))
+	args := argsForMulticall(vm.CALL, types.ArbDebugAddress, nil, pack(customRevert(uint64(32))))
 	spider := ": error Custom(32, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
 	expectFailure(callsAddr, args, spider)
 
 	colors.PrintBlue("Checking non-consensus revert data (Rust => precompile)")
-	args = makeCalldata(vm.CALL, types.ArbDebugAddress, nil, pack(legacyError()))
+	args = argsForMulticall(vm.CALL, types.ArbDebugAddress, nil, pack(legacyError()))
 	expectFailure(callsAddr, args, "")
 
 	colors.PrintBlue("Checking success (Rust => Solidity => Rust)")
 	rustArgs := append([]byte{0x01}, []byte(spider)...)
-	mockArgs := makeCalldata(vm.CALL, mockAddr, nil, pack(callKeccak(keccakAddr, rustArgs)))
+	mockArgs := argsForMulticall(vm.CALL, mockAddr, nil, pack(callKeccak(keccakAddr, rustArgs)))
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, mockArgs)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	colors.PrintBlue("Checking call with value (Rust => EOA)")
 	eoa := testhelpers.RandomAddress()
 	value := testhelpers.RandomCallValue(1e12)
-	args = makeCalldata(vm.CALL, eoa, value, []byte{})
+	args = argsForMulticall(vm.CALL, eoa, value, []byte{})
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, value, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	balance := GetBalance(t, ctx, l2client, eoa)
@@ -570,6 +549,114 @@ func testEvmData(t *testing.T, jit bool) {
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
+func TestProgramMemory(t *testing.T) {
+	t.Parallel()
+	testMemory(t, true)
+}
+
+func testMemory(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, memoryAddr, cleanup := setupProgramTest(t, watFile("memory"), jit)
+	defer cleanup()
+
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	expectFailure := func(to common.Address, data []byte, errMsg string) {
+		t.Helper()
+		msg := ethereum.CallMsg{
+			To:    &to,
+			Value: big.NewInt(0),
+			Data:  data,
+			Gas:   32000000,
+		}
+		_, err := l2client.CallContract(ctx, msg, nil)
+		if err == nil {
+			Fail(t, "call should have failed with", errMsg)
+		}
+		expected := fmt.Sprintf("%v", errMsg)
+		if err.Error() != expected {
+			Fail(t, "wrong error", err.Error(), " ", expected)
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &to, 1e9, nil, data)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt := EnsureTxFailed(t, ctx, l2client, tx)
+		if receipt.GasUsedForL2() > 32000000 {
+			Fail(t, "exceeded tx gas limit", receipt.GasUsedForL2())
+		}
+	}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetWasmHostioInk(&auth, 0))
+	ensure(arbOwner.SetInkPrice(&auth, 1e4))
+	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
+
+	model := programs.NewMemoryModel(2, 1000)
+
+	// expand to 128 pages, retract, then expand again to 128.
+	//   - multicall takes 1 page to init, and then 1 more at runtime.
+	//   - grow-and-call takes 1 page, then grows to the first arg by second arg steps.
+	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
+	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
+
+	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+	gasCost := receipt.GasUsedForL2()
+	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
+	logical := uint64(32000000 + 126*1000)
+	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) || !arbmath.WithinRange(gasCost, logical, logical+1e5) {
+		Fail(t, "unexpected cost", gasCost, model)
+	}
+
+	// check that we'd normally run out of gas
+	ensure(arbOwner.SetMaxTxGasLimit(&auth, 32000000))
+	expectFailure(multiAddr, args, "execution reverted")
+
+	// check that compilation fails when out of memory
+	wasm := readWasmFile(t, watFile("grow-120"))
+	growHugeAddr := deployContract(t, ctx, auth, l2client, wasm)
+	compile, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "compileProgram")
+	pack := func(data []byte, err error) []byte {
+		Require(t, err)
+		return data
+	}
+	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(compile(growHugeAddr)))
+	expectFailure(growCallAddr, args, "execution reverted") // consumes 64, then tries to compile something 120
+
+	// check that compilation then succeeds
+	args[0] = 0x00
+	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, nil, args)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	// check footprint can induce a revert
+	args = arbmath.ConcatByteSlices([]byte{122}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
+	expectFailure(growCallAddr, args, "execution reverted")
+
+	// check same call would have succeeded with fewer pages
+	args = arbmath.ConcatByteSlices([]byte{119}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
+	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, nil, args)
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	gasCost = receipt.GasUsedForL2()
+	memCost = model.GasCost(127, 0, 0)
+	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) {
+		Fail(t, "unexpected cost", gasCost, memCost)
+	}
+
+	t.SkipNow()
+
+	validateBlocks(t, 2, jit, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
@@ -627,7 +714,10 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 }
 
 func readWasmFile(t *testing.T, file string) []byte {
-	wasmSource, err := os.ReadFile(file)
+	source, err := os.ReadFile(file)
+	Require(t, err)
+
+	wasmSource, err := wasmer.Wat2Wasm(string(source))
 	Require(t, err)
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
@@ -645,18 +735,23 @@ func deployWasm(
 	wasm := readWasmFile(t, file)
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
+	return compileWasm(t, ctx, auth, l2client, programAddress)
+}
+
+func compileWasm(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, program common.Address,
+) common.Address {
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	timed(t, "compile", func() {
-		tx, err := arbWasm.CompileProgram(&auth, programAddress)
+		tx, err := arbWasm.CompileProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	})
-
-	return programAddress
+	return program
 }
 
 func argsForStorageRead(key common.Hash) []byte {
@@ -672,6 +767,36 @@ func argsForStorageWrite(key, value common.Hash) []byte {
 	return args
 }
 
+func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
+	kinds := make(map[vm.OpCode]byte)
+	kinds[vm.CALL] = 0x00
+	kinds[vm.DELEGATECALL] = 0x01
+	kinds[vm.STATICCALL] = 0x02
+
+	args := []byte{0x01}
+	length := 21 + len(calldata)
+	if opcode == vm.CALL {
+		length += 32
+	}
+	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
+	args = append(args, kinds[opcode])
+	if opcode == vm.CALL {
+		if value == nil {
+			value = common.Big0
+		}
+		args = append(args, common.BigToHash(value).Bytes()...)
+	}
+	args = append(args, address.Bytes()...)
+	args = append(args, calldata...)
+	return args
+}
+
+func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
+	calls[0] += 1 // add another call
+	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
+	return calls
+}
+
 func assertStorageAt(
 	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
 ) {
@@ -685,6 +810,10 @@ func assertStorageAt(
 
 func rustFile(name string) string {
 	return fmt.Sprintf("../arbitrator/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
+}
+
+func watFile(name string) string {
+	return fmt.Sprintf("../arbitrator/stylus/tests/%v.wat", name)
 }
 
 func validateBlocks(

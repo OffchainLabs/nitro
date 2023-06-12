@@ -15,6 +15,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
@@ -152,6 +153,9 @@ func newApiClosures(
 		return uint32(len(ret)), cost, err
 	}
 	contractCall := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
+		if !evm.ProcessingHook.MsgIsGasEstimation() {
+			colors.PrintMint("Doing call to ", contract.Hex(), value.Sign(), len(input))
+		}
 		return doCall(contract, vm.CALL, input, gas, value)
 	}
 	delegateCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
@@ -271,10 +275,15 @@ func newApiClosures(
 	}
 	addPages := func(pages uint16) (uint16, uint16) {
 		open, ever := db.GetStylusPages()
-		currOpen, currEver := *open, *ever
-		*open = arbmath.SaturatingUAdd(*open, *ever)
-		*ever = arbmath.MaxInt(*open, *ever)
-		return currOpen, currEver
+		defer func() {
+			if !evm.ProcessingHook.MsgIsGasEstimation() {
+				colors.PrintGrey(
+					"Depth ", evm.Depth(), ": add ", pages, " => ",
+					*open, " open ", *ever, " ever ",
+				)
+			}
+		}()
+		return db.AddStylusPages(pages)
 	}
 
 	return &goClosures{

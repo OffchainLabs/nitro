@@ -113,7 +113,6 @@ fn uniform_cost_config() -> StylusConfig {
     stylus_config.pricing.hostio_ink = 100;
     stylus_config.pricing.memory_model.free_pages = 2;
     stylus_config.pricing.memory_model.page_gas = 1000;
-    stylus_config.pricing.memory_model.page_ramp = 620674314;
     stylus_config
 }
 

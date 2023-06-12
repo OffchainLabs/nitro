@@ -189,8 +189,13 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint32) error {
 }
 
 // Sets the ramp that drives exponential wasm memory costs
-func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint32) error {
+func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint64) error {
 	return c.State.Programs().SetPageRamp(ramp)
+}
+
+// Sets the initial number of pages a wasm may allocate
+func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
+	return c.State.Programs().SetPageLimit(limit)
 }
 
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
