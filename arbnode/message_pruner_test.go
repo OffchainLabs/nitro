@@ -42,6 +42,20 @@ func TestMessagePrunerTraverseEachMessageOnlyOnce(t *testing.T) {
 	checkDbKeys(t, endBatchCount, inboxTrackerDb, sequencerBatchMetaPrefix)
 }
 
+func TestMessagePrunerPruneTillLessThenEqualTo(t *testing.T) {
+	endBatchCount := uint64(10)
+	endBatchMetadata := BatchMetadata{}
+	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, 2*endBatchCount, endBatchMetadata)
+	err := inboxTrackerDb.Delete(dbKey(sequencerBatchMetaPrefix, 9))
+	Require(t, err)
+	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	hasKey, err := inboxTrackerDb.Has(dbKey(sequencerBatchMetaPrefix, 10))
+	Require(t, err)
+	if !hasKey {
+		Fail(t, "Key", 10, "with prefix", string(sequencerBatchMetaPrefix), "should be present after pruning")
+	}
+}
+
 func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	endBatchCount := uint64(2)
 	endBatchMetadata := BatchMetadata{
