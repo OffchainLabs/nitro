@@ -563,7 +563,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	if dbBatchCount > batchPosition.NextSeqNum {
-		return false, fmt.Errorf("attempting to post batch %v, but the local inbox tracker database already has %v batches", batchPosition.NextSeqNum, dbBatchCount)
+		currentNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.From(), nil)
+		if err != nil {
+			return false, err
+		}
+		if nonce >= currentNonce {
+			return false, fmt.Errorf(
+				"attempting to post batch %v with nonce %v, but the local inbox tracker database already has %v batches and the current chain nonce is %v",
+				batchPosition.NextSeqNum, nonce, dbBatchCount, currentNonce,
+			)
+		}
 	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
