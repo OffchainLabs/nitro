@@ -558,6 +558,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 
+	dbBatchCount, err := b.inbox.GetBatchCount()
+	if err != nil {
+		return false, err
+	}
+	if dbBatchCount > batchPosition.NextSeqNum {
+		return false, fmt.Errorf("attempting to post batch %v, but the local inbox tracker database already has %v batches", batchPosition.NextSeqNum, dbBatchCount)
+	}
+
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
 			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.backlog),
