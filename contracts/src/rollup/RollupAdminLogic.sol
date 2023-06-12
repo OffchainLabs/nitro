@@ -233,12 +233,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         // To update the wasm module root in the case of a bug:
         // 0. pause the contract
         // 1. update the wasm module root in the contract
-        // 2. update the config hash of the assertion after which you wish to use the new wasm module root
+        // 2. update the config hash of the assertion after which you wish to use the new wasm module root (functionality not written yet)
         // 3. force refund the stake of the current leaf assertion(s)
-        // 4. create a new assertion useing the assertion with the updated config has as a prev
+        // 4. create a new assertion using the assertion with the updated config has as a prev
         // 5. force confirm it - this is necessary to set latestConfirmed on the correct line
         // 6. unpause the contract
-        
+
         // Normally, a new assertion is created using its prev's confirmPeriodBlocks
         // in the case of a force create, we use the rollup's current confirmPeriodBlocks
         createNewAssertion(assertion, prevAssertionId, expectedAssertionHash);

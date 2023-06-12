@@ -33,11 +33,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // ------------------------------
     // STAKING
     // ------------------------------
-    
+
     // Overall
     // ------------------------------
     // In order to create a new assertion the validator creating it must be staked. Only one stake
-    // is needed per consistent lineage of assertions, so additional stakes must be placed when 
+    // is needed per consistent lineage of assertions, so additional stakes must be placed when
     // lineages diverge.
     // As an example, for the following chain only one stake would be locked up in the C assertion
     // A -- B -- C

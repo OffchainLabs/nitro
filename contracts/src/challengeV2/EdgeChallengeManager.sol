@@ -369,11 +369,12 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
         IERC20 st = stakeToken;
         uint256 sa = stakeAmount;
-        // when a zero layer edge is created it must include a stake. Each time a zero layer
+        // when a zero layer edge is created it must include stake amount. Each time a zero layer
         // edge is created it forces the honest participants to do some work, so we want to disincentive
         // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
         // participant. This can be arranged out of bound by the excess stake receiver.
-        // the assertion chain can disable challenge staking by setting a zero stake token or amount
+        // The contract initializer can disable staking by setting zeros for token or amount, to change
+        // this a new challenge manager needs to be deployed and its address updated in the assertion chain
         if (address(st) != address(0) && sa != 0) {
             // since only one edge in a group of rivals can ever be confirmed, we know that we
             // will never need to refund more than one edge. Therefore we can immediately send

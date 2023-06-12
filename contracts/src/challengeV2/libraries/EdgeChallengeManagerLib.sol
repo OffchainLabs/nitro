@@ -117,7 +117,7 @@ library EdgeChallengeManagerLib {
         return store.edges[edgeId];
     }
 
-    /// @notice Gets an edge from the store with checking if it exists
+    /// @notice Gets an edge from the store without checking if it exists
     /// @dev    Useful where you already know the edge exists in the store - avoid a storage lookup
     /// @param store    The edge store to fetch an id from
     /// @param edgeId   The id of the edge to fetch
@@ -236,7 +236,14 @@ library EdgeChallengeManagerLib {
 
             return (ProofData(startStateHash, endStateHash, inclusionProof), originId);
         } else {
-            ChallengeEdge storage claimEdge = get(store, args.claimId);
+            // Claim must be length one. If it is unrivaled then its unrivaled time is ticking up, so there's
+            // no need to create claims against it
+            if (!hasLengthOneRival(store, args.claimId)) {
+                revert ClaimEdgeNotLengthOneRival(args.claimId);
+            }
+
+            // hasLengthOneRival checks existance, so we can use getNoCheck
+            ChallengeEdge storage claimEdge = getNoCheck(store, args.claimId);
 
             // origin id is the mutual id of the claim
             // all rivals and their children share the same origin id - it is a link to the information
@@ -247,12 +254,6 @@ library EdgeChallengeManagerLib {
             // opening a challenge that references it
             if (claimEdge.status != EdgeStatus.Pending) {
                 revert ClaimEdgeNotPending();
-            }
-
-            // Claim must be length one. If it is unrivaled then its unrivaled time is ticking up, so there's
-            // no need to create claims against it
-            if (!hasLengthOneRival(store, args.claimId)) {
-                revert ClaimEdgeNotLengthOneRival(args.claimId);
             }
 
             // the edge must be a level down from the claim
@@ -303,7 +304,7 @@ library EdgeChallengeManagerLib {
         // if x is a power of 2, then this will be 0111111
         uint256 y = x - 1;
 
-        // if x is a power of 2 then y will share no bits with y
+        // if x is a power of 2 then y will share no bits with x
         return ((x & y) == 0);
     }
 
@@ -581,9 +582,6 @@ library EdgeChallengeManagerLib {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
-        if (store.edges[edgeId].status != EdgeStatus.Pending) {
-            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
-        }
 
         bytes32 lowerChildId = store.edges[edgeId].lowerChildId;
         // Sanity check: it bisect should already enforce that this child exists
@@ -603,6 +601,7 @@ library EdgeChallengeManagerLib {
             revert EdgeNotConfirmed(upperChildId, store.edges[upperChildId].status);
         }
 
+        // we also check the edge is pending in setConfirmed()
         store.edges[edgeId].setConfirmed();
     }
 
@@ -648,14 +647,10 @@ library EdgeChallengeManagerLib {
     /// @param edgeId           The id of the edge to confirm
     /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
     function confirmEdgeByClaim(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) internal {
-        // this edge is pending
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
 
-        if (store.edges[edgeId].status != EdgeStatus.Pending) {
-            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
-        }
         // the claiming edge is confirmed
         if (!store.edges[claimingEdgeId].exists()) {
             revert EdgeNotExists(edgeId);
@@ -669,6 +664,7 @@ library EdgeChallengeManagerLib {
             revert EdgeClaimMismatch(edgeId, store.edges[claimingEdgeId].claimId);
         }
 
+        // we also check the edge is pending in setConfirmed()
         store.edges[edgeId].setConfirmed();
     }
 
@@ -694,9 +690,6 @@ library EdgeChallengeManagerLib {
     ) internal returns (uint256) {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
-        }
-        if (store.edges[edgeId].status != EdgeStatus.Pending) {
-            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
         }
 
         bytes32 currentEdgeId = edgeId;
@@ -735,6 +728,7 @@ library EdgeChallengeManagerLib {
             revert InsufficientConfirmationBlocks(totalTimeUnrivaled, confirmationThresholdBlock);
         }
 
+        // we also check the edge is pending in setConfirmed()
         store.edges[edgeId].setConfirmed();
 
         return totalTimeUnrivaled;
@@ -759,9 +753,6 @@ library EdgeChallengeManagerLib {
     ) internal {
         // get checks existence
         uint256 machineStep = get(store, edgeId).startHeight;
-        if (store.edges[edgeId].status != EdgeStatus.Pending) {
-            revert EdgeNotPending(edgeId, store.edges[edgeId].status);
-        }
 
         // edge must be length one and be of type SmallStep
         if (store.edges[edgeId].eType != EdgeType.SmallStep) {
@@ -785,6 +776,7 @@ library EdgeChallengeManagerLib {
             store.edges[edgeId].endHistoryRoot, afterHash, machineStep + 1, afterHistoryInclusionProof
         );
 
+        // we also check the edge is pending in setConfirmed()
         store.edges[edgeId].setConfirmed();
     }
 }

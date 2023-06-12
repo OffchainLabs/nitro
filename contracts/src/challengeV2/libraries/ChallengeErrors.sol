@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-// CHRIS: TODO: the data entities in here should be moved
 import "./Enums.sol";
 
 /// @dev The edge is not currently stored
