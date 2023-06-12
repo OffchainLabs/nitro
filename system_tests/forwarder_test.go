@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 var transferAmount = big.NewInt(1e12) // amount of ether to use for transactions in tests
@@ -55,18 +56,17 @@ func TestStaticForwarder(t *testing.T) {
 
 	l2info.GenerateAccount("User2")
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, transferAmount, nil)
-	if err := clientB.SendTransaction(ctx, tx); err != nil {
-		t.Fatalf("Error sending transaction: %v", err)
-	}
-	if _, err := EnsureTxSucceeded(ctx, clientA, tx); err != nil {
-		t.Fatalf("Error ensuring transaction succeeded: %v", err)
-	}
+	err := clientB.SendTransaction(ctx, tx)
+	testhelpers.RequireImpl(t, err)
+
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
+	testhelpers.RequireImpl(t, err)
+
 	l2balance, err := clientA.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatalf("Error checking a balance: %v", err)
-	}
+	testhelpers.RequireImpl(t, err)
+
 	if l2balance.Cmp(transferAmount) != 0 {
-		t.Errorf("Got balance: %v, want: %v", l2balance, transferAmount)
+		testhelpers.FailImpl(t, "Unexpected balance:", l2balance)
 	}
 }
 
@@ -74,22 +74,16 @@ func initRedis(ctx context.Context, t *testing.T, nodeNames []string) (*miniredi
 	t.Helper()
 
 	redisServer, err := miniredis.Run()
-	if err != nil {
-		t.Fatalf("Error running miniredis: %v", err)
-	}
+	testhelpers.RequireImpl(t, err)
 
 	redisUrl := fmt.Sprintf("redis://%s/0", redisServer.Addr())
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
-	if err != nil {
-		t.Fatalf("Error getting redis client from url: %v", err)
-	}
+	testhelpers.RequireImpl(t, err)
 	defer redisClient.Close()
 
 	priorities := strings.Join(nodeNames, ",")
 
-	if err := redisClient.Set(ctx, redisutil.PRIORITIES_KEY, priorities, time.Duration(0)).Err(); err != nil {
-		t.Fatalf("Error setting priorities in redis: %v", err)
-	}
+	testhelpers.RequireImpl(t, redisClient.Set(ctx, redisutil.PRIORITIES_KEY, priorities, time.Duration(0)).Err())
 	return redisServer, redisUrl
 }
 
@@ -267,12 +261,10 @@ func TestRedisForwarder(t *testing.T) {
 		userA := user("A", i)
 		l2info.GenerateAccount(userA)
 		tx := l2info.PrepareTx("Owner", userA, l2info.TransferGas, big.NewInt(1e12+int64(l2info.TransferGas)*l2info.GasPrice.Int64()), nil)
-		if err := fallbackClient.SendTransaction(ctx, tx); err != nil {
-			t.Errorf("Client: %v error sending transaction: %v", i, err)
-		}
-		if _, err := EnsureTxSucceeded(ctx, fallbackClient, tx); err != nil {
-			t.Errorf("Client: %v, error ensuring transaction succeeded: %v", i, err)
-		}
+		err := fallbackClient.SendTransaction(ctx, tx)
+		testhelpers.RequireImpl(t, err)
+		_, err = EnsureTxSucceeded(ctx, fallbackClient, tx)
+		testhelpers.RequireImpl(t, err)
 	}
 
 	for i := range seqClients {
@@ -288,16 +280,14 @@ func TestRedisForwarder(t *testing.T) {
 		if err := tryWithTimeout(ctx, sendFunc, execution.DefaultTestForwarderConfig.UpdateInterval*10); err != nil {
 			t.Fatalf("Client: %v, error sending transaction: %v", i, err)
 		}
-		if _, err := EnsureTxSucceeded(ctx, seqClients[i], tx); err != nil {
-			t.Fatalf("Couldn't send transaction through forwarding client: %d, error: %v", i, err)
-		}
+		_, err := EnsureTxSucceeded(ctx, seqClients[i], tx)
+		testhelpers.RequireImpl(t, err)
 
 		l2balance, err := seqClients[i].BalanceAt(ctx, l2info.GetAddress(userB), nil)
-		if err != nil {
-			t.Fatalf("Error checking balance of a client: %v, error: %v", i, err)
-		}
+		testhelpers.RequireImpl(t, err)
+
 		if l2balance.Cmp(transferAmount) != 0 {
-			t.Errorf("Got balance: %v, want: %v", l2balance, transferAmount)
+			testhelpers.FailImpl(t, "Unexpected balance:", l2balance)
 		}
 		if i < len(seqNodes) {
 			seqNodes[i].StopAndWait()
@@ -330,17 +320,15 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	l2info.GenerateAccount(user)
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, transferAmount, nil)
 	sendFunc := func() error { return forwardingClient.SendTransaction(ctx, tx) }
-	if err := tryWithTimeout(ctx, sendFunc, execution.DefaultTestForwarderConfig.UpdateInterval*10); err != nil {
-		t.Fatalf("Error sending transaction: %v", err)
-	}
+	err := tryWithTimeout(ctx, sendFunc, execution.DefaultTestForwarderConfig.UpdateInterval*10)
+	testhelpers.RequireImpl(t, err)
 
-	if _, err := EnsureTxSucceeded(ctx, fallbackClient, tx); err != nil {
-		t.Fatalf("Transaction didn't succeed: %v", err)
-	}
+	_, err = EnsureTxSucceeded(ctx, fallbackClient, tx)
+	testhelpers.RequireImpl(t, err)
+
 	l2balance, err := fallbackClient.BalanceAt(ctx, l2info.GetAddress(user), nil)
-	if err != nil {
-		t.Fatalf("Error checking balance for %s, error: %v", user, err)
-	}
+	testhelpers.RequireImpl(t, err)
+
 	if l2balance.Cmp(transferAmount) != 0 {
 		t.Errorf("Got balance: %v, want: %v", l2balance, transferAmount)
 	}
