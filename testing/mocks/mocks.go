@@ -359,14 +359,6 @@ func (m *MockSpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.E
 	args := m.Called(ctx)
 	return args.Get(0).(option.Option[protocol.EdgeId]), args.Error(1)
 }
-func (m *MockSpecEdge) LowerChildSnapshot() option.Option[protocol.EdgeId] {
-	args := m.Called()
-	return args.Get(0).(option.Option[protocol.EdgeId])
-}
-func (m *MockSpecEdge) UpperChildSnapshot() option.Option[protocol.EdgeId] {
-	args := m.Called()
-	return args.Get(0).(option.Option[protocol.EdgeId])
-}
 func (m *MockSpecEdge) Bisect(
 	ctx context.Context,
 	prefixHistoryRoot common.Hash,

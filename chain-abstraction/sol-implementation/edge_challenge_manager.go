@@ -94,11 +94,11 @@ func (e *SpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeI
 
 // The mutual id of the edge.
 func (e *SpecEdge) MutualId() protocol.MutualId {
-	return protocol.MutualId(e.mutualId)
+	return e.mutualId
 }
 
 func (e *SpecEdge) OriginId() protocol.OriginId {
-	return protocol.OriginId(e.inner.OriginId)
+	return e.inner.OriginId
 }
 
 // The claim id of the edge, if any.
@@ -107,24 +107,6 @@ func (e *SpecEdge) ClaimId() option.Option[protocol.ClaimId] {
 		return option.None[protocol.ClaimId]()
 	}
 	return option.Some(protocol.ClaimId(e.inner.ClaimId))
-}
-
-// The lower child of the edge at the time the edge was read on-chain. Note
-// this may change and if a newer snapshot is required, the edge should be re-fetched.
-func (e *SpecEdge) LowerChildSnapshot() option.Option[protocol.EdgeId] {
-	if e.inner.LowerChildId == ([32]byte{}) {
-		return option.None[protocol.EdgeId]()
-	}
-	return option.Some(protocol.EdgeId(e.inner.LowerChildId))
-}
-
-// The upper child of the edge at the time the edge was read on-chain. Note
-// this may change and if a newer snapshot is required, the edge should be re-fetched.
-func (e *SpecEdge) UpperChildSnapshot() option.Option[protocol.EdgeId] {
-	if e.inner.UpperChildId == ([32]byte{}) {
-		return option.None[protocol.EdgeId]()
-	}
-	return option.Some(protocol.EdgeId(e.inner.UpperChildId))
 }
 
 func (e *SpecEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
