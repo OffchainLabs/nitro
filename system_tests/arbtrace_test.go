@@ -148,7 +148,7 @@ func TestArbTraceForwarding(t *testing.T) {
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.RPC.ClassicRedirect = ipcPath
 	nodeConfig.RPC.ClassicRedirectTimeout = time.Second
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, nil)
+	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, nil, nil)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 

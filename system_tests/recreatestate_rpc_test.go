@@ -43,7 +43,7 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		SnapshotLimit: 256,
 		SnapshotWait:  true,
 	}
-	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig)
+	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig, nil)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
