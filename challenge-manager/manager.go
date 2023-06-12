@@ -5,7 +5,6 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
@@ -150,121 +149,6 @@ func (v *Manager) Start(ctx context.Context) {
 	if err := v.syncEdges(ctx); err != nil {
 		log.WithError(err).Fatal("Could not sync with onchain edges")
 	}
-
-	// Post assertions periodically to the chain.
-	go v.postAssertionsPeriodically(ctx)
-}
-
-func (v *Manager) postAssertionsPeriodically(ctx context.Context) {
-	if _, err := v.postLatestAssertion(ctx); err != nil {
-		log.WithError(err).Error("Could not submit latest assertion to L1")
-	}
-	ticker := time.NewTicker(v.postAssertionsInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if _, err := v.postLatestAssertion(ctx); err != nil {
-				log.WithError(err).Error("Could not submit latest assertion to L1")
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// Posts the latest claim of the Node's L2 state as an assertion to the L1 protocol smart contracts.
-// TODO: Include leaf creation validity conditions which are more complex than this.
-// For example, a validator must include messages from the inbox that were not included
-// by the last validator in the last leaf's creation.
-func (v *Manager) postLatestAssertion(ctx context.Context) (protocol.Assertion, error) {
-	// Ensure that we only build on a valid parent from this validator's perspective.
-	// the validator should also have ready access to historical commitments to make sure it can select
-	// the valid parent based on its commitment state root.
-	parentAssertionSeq, err := v.findLatestValidAssertion(ctx)
-	if err != nil {
-		return nil, err
-	}
-	parentAssertionCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, parentAssertionSeq)
-	if err != nil {
-		return nil, err
-	}
-	// TODO: this should really only go up to the prevInboxMaxCount batch state
-	newState, err := v.stateManager.LatestExecutionState(ctx)
-	if err != nil {
-		return nil, err
-	}
-	assertion, err := v.chain.CreateAssertion(
-		ctx,
-		parentAssertionCreationInfo,
-		newState,
-	)
-	switch {
-	case errors.Is(err, solimpl.ErrAlreadyExists):
-		return nil, errors.Wrap(err, "assertion already exists, was unable to post")
-	case err != nil:
-		return nil, err
-	}
-	logFields := logrus.Fields{
-		"name": v.name,
-	}
-	log.WithFields(logFields).Info("Submitted latest L2 state claim as an assertion to L1")
-
-	return assertion, nil
-}
-
-// Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
-// down from the number of assertions in the protocol down until it finds
-// an assertion that we have a state commitment for.
-func (v *Manager) findLatestValidAssertion(ctx context.Context) (protocol.AssertionId, error) {
-	latestConfirmed, err := v.chain.LatestConfirmed(ctx)
-	if err != nil {
-		return protocol.AssertionId{}, err
-	}
-	latestCreated, err := v.chain.LatestCreatedAssertion(ctx)
-	if err != nil {
-		return protocol.AssertionId{}, err
-	}
-	if latestConfirmed == latestCreated {
-		return latestConfirmed.Id(), nil
-	}
-	curr := latestCreated
-	for curr.Id() != latestConfirmed.Id() {
-		info, err := v.chain.ReadAssertionCreationInfo(ctx, curr.Id())
-		if err != nil {
-			return protocol.AssertionId{}, err
-		}
-		_, hasState := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
-		if hasState {
-			return curr.Id(), nil
-		}
-		prev, err := v.chain.GetAssertion(ctx, curr.PrevId())
-		if err != nil {
-			return protocol.AssertionId{}, err
-		}
-		curr = prev
-	}
-	return latestConfirmed.Id(), nil
-}
-
-// Processes new leaf creation events from the protocol that were not initiated by self.
-func (v *Manager) onLeafCreated(
-	ctx context.Context,
-	assertion protocol.Assertion,
-) error {
-	log.WithFields(logrus.Fields{
-		"name": v.name,
-	}).Info("New assertion appended to protocol")
-	isFirstChild, err := assertion.IsFirstChild()
-	if err != nil {
-		return err
-	}
-	// If this leaf is the first child, we have nothing else to do.
-	if isFirstChild {
-		log.Info("No fork detected in assertion tree upon leaf creation")
-		return nil
-	}
-	return v.challengeAssertion(ctx, assertion.Id())
 }
 
 // waitForSync waits for a notificataion that initial sync of onchain edges is complete.

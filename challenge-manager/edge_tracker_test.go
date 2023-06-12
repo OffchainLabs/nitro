@@ -8,6 +8,7 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/logging"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/time"
@@ -74,7 +75,7 @@ func Test_act(t *testing.T) {
 		err = tkr.act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, int(edgeAddingSubchallengeLeaf), int(tkr.fsm.Current().State))
-		AssertLogsContain(t, hook, "Reached one-step-fork at start height 0")
+		logging.AssertLogsContain(t, hook, "Reached one-step-fork at start height 0")
 	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
 		history := commitments.History{
@@ -133,7 +134,7 @@ func Test_act(t *testing.T) {
 		require.Equal(t, int(edgeBisecting), int(tkr.fsm.Current().State))
 		err = tkr.act(ctx)
 		require.NoError(t, err)
-		AssertLogsContain(t, hook, "Successfully bisected")
+		logging.AssertLogsContain(t, hook, "Successfully bisected")
 	})
 }
 

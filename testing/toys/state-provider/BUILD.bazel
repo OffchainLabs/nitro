@@ -1,12 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "toys",
+    name = "state-provider",
     srcs = [
         "execution_engine.go",
         "layer2_state_provider.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/toys",
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
@@ -20,12 +20,12 @@ go_library(
 )
 
 go_test(
-    name = "toys_test",
+    name = "state-provider_test",
     srcs = [
         "execution_engine_test.go",
         "layer2_state_provider_test.go",
     ],
-    embed = [":toys"],
+    embed = [":state-provider"],
     deps = [
         "//chain-abstraction:protocol",
         "//layer2-state-provider",
