@@ -12,7 +12,7 @@ import (
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,
 // this function will return 0.
 func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint64) (uint64, error) {
-	if blockNum < e.CreatedAtBlock() {
+	if blockNum <= e.CreatedAtBlock() {
 		return 0, nil
 	}
 	// If no rival at a block num, then the local timer is defined
