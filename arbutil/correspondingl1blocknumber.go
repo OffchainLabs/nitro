@@ -17,7 +17,7 @@ func CorrespondingL1BlockNumber(ctx context.Context, client L1Interface, blockNu
 		return 0, fmt.Errorf("error getting L1 block number %d header : %w", blockNumber, err)
 	}
 	headerInfo := types.DeserializeHeaderExtraInformation(header)
-	if headerInfo.L1BlockNumber != 0 {
+	if headerInfo.ArbOSFormatVersion > 0 {
 		return headerInfo.L1BlockNumber, nil
 	}
 	return blockNumber, nil
