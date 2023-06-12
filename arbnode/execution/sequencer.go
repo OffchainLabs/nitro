@@ -935,6 +935,8 @@ func (s *Sequencer) updateLatestL1Block(header *types.Header) {
 		arbosInfo := types.DeserializeHeaderExtraInformation(header)
 		if arbosInfo.ArbOSFormatVersion > 0 {
 			s.l1BlockNumber = arbosInfo.L1BlockNumber
+		} else {
+			s.l1BlockNumber = header.Number.Uint64()
 		}
 	}
 }
