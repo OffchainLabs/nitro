@@ -160,10 +160,6 @@ func (p *DataPoster[Meta]) From() common.Address {
 	return p.auth.From
 }
 
-func (p *DataPoster[Meta]) IsQueuePersistent() bool {
-	return p.queue.IsPersistent()
-}
-
 func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
 	config := p.config()
 	var emptyMeta Meta
