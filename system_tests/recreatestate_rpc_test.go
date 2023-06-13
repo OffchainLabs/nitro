@@ -47,7 +47,7 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		SnapshotLimit: 256,
 		SnapshotWait:  true,
 	}
-	l2info, node, l2client, _, l1info, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig, nil)
+	l2info, node, l2client, _, l1info, _, _, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig, nil)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
@@ -303,7 +303,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	AddDefaultValNode(t, ctx1, nodeConfig, true)
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, nil, t.TempDir(), params.ArbitrumDevTestChainConfig(), cacheConfig)
 
-	node, err := arbnode.CreateNode(ctx1, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
+	node, err := arbnode.CreateNode(ctx1, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 	err = node.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
@@ -333,7 +333,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 		_, err := EnsureTxSucceeded(ctx, client, tx)
 		testhelpers.RequireImpl(t, err)
 	}
-	bc := node.Backend.ArbInterface().BlockChain()
+	bc := node.Execution.Backend.ArbInterface().BlockChain()
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 	lastBlock, err := client.BlockNumber(ctx)
 	Require(t, err)
@@ -349,12 +349,12 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t, l2info, dataDir, params.ArbitrumDevTestChainConfig(), cacheConfig)
-	node, err = arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, node.DeployInfo, nil, nil, feedErrChan)
+	node, err = arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, node.DeployInfo, nil, nil, nil, feedErrChan)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 	client = ClientForStack(t, stack)
 	defer node.StopAndWait()
-	bc = node.Backend.ArbInterface().BlockChain()
+	bc = node.Execution.Backend.ArbInterface().BlockChain()
 	gas := skipGas
 	blocks := skipBlocks
 	for i := genesis + 1; i <= genesis+uint64(txCount); i++ {
