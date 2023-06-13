@@ -62,7 +62,7 @@ func BytesToUint32(value []byte) uint32 {
 	return binary.BigEndian.Uint32(value)
 }
 
-// BytesToUint32 creates a uint32 from its big-endian representation
+// BytesToUint16 creates a uint16 from its big-endian representation
 func BytesToUint16(value []byte) uint16 {
 	return binary.BigEndian.Uint16(value)
 }

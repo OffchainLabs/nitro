@@ -595,6 +595,7 @@ impl<'a> WasmBinary<'a> {
         })
     }
 
+    /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
         page_limit: u16,

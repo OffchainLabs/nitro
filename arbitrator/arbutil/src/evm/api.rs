@@ -134,8 +134,8 @@ pub trait EvmApi: Send + 'static {
     /// Analogous to `vm.BLOCKHASH`.
     fn evm_blockhash(&mut self, number: Bytes32) -> Bytes32;
 
-    /// Synchronizes the memory model between Rust and Go.
-    /// Returns the number of pages open and ever open before allocating `pages` more.
+    /// Determines the cost in gas of allocating additional wasm pages.
+    /// Note: has the side effect of updating Geth's memory usage tracker.
     /// Not analogous to any EVM opcode.
     fn add_pages(&mut self, pages: u16) -> u64;
 }
