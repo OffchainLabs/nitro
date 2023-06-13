@@ -320,6 +320,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
      */
     function withdrawStakerFunds() external override whenNotPaused returns (uint256) {
         uint256 amount = withdrawFunds(msg.sender);
+        require(amount > 0, "NO_FUNDS_TO_WITHDRAW");
         // This is safe because it occurs after all checks and effects
         require(IERC20Upgradeable(stakeToken).transfer(msg.sender, amount), "TRANSFER_FAILED");
         return amount;

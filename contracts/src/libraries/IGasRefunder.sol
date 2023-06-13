@@ -27,6 +27,9 @@ abstract contract GasRefundEnabled {
             }
             uint256 calldataWords = (calldataSize + 31) / 32;
             // account for the CALLDATACOPY cost of the proxy contract, including the memory expansion cost
+            // memory_expansion_cost = (memory_size_word ** 2) / 512 + (3 * memory_size_word)
+            // CALLDATACOPY_cost = 3 * memory_size_word + memory_expansion_cost
+            // CALLDATACOPY_cost = 6 * memory_size_word + (memory_size_word ** 2) / 512
             startGasLeft += calldataWords * 6 + (calldataWords**2) / 512;
             // if triggered in a contract call, the spender may be overrefunded by appending dummy data to the call
             // so we check if it is a top level call, which would mean the sender paid calldata as part of tx.input
