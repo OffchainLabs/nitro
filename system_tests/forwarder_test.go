@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 var transferAmount = big.NewInt(1e12) // amount of ether to use for transactions in tests
@@ -66,7 +65,7 @@ func TestStaticForwarder(t *testing.T) {
 	Require(t, err)
 
 	if l2balance.Cmp(transferAmount) != 0 {
-		testhelpers.FailImpl(t, "Unexpected balance:", l2balance)
+		Fatal(t, "Unexpected balance:", l2balance)
 	}
 }
 
@@ -287,7 +286,7 @@ func TestRedisForwarder(t *testing.T) {
 		Require(t, err)
 
 		if l2balance.Cmp(transferAmount) != 0 {
-			testhelpers.FailImpl(t, "Unexpected balance:", l2balance)
+			Fatal(t, "Unexpected balance:", l2balance)
 		}
 		if i < len(seqNodes) {
 			seqNodes[i].StopAndWait()
