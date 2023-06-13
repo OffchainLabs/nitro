@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -926,12 +927,14 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	return madeBlock
 }
 
-func (s *Sequencer) updateLatestL1Block(header *types.Header) {
+func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
 	s.L1BlockAndTimeMutex.Lock()
 	defer s.L1BlockAndTimeMutex.Unlock()
-	if s.l1BlockNumber < header.Number.Uint64() {
-		s.l1BlockNumber = header.Number.Uint64()
+
+	l1BlockNumber := arbutil.ParentHeaderToL1BlockNumber(header)
+	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber) {
 		s.l1Timestamp = header.Time
+		s.l1BlockNumber = l1BlockNumber
 	}
 }
 
@@ -944,7 +947,7 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.updateLatestL1Block(header)
+	s.updateLatestParentChainBlock(header)
 	return nil
 }
 
@@ -966,7 +969,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 					if !ok {
 						return
 					}
-					s.updateLatestL1Block(header)
+					s.updateLatestParentChainBlock(header)
 				case <-ctx.Done():
 					return
 				}
