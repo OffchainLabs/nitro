@@ -64,7 +64,7 @@ type Assertion struct {
 
 type NodeInfo struct {
 	NodeNum            uint64
-	BlockProposed      uint64
+	L1BlockProposed    uint64
 	Assertion          *Assertion
 	InboxMaxCount      *big.Int
 	AfterInboxBatchAcc common.Hash

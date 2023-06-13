@@ -790,7 +790,7 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 			node1Info.GlobalStates(),
 			node1Info.Assertion.NumBlocks,
 			node2Info.Assertion.ExecutionHash(),
-			[2]*big.Int{new(big.Int).SetUint64(node1Info.BlockProposed), new(big.Int).SetUint64(node2Info.BlockProposed)},
+			[2]*big.Int{new(big.Int).SetUint64(node1Info.L1BlockProposed), new(big.Int).SetUint64(node2Info.L1BlockProposed)},
 			[2][32]byte{node1Info.WasmModuleRoot, node2Info.WasmModuleRoot},
 		)
 		if err != nil {
