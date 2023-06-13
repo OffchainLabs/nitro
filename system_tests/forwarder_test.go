@@ -34,7 +34,7 @@ func TestStaticForwarder(t *testing.T) {
 	ipcPath := filepath.Join(t.TempDir(), "test.ipc")
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
-	stackConfig := testStackConfig(t)
+	stackConfig := stackConfigForTest(t)
 	ipcConfig.Apply(stackConfig)
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.BatchPoster.Enable = false
@@ -96,7 +96,7 @@ func fallbackSequencer(
 	ctx context.Context, t *testing.T, opts *fallbackSequencerOpts,
 ) (l2info info, currentNode *arbnode.Node, l2client *ethclient.Client,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
-	stackConfig := testStackConfig(t)
+	stackConfig := stackConfigForTest(t)
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = opts.ipcPath
 	ipcConfig.Apply(stackConfig)
@@ -117,7 +117,7 @@ func createForwardingNode(
 	redisUrl string,
 	fallbackPath string,
 ) (*ethclient.Client, *arbnode.Node) {
-	stackConfig := testStackConfig(t)
+	stackConfig := stackConfigForTest(t)
 	if ipcPath != "" {
 		ipcConfig := genericconf.IPCConfigDefault
 		ipcConfig.Path = ipcPath
@@ -142,7 +142,7 @@ func createSequencer(
 	ipcPath string,
 	redisUrl string,
 ) (*ethclient.Client, *arbnode.Node) {
-	stackConfig := testStackConfig(t)
+	stackConfig := stackConfigForTest(t)
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
 	ipcConfig.Apply(stackConfig)
@@ -161,7 +161,7 @@ func tmpPath(t *testing.T, filename string) string {
 }
 
 // testNodes creates specified number of paths for ipc from temporary directory of the test.
-// e.g. /tmp/TestRedisForwarder689063006/003/0.ipc, /tmp/TestRedisForwarder689063006/003/1.ipc and so on.
+// e.g. /tmp/TestRedisForwarder689063006/003/0.ipc, /tmp/TestRedisForwarder689063006/007/1.ipc and so on.
 func testNodes(t *testing.T, n int) []string {
 	var paths []string
 	for i := 0; i < n; i++ {
