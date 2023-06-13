@@ -648,7 +648,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, fmt.Errorf("error getting max time variation: %w", err)
 		}
 
-		l1BoundMaxBlockNumber = arbmath.BigToUintSaturating(arbmath.BigAdd(l1Bound.Number, maxTimeVariation.FutureSeconds))
+		l1BoundBlockNumber := arbutil.ParentHeaderToL1BlockNumber(l1Bound)
+		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
 		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
 
 		if config.L1BlockBoundBypass > 0 {
