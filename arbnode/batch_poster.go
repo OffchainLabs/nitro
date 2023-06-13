@@ -7,13 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
@@ -578,6 +578,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
+	}
+
+	dbBatchCount, err := b.inbox.GetBatchCount()
+	if err != nil {
+		return false, err
+	}
+	if dbBatchCount > batchPosition.NextSeqNum {
+		return false, fmt.Errorf("attempting to post batch %v, but the local inbox tracker database already has %v batches", batchPosition.NextSeqNum, dbBatchCount)
 	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {

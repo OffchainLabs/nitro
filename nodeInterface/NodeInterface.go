@@ -39,9 +39,9 @@ type NodeInterface struct {
 	backend       core.NodeInterfaceBackendAPI
 	context       context.Context
 	header        *types.Header
-	sourceMessage types.Message
+	sourceMessage *core.Message
 	returnMessage struct {
-		message *types.Message
+		message *core.Message
 		changed *bool
 	}
 }
@@ -143,8 +143,8 @@ func (n NodeInterface) EstimateRetryableTicket(
 		From:             util.RemapL1Address(sender),
 		L1BaseFee:        l1BaseFee,
 		DepositValue:     deposit,
-		GasFeeCap:        n.sourceMessage.GasPrice(),
-		Gas:              n.sourceMessage.Gas(),
+		GasFeeCap:        n.sourceMessage.GasPrice,
+		Gas:              n.sourceMessage.GasLimit,
 		RetryTo:          pRetryTo,
 		RetryValue:       l2CallValue,
 		Beneficiary:      callValueRefundAddress,
@@ -154,13 +154,13 @@ func (n NodeInterface) EstimateRetryableTicket(
 	}
 
 	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-	msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
+	msg, err := core.TransactionToMessage(types.NewTx(submitTx), types.NewArbitrumSigner(nil), nil)
 	if err != nil {
 		return err
 	}
 
-	msg.TxRunMode = types.MessageGasEstimationMode
-	*n.returnMessage.message = msg
+	msg.TxRunMode = core.MessageGasEstimationMode
+	*n.returnMessage.message = *msg
 	*n.returnMessage.changed = true
 	return nil
 }
@@ -170,7 +170,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	hash0 := bytes32{}
 
 	currentBlock := n.backend.CurrentBlock()
-	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock.Header())
+	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock)
 	if leaf > currentBlockInfo.SendCount {
 		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
@@ -297,7 +297,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		}
 	}
 
-	search(0, currentBlock.NumberU64(), query)
+	search(0, currentBlock.Number.Uint64(), query)
 
 	if searchErr != nil {
 		return hash0, hash0, nil, searchErr
@@ -425,11 +425,11 @@ func (n NodeInterface) messageArgs(
 	evm mech, value huge, to addr, contractCreation bool, data []byte,
 ) arbitrum.TransactionArgs {
 	msg := n.sourceMessage
-	from := msg.From()
-	gas := msg.Gas()
-	nonce := msg.Nonce()
-	maxFeePerGas := msg.GasFeeCap()
-	maxPriorityFeePerGas := msg.GasTipCap()
+	from := msg.From
+	gas := msg.GasLimit
+	nonce := msg.Nonce
+	maxFeePerGas := msg.GasFeeCap
+	maxPriorityFeePerGas := msg.GasTipCap
 	chainid := evm.ChainConfig().ChainID
 
 	args := arbitrum.TransactionArgs{
@@ -458,7 +458,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
 	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
-	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), types.MessageEthcallMode)
+	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -510,7 +510,7 @@ func (n NodeInterface) GasEstimateComponents(
 	// Setting the gas currently doesn't affect the PosterDataCost,
 	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), types.MessageGasEstimationMode)
+	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -526,7 +526,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	// Compute the fee paid for L1 in L2 terms
-	gasForL1 := arbos.GetPosterGas(c.State, baseFee, types.MessageGasEstimationMode, feeForL1)
+	gasForL1 := arbos.GetPosterGas(c.State, baseFee, core.MessageGasEstimationMode, feeForL1)
 
 	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }

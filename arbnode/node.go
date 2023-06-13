@@ -6,11 +6,11 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -242,20 +242,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
-	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
-	if err != nil {
-		return nil, fmt.Errorf("error getting pending nonce: %w", err)
-	}
-	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
-		expectedRollupAddr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -784,9 +778,8 @@ func createNodeImpl(
 	if err != nil {
 		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
-		} else {
-			log.Warn("validation not supported", "err", err)
 		}
+		log.Warn("validation not supported", "err", err)
 		statelessBlockValidator = nil
 	}
 
@@ -1051,9 +1044,8 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			if n.configFetcher.Get().ValidatorRequired() {
 				return fmt.Errorf("error initializing stateless block validator: %w", err)
-			} else {
-				log.Info("validation not set up", "err", err)
 			}
+			log.Info("validation not set up", "err", err)
 			n.StatelessBlockValidator = nil
 			n.BlockValidator = nil
 		}

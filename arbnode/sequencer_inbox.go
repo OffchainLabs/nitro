@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -56,7 +56,7 @@ type SequencerInbox struct {
 func NewSequencerInbox(client arbutil.L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 
 	return &SequencerInbox{
@@ -77,7 +77,7 @@ func (i *SequencerInbox) GetBatchCount(ctx context.Context, blockNumber *big.Int
 	}
 	count, err := i.con.BatchCount(opts)
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, err
 	}
 	if !count.IsUint64() {
 		return 0, errors.New("sequencer inbox returned non-uint64 batch count")
@@ -91,7 +91,7 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 		BlockNumber: blockNumber,
 	}
 	acc, err := i.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
-	return acc, errors.WithStack(err)
+	return acc, err
 }
 
 type SequencerInboxBatch struct {
@@ -119,7 +119,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		args := make(map[string]interface{})
 		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		return args["data"].([]byte), nil
 	case batchDataSeparateEvent:
@@ -132,7 +132,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		}
 		logs, err := client.FilterLogs(ctx, query)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		if len(logs) == 0 {
 			return nil, errors.New("expected to find sequencer batch data")
@@ -143,7 +143,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		event := new(bridgegen.SequencerInboxSequencerBatchData)
 		err = sequencerBridgeABI.UnpackIntoInterface(event, sequencerBatchDataEvent, logs[0].Data)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		return event.Data, nil
 	case batchDataNone:
@@ -195,7 +195,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	}
 	logs, err := i.client.FilterLogs(ctx, query)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	messages := make([]*SequencerInboxBatch, 0, len(logs))
 	var lastSeqNum *uint64
@@ -205,7 +205,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		}
 		parsedLog, err := i.con.ParseSequencerBatchDelivered(log)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		if !parsedLog.BatchSequenceNumber.IsUint64() {
 			return nil, errors.New("sequencer inbox event has non-uint64 sequence number")

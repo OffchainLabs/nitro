@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -78,19 +77,18 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 
 		// Create and apply a message
-		msg := types.NewMessage(
-			common.Address{},
-			&addr,
-			0,
-			new(big.Int),
-			fuzzGas,
-			new(big.Int),
-			new(big.Int),
-			new(big.Int),
-			input,
-			nil,
-			true,
-		)
+		msg := &core.Message{
+			From:       common.Address{},
+			To:         &addr,
+			Nonce:      0,
+			Value:      new(big.Int),
+			GasLimit:   fuzzGas,
+			GasPrice:   new(big.Int),
+			GasFeeCap:  new(big.Int),
+			GasTipCap:  new(big.Int),
+			Data:       input,
+			AccessList: nil,
+		}
 		_, _ = core.ApplyMessage(evm, msg, &gp)
 	})
 }

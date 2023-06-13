@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"runtime/debug"
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -85,17 +85,18 @@ type L1ValidatorConfig struct {
 }
 
 func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
-	if strings.ToLower(c.Strategy) == "watchtower" {
+	switch strings.ToLower(c.Strategy) {
+	case "watchtower":
 		return WatchtowerStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "defensive" {
+	case "defensive":
 		return DefensiveStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "stakelatest" {
+	case "stakelatest":
 		return StakeLatestStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "resolvenodes" {
+	case "resolvenodes":
 		return ResolveNodesStrategy, nil
-	} else if strings.ToLower(c.Strategy) == "makenodes" {
+	case "makenodes":
 		return MakeNodesStrategy, nil
-	} else {
+	default:
 		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", c.Strategy)
 	}
 }
@@ -209,8 +210,8 @@ func NewStaker(
 	statelessBlockValidator *StatelessBlockValidator,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
-	err := config.Validate()
-	if err != nil {
+
+	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 	client := l1Reader.Client()
@@ -290,9 +291,10 @@ func (s *Staker) Start(ctxIn context.Context) {
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
-			err = errors.Wrap(err, "error waiting for tx receipt")
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
+			} else {
+				err = fmt.Errorf("error waiting for tx receipt: %w", err)
 			}
 		}
 		if err == nil {
@@ -377,9 +379,8 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 			"highGasBuffer", s.highGasBlocksBuffer,
 		)
 		return false
-	} else {
-		return true
 	}
+	return true
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
