@@ -345,16 +345,17 @@ type validated interface {
 	Validate() error
 }
 
-func StaticFetcherFrom[T any](t *testing.T, config T) func() T {
+func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 	t.Helper()
-	asEmptyIf := interface{}(config)
+	tCopy := *config
+	asEmptyIf := interface{}(&tCopy)
 	if asValidtedIf, ok := asEmptyIf.(validated); ok {
 		err := asValidtedIf.Validate()
 		if err != nil {
 			Fail(t, err)
 		}
 	}
-	return func() T { return config }
+	return func() *T { return &tCopy }
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
