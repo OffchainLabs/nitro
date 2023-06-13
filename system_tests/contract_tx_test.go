@@ -94,12 +94,12 @@ func TestContractTxDeploy(t *testing.T) {
 		receipt, err := WaitForTx(ctx, client, txHash, time.Second*10)
 		Require(t, err)
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			Fail(t, "Receipt has non-successful status", receipt.Status)
+			Fatal(t, "Receipt has non-successful status", receipt.Status)
 		}
 
 		expectedAddr := crypto.CreateAddress(from, stateNonce)
 		if receipt.ContractAddress != expectedAddr {
-			Fail(t, "expected address", from, "nonce", stateNonce, "to deploy to", expectedAddr, "but got", receipt.ContractAddress)
+			Fatal(t, "expected address", from, "nonce", stateNonce, "to deploy to", expectedAddr, "but got", receipt.ContractAddress)
 		}
 		t.Log("deployed contract", receipt.ContractAddress, "from address", from, "with nonce", stateNonce)
 		stateNonce++
@@ -107,7 +107,7 @@ func TestContractTxDeploy(t *testing.T) {
 		code, err := client.CodeAt(ctx, receipt.ContractAddress, nil)
 		Require(t, err)
 		if !bytes.Equal(code, []byte{0xFE}) {
-			Fail(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))
+			Fatal(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))
 		}
 	}
 }
