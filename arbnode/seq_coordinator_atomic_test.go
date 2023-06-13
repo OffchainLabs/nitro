@@ -1,9 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build redistest
-// +build redistest
-
 package arbnode
 
 import (
@@ -15,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -53,7 +50,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			}
 			asIndex := arbutil.MessageIndex(messageCount)
 			holdingLockout := atomicTimeRead(&coord.lockoutUntil)
-			err := coord.acquireLockoutAndWriteMessage(ctx, asIndex, asIndex+1, &arbstate.EmptyTestMessageWithMetadata)
+			err := coord.acquireLockoutAndWriteMessage(ctx, asIndex, asIndex+1, &arbostypes.EmptyTestMessageWithMetadata)
 			if err == nil {
 				sequenced[messageCount] = true
 				atomic.StoreUint64(&data.messageCount, messageCount+1)
@@ -114,7 +111,9 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	nullSigner, err := signature.NewSignVerify(&coordConfig.Signing, nil, nil)
 	Require(t, err)
 
-	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	coordConfig.RedisUrl = redisUrl
+	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
 	if redisClient == nil {
 		t.Fatal("redisClient is nil")

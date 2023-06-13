@@ -14,7 +14,7 @@ type MachineStatus[M any] struct {
 
 func newMachineStatus[M any]() *MachineStatus[M] {
 	return &MachineStatus[M]{
-		Promise: containers.NewPromise[*M](),
+		Promise: containers.NewPromise[*M](nil),
 	}
 }
 

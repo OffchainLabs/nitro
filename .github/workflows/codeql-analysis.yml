@@ -30,6 +30,7 @@ jobs:
       security-events: write
     env:
       CODEQL_EXTRACTOR_GO_BUILD_TRACING: 'on'
+      WABT_VERSION: 1.0.32
 
     strategy:
       fail-fast: false
@@ -67,14 +68,14 @@ jobs:
     - name: Install go
       uses: actions/setup-go@v2
       with:
-        go-version: 1.18.x
+        go-version: 1.20.x
 
     - name: Install rust stable
       uses: actions-rs/toolchain@v1
       id: install-rust
       with:
         profile: minimal
-        toolchain: "1.66.1"
+        toolchain: "stable"
         override: true
 
     - name: Cache Rust Build Products
@@ -89,6 +90,13 @@ jobs:
           target/etc/initial-machine-cache/
         key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+
+    - name: Cache wabt build
+      id: cache-wabt
+      uses: actions/cache@v3
+      with:
+        path: ~/wabt-prefix
+        key: ${{ runner.os }}-wabt-codeql-${{ env.WABT_VERSION }}
 
     - name: Cache cbrotli
       uses: actions/cache@v3
