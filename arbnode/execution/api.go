@@ -6,6 +6,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -20,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/pkg/errors"
 )
 
 type ArbAPI struct {
@@ -280,7 +280,7 @@ type ArbTraceForwarderAPI struct {
 	fallbackClientUrl     string
 	fallbackClientTimeout time.Duration
 
-	initialized    int32
+	initialized    atomic.Bool
 	mutex          sync.Mutex
 	fallbackClient types.FallbackClient
 }
@@ -293,12 +293,12 @@ func NewArbTraceForwarderAPI(fallbackClientUrl string, fallbackClientTimeout tim
 }
 
 func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, error) {
-	if atomic.LoadInt32(&api.initialized) == 1 {
+	if api.initialized.Load() {
 		return api.fallbackClient, nil
 	}
 	api.mutex.Lock()
 	defer api.mutex.Unlock()
-	if atomic.LoadInt32(&api.initialized) == 1 {
+	if api.initialized.Load() {
 		return api.fallbackClient, nil
 	}
 	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
@@ -306,7 +306,7 @@ func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, erro
 		return nil, err
 	}
 	api.fallbackClient = fallbackClient
-	atomic.StoreInt32(&api.initialized, 1)
+	api.initialized.Store(true)
 	return api.fallbackClient, nil
 }
 
