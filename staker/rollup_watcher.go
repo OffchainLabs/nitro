@@ -128,19 +128,23 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 		return nil, err
 	}
 	if len(logs) == 0 {
-		return nil, errors.New("Couldn't find requested node")
+		return nil, fmt.Errorf("couldn't find requested node %v", number)
 	}
 	if len(logs) > 1 {
-		return nil, errors.New("Found multiple instances of requested node")
+		return nil, fmt.Errorf("found multiple instances of requested node %v", number)
 	}
 	ethLog := logs[0]
 	parsedLog, err := r.ParseNodeCreated(ethLog)
 	if err != nil {
 		return nil, err
 	}
+	l1BlockProposed, err := arbutil.CorrespondingL1BlockNumber(ctx, r.client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
 	return &NodeInfo{
 		NodeNum:            parsedLog.NodeNum,
-		BlockProposed:      ethLog.BlockNumber,
+		L1BlockProposed:    l1BlockProposed,
 		Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 		InboxMaxCount:      parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
@@ -186,9 +190,13 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 			lastHashIsSibling[0] = 1
 		}
 		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:], parsedLog.WasmModuleRoot[:])
+		l1BlockProposed, err := arbutil.CorrespondingL1BlockNumber(ctx, r.client, ethLog.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
 		infos = append(infos, &NodeInfo{
 			NodeNum:            parsedLog.NodeNum,
-			BlockProposed:      ethLog.BlockNumber,
+			L1BlockProposed:    l1BlockProposed,
 			Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 			InboxMaxCount:      parsedLog.InboxMaxCount,
 			AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
