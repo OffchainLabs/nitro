@@ -633,7 +633,7 @@ func testMemory(t *testing.T, jit bool) {
 	// check that compilation then succeeds
 	args[0] = 0x00
 	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, nil, args)
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	ensure(tx, l2client.SendTransaction(ctx, tx)) // TODO: check receipt after compilation pricing
 
 	// check footprint can induce a revert
 	args = arbmath.ConcatByteSlices([]byte{122}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
