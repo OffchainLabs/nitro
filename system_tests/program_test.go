@@ -618,6 +618,10 @@ func testMemory(t *testing.T, jit bool) {
 	// check that compilation fails when out of memory
 	wasm := readWasmFile(t, watFile("grow-120"))
 	growHugeAddr := deployContract(t, ctx, auth, l2client, wasm)
+	colors.PrintGrey("memory.wat        ", memoryAddr)
+	colors.PrintGrey("multicall.rs      ", multiAddr)
+	colors.PrintGrey("grow-and-call.wat ", growCallAddr)
+	colors.PrintGrey("grow-120.wat      ", growHugeAddr)
 	compile, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "compileProgram")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
@@ -644,13 +648,6 @@ func testMemory(t *testing.T, jit bool) {
 	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) {
 		Fail(t, "unexpected cost", gasCost, memCost)
 	}
-
-	_ = memoryAddr
-	_ = multiAddr
-	_ = growCallAddr
-	_ = expectFailure
-	_ = model
-	_ = growHugeAddr
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
