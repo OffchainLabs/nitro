@@ -3,14 +3,14 @@
 
 use crate::{evm_api::ApiCaller, Program, PROGRAMS};
 use arbutil::{
-    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData, StartPages},
+    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
     heapify, wavm,
 };
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
     binary::WasmBinary,
-    programs::{config::{CompileConfig, PricingParams, StylusConfig}, memory::MemoryModel},
+    programs::config::{CompileConfig, PricingParams, StylusConfig},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -196,7 +196,6 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
         pricing: PricingParams {
             ink_price: sp.read_u64(),
             hostio_ink: sp.read_u64(),
-            memory_model: MemoryModel::default(),
         },
     };
     sp.skip_space(); // skip debugMode
@@ -228,25 +227,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
         msg_value: read_bytes32(sp.read_go_ptr()).into(),
         tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
         tx_origin: read_bytes20(sp.read_go_ptr()).into(),
-        start_pages: sp.unbox(),
         return_data_len: 0,
     };
-    println!("EvmData {:?}", evm_data.start_pages);
     sp.write_ptr(heapify(evm_data));
-}
-
-/// Creates an `EvmData` from its component parts.
-/// Safety: λ(open, ever u16) *StartPages
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustStartPagesImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    let start_pages = StartPages{
-        open: sp.read_u16(),
-        ever: sp.read_u16(),
-    };
-    println!("StartPages {:?}", start_pages);
-    sp.skip_space();
-    sp.write_ptr(heapify(start_pages));
 }

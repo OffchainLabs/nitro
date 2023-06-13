@@ -37,8 +37,9 @@ func newApi(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
 ) *apiWrapper {
-	closures := newApiClosures(interpreter, tracingInfo, scope)
+	closures := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	global := js.Global()
 	uint8Array := global.Get("Uint8Array")
 
@@ -205,8 +206,8 @@ func newApi(
 	})
 	addPages := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		pages := jsU16(args[0])
-		open, ever := closures.addPages(pages)
-		return write(stylus, open, ever)
+		cost := closures.addPages(pages)
+		return write(stylus, cost)
 	})
 
 	ids := make([]byte, 0, 13*4)

@@ -137,5 +137,5 @@ pub trait EvmApi: Send + 'static {
     /// Synchronizes the memory model between Rust and Go.
     /// Returns the number of pages open and ever open before allocating `pages` more.
     /// Not analogous to any EVM opcode.
-    fn add_pages(&mut self, pages: u16) -> (u16, u16);
+    fn add_pages(&mut self, pages: u16) -> u64;
 }

@@ -569,7 +569,7 @@ func testMemory(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	expectFailure := func(to common.Address, data []byte, errMsg string) {
+	expectFailure := func(to common.Address, data []byte) {
 		t.Helper()
 		msg := ethereum.CallMsg{
 			To:    &to,
@@ -579,20 +579,13 @@ func testMemory(t *testing.T, jit bool) {
 		}
 		_, err := l2client.CallContract(ctx, msg, nil)
 		if err == nil {
-			Fail(t, "call should have failed with", errMsg)
-		}
-		expected := fmt.Sprintf("%v", errMsg)
-		if err.Error() != expected {
-			Fail(t, "wrong error", err.Error(), " ", expected)
+			Fail(t, "call should have failed")
 		}
 
 		// execute onchain for proving's sake
 		tx := l2info.PrepareTxTo("Owner", &to, 1e9, nil, data)
 		Require(t, l2client.SendTransaction(ctx, tx))
-		receipt := EnsureTxFailed(t, ctx, l2client, tx)
-		if receipt.GasUsedForL2() > 32000000 {
-			Fail(t, "exceeded tx gas limit", receipt.GasUsedForL2())
-		}
+		EnsureTxFailed(t, ctx, l2client, tx)
 	}
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
@@ -620,7 +613,7 @@ func testMemory(t *testing.T, jit bool) {
 
 	// check that we'd normally run out of gas
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 32000000))
-	expectFailure(multiAddr, args, "execution reverted")
+	expectFailure(multiAddr, args)
 
 	// check that compilation fails when out of memory
 	wasm := readWasmFile(t, watFile("grow-120"))
@@ -631,7 +624,7 @@ func testMemory(t *testing.T, jit bool) {
 		return data
 	}
 	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(compile(growHugeAddr)))
-	expectFailure(growCallAddr, args, "execution reverted") // consumes 64, then tries to compile something 120
+	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
 
 	// check that compilation then succeeds
 	args[0] = 0x00
@@ -640,7 +633,7 @@ func testMemory(t *testing.T, jit bool) {
 
 	// check footprint can induce a revert
 	args = arbmath.ConcatByteSlices([]byte{122}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
-	expectFailure(growCallAddr, args, "execution reverted")
+	expectFailure(growCallAddr, args)
 
 	// check same call would have succeeded with fewer pages
 	args = arbmath.ConcatByteSlices([]byte{119}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
@@ -652,7 +645,12 @@ func testMemory(t *testing.T, jit bool) {
 		Fail(t, "unexpected cost", gasCost, memCost)
 	}
 
-	t.SkipNow()
+	_ = memoryAddr
+	_ = multiAddr
+	_ = growCallAddr
+	_ = expectFailure
+	_ = model
+	_ = growHugeAddr
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }

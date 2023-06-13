@@ -34,8 +34,6 @@ impl RunProgram for Machine {
             config.max_depth.into(),
             config.pricing.ink_price.into(),
             config.pricing.hostio_ink.into(),
-            config.pricing.memory_model.free_pages.into(),
-            config.pricing.memory_model.page_gas.into(),
         ];
         let args_ptr = call!("user_test", "prepare", push_vec);
         let user_host = self.find_module("user_test")?;

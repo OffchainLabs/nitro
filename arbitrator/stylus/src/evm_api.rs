@@ -65,7 +65,7 @@ pub struct GoEvmApi {
     pub account_codehash:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // codehash
     pub evm_blockhash: unsafe extern "C" fn(id: usize, number: Bytes32) -> Bytes32, // hash
-    pub add_pages: unsafe extern "C" fn(id: usize, pages: u16, open: *mut u16, ever: *mut u16),
+    pub add_pages: unsafe extern "C" fn(id: usize, pages: u16) -> u64,              // gas cost
     pub id: usize,
 }
 
@@ -251,10 +251,7 @@ impl EvmApi for GoEvmApi {
         call!(self, evm_blockhash, num)
     }
 
-    fn add_pages(&mut self, pages: u16) -> (u16, u16) {
-        let mut open = 0;
-        let mut ever = 0;
-        call!(self, add_pages, pages, ptr!(open), ptr!(ever));
-        (open, ever)
+    fn add_pages(&mut self, pages: u16) -> u64 {
+        call!(self, add_pages, pages)
     }
 }

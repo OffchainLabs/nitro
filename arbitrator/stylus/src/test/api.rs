@@ -8,7 +8,7 @@ use arbutil::{
 };
 use eyre::Result;
 use parking_lot::Mutex;
-use prover::programs::prelude::*;
+use prover::programs::{memory::MemoryModel, prelude::*};
 use std::{collections::HashMap, sync::Arc};
 
 use super::TestInstance;
@@ -164,11 +164,13 @@ impl EvmApi for TestEvmApi {
         unimplemented!()
     }
 
-    fn add_pages(&mut self, new: u16) -> (u16, u16) {
-        let current = *self.pages.lock();
+    fn add_pages(&mut self, new: u16) -> u64 {
+        let model = MemoryModel::new(2, 1000);
+        let (open, ever) = *self.pages.lock();
+
         let mut pages = self.pages.lock();
         pages.0 = pages.0.saturating_add(new);
         pages.1 = pages.1.max(pages.0);
-        current
+        model.gas_cost(new, open, ever)
     }
 }

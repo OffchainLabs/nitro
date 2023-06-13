@@ -15,7 +15,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     // combined output of all calls
     let mut output = vec![];
 
-    debug::println(format!("Calling {count} contract(s)"));
+    //debug::println(format!("Calling {count} contract(s)"));
     for _ in 0..count {
         let length = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
         input = &input[4..];
@@ -34,14 +34,14 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
         let addr = Bytes20::from_slice(&curr[..20]).unwrap();
         let data = &curr[20..];
-        debug::println(match value {
+        /*debug::println(match value {
             Some(value) if value != Bytes32::default() => format!(
                 "Calling {addr} with {} bytes and value {} {kind}",
                 data.len(),
                 hex::encode(&value)
             ),
             _ => format!("Calling {addr} with {} bytes {kind}", curr.len()),
-        });
+        });*/
 
         let return_data = match kind {
             0 => contract::call(addr, data, value, None)?,
@@ -50,10 +50,10 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             x => panic!("unknown call kind {x}"),
         };
         if !return_data.is_empty() {
-            debug::println(format!(
+            /*debug::println(format!(
                 "Contract {addr} returned {} bytes",
                 return_data.len()
-            ));
+            ));*/
         }
         output.extend(return_data);
         input = next;

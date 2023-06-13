@@ -29,7 +29,3 @@ TEXT ·rustConfigImpl(SB), NOSPLIT, $0
 TEXT ·rustEvmDataImpl(SB), NOSPLIT, $0
   CallImport
   RET
-
-TEXT ·rustStartPagesImpl(SB), NOSPLIT, $0
-  CallImport
-  RET

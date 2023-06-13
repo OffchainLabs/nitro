@@ -7,12 +7,12 @@ use crate::{
     user::evm_api::exec_wasm,
 };
 use arbutil::{
-    evm::{user::UserOutcome, EvmData, StartPages},
+    evm::{user::UserOutcome, EvmData},
     heapify,
 };
 use prover::{
     binary::WasmBinary,
-    programs::{config::PricingParams, memory::MemoryModel, prelude::*},
+    programs::{config::PricingParams, prelude::*},
 };
 use std::mem;
 use stylus::native;
@@ -35,7 +35,7 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
         ($error:expr) => {{
             let error = format!("{:?}", $error).as_bytes().to_vec();
             sp.write_nullptr();
-            sp.skip_space();
+            sp.skip_space(); // skip footprint
             sp.write_ptr(heapify(error));
             return;
         }};
@@ -122,7 +122,6 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
         pricing: PricingParams {
             ink_price: sp.read_u64(),
             hostio_ink: sp.read_u64(),
-            memory_model: MemoryModel::default(),
         },
     };
     let compile = CompileConfig::version(config.version, sp.read_u32() != 0);
@@ -133,7 +132,7 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 /// go side: λ(
 ///     blockBasefee, blockChainid *[32]byte, blockCoinbase *[20]byte, blockDifficulty *[32]byte,
 ///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, startPages *StartPages,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
@@ -150,22 +149,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
-        start_pages: sp.unbox(),
         return_data_len: 0,
     };
-    println!("EvmData {:?}", evm_data);
     sp.write_ptr(heapify(evm_data));
-}
-
-/// Creates an `EvmData` from its component parts.
-/// Safety: λ(open, ever u16) *StartPages
-pub fn start_pages_impl(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
-    let start_pages = StartPages {
-        open: sp.read_u16(),
-        ever: sp.read_u16(),
-    };
-    println!("StartPages {:?}", start_pages);
-    sp.skip_space();
-    sp.write_ptr(heapify(start_pages));
 }

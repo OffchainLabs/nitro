@@ -76,9 +76,9 @@ Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
     return evmBlockHashImpl(api, block);
 }
 
-void addPagesImpl(usize api, u16 pages, u16 * open, u16 * ever);
-void addPagesWrap(usize api, u16 pages, u16 * open, u16 * ever) {
-    return addPagesImpl(api, pages, open, ever);
+u64 addPagesImpl(usize api, u16 pages);
+u64 addPagesWrap(usize api, u16 pages) {
+    return addPagesImpl(api, pages);
 }
 */
 import "C"
@@ -98,8 +98,9 @@ func newApi(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
 ) (C.GoEvmApi, usize) {
-	closures := newApiClosures(interpreter, tracingInfo, scope)
+	closures := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	apiId := atomic.AddUintptr(&apiIds, 1)
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)

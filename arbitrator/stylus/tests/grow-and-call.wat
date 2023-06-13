@@ -27,7 +27,6 @@
         i64.const -1                                   ;; all gas
         i32.const 0x2000                               ;; return_data_len ptr
         call $call_contract
-        call $tee
     )
     (memory (export "memory") 4)
 )

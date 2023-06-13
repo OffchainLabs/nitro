@@ -16,7 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type Programs struct {
@@ -162,43 +161,36 @@ func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
 	return p.programs.GetUint32(program.Hash())
 }
 
-func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, error) {
+func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, bool, error) {
 	statedb := evm.StateDB
 
 	version, err := p.StylusVersion()
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	latest, err := p.ProgramVersion(program)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if latest >= version {
-		return 0, ProgramUpToDateError()
+		return 0, false, ProgramUpToDateError()
 	}
 
 	wasm, err := getWasm(statedb, program)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit, err := p.PageLimit()
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	open, _ := statedb.GetStylusPages()
-	if !evm.ProcessingHook.MsgIsGasEstimation() {
-		colors.PrintPink(
-			"Compile ", evm.Depth(), ": ", *open, " open ", pageLimit, " limit",
-		)
-	}
-
 	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
 	if err != nil {
-		return 0, err
+		return 0, true, err
 	}
 
 	// reflect the fact that, briefly, the footprint was allocated
@@ -210,7 +202,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 		version:   version,
 		address:   program,
 	}
-	return version, p.programs.Set(program.Hash(), programData.serialize())
+	return version, false, p.programs.Set(program.Hash(), programData.serialize())
 }
 
 func (p Programs) CallProgram(
@@ -256,24 +248,12 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	cost := model.GasCost(program.footprint, *open, *ever)
-	burner := p.backingStorage.Burner()
+	cost := model.GasCost(program.footprint, open, ever)
 	if err := contract.BurnGas(cost); err != nil {
-		return nil, err // TODO: why is this not being hit?
+		return nil, err
 	}
-	openBefore, _ := statedb.AddStylusPages(program.footprint)
-	if !evm.ProcessingHook.MsgIsGasEstimation() {
-		defer func() {
-			colors.PrintPink("After: ", *open, " open ", *ever, " ever")
-		}()
-	}
-	defer statedb.SetStylusPagesOpen(openBefore)
-	if !evm.ProcessingHook.MsgIsGasEstimation() {
-		colors.PrintPink(
-			"Start ", evm.Depth(), ": ", openBefore, " open + ", program.footprint,
-			" new => ", *open, " open ", *ever, " ever ", cost, " cost ", burner.Burned(), " burned",
-		)
-	}
+	statedb.AddStylusPages(program.footprint)
+	defer statedb.SetStylusPagesOpen(open)
 
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
@@ -288,13 +268,9 @@ func (p Programs) CallProgram(
 		msgValue:        common.BigToHash(contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
-		startPages: startPages{
-			open: *open,
-			ever: *ever,
-		},
 	}
 
-	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
+	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -330,12 +306,11 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 }
 
 type goParams struct {
-	version     uint32
-	maxDepth    uint32
-	inkPrice    uint64
-	hostioInk   uint64
-	debugMode   uint32
-	memoryModel *GoMemoryModel
+	version   uint32
+	maxDepth  uint32
+	inkPrice  uint64
+	hostioInk uint64
+	debugMode uint32
 }
 
 func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goParams, error) {
@@ -352,21 +327,11 @@ func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goP
 		return nil, err
 	}
 
-	freePages, err := p.FreePages()
-	if err != nil {
-		return nil, err
-	}
-	pageGas, err := p.PageGas()
-	if err != nil {
-		return nil, err
-	}
-
 	config := &goParams{
-		version:     version,
-		maxDepth:    maxDepth,
-		inkPrice:    inkPrice.Uint64(),
-		hostioInk:   hostioInk,
-		memoryModel: NewMemoryModel(freePages, pageGas),
+		version:   version,
+		maxDepth:  maxDepth,
+		inkPrice:  inkPrice.Uint64(),
+		hostioInk: hostioInk,
 	}
 	if debug {
 		config.debugMode = 1
@@ -387,12 +352,6 @@ type evmData struct {
 	msgValue        common.Hash
 	txGasPrice      common.Hash
 	txOrigin        common.Address
-	startPages      startPages
-}
-
-type startPages struct {
-	open uint16
-	ever uint16
 }
 
 type userStatus uint8

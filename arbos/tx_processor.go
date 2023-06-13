@@ -688,11 +688,3 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	mode := p.msg.RunMode()
 	return mode == types.MessageGasEstimationMode || mode == types.MessageEthcallMode
 }
-
-func (p *TxProcessor) MsgIsGasEstimation() bool {
-	if p.msg == nil {
-		return false
-	}
-	mode := p.msg.RunMode()
-	return mode == types.MessageGasEstimationMode
-}

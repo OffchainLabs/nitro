@@ -341,7 +341,6 @@ pub unsafe extern "C" fn user_host__tx_origin(ptr: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__memory_grow(pages: u16) {
     let program = Program::start();
-    let model = program.config.pricing.memory_model;
-    let (open, ever) = program.evm_api.add_pages(pages);
-    program.buy_gas(model.gas_cost(pages, open, ever)).unwrap();
+    let gas_cost = program.evm_api.add_pages(pages);
+    program.buy_gas(gas_cost).unwrap();
 }

@@ -14,7 +14,11 @@ type ArbWasm struct {
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error) {
 	// TODO: pay for gas by some compilation pricing formula
-	return c.State.Programs().CompileProgram(evm, program, evm.ChainConfig().DebugMode())
+	version, takeAllGas, err := c.State.Programs().CompileProgram(evm, program, evm.ChainConfig().DebugMode())
+	if takeAllGas {
+		return version, c.BurnOut()
+	}
+	return version, err
 }
 
 // Gets the latest stylus version

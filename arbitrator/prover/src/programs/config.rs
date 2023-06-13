@@ -3,7 +3,6 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use super::memory::MemoryModel;
 use derivative::Derivative;
 use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
@@ -38,8 +37,6 @@ pub struct PricingParams {
     pub ink_price: u64,
     /// The amount of ink one pays to do a user_host call
     pub hostio_ink: u64,
-    /// Memory pricing model
-    pub memory_model: MemoryModel,
 }
 
 impl Default for StylusConfig {
@@ -57,20 +54,13 @@ impl Default for PricingParams {
         Self {
             ink_price: 1,
             hostio_ink: 0,
-            memory_model: MemoryModel::default(),
         }
     }
 }
 
 impl StylusConfig {
-    pub const fn new(
-        version: u32,
-        max_depth: u32,
-        ink_price: u64,
-        hostio_ink: u64,
-        memory_model: MemoryModel,
-    ) -> Self {
-        let pricing = PricingParams::new(ink_price, hostio_ink, memory_model);
+    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
+        let pricing = PricingParams::new(ink_price, hostio_ink);
         Self {
             version,
             max_depth,
@@ -81,11 +71,10 @@ impl StylusConfig {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub const fn new(ink_price: u64, hostio_ink: u64, memory_model: MemoryModel) -> Self {
+    pub const fn new(ink_price: u64, hostio_ink: u64) -> Self {
         Self {
             ink_price,
             hostio_ink,
-            memory_model,
         }
     }
 

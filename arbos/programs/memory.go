@@ -9,19 +9,19 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-type GoMemoryModel struct {
+type MemoryModel struct {
 	freePages uint16 // number of pages the tx gets for free
 	pageGas   uint32 // base gas to charge per wasm page
 }
 
-func NewMemoryModel(freePages uint16, pageGas uint32) *GoMemoryModel {
-	return &GoMemoryModel{
+func NewMemoryModel(freePages uint16, pageGas uint32) *MemoryModel {
+	return &MemoryModel{
 		freePages: freePages,
 		pageGas:   pageGas,
 	}
 }
 
-func (p Programs) memoryModel() (*GoMemoryModel, error) {
+func (p Programs) memoryModel() (*MemoryModel, error) {
 	freePages, err := p.FreePages()
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (p Programs) memoryModel() (*GoMemoryModel, error) {
 }
 
 // Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
-func (model *GoMemoryModel) GasCost(new, open, ever uint16) uint64 {
+func (model *MemoryModel) GasCost(new, open, ever uint16) uint64 {
 	newOpen := arbmath.SaturatingUAdd(open, new)
 	newEver := arbmath.MaxInt(ever, newOpen)
 
@@ -50,7 +50,7 @@ func (model *GoMemoryModel) GasCost(new, open, ever uint16) uint64 {
 	return arbmath.SaturatingUAdd(linear, expand)
 }
 
-func (model *GoMemoryModel) exp(pages uint16) uint64 {
+func (model *MemoryModel) exp(pages uint16) uint64 {
 	if int(pages) < len(memoryExponents) {
 		return uint64(memoryExponents[pages])
 	}

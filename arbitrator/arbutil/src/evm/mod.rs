@@ -77,15 +77,5 @@ pub struct EvmData {
     pub msg_value: Bytes32,
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
-    pub start_pages: StartPages,
     pub return_data_len: u32,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
-pub struct StartPages {
-    /// Open pages as of the start of the call
-    pub open: u16,
-    /// Largest number of pages ever open as of the start of the call
-    pub ever: u16,
 }

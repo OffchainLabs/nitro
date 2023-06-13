@@ -139,13 +139,6 @@ impl From<String> for ApiValue {
 }
 
 impl ApiValueKind {
-    fn assert_u16(self) -> u16 {
-        match self {
-            ApiValueKind::U16(value) => value,
-            x => panic!("wrong type {x:?}"),
-        }
-    }
-
     fn assert_u32(self) -> u32 {
         match self {
             ApiValueKind::U32(value) => value,
@@ -315,8 +308,8 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         value.assert_bytes32()
     }
 
-    fn add_pages(&mut self, pages: u16) -> (u16, u16) {
-        let [open, ever] = call!(self, 2, AddPages, pages);
-        (open.assert_u16(), ever.assert_u16())
+    fn add_pages(&mut self, pages: u16) -> u64 {
+        let [cost] = call!(self, 1, AddPages, pages);
+        cost.assert_u64()
     }
 }

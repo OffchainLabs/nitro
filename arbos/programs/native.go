@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -43,7 +42,6 @@ type rustVec = C.RustVec
 func compileUserWasm(
 	db vm.StateDB, program common.Address, wasm []byte, pageLimit uint16, version uint32, debug bool,
 ) (uint16, error) {
-	colors.PrintMint("Compile ", pageLimit)
 	footprint := uint16(0)
 	output := &rustVec{}
 	status := userStatus(C.stylus_compile(
@@ -61,7 +59,6 @@ func compileUserWasm(
 	} else {
 		data := arbutil.ToStringOrHex(data)
 		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
-		colors.PrintPink("compile failure", data)
 	}
 	return footprint, err
 }
@@ -75,13 +72,14 @@ func callUserWasm(
 	calldata []byte,
 	evmData *evmData,
 	stylusParams *goParams,
+	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program.address, stylusParams.version)
 	}
 	module := db.GetCompiledWasmCode(program.address, stylusParams.version)
 
-	evmApi, id := newApi(interpreter, tracingInfo, scope)
+	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
 
 	output := &rustVec{}
@@ -243,11 +241,10 @@ func evmBlockHashImpl(api usize, block bytes32) bytes32 {
 }
 
 //export addPagesImpl
-func addPagesImpl(api usize, pages u16, open *u16, ever *u16) {
+func addPagesImpl(api usize, pages u16) u64 {
 	closures := getApi(api)
-	openPages, everPages := closures.addPages(uint16(pages))
-	*open = u16(openPages)
-	*ever = u16(everPages)
+	cost := closures.addPages(uint16(pages))
+	return u64(cost)
 }
 
 func (value bytes20) toAddress() common.Address {
@@ -317,21 +314,13 @@ func goSlice(slice []byte) C.GoSliceData {
 
 func (params *goParams) encode() C.StylusConfig {
 	pricing := C.PricingParams{
-		ink_price:    u64(params.inkPrice),
-		hostio_ink:   u64(params.hostioInk),
-		memory_model: params.memoryModel.encode(),
+		ink_price:  u64(params.inkPrice),
+		hostio_ink: u64(params.hostioInk),
 	}
 	return C.StylusConfig{
 		version:   u32(params.version),
 		max_depth: u32(params.maxDepth),
 		pricing:   pricing,
-	}
-}
-
-func (model *GoMemoryModel) encode() C.MemoryModel {
-	return C.MemoryModel{
-		free_pages: u16(model.freePages),
-		page_gas:   u32(model.pageGas),
 	}
 }
 
@@ -349,10 +338,6 @@ func (data *evmData) encode() C.EvmData {
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
-		start_pages: C.StartPages{
-			open: u16(data.startPages.open),
-			ever: u16(data.startPages.ever),
-		},
-		return_data_len: 0,
+		return_data_len:  0,
 	}
 }

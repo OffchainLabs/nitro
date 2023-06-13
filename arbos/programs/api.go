@@ -15,7 +15,6 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
@@ -45,7 +44,7 @@ type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type evmBlockHashType func(block common.Hash) (value common.Hash)
-type addPagesType func(pages uint16) (open uint16, ever uint16)
+type addPagesType func(pages uint16) (cost uint64)
 
 type goClosures struct {
 	getBytes32      getBytes32Type
@@ -67,6 +66,7 @@ func newApiClosures(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
 ) *goClosures {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
@@ -153,9 +153,6 @@ func newApiClosures(
 		return uint32(len(ret)), cost, err
 	}
 	contractCall := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
-		if !evm.ProcessingHook.MsgIsGasEstimation() {
-			colors.PrintMint("Doing call to ", contract.Hex(), value.Sign(), len(input))
-		}
 		return doCall(contract, vm.CALL, input, gas, value)
 	}
 	delegateCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
@@ -273,17 +270,9 @@ func newApiClosures(
 	evmBlockHash := func(block common.Hash) common.Hash {
 		return vm.BlockHashOp(evm, block.Big())
 	}
-	addPages := func(pages uint16) (uint16, uint16) {
-		open, ever := db.GetStylusPages()
-		defer func() {
-			if !evm.ProcessingHook.MsgIsGasEstimation() {
-				colors.PrintGrey(
-					"Depth ", evm.Depth(), ": add ", pages, " => ",
-					*open, " open ", *ever, " ever ",
-				)
-			}
-		}()
-		return db.AddStylusPages(pages)
+	addPages := func(pages uint16) uint64 {
+		open, ever := db.AddStylusPages(pages)
+		return memoryModel.GasCost(pages, open, ever)
 	}
 
 	return &goClosures{

@@ -7,7 +7,7 @@ use arbutil::Bytes32;
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-use prover::programs::{memory::MemoryModel, prelude::StylusConfig};
+use prover::programs::prelude::StylusConfig;
 
 mod ink;
 pub mod user;
@@ -33,11 +33,8 @@ pub unsafe extern "C" fn user_test__prepare(
     max_depth: u32,
     ink_price: u64,
     hostio_ink: u64,
-    free_pages: u16,
-    page_gas: u32,
 ) -> *const u8 {
-    let memory_model = MemoryModel::new(free_pages, page_gas);
-    let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink, memory_model);
+    let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink);
     CONFIG = Some(config);
     ARGS = vec![0; len];
     ARGS.as_ptr()
