@@ -29,11 +29,9 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     sp.skip_space();
 
     macro_rules! error {
-        ($text:expr, $error:expr) => {
-            error!($error.wrap_err($text))
-        };
         ($error:expr) => {{
-            let error = format!("{:?}", $error).as_bytes().to_vec();
+            let error = $error.wrap_err("failed to compile");
+            let error = format!("{:?}", error).as_bytes().to_vec();
             sp.write_nullptr();
             sp.skip_space(); // skip footprint
             sp.write_ptr(heapify(error));
@@ -48,7 +46,7 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     };
     let module = match native::module(&wasm, compile) {
         Ok(module) => module,
-        Err(error) => error!("failed to compile", error),
+        Err(error) => error!(error),
     };
     sp.write_ptr(heapify(module));
     sp.write_u16(footprint).skip_space();
