@@ -362,6 +362,9 @@ type DumpKeysetConfig struct {
 
 func dumpKeyset(args []string) error {
 	config, err := parseDumpKeyset(args)
+	if err != nil {
+		return err
+	}
 
 	services, err := das.ParseServices(config.KeysetConfig)
 	if err != nil {
