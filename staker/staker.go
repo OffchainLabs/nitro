@@ -805,6 +805,10 @@ func (s *Staker) Strategy() StakerStrategy {
 	return s.config.strategy
 }
 
+func (s *Staker) Rollup() *RollupWatcher {
+	return s.rollup
+}
+
 func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 	txSenderAddress := s.wallet.TxSenderAddress()
 	if txSenderAddress == nil {
