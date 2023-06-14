@@ -63,7 +63,7 @@ func TestDelayInboxLong(t *testing.T) {
 
 	t.Log("Done sending", delayedMessages, "delayedMessages")
 	if delayedMessages == 0 {
-		Fail(t, "No delayed messages sent!")
+		Fatal(t, "No delayed messages sent!")
 	}
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
@@ -78,6 +78,6 @@ func TestDelayInboxLong(t *testing.T) {
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(fundsPerDelayed*delayedMessages)) != 0 {
-		Fail(t, "Unexpected balance:", "balance", l2balance, "expected", fundsPerDelayed*delayedMessages)
+		Fatal(t, "Unexpected balance:", "balance", l2balance, "expected", fundsPerDelayed*delayedMessages)
 	}
 }

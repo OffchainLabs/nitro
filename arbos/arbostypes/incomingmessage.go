@@ -244,7 +244,8 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig,
 	if len(msg.L2msg) == 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		return chainId, nil, nil, nil
-	} else if len(msg.L2msg) > 32 {
+	}
+	if len(msg.L2msg) > 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		version := msg.L2msg[32]
 		if version == 0 && len(msg.L2msg) > 33 {

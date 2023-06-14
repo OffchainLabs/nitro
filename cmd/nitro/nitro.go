@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -17,9 +18,7 @@ import (
 	"time"
 
 	"github.com/knadh/koanf"
-
 	"github.com/knadh/koanf/providers/confmap"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
@@ -667,9 +666,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			// If persistent-chain not defined, user not creating custom chain
 			if l2ChainId != 0 {
 				return nil, nil, nil, fmt.Errorf("Unknown chain id: %d, L2ChainInfoFiles: %v.  update chain id, modify --chain.info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
-			} else {
-				return nil, nil, nil, fmt.Errorf("Unknown chain name: %s, L2ChainInfoFiles: %v.  update chain name, modify --chain.info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
 			}
+			return nil, nil, nil, fmt.Errorf("Unknown chain name: %s, L2ChainInfoFiles: %v.  update chain name, modify --chain.info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
 		}
 		return nil, nil, nil, errors.New("--persistent.chain not specified")
 	}

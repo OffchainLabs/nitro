@@ -83,10 +83,10 @@ func TestSequencerFeePaid(t *testing.T) {
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
 		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
 		if !gotTip && version == 9 {
-			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
+			Fatal(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
 		}
 		if gotTip && version != 9 {
-			Fail(t, "tips are somehow enabled")
+			Fatal(t, "tips are somehow enabled")
 		}
 
 		txSize := compressedTxSize(t, tx)
@@ -96,7 +96,7 @@ func TestSequencerFeePaid(t *testing.T) {
 		colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
 
 		if l1GasBought != l1GasActual {
-			Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
+			Fatal(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
 		}
 		return networkRevenue, tipPaidToNet
 	}
@@ -110,10 +110,10 @@ func TestSequencerFeePaid(t *testing.T) {
 	net2, tip2 := testFees(2)
 
 	if tip0.Sign() != 0 {
-		Fail(t, "nonzero tip")
+		Fatal(t, "nonzero tip")
 	}
 	if arbmath.BigEquals(arbmath.BigSub(net2, tip2), net0) {
-		Fail(t, "a tip of 2 should yield a total of 3")
+		Fatal(t, "a tip of 2 should yield a total of 3")
 	}
 }
 
@@ -212,7 +212,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 				if numRetrogradeMoves > 1 {
 					colors.PrintRed(timesPriceAdjusted, newDiff, oldDiff, lastEstimate, surplus)
 					colors.PrintRed(estimatedL1FeePerUnit, l1Header.BaseFee, actualL1FeePerUnit)
-					Fail(t, "L1 gas price estimate should tend toward the basefee")
+					Fatal(t, "L1 gas price estimate should tend toward the basefee")
 				}
 			} else {
 				numRetrogradeMoves = 0
@@ -220,10 +220,10 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			diff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, estimatedL1FeePerUnit))
 			maxDiffToAllow := arbmath.BigDivByUint(actualL1FeePerUnit, 100)
 			if arbmath.BigLessThan(maxDiffToAllow, diff) { // verify that estimates is within 1% of actual
-				Fail(t, "New L1 estimate differs too much from receipt")
+				Fatal(t, "New L1 estimate differs too much from receipt")
 			}
 			if arbmath.BigEquals(actualL1FeePerUnit, common.Big0) {
-				Fail(t, "Estimate is zero", i)
+				Fatal(t, "Estimate is zero", i)
 			}
 			lastEstimate = actualL1FeePerUnit
 			timesPriceAdjusted++
@@ -241,7 +241,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 					break
 				}
 				if j == 1 {
-					Fail(t, "batch count didn't update in time")
+					Fatal(t, "batch count didn't update in time")
 				}
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -253,10 +253,10 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	colors.PrintMint("price changes     ", timesPriceAdjusted)
 
 	if timesPriceAdjusted == 0 {
-		Fail(t, "L1 gas price estimate never adjusted")
+		Fatal(t, "L1 gas price estimate never adjusted")
 	}
 	if !arbmath.BigGreaterThan(rewardRecipientBalanceAfter, rewardRecipientBalanceBefore) {
-		Fail(t, "reward recipient didn't get paid")
+		Fatal(t, "reward recipient didn't get paid")
 	}
 
 	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), l2client)
@@ -270,12 +270,12 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			bal, err := l1client.BalanceAt(ctx, bpAddr, nil)
 			Require(t, err)
 			if bal.Sign() == 0 {
-				Fail(t, "Batch poster balance is zero for", bpAddr)
+				Fatal(t, "Batch poster balance is zero for", bpAddr)
 			}
 		}
 	}
 	if numReimbursed != 1 {
-		Fail(t, "Wrong number of batch posters were reimbursed", numReimbursed)
+		Fatal(t, "Wrong number of batch posters were reimbursed", numReimbursed)
 	}
 }
 

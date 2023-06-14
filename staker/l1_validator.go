@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -19,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/pkg/errors"
 )
 
 type ConfirmType uint8
@@ -323,7 +323,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
-	parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
+	l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
 	if err != nil {
 		return nil, false, err
 	}
@@ -333,7 +333,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
-	timeSinceProposed := big.NewInt(int64(parentChainBlockNumber) - int64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(l1BlockNumber) - int64(startStateProposed))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
@@ -480,7 +480,7 @@ func (v *L1Validator) createNewNodeAction(
 }
 
 // Returns (execution state, inbox max count, L1 block proposed, error)
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash common.Hash) (*validator.ExecutionState, *big.Int, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
@@ -502,5 +502,5 @@ func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum ui
 	if node.NodeHash != nodeHash {
 		return nil, nil, 0, errors.New("looked up starting node but found wrong hash")
 	}
-	return node.AfterState(), node.InboxMaxCount, node.BlockProposed, nil
+	return node.AfterState(), node.InboxMaxCount, node.L1BlockProposed, nil
 }
