@@ -43,12 +43,12 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
             return Ok(());
         };
 
-        let min = memory.initial;
-        let max = memory.maximum;
-        let lim: u64 = self.limit.0.into();
+        let min = memory.min;
+        let max = memory.max;
+        let lim = self.limit;
 
         if min > lim {
-            bail!("memory size {} exceeds bound {}", min.red(), lim.red());
+            bail!("memory size {} exceeds bound {}", min.0.red(), lim.0.red());
         }
         if max == Some(min) {
             return Ok(());

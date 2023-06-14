@@ -3,6 +3,7 @@
 
 use crate::{
     binary::{ExportKind, WasmBinary},
+    memory::MemoryType,
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;
@@ -13,7 +14,7 @@ use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
-use wasmparser::{MemoryType, Operator, Type as WpType};
+use wasmparser::{Operator, Type as WpType};
 
 #[cfg(feature = "native")]
 use {
@@ -21,7 +22,6 @@ use {
     std::marker::PhantomData,
     wasmer::{
         ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
-        WASM_MAX_PAGES,
     },
     wasmer_types::ModuleInfo,
 };
@@ -239,21 +239,7 @@ impl ModuleMod for ModuleInfo {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
         }
-        let Some(memory) = self.memories.last() else {
-            return Ok(None);
-        };
-
-        let initial = memory.minimum.0.into();
-        let maximum = memory.maximum.map(|f| f.0.into());
-        let is_64 = |x| x > WASM_MAX_PAGES as u64;
-
-        let memory = MemoryType {
-            initial,
-            maximum,
-            shared: memory.shared,
-            memory64: is_64(initial) || is_64(maximum.unwrap_or_default()),
-        };
-        Ok(Some(memory))
+        Ok(self.memories.last().map(|x| x.into()))
     }
 }
 
@@ -359,7 +345,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
         }
-        Ok(self.memories.last().cloned())
+        self.memories.last().map(|x| x.try_into()).transpose()
     }
 }
 

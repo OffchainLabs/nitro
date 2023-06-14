@@ -583,7 +583,7 @@ impl<'a> WasmBinary<'a> {
         }
 
         // 4GB maximum implies `footprint` fits in a u16
-        let footprint = self.memory_size()?.map(|x| x.initial).unwrap_or_default() as u16;
+        let footprint = self.memory_size()?.map(|x| x.min.0).unwrap_or_default() as u16;
 
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
