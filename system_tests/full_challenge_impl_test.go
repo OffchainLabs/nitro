@@ -288,7 +288,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
 
 	if challengeMsgIdx < 1 || challengeMsgIdx > 3*MsgPerBatch {
-		Fail(t, "challengeMsgIdx illegal")
+		Fatal(t, "challengeMsgIdx illegal")
 	}
 
 	// seqNum := common.Big2
@@ -437,10 +437,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		if useStubs {
 			if len(mockSpawn.ExecSpawned) != 0 {
 				if len(mockSpawn.ExecSpawned) != 1 {
-					Fail(t, "bad number of spawned execRuns: ", len(mockSpawn.ExecSpawned))
+					Fatal(t, "bad number of spawned execRuns: ", len(mockSpawn.ExecSpawned))
 				}
 				if mockSpawn.ExecSpawned[0] != uint64(challengeMsgIdx) {
-					Fail(t, "wrong spawned execRuns: ", mockSpawn.ExecSpawned[0], " expected: ", challengeMsgIdx)
+					Fatal(t, "wrong spawned execRuns: ", mockSpawn.ExecSpawned[0], " expected: ", challengeMsgIdx)
 				}
 				return
 			}

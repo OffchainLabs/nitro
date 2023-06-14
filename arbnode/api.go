@@ -12,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/pkg/errors"
 )
 
 type BlockValidatorAPI struct {
