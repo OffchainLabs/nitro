@@ -125,7 +125,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 					break
 				}
 				if attempts > 10 {
-					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.SeqCoordinator.DebugPrint())
+					Fatal(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.SeqCoordinator.DebugPrint())
 				}
 				<-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3)
 			}
@@ -198,7 +198,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		// sequencing suceeds only on the leder
 		for i := arbutil.MessageIndex(0); i < messagesPerRound; i++ {
 			if sequencer := trySequencingEverywhere(); sequencer != currentSequencer {
-				Fail(t, "unexpected sequencer. expected: ", currentSequencer, " got ", sequencer)
+				Fatal(t, "unexpected sequencer. expected: ", currentSequencer, " got ", sequencer)
 			}
 			sequencedMesssages++
 		}
@@ -223,7 +223,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		for attempts := 0; ; attempts++ {
 			sequencer := trySequencingEverywhere()
 			if sequencer == -1 && attempts > 15 {
-				Fail(t, "failed to sequence")
+				Fatal(t, "failed to sequence")
 			}
 			if sequencer != -1 {
 				sequencedMesssages++
@@ -236,7 +236,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			if sequencer == currentSequencer {
 				break
 			}
-			Fail(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages)
+			Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages)
 		}
 
 		// all nodes get messages
@@ -246,7 +246,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		for i := arbutil.MessageIndex(0); i < messagesPerRound; i++ {
 			sequencer := trySequencingEverywhere()
 			if sequencer != currentSequencer {
-				Fail(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages)
+				Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages)
 			}
 			sequencedMesssages++
 		}
@@ -329,7 +329,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	} else {
 		_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
 		if err == nil {
-			Fail(t, "tx received by node with different seq coordinator signing key")
+			Fatal(t, "tx received by node with different seq coordinator signing key")
 		}
 	}
 }

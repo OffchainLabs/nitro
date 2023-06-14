@@ -125,7 +125,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))
 		if l2balance.Cmp(expectedBalance) != 0 {
-			Fail(t, "Unexpected balance:", l2balance)
+			Fatal(t, "Unexpected balance:", l2balance)
 		}
 	}
 
@@ -148,7 +148,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	t.Log("waiting for block: ", lastBlock.NumberU64())
 	timeout := getDeadlineTimeout(t, time.Minute*10)
 	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {
-		Fail(t, "did not validate all blocks")
+		Fatal(t, "did not validate all blocks")
 	}
 	finalRefCount := nodeB.BlockValidator.RecordDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
@@ -156,7 +156,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
 	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
-		Fail(t, "unexpected refcount:", finalRefCount)
+		Fatal(t, "unexpected refcount:", finalRefCount)
 	}
 }
 

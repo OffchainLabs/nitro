@@ -248,9 +248,10 @@ type batchSegments struct {
 }
 
 type buildingBatch struct {
-	segments      *batchSegments
-	startMsgCount arbutil.MessageIndex
-	msgCount      arbutil.MessageIndex
+	segments          *batchSegments
+	startMsgCount     arbutil.MessageIndex
+	msgCount          arbutil.MessageIndex
+	haveUsefulMessage bool
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64) *batchSegments {
@@ -585,11 +586,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
+	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	config := b.config()
-	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostDelay
-	haveUsefulMessage := false
+	forcePostBatch := time.Since(firstMsgTime) >= config.MaxBatchPostDelay
 
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
@@ -608,16 +608,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if !config.WaitForMaxBatchPostDelay {
 				forcePostBatch = true
 			}
-			haveUsefulMessage = true
+			b.building.haveUsefulMessage = true
 			break
 		}
 		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
-			haveUsefulMessage = true
+			b.building.haveUsefulMessage = true
 		}
 		b.building.msgCount++
 	}
 
-	if !forcePostBatch || !haveUsefulMessage {
+	if !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return false, nil
@@ -659,7 +659,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		DelayedMessageCount: b.building.segments.delayedMsg,
 		NextSeqNum:          batchPosition.NextSeqNum + 1,
 	}
-	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
+	err = b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
 		return false, err
 	}
