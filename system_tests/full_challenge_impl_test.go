@@ -43,27 +43,27 @@ import (
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	ospEntry, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	return ospEntry
 }
@@ -172,7 +172,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
 	Require(t, err)
 	if len(batches) == 0 {
-		Fail(t, "batch not found after AddSequencerL2BatchFromOrigin")
+		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
@@ -315,7 +315,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	locator, err := server_common.NewMachineLocator("")
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
@@ -323,19 +323,19 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	} else {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 		if (wasmModuleRoot == common.Hash{}) {
-			Fail(t, "latest machine not found")
+			Fatal(t, "latest machine not found")
 		}
 	}
 
 	asserterGenesis := asserterL2.Execution.ArbInterface.BlockChain().Genesis()
 	challengerGenesis := challengerL2.Execution.ArbInterface.BlockChain().Genesis()
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
-		Fail(t, "asserter and challenger have different genesis hashes")
+		Fatal(t, "asserter and challenger have different genesis hashes")
 	}
 	asserterLatestBlock := asserterL2.Execution.ArbInterface.BlockChain().CurrentBlock()
 	challengerLatestBlock := challengerL2.Execution.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
-		Fail(t, "asserter and challenger have the same end block")
+		Fatal(t, "asserter and challenger have the same end block")
 	}
 
 	asserterStartGlobalState := validator.GoGlobalState{
@@ -348,7 +348,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Batch:      4,
 		PosInBatch: 0,
 	}
-	numBlocks := asserterLatestBlock.NumberU64() - asserterGenesis.NumberU64()
+	numBlocks := asserterLatestBlock.Number.Uint64() - asserterGenesis.NumberU64()
 
 	resultReceiver, challengeManagerAddr := CreateChallenge(
 		t,
@@ -370,7 +370,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2.Execution.Recorder, asserterL2ArbDb, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	if useStubs {
 		asserterRecorder := newMockRecorder(asserterValidator, asserterL2.TxStreamer)
@@ -378,16 +378,16 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	err = asserterValidator.Start(ctx)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	defer asserterValidator.Stop()
 	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2.Execution.Recorder, challengerL2ArbDb, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	if useStubs {
 		challengerRecorder := newMockRecorder(challengerValidator, challengerL2.TxStreamer)
@@ -395,12 +395,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	err = challengerValidator.Start(ctx)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	defer challengerValidator.Stop()
 	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 
 	for i := 0; i < 100; i++ {
@@ -428,10 +428,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 				t.Log("challenge completed! asserter hit expected error:", err)
 				return
 			}
-			Fail(t, "challenge step", i, "hit error:", err)
+			Fatal(t, "challenge step", i, "hit error:", err)
 		}
 		if tx == nil {
-			Fail(t, "no move")
+			Fatal(t, "no move")
 		}
 
 		if useStubs {
@@ -452,24 +452,24 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 				t.Log("challenge complete! Tx failed as expected:", err)
 				return
 			}
-			Fail(t, err)
+			Fatal(t, err)
 		}
 
 		confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
 		if err != nil {
-			Fail(t, err)
+			Fatal(t, err)
 		}
 		if winner == (common.Address{}) {
 			continue
 		}
 		if winner != expectedWinner {
-			Fail(t, "wrong party won challenge")
+			Fatal(t, "wrong party won challenge")
 		}
 	}
 
-	Fail(t, "challenge timed out without winner")
+	Fatal(t, "challenge timed out without winner")
 }
 
 func TestMockChallengeManagerAsserterIncorrect(t *testing.T) {

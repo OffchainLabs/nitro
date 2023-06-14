@@ -104,7 +104,7 @@ func BridgeBalance(
 		l2acct := l2info.GetInfoWithPrivKey(account)
 		if l2acct.PrivateKey.X.Cmp(l1acct.PrivateKey.X) != 0 ||
 			l2acct.PrivateKey.Y.Cmp(l1acct.PrivateKey.Y) != 0 {
-			Fail(t, "l2 account already exists and not compatible to l1")
+			Fatal(t, "l2 account already exists and not compatible to l1")
 		}
 	}
 
@@ -136,7 +136,7 @@ func BridgeBalance(
 			}
 			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
 			if i > 20 {
-				Fail(t, "bridging failed")
+				Fatal(t, "bridging failed")
 			}
 			<-time.After(time.Millisecond * 100)
 		}
@@ -280,7 +280,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
 
-func getTestStackConfig(t *testing.T) *node.Config {
+func stackConfigForTest(t *testing.T) *node.Config {
 	stackConfig := node.DefaultConfig
 	stackConfig.HTTPPort = 0
 	stackConfig.WSPort = 0
@@ -344,16 +344,17 @@ type validated interface {
 	Validate() error
 }
 
-func StaticFetcherFrom[T any](t *testing.T, config T) func() T {
+func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 	t.Helper()
-	asEmptyIf := interface{}(config)
+	tCopy := *config
+	asEmptyIf := interface{}(&tCopy)
 	if asValidtedIf, ok := asEmptyIf.(validated); ok {
 		err := asValidtedIf.Validate()
 		if err != nil {
-			Fail(t, err)
+			Fatal(t, err)
 		}
 	}
-	return func() T { return config }
+	return func() *T { return &tCopy }
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
@@ -379,7 +380,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 		l1info = NewL1TestInfo(t)
 	}
 	if stackConfig == nil {
-		stackConfig = getTestStackConfig(t)
+		stackConfig = stackConfigForTest(t)
 	}
 	l1info.GenerateAccount("Faucet")
 
@@ -655,7 +656,7 @@ func Require(t *testing.T, err error, text ...interface{}) {
 	testhelpers.RequireImpl(t, err, text...)
 }
 
-func Fail(t *testing.T, printables ...interface{}) {
+func Fatal(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
 }
@@ -691,12 +692,12 @@ func Create2ndNodeWithConfig(
 	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
-		stackConfig = getTestStackConfig(t)
+		stackConfig = stackConfigForTest(t)
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -712,7 +713,7 @@ func Create2ndNodeWithConfig(
 	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	if err != nil {
-		Fail(t, err)
+		Fatal(t, err)
 	}
 	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
@@ -789,7 +790,7 @@ func setupConfigWithDAS(
 	case "onchain":
 		enableDas = false
 	default:
-		Fail(t, "unknown storage type")
+		Fatal(t, "unknown storage type")
 	}
 	dbPath = t.TempDir()
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)

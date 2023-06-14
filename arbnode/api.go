@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 

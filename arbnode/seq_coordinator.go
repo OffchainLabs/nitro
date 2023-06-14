@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
