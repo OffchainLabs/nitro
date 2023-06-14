@@ -89,31 +89,31 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 }
 
 func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
-	prunedKeys, err := deleteFromLastPrunedUptoEndKey(inboxTrackerDb, sequencerBatchMetaPrefix, endBatchCount)
+	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(inboxTrackerDb, sequencerBatchMetaPrefix, endBatchCount)
 	if err != nil {
 		log.Error("error deleting batch metadata: %w", err)
 		return
 	}
-	if len(prunedKeys) > 0 {
-		log.Info("Pruned batches:", "first pruned key", prunedKeys[0], "last pruned key", prunedKeys[len(prunedKeys)-1])
+	if len(prunedKeysRange) > 0 {
+		log.Info("Pruned batches:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeys, err = deleteFromLastPrunedUptoEndKey(transactionStreamerDb, messagePrefix, uint64(endBatchMetadata.MessageCount))
+	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(transactionStreamerDb, messagePrefix, uint64(endBatchMetadata.MessageCount))
 	if err != nil {
 		log.Error("error deleting last batch messages: %w", err)
 		return
 	}
-	if len(prunedKeys) > 0 {
-		log.Info("Pruned last batch messages:", "first pruned key", prunedKeys[0], "last pruned key", prunedKeys[len(prunedKeys)-1])
+	if len(prunedKeysRange) > 0 {
+		log.Info("Pruned last batch messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeys, err = deleteFromLastPrunedUptoEndKey(inboxTrackerDb, rlpDelayedMessagePrefix, endBatchMetadata.DelayedMessageCount)
+	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(inboxTrackerDb, rlpDelayedMessagePrefix, endBatchMetadata.DelayedMessageCount)
 	if err != nil {
 		log.Error("error deleting last batch delayed messages: %w", err)
 		return
 	}
-	if len(prunedKeys) > 0 {
-		log.Info("Pruned last batch delayed messages", "first pruned key", prunedKeys[0], "last pruned key", prunedKeys[len(prunedKeys)-1])
+	if len(prunedKeysRange) > 0 {
+		log.Info("Pruned last batch delayed messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 }
 

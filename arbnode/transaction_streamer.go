@@ -203,12 +203,16 @@ func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMi
 	batch := db.NewBatch()
 	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
 	defer startIter.Release()
-	var prunedKeys [][]byte
+	var prunedKeysRange [][]byte
 	for startIter.Next() {
 		if binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix)) >= endMinKey {
 			break
 		}
-		prunedKeys = append(prunedKeys, startIter.Key())
+		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
+			prunedKeysRange = append(prunedKeysRange, startIter.Key())
+		} else {
+			prunedKeysRange[1] = startIter.Key()
+		}
 		err := batch.Delete(startIter.Key())
 		if err != nil {
 			return nil, err
@@ -225,7 +229,7 @@ func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMi
 			return nil, err
 		}
 	}
-	return prunedKeys, nil
+	return prunedKeysRange, nil
 }
 
 // The insertion mutex must be held. This acquires the reorg mutex.
