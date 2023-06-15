@@ -5,10 +5,10 @@ package server_arb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -282,7 +282,7 @@ func (c *MachineCache) GetMachineAt(ctx context.Context, stepCount uint64) (Mach
 		return nil, err
 	}
 	if !closestMachine.ValidForStep(stepCount) {
-		return nil, errors.Errorf("internal error: got machine with wrong step count %v looking for step count %v", closestMachine.GetStepCount(), stepCount)
+		return nil, fmt.Errorf("internal error: got machine with wrong step count %v looking for step count %v", closestMachine.GetStepCount(), stepCount)
 	}
 	c.setLastMachine(closestMachine)
 	return closestMachine, nil

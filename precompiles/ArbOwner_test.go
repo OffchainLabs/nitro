@@ -12,6 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -155,7 +156,7 @@ func TestArbOwner(t *testing.T) {
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
-	evm := newMockEVMForTestingWithVersionAndRunMode(nil, types.MessageGasEstimationMode)
+	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.MessageGasEstimationMode)
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))

@@ -30,18 +30,17 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
-	"github.com/pkg/errors"
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	enc, err := wavmio.ResolvePreImage(hash)
 	if err != nil {
-		panic(errors.Wrap(err, "Error resolving preimage"))
+		panic(fmt.Errorf("Error resolving preimage: %w", err))
 	}
 	header := &types.Header{}
 	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
-		panic(errors.Wrap(err, "Error parsing resolved block header"))
+		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
 	return header
 }

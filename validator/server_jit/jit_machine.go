@@ -6,6 +6,7 @@ package server_jit
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/pkg/errors"
 )
 
 type JitMachine struct {

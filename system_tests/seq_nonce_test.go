@@ -53,7 +53,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 	balance, err := client.BalanceAt(ctx, addr, nil)
 	Require(t, err)
 	if !arbmath.BigEquals(balance, big.NewInt(100)) {
-		Fail(t, "Unexpected user balance", balance)
+		Fatal(t, "Unexpected user balance", balance)
 	}
 }
 
@@ -72,14 +72,14 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	tx := l2info.PrepareTx("Owner", "Owner", l2info.TransferGas, common.Big0, nil)
 	err := client.SendTransaction(ctx, tx)
 	if err == nil {
-		Fail(t, "No error when nonce was too high")
+		Fatal(t, "No error when nonce was too high")
 	}
 	if !strings.Contains(err.Error(), core.ErrNonceTooHigh.Error()) {
-		Fail(t, "Unexpected transaction error", err)
+		Fatal(t, "Unexpected transaction error", err)
 	}
 	elapsed := time.Since(before)
 	if elapsed > 2*config.Sequencer.NonceFailureCacheExpiry {
-		Fail(t, "Sequencer took too long to respond with nonce too high")
+		Fatal(t, "Sequencer took too long to respond with nonce too high")
 	}
 }
 
@@ -102,7 +102,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 		go func() {
 			err := client.SendTransaction(ctx, tx)
 			if err == nil {
-				Fail(t, "No error when nonce was too high")
+				Fatal(t, "No error when nonce was too high")
 			}
 			atomic.AddUint64(&completed, 1)
 		}()
@@ -115,7 +115,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 			break
 		}
 		if wait == 0 || got > expected {
-			Fail(t, "Wrong number of transaction responses; got", got, "but expected", expected)
+			Fatal(t, "Wrong number of transaction responses; got", got, "but expected", expected)
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
