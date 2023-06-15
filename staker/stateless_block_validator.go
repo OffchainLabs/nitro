@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -24,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/pkg/errors"
 )
 
 type StatelessBlockValidator struct {
@@ -225,7 +225,7 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
 	if e.Stage != ReadyForRecord {
-		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
+		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
 		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg).Await(ctx)

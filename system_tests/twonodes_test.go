@@ -57,7 +57,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	Require(t, err)
 
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-		Fail(t, "Unexpected balance:", l2balance)
+		Fatal(t, "Unexpected balance:", l2balance)
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ipfs/go-libipfs/files"
@@ -177,7 +176,6 @@ func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destina
 		}
 		fmt.Printf("\033[2K\rPinned %d / %d subtrees (%.2f%%)", done, all, float32(done)/float32(all)*100)
 	}
-	rand.Seed(time.Now().UnixNano())
 	permutation := rand.Perm(len(links))
 	printProgress(0, len(links))
 	for i, j := range permutation {

@@ -35,6 +35,6 @@ func TestSequencerWhitelist(t *testing.T) {
 	tx := l2info.PrepareTx("User2", "User", l2info.TransferGas, big.NewInt(params.Ether/10), nil)
 	err := client.SendTransaction(ctx, tx)
 	if err == nil {
-		Fail(t, "transaction from user not on whitelist accepted")
+		Fatal(t, "transaction from user not on whitelist accepted")
 	}
 }

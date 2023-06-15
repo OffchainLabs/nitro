@@ -136,7 +136,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))
 		if l2balance.Cmp(expectedBalance) != 0 {
-			Fail(t, "Unexpected balance:", l2balance)
+			Fatal(t, "Unexpected balance:", l2balance)
 		}
 	}
 
@@ -160,7 +160,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	timeout := getDeadlineTimeout(t, time.Minute*10)
 	// messageindex is same as block number here
 	if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
-		Fail(t, "did not validate all blocks")
+		Fatal(t, "did not validate all blocks")
 	}
 	gethExec, ok := nodeB.Execution.(*gethexec.ExecutionNode)
 	if !ok {
@@ -173,7 +173,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
 	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
-		Fail(t, "unexpected refcount:", finalRefCount)
+		Fatal(t, "unexpected refcount:", finalRefCount)
 	}
 }
 

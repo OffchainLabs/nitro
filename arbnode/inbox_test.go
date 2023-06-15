@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 
-	nitroutil "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
@@ -124,7 +125,7 @@ func TestTransactionStreamer(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]*big.Int{
-			ownerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(int64(nitroutil.NormalizeL2GasForL1GasInitial(1_000_000, params.GWei)))),
+			ownerAddress: new(big.Int).SetUint64(params.Ether),
 		},
 		accounts:    []common.Address{ownerAddress},
 		numMessages: 1,
@@ -192,6 +193,7 @@ func TestTransactionStreamer(t *testing.T) {
 			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
 			state.numMessages += arbutil.MessageIndex(len(messages))
+			prevBlockNumber := state.blockNumber
 			state.blockNumber += uint64(len(messages))
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()
@@ -203,6 +205,23 @@ func TestTransactionStreamer(t *testing.T) {
 					Fail(t, "timed out waiting for new block")
 				}
 				time.Sleep(10 * time.Millisecond)
+			}
+			for blockNum := prevBlockNumber + 1; blockNum <= state.blockNumber; blockNum++ {
+				block := bc.GetBlockByNumber(blockNum)
+				txs := block.Transactions()
+				receipts := bc.GetReceiptsByHash(block.Hash())
+				if len(txs) != len(receipts) {
+					Fail(t, "got", len(txs), "transactions but", len(receipts), "receipts in block", blockNum)
+				}
+				for i, receipt := range receipts {
+					sender, err := types.Sender(types.LatestSigner(bc.Config()), txs[i])
+					Require(t, err)
+					balance, ok := state.balances[sender]
+					if !ok {
+						continue
+					}
+					balance.Sub(balance, arbmath.BigMulByUint(block.BaseFee(), receipt.GasUsed))
+				}
 			}
 			blockStates = append(blockStates, state)
 		}
@@ -232,7 +251,7 @@ func TestTransactionStreamer(t *testing.T) {
 					Fail(t, "error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
-				if balance.Cmp(haveBalance) < 0 {
+				if balance.Cmp(haveBalance) != 0 {
 					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}
