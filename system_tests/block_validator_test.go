@@ -126,6 +126,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		err = l2client.SendTransaction(ctx, tx)
 		Require(t, err)
 		_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
+		Require(t, err)
 	}
 
 	if workload != depleteGas {
