@@ -119,7 +119,6 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 			ArbOSFormatVersion: arbosVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
-		header.Root = statedb.IntermediateRoot(true)
 	}
 	return header
 }
