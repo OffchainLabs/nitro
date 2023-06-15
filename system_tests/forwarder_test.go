@@ -323,7 +323,7 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	l2info.GenerateAccount(user)
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, transferAmount, nil)
 	sendFunc := func() error { return forwardingClient.SendTransaction(ctx, tx) }
-	err := tryWithTimeout(ctx, sendFunc, execution.DefaultTestForwarderConfig.UpdateInterval*10)
+	err := tryWithTimeout(ctx, sendFunc, gethexec.DefaultTestForwarderConfig.UpdateInterval*10)
 	Require(t, err)
 
 	_, err = EnsureTxSucceeded(ctx, fallbackClient, tx)

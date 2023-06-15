@@ -683,6 +683,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
+	if nodeConfig.Execution.Archive {
+		nodeConfig.Node.MessagePruner.Enable = false
+	}
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, nil, err

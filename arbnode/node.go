@@ -808,7 +808,7 @@ func createNodeImpl(
 		}
 	}
 	var messagePruner *MessagePruner
-	if config.MessagePruner.Enable && !config.Caching.Archive && stakerObj != nil {
+	if config.MessagePruner.Enable && stakerObj != nil {
 		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
