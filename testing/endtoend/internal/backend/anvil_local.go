@@ -137,6 +137,7 @@ func (a *AnvilLocal) Start() error {
 	args := []string{
 		"--block-time=1",
 		"--chain-id=1002",
+		"--gas-limit=5000000000",
 	}
 
 	cmd := exec.CommandContext(a.ctx, binaryPath, args...) // #nosec G204 -- Test only code.

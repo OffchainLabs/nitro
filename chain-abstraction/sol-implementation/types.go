@@ -28,12 +28,12 @@ func (a *Assertion) PrevId() protocol.AssertionId {
 	return a.prevId
 }
 
-func (a *Assertion) IsFirstChild() (bool, error) {
+func (a *Assertion) HasSecondChild() (bool, error) {
 	inner, err := a.inner()
 	if err != nil {
 		return false, err
 	}
-	return inner.IsFirstChild, nil
+	return inner.SecondChildBlock > 0, nil
 }
 
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {

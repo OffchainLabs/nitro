@@ -23,6 +23,7 @@ go_test(
         "//challenge-manager",
         "//layer2-state-provider",
         "//testing/endtoend/internal/backend",
+        "//testing/toys/assertions",
         "//testing/toys/state-provider",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",

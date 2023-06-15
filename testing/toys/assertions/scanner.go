@@ -9,6 +9,7 @@ import (
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -26,6 +27,7 @@ type Scanner struct {
 	chain            protocol.AssertionChain
 	backend          bind.ContractBackend
 	challengeManager challengemanager.ChallengeCreator
+	stateProvider    l2stateprovider.Provider
 	pollInterval     time.Duration
 	rollupAddr       common.Address
 	validatorName    string
@@ -34,6 +36,7 @@ type Scanner struct {
 // NewScanner creates a scanner from the required dependencies.
 func NewScanner(
 	chain protocol.AssertionChain,
+	stateProvider l2stateprovider.Provider,
 	backend bind.ContractBackend,
 	challengeManager challengemanager.ChallengeCreator,
 	rollupAddr common.Address,
@@ -43,6 +46,7 @@ func NewScanner(
 	return &Scanner{
 		chain:            chain,
 		backend:          backend,
+		stateProvider:    stateProvider,
 		challengeManager: challengeManager,
 		rollupAddr:       rollupAddr,
 		validatorName:    validatorName,
@@ -187,19 +191,28 @@ func (s *Scanner) ProcessAssertionCreation(
 	log.WithFields(logrus.Fields{
 		"validatorName": s.validatorName,
 	}).Info("Processed assertion creation event")
-	assertion, err := s.chain.GetAssertion(ctx, assertionId)
+	creationInfo, err := s.chain.ReadAssertionCreationInfo(ctx, assertionId)
 	if err != nil {
 		return err
 	}
-	isFirstChild, err := assertion.IsFirstChild()
+	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionId(creationInfo.ParentAssertionHash))
 	if err != nil {
 		return err
 	}
-	if isFirstChild {
+	hasSecondChild, err := prevAssertion.HasSecondChild()
+	if err != nil {
+		return err
+	}
+	if !hasSecondChild {
 		log.WithFields(logrus.Fields{
 			"validatorName": s.validatorName,
 		}).Info("No fork detected in assertion chain")
 		return nil
 	}
-	return s.challengeManager.ChallengeAssertion(ctx, assertion.Id())
+	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
+	_, agreesWithAssertion := s.stateProvider.ExecutionStateBlockHeight(ctx, execState)
+	if !agreesWithAssertion {
+		return nil
+	}
+	return s.challengeManager.ChallengeAssertion(ctx, assertionId)
 }

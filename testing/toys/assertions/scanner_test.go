@@ -8,6 +8,7 @@ import (
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/logging"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
@@ -21,26 +22,30 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 	ctx := context.Background()
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		manager, _, _, cfg := setupChallengeManager(t)
+		manager, _, mockStateProvider, cfg := setupChallengeManager(t)
 
 		prev := &mocks.MockAssertion{
-			MockPrevId:       mockId(1),
-			MockId:           mockId(1),
-			MockStateHash:    common.Hash{},
-			MockIsFirstChild: true,
+			MockPrevId:         mockId(1),
+			MockId:             mockId(1),
+			MockStateHash:      common.Hash{},
+			MockHasSecondChild: false,
 		}
 		ev := &mocks.MockAssertion{
-			MockPrevId:       mockId(1),
-			MockId:           mockId(2),
-			MockStateHash:    common.BytesToHash([]byte("bar")),
-			MockIsFirstChild: true,
+			MockPrevId:         mockId(1),
+			MockId:             mockId(2),
+			MockStateHash:      common.BytesToHash([]byte("bar")),
+			MockHasSecondChild: false,
 		}
 
 		p := &mocks.MockProtocol{}
 		p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
+		p.On("ReadAssertionCreationInfo", ctx, mockId(2)).Return(&protocol.AssertionCreatedInfo{
+			ParentAssertionHash: common.Hash(mockId(1)),
+			AfterState:          rollupgen.ExecutionState{},
+		}, nil)
 		p.On("GetAssertion", ctx, mockId(2)).Return(ev, nil)
 		p.On("GetAssertion", ctx, mockId(1)).Return(prev, nil)
-		scanner := assertions.NewScanner(p, cfg.Backend, manager, cfg.Addrs.Rollup, "", time.Second)
+		scanner := assertions.NewScanner(p, mockStateProvider, cfg.Backend, manager, cfg.Addrs.Rollup, "", time.Second)
 
 		err := scanner.ProcessAssertionCreation(ctx, ev.Id())
 		require.NoError(t, err)
@@ -63,7 +68,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			createdData.Addrs.Rollup,
 		)
 		require.NoError(t, err)
-		scanner := assertions.NewScanner(createdData.Chains[1], createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second)
+		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second)
 
 		err = scanner.ProcessAssertionCreation(ctx, createdData.Leaf1.Id())
 		require.NoError(t, err)
@@ -77,7 +82,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		otherScanner := assertions.NewScanner(createdData.Chains[0], createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second)
+		otherScanner := assertions.NewScanner(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second)
 
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)

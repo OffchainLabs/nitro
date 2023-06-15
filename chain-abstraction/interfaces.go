@@ -26,7 +26,7 @@ type Protocol interface {
 type Assertion interface {
 	Id() AssertionId
 	PrevId() AssertionId
-	IsFirstChild() (bool, error)
+	HasSecondChild() (bool, error)
 	CreatedAtBlock() (uint64, error)
 }
 

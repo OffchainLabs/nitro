@@ -18,6 +18,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var errBadOneStepProof = errors.New("bad one step proof data")
+
 func (et *edgeTracker) uniqueTrackerLogFields() logrus.Fields {
 	startHeight, startCommit := et.edge.StartCommitment()
 	endHeight, endCommit := et.edge.EndCommitment()
@@ -74,6 +76,9 @@ func (et *edgeTracker) act(ctx context.Context) error {
 	// Edge is at a one-step-proof in a small-step challenge.
 	case edgeAtOneStepProof:
 		if err := et.submitOneStepProof(ctx); err != nil {
+			if errors.Is(err, errBadOneStepProof) {
+				return et.fsm.Do(edgeConfirm{})
+			}
 			log.WithFields(fields).WithError(err).Error("could not submit one step proof")
 			return et.fsm.Do(edgeBackToStart{})
 		}
@@ -388,7 +393,7 @@ func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
 		uint64(pc)+1,
 	)
 	if err != nil {
-		return err
+		return errors.Wrapf(errBadOneStepProof, "could not get one step data: %v", err)
 	}
 	if err = manager.ConfirmEdgeByOneStepProof(
 		ctx,

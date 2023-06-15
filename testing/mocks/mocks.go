@@ -29,7 +29,7 @@ type MockAssertion struct {
 	MockStateHash         common.Hash
 	MockInboxMsgCountSeen uint64
 	MockCreatedAtBlock    uint64
-	MockIsFirstChild      bool
+	MockHasSecondChild    bool
 	CreatedAt             uint64
 }
 
@@ -45,8 +45,8 @@ func (m *MockAssertion) StateHash() (common.Hash, error) {
 	return m.MockStateHash, nil
 }
 
-func (m *MockAssertion) IsFirstChild() (bool, error) {
-	return m.MockIsFirstChild, nil
+func (m *MockAssertion) HasSecondChild() (bool, error) {
+	return m.MockHasSecondChild, nil
 }
 
 func (m *MockAssertion) InboxMsgCountSeen() (uint64, error) {
@@ -358,6 +358,10 @@ func (m *MockSpecEdge) LowerChild(ctx context.Context) (option.Option[protocol.E
 func (m *MockSpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
 	args := m.Called(ctx)
 	return args.Get(0).(option.Option[protocol.EdgeId]), args.Error(1)
+}
+func (m *MockSpecEdge) HasChildren(ctx context.Context) (bool, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(bool), args.Error(1)
 }
 func (m *MockSpecEdge) Bisect(
 	ctx context.Context,

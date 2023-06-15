@@ -278,7 +278,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	_,
 	_ commitments.History,
 ) (protocol.Agreement, error) {
-	return protocol.Agreement{}, errors.New("unimplemented")
+	return protocol.Agreement{}, nil
 }
 
 func (s *L2StateBackend) BigStepLeafCommitment(
