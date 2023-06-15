@@ -27,7 +27,7 @@ const RetryableReapPrice = 58000
 type RetryableState struct {
 	retryables   *storage.Storage
 	TimeoutQueue *storage.Queue
-	expired      *merkleAccumulator.MerkleAccumulator
+	Expired      *merkleAccumulator.MerkleAccumulator
 	revived      *storage.Uint64Set
 }
 
@@ -339,7 +339,7 @@ func (rs *RetryableState) Revive(
 	timeToAdd uint64,
 ) (uint64, error) {
 	retryableHash := RetryableHash(ticketId, numTries, from, to, callvalue, beneficiary, calldata)
-	expiredRoot, err := rs.expired.Root()
+	expiredRoot, err := rs.Expired.Root()
 	if err != nil {
 		return 0, err
 	}
@@ -444,57 +444,62 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	return true, err
 }
 
-func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) ([]merkleAccumulator.MerkleTreeNodeEvent, error) {
+type ExpiredRetryableLeaf struct {
+	Event    *merkleAccumulator.MerkleTreeNodeEvent
+	TicketId common.Hash
+}
+
+func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) ([]merkleAccumulator.MerkleTreeNodeEvent, *ExpiredRetryableLeaf, error) {
 	id, err := rs.TimeoutQueue.Peek()
 	if err != nil || id == nil {
-		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		return nil, nil, err
 	}
 	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes())
 	timeoutStorage := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
 	timeout, err := timeoutStorage.Get()
 	if err != nil {
-		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		return nil, nil, err
 	}
 	if timeout == 0 {
 		// The retryable has already been deleted, so discard the peeked entry
 		_, err = rs.TimeoutQueue.Get()
-		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		return nil, nil, err
 	}
 
 	windowsLeftStorage := retryableStorage.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
 	windowsLeft, err := windowsLeftStorage.Get()
 	// TODO(magic) why can't we check the second cond earlier?
 	if err != nil || timeout >= currentTimestamp {
-		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		return nil, nil, err
 	}
 
 	// Either the retryable has expired, or it's lost a lifetime's worth of time
 	_, err = rs.TimeoutQueue.Get()
 	if err != nil {
-		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		return nil, nil, err
 	}
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
 		retryableHash, err := rs.OpenPotentialyExpiredRetryable(*id).GetHash()
 		if err != nil {
-			return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+			return nil, nil, err
 		}
 		if err = clearRetryable(retryableStorage); err != nil {
-			return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+			return nil, nil, err
 		}
-		merkleUpdateEvents, err := rs.expired.Append(retryableHash)
+		merkleUpdateEvents, newLeafMerkleEvent, err := rs.Expired.Append(retryableHash)
 		if err != nil {
-			return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+			return nil, nil, err
 		}
-		return merkleUpdateEvents, nil
+		return merkleUpdateEvents, &ExpiredRetryableLeaf{newLeafMerkleEvent, *id}, nil
 	}
 
 	// Consume a window, delaying the timeout one lifetime period
 	if err := timeoutStorage.Set(timeout + RetryableLifetimeSeconds); err != nil {
-		return []merkleAccumulator.MerkleTreeNodeEvent{}, err
+		return nil, nil, err
 	}
-	return []merkleAccumulator.MerkleTreeNodeEvent{}, windowsLeftStorage.Set(windowsLeft - 1)
+	return nil, nil, windowsLeftStorage.Set(windowsLeft - 1)
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {

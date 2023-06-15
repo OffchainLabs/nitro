@@ -59,13 +59,15 @@ func TestRetryableLifecycle(t *testing.T) {
 		return currentTime
 	}
 	proveReapingDoesNothing := func() {
+		t.Helper()
 		stateCheck(t, statedb, false, "reaping had an effect", func() {
 			evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
-			_, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+			_, _, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 			Require(t, err)
 		})
 	}
 	checkQueueSize := func(expected int, message string) {
+		t.Helper()
 		timeoutQueueSize, err := retryableState.TimeoutQueue.Size()
 		Require(t, err)
 		if timeoutQueueSize != uint64(expected) {
@@ -119,7 +121,7 @@ func TestRetryableLifecycle(t *testing.T) {
 		// check that our reap pricing is reflective of the true cost
 		gasBefore := burner.Burned()
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
-		_, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		_, _, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		Require(t, err)
 		gasBurnedToReap := burner.Burned() - gasBefore
 		if gasBurnedToReap != retryables.RetryableReapPrice {
@@ -142,7 +144,7 @@ func TestRetryableLifecycle(t *testing.T) {
 
 		gasBefore := burner.Burned()
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
-		_, err = retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		_, _, err = retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		Require(t, err)
 		gasBurnedToReapAndDelete := burner.Burned() - gasBefore
 		if gasBurnedToReapAndDelete <= retryables.RetryableReapPrice {
@@ -191,7 +193,7 @@ func TestRetryableCleanup(t *testing.T) {
 		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
 		Require(t, err)
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
-		_, err = retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM)
+		_, _, err = retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM)
 		Require(t, err)
 		cleared, err := retryableState.TimeoutQueue.Shift()
 		Require(t, err)
@@ -233,6 +235,7 @@ func TestRetryableCreate(t *testing.T) {
 }
 
 func stateCheck(t *testing.T, statedb *state.StateDB, change bool, message string, scope func()) {
+	t.Helper()
 	stateBefore := statedb.IntermediateRoot(true)
 	dumpBefore := string(statedb.Dump(&state.DumpConfig{}))
 	scope()

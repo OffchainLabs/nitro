@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -87,21 +88,39 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		// Try to reap 2 retryables, revert the state on failure
 		snapshot := evm.StateDB.Snapshot()
 		var merkleUpdateEvents []merkleAccumulator.MerkleTreeNodeEvent
-		tryToReap := func() error {
-			events, err := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		var expiredRetryableLeafs []*retryables.ExpiredRetryableLeaf
+		for i := 0; i < 2; i++ {
+			var events []merkleAccumulator.MerkleTreeNodeEvent
+			var leaf *retryables.ExpiredRetryableLeaf
+			events, leaf, err = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+			if err != nil {
+				log.Error("Failed to try reaping one retryable", "err", err)
+				break
+			}
 			merkleUpdateEvents = append(merkleUpdateEvents, events...)
-			return err
+			if leaf != nil {
+				expiredRetryableLeafs = append(expiredRetryableLeafs, leaf)
+			}
 		}
-		if err = tryToReap(); err == nil {
-			err = tryToReap()
+		// TODO(magic) should we add it as MerkleTreeNodeEvent method?
+		positionFromEvent := func(event *merkleAccumulator.MerkleTreeNodeEvent) merkletree.LevelAndLeaf {
+			return merkletree.LevelAndLeaf{
+				Level: event.Level,
+				Leaf:  event.NumLeaves,
+			}
 		}
 		if err == nil {
-			for _, merkleUpdateEvent := range merkleUpdateEvents {
-				position := merkletree.LevelAndLeaf{
-					Level: merkleUpdateEvent.Level,
-					Leaf:  merkleUpdateEvent.NumLeaves,
+			for _, leaf := range expiredRetryableLeafs {
+				if err = EmitRetryableExpiredEvent(evm, leaf.TicketId, leaf.Event.Hash, positionFromEvent(leaf.Event).ToBigInt()); err != nil {
+					log.Error("Failed to emit RetryableExpired event", "err", err)
+					break
 				}
-				if err = EmitExpiredMerkleUpdateEvent(evm, merkleUpdateEvent.Hash, position.ToBigInt()); err != nil {
+			}
+		}
+		if err == nil {
+			for _, event := range merkleUpdateEvents {
+				if err = EmitExpiredMerkleUpdateEvent(evm, event.Hash, positionFromEvent(&event).ToBigInt()); err != nil {
+					log.Error("Failed to emit ExpiredMerkleUpdate event", "err", err)
 					break
 				}
 			}
