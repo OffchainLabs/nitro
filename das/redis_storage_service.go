@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"

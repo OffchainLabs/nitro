@@ -224,7 +224,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 		Require(t, err)
 
 		if l2balance.Cmp(expectedBalance) != 0 {
-			Fail(t, "Unexpected balance:", l2balance)
+			Fatal(t, "Unexpected balance:", l2balance)
 		}
 
 	}

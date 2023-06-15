@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -79,34 +78,33 @@ type NonceError struct {
 func (e NonceError) Error() string {
 	if e.txNonce < e.stateNonce {
 		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooLow, e.sender, e.txNonce, e.stateNonce)
-	} else if e.txNonce > e.stateNonce {
-		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooHigh, e.sender, e.txNonce, e.stateNonce)
-	} else {
-		// This should be unreachable
-		return fmt.Sprintf("invalid nonce error for address %v nonce %v", e.sender, e.txNonce)
 	}
+	if e.txNonce > e.stateNonce {
+		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooHigh, e.sender, e.txNonce, e.stateNonce)
+	}
+	// This should be unreachable
+	return fmt.Sprintf("invalid nonce error for address %v nonce %v", e.sender, e.txNonce)
 }
 
 func (e NonceError) Unwrap() error {
 	if e.txNonce < e.stateNonce {
 		return core.ErrNonceTooLow
-	} else if e.txNonce > e.stateNonce {
-		return core.ErrNonceTooHigh
-	} else {
-		// This should be unreachable
-		return nil
 	}
+	if e.txNonce > e.stateNonce {
+		return core.ErrNonceTooHigh
+	}
+	// This should be unreachable
+	return nil
 }
 
 func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) error {
-	if txNonce != stateNonce {
-		return NonceError{
-			sender:     sender,
-			txNonce:    txNonce,
-			stateNonce: stateNonce,
-		}
-	} else {
+	if txNonce == stateNonce {
 		return nil
+	}
+	return NonceError{
+		sender:     sender,
+		txNonce:    txNonce,
+		stateNonce: stateNonce,
 	}
 }
 
@@ -175,7 +173,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			if oldHeader != header {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
-					return errors.Wrap(err, "failed to get old state")
+					return fmt.Errorf("failed to get old state: %w", err)
 				}
 				oldExtraInfo := types.DeserializeHeaderExtraInformation(oldHeader)
 				if err := options.Check(oldExtraInfo.L1BlockNumber, oldHeader.Time, secondOldStatedb); err != nil {
@@ -199,7 +197,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 
 func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	block := c.bc.CurrentBlock()
-	statedb, err := c.bc.StateAt(block.Root())
+	statedb, err := c.bc.StateAt(block.Root)
 	if err != nil {
 		return err
 	}
@@ -207,7 +205,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block.Header(), statedb, arbos, tx, options, c.config())
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, options, c.config())
 	if err != nil {
 		return err
 	}

@@ -6,11 +6,11 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -241,20 +241,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
-	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
-	if err != nil {
-		return nil, fmt.Errorf("error getting pending nonce: %w", err)
-	}
-	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
-		expectedRollupAddr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -317,6 +311,7 @@ type Config struct {
 	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster         BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
+	MessagePruner       MessagePrunerConfig         `koanf:"message-pruner" reload:"hot"`
 	BlockValidator      staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
 	Staker              staker.L1ValidatorConfig    `koanf:"staker"`
@@ -372,6 +367,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
+	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
@@ -388,6 +384,7 @@ var ConfigDefault = Config{
 	InboxReader:         DefaultInboxReaderConfig,
 	DelayedSequencer:    DefaultDelayedSequencerConfig,
 	BatchPoster:         DefaultBatchPosterConfig,
+	MessagePruner:       DefaultMessagePrunerConfig,
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
 	Staker:              staker.DefaultL1ValidatorConfig,
@@ -466,6 +463,7 @@ type Node struct {
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
 	BatchPoster             *BatchPoster
+	MessagePruner           *MessagePruner
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
 	Staker                  *staker.Staker
@@ -644,6 +642,7 @@ func createNodeImpl(
 			nil,
 			nil,
 			nil,
+			nil,
 			broadcastServer,
 			broadcastClients,
 			coordinator,
@@ -723,9 +722,8 @@ func createNodeImpl(
 	if err != nil {
 		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
-		} else {
-			log.Warn("validation not supported", "err", err)
 		}
+		log.Warn("validation not supported", "err", err)
 		statelessBlockValidator = nil
 	}
 
@@ -802,6 +800,10 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
+	var messagePruner *MessagePruner
+	if config.MessagePruner.Enable && stakerObj != nil {
+		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
+	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
 	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
@@ -819,6 +821,7 @@ func createNodeImpl(
 		inboxTracker,
 		delayedSequencer,
 		batchPoster,
+		messagePruner,
 		blockValidator,
 		statelessBlockValidator,
 		stakerObj,
@@ -951,6 +954,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start(ctx)
 	}
+	if n.MessagePruner != nil {
+		n.MessagePruner.Start(ctx)
+	}
 	if n.Staker != nil {
 		err = n.Staker.Initialize(ctx)
 		if err != nil {
@@ -962,9 +968,8 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			if n.configFetcher.Get().ValidatorRequired() {
 				return fmt.Errorf("error initializing stateless block validator: %w", err)
-			} else {
-				log.Info("validation not set up", "err", err)
 			}
+			log.Info("validation not set up", "err", err)
 			n.StatelessBlockValidator = nil
 			n.BlockValidator = nil
 		}
@@ -1035,6 +1040,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.BatchPoster != nil && n.BatchPoster.Started() {
 		n.BatchPoster.StopAndWait()
+	}
+	if n.MessagePruner != nil && n.MessagePruner.Started() {
+		n.MessagePruner.StopAndWait()
 	}
 	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
