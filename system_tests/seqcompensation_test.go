@@ -50,12 +50,12 @@ func TestSequencerCompensation(t *testing.T) {
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-		Fail(t, "Unexpected balance:", l2balance)
+		Fatal(t, "Unexpected balance:", l2balance)
 	}
 
 	initialSeqBalance, err := l2clientB.BalanceAt(ctx, l1pricing.BatchPosterAddress, big.NewInt(0))
 	Require(t, err)
 	if initialSeqBalance.Sign() != 0 {
-		Fail(t, "Unexpected initial sequencer balance:", initialSeqBalance)
+		Fatal(t, "Unexpected initial sequencer balance:", initialSeqBalance)
 	}
 }

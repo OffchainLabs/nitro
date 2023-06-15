@@ -3,6 +3,7 @@ package gethexec
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -25,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 )
 
 var messageHashHeader = []byte("messageHash_")
@@ -156,7 +156,7 @@ func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
 	if currentBlock == nil {
 		return nil, errors.New("failed to get current block")
 	}
-	return currentBlock.Header(), nil
+	return currentBlock, nil
 }
 
 func (s *ExecutionEngine) headMessageNumber() (arbutil.MessageIndex, error) {
@@ -468,17 +468,20 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIn
 
 // must hold createBlockMutex
 func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
-	currentBlock := s.bc.CurrentBlock()
+	currentHeader := s.bc.CurrentBlock()
+	if currentHeader == nil {
+		return nil, nil, nil, errors.New("failed to get current block header")
+	}
+
+	currentBlock := s.bc.GetBlock(currentHeader.Hash(), currentHeader.Number.Uint64())
 	if currentBlock == nil {
-		return nil, nil, nil, errors.New("failed to get current block")
+		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
 	err := s.bc.RecoverState(currentBlock)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
-
-	currentHeader := currentBlock.Header()
 
 	statedb, err := s.bc.StateAt(currentHeader.Root)
 	if err != nil {

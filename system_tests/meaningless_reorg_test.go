@@ -36,14 +36,14 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	execNode := getExecNode(t, arbNode)
 	for i := 0; ; i++ {
 		if i >= 500 {
-			Fail(t, "Failed to read batch from L1")
+			Fatal(t, "Failed to read batch from L1")
 		}
 		msgNum, err := execNode.ExecEngine.HeadMessageNumber().Await(ctx)
 		Require(t, err)
 		if msgNum == 1 {
 			break
 		} else if msgNum > 1 {
-			Fail(t, "More than two batches in test?")
+			Fatal(t, "More than two batches in test?")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -51,7 +51,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
 	if metadata.L1Block != originalBatchBlock {
-		Fail(t, "Posted batch in block", originalBatchBlock, "but metadata says L1 block was", metadata.L1Block)
+		Fatal(t, "Posted batch in block", originalBatchBlock, "but metadata says L1 block was", metadata.L1Block)
 	}
 
 	_, l2Receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2Info, l2Client, ctx)
@@ -78,21 +78,21 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 
 	newBatchBlock := newBatchReceipt.BlockNumber.Uint64()
 	if newBatchBlock == originalBatchBlock {
-		Fail(t, "Attempted to change L1 block number in batch reorg, but it ended up in the same block", newBatchBlock)
+		Fatal(t, "Attempted to change L1 block number in batch reorg, but it ended up in the same block", newBatchBlock)
 	} else {
 		t.Log("Batch successfully moved in reorg from L1 block", originalBatchBlock, "to L1 block", newBatchBlock)
 	}
 
 	for i := 0; ; i++ {
 		if i >= 500 {
-			Fail(t, "Failed to read batch reorg from L1")
+			Fatal(t, "Failed to read batch reorg from L1")
 		}
 		metadata, err = arbNode.InboxTracker.GetBatchMetadata(1)
 		Require(t, err)
 		if metadata.L1Block == newBatchBlock {
 			break
 		} else if metadata.L1Block != originalBatchBlock {
-			Fail(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.L1Block, "instead of expected", metadata.L1Block)
+			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.L1Block, "instead of expected", metadata.L1Block)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -104,6 +104,6 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	Require(t, err)
 
 	if l2Header.Hash() != l2Receipt.BlockHash {
-		Fail(t, "L2 block hash changed")
+		Fatal(t, "L2 block hash changed")
 	}
 }

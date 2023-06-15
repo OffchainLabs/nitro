@@ -108,11 +108,11 @@ func TestSequencerRejection(t *testing.T) {
 			break
 		}
 		if i == 0 {
-			Fail(t, "failed to reach block 200, only reached block", block)
+			Fatal(t, "failed to reach block 200, only reached block", block)
 		}
 		select {
 		case err := <-feedErrChan:
-			Fail(t, "error: ", err)
+			Fatal(t, "error: ", err)
 		case <-time.After(time.Millisecond * 100):
 		}
 	}
@@ -128,12 +128,12 @@ func TestSequencerRejection(t *testing.T) {
 		if err != nil {
 			select {
 			case err := <-feedErrChan:
-				Fail(t, "error: ", err)
+				Fatal(t, "error: ", err)
 			case <-time.After(time.Millisecond * 100):
 			}
 			if i == 0 {
 				client2Block, _ := client2.BlockNumber(ctx)
-				Fail(t, "client2 failed to reach client1 block ", header1.Number, ", only reached block", client2Block)
+				Fatal(t, "client2 failed to reach client1 block ", header1.Number, ", only reached block", client2Block)
 			}
 			continue
 		}
@@ -143,7 +143,7 @@ func TestSequencerRejection(t *testing.T) {
 		} else {
 			colors.PrintBlue("header 1:", header1)
 			colors.PrintBlue("header 2:", header2)
-			Fail(t, "header 1 and header 2 have different hashes")
+			Fatal(t, "header 1 and header 2 have different hashes")
 		}
 	}
 }
