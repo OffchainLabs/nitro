@@ -21,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64, skipBlocks uint32, skipGas uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, l1info info, l1stack *node.Node, nodeConfig *arbnode.Config, cacheConfig *core.CacheConfig, cancel func()) {
@@ -58,11 +57,11 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
 		err := l2client.SendTransaction(ctx, tx)
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 	}
 	for _, tx := range txs {
 		_, err := EnsureTxSucceeded(ctx, l2client, tx)
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 	}
 	bc = node.Execution.Backend.ArbInterface().BlockChain()
 	db = node.Execution.Backend.ChainDb()
@@ -74,7 +73,7 @@ func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
 		if header == nil {
-			testhelpers.FailImpl(t, "internal test error - failed to get header while trying to fill headerCache, header:", i)
+			Fatal(t, "internal test error - failed to get header while trying to fill headerCache, header:", i)
 		}
 	}
 }
@@ -83,7 +82,7 @@ func fillBlockCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
 	for i := from; i <= to; i++ {
 		block := bc.GetBlockByNumber(i)
 		if block == nil {
-			testhelpers.FailImpl(t, "internal test error - failed to get block while trying to fill blockCache, block:", i)
+			Fatal(t, "internal test error - failed to get block while trying to fill blockCache, block:", i)
 		}
 	}
 }
@@ -92,21 +91,21 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
 		if header == nil {
-			testhelpers.FailImpl(t, "failed to get last block header")
+			Fatal(t, "failed to get last block header")
 		}
 		hash := header.Root
 		err := db.Delete(hash.Bytes())
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 	}
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
 		_, err := bc.StateAt(header.Root)
 		if err == nil {
-			testhelpers.FailImpl(t, "internal test error - failed to remove state from db")
+			Fatal(t, "internal test error - failed to remove state from db")
 		}
 		expectedErr := &trie.MissingNodeError{}
 		if !errors.As(err, &expectedErr) {
-			testhelpers.FailImpl(t, "internal test error - failed to remove state from db, err: ", err)
+			Fatal(t, "internal test error - failed to remove state from db, err: ", err)
 		}
 	}
 }
@@ -118,18 +117,18 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	middleBlock := lastBlock / 2
 
 	expectedBalance, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	removeStatesFromDb(t, bc, db, middleBlock, lastBlock)
 
 	balance, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	if balance.Cmp(expectedBalance) != 0 {
-		testhelpers.FailImpl(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
+		Fatal(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
 	}
 
 }
@@ -142,18 +141,18 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	middleBlock := lastBlock / 2
 
 	expectedBalance, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	removeStatesFromDb(t, bc, db, middleBlock, lastBlock)
 
 	balance, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	if balance.Cmp(expectedBalance) != 0 {
-		testhelpers.FailImpl(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
+		Fatal(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
 	}
 
 }
@@ -166,17 +165,17 @@ func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	middleBlock := lastBlock / 2
 
 	removeStatesFromDb(t, bc, db, middleBlock, lastBlock)
 
 	_, err = l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
 	if err == nil {
-		testhelpers.FailImpl(t, "Didn't fail as expected")
+		Fatal(t, "Didn't fail as expected")
 	}
 	if err.Error() != arbitrum.ErrDepthLimitExceeded.Error() {
-		testhelpers.FailImpl(t, "Failed with unexpected error:", err)
+		Fatal(t, "Failed with unexpected error:", err)
 	}
 }
 
@@ -189,9 +188,9 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	if lastBlock < headerCacheLimit+4 {
-		testhelpers.FailImpl(t, "Internal test error - not enough blocks produced during preparation, want:", headerCacheLimit, "have:", lastBlock)
+		Fatal(t, "Internal test error - not enough blocks produced during preparation, want:", headerCacheLimit, "have:", lastBlock)
 	}
 
 	removeStatesFromDb(t, bc, db, lastBlock-4, lastBlock)
@@ -207,10 +206,10 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 		_, err = l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(i))
 		if err == nil {
 			hash := rawdb.ReadCanonicalHash(db, i)
-			testhelpers.FailImpl(t, "Didn't fail to get balance at block:", i, " with hash:", hash, ", lastBlock:", lastBlock)
+			Fatal(t, "Didn't fail to get balance at block:", i, " with hash:", hash, ", lastBlock:", lastBlock)
 		}
 		if !strings.Contains(err.Error(), "chain doesn't contain parent of block") {
-			testhelpers.FailImpl(t, "Failed with unexpected error: \"", err, "\", at block:", i, "lastBlock:", lastBlock)
+			Fatal(t, "Failed with unexpected error: \"", err, "\", at block:", i, "lastBlock:", lastBlock)
 		}
 	}
 }
@@ -222,7 +221,7 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 	removeStatesFromDb(t, bc, db, genesis, lastBlock)
@@ -230,10 +229,10 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	_, err = l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
 	if err == nil {
 		hash := rawdb.ReadCanonicalHash(db, lastBlock)
-		testhelpers.FailImpl(t, "Didn't fail to get balance at block:", lastBlock, " with hash:", hash, ", lastBlock:", lastBlock)
+		Fatal(t, "Didn't fail to get balance at block:", lastBlock, " with hash:", hash, ", lastBlock:", lastBlock)
 	}
 	if !strings.Contains(err.Error(), "moved beyond genesis") {
-		testhelpers.FailImpl(t, "Failed with unexpected error: \"", err, "\", at block:", lastBlock, "lastBlock:", lastBlock)
+		Fatal(t, "Failed with unexpected error: \"", err, "\", at block:", lastBlock, "lastBlock:", lastBlock)
 	}
 }
 
@@ -246,9 +245,9 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	if lastBlock < blockCacheLimit+4 {
-		testhelpers.FailImpl(t, "Internal test error - not enough blocks produced during preparation, want:", blockCacheLimit, "have:", lastBlock)
+		Fatal(t, "Internal test error - not enough blocks produced during preparation, want:", blockCacheLimit, "have:", lastBlock)
 	}
 
 	removeStatesFromDb(t, bc, db, lastBlock-4, lastBlock)
@@ -263,10 +262,10 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	_, err = l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
 	if err == nil {
 		hash := rawdb.ReadCanonicalHash(db, lastBlock)
-		testhelpers.FailImpl(t, "Didn't fail to get balance at block:", lastBlock, " with hash:", hash, ", lastBlock:", lastBlock)
+		Fatal(t, "Didn't fail to get balance at block:", lastBlock, " with hash:", hash, ", lastBlock:", lastBlock)
 	}
 	if !strings.Contains(err.Error(), "block not found while recreating") {
-		testhelpers.FailImpl(t, "Failed with unexpected error: \"", err, "\", at block:", lastBlock, "lastBlock:", lastBlock)
+		Fatal(t, "Failed with unexpected error: \"", err, "\", at block:", lastBlock, "lastBlock:", lastBlock)
 	}
 }
 
@@ -327,18 +326,18 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
 		err := client.SendTransaction(ctx, tx)
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 	}
 	for _, tx := range txs {
 		_, err := EnsureTxSucceeded(ctx, client, tx)
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 	}
 	bc := node.Execution.Backend.ArbInterface().BlockChain()
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 	lastBlock, err := client.BlockNumber(ctx)
 	Require(t, err)
 	if want := genesis + uint64(txCount); lastBlock < want {
-		Fail(t, "internal test error - not enough blocks produced during preparation, want:", want, "have:", lastBlock)
+		Fatal(t, "internal test error - not enough blocks produced during preparation, want:", want, "have:", lastBlock)
 	}
 	expectedBalance, err := client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
 	Require(t, err)
@@ -360,7 +359,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	for i := genesis + 1; i <= genesis+uint64(txCount); i++ {
 		block := bc.GetBlockByNumber(i)
 		if block == nil {
-			Fail(t, "header not found for block number:", i)
+			Fatal(t, "header not found for block number:", i)
 			continue
 		}
 		gas += block.GasUsed()
@@ -376,23 +375,23 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 		} else {
 			if err == nil {
 				t.Log("blocks:", blocks, "skipBlocks:", skipBlocks, "gas:", gas, "skipGas:", skipGas)
-				Fail(t, "state shouldn't be available, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
+				Fatal(t, "state shouldn't be available, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
 			}
 			expectedErr := &trie.MissingNodeError{}
 			if !errors.As(err, &expectedErr) {
-				Fail(t, "getting state failed with unexpected error, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
+				Fatal(t, "getting state failed with unexpected error, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
 			}
 		}
 	}
 	for i := genesis + 1; i <= genesis+uint64(txCount); i += i % 10 {
 		_, err = client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(i))
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 	}
 
 	balance, err := client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	if balance.Cmp(expectedBalance) != 0 {
-		testhelpers.FailImpl(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
+		Fatal(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
 	}
 }
 
