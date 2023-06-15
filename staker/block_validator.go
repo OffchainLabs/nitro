@@ -603,15 +603,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			defer cancel()
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
-			if err != nil && validationCtx.Err() == nil {
+			if err != nil {
 				validationStatus.replaceStatus(Prepared, RecordFailed)
-				log.Error("error preparing validation", "err", err)
+				if validationCtx.Err() == nil {
+					log.Error("error preparing validation", "err", err)
+				}
 				return
 			}
 			input, err := validationStatus.Entry.ToInput()
-			if err != nil && validationCtx.Err() == nil {
+			if err != nil {
 				validationStatus.replaceStatus(Prepared, RecordFailed)
-				log.Error("error preparing validation", "err", err)
+				if validationCtx.Err() == nil {
+					log.Error("error preparing validation", "err", err)
+				}
 				return
 			}
 			for _, moduleRoot := range wasmRoots {
