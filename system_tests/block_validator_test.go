@@ -9,6 +9,9 @@ package arbtest
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"math/big"
 	"testing"
@@ -54,53 +57,53 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 	perTransfer := big.NewInt(1e12)
 
-	//for i := 0; i < workloadLoops; i++ {
-	//	var tx *types.Transaction
-	//
-	//	if workload == ethSend {
-	//		tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, perTransfer, nil)
-	//	} else {
-	//		var contractCode []byte
-	//		var gas uint64
-	//
-	//		if workload == smallContract {
-	//			contractCode = []byte{byte(vm.PUSH0)}
-	//			contractCode = append(contractCode, byte(vm.PUSH0))
-	//			contractCode = append(contractCode, byte(vm.PUSH1))
-	//			contractCode = append(contractCode, 8) // the prelude length
-	//			contractCode = append(contractCode, byte(vm.PUSH0))
-	//			contractCode = append(contractCode, byte(vm.CODECOPY))
-	//			contractCode = append(contractCode, byte(vm.PUSH0))
-	//			contractCode = append(contractCode, byte(vm.RETURN))
-	//			basefee := GetBaseFee(t, l2client, ctx)
-	//			var err error
-	//			gas, err = l2client.EstimateGas(ctx, ethereum.CallMsg{
-	//				From:     l2info.GetAddress("Owner"),
-	//				GasPrice: basefee,
-	//				Value:    big.NewInt(0),
-	//				Data:     contractCode,
-	//			})
-	//			Require(t, err)
-	//		} else {
-	//			contractCode = []byte{0x5b} // JUMPDEST
-	//			for i := 0; i < 20; i++ {
-	//				contractCode = append(contractCode, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
-	//			}
-	//			contractCode = append(contractCode, 0x60, 0x00, 0x56) // JUMP
-	//			gas = l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6
-	//		}
-	//		tx = l2info.PrepareTxTo("Owner", nil, gas, common.Big0, contractCode)
-	//	}
-	//
-	//	err := l2client.SendTransaction(ctx, tx)
-	//	Require(t, err)
-	//	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
-	//	if workload != depleteGas {
-	//		Require(t, err)
-	//	}
-	//}
+	if workload != upgradeArbOs {
+		for i := 0; i < workloadLoops; i++ {
+			var tx *types.Transaction
 
-	if workload == upgradeArbOs {
+			if workload == ethSend {
+				tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, perTransfer, nil)
+			} else {
+				var contractCode []byte
+				var gas uint64
+
+				if workload == smallContract {
+					contractCode = []byte{byte(vm.PUSH0)}
+					contractCode = append(contractCode, byte(vm.PUSH0))
+					contractCode = append(contractCode, byte(vm.PUSH1))
+					contractCode = append(contractCode, 8) // the prelude length
+					contractCode = append(contractCode, byte(vm.PUSH0))
+					contractCode = append(contractCode, byte(vm.CODECOPY))
+					contractCode = append(contractCode, byte(vm.PUSH0))
+					contractCode = append(contractCode, byte(vm.RETURN))
+					basefee := GetBaseFee(t, l2client, ctx)
+					var err error
+					gas, err = l2client.EstimateGas(ctx, ethereum.CallMsg{
+						From:     l2info.GetAddress("Owner"),
+						GasPrice: basefee,
+						Value:    big.NewInt(0),
+						Data:     contractCode,
+					})
+					Require(t, err)
+				} else {
+					contractCode = []byte{0x5b} // JUMPDEST
+					for i := 0; i < 20; i++ {
+						contractCode = append(contractCode, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
+					}
+					contractCode = append(contractCode, 0x60, 0x00, 0x56) // JUMP
+					gas = l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6
+				}
+				tx = l2info.PrepareTxTo("Owner", nil, gas, common.Big0, contractCode)
+			}
+
+			err := l2client.SendTransaction(ctx, tx)
+			Require(t, err)
+			_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
+			if workload != depleteGas {
+				Require(t, err)
+			}
+		}
+	} else {
 		auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 		// make auth a chain owner
 		arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
