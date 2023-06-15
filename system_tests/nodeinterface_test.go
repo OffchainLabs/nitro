@@ -238,11 +238,11 @@ func callFindBatchContainig(t *testing.T, ctx context.Context, client *ethclient
 	outputs, err := findBatch.Outputs.Unpack(returnData)
 	Require(t, err)
 	if len(outputs) != 1 {
-		Fail(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
+		Fatal(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
 	}
 	gotBatchNum, ok := outputs[0].(uint64)
 	if !ok {
-		Fail(t, "bad output from findBatchContainingBlock")
+		Fatal(t, "bad output from findBatchContainingBlock")
 	}
 	return gotBatchNum
 }
@@ -262,11 +262,11 @@ func callGetL1Confirmations(t *testing.T, ctx context.Context, client *ethclient
 	outputs, err := getConfirmations.Outputs.Unpack(returnData)
 	Require(t, err)
 	if len(outputs) != 1 {
-		Fail(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
+		Fatal(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
 	}
 	confirmations, ok := outputs[0].(uint64)
 	if !ok {
-		Fail(t, "bad output from findBatchContainingBlock")
+		Fatal(t, "bad output from findBatchContainingBlock")
 	}
 	return confirmations
 }
@@ -317,7 +317,7 @@ func TestFindBatch(t *testing.T) {
 			expBatchNum = 1 + (blockNum-1)/uint64(MsgPerBatch)
 		}
 		if expBatchNum != gotBatchNum {
-			Fail(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
+			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
 		}
 		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum)
 		Require(t, err)
@@ -332,7 +332,7 @@ func TestFindBatch(t *testing.T) {
 		Require(t, err)
 
 		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
-			Fail(t, "wrong number of confirmations. got ", gotConfirmations)
+			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
 		}
 	}
 }
