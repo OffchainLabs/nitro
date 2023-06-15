@@ -102,16 +102,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 				expiredRetryableLeafs = append(expiredRetryableLeafs, leaf)
 			}
 		}
-		// TODO(magic) should we add it as MerkleTreeNodeEvent method?
-		positionFromEvent := func(event *merkleAccumulator.MerkleTreeNodeEvent) merkletree.LevelAndLeaf {
-			return merkletree.LevelAndLeaf{
-				Level: event.Level,
-				Leaf:  event.NumLeaves,
-			}
-		}
 		if err == nil {
 			for _, leaf := range expiredRetryableLeafs {
-				if err = EmitRetryableExpiredEvent(evm, leaf.TicketId, leaf.Event.Hash, positionFromEvent(leaf.Event).ToBigInt()); err != nil {
+				position := merkletree.LevelAndLeaf{Level: leaf.Event.Level, Leaf: leaf.Event.NumLeaves}
+				if err = EmitRetryableExpiredEvent(evm, leaf.TicketId, leaf.Event.Hash, position.ToBigInt()); err != nil {
 					log.Error("Failed to emit RetryableExpired event", "err", err)
 					break
 				}
@@ -119,7 +113,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		if err == nil {
 			for _, event := range merkleUpdateEvents {
-				if err = EmitExpiredMerkleUpdateEvent(evm, event.Hash, positionFromEvent(&event).ToBigInt()); err != nil {
+				position := merkletree.LevelAndLeaf{Level: event.Level, Leaf: event.NumLeaves}
+				if err = EmitExpiredMerkleUpdateEvent(evm, event.Hash, position.ToBigInt()); err != nil {
 					log.Error("Failed to emit ExpiredMerkleUpdate event", "err", err)
 					break
 				}
