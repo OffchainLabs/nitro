@@ -121,7 +121,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 
-		tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, perTransfer, nil)
+		tx = l2info.PrepareTxTo("Owner", nil, l2info.TransferGas, perTransfer, []byte{byte(vm.PUSH0)})
 		err = l2client.SendTransaction(ctx, tx)
 		Require(t, err)
 		_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
