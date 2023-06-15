@@ -58,7 +58,7 @@ impl TestEvmApi {
     pub fn set_pages(&mut self, open: u16) {
         let mut pages = self.pages.lock();
         pages.0 = open;
-        pages.1 = open.max(pages.0);
+        pages.1 = open.max(pages.1);
     }
 }
 
