@@ -125,20 +125,20 @@ func TestExecutionMessageStore(t *testing.T) {
 	Require(t, err)
 
 	if len(mock.Messages) != 5 {
-		Fail(t, "expecting 5 messages, got: ", len(mock.Messages))
+		Fatal(t, "expecting 5 messages, got: ", len(mock.Messages))
 	}
 
 	state, err := blockchain.State()
 	Require(t, err)
 	userBalance := state.GetBalance(l2Info.GetAddress("User"))
 	if userBalance.Cmp(big.NewInt(3000)) != 0 {
-		Fail(t, "unexpected user balance: ", userBalance)
+		Fatal(t, "unexpected user balance: ", userBalance)
 	}
 	for msgNum, result := range mock.Results {
 		curResult, err := engine.DigestMessage(msgNum, mock.Messages[msgNum]).Await(ctx)
 		Require(t, err)
 		if *curResult != *result {
-			Fail(t, "result inconsistent for msg ", msgNum, " old ", *result, " new ", *curResult)
+			Fatal(t, "result inconsistent for msg ", msgNum, " old ", *result, " new ", *curResult)
 		}
 	}
 	for msgNum, msg := range mock.Messages {
@@ -147,10 +147,10 @@ func TestExecutionMessageStore(t *testing.T) {
 			if sendMsgNum == msgNum {
 				Require(t, err)
 				if *result != *mock.Results[msgNum] {
-					Fail(t, "result inconsistent for msg ", msgNum, " old ", *result, " new ", *mock.Results[msgNum])
+					Fatal(t, "result inconsistent for msg ", msgNum, " old ", *result, " new ", *mock.Results[msgNum])
 				}
 			} else if err == nil {
-				Fail(t, "message wrongfully accepted. sendNum: ", sendMsgNum, " msgNum: ", msgNum)
+				Fatal(t, "message wrongfully accepted. sendNum: ", sendMsgNum, " msgNum: ", msgNum)
 			}
 		}
 	}
@@ -207,21 +207,21 @@ func TestConsensusRPC(t *testing.T) {
 	num, err := client.FindL1BatchForMessage(12).Await(ctx)
 	Require(t, err)
 	if num != 7 {
-		Fail(t, "unexpected num:", num)
+		Fatal(t, "unexpected num:", num)
 	}
 	num, err = client.GetBatchL1Block(12).Await(ctx)
 	Require(t, err)
 	if num != 1012 {
-		Fail(t, "unexpected num:", num)
+		Fatal(t, "unexpected num:", num)
 	}
 	syncmap, err := client.SyncProgressMap().Await(ctx)
 	Require(t, err)
 	if len(syncmap) != 1 {
-		Fail(t, "unexpected syncmap: ", syncmap)
+		Fatal(t, "unexpected syncmap: ", syncmap)
 	}
 	world, ok := syncmap["hello"].(string)
 	if world != "world" {
-		Fail(t, "unexpected val: ", world, " ok:", ok)
+		Fatal(t, "unexpected val: ", world, " ok:", ok)
 	}
 	testMsg := arbostypes.MessageWithMetadata{
 		Message: &arbostypes.L1IncomingMessage{
@@ -244,28 +244,28 @@ func TestConsensusRPC(t *testing.T) {
 	Require(t, err)
 	gotMessage := mock.Messages[3]
 	if len(mock.Messages) != 1 || gotMessage == nil {
-		Fail(t, "unexpected messages ", mock.Messages, " message ", *mock.Messages[3].Message, " delayed ", mock.Messages[3].DelayedMessagesRead)
+		Fatal(t, "unexpected messages ", mock.Messages, " message ", *mock.Messages[3].Message, " delayed ", mock.Messages[3].DelayedMessagesRead)
 	}
 	if (!gotMessage.Message.Equals(testMsg.Message)) || gotMessage.DelayedMessagesRead != testMsg.DelayedMessagesRead {
-		Fail(t, "unexpected message")
+		Fatal(t, "unexpected message")
 	}
 	if len(mock.Results) != 1 || *mock.Results[3] != testResult {
-		Fail(t, "unexpected results ", mock.Results)
+		Fatal(t, "unexpected results ", mock.Results)
 	}
 	pos, err := client.SyncTargetMessageCount().Await(ctx)
 	Require(t, err)
 	if pos != 1 {
-		Fail(t, "unexpected pos:", pos)
+		Fatal(t, "unexpected pos:", pos)
 	}
 	pos, err = client.GetSafeMsgCount().Await(ctx)
 	Require(t, err)
 	if pos != 1 {
-		Fail(t, "unexpected pos:", pos)
+		Fatal(t, "unexpected pos:", pos)
 	}
 	pos, err = client.GetFinalizedMsgCount().Await(ctx)
 	Require(t, err)
 	if pos != 1 {
-		Fail(t, "unexpected pos:", pos)
+		Fatal(t, "unexpected pos:", pos)
 	}
 	_, err = client.ExpectChosenSequencer().Await(ctx)
 	Require(t, err)

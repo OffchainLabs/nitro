@@ -125,7 +125,7 @@ test-go: .make/test-go
 	@printf $(done)
 
 test-go-challenge: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
+	go test -timeout 30m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
 test-go-redis: test-go-deps
