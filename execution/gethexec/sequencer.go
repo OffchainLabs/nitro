@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -14,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -35,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -185,9 +186,8 @@ func (c *nonceCache) matches(header *types.Header) bool {
 		// The header is updated as the block is built,
 		// so instead of checking its hash, we do a pointer comparison.
 		return c.dirty == header
-	} else {
-		return c.block == header.ParentHash
 	}
+	return c.block == header.ParentHash
 }
 
 func (c *nonceCache) Reset(block common.Hash) {
@@ -635,7 +635,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 // There's no guarantee that returned tx nonces will be correct
 func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	bc := s.execEngine.bc
-	latestHeader := bc.CurrentBlock().Header()
+	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
 		log.Error("failed to get current state to pre-check nonces", "err", err)
@@ -929,12 +929,14 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	return madeBlock
 }
 
-func (s *Sequencer) updateLatestL1Block(header *types.Header) {
+func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
 	s.L1BlockAndTimeMutex.Lock()
 	defer s.L1BlockAndTimeMutex.Unlock()
-	if s.l1BlockNumber < header.Number.Uint64() {
-		s.l1BlockNumber = header.Number.Uint64()
+
+	l1BlockNumber := arbutil.ParentHeaderToL1BlockNumber(header)
+	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber) {
 		s.l1Timestamp = header.Time
+		s.l1BlockNumber = l1BlockNumber
 	}
 }
 
@@ -947,7 +949,7 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.updateLatestL1Block(header)
+	s.updateLatestParentChainBlock(header)
 	return nil
 }
 
@@ -969,7 +971,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 					if !ok {
 						return
 					}
-					s.updateLatestL1Block(header)
+					s.updateLatestParentChainBlock(header)
 				case <-ctx.Done():
 					return
 				}
@@ -984,10 +986,9 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
-		} else {
-			// If we didn't make a block, try again immediately.
-			return 0
 		}
+		// If we didn't make a block, try again immediately.
+		return 0
 	})
 
 	return nil

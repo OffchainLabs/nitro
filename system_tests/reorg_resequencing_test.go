@@ -44,7 +44,7 @@ func TestReorgResequencing(t *testing.T) {
 			balance, err := client.BalanceAt(ctx, l2info.GetAddress(account), nil)
 			Require(t, err)
 			if balance.Int64() != params.Ether {
-				Fail(t, "expected account", account, "to have a balance of 1 ether but instead it has", balance, "wei "+scenario)
+				Fatal(t, "expected account", account, "to have a balance of 1 ether but instead it has", balance, "wei "+scenario)
 			}
 		}
 	}

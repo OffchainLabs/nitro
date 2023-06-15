@@ -529,22 +529,22 @@ var randS = crypto.Keccak256Hash([]byte("S")).Big()
 
 // The returned tx will be invalid, likely for a number of reasons such as an invalid signature.
 // It's only used to check how large it is after brotli level 0 compression.
-func makeFakeTxForMessage(message core.Message) *types.Transaction {
-	nonce := message.Nonce()
+func makeFakeTxForMessage(message *core.Message) *types.Transaction {
+	nonce := message.Nonce
 	if nonce == 0 {
 		nonce = randomNonce
 	}
-	gasTipCap := message.GasTipCap()
+	gasTipCap := message.GasTipCap
 	if gasTipCap.Sign() == 0 {
 		gasTipCap = randomGasTipCap
 	}
-	gasFeeCap := message.GasFeeCap()
+	gasFeeCap := message.GasFeeCap
 	if gasFeeCap.Sign() == 0 {
 		gasFeeCap = randomGasFeeCap
 	}
 	// During gas estimation, we don't want the gas limit variability to change the L1 cost.
-	gas := message.Gas()
-	if gas == 0 || message.RunMode() == types.MessageGasEstimationMode {
+	gas := message.GasLimit
+	if gas == 0 || message.TxRunMode == core.MessageGasEstimationMode {
 		gas = RandomGas
 	}
 	return types.NewTx(&types.DynamicFeeTx{
@@ -552,18 +552,18 @@ func makeFakeTxForMessage(message core.Message) *types.Transaction {
 		GasTipCap:  gasTipCap,
 		GasFeeCap:  gasFeeCap,
 		Gas:        gas,
-		To:         message.To(),
-		Value:      message.Value(),
-		Data:       message.Data(),
-		AccessList: message.AccessList(),
+		To:         message.To,
+		Value:      message.Value,
+		Data:       message.Data,
+		AccessList: message.AccessList,
 		V:          randV,
 		R:          randR,
 		S:          randS,
 	})
 }
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
-	tx := message.UnderlyingTransaction()
+func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Address) (*big.Int, uint64) {
+	tx := message.Tx
 	if tx != nil {
 		return ps.GetPosterInfo(tx, poster)
 	}

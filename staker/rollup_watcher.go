@@ -6,6 +6,7 @@ package staker
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -52,7 +52,7 @@ type RollupWatcher struct {
 func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
 	con, err := rollupgen.NewRollupUserLogic(address, client)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 
 	return &RollupWatcher{
@@ -76,7 +76,7 @@ func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64
 		log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
 		node, err := r.GetNode(callOpts, nodeNum)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		createdAtBlock = new(big.Int).SetUint64(node.CreatedAtBlock)
 	}
@@ -98,7 +98,7 @@ func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUs
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	if len(logs) == 0 {
 		return nil, errors.New("rollup not created")
@@ -107,7 +107,7 @@ func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUs
 		return nil, errors.New("rollup created multiple times")
 	}
 	ev, err := r.ParseRollupInitialized(logs[0])
-	return ev, errors.WithStack(err)
+	return ev, err
 }
 
 func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInfo, error) {
@@ -125,22 +125,26 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	if len(logs) == 0 {
-		return nil, errors.New("Couldn't find requested node")
+		return nil, fmt.Errorf("couldn't find requested node %v", number)
 	}
 	if len(logs) > 1 {
-		return nil, errors.New("Found multiple instances of requested node")
+		return nil, fmt.Errorf("found multiple instances of requested node %v", number)
 	}
 	ethLog := logs[0]
 	parsedLog, err := r.ParseNodeCreated(ethLog)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
+	}
+	l1BlockProposed, err := arbutil.CorrespondingL1BlockNumber(ctx, r.client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
 	}
 	return &NodeInfo{
 		NodeNum:            parsedLog.NodeNum,
-		BlockProposed:      ethLog.BlockNumber,
+		L1BlockProposed:    l1BlockProposed,
 		Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 		InboxMaxCount:      parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
@@ -152,7 +156,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
 	node, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), nodeNum)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	if node.LatestChildNumber == 0 {
 		return nil, nil
@@ -162,7 +166,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 	}
 	latestChild, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), node.LatestChildNumber)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
@@ -172,23 +176,27 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	infos := make([]*NodeInfo, 0, len(logs))
 	lastHash := nodeHash
 	for i, ethLog := range logs {
 		parsedLog, err := r.ParseNodeCreated(ethLog)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		lastHashIsSibling := [1]byte{0}
 		if i > 0 {
 			lastHashIsSibling[0] = 1
 		}
 		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:], parsedLog.WasmModuleRoot[:])
+		l1BlockProposed, err := arbutil.CorrespondingL1BlockNumber(ctx, r.client, ethLog.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
 		infos = append(infos, &NodeInfo{
 			NodeNum:            parsedLog.NodeNum,
-			BlockProposed:      ethLog.BlockNumber,
+			L1BlockProposed:    l1BlockProposed,
 			Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 			InboxMaxCount:      parsedLog.InboxMaxCount,
 			AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
@@ -202,7 +210,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 func (r *RollupWatcher) LatestConfirmedCreationBlock(ctx context.Context) (uint64, error) {
 	latestConfirmed, err := r.LatestConfirmed(r.getCallOpts(ctx))
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, err
 	}
 	creation, err := r.getNodeCreationBlock(ctx, latestConfirmed)
 	if err != nil {
@@ -236,7 +244,7 @@ func (r *RollupWatcher) LookupChallengedNode(ctx context.Context, address common
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, err
 	}
 
 	if len(logs) == 0 {
@@ -249,7 +257,7 @@ func (r *RollupWatcher) LookupChallengedNode(ctx context.Context, address common
 
 	challenge, err := r.ParseRollupChallengeStarted(logs[0])
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, err
 	}
 
 	return challenge.ChallengedNode, nil
@@ -258,7 +266,7 @@ func (r *RollupWatcher) LookupChallengedNode(ctx context.Context, address common
 func (r *RollupWatcher) StakerInfo(ctx context.Context, staker common.Address) (*StakerInfo, error) {
 	info, err := r.StakerMap(r.getCallOpts(ctx), staker)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 	if !info.IsStaked {
 		return nil, nil

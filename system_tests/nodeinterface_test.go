@@ -46,7 +46,7 @@ func TestDeploy(t *testing.T) {
 	Require(t, err, "failed to get counter")
 
 	if counter != 1 {
-		Fail(t, "Unexpected counter value", counter)
+		Fatal(t, "Unexpected counter value", counter)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestEstimate(t *testing.T) {
 		numTriesLeft--
 	}
 	if !equilibrated {
-		Fail(t, "L2 gas price did not converge", gasPrice)
+		Fatal(t, "L2 gas price did not converge", gasPrice)
 	}
 
 	initialBalance, err := client.BalanceAt(ctx, auth.From, nil)
@@ -106,7 +106,7 @@ func TestEstimate(t *testing.T) {
 	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
 	Require(t, err, "could not get header")
 	if header.BaseFee.Cmp(gasPrice) != 0 {
-		Fail(t, "Header has wrong basefee", header.BaseFee, gasPrice)
+		Fatal(t, "Header has wrong basefee", header.BaseFee, gasPrice)
 	}
 
 	balance, err := client.BalanceAt(ctx, auth.From, nil)
@@ -114,7 +114,7 @@ func TestEstimate(t *testing.T) {
 	expectedCost := receipt.GasUsed * gasPrice.Uint64()
 	observedCost := initialBalance.Uint64() - balance.Uint64()
 	if expectedCost != observedCost {
-		Fail(t, "Expected deployment to cost", expectedCost, "instead of", observedCost)
+		Fatal(t, "Expected deployment to cost", expectedCost, "instead of", observedCost)
 	}
 
 	tx, err = simple.Increment(&auth)
@@ -126,7 +126,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "failed to get counter")
 
 	if counter != 1 {
-		Fail(t, "Unexpected counter value", counter)
+		Fatal(t, "Unexpected counter value", counter)
 	}
 }
 
@@ -180,7 +180,7 @@ func TestComponentEstimate(t *testing.T) {
 	outputs, err := nodeMethod.Outputs.Unpack(returnData)
 	Require(t, err)
 	if len(outputs) != 4 {
-		Fail(t, "expected 4 outputs from gasEstimateComponents, got", len(outputs))
+		Fatal(t, "expected 4 outputs from gasEstimateComponents, got", len(outputs))
 	}
 
 	gasEstimate, _ := outputs[0].(uint64)
@@ -205,10 +205,10 @@ func TestComponentEstimate(t *testing.T) {
 	colors.PrintBlue("Est. ", gasEstimate, " - ", gasEstimateForL1, " = ", l2Estimate)
 
 	if !arbmath.BigEquals(l1BaseFeeEstimate, l1BaseFee) {
-		Fail(t, l1BaseFeeEstimate, l1BaseFee)
+		Fatal(t, l1BaseFeeEstimate, l1BaseFee)
 	}
 	if !arbmath.BigEquals(baseFee, l2BaseFee) {
-		Fail(t, baseFee, l2BaseFee.Uint64())
+		Fatal(t, baseFee, l2BaseFee.Uint64())
 	}
 
 	Require(t, client.SendTransaction(ctx, tx))
@@ -219,7 +219,7 @@ func TestComponentEstimate(t *testing.T) {
 	colors.PrintMint("True ", receipt.GasUsed, " - ", receipt.GasUsedForL1, " = ", l2Used)
 
 	if l2Estimate != l2Used {
-		Fail(t, l2Estimate, l2Used)
+		Fatal(t, l2Estimate, l2Used)
 	}
 }
 
@@ -238,11 +238,11 @@ func callFindBatchContainig(t *testing.T, ctx context.Context, client *ethclient
 	outputs, err := findBatch.Outputs.Unpack(returnData)
 	Require(t, err)
 	if len(outputs) != 1 {
-		Fail(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
+		Fatal(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
 	}
 	gotBatchNum, ok := outputs[0].(uint64)
 	if !ok {
-		Fail(t, "bad output from findBatchContainingBlock")
+		Fatal(t, "bad output from findBatchContainingBlock")
 	}
 	return gotBatchNum
 }
@@ -262,11 +262,11 @@ func callGetL1Confirmations(t *testing.T, ctx context.Context, client *ethclient
 	outputs, err := getConfirmations.Outputs.Unpack(returnData)
 	Require(t, err)
 	if len(outputs) != 1 {
-		Fail(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
+		Fatal(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
 	}
 	confirmations, ok := outputs[0].(uint64)
 	if !ok {
-		Fail(t, "bad output from findBatchContainingBlock")
+		Fatal(t, "bad output from findBatchContainingBlock")
 	}
 	return confirmations
 }
@@ -319,7 +319,7 @@ func TestFindBatch(t *testing.T) {
 			expBatchNum = 1 + (blockNum-1)/uint64(MsgPerBatch)
 		}
 		if expBatchNum != gotBatchNum {
-			Fail(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
+			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
 		}
 		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum).Await(ctx)
 		Require(t, err)
@@ -334,7 +334,7 @@ func TestFindBatch(t *testing.T) {
 		Require(t, err)
 
 		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
-			Fail(t, "wrong number of confirmations. got ", gotConfirmations)
+			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
 		}
 	}
 }

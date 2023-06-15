@@ -5,13 +5,13 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -364,7 +364,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 		return nil
 	}
 	if !s.replaceStatus(Created, RecordSent) {
-		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
+		return fmt.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
 	v.LaunchThread(func(ctx context.Context) {
 		err := v.ValidationEntryRecord(ctx, s.Entry)
@@ -769,7 +769,7 @@ func (v *BlockValidator) writeLastValidatedToDb(gs validator.GoGlobalState, wasm
 
 func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
-		return errors.Errorf("cannot handle AssumeValid while running")
+		return fmt.Errorf("cannot handle AssumeValid while running")
 	}
 
 	// don't do anything if we already validated past that

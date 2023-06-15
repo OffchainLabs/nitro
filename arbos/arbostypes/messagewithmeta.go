@@ -3,12 +3,12 @@ package arbostypes
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/pkg/errors"
 )
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
@@ -35,7 +35,7 @@ func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId 
 
 	serializedMessage, err := rlp.EncodeToBytes(m.Message)
 	if err != nil {
-		return common.Hash{}, errors.Wrapf(err, "unable to serialize message %v", sequenceNumber)
+		return common.Hash{}, fmt.Errorf("unable to serialize message %v: %w", sequenceNumber, err)
 	}
 
 	return crypto.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil

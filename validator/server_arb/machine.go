@@ -12,6 +12,8 @@ ResolvedPreimage preimageResolverC(size_t context, const uint8_t* hash);
 import "C"
 import (
 	"context"
+	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -20,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/pkg/errors"
 )
 
 type MachineInterface interface {
@@ -85,7 +86,7 @@ func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, err
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
-		return nil, errors.Errorf("failed to load simple machine at path %v", wasm)
+		return nil, fmt.Errorf("failed to load simple machine at path %v", wasm)
 	}
 	return machineFromPointer(mach), nil
 }

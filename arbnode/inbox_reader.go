@@ -399,9 +399,8 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					idx := int(batchNum - sequencerBatches[0].SequenceNumber)
 					if idx < len(sequencerBatches) {
 						return sequencerBatches[idx].Serialize(ctx, r.l1Reader.Client())
-					} else {
-						log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 					}
+					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
 				return r.GetSequencerMessageBytes(batchNum).Await(ctx)
 			})

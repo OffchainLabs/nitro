@@ -33,6 +33,10 @@ type ClientConfig struct {
 }
 
 func (c *ClientConfig) Validate() error {
+	if c.RetryErrors == "" {
+		c.retryErrors = nil
+		return nil
+	}
 	var err error
 	c.retryErrors, err = regexp.Compile(c.RetryErrors)
 	return err
@@ -143,7 +147,8 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		if errors.Is(err, context.DeadlineExceeded) {
 			continue
 		}
-		if c.config().retryErrors.MatchString(err.Error()) {
+		retryErrs := c.config().retryErrors
+		if retryErrs != nil && retryErrs.MatchString(err.Error()) {
 			continue
 		}
 		return err
