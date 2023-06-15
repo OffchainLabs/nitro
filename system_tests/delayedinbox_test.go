@@ -50,6 +50,6 @@ func TestDelayInboxSimple(t *testing.T) {
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
-		Fail(t, "Unexpected balance:", l2balance)
+		Fatal(t, "Unexpected balance:", l2balance)
 	}
 }
