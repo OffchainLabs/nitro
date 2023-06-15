@@ -38,7 +38,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	if workload == upgradeArbOs {
+		chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	}
 
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
 	defer requireClose(t, l1stack)
