@@ -671,7 +671,7 @@ func getExecNodeFromEndpoint(t *testing.T, endpoint string) *gethexec.ExecutionN
 	defer execNodeLock.Unlock()
 	nodeInfo := execNodes[endpoint]
 	if nodeInfo == nil {
-		Fail(t, "didn't find execnode for endpoint: ", endpoint)
+		Fatal(t, "didn't find execnode for endpoint: ", endpoint)
 		return nil
 	}
 	nodeInfo.lock.Lock()
