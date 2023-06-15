@@ -231,7 +231,7 @@ func (p Programs) CallProgram(
 	}
 
 	debugMode := interpreter.Evm().ChainConfig().DebugMode()
-	params, err := p.goParams(program.version, statedb, debugMode)
+	params, err := p.goParams(program.version, debugMode)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +313,7 @@ type goParams struct {
 	debugMode uint32
 }
 
-func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goParams, error) {
+func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
