@@ -54,7 +54,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, statedb *state.StateDB, chainConfig *params.ChainConfig, updateHeaderWithInfo bool) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig, updateHeaderWithInfo bool) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
@@ -213,7 +213,7 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state, statedb, chainConfig, false)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig, false)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
@@ -345,15 +345,16 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if tx.Type() == types.ArbitrumInternalTxType {
-				state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
-				if err != nil {
-					return nil, nil, err
-				}
-				header = createNewHeader(lastBlockHeader, l1Info, state, statedb, chainConfig, true)
-			}
 			return receipt, result, nil
 		})()
+
+		if tx.Type() == types.ArbitrumInternalTxType {
+			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			header = createNewHeader(lastBlockHeader, l1Info, state, chainConfig, true)
+		}
 
 		// append the err, even if it is nil
 		hooks.TxErrors = append(hooks.TxErrors, err)
