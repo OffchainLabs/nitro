@@ -67,7 +67,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         uint64 inboxMaxCount = 1; // force the first assertion to read a message
         AssertionNode memory initialAssertion = AssertionNodeLib.createAssertion(
-            0, // prev assertion
             true,
             RollupLib.configHash({
                 wasmModuleRoot: wasmModuleRoot,

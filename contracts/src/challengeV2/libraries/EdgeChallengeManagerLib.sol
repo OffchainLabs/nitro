@@ -6,8 +6,17 @@ import "./MerkleTreeLib.sol";
 import "./ChallengeEdgeLib.sol";
 import "../../osp/IOneStepProofEntry.sol";
 import "../../libraries/Constants.sol";
-import "../../rollup/RollupLib.sol";
 import "./ChallengeErrors.sol";
+
+/// @notice An execution state and proof to show that it's valid
+struct ExecutionStateData {
+    /// @notice An execution state
+    ExecutionState executionState;
+    /// @notice Assertion id of the prev assertion
+    bytes32 prevAssertionHash;
+    /// @notice Inbox accumulator of the assertion
+    bytes32 inboxAcc;
+}
 
 /// @notice Data for creating a layer zero edge
 struct CreateEdgeArgs {
@@ -29,6 +38,8 @@ struct CreateEdgeArgs {
     ///         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
     ///         ExecutionStateData: the before state of the edge
     ///         ExecutionStateData: the after state of the edge
+    ///         bytes32 predecessorId: id of the prev assertion
+    ///         bytes32 inboxAcc:  the inbox accumulator of the assertion
     ///         For BigStep and SmallStep edges this is the abi encoding of:
     ///         bytes32: Start state - first state the edge commits to
     ///         bytes32: End state - last state the edge commits to
@@ -104,7 +115,7 @@ library EdgeChallengeManagerLib {
     using GlobalStateLib for GlobalState;
 
     /// @dev Magic string hash to represent that a edges with a given mutual id have no rivals
-    bytes32 constant UNRIVALED = keccak256(abi.encodePacked("UNRIVALED"));
+    bytes32 public constant UNRIVALED = keccak256(abi.encodePacked("UNRIVALED"));
 
     /// @notice Get an edge from the store
     /// @dev    Throws if the edge does not exist in the store
@@ -746,10 +757,10 @@ library EdgeChallengeManagerLib {
         EdgeStore storage store,
         bytes32 edgeId,
         IOneStepProofEntry oneStepProofEntry,
-        OneStepData memory oneStepData,
+        OneStepData calldata oneStepData,
         ExecutionContext memory execCtx,
-        bytes32[] memory beforeHistoryInclusionProof,
-        bytes32[] memory afterHistoryInclusionProof
+        bytes32[] calldata beforeHistoryInclusionProof,
+        bytes32[] calldata afterHistoryInclusionProof
     ) internal {
         // get checks existence
         uint256 machineStep = get(store, edgeId).startHeight;

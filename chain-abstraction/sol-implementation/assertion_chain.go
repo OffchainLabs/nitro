@@ -119,9 +119,8 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, assertionId protocol.
 		)
 	}
 	return &Assertion{
-		id:     assertionId,
-		prevId: res.PrevId,
-		chain:  a,
+		id:    assertionId,
+		chain: a,
 	}, nil
 }
 

@@ -25,7 +25,7 @@ type Protocol interface {
 // Assertions can be challenged.
 type Assertion interface {
 	Id() AssertionId
-	PrevId() AssertionId
+	PrevId(ctx context.Context) (AssertionId, error)
 	HasSecondChild() (bool, error)
 	CreatedAtBlock() (uint64, error)
 }

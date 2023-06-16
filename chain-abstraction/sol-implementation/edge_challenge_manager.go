@@ -204,13 +204,41 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	if s == protocol.EdgeConfirmed {
 		return nil
 	}
-
+	var assertionId protocol.AssertionId
+	if len(ancestorIds) != 0 {
+		topLevelAncestorId := ancestorIds[len(ancestorIds)-1]
+		topLevelAncestor, topLevelErr := e.manager.GetEdge(ctx, topLevelAncestorId)
+		if topLevelErr != nil {
+			return topLevelErr
+		}
+		if topLevelAncestor.IsNone() {
+			return fmt.Errorf("did not find edge with id %#x for specified top level ancestor", topLevelAncestorId)
+		}
+		topEdge := topLevelAncestor.Unwrap()
+		if topEdge.GetType() != protocol.BlockChallengeEdge {
+			return errors.New("top level ancestor must be a block challenge edge")
+		}
+		assertionId = protocol.AssertionId(topEdge.ClaimId().Unwrap())
+	} else {
+		assertionId = e.inner.ClaimId
+	}
+	assertionCreation, err := e.manager.assertionChain.ReadAssertionCreationInfo(ctx, assertionId)
+	if err != nil {
+		return err
+	}
 	ancestors := make([][32]byte, len(ancestorIds))
 	for i, r := range ancestorIds {
 		ancestors[i] = r
 	}
 	_, err = transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByTime(e.manager.txOpts, e.id, ancestors)
+		return e.manager.writer.ConfirmEdgeByTime(e.manager.txOpts, e.id, ancestors, challengeV2gen.ExecutionStateData{
+			ExecutionState: challengeV2gen.ExecutionState{
+				GlobalState:   challengeV2gen.GlobalState(assertionCreation.AfterState.GlobalState),
+				MachineStatus: assertionCreation.AfterState.MachineStatus,
+			},
+			PrevAssertionHash: assertionCreation.ParentAssertionHash,
+			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
+		})
 	})
 	return err
 }
@@ -532,8 +560,12 @@ var executionStateData = newStaticType("tuple", "ExecutionStateData", []abi.Argu
 		},
 	},
 	{
-		Type: "bytes",
-		Name: "proof",
+		Type: "bytes32",
+		Name: "prevAssertionHash",
+	},
+	{
+		Type: "bytes32",
+		Name: "inboxAcc",
 	},
 })
 
@@ -552,24 +584,10 @@ var blockEdgeCreateProofAbi = abi.Arguments{
 	},
 }
 
-var executionStateDataProofAbi = abi.Arguments{
-	{
-		Name: "parentAssertionHash",
-		Type: bytes32Type,
-	},
-	{
-		Name: "inboxAcc",
-		Type: bytes32Type,
-	},
-	{
-		Name: "wasmModuleRootInner",
-		Type: bytes32Type,
-	},
-}
-
 type ExecutionStateData struct {
-	ExecutionState rollupgen.ExecutionState
-	Proof          []byte
+	ExecutionState    rollupgen.ExecutionState
+	PrevAssertionHash [32]byte
+	InboxAcc          [32]byte
 }
 
 func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
@@ -583,9 +601,13 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read assertion %#x creation info: %w", assertion.Id(), err)
 	}
-	parentAssertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.PrevId())
+	prevId, err := assertion.PrevId(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read parent assertion %#x creation info: %w", assertion.PrevId(), err)
+		return nil, err
+	}
+	parentAssertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, prevId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read parent assertion %#x creation info: %w", prevId, err)
 	}
 	if endCommit.Height != protocol.LevelZeroBlockEdgeHeight {
 		return nil, fmt.Errorf(
@@ -594,31 +616,17 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			protocol.LevelZeroBlockEdgeHeight,
 		)
 	}
-	preStateProof, err := executionStateDataProofAbi.Pack(
-		parentAssertionCreation.ParentAssertionHash,
-		parentAssertionCreation.AfterInboxBatchAcc,
-		parentAssertionCreation.WasmModuleRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	postStateProof, err := executionStateDataProofAbi.Pack(
-		assertionCreation.ParentAssertionHash,
-		assertionCreation.AfterInboxBatchAcc,
-		assertionCreation.WasmModuleRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
 	blockEdgeProof, err := blockEdgeCreateProofAbi.Pack(
 		endCommit.LastLeafProof,
 		ExecutionStateData{
-			ExecutionState: parentAssertionCreation.AfterState,
-			Proof:          preStateProof,
+			ExecutionState:    parentAssertionCreation.AfterState,
+			PrevAssertionHash: parentAssertionCreation.ParentAssertionHash,
+			InboxAcc:          parentAssertionCreation.AfterInboxBatchAcc,
 		},
 		ExecutionStateData{
-			ExecutionState: assertionCreation.AfterState,
-			Proof:          postStateProof,
+			ExecutionState:    assertionCreation.AfterState,
+			PrevAssertionHash: assertionCreation.ParentAssertionHash,
+			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
 		},
 	)
 	if err != nil {

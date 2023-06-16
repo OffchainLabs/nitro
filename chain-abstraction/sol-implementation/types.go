@@ -1,10 +1,14 @@
 package solimpl
 
 import (
+	"context"
+	"math/big"
+
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -15,17 +19,37 @@ import (
 // to have a smaller API surface area and attach useful
 // methods that callers can use directly.
 type Assertion struct {
-	chain  *AssertionChain
-	id     protocol.AssertionId
-	prevId protocol.AssertionId
+	chain *AssertionChain
+	id    protocol.AssertionId
 }
 
 func (a *Assertion) Id() protocol.AssertionId {
 	return a.id
 }
 
-func (a *Assertion) PrevId() protocol.AssertionId {
-	return a.prevId
+func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionId, error) {
+	createdAtBlock, err := a.CreatedAtBlock()
+	if err != nil {
+		return protocol.AssertionId{}, err
+	}
+	var query = ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(createdAtBlock),
+		ToBlock:   nil, // Latest block.
+		Addresses: []common.Address{a.chain.rollupAddr},
+		Topics:    [][]common.Hash{{assertionCreatedId}},
+	}
+	logs, err := a.chain.backend.FilterLogs(ctx, query)
+	if err != nil {
+		return protocol.AssertionId{}, err
+	}
+	if len(logs) == 0 {
+		return protocol.AssertionId{}, errors.New("no assertion creation events found")
+	}
+	creationEvent, err := a.chain.rollup.ParseAssertionCreated(logs[len(logs)-1])
+	if err != nil {
+		return protocol.AssertionId{}, err
+	}
+	return creationEvent.ParentAssertionHash, nil
 }
 
 func (a *Assertion) HasSecondChild() (bool, error) {

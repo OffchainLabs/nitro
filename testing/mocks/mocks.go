@@ -37,8 +37,8 @@ func (m *MockAssertion) Id() protocol.AssertionId {
 	return m.MockId
 }
 
-func (m *MockAssertion) PrevId() protocol.AssertionId {
-	return m.MockPrevId
+func (m *MockAssertion) PrevId(ctx context.Context) (protocol.AssertionId, error) {
+	return m.MockPrevId, nil
 }
 
 func (m *MockAssertion) StateHash() (common.Hash, error) {

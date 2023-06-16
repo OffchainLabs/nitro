@@ -681,7 +681,7 @@ func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 		createdData.Backend.Commit()
 	}
 
-	t.Run("confirmed by timer", func(t *testing.T) {
+	t.Run("edge not found", func(t *testing.T) {
 		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{protocol.EdgeId(common.Hash{1})}), "execution reverted")
 	})
 	t.Run("confirmed by timer", func(t *testing.T) {

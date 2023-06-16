@@ -73,19 +73,19 @@ func setupAssertions(
 	assertions := []protocol.Assertion{genesis}
 	for i := 1; i <= num; i++ {
 		mockHash := common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
-		assertion := protocol.Assertion(&mocks.MockAssertion{
+		mockAssertion := &mocks.MockAssertion{
 			MockId:        mockId(uint64(i)),
 			MockPrevId:    mockId(uint64(i - 1)),
 			MockHeight:    uint64(i),
 			MockStateHash: mockHash,
 			Prev:          option.Some(assertions[i-1].(*mocks.MockAssertion)),
-		})
-		assertions = append(assertions, assertion)
+		}
+		assertions = append(assertions, protocol.Assertion(mockAssertion))
 		p.On(
 			"GetAssertion",
 			ctx,
 			mockId(uint64(i)),
-		).Return(assertion, nil)
+		).Return(protocol.Assertion(mockAssertion), nil)
 		mockState := rollupgen.ExecutionState{
 			MachineStatus: uint8(protocol.MachineStatusFinished),
 			GlobalState: rollupgen.GlobalState(protocol.GoGlobalState{
@@ -106,7 +106,7 @@ func setupAssertions(
 		if i == 1 {
 			var firstValid protocol.Assertion = genesis
 			if valid {
-				firstValid = assertion
+				firstValid = protocol.Assertion(mockAssertion)
 			}
 			p.On("LatestConfirmed", ctx).Return(firstValid, nil)
 		}

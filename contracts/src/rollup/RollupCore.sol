@@ -204,6 +204,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         _latestConfirmed = assertionHash;
     }
 
+    /**
+     * @dev This function will validate the parentAssertionHash, confirmState and inboxAcc against the assertionId
+     *          and check if the assertionId is currently pending. If all checks pass, the assertion will be confirmed.
+     */
     function confirmAssertionInternal(
         bytes32 assertionId,
         bytes32 parentAssertionHash,
@@ -446,7 +450,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
         // state updates
         AssertionNode memory newAssertion = AssertionNodeLib.createAssertion(
-            prevAssertionId,
             prevAssertion.firstChildBlock == 0, // assumes block 0 is impossible
             RollupLib.configHash({
                 wasmModuleRoot: wasmModuleRoot,
@@ -489,33 +492,21 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         });
     }
 
-    function getPredecessorId(bytes32 assertionId) external view returns (bytes32) {
-        bytes32 prevId = getAssertionStorage(assertionId).prevId;
-        return prevId;
-    }
-
-    function proveExecutionState(bytes32 assertionId, ExecutionState calldata state, bytes calldata proof)
-        external
-        pure
-        returns (ExecutionState memory)
-    {
-        (bytes32 parentAssertionHash, bytes32 inboxAcc) = abi.decode(proof, (bytes32, bytes32));
-
-        require(assertionId == RollupLib.assertionHash(parentAssertionHash, state, inboxAcc), "Invalid assertion hash");
-
-        return state;
-    }
-
-    function hasSibling(bytes32 assertionId) external view returns (bool) {
-        return getAssertionStorage(getAssertionStorage(assertionId).prevId).secondChildBlock != 0;
-    }
-
     function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
         return getAssertionStorage(assertionId).firstChildBlock;
     }
 
     function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
         return getAssertionStorage(assertionId).secondChildBlock;
+    }
+
+    function validateAssertionId(
+        bytes32 assertionId,
+        ExecutionState calldata state,
+        bytes32 prevAssertionId,
+        bytes32 inboxAcc
+    ) external pure {
+        require(assertionId == RollupLib.assertionHash(prevAssertionId, state, inboxAcc), "INVALID_ASSERTION_HASH");
     }
 
     function validateConfig(bytes32 assertionId, ConfigData calldata configData) external view {

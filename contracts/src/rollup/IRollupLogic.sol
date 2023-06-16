@@ -22,9 +22,11 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function confirmAssertion(
         bytes32 assertionHash,
+        bytes32 prevAssertionHash,
         ExecutionState calldata confirmState,
-        bytes32 winningEdge,
-        BeforeStateData calldata beforeStateData
+        bytes32 winningEdgeId,
+        ConfigData calldata prevConfig,
+        bytes32 inboxAcc
     ) external;
 
     function stakeOnNewAssertion(AssertionInputs calldata assertion, bytes32 expectedAssertionHash) external;

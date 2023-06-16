@@ -11,14 +11,6 @@ import "../state/Machine.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @notice An execution state and proof to show that it's valid
-struct ExecutionStateData {
-    /// @notice An execution state
-    ExecutionState executionState;
-    /// @notice Proof to show the execution state is valid
-    bytes proof;
-}
-
 /// @title EdgeChallengeManager interface
 interface IEdgeChallengeManager {
     /// @notice Initialize the EdgeChallengeManager. EdgeChallengeManagers are upgradeable
@@ -65,7 +57,7 @@ interface IEdgeChallengeManager {
     /// @param prefixProof          A proof to show that the bisectionHistoryRoot commits to a prefix of the current endHistoryRoot
     /// @return lowerChildId        The id of the newly created lower child edge
     /// @return upperChildId        The id of the newly created upper child edge
-    function bisectEdge(bytes32 edgeId, bytes32 bisectionHistoryRoot, bytes memory prefixProof)
+    function bisectEdge(bytes32 edgeId, bytes32 bisectionHistoryRoot, bytes calldata prefixProof)
         external
         returns (bytes32, bytes32);
 
@@ -82,7 +74,11 @@ interface IEdgeChallengeManager {
     /// @param edgeId                   The id of the edge to confirm
     /// @param ancestorEdgeIds          The ids of the direct ancestors of an edge. These are ordered from the parent first, then going to grand-parent,
     ///                                 great-grandparent etc. The chain can extend only as far as the zero layer edge of type Block.
-    function confirmEdgeByTime(bytes32 edgeId, bytes32[] memory ancestorEdgeIds) external;
+    function confirmEdgeByTime(
+        bytes32 edgeId,
+        bytes32[] calldata ancestorEdgeIds,
+        ExecutionStateData calldata claimStateData
+    ) external;
 
     /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
     /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level above. If a zero layer
@@ -345,21 +341,30 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         AssertionReferenceData memory ard;
         if (args.edgeType == EdgeType.Block) {
             // for block type edges we need to provide some extra assertion data context
-            bytes32 predecessorId = assertionChain.getPredecessorId(args.claimId);
             if (args.proof.length == 0) {
                 revert EmptyEdgeSpecificProof();
             }
             (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
                 abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
+
+            assertionChain.validateAssertionId(
+                args.claimId, claimStateData.executionState, claimStateData.prevAssertionHash, claimStateData.inboxAcc
+            );
+
+            assertionChain.validateAssertionId(
+                claimStateData.prevAssertionHash,
+                predecessorStateData.executionState,
+                predecessorStateData.prevAssertionHash,
+                predecessorStateData.inboxAcc
+            );
+
             ard = AssertionReferenceData(
                 args.claimId,
-                predecessorId,
+                claimStateData.prevAssertionHash,
                 assertionChain.isPending(args.claimId),
-                assertionChain.hasSibling(args.claimId),
-                assertionChain.proveExecutionState(
-                    predecessorId, predecessorStateData.executionState, predecessorStateData.proof
-                ),
-                assertionChain.proveExecutionState(args.claimId, claimStateData.executionState, claimStateData.proof)
+                assertionChain.getSecondChildCreationBlock(claimStateData.prevAssertionHash) > 0,
+                predecessorStateData.executionState,
+                claimStateData.executionState
             );
 
             edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
@@ -397,7 +402,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function bisectEdge(bytes32 edgeId, bytes32 bisectionHistoryRoot, bytes memory prefixProof)
+    function bisectEdge(bytes32 edgeId, bytes32 bisectionHistoryRoot, bytes calldata prefixProof)
         external
         returns (bytes32, bytes32)
     {
@@ -451,7 +456,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function confirmEdgeByTime(bytes32 edgeId, bytes32[] memory ancestorEdges) public {
+    function confirmEdgeByTime(
+        bytes32 edgeId,
+        bytes32[] memory ancestorEdges,
+        ExecutionStateData calldata claimStateData
+    ) public {
         // if there are no ancestors provided, then the top edge is the edge we're confirming itself
         bytes32 lastEdgeId = ancestorEdges.length > 0 ? ancestorEdges[ancestorEdges.length - 1] : edgeId;
         ChallengeEdge storage topEdge = store.get(lastEdgeId);
@@ -469,9 +478,14 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         // the this edge
         bool isFirstChild = assertionChain.isFirstChild(topEdge.claimId);
         if (isFirstChild) {
-            bytes32 predecessorId = assertionChain.getPredecessorId(topEdge.claimId);
-            assertionBlocks = assertionChain.getSecondChildCreationBlock(predecessorId)
-                - assertionChain.getFirstChildCreationBlock(predecessorId);
+            assertionChain.validateAssertionId(
+                topEdge.claimId,
+                claimStateData.executionState,
+                claimStateData.prevAssertionHash,
+                claimStateData.inboxAcc
+            );
+            assertionBlocks = assertionChain.getSecondChildCreationBlock(claimStateData.prevAssertionHash)
+                - assertionChain.getFirstChildCreationBlock(claimStateData.prevAssertionHash);
         } else {
             // if the assertion being claimed is not the first child, then it had siblings from the moment
             // it was created, so it has no time unrivaled

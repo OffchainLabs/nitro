@@ -118,7 +118,11 @@ func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.Asserti
 		if hasState {
 			return curr.Id(), nil
 		}
-		prev, err := p.chain.GetAssertion(ctx, curr.PrevId())
+		prevId, err := curr.PrevId(ctx)
+		if err != nil {
+			return protocol.AssertionId{}, err
+		}
+		prev, err := p.chain.GetAssertion(ctx, prevId)
 		if err != nil {
 			return protocol.AssertionId{}, err
 		}

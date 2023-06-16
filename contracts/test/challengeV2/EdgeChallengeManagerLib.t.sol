@@ -48,10 +48,10 @@ contract EdgeChallengeManagerLibAccess {
     function confirmEdgeByOneStepProof(
         bytes32 edgeId,
         IOneStepProofEntry oneStepProofEntry,
-        OneStepData memory oneStepData,
+        OneStepData calldata oneStepData,
         ExecutionContext memory execCtx,
-        bytes32[] memory beforeHistoryInclusionProof,
-        bytes32[] memory afterHistoryInclusionProof
+        bytes32[] calldata beforeHistoryInclusionProof,
+        bytes32[] calldata afterHistoryInclusionProof
     ) public {
         store.confirmEdgeByOneStepProof(
             edgeId, oneStepProofEntry, oneStepData, execCtx, beforeHistoryInclusionProof, afterHistoryInclusionProof
@@ -60,7 +60,7 @@ contract EdgeChallengeManagerLibAccess {
 
     function createLayerZeroEdge(
         CreateEdgeArgs calldata args,
-        AssertionReferenceData memory ard,
+        AssertionReferenceData calldata ard,
         IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
         uint256 challengePeriodBlocks,
@@ -1570,8 +1570,8 @@ contract EdgeChallengeManagerLibTest is Test {
 
         bytes memory proof = abi.encode(
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight),
-            ExecutionStateData(ard.startState, ""),
-            ExecutionStateData(ard.endState, "")
+            ExecutionStateData(ard.startState, bytes32(0), bytes32(0)),
+            ExecutionStateData(ard.endState, bytes32(0), bytes32(0))
         );
         if (mode == 140) {
             bytes32[] memory b = new bytes32[](1);

@@ -78,9 +78,11 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
      */
     function confirmAssertion(
         bytes32 assertionHash,
+        bytes32 prevAssertionHash,
         ExecutionState calldata confirmState,
         bytes32 winningEdgeId,
-        BeforeStateData calldata beforeStateData
+        ConfigData calldata prevConfig,
+        bytes32 inboxAcc
     ) external onlyValidator whenNotPaused {
         /*
         * To confirm an assertion, the following must be true:
@@ -94,29 +96,28 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
         *      and the stake on them is swept to the loserStakeEscrow as soon as the leaf is created
         */
 
+        // The assertion's must exists and be pending and will be validated in RollupCore.confirmAssertionInternal
         AssertionNode storage assertion = getAssertionStorage(assertionHash);
-        // The assertion's must exists and be pending and will be checked in RollupCore
 
-        AssertionNode storage prevAssertion = getAssertionStorage(assertion.prevId);
-        RollupLib.validateConfigHash(beforeStateData.configData, prevAssertion.configHash);
+        // prevAssertionHash is user supplied, but will be validated in RollupCore.confirmAssertionInternal
+        AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionHash);
+        RollupLib.validateConfigHash(prevConfig, prevAssertion.configHash);
 
         // Check that deadline has passed
-        require(
-            block.number >= assertion.createdAtBlock + beforeStateData.configData.confirmPeriodBlocks, "BEFORE_DEADLINE"
-        );
+        require(block.number >= assertion.createdAtBlock + prevConfig.confirmPeriodBlocks, "BEFORE_DEADLINE");
 
         // Check that prev is latest confirmed
-        assert(assertion.prevId == latestConfirmed());
+        require(prevAssertionHash == latestConfirmed(), "PREV_NOT_LATEST_CONFIRMED");
 
         if (prevAssertion.secondChildBlock > 0) {
             // if the prev has more than 1 child, check if this assertion is the challenge winner
-            RollupLib.validateConfigHash(beforeStateData.configData, prevAssertion.configHash);
+            RollupLib.validateConfigHash(prevConfig, prevAssertion.configHash);
             ChallengeEdge memory winningEdge = challengeManager.getEdge(winningEdgeId);
             require(winningEdge.claimId == assertionHash, "NOT_WINNER");
             require(winningEdge.status == EdgeStatus.Confirmed, "EDGE_NOT_CONFIRMED");
         }
 
-        confirmAssertionInternal(assertionHash, assertion.prevId, confirmState, beforeStateData.sequencerBatchAcc);
+        confirmAssertionInternal(assertionHash, prevAssertionHash, confirmState, inboxAcc);
     }
 
     /**
