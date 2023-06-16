@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -495,7 +496,13 @@ func createL2BlockChainWithStackConfig(
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
-	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	initMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -716,7 +723,13 @@ func Create2ndNodeWithConfig(
 	if err != nil {
 		Fatal(t, err)
 	}
-	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	initMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
