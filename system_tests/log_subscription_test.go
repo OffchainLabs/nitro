@@ -37,7 +37,7 @@ func TestLogSubscription(t *testing.T) {
 	Require(t, err)
 
 	if len(receipt.Logs) != 1 {
-		Fail(t, "Unexpected number of logs", len(receipt.Logs))
+		Fatal(t, "Unexpected number of logs", len(receipt.Logs))
 	}
 
 	var receiptLog types.Log = *receipt.Logs[0]
@@ -46,11 +46,11 @@ func TestLogSubscription(t *testing.T) {
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		Fail(t, "Hit timeout waiting for log from subscription")
+		Fatal(t, "Hit timeout waiting for log from subscription")
 	case subscriptionLog = <-logChan:
 	}
 	if !reflect.DeepEqual(receiptLog, subscriptionLog) {
-		Fail(t, "Receipt log", receiptLog, "is different than subscription log", subscriptionLog)
+		Fatal(t, "Receipt log", receiptLog, "is different than subscription log", subscriptionLog)
 	}
 	_, err = client.BlockByHash(ctx, subscriptionLog.BlockHash)
 	Require(t, err)
