@@ -370,7 +370,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 }
 
 func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
-	batchTimestamp, batchPosterAddr, batchHash, batchNum, l1BaseFee, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
+	batchTimestamp, batchPosterAddr, batchHash, batchNum, l1BaseFee, extraGas, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +381,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 		batchData := batchFetcher(batchNum, batchHash)
 		batchDataGas = arbostypes.ComputeBatchGasCost(batchData)
 	}
+	batchDataGas += extraGas
 
 	data, err := util.PackInternalTxDataBatchPostingReport(
 		batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,
