@@ -6,7 +6,8 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
+	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
+	challengetree "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/fsm"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
@@ -23,14 +24,15 @@ var errBadOneStepProof = errors.New("bad one step proof data")
 func (et *edgeTracker) uniqueTrackerLogFields() logrus.Fields {
 	startHeight, startCommit := et.edge.StartCommitment()
 	endHeight, endCommit := et.edge.EndCommitment()
+	id := et.edge.Id()
 	return logrus.Fields{
+		"id":            containers.Trunc(id[:]),
 		"startHeight":   startHeight,
 		"startCommit":   containers.Trunc(startCommit.Bytes()),
 		"endHeight":     endHeight,
 		"endCommit":     containers.Trunc(endCommit.Bytes()),
 		"validatorName": et.cfg.validatorName,
 		"challengeType": et.edge.GetType(),
-		"address":       containers.Trunc(et.cfg.validatorAddress.Bytes()),
 	}
 }
 
@@ -42,61 +44,57 @@ func (et *edgeTracker) act(ctx context.Context) error {
 	case edgeStarted:
 		canOsp, err := canOneStepProve(et.edge)
 		if err != nil {
-			log.WithFields(fields).WithError(err).Error("could not check if edge can be one step proven")
+			log.WithFields(fields).WithError(err).Error("Could not check if edge can be one step proven")
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if canOsp {
 			return et.fsm.Do(edgeHandleOneStepProof{})
+		}
+		wasConfirmed, err := et.tryToConfirm(ctx)
+		if err != nil {
+			log.WithFields(fields).WithError(err).Debug("Could not confirm edge yet")
+			return et.fsm.Do(edgeBackToStart{})
+		}
+		if wasConfirmed {
+			return et.fsm.Do(edgeConfirm{})
 		}
 		hasRival, err := et.edge.HasRival(ctx)
 		if err != nil {
 			return errors.Wrap(err, "could not check presumptive")
 		}
 		if !hasRival {
-			return et.fsm.Do(edgeMarkPresumptive{})
+			return et.fsm.Do(edgeBackToStart{})
 		}
 		atOneStepFork, err := et.edge.HasLengthOneRival(ctx)
 		if err != nil {
-			log.WithFields(fields).WithError(err).Error("could not check if edge has length one rival")
+			log.WithFields(fields).WithError(err).Error("Could not check if edge has length one rival")
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if atOneStepFork {
-			return et.fsm.Do(edgeHandleOneStepFork{})
+			return et.fsm.Do(edgeOpenSubchallengeLeaf{})
 		}
 		return et.fsm.Do(edgeBisect{})
-	// Edge is the source of a one-step-fork.
-	case edgeAtOneStepFork:
-		startHeight, startCommit := et.edge.StartCommitment()
-		log.WithFields(fields).Infof(
-			"Reached one-step-fork at start height %d and start history commitment %s",
-			startHeight,
-			containers.Trunc(startCommit.Bytes()),
-		)
-		return et.fsm.Do(edgeOpenSubchallengeLeaf{})
 	// Edge is at a one-step-proof in a small-step challenge.
 	case edgeAtOneStepProof:
 		if err := et.submitOneStepProof(ctx); err != nil {
 			if errors.Is(err, errBadOneStepProof) {
 				return et.fsm.Do(edgeConfirm{})
 			}
-			log.WithFields(fields).WithError(err).Error("could not submit one step proof")
+			log.WithFields(fields).WithError(err).Error("Could not submit one step proof")
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		return et.fsm.Do(edgeConfirm{})
 	// Edge tracker should add a subchallenge level zero leaf.
 	case edgeAddingSubchallengeLeaf:
 		if err := et.openSubchallengeLeaf(ctx); err != nil {
-			log.WithFields(fields).WithError(err).Error("could not open subchallenge leaf")
+			log.WithFields(fields).WithError(err).Error("Could not open subchallenge leaf")
 			return et.fsm.Do(edgeBackToStart{})
 		}
-		return et.fsm.Do(edgeTryToConfirm{})
+		return et.fsm.Do(edgeAwaitConfirmation{})
 	// Edge should bisect.
 	case edgeBisecting:
 		lowerChild, upperChild, err := et.bisect(ctx)
 		if err != nil {
-			if errors.Is(err, solimpl.ErrAlreadyExists) {
-				return et.fsm.Do(edgeBackToStart{})
-			}
 			log.WithError(err).WithFields(fields).Error("Could not bisect")
 			return et.fsm.Do(edgeBackToStart{})
 		}
@@ -124,30 +122,122 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		}
 		go firstTracker.spawn(ctx)
 		go secondTracker.spawn(ctx)
-		return et.fsm.Do(edgeTryToConfirm{})
-	// Edge is presumptive, should do nothing until it loses ps status.
-	case edgePresumptive:
-		hasRival, err := et.edge.HasRival(ctx)
-		if err != nil {
-			log.WithError(err).WithFields(fields).Error("Could not check if presumptive")
-			return et.fsm.Do(edgeBackToStart{})
-		}
-		if hasRival {
-			return et.fsm.Do(edgeBackToStart{})
-		}
-		return et.fsm.Do(edgeMarkPresumptive{})
+		return et.fsm.Do(edgeAwaitConfirmation{})
 	case edgeConfirming:
-		// TODO: Implement.
-		// Checks if we can confirm by children.
-		// Checks if we can confirm by claim.
-		// Checks if we can confirm by time.
-		return et.fsm.Do(edgeTryToConfirm{})
+		wasConfirmed, err := et.tryToConfirm(ctx)
+		if err != nil {
+			log.WithFields(fields).WithError(err).Debug("Could not confirm edge yet")
+			return et.fsm.Do(edgeAwaitConfirmation{})
+		}
+		if !wasConfirmed {
+			return et.fsm.Do(edgeAwaitConfirmation{})
+		}
+		return et.fsm.Do(edgeConfirm{})
 	case edgeConfirmed:
 		log.WithFields(fields).Info("Edge reached confirmed state")
 		return et.fsm.Do(edgeConfirm{})
 	default:
 		return fmt.Errorf("invalid state: %s", current.State)
 	}
+}
+
+func (et *edgeTracker) childrenAreConfirmed(
+	ctx context.Context,
+	chalManager protocol.SpecChallengeManager,
+) (bool, error) {
+	lower, err := et.edge.LowerChild(ctx)
+	if err != nil {
+		return false, err
+	}
+	upper, err := et.edge.UpperChild(ctx)
+	if err != nil {
+		return false, err
+	}
+	if lower.IsNone() || upper.IsNone() {
+		return false, nil
+	}
+	someLowerEdge, err := chalManager.GetEdge(ctx, lower.Unwrap())
+	if err != nil {
+		return false, err
+	}
+	someUpperEdge, err := chalManager.GetEdge(ctx, upper.Unwrap())
+	if err != nil {
+		return false, err
+	}
+	if someLowerEdge.IsNone() || someUpperEdge.IsNone() {
+		return false, nil
+	}
+	lowerStatus, err := someLowerEdge.Unwrap().Status(ctx)
+	if err != nil {
+		return false, err
+	}
+	upperStatus, err := someUpperEdge.Unwrap().Status(ctx)
+	if err != nil {
+		return false, err
+	}
+	return lowerStatus == protocol.EdgeConfirmed && upperStatus == protocol.EdgeConfirmed, nil
+}
+
+func (et *edgeTracker) tryToConfirm(ctx context.Context) (bool, error) {
+	status, err := et.edge.Status(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, "could not get edge status")
+	}
+	if status == protocol.EdgeConfirmed {
+		return true, nil
+	}
+	assertionId, err := et.edge.AssertionId(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, "could not get prev assertion id")
+	}
+	manager, err := et.cfg.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, "could not get challenge manager")
+	}
+
+	// Check if we can confirm by children.
+	childrenConfirmed, err := et.childrenAreConfirmed(ctx, manager)
+	if err != nil {
+		return false, errors.Wrap(err, "could not check if children are confirmed")
+	}
+	if childrenConfirmed {
+		if confirmErr := et.edge.ConfirmByChildren(ctx); confirmErr != nil {
+			return false, errors.Wrap(confirmErr, "could not confirm by children")
+		}
+		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by children")
+		return true, nil
+	}
+
+	// Check if we can confirm by claim.
+	claimingEdge, ok := et.cfg.chainWatcher.ConfirmedEdgeWithClaimExists(
+		assertionId,
+		protocol.ClaimId(et.edge.Id()),
+	)
+	if ok {
+		if confirmClaimErr := et.edge.ConfirmByClaim(ctx, protocol.ClaimId(claimingEdge)); confirmClaimErr != nil {
+			return false, errors.Wrap(confirmClaimErr, "could not confirm by claim")
+		}
+		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by claim")
+		return true, nil
+	}
+
+	// Check if we can confirm by time.
+	timer, ancestors, err := et.cfg.chainWatcher.ComputeHonestPathTimer(ctx, assertionId, et.edge.Id())
+	if err != nil {
+		return false, errors.Wrap(err, "could not compute honest path timer")
+	}
+	chalPeriod, err := manager.ChallengePeriodBlocks(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, "could not check the challenge period length")
+	}
+	if timer >= challengetree.PathTimer(chalPeriod) {
+		if err := et.edge.ConfirmByTimer(ctx, ancestors); err != nil {
+			return false, errors.Wrap(err, "could not confirm by timer")
+		}
+		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by time")
+		return true, nil
+	}
+	return false, nil
 }
 
 // Determines the bisection point from parentHeight to toHeight and returns a history
@@ -254,7 +344,6 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 		"edgeStartHeight":     startHeight,
 		"edgeEndHeight":       endHeight,
 		"fromAssertionHeight": fromAssertionHeight,
-		"toAssertionHeight":   toAssertionHeight,
 	}
 
 	var startHistory commitments.History
@@ -264,7 +353,6 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 	var startEndPrefixProof []byte
 	switch et.edge.GetType() {
 	case protocol.BlockChallengeEdge:
-		log.WithFields(fields).Info("Big step leaf commit")
 		fromBlock := fromAssertionHeight + et.startBlockHeight
 		toBlock := toAssertionHeight + et.startBlockHeight
 		startHistory, err = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, 0)
@@ -288,7 +376,6 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 			return err
 		}
 	case protocol.BigStepChallengeEdge:
-		log.WithFields(fields).Info("Small step leaf commit")
 		fromBlock := fromAssertionHeight + et.startBlockHeight
 		toBlock := toAssertionHeight + et.startBlockHeight
 		startHistory, err = et.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight), 0)
@@ -331,10 +418,9 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 		return err
 	}
 	fields["firstLeaf"] = containers.Trunc(startHistory.FirstLeaf.Bytes())
-	fields["endHeight"] = endHistory.Height
 	fields["startCommitment"] = containers.Trunc(startHistory.Merkle.Bytes())
 	fields["subChallengeType"] = addedLeaf.GetType()
-	log.WithFields(fields).Info("Added subchallenge level zero edge, now tracking it")
+	log.WithFields(fields).Info("Created subchallenge edge")
 	tracker, err := newEdgeTracker(
 		ctx,
 		et.cfg,
@@ -415,6 +501,8 @@ type edgeTrackerConfig struct {
 	stateManager     l2stateprovider.Provider
 	validatorName    string
 	validatorAddress common.Address
+	chainWatcher     watcher.ConfirmationMetadataChecker
+	challengeManager *Manager
 }
 
 type edgeTracker struct {
@@ -451,16 +539,20 @@ func newEdgeTracker(
 }
 
 func (et *edgeTracker) spawn(ctx context.Context) {
+	// No-op if we are already tracking this edge in our challenge manager.
+	if et.cfg.challengeManager.trackedEdgeIds.Has(et.edge.Id()) {
+		return
+	}
 	fields := et.uniqueTrackerLogFields()
 	log.WithFields(fields).Info("Tracking edge")
-
+	et.cfg.challengeManager.trackedEdgeIds.Insert(et.edge.Id())
 	t := et.cfg.timeRef.NewTicker(et.cfg.actEveryNSeconds)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C():
 			if et.shouldComplete() {
-				log.WithFields(fields).Debug("Edge tracker received notice of a confirmation, exiting")
+				log.WithFields(fields).Infof("Edge tracker received notice of a confirmation, exiting")
 				return
 			}
 			if err := et.act(ctx); err != nil {

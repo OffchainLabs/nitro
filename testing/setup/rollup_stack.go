@@ -138,11 +138,12 @@ func CreateTwoValidatorFork(
 }
 
 type ChainSetup struct {
-	Chains   []*solimpl.AssertionChain
-	Accounts []*TestAccount
-	Addrs    *RollupAddresses
-	Backend  *backends.SimulatedBackend
-	L1Reader *headerreader.HeaderReader
+	Chains       []*solimpl.AssertionChain
+	Accounts     []*TestAccount
+	Addrs        *RollupAddresses
+	Backend      *backends.SimulatedBackend
+	L1Reader     *headerreader.HeaderReader
+	RollupConfig rollupgen.Config
 }
 
 func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
@@ -203,11 +204,12 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 	}
 	chains[1] = chain2
 	return &ChainSetup{
-		Chains:   chains,
-		Accounts: accs,
-		Addrs:    addresses,
-		L1Reader: headerReader,
-		Backend:  backend,
+		Chains:       chains,
+		Accounts:     accs,
+		Addrs:        addresses,
+		L1Reader:     headerReader,
+		Backend:      backend,
+		RollupConfig: cfg,
 	}, nil
 }
 

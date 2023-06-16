@@ -13,19 +13,14 @@ const (
 	_ edgeTrackerState = iota
 	// The start state of the tracker.
 	edgeStarted
-	// The edge being tracked is presumptive.
-	edgePresumptive
-	// The edge being tracked is at a one step fork.
-	edgeAtOneStepFork
 	// The edge being tracked is at a one step proof.
 	edgeAtOneStepProof
 	// The tracker is adding a subchallenge leaf on the edge's subchallenge.
 	edgeAddingSubchallengeLeaf
 	// The tracker is attempting a bisection move.
 	edgeBisecting
-	// The tracker is confirming an edge.
-	// TODO: There are other ways the edge can be confirmed, and perhaps should
-	// be tracked in a separate goroutine then the tracker.
+	// Intermediary state in which an edge is doing nothing else but awaiting confirmation
+	// whenever it is possible.
 	edgeConfirming
 	// Terminal state
 	edgeConfirmed
@@ -36,10 +31,6 @@ func (s edgeTrackerState) String() string {
 	switch s {
 	case edgeStarted:
 		return "started"
-	case edgePresumptive:
-		return "presumptive"
-	case edgeAtOneStepFork:
-		return "one_step_fork"
 	case edgeAtOneStepProof:
 		return "one_step_proof"
 	case edgeAddingSubchallengeLeaf:
@@ -65,12 +56,6 @@ type edgeTrackerAction interface {
 // Transitions the edge tracker back to a start state.
 type edgeBackToStart struct{}
 
-// Transitions the edge tracker to a presumptive state.
-type edgeMarkPresumptive struct{}
-
-// Tracker will act if the edge is at a one step fork.
-type edgeHandleOneStepFork struct{}
-
 // Tracker will act if the edge is at a one step proof.
 type edgeHandleOneStepProof struct{}
 
@@ -80,19 +65,12 @@ type edgeOpenSubchallengeLeaf struct{}
 // Tracker will attempt to bisect its edge.
 type edgeBisect struct{}
 
-// Tracker will attempt to confirm a challenge winner.
-type edgeTryToConfirm struct{}
+type edgeAwaitConfirmation struct{}
 
 type edgeConfirm struct{}
 
 func (edgeBackToStart) String() string {
 	return "back_to_start"
-}
-func (edgeMarkPresumptive) String() string {
-	return "mark_presumptive"
-}
-func (edgeHandleOneStepFork) String() string {
-	return "check_one_step_fork"
 }
 func (edgeHandleOneStepProof) String() string {
 	return "check_one_step_proof"
@@ -103,20 +81,14 @@ func (edgeOpenSubchallengeLeaf) String() string {
 func (edgeBisect) String() string {
 	return "bisect"
 }
-func (edgeTryToConfirm) String() string {
-	return "trying_to_confirm"
+func (edgeAwaitConfirmation) String() string {
+	return "await_confirmation"
 }
 func (edgeConfirm) String() string {
 	return "confirm"
 }
 
 func (edgeBackToStart) isEdgeTrackerAction() bool {
-	return true
-}
-func (edgeMarkPresumptive) isEdgeTrackerAction() bool {
-	return true
-}
-func (edgeHandleOneStepFork) isEdgeTrackerAction() bool {
 	return true
 }
 func (edgeHandleOneStepProof) isEdgeTrackerAction() bool {
@@ -128,7 +100,7 @@ func (edgeOpenSubchallengeLeaf) isEdgeTrackerAction() bool {
 func (edgeBisect) isEdgeTrackerAction() bool {
 	return true
 }
-func (edgeTryToConfirm) isEdgeTrackerAction() bool {
+func (edgeAwaitConfirmation) isEdgeTrackerAction() bool {
 	return true
 }
 func (edgeConfirm) isEdgeTrackerAction() bool {

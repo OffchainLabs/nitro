@@ -33,6 +33,7 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 	).Return(option.Some(protocol.SpecEdge(edge)), nil)
 
 	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionId)))
+	edge.On("Id").Return(edgeId)
 	edge.On(
 		"AssertionId",
 		ctx,
@@ -43,7 +44,7 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 		chain:      mockChain,
 	}
 	watcher.challenges.Put(assertionId, &trackedChallenge{
-		confirmedLevelZeroEdgeClaimIds: threadsafe.NewSet[protocol.ClaimId](),
+		confirmedLevelZeroEdgeClaimIds: threadsafe.NewMap[protocol.ClaimId, protocol.EdgeId](),
 	})
 
 	err := watcher.processEdgeConfirmation(ctx, edgeId)

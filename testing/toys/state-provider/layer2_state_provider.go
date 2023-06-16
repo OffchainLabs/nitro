@@ -270,15 +270,84 @@ func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, blockStar
 	)
 }
 
+// AgreesWithHistoryCommitment checks if the l2 state provider agrees with a specified start and end
+// history commitment for a type of edge under a specified assertion challenge. It returns an agreement struct
+// which informs the caller whether (a) we agree with the start commitment, and whether (b) the edge is honest, meaning
+// that we also agree with the end commitment.
 func (s *L2StateBackend) AgreesWithHistoryCommitment(
-	_ context.Context,
-	_ protocol.EdgeType,
-	_ uint64,
-	_ *protocol.OriginHeights,
-	_,
-	_ commitments.History,
+	ctx context.Context,
+	edgeType protocol.EdgeType,
+	prevAssertionInboxMaxCount uint64,
+	heights *protocol.OriginHeights,
+	startCommit,
+	endCommit commitments.History,
 ) (protocol.Agreement, error) {
-	return protocol.Agreement{}, nil
+	agreement := protocol.Agreement{}
+	var localStartCommit commitments.History
+	var localEndCommit commitments.History
+	var err error
+	switch edgeType {
+	case protocol.BlockChallengeEdge:
+		localStartCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(startCommit.Height), prevAssertionInboxMaxCount)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+		localEndCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(endCommit.Height), prevAssertionInboxMaxCount)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+	case protocol.BigStepChallengeEdge:
+		localStartCommit, err = s.BigStepCommitmentUpTo(
+			ctx,
+			uint64(heights.BlockChallengeOriginHeight),
+			uint64(heights.BlockChallengeOriginHeight)+1,
+			uint64(startCommit.Height),
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+		localEndCommit, err = s.BigStepCommitmentUpTo(
+			ctx,
+			uint64(heights.BlockChallengeOriginHeight),
+			uint64(heights.BlockChallengeOriginHeight)+1,
+			uint64(endCommit.Height),
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+	case protocol.SmallStepChallengeEdge:
+		localStartCommit, err = s.SmallStepCommitmentUpTo(
+			ctx,
+			uint64(heights.BlockChallengeOriginHeight),
+			uint64(heights.BlockChallengeOriginHeight)+1,
+			uint64(heights.BigStepChallengeOriginHeight),
+			uint64(heights.BigStepChallengeOriginHeight)+1,
+			startCommit.Height,
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+		localEndCommit, err = s.SmallStepCommitmentUpTo(
+			ctx,
+			uint64(heights.BlockChallengeOriginHeight),
+			uint64(heights.BlockChallengeOriginHeight)+1,
+			uint64(heights.BigStepChallengeOriginHeight),
+			uint64(heights.BigStepChallengeOriginHeight)+1,
+			endCommit.Height,
+		)
+		if err != nil {
+			return protocol.Agreement{}, err
+		}
+	default:
+		return agreement, errors.New("unsupported edge type")
+	}
+	if localStartCommit.Height == startCommit.Height && localStartCommit.Merkle == startCommit.Merkle {
+		agreement.AgreesWithStartCommit = true
+	}
+	if localEndCommit.Height == endCommit.Height && localEndCommit.Merkle == endCommit.Merkle {
+		agreement.IsHonestEdge = true
+	}
+	return agreement, nil
 }
 
 func (s *L2StateBackend) BigStepLeafCommitment(
@@ -624,6 +693,12 @@ func (s *L2StateBackend) OneStepProofData(
 }
 
 func (s *L2StateBackend) prefixProofImpl(_ context.Context, start, lo, hi, batchCount uint64) ([]byte, error) {
+	if lo+1 < start {
+		return nil, fmt.Errorf("lo %d + 1 < start %d", lo, start)
+	}
+	if hi+1 < start {
+		return nil, fmt.Errorf("hi %d + 1 < start %d", hi, start)
+	}
 	states, err := s.statesUpTo(start, hi, batchCount)
 	if err != nil {
 		return nil, err

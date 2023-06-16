@@ -14,31 +14,12 @@ func newEdgeTrackerFsm(
 			// this, including challenge moves.
 			Typ: edgeBackToStart{},
 			From: []edgeTrackerState{
-				edgePresumptive,
 				edgeBisecting,
 				edgeStarted,
 				edgeAtOneStepProof,
 				edgeAddingSubchallengeLeaf,
-				edgePresumptive,
 			},
 			To: edgeStarted,
-		},
-		{
-			// Marks a tracker as presumptive status. This can occur
-			// soon after the tracker begins, or if a challenge move has been made.
-			Typ: edgeMarkPresumptive{},
-			From: []edgeTrackerState{
-				edgeStarted,
-				edgePresumptive,
-			},
-			To: edgePresumptive,
-		},
-		// One-step-proof states.
-		{
-			// The tracker will take some action if it has reached a one-step-fork.
-			Typ:  edgeHandleOneStepFork{},
-			From: []edgeTrackerState{edgeStarted},
-			To:   edgeAtOneStepFork,
 		},
 		{
 			// The tracker will take some action if it has reached a one-step-proof
@@ -50,7 +31,7 @@ func newEdgeTrackerFsm(
 		{
 			// The tracker will add a subchallenge leaf to its edge's subchallenge.
 			Typ:  edgeOpenSubchallengeLeaf{},
-			From: []edgeTrackerState{edgeAtOneStepFork, edgeAddingSubchallengeLeaf},
+			From: []edgeTrackerState{edgeStarted, edgeAddingSubchallengeLeaf},
 			To:   edgeAddingSubchallengeLeaf,
 		},
 		// Challenge moves.
@@ -59,15 +40,16 @@ func newEdgeTrackerFsm(
 			From: []edgeTrackerState{edgeStarted},
 			To:   edgeBisecting,
 		},
+		// Awaiting confirmation.
 		{
-			Typ:  edgeTryToConfirm{},
-			From: []edgeTrackerState{edgeConfirming, edgeBisecting, edgeAtOneStepFork, edgeAddingSubchallengeLeaf},
+			Typ:  edgeAwaitConfirmation{},
+			From: []edgeTrackerState{edgeStarted, edgeBisecting, edgeAddingSubchallengeLeaf, edgeConfirming},
 			To:   edgeConfirming,
 		},
 		// Terminal state.
 		{
 			Typ:  edgeConfirm{},
-			From: []edgeTrackerState{edgeConfirmed, edgeConfirming, edgeAtOneStepProof},
+			From: []edgeTrackerState{edgeStarted, edgeConfirming, edgeConfirmed, edgeAtOneStepProof},
 			To:   edgeConfirmed,
 		},
 	}

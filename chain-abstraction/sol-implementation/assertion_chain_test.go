@@ -101,5 +101,5 @@ func TestChallengePeriodBlocks(t *testing.T) {
 
 	chalPeriod, err := manager.ChallengePeriodBlocks(ctx)
 	require.NoError(t, err)
-	require.Equal(t, uint64(20), chalPeriod)
+	require.Equal(t, cfg.RollupConfig.ConfirmPeriodBlocks, chalPeriod)
 }

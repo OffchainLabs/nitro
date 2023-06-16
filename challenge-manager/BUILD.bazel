@@ -14,8 +14,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
-        "//chain-abstraction/sol-implementation",
         "//challenge-manager/chain-watcher",
+        "//challenge-manager/challenge-tree",
         "//containers",
         "//containers/fsm",
         "//containers/threadsafe",
@@ -43,8 +43,7 @@ go_test(
     embed = [":challenge-manager"],
     deps = [
         "//chain-abstraction:protocol",
-        "//containers/option",
-        "//state-commitments/history",
+        "//challenge-manager/chain-watcher",
         "//testing/logging",
         "//testing/mocks",
         "//testing/setup:setup_lib",

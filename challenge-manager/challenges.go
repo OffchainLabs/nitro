@@ -40,6 +40,8 @@ func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionI
 			stateManager:     v.stateManager,
 			validatorName:    v.name,
 			validatorAddress: v.address,
+			chainWatcher:     v.watcher,
+			challengeManager: v,
 		},
 		levelZeroEdge,
 		0,

@@ -43,6 +43,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
+        "//runtime",
         "//solgen/go/challengeV2gen",
         "//solgen/go/rollupgen",
         "//testing/endtoend/internal/backend",
