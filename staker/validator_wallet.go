@@ -266,6 +266,9 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	}
 
 	callValue := new(big.Int).Sub(totalAmount, balanceInContract)
+	if callValue.Sign() < 0 {
+		callValue.SetInt64(0)
+	}
 	auth, err := v.getAuth(ctx, callValue)
 	if err != nil {
 		return nil, err
