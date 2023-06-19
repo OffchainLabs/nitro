@@ -54,7 +54,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig, updateHeaderWithInfo bool) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
@@ -78,7 +78,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		copy(extra, prevHeader.Extra)
 		mixDigest = prevHeader.MixDigest
 	}
-	return &types.Header{
+	header := &types.Header{
 		ParentHash:  lastBlockHash,
 		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
@@ -96,6 +96,31 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Nonce:       [8]byte{}, // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
+
+	if updateHeaderWithInfo {
+		var sendRoot common.Hash
+		var sendCount uint64
+		var nextL1BlockNumber uint64
+		var arbosVersion uint64
+
+		if blockNumber.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+		} else {
+			acc := state.SendMerkleAccumulator()
+			sendRoot, _ = acc.Root()
+			sendCount, _ = acc.Size()
+			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
+			arbosVersion = state.ArbOSVersion()
+		}
+		arbitrumHeader := types.HeaderInfo{
+			SendRoot:           sendRoot,
+			SendCount:          sendCount,
+			L1BlockNumber:      nextL1BlockNumber,
+			ArbOSFormatVersion: arbosVersion,
+		}
+		arbitrumHeader.UpdateHeaderWithInfo(header)
+	}
+	return header
 }
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
@@ -188,7 +213,7 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig, false)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
@@ -322,6 +347,14 @@ func ProduceBlockAdvanced(
 
 			return receipt, result, nil
 		})()
+
+		if tx.Type() == types.ArbitrumInternalTxType {
+			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			header = createNewHeader(lastBlockHeader, l1Info, state, chainConfig, true)
+		}
 
 		// append the err, even if it is nil
 		hooks.TxErrors = append(hooks.TxErrors, err)
