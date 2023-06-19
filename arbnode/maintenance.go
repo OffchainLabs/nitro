@@ -142,6 +142,7 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 	}
 
 	if mr.seqCoordinator == nil {
+		mr.lastMaintenance = now
 		mr.runMaintenance()
 		return time.Minute
 	}
