@@ -20,10 +20,10 @@ import (
 type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
-	config         MaintenanceConfigFetcher
-	seqCoordinator *SeqCoordinator
-	dbs            []ethdb.Database
-	lastCheck      time.Time
+	config          MaintenanceConfigFetcher
+	seqCoordinator  *SeqCoordinator
+	dbs             []ethdb.Database
+	lastMaintenance time.Time
 
 	// lock is used to ensures that at any given time, only single node is on
 	// maintenance mode.
@@ -87,10 +87,10 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 	res := &MaintenanceRunner{
-		config:         config,
-		seqCoordinator: seqCoordinator,
-		dbs:            dbs,
-		lastCheck:      time.Now().UTC(),
+		config:          config,
+		seqCoordinator:  seqCoordinator,
+		dbs:             dbs,
+		lastMaintenance: time.Now().UTC(),
 	}
 
 	if seqCoordinator != nil {
@@ -136,13 +136,11 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 	}
 
 	now := time.Now().UTC()
-	mr.lastCheck = now
 
-	if !wentPastTimeOfDay(mr.lastCheck, now, config.minutesAfterMidnight) {
+	if !wentPastTimeOfDay(mr.lastMaintenance, now, config.minutesAfterMidnight) {
 		return time.Minute
 	}
 
-	log.Info("Attempting to release sequencer lockout to run database compaction", "targetTime", config.TimeOfDay)
 	if mr.seqCoordinator == nil {
 		mr.runMaintenance()
 		return time.Minute
@@ -153,8 +151,10 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 	}
 	defer mr.lock.Release(ctx)
 
+	log.Info("Attempting avoiding lockout and handing off", "targetTime", config.TimeOfDay)
 	// Avoid lockout for the sequencer and try to handoff.
 	if mr.seqCoordinator.AvoidLockout(ctx) && mr.seqCoordinator.TryToHandoffChosenOne(ctx) {
+		mr.lastMaintenance = now
 		mr.runMaintenance()
 	}
 	defer mr.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
