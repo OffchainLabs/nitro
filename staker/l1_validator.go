@@ -169,7 +169,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			return false, nil
 		}
 		log.Warn("rejecting node", "node", unresolvedNodeIndex)
-		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
+		auth, err := v.builder.Auth(ctx)
+		if err != nil {
+			return false, err
+		}
+		_, err = v.rollup.RejectNextNode(auth, *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
 		nodeInfo, err := v.rollup.LookupNode(ctx, unresolvedNodeIndex)
@@ -178,7 +182,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
 		log.Info("confirming node", "node", unresolvedNodeIndex)
-		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
+		auth, err := v.builder.Auth(ctx)
+		if err != nil {
+			return false, err
+		}
+		_, err = v.rollup.ConfirmNextNode(auth, afterGs.BlockHash, afterGs.SendRoot)
 		if err != nil {
 			return false, err
 		}
