@@ -262,6 +262,8 @@ func TestSync_HonestBobStopsCharlieJoins(t *testing.T) {
 		}(),
 		Expectations: []expect{
 			expectLevelZeroBlockEdgeConfirmed,
+			expectAssertionConfirmedByChallengeWinner,
+			expectOneStepProofSuccessful,
 		},
 	}
 
