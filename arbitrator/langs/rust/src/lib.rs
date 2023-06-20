@@ -16,7 +16,7 @@ mod util;
 extern "C" {
     pub(crate) fn read_args(dest: *mut u8);
     pub(crate) fn return_data(data: *const u8, len: usize);
-    pub fn memory_grow(pages: u32);
+    pub fn memory_grow(pages: u16);
 }
 
 pub fn args(len: usize) -> Vec<u8> {

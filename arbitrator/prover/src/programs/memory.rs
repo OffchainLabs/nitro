@@ -83,11 +83,43 @@ fn test_model() {
     for jump in 1..=128 {
         let mut total = 0;
         let mut pages = 0;
-        while pages + jump < 128 {
+        while pages < 128 {
+            let jump = jump.min(128 - pages);
             total += model.gas_cost(jump, pages, pages);
-            pages += jump
+            pages += jump;
         }
-        total += model.gas_cost(128 - pages, pages, pages);
         assert_eq!(total, 31999998);
     }
+
+    for jump in 1..=128 {
+        let mut total = 0;
+        let mut open = 0;
+        let mut ever = 0;
+        let mut adds = 0;
+        while ever < 128 {
+            let jump = jump.min(128 - open);
+            total += model.gas_cost(jump, open, ever);
+            open += jump;
+            ever = ever.max(open);
+
+            if ever > model.free_pages {
+                adds += jump.min(ever - model.free_pages) as u64;
+            }
+
+            // pretend we've deallocated some pages
+            open -= jump / 2;
+        }
+        let expected = 31873998 + adds * model.page_gas as u64;
+        assert_eq!(total, expected);
+    }
+
+    // check saturation
+    assert_eq!(u64::MAX, model.gas_cost(129, 0, 0));
+    assert_eq!(u64::MAX, model.gas_cost(u16::MAX, 0, 0));
+
+    // check free pages
+    let model = MemoryModel::new(128, 1000);
+    assert_eq!(0, model.gas_cost(128, 0, 0));
+    assert_eq!(0, model.gas_cost(128, 0, 128));
+    assert_eq!(u64::MAX, model.gas_cost(129, 0, 0));
 }

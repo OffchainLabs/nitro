@@ -606,7 +606,8 @@ impl<'a> WasmBinary<'a> {
 
         let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
         if pages > page_limit as u64 {
-            bail!("memory exceeds limit");
+            let limit = page_limit.red();
+            bail!("memory exceeds limit: {} > {limit}", pages.red());
         }
         Ok((bin, stylus_data, pages as u16))
     }
