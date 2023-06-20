@@ -18,6 +18,10 @@ interface ArbWasm {
     // @return version the stylus version
     function stylusVersion() external view returns (uint32 version);
 
+    // @notice gets the stylus version the program was most recently compiled against.
+    // @return version the program version (0 for EVM contracts)
+    function programVersion(address program) external view returns (uint32 version);
+
     // @notice gets the conversion rate between gas and ink
     // @return price the price (in evm gas basis points) of ink
     function inkPrice() external view returns (uint64 price);
@@ -45,10 +49,6 @@ interface ArbWasm {
     // @notice gets the maximum number of pages a wasm may allocate
     // @return limit the number of pages
     function pageLimit() external view returns (uint16 limit);
-
-    // @notice gets the stylus version the program was most recently compiled against.
-    // @return version the program version (0 for EVM contracts)
-    function programVersion(address program) external view returns (uint32 version);
 
     error ProgramNotCompiled();
     error ProgramOutOfDate(uint32 version);
