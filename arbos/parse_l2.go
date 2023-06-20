@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
@@ -381,7 +382,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 		batchData := batchFetcher(batchNum, batchHash)
 		batchDataGas = arbostypes.ComputeBatchGasCost(batchData)
 	}
-	batchDataGas += extraGas
+	batchDataGas = arbmath.SaturatingUAdd(batchDataGas, extraGas)
 
 	data, err := util.PackInternalTxDataBatchPostingReport(
 		batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,
