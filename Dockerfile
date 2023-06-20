@@ -6,20 +6,20 @@ RUN apt-get update && \
     cd emsdk && \
     ./emsdk install 3.1.7 && \
     ./emsdk activate 3.1.7
-COPY build-brotli.sh .
+COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./build-brotli.sh -w -t install/
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t install/
 
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
 
 FROM debian:bullseye-slim as brotli-library-builder
 WORKDIR /workspace
-COPY build-brotli.sh .
+COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN apt-get update && \
     apt-get install -y cmake make gcc git && \
-    ./build-brotli.sh -l -t install/
+    ./scripts/build-brotli.sh -l -t /workspace/install/
 
 FROM scratch as brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /

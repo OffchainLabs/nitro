@@ -9,8 +9,8 @@ BUILD_WASM=false
 BUILD_LOCAL=false
 BUILD_SOFTFLOAT=false
 USE_DOCKER=false
-TARGET_DIR=target/
-SOURCE_DIR=brotli
+TARGET_DIR=../target/
+SOURCE_DIR=../brotli
 
 usage(){
     echo "brotli builder for arbitrum"

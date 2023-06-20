@@ -108,12 +108,12 @@ jobs:
           target/lib/libbrotlicommon-static.a
           target/lib/libbrotlienc-static.a
           target/lib/libbrotlidec-static.a
-        key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+        key: ${{ runner.os }}-brotli-3a-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
         restore-keys: ${{ runner.os }}-brotli-
 
     - name: Build cbrotli-local
       if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-      run: ./build-brotli.sh -l
+      run: ./scripts/build-brotli.sh -l
 
     - name: Cache Build Products
       uses: actions/cache@v3
