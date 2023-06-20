@@ -62,7 +62,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	timestampAtCreation := uint64(rand.Int63n(1 << 16))
 	timeoutAtCreation := timestampAtCreation + lifetime
 	timestampAtRevival := timeoutAtCreation + 2 + uint64(rand.Int63n(1<<16))
-	//timeoutAtRevival := timestampAtRevival + lifetime
+	// timeoutAtRevival := timestampAtRevival + lifetime
 	currentTime := timeoutAtCreation
 
 	setTime := func(timestamp uint64) uint64 {
