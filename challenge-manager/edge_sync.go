@@ -7,6 +7,7 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	"github.com/pkg/errors"
 )
 
 // Sync edges from challenges from confirmed block height to latest block height.
@@ -71,6 +72,9 @@ func (v *Manager) getEdgeTrackers(ctx context.Context, edges []protocol.SpecEdge
 			})
 			if creationErr != nil {
 				return nil, creationErr
+			}
+			if !assertionCreationInfo.InboxMaxCount.IsUint64() {
+				return nil, errors.New("assertion creation info inbox max count was not a uint64")
 			}
 
 			// Retry until you get the execution state block height.

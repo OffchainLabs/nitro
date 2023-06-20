@@ -169,6 +169,9 @@ func (a *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get current required stake")
 	}
+	if !assertionCreationInfo.InboxMaxCount.IsUint64() {
+		return nil, errors.New("inbox max count was not a uint64")
+	}
 	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
 		return a.userLogic.NewStakeOnNewAssertion(
 			newOpts,
@@ -249,6 +252,9 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 			creationInfo.ParentAssertionHash,
 			latestConfirmed.Id(),
 		)
+	}
+	if !prevCreationInfo.InboxMaxCount.IsUint64() {
+		return errors.New("assertion prev creation info inbox max count was not a uint64")
 	}
 	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
 		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(

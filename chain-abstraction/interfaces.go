@@ -240,7 +240,7 @@ type ReadOnlyEdge interface {
 	// The end height and history commitment for an edge.
 	EndCommitment() (Height, common.Hash)
 	// The block number the edge was created at.
-	CreatedAtBlock() uint64
+	CreatedAtBlock() (uint64, error)
 	// The mutual id of the edge.
 	MutualId() MutualId
 	// The origin id of the edge.

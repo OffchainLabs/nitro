@@ -103,8 +103,7 @@ func (s *Scanner) Scan(ctx context.Context) {
 					continue
 				}
 				if !latestBlock.Number.IsUint64() {
-					log.Error("latest block header number is not a uint64")
-					continue
+					log.Fatal("Latest block number was not a uint64")
 				}
 				toBlock := latestBlock.Number.Uint64()
 				if fromBlock == toBlock {

@@ -329,6 +329,9 @@ func FuzzMaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
 		gotGo, err1 := prefixproofs.MaximumAppendBetween(pre, post)
 		gotSol, err2 := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(pre)), big.NewInt(int64(post)))
 		if err1 == nil && err2 == nil {
+			if !gotSol.IsUint64() {
+				t.Fatal("sol result was not a uint64")
+			}
 			if gotSol.Uint64() != gotGo {
 				t.Errorf("sol %d != go %d", gotSol.Uint64(), gotGo)
 			}

@@ -12,7 +12,11 @@ import (
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,
 // this function will return 0.
 func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint64) (uint64, error) {
-	if blockNum <= e.CreatedAtBlock() {
+	createdAtBlock, err := e.CreatedAtBlock()
+	if err != nil {
+		return 0, err
+	}
+	if blockNum <= createdAtBlock {
 		return 0, nil
 	}
 	// If no rival at a block num, then the local timer is defined
@@ -22,16 +26,16 @@ func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint
 		return 0, err
 	}
 	if unrivaled {
-		return blockNum - e.CreatedAtBlock(), nil
+		return blockNum - createdAtBlock, nil
 	}
 	// Else we return the earliest created rival's block number: t_rival - t_creation(e).
 	// This unwrap is safe because the edge has rivals at this point due to the check above.
 	earliest := ht.earliestCreatedRivalBlockNumber(e)
 	tRival := earliest.Unwrap()
-	if e.CreatedAtBlock() >= tRival {
+	if createdAtBlock >= tRival {
 		return 0, nil
 	}
-	return tRival - e.CreatedAtBlock(), nil
+	return tRival - createdAtBlock, nil
 }
 
 // Gets the minimum creation block number across all of an edge's rivals. If an edge
@@ -48,10 +52,14 @@ func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOn
 // Determines if an edge was unrivaled at a block num T. If any rival existed
 // for the edge at T, this function will return false.
 func (ht *HonestChallengeTree) unrivaledAtBlockNum(e protocol.ReadOnlyEdge, blockNum uint64) (bool, error) {
-	if blockNum < e.CreatedAtBlock() {
+	createdAtBlock, err := e.CreatedAtBlock()
+	if err != nil {
+		return false, err
+	}
+	if blockNum < createdAtBlock {
 		return false, fmt.Errorf(
 			"edge creation block %d less than specified %d",
-			e.CreatedAtBlock(),
+			createdAtBlock,
 			blockNum,
 		)
 	}

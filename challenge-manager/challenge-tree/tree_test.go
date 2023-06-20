@@ -210,8 +210,8 @@ func (e *edge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.endHeight), common.BytesToHash([]byte(e.endCommit))
 }
 
-func (e *edge) CreatedAtBlock() uint64 {
-	return e.creationBlock
+func (e *edge) CreatedAtBlock() (uint64, error) {
+	return e.creationBlock, nil
 }
 
 func (e *edge) OriginId() protocol.OriginId {

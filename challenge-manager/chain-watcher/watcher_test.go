@@ -101,7 +101,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	).Return(option.Some(protocol.SpecEdge(edge)), nil)
 
 	edge.On("Id").Return(edgeId)
-	edge.On("CreatedAtBlock").Return(uint64(0))
+	edge.On("CreatedAtBlock").Return(uint64(0), nil)
 	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionId)))
 	edge.On("MutualId").Return(protocol.MutualId{})
 	edge.On("GetType").Return(protocol.BlockChallengeEdge)

@@ -72,6 +72,9 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	if err != nil {
 		return err
 	}
+	if !prevCreationInfo.InboxMaxCount.IsUint64() {
+		return errors.New("prev inbox max count was not a uint64")
+	}
 
 	// We only track edges we fully agree with (honest edges).
 	startHeight, startCommit := eg.StartCommitment()
@@ -126,7 +129,11 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 			ht.mutualIds.Put(mutualId, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 			mutuals = ht.mutualIds.Get(mutualId)
 		}
-		mutuals.Put(eg.Id(), creationTime(eg.CreatedAtBlock()))
+		createdAtBlock, err := eg.CreatedAtBlock()
+		if err != nil {
+			return err
+		}
+		mutuals.Put(eg.Id(), creationTime(createdAtBlock))
 	}
 	return nil
 }

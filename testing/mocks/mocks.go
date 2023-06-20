@@ -335,9 +335,9 @@ func (m *MockSpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) 
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.EdgeStatus), args.Error(1)
 }
-func (m *MockSpecEdge) CreatedAtBlock() uint64 {
+func (m *MockSpecEdge) CreatedAtBlock() (uint64, error) {
 	args := m.Called()
-	return args.Get(0).(uint64)
+	return args.Get(0).(uint64), args.Error(1)
 }
 func (m *MockSpecEdge) MutualId() protocol.MutualId {
 	args := m.Called()

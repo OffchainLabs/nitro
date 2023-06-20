@@ -80,63 +80,83 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 	ht.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals := ht.mutualIds.Get(mutual)
 	idd := id("blk-0.a-16.a")
-	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+	iddCreation, err := ht.edges.Get(idd).CreatedAtBlock()
+	require.NoError(t, err)
+	mutuals.Put(idd, creationTime(iddCreation))
 	idd = id("blk-0.a-16.b")
-	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+	iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+	require.NoError(t, err)
+	mutuals.Put(idd, creationTime(iddCreation))
 
 	mutual = edges["blk-0.a-8.a"].MutualId()
 
 	ht.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = ht.mutualIds.Get(mutual)
 	idd = id("blk-0.a-8.a")
-	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+	iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+	require.NoError(t, err)
+	mutuals.Put(idd, creationTime(iddCreation))
 	idd = id("blk-0.a-8.b")
-	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+	iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+	require.NoError(t, err)
+	mutuals.Put(idd, creationTime(iddCreation))
 
 	mutual = edges["blk-4.a-8.a"].MutualId()
 
 	ht.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = ht.mutualIds.Get(mutual)
 	idd = id("blk-4.a-8.a")
-	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+	iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+	require.NoError(t, err)
+	mutuals.Put(idd, creationTime(iddCreation))
 	idd = id("blk-4.a-8.b")
-	mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+	iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+	require.NoError(t, err)
+	mutuals.Put(idd, creationTime(iddCreation))
 
 	ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(ht.edges.Get(id("blk-0.a-16.a"))))
 	ctx := context.Background()
 
 	t.Run("querying path timer before creation should return zero", func(t *testing.T) {
 		edge := ht.edges.Get(id("blk-0.a-16.a"))
-		timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), 0)
-		require.NoError(t, err)
+		timer, _, pathErr := ht.HonestPathTimer(ctx, edge.Id(), 0)
+		require.NoError(t, pathErr)
 		require.Equal(t, PathTimer(0), timer)
 	})
 	t.Run("at creation time should be zero if no parents", func(t *testing.T) {
 		edge := ht.edges.Get(id("blk-0.a-16.a"))
-		timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), edge.CreatedAtBlock())
-		require.NoError(t, err)
+		creation, createErr := edge.CreatedAtBlock()
+		require.NoError(t, createErr)
+		timer, _, timeErr := ht.HonestPathTimer(ctx, edge.Id(), creation)
+		require.NoError(t, timeErr)
 		require.Equal(t, PathTimer(0), timer)
 	})
 	t.Run("OK", func(t *testing.T) {
 		// Top-level edge should have spent 1 second unrivaled
 		// as its rival was created 1 second after its creation.
 		edge := ht.edges.Get(id("blk-0.a-16.a"))
-		timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), edge.CreatedAtBlock()+1)
-		require.NoError(t, err)
+		creation, createErr := edge.CreatedAtBlock()
+		require.NoError(t, createErr)
+		timer, _, timeErr := ht.HonestPathTimer(ctx, edge.Id(), creation+1)
+		require.NoError(t, timeErr)
 		require.Equal(t, PathTimer(1), timer)
 
 		// Now we look at the lower honest child, 0.a-8.a. It will have spent
 		// 1 second unrivaled and will inherit the local timers of its honest ancestors.
 		// which is 1 for a total of 2.
 		edge = ht.edges.Get(id("blk-0.a-8.a"))
-		timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), edge.CreatedAtBlock()+1)
+		creation, err = edge.CreatedAtBlock()
+		require.NoError(t, err)
+		timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), creation+1)
 		require.NoError(t, err)
 		require.Equal(t, PathTimer(2), timer)
 
 		// Now we look at the upper honest grandchild, 4.a-8.a. It will
 		// have spent 1 second unrivaled.
 		edge = ht.edges.Get(id("blk-4.a-8.a"))
-		timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), edge.CreatedAtBlock()+1)
+		creation, err = edge.CreatedAtBlock()
+		require.NoError(t, err)
+		timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), creation+1)
 		require.NoError(t, err)
 		require.Equal(t, PathTimer(3), timer)
 
@@ -148,14 +168,18 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 
 		// Querying it at creation time+1 should just have the path timers
 		// of its ancestors that count, which is a total of 3.
-		timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), edge.CreatedAtBlock()+1)
+		creation, err = edge.CreatedAtBlock()
+		require.NoError(t, err)
+		timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), creation+1)
 		require.NoError(t, err)
 		require.Equal(t, PathTimer(3), timer)
 
 		// Continuing to query it at time T+i should increase the timer
 		// as it is unrivaled.
+		creation, err = edge.CreatedAtBlock()
+		require.NoError(t, err)
 		for i := uint64(2); i < 10; i++ {
-			timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), edge.CreatedAtBlock()+i)
+			timer, _, err = ht.HonestPathTimer(ctx, edge.Id(), creation+i)
 			require.NoError(t, err)
 			require.Equal(t, PathTimer(2)+PathTimer(i), timer)
 		}
@@ -187,37 +211,49 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 		mutual := edges["blk-0.a-16.c"].MutualId()
 		mutuals := ht.mutualIds.Get(mutual)
 		idd := id("blk-0.a-16.c")
-		mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+		iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+		require.NoError(t, err)
+		mutuals.Put(idd, creationTime(iddCreation))
 
 		mutual = edges["blk-0.a-8.c"].MutualId()
 
 		mutuals = ht.mutualIds.Get(mutual)
 		idd = id("blk-0.a-8.c")
-		mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+		iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+		require.NoError(t, err)
+		mutuals.Put(idd, creationTime(iddCreation))
 
 		mutual = edges["blk-0.a-4.c"].MutualId()
 
 		ht.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 		mutuals = ht.mutualIds.Get(mutual)
 		idd = id("blk-0.a-4.a")
-		mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+		iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+		require.NoError(t, err)
+		mutuals.Put(idd, creationTime(iddCreation))
 		idd = id("blk-0.a-4.c")
-		mutuals.Put(idd, creationTime(ht.edges.Get(idd).CreatedAtBlock()))
+		iddCreation, err = ht.edges.Get(idd).CreatedAtBlock()
+		require.NoError(t, err)
+		mutuals.Put(idd, creationTime(iddCreation))
 
 		// The path timer of the old, unrivaled edge should no longer increase
 		// as it is now rivaled as of the time of the last created edge above.
 		lastCreated := ht.edges.Get(id("blk-0.a-4.c"))
 		edge := ht.edges.Get(id("blk-0.a-4.a"))
-		timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), lastCreated.CreatedAtBlock())
+		latestCreation, err := lastCreated.CreatedAtBlock()
+		require.NoError(t, err)
+		edgeCreation, err := edge.CreatedAtBlock()
+		require.NoError(t, err)
+		timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), latestCreation)
 		require.NoError(t, err)
 		ancestorTimers := uint64(2)
-		require.Equal(t, PathTimer(lastCreated.CreatedAtBlock()-edge.CreatedAtBlock()+ancestorTimers), timer)
+		require.Equal(t, PathTimer(latestCreation-edgeCreation+ancestorTimers), timer)
 
 		// Should no longer increase.
 		for i := 0; i < 10; i++ {
-			timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), lastCreated.CreatedAtBlock()+uint64(i))
+			timer, _, err := ht.HonestPathTimer(ctx, edge.Id(), latestCreation+uint64(i))
 			require.NoError(t, err)
-			require.Equal(t, PathTimer(lastCreated.CreatedAtBlock()-edge.CreatedAtBlock()+ancestorTimers), timer)
+			require.Equal(t, PathTimer(latestCreation-edgeCreation+ancestorTimers), timer)
 		}
 	})
 }
@@ -246,7 +282,9 @@ func TestPathTimer_AllChallengeLevels(t *testing.T) {
 
 	ctx := context.Background()
 	lastCreated := ht.edges.Get(id("smol-4.a-5.a"))
-	timer, ancestors, err := ht.HonestPathTimer(ctx, lastCreated.Id(), lastCreated.CreatedAtBlock()+1)
+	lastCreatedTime, err := lastCreated.CreatedAtBlock()
+	require.NoError(t, err)
+	timer, ancestors, err := ht.HonestPathTimer(ctx, lastCreated.Id(), lastCreatedTime+1)
 	require.NoError(t, err)
 
 	// Should be the sum of the unrivaled timers of honest edges along the path
