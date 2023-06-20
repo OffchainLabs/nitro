@@ -1,7 +1,0 @@
-build/
-cache/
-node_modules/
-deployments/
-/test/prover/proofs/*.json
-/test/prover/spec-proofs/*.json
-/test/storage/*-old.dot
