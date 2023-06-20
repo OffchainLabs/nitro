@@ -11,6 +11,7 @@ BUILD_SOFTFLOAT=false
 USE_DOCKER=false
 TARGET_DIR=../target/
 SOURCE_DIR=../brotli
+NITRO_DIR=../
 
 usage(){
     echo "brotli builder for arbitrum"
@@ -28,12 +29,13 @@ usage(){
     echo "Other options:"
     echo " -s     source dir default: $SOURCE_DIR"
     echo " -t     target dir default: $TARGET_DIR"
+    echo " -n     nitro dir default: $NITRO_DIR"
     echo " -h     help"
     echo
     echo "all relative paths are relative to script location"
 }
 
-while getopts "s:t:c:wldhf" option; do
+while getopts "s:t:c:D:wldhf" option; do
     case $option in
         h)
             usage
@@ -53,6 +55,9 @@ while getopts "s:t:c:wldhf" option; do
             ;;
         t)
             TARGET_DIR="$OPTARG"
+            ;;
+        n)
+            NITRO_DIR="$OPTARG"
             ;;
         s)
             SOURCE_DIR="$OPTARG"
@@ -74,13 +79,13 @@ TARGET_DIR_ABS=`cd -P "$TARGET_DIR"; pwd`
 
 if $USE_DOCKER; then
     if $BUILD_WASM; then
-        DOCKER_BUILDKIT=1 docker build --target brotli-wasm-export -o type=local,dest="$TARGET_DIR_ABS" .
+        DOCKER_BUILDKIT=1 docker build --target brotli-wasm-export -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
     fi
     if $BUILD_LOCAL; then
-        DOCKER_BUILDKIT=1 docker build --target brotli-library-export -o type=local,dest="$TARGET_DIR_ABS" .
+        DOCKER_BUILDKIT=1 docker build --target brotli-library-export -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
     fi
     if $BUILD_SOFTFLOAT; then
-        DOCKER_BUILDKIT=1 docker build --target wasm-libs-export -o type=local,dest="$TARGET_DIR_ABS" .
+        DOCKER_BUILDKIT=1 docker build --target wasm-libs-export -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
     fi
     exit 0
 fi

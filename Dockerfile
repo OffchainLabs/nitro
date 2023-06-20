@@ -8,7 +8,7 @@ RUN apt-get update && \
     ./emsdk activate 3.1.7
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t install/
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
 
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
