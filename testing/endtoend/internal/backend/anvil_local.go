@@ -106,7 +106,7 @@ func (a *AnvilLocal) loadAccounts() error {
 	a.bob = bobOpts
 
 	// Load Charlie from fourth account in test mnemonic.
-	charliePK, err := crypto.HexToECDSA("6de4211afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
+	charliePK, err := crypto.HexToECDSA("2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6")
 	if err != nil {
 		return err
 	}

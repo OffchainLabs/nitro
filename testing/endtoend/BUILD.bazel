@@ -11,6 +11,7 @@ test_suite(
 
 go_test(
     name = "endtoend_test",
+    timeout = "long",
     srcs = ["basic_local_test.go"],
     embed = [":endtoend"],
     tags = [
@@ -28,6 +29,7 @@ go_test(
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_offchainlabs_nitro//util/headerreader",
+        "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],
 )

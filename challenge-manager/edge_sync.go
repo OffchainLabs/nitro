@@ -23,6 +23,10 @@ func (v *Manager) syncEdges(ctx context.Context) error {
 		return err
 	}
 
+	log.WithField(
+		"count", len(edges),
+	).Infof("Syncing edges for %v", v.name)
+
 	// Spin off all the edge trackers in the background.
 	for _, tracker := range trackers {
 		go tracker.spawn(ctx)
