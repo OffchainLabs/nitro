@@ -18,13 +18,13 @@ var (
 	// The heights at which Alice and Bob diverge at each challenge level.
 	divergeHeightAtL2 = uint64(4)
 	// How often an edge tracker needs to wake and perform its responsibilities.
-	edgeTrackerWakeInterval = time.Millisecond * 100
+	edgeTrackerWakeInterval = time.Millisecond * 50
 	// How often the validator polls the chain to see if new assertions have been posted.
 	checkForAssertionsInterval = time.Second
 	// How often the validator will post its latest assertion to the chain.
 	postNewAssertionInterval = time.Hour
 	// How often we advance the blockchain's latest block in the background using a simulated backend.
-	advanceChainInterval = time.Second * 5
+	advanceChainInterval = time.Second * 2
 )
 
 type challengeProtocolTestConfig struct {

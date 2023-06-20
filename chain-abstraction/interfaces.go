@@ -20,6 +20,14 @@ type Protocol interface {
 	AssertionChain
 }
 
+type AssertionStatus uint8
+
+const (
+	NoAssertion AssertionStatus = iota
+	AssertionPending
+	AssertionConfirmed
+)
+
 // Assertion represents a top-level claim in the protocol about the
 // chain state created by a validator that stakes on their claim.
 // Assertions can be challenged.
@@ -41,6 +49,7 @@ type AssertionCreatedInfo struct {
 	AfterInboxBatchAcc  common.Hash
 	AssertionHash       common.Hash
 	WasmModuleRoot      common.Hash
+	ChallengeManager    common.Address
 }
 
 func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
@@ -72,6 +81,11 @@ type AssertionChain interface {
 		assertionCreationInfo *AssertionCreatedInfo,
 		postState *ExecutionState,
 	) (Assertion, error)
+	ConfirmAssertionByChallengeWinner(
+		ctx context.Context,
+		assertionId AssertionId,
+		winningEdgeId EdgeId,
+	) error
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)

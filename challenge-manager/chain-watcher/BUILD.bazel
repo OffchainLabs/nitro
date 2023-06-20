@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//challenge-manager/challenge-tree",
+        "//containers",
         "//containers/threadsafe",
         "//layer2-state-provider",
         "//runtime",

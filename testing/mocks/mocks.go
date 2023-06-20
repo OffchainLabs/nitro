@@ -450,6 +450,15 @@ func (m *MockProtocol) ReadAssertionCreationInfo(
 }
 
 // Mutating methods.
+func (m *MockProtocol) ConfirmAssertionByChallengeWinner(
+	ctx context.Context,
+	assertionId protocol.AssertionId,
+	winningEdgeId protocol.EdgeId,
+) error {
+	args := m.Called(ctx, assertionId)
+	return args.Error(0)
+}
+
 func (m *MockProtocol) CreateAssertion(
 	ctx context.Context,
 	assertionCreationInfo *protocol.AssertionCreatedInfo,

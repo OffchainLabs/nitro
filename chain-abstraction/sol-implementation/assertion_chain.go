@@ -213,6 +213,69 @@ func (a *AssertionChain) CreateAssertion(
 	return a.GetAssertion(ctx, assertionCreated.AssertionHash)
 }
 
+// ConfirmAssertionByChallengeWinner attempts to confirm an assertion onchain
+// if there is a winning, level zero, block challenge edge that claims it.
+func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
+	ctx context.Context,
+	assertionId protocol.AssertionId,
+	winningEdgeId protocol.EdgeId,
+) error {
+	node, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionId)
+	if err != nil {
+		return err
+	}
+	if node.Status == uint8(protocol.AssertionConfirmed) {
+		return nil
+	}
+	creationInfo, err := a.ReadAssertionCreationInfo(ctx, assertionId)
+	if err != nil {
+		return err
+	}
+	// If the assertion is genesis, return nil.
+	if creationInfo.ParentAssertionHash == [32]byte{} {
+		return nil
+	}
+	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionId(creationInfo.ParentAssertionHash))
+	if err != nil {
+		return err
+	}
+	latestConfirmed, err := a.LatestConfirmed(ctx)
+	if err != nil {
+		return err
+	}
+	if creationInfo.ParentAssertionHash != common.Hash(latestConfirmed.Id()) {
+		return fmt.Errorf(
+			"parent id %#x is not the latest confirmed assertion %#x",
+			creationInfo.ParentAssertionHash,
+			latestConfirmed.Id(),
+		)
+	}
+	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
+		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
+			copyTxOpts(a.txOpts),
+			assertionId,
+			creationInfo.ParentAssertionHash,
+			creationInfo.AfterState,
+			winningEdgeId,
+			rollupgen.ConfigData{
+				WasmModuleRoot:      prevCreationInfo.WasmModuleRoot,
+				ConfirmPeriodBlocks: prevCreationInfo.ConfirmPeriodBlocks,
+				RequiredStake:       prevCreationInfo.RequiredStake,
+				ChallengeManager:    prevCreationInfo.ChallengeManager,
+				NextInboxPosition:   prevCreationInfo.InboxMaxCount.Uint64(),
+			},
+			creationInfo.AfterInboxBatchAcc,
+		)
+	})
+	if err != nil {
+		return err
+	}
+	if len(receipt.Logs) == 0 {
+		return errors.New("no logs observed from assertion confirmation")
+	}
+	return nil
+}
+
 // SpecChallengeManager creates a new spec challenge manager
 func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
 	challengeManagerAddr, err := a.userLogic.RollupUserLogicCaller.ChallengeManager(
@@ -353,6 +416,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
 		AssertionHash:       parsedLog.AssertionHash,
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
+		ChallengeManager:    parsedLog.ChallengeManager,
 	}, nil
 }
 

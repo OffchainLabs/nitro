@@ -8,12 +8,52 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/endtoend/internal/backend"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/stretchr/testify/require"
 )
 
 // expect is a function that will be called asynchronously to verify some success criteria
 // for the given scenario.
 type expect func(t *testing.T, ctx context.Context, be backend.Backend) error
+
+// Expects that an assertion is confirmed by challenge win.
+func expectAssertionConfirmedByChallengeWinner(t *testing.T, ctx context.Context, be backend.Backend) error {
+	t.Run("assertion confirmed", func(t *testing.T) {
+		rc, err := rollupgen.NewRollupCore(be.ContractAddresses().Rollup, be.Client())
+		require.NoError(t, err)
+
+		var confirmed bool
+		for ctx.Err() == nil && !confirmed {
+			i, err := retry.UntilSucceeds(ctx, func() (*rollupgen.RollupCoreAssertionConfirmedIterator, error) {
+				return rc.FilterAssertionConfirmed(nil, nil)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i.Next() {
+				assertionNode, err := retry.UntilSucceeds(ctx, func() (rollupgen.AssertionNode, error) {
+					return rc.GetAssertion(&bind.CallOpts{Context: ctx}, i.Event.AssertionId)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if assertionNode.Status != uint8(protocol.AssertionConfirmed) {
+					t.Fatal("Confirmed assertion with unfinished state")
+				}
+				confirmed = true
+				break
+			}
+			time.Sleep(500 * time.Millisecond) // Don't spam the backend.
+		}
+
+		if !confirmed {
+			t.Fatal("assertion was not confirmed")
+		}
+	})
+	return nil
+}
 
 // Expects that a level zero, block challenge edge was successfully confirmed in an e2e run.
 func expectLevelZeroBlockEdgeConfirmed(t *testing.T, ctx context.Context, be backend.Backend) error {

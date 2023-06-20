@@ -34,6 +34,7 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 
 	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionId)))
 	edge.On("Id").Return(edgeId)
+	edge.On("GetType").Return(protocol.BigStepChallengeEdge)
 	edge.On(
 		"AssertionId",
 		ctx,

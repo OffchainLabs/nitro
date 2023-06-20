@@ -82,7 +82,7 @@ func New(
 		timeRef:                 utilTime.NewRealTimeReference(),
 		rollupAddr:              rollupAddr,
 		edgeTrackerWakeInterval: time.Millisecond * 100,
-		chainWatcherInterval:    time.Second * 5,
+		chainWatcherInterval:    time.Millisecond * 500,
 		initialSyncCompleted:    make(chan struct{}),
 		trackedEdgeIds:          threadsafe.NewSet[protocol.EdgeId](),
 	}
