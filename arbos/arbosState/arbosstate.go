@@ -4,7 +4,6 @@
 package arbosState
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/addressTable"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -115,11 +115,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		log.Crit("failed to serialize chain config", "error", err)
-	}
-	newState, err := InitializeArbosState(statedb, burner, chainConfig, serializedChainConfig)
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
@@ -183,12 +179,7 @@ func getArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common
 	return arbOnlyPrecompiles
 }
 
-func InitializeArbosState(
-	stateDB vm.StateDB,
-	burner burn.Burner,
-	chainConfig *params.ChainConfig,
-	serializedChainConfig []byte,
-) (*ArbosState, error) {
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -222,14 +213,14 @@ func InitializeArbosState(
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
-	_ = chainConfigStorage.Set(serializedChainConfig)
+	_ = chainConfigStorage.Set(initMessage.SerializedChainConfig)
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 
 	initialRewardsRecipient := l1pricing.BatchPosterAddress
 	if desiredArbosVersion >= 2 {
 		initialRewardsRecipient = initialChainOwner
 	}
-	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), initialRewardsRecipient)
+	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))

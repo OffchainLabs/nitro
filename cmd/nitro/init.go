@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"math/big"
 	"os"
 	"regexp"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/offchainlabs/nitro/cmd/util"
 
 	"github.com/cavaliergopher/grab/v3"
 	extract "github.com/codeclysm/extract/v3"
@@ -201,7 +202,7 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 		if currentBlock == nil {
 			return errors.New("failed to get current block")
 		}
-		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.NumberU64(), currentBlock.Time()); err != nil {
+		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.Number.Uint64(), currentBlock.Time); err != nil {
 			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
 		}
 	}
@@ -244,12 +245,11 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
-		if overwrite {
-			r.roots = r.roots[:len(r.roots)-1]
-			r.heights = r.heights[:len(r.heights)-1]
-		} else {
+		if !overwrite {
 			return nil
 		}
+		r.roots = r.roots[:len(r.roots)-1]
+		r.heights = r.heights[:len(r.heights)-1]
 	}
 	if len(r.heights) > 0 && r.heights[len(r.heights)-1]+minRootDistance > height {
 		return nil
@@ -575,7 +575,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		var serializedChainConfig []byte
+		var parsedInitMessage *arbostypes.ParsedInitMessage
 		if config.Node.L1Reader.Enable {
 			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 			if err != nil {
@@ -596,30 +596,34 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			if initMessage == nil {
 				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
 			}
-			var initChainConfig *params.ChainConfig
-			var initChainId *big.Int
-			initChainId, initChainConfig, serializedChainConfig, err = initMessage.ParseInitMessage()
+			parsedInitMessage, err = initMessage.ParseInitMessage()
 			if err != nil {
 				return chainDb, nil, err
 			}
-			if initChainId.Cmp(chainId) != 0 {
-				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, initChainId)
+			if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
+				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
 			}
-			if initChainConfig != nil {
-				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+			if parsedInitMessage.ChainConfig != nil {
+				if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
-			log.Info("Read serialized chain config from init message", "json", string(serializedChainConfig))
+			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
-			serializedChainConfig, err = json.Marshal(chainConfig)
+			serializedChainConfig, err := json.Marshal(chainConfig)
 			if err != nil {
 				return chainDb, nil, err
 			}
-			log.Warn("Serialized chain config as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
+			parsedInitMessage = &arbostypes.ParsedInitMessage{
+				ChainId:               chainConfig.ChainID,
+				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+				ChainConfig:           chainConfig,
+				SerializedChainConfig: serializedChainConfig,
+			}
+			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
-		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, serializedChainConfig, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

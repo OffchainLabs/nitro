@@ -1,6 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::useless_transmute)]
+
 use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     syscall::JsValue,

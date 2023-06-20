@@ -32,11 +32,10 @@ func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 }
 
 func (s *SliceStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
-	if len(s.queue) > 0 {
-		return s.queue[len(s.queue)-1], nil
-	} else {
+	if len(s.queue) == 0 {
 		return nil, nil
 	}
+	return s.queue[len(s.queue)-1], nil
 }
 
 func (s *SliceStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {

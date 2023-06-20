@@ -51,7 +51,7 @@ func keccakTest(t *testing.T, jit bool) {
 	programVersion, err := arbWasm.ProgramVersion(nil, programAddress)
 	Require(t, err)
 	if programVersion != stylusVersion || stylusVersion == 0 {
-		Fail(t, "unexpected versions", stylusVersion, programVersion)
+		Fatal(t, "unexpected versions", stylusVersion, programVersion)
 	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -63,11 +63,11 @@ func keccakTest(t *testing.T, jit bool) {
 	timed(t, "execute", func() {
 		result := sendContractCall(t, ctx, programAddress, l2client, args)
 		if len(result) != 32 {
-			Fail(t, "unexpected return result: ", "result", result)
+			Fatal(t, "unexpected return result: ", "result", result)
 		}
 		hash := common.BytesToHash(result)
 		if hash != correct {
-			Fail(t, "computed hash mismatch", hash, correct)
+			Fatal(t, "computed hash mismatch", hash, correct)
 		}
 		colors.PrintGrey("keccak(x) = ", hash)
 	})
@@ -109,7 +109,7 @@ func errorTest(t *testing.T, jit bool) {
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
-		Fail(t, "call should have failed")
+		Fatal(t, "call should have failed")
 	}
 
 	validateBlocks(t, 7, jit, ctx, node, l2client)
@@ -167,11 +167,11 @@ func testCalls(t *testing.T, jit bool) {
 		}
 		_, err := l2client.CallContract(ctx, msg, nil)
 		if err == nil {
-			Fail(t, "call should have failed with", errMsg)
+			Fatal(t, "call should have failed with", errMsg)
 		}
 		expected := fmt.Sprintf("execution reverted%v", errMsg)
 		if err.Error() != expected {
-			Fail(t, "wrong error", err.Error(), " ", expected)
+			Fatal(t, "wrong error", err.Error(), " ", expected)
 		}
 
 		// execute onchain for proving's sake
@@ -256,7 +256,7 @@ func testCalls(t *testing.T, jit bool) {
 	}
 	values := sendContractCall(t, ctx, callsAddr, l2client, calldata)
 	if !bytes.Equal(expected, values) {
-		Fail(t, "wrong results static call", common.Bytes2Hex(expected), common.Bytes2Hex(values))
+		Fatal(t, "wrong results static call", common.Bytes2Hex(expected), common.Bytes2Hex(values))
 	}
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, calldata)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
@@ -293,7 +293,7 @@ func testCalls(t *testing.T, jit bool) {
 
 	if !arbmath.Within(large-small, largeGas-smallGas, 1) {
 		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
-		Fail(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
+		Fatal(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
 
 	colors.PrintBlue("Checking consensus revert data (Rust => precompile)")
@@ -319,7 +319,7 @@ func testCalls(t *testing.T, jit bool) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	balance := GetBalance(t, ctx, l2client, eoa)
 	if !arbmath.BigEquals(balance, value) {
-		Fail(t, balance, value)
+		Fatal(t, balance, value)
 	}
 
 	blocks := []uint64{11}
@@ -367,18 +367,18 @@ func testLogs(t *testing.T, jit bool) {
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 
 		if len(receipt.Logs) != 1 {
-			Fail(t, "wrong number of logs", len(receipt.Logs))
+			Fatal(t, "wrong number of logs", len(receipt.Logs))
 		}
 		log := receipt.Logs[0]
 		if !bytes.Equal(log.Data, data) {
-			Fail(t, "data mismatch", log.Data, data)
+			Fatal(t, "data mismatch", log.Data, data)
 		}
 		if len(log.Topics) != len(topics) {
-			Fail(t, "topics mismatch", len(log.Topics), len(topics))
+			Fatal(t, "topics mismatch", len(log.Topics), len(topics))
 		}
 		for j := 0; j < i; j++ {
 			if log.Topics[j] != topics[j] {
-				Fail(t, "topic mismatch", log.Topics, topics)
+				Fatal(t, "topic mismatch", log.Topics, topics)
 			}
 		}
 	}
@@ -418,13 +418,13 @@ func testCreate(t *testing.T, jit bool) {
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 		storeAddr := common.BytesToAddress(receipt.Logs[0].Topics[0][:])
 		if storeAddr == (common.Address{}) {
-			Fail(t, "failed to deploy storage.wasm")
+			Fatal(t, "failed to deploy storage.wasm")
 		}
 		colors.PrintBlue("deployed keccak to ", storeAddr.Hex())
 		balance, err := l2client.BalanceAt(ctx, storeAddr, nil)
 		Require(t, err)
 		if !arbmath.BigEquals(balance, startValue) {
-			Fail(t, "storage.wasm has the wrong balance", balance, startValue)
+			Fatal(t, "storage.wasm has the wrong balance", balance, startValue)
 		}
 
 		// compile the program
@@ -440,7 +440,7 @@ func testCreate(t *testing.T, jit bool) {
 		assertStorageAt(t, ctx, l2client, storeAddr, key, value)
 
 		if storeAddr != correctStoreAddr {
-			Fail(t, "program deployed to the wrong address", storeAddr, correctStoreAddr)
+			Fatal(t, "program deployed to the wrong address", storeAddr, correctStoreAddr)
 		}
 	}
 
@@ -518,7 +518,7 @@ func testEvmData(t *testing.T, jit bool) {
 	advance := func(count int, name string) []byte {
 		t.Helper()
 		if len(result) < count {
-			Fail(t, "not enough data left", name, count, len(result))
+			Fatal(t, "not enough data left", name, count, len(result))
 		}
 		data := result[:count]
 		result = result[count:]
@@ -540,7 +540,7 @@ func testEvmData(t *testing.T, jit bool) {
 
 	// Should be within 1 gas
 	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
-		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
+		Fatal(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 
 	tx = l2info.PrepareTxTo("Owner", &evmDataAddr, evmDataGas, nil, evmDataData)
@@ -579,7 +579,7 @@ func testMemory(t *testing.T, jit bool) {
 		}
 		_, err := l2client.CallContract(ctx, msg, nil)
 		if err == nil {
-			Fail(t, "call should have failed")
+			Fatal(t, "call should have failed")
 		}
 
 		// execute onchain for proving's sake
@@ -608,7 +608,7 @@ func testMemory(t *testing.T, jit bool) {
 	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
 	logical := uint64(32000000 + 126*1000)
 	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) || !arbmath.WithinRange(gasCost, logical, logical+1e5) {
-		Fail(t, "unexpected cost", gasCost, model)
+		Fatal(t, "unexpected cost", gasCost, model)
 	}
 
 	// check that we'd normally run out of gas
@@ -646,7 +646,7 @@ func testMemory(t *testing.T, jit bool) {
 	gasCost = receipt.GasUsedForL2()
 	memCost = model.GasCost(127, 0, 0)
 	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) {
-		Fail(t, "unexpected cost", gasCost, memCost)
+		Fatal(t, "unexpected cost", gasCost, memCost)
 	}
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
@@ -799,7 +799,7 @@ func assertStorageAt(
 	Require(t, err)
 	storedValue := common.BytesToHash(storedBytes)
 	if value != storedValue {
-		Fail(t, "wrong value", value, storedValue)
+		Fatal(t, "wrong value", value, storedValue)
 	}
 }
 
@@ -871,7 +871,7 @@ func validateBlockRange(
 		success = success && correct
 	}
 	if !success {
-		Fail(t)
+		Fatal(t)
 	}
 }
 

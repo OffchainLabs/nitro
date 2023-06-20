@@ -4,6 +4,7 @@
 package testhelpers
 
 import (
+	crypto "crypto/rand"
 	"math/big"
 	"math/rand"
 	"os"
@@ -30,7 +31,7 @@ func FailImpl(t *testing.T, printables ...interface{}) {
 }
 
 func RandomizeSlice(slice []byte) []byte {
-	_, err := rand.Read(slice)
+	_, err := crypto.Read(slice)
 	if err != nil {
 		panic(err)
 	}
