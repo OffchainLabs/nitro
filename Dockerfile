@@ -188,11 +188,11 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder as fuzz-builder
 RUN mkdir fuzzers/
-RUN ./fuzz.bash --build --binary-path /workspace/fuzzers/
+RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
 
 FROM debian:bullseye-slim as nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
-COPY ./fuzz.bash /usr/local/bin
+COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
 ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
