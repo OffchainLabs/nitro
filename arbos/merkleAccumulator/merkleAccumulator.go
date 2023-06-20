@@ -6,6 +6,7 @@ package merkleAccumulator
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -107,6 +108,7 @@ func (acc *MerkleAccumulator) GetPartials() ([]*common.Hash, error) {
 }
 
 func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) error {
+	log.Warn("setPartial", "level", level, "val", val)
 	if acc.backingStorage != nil {
 		err := acc.backingStorage.SetByUint64(2+level, *val)
 		if err != nil {
@@ -121,10 +123,10 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) error {
 }
 
 // Note: itemHash is hashed before being included in the tree, to prevent confusing leafs with branches.
-func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEvent, *MerkleTreeNodeEvent, error) {
+func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEvent, uint64, error) {
 	size, err := acc.size.Increment()
 	if err != nil {
-		return nil, nil, err
+		return nil, 0, err
 	}
 	events := []MerkleTreeNodeEvent{}
 
@@ -134,25 +136,25 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)
 			err := acc.setPartial(level, &h)
-			return events, &MerkleTreeNodeEvent{level, size - 1, h}, err
+			return events, size, err
 		}
 		thisLevel, err := acc.getPartial(level)
 		if err != nil {
-			return nil, nil, err
+			return nil, size, err
 		}
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
 			err := acc.setPartial(level, &h)
-			return events, &MerkleTreeNodeEvent{level, size - 1, h}, err
+			return events, size, err
 		}
 		soFar, err = acc.Keccak(thisLevel.Bytes(), soFar)
 		if err != nil {
-			return nil, nil, err
+			return nil, size, err
 		}
 		h := common.Hash{}
 		err = acc.setPartial(level, &h)
 		if err != nil {
-			return nil, nil, err
+			return nil, size, err
 		}
 		level += 1
 		events = append(events, MerkleTreeNodeEvent{level, size - 1, common.BytesToHash(soFar)})

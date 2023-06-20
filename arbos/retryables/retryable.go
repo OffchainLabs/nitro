@@ -445,8 +445,9 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 }
 
 type ExpiredRetryableLeaf struct {
-	Event    *merkleAccumulator.MerkleTreeNodeEvent
 	TicketId common.Hash
+	Index    uint64
+	Hash     common.Hash
 }
 
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) ([]merkleAccumulator.MerkleTreeNodeEvent, *ExpiredRetryableLeaf, error) {
@@ -488,11 +489,11 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		if err = clearRetryable(retryableStorage); err != nil {
 			return nil, nil, err
 		}
-		merkleUpdateEvents, newLeafMerkleEvent, err := rs.Expired.Append(retryableHash)
+		merkleUpdateEvents, accumulatorSize, err := rs.Expired.Append(retryableHash)
 		if err != nil {
 			return nil, nil, err
 		}
-		return merkleUpdateEvents, &ExpiredRetryableLeaf{newLeafMerkleEvent, *id}, nil
+		return merkleUpdateEvents, &ExpiredRetryableLeaf{TicketId: *id, Index: accumulatorSize - 1, Hash: common.BytesToHash(crypto.Keccak256(retryableHash.Bytes()))}, nil
 	}
 
 	// Consume a window, delaying the timeout one lifetime period

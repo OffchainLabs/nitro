@@ -88,7 +88,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		// Try to reap 2 retryables, revert the state on failure
 		snapshot := evm.StateDB.Snapshot()
 		var merkleUpdateEvents []merkleAccumulator.MerkleTreeNodeEvent
-		var expiredRetryableLeafs []*retryables.ExpiredRetryableLeaf
+		var expiredRetryableLeaves []*retryables.ExpiredRetryableLeaf
 		for i := 0; i < 2; i++ {
 			var events []merkleAccumulator.MerkleTreeNodeEvent
 			var leaf *retryables.ExpiredRetryableLeaf
@@ -99,13 +99,13 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			}
 			merkleUpdateEvents = append(merkleUpdateEvents, events...)
 			if leaf != nil {
-				expiredRetryableLeafs = append(expiredRetryableLeafs, leaf)
+				expiredRetryableLeaves = append(expiredRetryableLeaves, leaf)
 			}
 		}
 		if err == nil {
-			for _, leaf := range expiredRetryableLeafs {
-				position := merkletree.LevelAndLeaf{Level: leaf.Event.Level, Leaf: leaf.Event.NumLeaves}
-				if err = EmitRetryableExpiredEvent(evm, leaf.TicketId, leaf.Event.Hash, position.ToBigInt()); err != nil {
+			for _, leaf := range expiredRetryableLeaves {
+				position := merkletree.LevelAndLeaf{Level: 0, Leaf: leaf.Index}
+				if err = EmitRetryableExpiredEvent(evm, leaf.TicketId, leaf.Hash, position.ToBigInt()); err != nil {
 					log.Error("Failed to emit RetryableExpired event", "err", err)
 					break
 				}
