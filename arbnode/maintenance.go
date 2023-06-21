@@ -32,7 +32,7 @@ type MaintenanceRunner struct {
 
 type MaintenanceConfig struct {
 	TimeOfDay string                `koanf:"time-of-day" reload:"hot"`
-	Lock      SimpleRedisLockConfig `koanf:"maintenance-lock" reload:"hot"`
+	Lock      SimpleRedisLockConfig `koanf:"lock" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
@@ -70,7 +70,7 @@ func (c *MaintenanceConfig) Validate() error {
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".time-of-day", DefaultMaintenanceConfig.TimeOfDay, "UTC 24-hour time of day to run maintenance (currently only db compaction) at (e.g. 15:00)")
-	RedisLockConfigAddOptions(prefix+".maintenance-lock", f)
+	RedisLockConfigAddOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
