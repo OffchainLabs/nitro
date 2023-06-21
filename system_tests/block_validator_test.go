@@ -14,13 +14,16 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type workloadType uint
@@ -60,6 +63,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 	perTransfer := big.NewInt(1e12)
 
+	var simple *mocksgen.Simple
 	if workload != upgradeArbOs {
 		for i := 0; i < workloadLoops; i++ {
 			var tx *types.Transaction
@@ -108,6 +112,16 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		}
 	} else {
 		auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+		// deploy a test contract
+		var err error
+		_, _, simple, err = mocksgen.DeploySimple(&auth, l2client)
+		Require(t, err, "could not deploy contract")
+
+		difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+		Require(t, err)
+		if !arbmath.BigEquals(difficulty, common.Big1) {
+			Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+		}
 		// make auth a chain owner
 		arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
 		Require(t, err)
@@ -121,6 +135,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
+
+		difficulty, err = simple.GetBlockDifficulty(&bind.CallOpts{})
+		Require(t, err)
+		if !arbmath.BigEquals(difficulty, common.Big1) {
+			Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+		}
 
 		tx = l2info.PrepareTxTo("Owner", nil, l2info.TransferGas, perTransfer, []byte{byte(vm.PUSH0)})
 		err = l2client.SendTransaction(ctx, tx)
@@ -155,6 +175,13 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))
 		if l2balance.Cmp(expectedBalance) != 0 {
 			Fatal(t, "Unexpected balance:", l2balance)
+		}
+	}
+	if workload == upgradeArbOs {
+		difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+		Require(t, err)
+		if !arbmath.BigEquals(difficulty, common.Big1) {
+			Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
 		}
 	}
 
