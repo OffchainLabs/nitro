@@ -69,7 +69,7 @@ type inboxBackend struct {
 	delayedMessages       [][]byte
 }
 
-func (b *inboxBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *inboxBackend) PeekSequencerInbox(context.Context) ([]byte, error) {
 	if len(b.batches) == 0 {
 		return nil, errors.New("read past end of specified sequencer batches")
 	}

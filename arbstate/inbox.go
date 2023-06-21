@@ -24,7 +24,7 @@ import (
 )
 
 type InboxBackend interface {
-	PeekSequencerInbox() ([]byte, error)
+	PeekSequencerInbox(ctx context.Context) ([]byte, error)
 
 	GetSequencerInboxPosition() uint64
 	AdvanceSequencerInbox()
@@ -262,7 +262,7 @@ const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 // Note: this does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
-		bytes, realErr := r.backend.PeekSequencerInbox()
+		bytes, realErr := r.backend.PeekSequencerInbox(ctx)
 		if realErr != nil {
 			return nil, realErr
 		}

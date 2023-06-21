@@ -45,6 +45,303 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+type Node struct {
+	ArbDB                   ethdb.Database
+	Stack                   *node.Node
+	Execution               *execution.ExecutionNode
+	L1Reader                *headerreader.HeaderReader
+	TxStreamer              *TransactionStreamer
+	DeployInfo              *chaininfo.RollupAddresses
+	InboxReader             *InboxReader
+	InboxTracker            *InboxTracker
+	DelayedSequencer        *DelayedSequencer
+	BatchPoster             *BatchPoster
+	MessagePruner           *MessagePruner
+	BlockValidator          *staker.BlockValidator
+	StatelessBlockValidator *staker.StatelessBlockValidator
+	Staker                  *staker.Staker
+	BroadcastServer         *broadcaster.Broadcaster
+	BroadcastClients        *broadcastclients.BroadcastClients
+	SeqCoordinator          *SeqCoordinator
+	MaintenanceRunner       *MaintenanceRunner
+	DASLifecycleManager     *das.LifecycleManager
+	ClassicOutboxRetriever  *ClassicOutboxRetriever
+	SyncMonitor             *SyncMonitor
+	configFetcher           ConfigFetcher
+}
+
+func New(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	arbDb ethdb.Database,
+	configFetcher ConfigFetcher,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *chaininfo.RollupAddresses,
+	txOptsValidator *bind.TransactOpts,
+	txOptsBatchPoster *bind.TransactOpts,
+	dataSigner signature.DataSignerFunc,
+	fatalErrChan chan error,
+) (*Node, error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan)
+	if err != nil {
+		return nil, err
+	}
+	var apis []rpc.API
+	if currentNode.BlockValidator != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "arb",
+			Version:   "1.0",
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Public:    false,
+		})
+	}
+	if currentNode.StatelessBlockValidator != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "arbvalidator",
+			Version:   "1.0",
+			Service: &BlockValidatorDebugAPI{
+				val:        currentNode.StatelessBlockValidator,
+				blockchain: l2BlockChain,
+			},
+			Public: false,
+		})
+	}
+
+	apis = append(apis, rpc.API{
+		Namespace: "arb",
+		Version:   "1.0",
+		Service:   execution.NewArbAPI(currentNode.Execution.TxPublisher),
+		Public:    false,
+	})
+	config := configFetcher.Get()
+	apis = append(apis, rpc.API{
+		Namespace: "arbdebug",
+		Version:   "1.0",
+		Service: execution.NewArbDebugAPI(
+			l2BlockChain,
+			config.RPC.ArbDebug.BlockRangeBound,
+			config.RPC.ArbDebug.TimeoutQueueBound,
+		),
+		Public: false,
+	})
+	apis = append(apis, rpc.API{
+		Namespace: "arbtrace",
+		Version:   "1.0",
+		Service: execution.NewArbTraceForwarderAPI(
+			config.RPC.ClassicRedirect,
+			config.RPC.ClassicRedirectTimeout,
+		),
+		Public: false,
+	})
+	apis = append(apis, rpc.API{
+		Namespace: "debug",
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDb)),
+		Public:    false,
+	})
+	stack.RegisterAPIs(apis)
+
+	return currentNode, nil
+}
+
+func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
+	// TODO
+	return nil
+}
+
+func (n *Node) Start(ctx context.Context) error {
+	// config is the static config at start, not a dynamic config
+	config := n.configFetcher.Get()
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
+	n.Execution.ArbInterface.Initialize(n)
+	err := n.Stack.Start()
+	if err != nil {
+		return fmt.Errorf("error starting geth stack: %w", err)
+	}
+	err = n.Execution.Backend.Start()
+	if err != nil {
+		return fmt.Errorf("error starting geth backend: %w", err)
+	}
+	err = n.Execution.TxPublisher.Initialize(ctx)
+	if err != nil {
+		return fmt.Errorf("error initializing transaction publisher: %w", err)
+	}
+	if n.InboxTracker != nil {
+		err = n.InboxTracker.Initialize()
+		if err != nil {
+			return fmt.Errorf("error initializing inbox tracker: %w", err)
+		}
+	}
+	if n.BroadcastServer != nil {
+		err = n.BroadcastServer.Initialize()
+		if err != nil {
+			return fmt.Errorf("error initializing feed broadcast server: %w", err)
+		}
+	}
+	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer.Enable && !config.SeqCoordinator.Enable {
+		// Normally, the sequencer would populate the feed backlog when it acquires the lockout.
+		// However, if the sequencer coordinator is not enabled, we must populate the backlog on startup.
+		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
+		if err != nil {
+			return fmt.Errorf("error populating feed backlog on startup: %w", err)
+		}
+	}
+	err = n.TxStreamer.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting transaction streamer: %w", err)
+	}
+	n.Execution.ExecEngine.Start(ctx)
+	if n.InboxReader != nil {
+		err = n.InboxReader.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting inbox reader: %w", err)
+		}
+	}
+	err = n.Execution.TxPublisher.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting transaction puiblisher: %w", err)
+	}
+	if n.SeqCoordinator != nil {
+		n.SeqCoordinator.Start(ctx)
+	}
+	if n.MaintenanceRunner != nil {
+		n.MaintenanceRunner.Start(ctx)
+	}
+	if n.DelayedSequencer != nil {
+		n.DelayedSequencer.Start(ctx)
+	}
+	if n.BatchPoster != nil {
+		n.BatchPoster.Start(ctx)
+	}
+	if n.MessagePruner != nil {
+		n.MessagePruner.Start(ctx)
+	}
+	if n.Staker != nil {
+		err = n.Staker.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing staker: %w", err)
+		}
+	}
+	if n.StatelessBlockValidator != nil {
+		err = n.StatelessBlockValidator.Start(ctx)
+		if err != nil {
+			if n.configFetcher.Get().ValidatorRequired() {
+				return fmt.Errorf("error initializing stateless block validator: %w", err)
+			}
+			log.Info("validation not set up", "err", err)
+			n.StatelessBlockValidator = nil
+			n.BlockValidator = nil
+		}
+	}
+	if n.BlockValidator != nil {
+		err = n.BlockValidator.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing block validator: %w", err)
+		}
+		err = n.BlockValidator.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting block validator: %w", err)
+		}
+	}
+	if n.Staker != nil {
+		n.Staker.Start(ctx)
+	}
+	if n.L1Reader != nil {
+		n.L1Reader.Start(ctx)
+	}
+	if n.BroadcastServer != nil {
+		err = n.BroadcastServer.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting feed broadcast server: %w", err)
+		}
+	}
+	if n.BroadcastClients != nil {
+		go func() {
+			if n.InboxReader != nil {
+				select {
+				case <-n.InboxReader.CaughtUp():
+				case <-ctx.Done():
+					return
+				}
+			}
+			n.BroadcastClients.Start(ctx)
+		}()
+	}
+	if n.configFetcher != nil {
+		n.configFetcher.Start(ctx)
+	}
+	return nil
+}
+
+func (n *Node) StopAndWait() {
+	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
+		n.MaintenanceRunner.StopAndWait()
+	}
+	if n.configFetcher != nil && n.configFetcher.Started() {
+		n.configFetcher.StopAndWait()
+	}
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+		// Releases the chosen sequencer lockout,
+		// and stops the background thread but not the redis client.
+		n.SeqCoordinator.PrepareForShutdown()
+	}
+	n.Stack.StopRPC() // does nothing if not running
+	if n.Execution.TxPublisher.Started() {
+		n.Execution.TxPublisher.StopAndWait()
+	}
+	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
+		n.DelayedSequencer.StopAndWait()
+	}
+	if n.BatchPoster != nil && n.BatchPoster.Started() {
+		n.BatchPoster.StopAndWait()
+	}
+	if n.MessagePruner != nil && n.MessagePruner.Started() {
+		n.MessagePruner.StopAndWait()
+	}
+	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
+		n.BroadcastServer.StopAndWait()
+	}
+	if n.BroadcastClients != nil {
+		n.BroadcastClients.StopAndWait()
+	}
+	if n.BlockValidator != nil && n.BlockValidator.Started() {
+		n.BlockValidator.StopAndWait()
+	}
+	if n.Staker != nil {
+		n.Staker.StopAndWait()
+	}
+	if n.StatelessBlockValidator != nil {
+		n.StatelessBlockValidator.Stop()
+	}
+	if n.InboxReader != nil && n.InboxReader.Started() {
+		n.InboxReader.StopAndWait()
+	}
+	if n.L1Reader != nil && n.L1Reader.Started() {
+		n.L1Reader.StopAndWait()
+	}
+	if n.TxStreamer.Started() {
+		n.TxStreamer.StopAndWait()
+	}
+	if n.Execution.ExecEngine.Started() {
+		n.Execution.ExecEngine.StopAndWait()
+	}
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+		// Just stops the redis client (most other stuff was stopped earlier)
+		n.SeqCoordinator.StopAndWait()
+	}
+	n.Execution.ArbInterface.BlockChain().Stop() // does nothing if not running
+	if err := n.Execution.Backend.Stop(); err != nil {
+		log.Error("backend stop", "err", err)
+	}
+	if n.DASLifecycleManager != nil {
+		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	}
+	if err := n.Stack.Close(); err != nil {
+		log.Error("error on stak close", "err", err)
+	}
+}
+
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
@@ -488,32 +785,6 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
 }
 
-type Node struct {
-	ArbDB                   ethdb.Database
-	Stack                   *node.Node
-	Execution               *execution.ExecutionNode
-	L1Reader                *headerreader.HeaderReader
-	TxStreamer              *TransactionStreamer
-	DeployInfo              *chaininfo.RollupAddresses
-	InboxReader             *InboxReader
-	InboxTracker            *InboxTracker
-	DelayedSequencer        *DelayedSequencer
-	BatchPoster             *BatchPoster
-	MessagePruner           *MessagePruner
-	BlockValidator          *staker.BlockValidator
-	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *staker.Staker
-	BroadcastServer         *broadcaster.Broadcaster
-	BroadcastClients        *broadcastclients.BroadcastClients
-	SeqCoordinator          *SeqCoordinator
-	MaintenanceRunner       *MaintenanceRunner
-	DASLifecycleManager     *das.LifecycleManager
-	ClassicOutboxRetriever  *ClassicOutboxRetriever
-	SyncMonitor             *SyncMonitor
-	configFetcher           ConfigFetcher
-	ctx                     context.Context
-}
-
 type ConfigFetcher interface {
 	Get() *Config
 	Start(context.Context)
@@ -688,29 +959,28 @@ func createNodeImpl(
 
 	if !config.L1Reader.Enable {
 		return &Node{
-			arbDb,
-			stack,
-			exec,
-			nil,
-			txStreamer,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			broadcastServer,
-			broadcastClients,
-			coordinator,
-			maintenanceRunner,
-			nil,
-			classicOutbox,
-			syncMonitor,
-			configFetcher,
-			ctx,
+			ArbDB:                   arbDb,
+			Stack:                   stack,
+			Execution:               exec,
+			L1Reader:                nil,
+			TxStreamer:              txStreamer,
+			DeployInfo:              nil,
+			InboxReader:             nil,
+			InboxTracker:            nil,
+			DelayedSequencer:        nil,
+			BatchPoster:             nil,
+			MessagePruner:           nil,
+			BlockValidator:          nil,
+			StatelessBlockValidator: nil,
+			Staker:                  nil,
+			BroadcastServer:         broadcastServer,
+			BroadcastClients:        broadcastClients,
+			SeqCoordinator:          coordinator,
+			MaintenanceRunner:       maintenanceRunner,
+			DASLifecycleManager:     nil,
+			ClassicOutboxRetriever:  classicOutbox,
+			SyncMonitor:             syncMonitor,
+			configFetcher:           configFetcher,
 		}, nil
 	}
 
@@ -873,302 +1143,29 @@ func createNodeImpl(
 	}
 
 	return &Node{
-		arbDb,
-		stack,
-		exec,
-		l1Reader,
-		txStreamer,
-		deployInfo,
-		inboxReader,
-		inboxTracker,
-		delayedSequencer,
-		batchPoster,
-		messagePruner,
-		blockValidator,
-		statelessBlockValidator,
-		stakerObj,
-		broadcastServer,
-		broadcastClients,
-		coordinator,
-		maintenanceRunner,
-		dasLifecycleManager,
-		classicOutbox,
-		syncMonitor,
-		configFetcher,
-		ctx,
+		ArbDB:                   arbDb,
+		Stack:                   stack,
+		Execution:               exec,
+		L1Reader:                l1Reader,
+		TxStreamer:              txStreamer,
+		DeployInfo:              deployInfo,
+		InboxReader:             inboxReader,
+		InboxTracker:            inboxTracker,
+		DelayedSequencer:        delayedSequencer,
+		BatchPoster:             batchPoster,
+		MessagePruner:           messagePruner,
+		BlockValidator:          blockValidator,
+		StatelessBlockValidator: statelessBlockValidator,
+		Staker:                  stakerObj,
+		BroadcastServer:         broadcastServer,
+		BroadcastClients:        broadcastClients,
+		SeqCoordinator:          coordinator,
+		MaintenanceRunner:       maintenanceRunner,
+		DASLifecycleManager:     dasLifecycleManager,
+		ClassicOutboxRetriever:  classicOutbox,
+		SyncMonitor:             syncMonitor,
+		configFetcher:           configFetcher,
 	}, nil
-}
-
-func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
-	// TODO
-	return nil
-}
-
-func CreateNode(
-	ctx context.Context,
-	stack *node.Node,
-	chainDb ethdb.Database,
-	arbDb ethdb.Database,
-	configFetcher ConfigFetcher,
-	l2BlockChain *core.BlockChain,
-	l1client arbutil.L1Interface,
-	deployInfo *chaininfo.RollupAddresses,
-	txOptsValidator *bind.TransactOpts,
-	txOptsBatchPoster *bind.TransactOpts,
-	dataSigner signature.DataSignerFunc,
-	fatalErrChan chan error,
-) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan)
-	if err != nil {
-		return nil, err
-	}
-	var apis []rpc.API
-	if currentNode.BlockValidator != nil {
-		apis = append(apis, rpc.API{
-			Namespace: "arb",
-			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
-			Public:    false,
-		})
-	}
-	if currentNode.StatelessBlockValidator != nil {
-		apis = append(apis, rpc.API{
-			Namespace: "arbvalidator",
-			Version:   "1.0",
-			Service: &BlockValidatorDebugAPI{
-				val:        currentNode.StatelessBlockValidator,
-				blockchain: l2BlockChain,
-			},
-			Public: false,
-		})
-	}
-
-	apis = append(apis, rpc.API{
-		Namespace: "arb",
-		Version:   "1.0",
-		Service:   execution.NewArbAPI(currentNode.Execution.TxPublisher),
-		Public:    false,
-	})
-	config := configFetcher.Get()
-	apis = append(apis, rpc.API{
-		Namespace: "arbdebug",
-		Version:   "1.0",
-		Service: execution.NewArbDebugAPI(
-			l2BlockChain,
-			config.RPC.ArbDebug.BlockRangeBound,
-			config.RPC.ArbDebug.TimeoutQueueBound,
-		),
-		Public: false,
-	})
-	apis = append(apis, rpc.API{
-		Namespace: "arbtrace",
-		Version:   "1.0",
-		Service: execution.NewArbTraceForwarderAPI(
-			config.RPC.ClassicRedirect,
-			config.RPC.ClassicRedirectTimeout,
-		),
-		Public: false,
-	})
-	apis = append(apis, rpc.API{
-		Namespace: "debug",
-		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDb)),
-		Public:    false,
-	})
-	stack.RegisterAPIs(apis)
-
-	return currentNode, nil
-}
-
-func (n *Node) Start(ctx context.Context) error {
-	// config is the static config at start, not a dynamic config
-	config := n.configFetcher.Get()
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
-	n.Execution.ArbInterface.Initialize(n)
-	err := n.Stack.Start()
-	if err != nil {
-		return fmt.Errorf("error starting geth stack: %w", err)
-	}
-	err = n.Execution.Backend.Start()
-	if err != nil {
-		return fmt.Errorf("error starting geth backend: %w", err)
-	}
-	err = n.Execution.TxPublisher.Initialize(ctx)
-	if err != nil {
-		return fmt.Errorf("error initializing transaction publisher: %w", err)
-	}
-	if n.InboxTracker != nil {
-		err = n.InboxTracker.Initialize()
-		if err != nil {
-			return fmt.Errorf("error initializing inbox tracker: %w", err)
-		}
-	}
-	if n.BroadcastServer != nil {
-		err = n.BroadcastServer.Initialize()
-		if err != nil {
-			return fmt.Errorf("error initializing feed broadcast server: %w", err)
-		}
-	}
-	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer.Enable && !config.SeqCoordinator.Enable {
-		// Normally, the sequencer would populate the feed backlog when it acquires the lockout.
-		// However, if the sequencer coordinator is not enabled, we must populate the backlog on startup.
-		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
-		if err != nil {
-			return fmt.Errorf("error populating feed backlog on startup: %w", err)
-		}
-	}
-	err = n.TxStreamer.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error starting transaction streamer: %w", err)
-	}
-	n.Execution.ExecEngine.Start(ctx)
-	if n.InboxReader != nil {
-		err = n.InboxReader.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting inbox reader: %w", err)
-		}
-	}
-	err = n.Execution.TxPublisher.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
-	}
-	if n.SeqCoordinator != nil {
-		n.SeqCoordinator.Start(ctx)
-	}
-	if n.MaintenanceRunner != nil {
-		n.MaintenanceRunner.Start(ctx)
-	}
-	if n.DelayedSequencer != nil {
-		n.DelayedSequencer.Start(ctx)
-	}
-	if n.BatchPoster != nil {
-		n.BatchPoster.Start(ctx)
-	}
-	if n.MessagePruner != nil {
-		n.MessagePruner.Start(ctx)
-	}
-	if n.Staker != nil {
-		err = n.Staker.Initialize(ctx)
-		if err != nil {
-			return fmt.Errorf("error initializing staker: %w", err)
-		}
-	}
-	if n.StatelessBlockValidator != nil {
-		err = n.StatelessBlockValidator.Start(ctx)
-		if err != nil {
-			if n.configFetcher.Get().ValidatorRequired() {
-				return fmt.Errorf("error initializing stateless block validator: %w", err)
-			}
-			log.Info("validation not set up", "err", err)
-			n.StatelessBlockValidator = nil
-			n.BlockValidator = nil
-		}
-	}
-	if n.BlockValidator != nil {
-		err = n.BlockValidator.Initialize(ctx)
-		if err != nil {
-			return fmt.Errorf("error initializing block validator: %w", err)
-		}
-		err = n.BlockValidator.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting block validator: %w", err)
-		}
-	}
-	if n.Staker != nil {
-		n.Staker.Start(ctx)
-	}
-	if n.L1Reader != nil {
-		n.L1Reader.Start(ctx)
-	}
-	if n.BroadcastServer != nil {
-		err = n.BroadcastServer.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting feed broadcast server: %w", err)
-		}
-	}
-	if n.BroadcastClients != nil {
-		go func() {
-			if n.InboxReader != nil {
-				select {
-				case <-n.InboxReader.CaughtUp():
-				case <-ctx.Done():
-					return
-				}
-			}
-			n.BroadcastClients.Start(ctx)
-		}()
-	}
-	if n.configFetcher != nil {
-		n.configFetcher.Start(ctx)
-	}
-	return nil
-}
-
-func (n *Node) StopAndWait() {
-	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
-		n.MaintenanceRunner.StopAndWait()
-	}
-	if n.configFetcher != nil && n.configFetcher.Started() {
-		n.configFetcher.StopAndWait()
-	}
-	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
-		// Releases the chosen sequencer lockout,
-		// and stops the background thread but not the redis client.
-		n.SeqCoordinator.PrepareForShutdown()
-	}
-	n.Stack.StopRPC() // does nothing if not running
-	if n.Execution.TxPublisher.Started() {
-		n.Execution.TxPublisher.StopAndWait()
-	}
-	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
-		n.DelayedSequencer.StopAndWait()
-	}
-	if n.BatchPoster != nil && n.BatchPoster.Started() {
-		n.BatchPoster.StopAndWait()
-	}
-	if n.MessagePruner != nil && n.MessagePruner.Started() {
-		n.MessagePruner.StopAndWait()
-	}
-	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
-		n.BroadcastServer.StopAndWait()
-	}
-	if n.BroadcastClients != nil {
-		n.BroadcastClients.StopAndWait()
-	}
-	if n.BlockValidator != nil && n.BlockValidator.Started() {
-		n.BlockValidator.StopAndWait()
-	}
-	if n.Staker != nil {
-		n.Staker.StopAndWait()
-	}
-	if n.StatelessBlockValidator != nil {
-		n.StatelessBlockValidator.Stop()
-	}
-	if n.InboxReader != nil && n.InboxReader.Started() {
-		n.InboxReader.StopAndWait()
-	}
-	if n.L1Reader != nil && n.L1Reader.Started() {
-		n.L1Reader.StopAndWait()
-	}
-	if n.TxStreamer.Started() {
-		n.TxStreamer.StopAndWait()
-	}
-	if n.Execution.ExecEngine.Started() {
-		n.Execution.ExecEngine.StopAndWait()
-	}
-	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
-		// Just stops the redis client (most other stuff was stopped earlier)
-		n.SeqCoordinator.StopAndWait()
-	}
-	n.Execution.ArbInterface.BlockChain().Stop() // does nothing if not running
-	if err := n.Execution.Backend.Stop(); err != nil {
-		log.Error("backend stop", "err", err)
-	}
-	if n.DASLifecycleManager != nil {
-		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
-	}
-	if err := n.Stack.Close(); err != nil {
-		log.Error("error on stak close", "err", err)
-	}
 }
 
 func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {

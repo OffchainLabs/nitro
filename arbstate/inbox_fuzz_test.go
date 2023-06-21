@@ -19,7 +19,7 @@ type multiplexerBackend struct {
 	positionWithinMessage uint64
 }
 
-func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *multiplexerBackend) PeekSequencerInbox(context.Context) ([]byte, error) {
 	if b.batchSeqNum != 0 {
 		return nil, errors.New("reading unknown sequencer batch")
 	}

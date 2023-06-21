@@ -398,7 +398,7 @@ func mainImpl() int {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	currentNode, err := arbnode.New(
 		ctx,
 		stack,
 		chainDb,

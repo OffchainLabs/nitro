@@ -491,16 +491,15 @@ type multiplexerBackend struct {
 	batches               []*SequencerInboxBatch
 	positionWithinMessage uint64
 
-	ctx    context.Context
 	client arbutil.L1Interface
 	inbox  *InboxTracker
 }
 
-func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *multiplexerBackend) PeekSequencerInbox(ctx context.Context) ([]byte, error) {
 	if len(b.batches) == 0 {
 		return nil, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0].Serialize(b.ctx, b.client)
+	return b.batches[0].Serialize(ctx, b.client)
 }
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
@@ -592,7 +591,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		batches:     batches,
 
 		inbox:  t,
-		ctx:    ctx,
 		client: client,
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, arbstate.KeysetValidate)
