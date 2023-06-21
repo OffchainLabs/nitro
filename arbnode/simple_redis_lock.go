@@ -3,6 +3,7 @@ package arbnode
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"math"
 	"math/big"
 	"strconv"
@@ -12,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 

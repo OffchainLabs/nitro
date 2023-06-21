@@ -96,7 +96,7 @@ func TestRpcClientRetry(t *testing.T) {
 		URL:         "self",
 		Timeout:     time.Second * 5,
 		Retries:     2,
-		RetryErrors: "b.*",
+		RetryErrors: "",
 	}
 	Require(t, config.Validate())
 	configFetcher := func() *ClientConfig { return config }
@@ -154,6 +154,23 @@ func TestRpcClientRetry(t *testing.T) {
 	err = clientFailsWithRetry.Start(ctx)
 	Require(t, err)
 	err = clientFailsWithRetry.CallContext(ctx, nil, "test_failAtFirst")
+	if err == nil {
+		Fail(t, "no error for failAtFirst")
+	}
+
+	noMatchconfig := &ClientConfig{
+		URL:         "self",
+		Timeout:     time.Second * 5,
+		Retries:     2,
+		RetryErrors: "b.*",
+	}
+	Require(t, config.Validate())
+	noMatchFetcher := func() *ClientConfig { return noMatchconfig }
+	serverWorkWithRetry2 := createTestNode(t, ctx, 1)
+	clientNoMatch := NewRpcClient(noMatchFetcher, serverWorkWithRetry2)
+	err = clientNoMatch.Start(ctx)
+	Require(t, err)
+	err = clientNoMatch.CallContext(ctx, nil, "test_failAtFirst")
 	if err == nil {
 		Fail(t, "no error for failAtFirst")
 	}

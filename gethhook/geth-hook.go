@@ -44,7 +44,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 }
 
 func init() {
-	core.ReadyEVMForL2 = func(evm *vm.EVM, msg core.Message) {
+	core.ReadyEVMForL2 = func(evm *vm.EVM, msg *core.Message) {
 		if evm.ChainConfig().IsArbitrum() {
 			evm.ProcessingHook = arbos.NewTxProcessor(evm, msg)
 		}

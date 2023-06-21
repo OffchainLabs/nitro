@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -19,7 +21,6 @@ import (
 	"github.com/gobwas/httphead"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -287,19 +288,19 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, err
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "broadcast client unable to connect")
+		return nil, fmt.Errorf("broadcast client unable to connect: %w", err)
 	}
 	if config.RequireChainId && !foundChainId {
 		err := conn.Close()
 		if err != nil {
-			return nil, errors.Wrap(err, "error closing connection when missing chain id")
+			return nil, fmt.Errorf("error closing connection when missing chain id: %w", err)
 		}
 		return nil, ErrMissingChainId
 	}
 	if config.RequireFeedVersion && !foundFeedServerVersion {
 		err := conn.Close()
 		if err != nil {
-			return nil, errors.Wrap(err, "error closing connection when missing feed server version")
+			return nil, fmt.Errorf("error closing connection when missing feed server version: %w", err)
 		}
 		return nil, ErrMissingFeedServerVersion
 	}
@@ -407,7 +408,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
+								bc.fatalErrChan <- fmt.Errorf("error validating feed signature %v: %w", message.SequenceNumber, err)
 								continue
 							}
 
@@ -485,7 +486,7 @@ func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadc
 	}
 	hash, err := message.Hash(bc.chainId)
 	if err != nil {
-		return errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
+		return fmt.Errorf("error getting message hash for sequence number %v: %w", message.SequenceNumber, err)
 	}
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }
