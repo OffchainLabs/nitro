@@ -32,7 +32,7 @@ func TestAddEdge(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
 			assertionErr: errors.New("bad request"),
 		}
-		err := ht.AddEdge(ctx, edge)
+		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not get top level assertion for edge")
 	})
 	t.Run("ignores if disagrees with top level assertion id of edge", func(t *testing.T) {
@@ -40,7 +40,7 @@ func TestAddEdge(t *testing.T) {
 			assertionErr: nil,
 			assertionId:  protocol.AssertionId(common.BytesToHash([]byte("bar"))),
 		}
-		err := ht.AddEdge(ctx, edge)
+		_, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
 	})
 	t.Run("getting claim heights fails", func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestAddEdge(t *testing.T) {
 			assertionId:     ht.topLevelAssertionId,
 			claimHeightsErr: errors.New("bad request"),
 		}
-		err := ht.AddEdge(ctx, edge)
+		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not get claim heights for edge")
 	})
 	t.Run("checking if agrees with commit fails", func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestAddEdge(t *testing.T) {
 		ht.histChecker = &mocks.MockStateManager{
 			AgreeErr: true,
 		}
-		err := ht.AddEdge(ctx, edge)
+		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not check if agrees with")
 	})
 	t.Run("fully disagrees with edge", func(t *testing.T) {
@@ -71,8 +71,12 @@ func TestAddEdge(t *testing.T) {
 			},
 		}
 		badEdge := newEdge(&newCfg{t: t, edgeId: "blk-0.f-16.a", createdAt: 1})
-		err := ht.AddEdge(ctx, badEdge)
+		agreement, err := ht.AddEdge(ctx, badEdge)
 		require.NoError(t, err)
+		require.Equal(t, protocol.Agreement{
+			IsHonestEdge:          false,
+			AgreesWithStartCommit: false,
+		}, agreement)
 
 		// Check the edge is not kept track of anywhere.
 		_, ok := ht.edges.TryGet(badEdge.Id())
@@ -83,12 +87,17 @@ func TestAddEdge(t *testing.T) {
 	t.Run("agrees with edge but is not a level zero edge", func(t *testing.T) {
 		ht.histChecker = &mocks.MockStateManager{
 			Agreement: protocol.Agreement{
-				IsHonestEdge: true,
+				IsHonestEdge:          true,
+				AgreesWithStartCommit: true,
 			},
 		}
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1})
-		err := ht.AddEdge(ctx, edge)
+		agreement, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
+		require.Equal(t, protocol.Agreement{
+			IsHonestEdge:          true,
+			AgreesWithStartCommit: true,
+		}, agreement)
 
 		// Exists.
 		_, ok := ht.edges.TryGet(edge.Id())
@@ -104,8 +113,12 @@ func TestAddEdge(t *testing.T) {
 	})
 	t.Run("agrees with edge and is a level zero edge", func(t *testing.T) {
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-32.a", createdAt: 1, claimId: "foo"})
-		err := ht.AddEdge(ctx, edge)
+		agreement, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
+		require.Equal(t, protocol.Agreement{
+			IsHonestEdge:          true,
+			AgreesWithStartCommit: true,
+		}, agreement)
 
 		// Exists.
 		_, ok := ht.edges.TryGet(edge.Id())
@@ -125,8 +138,12 @@ func TestAddEdge(t *testing.T) {
 			},
 		}
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-32.b", createdAt: 1, claimId: "bar"})
-		err := ht.AddEdge(ctx, edge)
+		agreement, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
+		require.Equal(t, protocol.Agreement{
+			IsHonestEdge:          false,
+			AgreesWithStartCommit: true,
+		}, agreement)
 
 		// Is not being tracked by the honest challenge tree.
 		_, ok := ht.edges.TryGet(edge.Id())

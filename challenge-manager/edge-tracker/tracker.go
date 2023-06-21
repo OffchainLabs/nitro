@@ -6,7 +6,6 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
 	challengetree "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/fsm"
@@ -22,6 +21,23 @@ import (
 var errBadOneStepProof = errors.New("bad one step proof data")
 
 var log = logrus.WithField("prefix", "edge-tracker")
+
+// ConfirmationMetadataChecker defines a struct which can retrieve information about
+// an edge to determine if it can be confirmed via different means. For example,
+// checking if a confirmed edge exists that claims a specified edge id as its claim id,
+// or retrieving the cumulative, honest path timer for an edge and its honest ancestors.
+// This information is used in order to confirm edges onchain.
+type ConfirmationMetadataChecker interface {
+	ConfirmedEdgeWithClaimExists(
+		topLevelAssertionId protocol.AssertionId,
+		claimId protocol.ClaimId,
+	) (protocol.EdgeId, bool)
+	ComputeHonestPathTimer(
+		ctx context.Context,
+		topLevelAssertionId protocol.AssertionId,
+		edgeId protocol.EdgeId,
+	) (challengetree.PathTimer, challengetree.HonestAncestors, error)
+}
 
 type ChallengeTracker interface {
 	IsTrackingEdge(protocol.EdgeId) bool
@@ -75,7 +91,7 @@ type Tracker struct {
 	validatorAddress common.Address
 	chain            protocol.Protocol
 	stateProvider    l2stateprovider.Provider
-	chainWatcher     watcher.ConfirmationMetadataChecker
+	chainWatcher     ConfirmationMetadataChecker
 	challengeManager ChallengeTracker
 	heightConfig     HeightConfig
 }
@@ -84,7 +100,7 @@ func New(
 	edge protocol.SpecEdge,
 	chain protocol.Protocol,
 	stateProvider l2stateprovider.Provider,
-	chainWatcher watcher.ConfirmationMetadataChecker,
+	chainWatcher ConfirmationMetadataChecker,
 	challengeManager ChallengeTracker,
 	heightConfig HeightConfig,
 	opts ...Opt,

@@ -2,18 +2,20 @@ package challengemanager
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
+	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	utilTime "github.com/OffchainLabs/challenge-protocol-v2/time"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -36,10 +38,10 @@ type Manager struct {
 	name                    string
 	timeRef                 utilTime.Reference
 	edgeTrackerWakeInterval time.Duration
-	initialSyncCompleted    chan struct{}
 	chainWatcherInterval    time.Duration
 	watcher                 *watcher.Watcher
 	trackedEdgeIds          *threadsafe.Set[protocol.EdgeId]
+	assertionIdCache        *threadsafe.Map[protocol.AssertionId, [2]uint64]
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -82,8 +84,8 @@ func New(
 		rollupAddr:              rollupAddr,
 		edgeTrackerWakeInterval: time.Millisecond * 100,
 		chainWatcherInterval:    time.Millisecond * 500,
-		initialSyncCompleted:    make(chan struct{}),
 		trackedEdgeIds:          threadsafe.NewSet[protocol.EdgeId](),
+		assertionIdCache:        threadsafe.NewMap[protocol.AssertionId, [2]uint64](),
 	}
 	for _, o := range opts {
 		o(m)
@@ -110,16 +112,87 @@ func New(
 	m.rollupFilterer = rollupFilterer
 	m.chalManagerAddr = chalManagerAddr
 	m.chalManager = chalManagerFilterer
-	m.watcher = watcher.New(m.chain, m.stateManager, backend, m.chainWatcherInterval, m.name)
+	m.watcher = watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, m.name)
 	return m, nil
 }
 
+// IsTrackingEdge returns true if we are currently tracking a specified edge id as an edge tracker goroutine.
 func (m *Manager) IsTrackingEdge(edgeId protocol.EdgeId) bool {
 	return m.trackedEdgeIds.Has(edgeId)
 }
 
+// MarkTrackedEdge marks an edge id as being tracked by our challenge manager.
 func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId) {
 	m.trackedEdgeIds.Insert(edgeId)
+}
+
+// TrackEdge spawns an edge tracker for an edge if it is not currently being tracked.
+func (m *Manager) TrackEdge(ctx context.Context, edge protocol.SpecEdge) error {
+	if m.trackedEdgeIds.Has(edge.Id()) {
+		return nil
+	}
+	trk, err := m.getTrackerForEdge(ctx, edge)
+	if err != nil {
+		return err
+	}
+	go trk.Spawn(ctx)
+	return nil
+}
+
+// Gets an edge tracker for an edge by retrieving its associated assertion creation info.
+func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge) (*edgetracker.Tracker, error) {
+	// Retry until you get the previous assertion ID.
+	assertionId, err := retry.UntilSucceeds(ctx, func() (protocol.AssertionId, error) {
+		return edge.AssertionId(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Smart caching to avoid querying the same assertion number and creation info multiple times.
+	// Edges in the same challenge should have the same creation info.
+	cachedHeightAndInboxMsgCount, ok := m.assertionIdCache.TryGet(assertionId)
+	var assertionHeight uint64
+	var inboxMsgCount uint64
+	if !ok {
+		// Retry until you get the assertion creation info.
+		assertionCreationInfo, creationErr := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+			return m.chain.ReadAssertionCreationInfo(ctx, assertionId)
+		})
+		if creationErr != nil {
+			return nil, creationErr
+		}
+
+		// Retry until you get the execution state block height.
+		height, heightErr := retry.UntilSucceeds(ctx, func() (uint64, error) {
+			return m.getExecutionStateBlockHeight(ctx, assertionCreationInfo.AfterState)
+		})
+		if heightErr != nil {
+			return nil, heightErr
+		}
+		assertionHeight = height
+		inboxMsgCount = assertionCreationInfo.InboxMaxCount.Uint64()
+		m.assertionIdCache.Put(assertionId, [2]uint64{assertionHeight, inboxMsgCount})
+	} else {
+		assertionHeight, inboxMsgCount = cachedHeightAndInboxMsgCount[0], cachedHeightAndInboxMsgCount[1]
+	}
+	return retry.UntilSucceeds(ctx, func() (*edgetracker.Tracker, error) {
+		return edgetracker.New(
+			edge,
+			m.chain,
+			m.stateManager,
+			m.watcher,
+			m,
+			edgetracker.HeightConfig{
+				StartBlockHeight:           assertionHeight,
+				TopLevelClaimEndBatchCount: inboxMsgCount,
+			},
+			edgetracker.WithActInterval(m.edgeTrackerWakeInterval),
+			edgetracker.WithTimeReference(m.timeRef),
+			edgetracker.WithValidatorAddress(m.address),
+			edgetracker.WithValidatorName(m.name),
+		)
+	})
 }
 
 func (m *Manager) Start(ctx context.Context) {
@@ -129,21 +202,14 @@ func (m *Manager) Start(ctx context.Context) {
 	).Info("Started challenge manager")
 
 	// Start watching for ongoing chain events in the background.
-	go m.watcher.Watch(ctx, m.initialSyncCompleted)
-
-	// Then, wait until the chain event watcher has synced up with
-	// all edges from the chain since the latest confirmed assertion up to the latest block number.
-	if err := m.syncEdges(ctx); err != nil {
-		log.WithError(err).Errorf("Could sync with edges")
-	}
+	go m.watcher.Watch(ctx)
 }
 
-// waitForSync waits for a notificataion that initial sync of onchain edges is complete.
-func (m *Manager) waitForSync(ctx context.Context) error {
-	select {
-	case <-m.initialSyncCompleted:
-		return nil
-	case <-ctx.Done():
-		return errors.New("context closed, exiting goroutine")
+// Gets the execution height for a rollup state from our state manager.
+func (m *Manager) getExecutionStateBlockHeight(ctx context.Context, st rollupgen.ExecutionState) (uint64, error) {
+	height, ok := m.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(st))
+	if !ok {
+		return 0, fmt.Errorf("missing previous assertion after execution %+v in local state manager", st)
 	}
+	return height, nil
 }

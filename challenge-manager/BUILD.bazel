@@ -4,7 +4,6 @@ go_library(
     name = "challenge-manager",
     srcs = [
         "challenges.go",
-        "edge_sync.go",
         "manager.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager",
@@ -29,10 +28,7 @@ go_library(
 
 go_test(
     name = "challenge-manager_test",
-    srcs = [
-        "edge_sync_test.go",
-        "manager_test.go",
-    ],
+    srcs = ["manager_test.go"],
     embed = [":challenge-manager"],
     deps = [
         "//chain-abstraction:protocol",

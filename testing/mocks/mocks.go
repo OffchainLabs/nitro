@@ -401,6 +401,15 @@ func (m *MockSpecEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
 	return args.Get(0).(bool), args.Error(1)
 }
 
+type MockEdgeTracker struct {
+	mock.Mock
+}
+
+func (m *MockEdgeTracker) TrackEdge(ctx context.Context, edge protocol.SpecEdge) error {
+	args := m.Called(ctx, edge)
+	return args.Error(0)
+}
+
 type MockProtocol struct {
 	mock.Mock
 }

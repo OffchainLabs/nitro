@@ -2,11 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "state-provider",
+    testonly = 1,
     srcs = [
         "execution_engine.go",
         "layer2_state_provider.go",
     ],
-    testonly = 1,
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider",
     visibility = ["//visibility:public"],
     deps = [
