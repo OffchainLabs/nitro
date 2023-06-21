@@ -234,30 +234,60 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 
 type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
 
+type ParsedInitMessage struct {
+	ChainId          *big.Int
+	InitialL1BaseFee *big.Int
+
+	// These may be nil
+	ChainConfig           *params.ChainConfig
+	SerializedChainConfig []byte
+}
+
+// The initial L1 pricing basefee starts at 50 GWei unless set in the init message
+var DefaultInitialL1BaseFee = big.NewInt(50 * params.GWei)
+
+var TestInitMessage = &ParsedInitMessage{
+	ChainId:          params.ArbitrumDevTestChainConfig().ChainID,
+	InitialL1BaseFee: DefaultInitialL1BaseFee,
+}
+
 // ParseInitMessage returns the chain id on success
-func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig, []byte, error) {
+func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
-		return nil, nil, nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
+		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
+	basefee := new(big.Int).Set(DefaultInitialL1BaseFee)
 	var chainConfig params.ChainConfig
 	var chainId *big.Int
 	if len(msg.L2msg) == 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
-		return chainId, nil, nil, nil
+		return &ParsedInitMessage{chainId, basefee, nil, nil}, nil
 	}
 	if len(msg.L2msg) > 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		version := msg.L2msg[32]
-		if version == 0 && len(msg.L2msg) > 33 {
-			serializedChainConfig := msg.L2msg[33:]
-			err := json.Unmarshal(serializedChainConfig, &chainConfig)
+		reader := bytes.NewReader(msg.L2msg[33:])
+		switch version {
+		case 1:
+			var err error
+			basefee, err = util.Uint256FromReader(reader)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
+				return nil, err
 			}
-			return chainId, &chainConfig, serializedChainConfig, nil
+			fallthrough
+		case 0:
+			serializedChainConfig, err := io.ReadAll(reader)
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(serializedChainConfig, &chainConfig)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
+			}
+			return &ParsedInitMessage{chainId, basefee, &chainConfig, serializedChainConfig}, nil
 		}
 	}
-	return nil, nil, nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
+	return nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
 }
 
 func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, error) {
