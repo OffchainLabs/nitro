@@ -163,6 +163,8 @@ type OneStepData struct {
 type SpecChallengeManager interface {
 	// Address of the challenge manager contract.
 	Address() common.Address
+	// Heights for level zero edge creation.
+	LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error)
 	// Duration of the challenge period in blocks.
 	ChallengePeriodBlocks(ctx context.Context) (uint64, error)
 	// Gets an edge by its id.
@@ -207,11 +209,6 @@ type SpecChallengeManager interface {
 // Height if defined as the height of a history commitment in the specification.
 // Heights are 0-indexed.
 type Height uint64
-
-// Also set in the `initialize()` function of the EdgeChallengeManager contract.
-const LevelZeroBlockEdgeHeight = 1 << 5
-const LevelZeroBigStepEdgeHeight = 1 << 5
-const LevelZeroSmallStepEdgeHeight = 1 << 5
 
 // EdgeStatus of an edge in the protocol.
 type EdgeStatus uint8

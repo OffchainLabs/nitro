@@ -23,6 +23,7 @@ go_test(
         "//chain-abstraction/sol-implementation",
         "//challenge-manager",
         "//layer2-state-provider",
+        "//testing",
         "//testing/endtoend/internal/backend",
         "//testing/toys/assertions",
         "//testing/toys/state-provider",

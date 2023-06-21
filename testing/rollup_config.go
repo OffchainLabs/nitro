@@ -3,10 +3,31 @@ package challenge_testing
 import (
 	"math/big"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 )
+
+const (
+	LevelZeroBlockEdgeHeight     = 1 << 5
+	LevelZeroBigStepEdgeHeight   = 1 << 5
+	LevelZeroSmallStepEdgeHeight = 1 << 5
+)
+
+type LevelZeroHeights struct {
+	BlockChallengeHeight     uint64
+	BigStepChallengeHeight   uint64
+	SmallStepChallengeHeight uint64
+}
+
+type Opt func(c *rollupgen.Config)
+
+func WithLevelZeroHeights(heights *LevelZeroHeights) Opt {
+	return func(c *rollupgen.Config) {
+		c.LayerZeroBlockEdgeHeight = new(big.Int).SetUint64(heights.BlockChallengeHeight)
+		c.LayerZeroBigStepEdgeHeight = new(big.Int).SetUint64(heights.BigStepChallengeHeight)
+		c.LayerZeroSmallStepEdgeHeight = new(big.Int).SetUint64(heights.SmallStepChallengeHeight)
+	}
+}
 
 func GenerateRollupConfig(
 	prod bool,
@@ -15,6 +36,7 @@ func GenerateRollupConfig(
 	chainId *big.Int,
 	loserStakeEscrow common.Address,
 	miniStakeValue *big.Int,
+	opts ...Opt,
 ) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
@@ -23,7 +45,7 @@ func GenerateRollupConfig(
 		confirmPeriod = 25
 	}
 
-	return rollupgen.Config{
+	cfg := rollupgen.Config{
 		MiniStakeValue:      miniStakeValue,
 		ConfirmPeriodBlocks: confirmPeriod,
 		StakeToken:          common.Address{},
@@ -38,8 +60,12 @@ func GenerateRollupConfig(
 			DelaySeconds:  big.NewInt(60 * 60 * 24),
 			FutureSeconds: big.NewInt(60 * 60),
 		},
-		LayerZeroBlockEdgeHeight:     big.NewInt(protocol.LevelZeroBlockEdgeHeight),
-		LayerZeroBigStepEdgeHeight:   big.NewInt(protocol.LevelZeroBigStepEdgeHeight),
-		LayerZeroSmallStepEdgeHeight: big.NewInt(protocol.LevelZeroSmallStepEdgeHeight),
+		LayerZeroBlockEdgeHeight:     big.NewInt(LevelZeroBlockEdgeHeight),
+		LayerZeroBigStepEdgeHeight:   big.NewInt(LevelZeroBigStepEdgeHeight),
+		LayerZeroSmallStepEdgeHeight: big.NewInt(LevelZeroSmallStepEdgeHeight),
 	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return cfg
 }

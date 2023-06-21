@@ -6,6 +6,7 @@ go_library(
         "execution_engine.go",
         "layer2_state_provider.go",
     ],
+    testonly = 1,
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider",
     visibility = ["//visibility:public"],
     deps = [
@@ -14,6 +15,7 @@ go_library(
         "//solgen/go/rollupgen",
         "//state-commitments/history",
         "//state-commitments/prefix-proofs",
+        "//testing",
         "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",
     ],

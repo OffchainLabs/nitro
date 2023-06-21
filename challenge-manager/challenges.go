@@ -77,10 +77,18 @@ func (v *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, nil, err
 	}
+	manager, err := v.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	levelZeroBlockEdgeHeight, err := manager.LevelZeroBlockEdgeHeight(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	endCommit, err := v.stateManager.HistoryCommitmentUpToBatch(
 		ctx,
 		0,
-		protocol.LevelZeroBlockEdgeHeight,
+		levelZeroBlockEdgeHeight,
 		creationInfo.InboxMaxCount.Uint64(),
 	)
 	if err != nil {
@@ -90,13 +98,9 @@ func (v *Manager) addBlockChallengeLevelZeroEdge(
 		ctx,
 		0,
 		0,
-		protocol.LevelZeroBlockEdgeHeight,
+		levelZeroBlockEdgeHeight,
 		creationInfo.InboxMaxCount.Uint64(),
 	)
-	if err != nil {
-		return nil, nil, err
-	}
-	manager, err := v.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -393,6 +393,17 @@ func (cm *SpecChallengeManager) Address() common.Address {
 	return cm.addr
 }
 
+func (cm *SpecChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error) {
+	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return 0, err
+	}
+	if !h.IsUint64() {
+		return 0, errors.New("level zero block edge height was not a uint64")
+	}
+	return h.Uint64(), nil
+}
+
 // Duration of the challenge period in blocks.
 func (cm *SpecChallengeManager) ChallengePeriodBlocks(
 	ctx context.Context,
@@ -634,11 +645,18 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parent assertion %#x creation info: %w", prevId, err)
 	}
-	if endCommit.Height != protocol.LevelZeroBlockEdgeHeight {
+	levelZeroBlockHeight, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return nil, err
+	}
+	if !levelZeroBlockHeight.IsUint64() {
+		return nil, errors.New("level zero block height not a uint64")
+	}
+	if endCommit.Height != levelZeroBlockHeight.Uint64() {
 		return nil, fmt.Errorf(
 			"end commit has unexpected height %v (expected %v)",
 			endCommit.Height,
-			protocol.LevelZeroBlockEdgeHeight,
+			levelZeroBlockHeight.Uint64(),
 		)
 	}
 	blockEdgeProof, err := blockEdgeCreateProofAbi.Pack(

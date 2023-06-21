@@ -10,6 +10,7 @@ import (
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -37,9 +38,9 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
 		startCommit, startErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, endErr)
-		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, proofErr)
 
 		edge, edgeErr := challengeManager.AddBlockChallengeLevelZeroEdge(
@@ -76,10 +77,10 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	})
 
 	t.Run("bisected children are presumptive", func(t *testing.T) {
-		var bisectHeight uint64 = protocol.LevelZeroBlockEdgeHeight / 2
+		var bisectHeight uint64 = challenge_testing.LevelZeroBlockEdgeHeight / 2
 		honestBisectCommit, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, bisectHeight, 1)
 		require.NoError(t, err)
-		honestProof, err := createdData.HonestStateManager.PrefixProofUpToBatch(ctx, 0, bisectHeight, protocol.LevelZeroBlockEdgeHeight, 1)
+		honestProof, err := createdData.HonestStateManager.PrefixProofUpToBatch(ctx, 0, bisectHeight, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, err)
 
 		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
@@ -119,7 +120,7 @@ func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 		require.Equal(t, false, isOSF)
 	})
 	t.Run("post bisection, mutual edge is one step fork source", func(t *testing.T) {
-		var height uint64 = protocol.LevelZeroBlockEdgeHeight
+		var height uint64 = challenge_testing.LevelZeroBlockEdgeHeight
 		for height > 1 {
 			honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, height/2, 1)
 			require.NoError(t, err)
@@ -182,9 +183,9 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 
 	start, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 	require.NoError(t, err)
-	end, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+	end, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
-	prefixProof, err := createdData.HonestStateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+	prefixProof, err := createdData.HonestStateManager.PrefixProofUpToBatch(ctx, 0, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
 
 	t.Run("OK", func(t *testing.T) {
@@ -212,9 +213,9 @@ func TestEdgeChallengeManager_Bisect(t *testing.T) {
 		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("OK", func(t *testing.T) {
-		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, 1)
+		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, 1)
 		require.NoError(t, err)
-		honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, protocol.LevelZeroBlockEdgeHeight, 1)
+		honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, err)
 		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
@@ -270,9 +271,9 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 	// 	challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
 	// 	require.NoError(t, err)
 
-	// 	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, 1)
+	// 	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, 1)
 	// 	require.NoError(t, err)
-	// 	honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, protocol.LevelZeroBlockEdgeHeight, 1)
+	// 	honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 	// 	require.NoError(t, err)
 	// 	honestChildren1, honestChildren2, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 	// 	require.NoError(t, err)
@@ -350,9 +351,9 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 	// 	challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
 	// 	require.NoError(t, err)
 
-	// 	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, 1)
+	// 	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, 1)
 	// 	require.NoError(t, err)
-	// 	honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, protocol.LevelZeroBlockEdgeHeight, 1)
+	// 	honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 	// 	require.NoError(t, err)
 	// 	honestChildren1, honestChildren2, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 	// 	require.NoError(t, err)
@@ -594,9 +595,9 @@ func TestEdgeChallengeManager_ConfirmByTimerAndChildren(t *testing.T) {
 	honestStateManager := bisectionScenario.honestStateManager
 	honestEdge := bisectionScenario.honestLevelZeroEdge
 
-	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, 1)
+	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, 1)
 	require.NoError(t, err)
-	honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight/2, protocol.LevelZeroBlockEdgeHeight, 1)
+	honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
 	honestChildren1, honestChildren2, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 	require.NoError(t, err)
@@ -643,9 +644,9 @@ func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
 		startCommit, startErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, endErr)
-		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, proofErr)
 
 		edge, edgeErr := challengeManager.AddBlockChallengeLevelZeroEdge(
@@ -717,9 +718,9 @@ func setupBisectionScenario(
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) (commitments.History, protocol.SpecEdge) {
 		startCommit, startErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, endErr)
-		prefixProof, prefixErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		prefixProof, prefixErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, prefixErr)
 
 		edge, edgeErr := challengeManager.AddBlockChallengeLevelZeroEdge(
@@ -794,7 +795,7 @@ func setupOneStepProofScenario(
 	challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
 	require.NoError(t, err)
 
-	var blockHeight uint64 = protocol.LevelZeroBlockEdgeHeight
+	var blockHeight uint64 = challenge_testing.LevelZeroBlockEdgeHeight
 	for blockHeight > 1 {
 		honestBisectCommit, honestErr := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, blockHeight/2, 1)
 		require.NoError(t, honestErr)
@@ -855,7 +856,7 @@ func setupOneStepProofScenario(
 	evilEdge = bigStepAdder(evilStateManager, evilEdge)
 	require.Equal(t, protocol.BigStepChallengeEdge, evilEdge.GetType())
 
-	var bigStepHeight uint64 = protocol.LevelZeroBigStepEdgeHeight
+	var bigStepHeight uint64 = challenge_testing.LevelZeroBigStepEdgeHeight
 	for bigStepHeight > 1 {
 		honestBisectCommit, bisectErr := honestStateManager.BigStepCommitmentUpTo(ctx, 0, 1, bigStepHeight/2)
 		require.NoError(t, bisectErr)
@@ -948,7 +949,7 @@ func setupOneStepProofScenario(
 	// Get the lower-level edge of either edge we just bisected.
 	require.Equal(t, protocol.SmallStepChallengeEdge, honestEdge.GetType())
 
-	var smallStepHeight uint64 = protocol.LevelZeroBigStepEdgeHeight
+	var smallStepHeight uint64 = challenge_testing.LevelZeroBigStepEdgeHeight
 	for smallStepHeight > 1 {
 		honestBisectCommit, bisectErr := honestStateManager.SmallStepCommitmentUpTo(ctx, 0, 1, 0, 1, smallStepHeight/2)
 		require.NoError(t, bisectErr)

@@ -8,6 +8,7 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -92,9 +93,9 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
 		startCommit, startErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, endErr)
-		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, proofErr)
 
 		edge, edgeErr := challengeManager.AddBlockChallengeLevelZeroEdge(

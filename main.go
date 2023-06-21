@@ -7,6 +7,7 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	validator "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/toys/assertions"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider"
@@ -25,6 +26,10 @@ var (
 	postNewAssertionInterval = time.Hour
 	// How often we advance the blockchain's latest block in the background using a simulated backend.
 	advanceChainInterval = time.Second * 2
+	// Heights
+	levelZeroBlockHeight     = uint64(1 << 5)
+	levelZeroBigStepHeight   = uint64(1 << 5)
+	levelZeroSmallStepHeight = uint64(1 << 5)
 )
 
 type challengeProtocolTestConfig struct {
@@ -59,7 +64,11 @@ func main() {
 		backend.Commit()
 	}
 
-	aliceStateManager, err := statemanager.NewForSimpleMachine()
+	aliceStateManager, err := statemanager.NewForSimpleMachine(statemanager.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
+		BlockChallengeHeight:     uint64(levelZeroBlockHeight),
+		BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
+		SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
+	}))
 	if err != nil {
 		panic(err)
 	}
@@ -71,9 +80,14 @@ func main() {
 		smallStepDivergenceHeight: divergeHeightAtL2,
 	}
 	bobStateManager, err := statemanager.NewForSimpleMachine(
-		statemanager.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*protocol.LevelZeroSmallStepEdgeHeight+cfg.smallStepDivergenceHeight),
+		statemanager.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*levelZeroSmallStepHeight+cfg.smallStepDivergenceHeight),
 		statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
 		statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
+		statemanager.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
+			BlockChallengeHeight:     uint64(levelZeroBlockHeight),
+			BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
+			SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
+		}),
 	)
 	if err != nil {
 		panic(err)

@@ -36,6 +36,7 @@ go_test(
         "//chain-abstraction:protocol",
         "//layer2-state-provider",
         "//state-commitments/history",
+        "//testing",
         "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",

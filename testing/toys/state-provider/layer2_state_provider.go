@@ -12,6 +12,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -29,15 +30,18 @@ var (
 // L2StateBackend defines a very naive state manager that is initialized from a list of predetermined
 // state roots. It can produce state and history commitments from those roots.
 type L2StateBackend struct {
-	stateRoots              []common.Hash
-	executionStates         []*protocol.ExecutionState
-	machineAtBlock          func(context.Context, uint64) (Machine, error)
-	maxWavmOpcodes          uint64
-	numOpcodesPerBigStep    uint64
-	blockDivergenceHeight   uint64
-	posInBatchDivergence    int64
-	machineDivergenceStep   uint64
-	forceMachineBlockCompat bool
+	stateRoots                   []common.Hash
+	executionStates              []*protocol.ExecutionState
+	machineAtBlock               func(context.Context, uint64) (Machine, error)
+	maxWavmOpcodes               uint64
+	numOpcodesPerBigStep         uint64
+	blockDivergenceHeight        uint64
+	posInBatchDivergence         int64
+	machineDivergenceStep        uint64
+	forceMachineBlockCompat      bool
+	levelZeroBlockEdgeHeight     uint64
+	levelZeroBigStepEdgeHeight   uint64
+	levelZeroSmallStepEdgeHeight uint64
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
@@ -102,6 +106,14 @@ func WithForceMachineBlockCompat() Opt {
 	}
 }
 
+func WithLevelZeroEdgeHeights(heights *challenge_testing.LevelZeroHeights) Opt {
+	return func(s *L2StateBackend) {
+		s.levelZeroBlockEdgeHeight = heights.BlockChallengeHeight
+		s.levelZeroBigStepEdgeHeight = heights.BigStepChallengeHeight
+		s.levelZeroSmallStepEdgeHeight = heights.SmallStepChallengeHeight
+	}
+}
+
 // NewWithAssertionStates creates a simulated state manager from a list of predefined state roots for
 // the top-level assertion chain, useful for tests and simulation purposes in block challenges.
 // This also allows for specifying the honest states for big and small step subchallenges along
@@ -131,6 +143,9 @@ func NewWithAssertionStates(
 		machineAtBlock: func(context.Context, uint64) (Machine, error) {
 			return nil, errors.New("state manager created with NewWithAssertionStates() cannot provide machines")
 		},
+		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
+		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
+		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
 	}
 	for _, o := range opts {
 		o(s)
@@ -142,12 +157,15 @@ func NewForSimpleMachine(
 	opts ...Opt,
 ) (*L2StateBackend, error) {
 	s := &L2StateBackend{
-		maxWavmOpcodes:       protocol.LevelZeroSmallStepEdgeHeight * protocol.LevelZeroBigStepEdgeHeight,
-		numOpcodesPerBigStep: protocol.LevelZeroSmallStepEdgeHeight,
+		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
+		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
+		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
 	}
 	for _, o := range opts {
 		o(s)
 	}
+	s.maxWavmOpcodes = s.levelZeroSmallStepEdgeHeight * s.levelZeroBigStepEdgeHeight
+	s.numOpcodesPerBigStep = s.levelZeroSmallStepEdgeHeight
 	if s.maxWavmOpcodes == 0 {
 		return nil, errors.New("maxWavmOpcodes cannot be zero")
 	}

@@ -207,6 +207,11 @@ func (m *MockChallengeManager) Address() common.Address {
 	return m.MockAddr
 }
 
+func (m *MockChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
 // MockSpecChallengeManager is a mock implementation of the SpecChallengeManager interface.
 type MockSpecChallengeManager struct {
 	mock.Mock
@@ -215,6 +220,11 @@ type MockSpecChallengeManager struct {
 
 func (m *MockSpecChallengeManager) Address() common.Address {
 	return m.MockAddr
+}
+
+func (m *MockSpecChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(uint64), args.Error(1)
 }
 
 func (m *MockSpecChallengeManager) ChallengePeriodBlocks(ctx context.Context) (uint64, error) {
