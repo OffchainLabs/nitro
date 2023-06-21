@@ -226,6 +226,9 @@ func TestSync_HonestBobStopsCharlieJoins(t *testing.T) {
 	be, err := backend.NewAnvilLocal(context.Background())
 	require.NoError(t, err)
 	require.NoError(t, be.Start())
+	defer func() {
+		require.NoError(t, be.Stop(), "error stopping backend")
+	}()
 
 	scenario := &ChallengeScenario{
 		Name: "two forked assertions at the same height",
