@@ -545,20 +545,11 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, id)
 		require.NoError(t, err)
 
-		requiredStake, err := chain.BaseStake(ctx)
-		require.NoError(t, err)
-
-		challengePeriod, err := challengeManager.ChallengePeriodBlocks(ctx)
-		require.NoError(t, err)
-
-		wasmRoot, err := chain.WasmModuleRoot(ctx)
-		require.NoError(t, err)
-
 		cfgSnapshot := &l2stateprovider.ConfigSnapshot{
-			RequiredStake:           requiredStake,
-			ChallengeManagerAddress: challengeManager.Address(),
-			ConfirmPeriodBlocks:     challengePeriod,
-			WasmModuleRoot:          wasmRoot,
+			RequiredStake:           parentAssertionCreationInfo.RequiredStake,
+			ChallengeManagerAddress: parentAssertionCreationInfo.ChallengeManager,
+			ConfirmPeriodBlocks:     parentAssertionCreationInfo.ConfirmPeriodBlocks,
+			WasmModuleRoot:          parentAssertionCreationInfo.WasmModuleRoot,
 			InboxMaxCount:           big.NewInt(1),
 		}
 

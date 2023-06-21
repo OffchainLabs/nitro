@@ -3,7 +3,6 @@ package mocks
 import (
 	"context"
 	"errors"
-	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
@@ -400,16 +399,6 @@ type MockProtocol struct {
 func (m *MockProtocol) NumAssertions(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
-}
-
-func (m *MockProtocol) BaseStake(ctx context.Context) (*big.Int, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(*big.Int), args.Error(1)
-}
-
-func (m *MockProtocol) WasmModuleRoot(ctx context.Context) ([32]byte, error) {
-	args := m.Called(ctx)
-	return args.Get(0).([32]byte), args.Error(1)
 }
 
 func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionId) (protocol.Assertion, error) {

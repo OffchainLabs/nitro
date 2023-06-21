@@ -65,8 +65,6 @@ type AssertionChain interface {
 	GetAssertion(ctx context.Context, id AssertionId) (Assertion, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
 	LatestCreatedAssertion(ctx context.Context) (Assertion, error)
-	BaseStake(ctx context.Context) (*big.Int, error)
-	WasmModuleRoot(ctx context.Context) ([32]byte, error)
 	ReadAssertionCreationInfo(
 		ctx context.Context, id AssertionId,
 	) (*AssertionCreatedInfo, error)

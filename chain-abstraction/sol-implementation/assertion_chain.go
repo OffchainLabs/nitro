@@ -132,14 +132,6 @@ func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertio
 	return a.GetAssertion(ctx, res)
 }
 
-func (a *AssertionChain) BaseStake(ctx context.Context) (*big.Int, error) {
-	return a.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
-}
-
-func (a *AssertionChain) WasmModuleRoot(ctx context.Context) ([32]byte, error) {
-	return a.userLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
-}
-
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
 // and a commitment to a post-state.
 func (a *AssertionChain) CreateAssertion(
@@ -150,25 +142,12 @@ func (a *AssertionChain) CreateAssertion(
 	if !assertionCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("prev assertion creation info inbox max count not a uint64")
 	}
-	stake, err := a.userLogic.BaseStake(&bind.CallOpts{Context: ctx})
+	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionId(assertionCreationInfo.ParentAssertionHash))
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get current required stake")
+		return nil, err
 	}
 	newOpts := copyTxOpts(a.txOpts)
-	newOpts.Value = stake
-
-	chalManager, err := a.SpecChallengeManager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	chalPeriodBlocks, err := chalManager.ChallengePeriodBlocks(ctx)
-	if err != nil {
-		return nil, err
-	}
-	wasmModuleRoot, err := a.userLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not get current required stake")
-	}
+	newOpts.Value = prevCreationInfo.RequiredStake
 	if !assertionCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("inbox max count was not a uint64")
 	}
@@ -180,10 +159,10 @@ func (a *AssertionChain) CreateAssertion(
 					PrevPrevAssertionHash: assertionCreationInfo.ParentAssertionHash,
 					SequencerBatchAcc:     assertionCreationInfo.AfterInboxBatchAcc,
 					ConfigData: rollupgen.ConfigData{
-						RequiredStake:       stake,
-						ChallengeManager:    chalManager.Address(),
-						ConfirmPeriodBlocks: chalPeriodBlocks,
-						WasmModuleRoot:      wasmModuleRoot,
+						RequiredStake:       prevCreationInfo.RequiredStake,
+						ChallengeManager:    prevCreationInfo.ChallengeManager,
+						ConfirmPeriodBlocks: prevCreationInfo.ConfirmPeriodBlocks,
+						WasmModuleRoot:      prevCreationInfo.WasmModuleRoot,
 						NextInboxPosition:   assertionCreationInfo.InboxMaxCount.Uint64(),
 					},
 				},

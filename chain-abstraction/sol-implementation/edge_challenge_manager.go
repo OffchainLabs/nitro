@@ -525,9 +525,9 @@ func (cm *SpecChallengeManager) ConfirmEdgeByOneStepProof(
 					Proof:      oneStepData.Proof,
 				},
 				challengeV2gen.ConfigData{
-					WasmModuleRoot:      oneStepData.WasmModuleRoot,
+					WasmModuleRoot:      creationInfo.WasmModuleRoot,
 					RequiredStake:       creationInfo.RequiredStake,
-					ChallengeManager:    cm.addr,
+					ChallengeManager:    creationInfo.ChallengeManager,
 					ConfirmPeriodBlocks: creationInfo.ConfirmPeriodBlocks,
 					NextInboxPosition:   creationInfo.InboxMaxCount.Uint64(),
 				},
