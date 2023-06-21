@@ -622,32 +622,23 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithArbOS(t, ctx, 11)
-}
-
-func CreateTestL2WithArbOS(t *testing.T, ctx context.Context, arbOS uint64) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfigArbOS(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, arbOS)
+func CreateTestL2(t *testing.T, ctx context.Context, chainConfig *params.ChainConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, chainConfig)
 }
 
 func CreateTestL2WithConfig(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
-) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfigArbOS(t, ctx, l2Info, nodeConfig, takeOwnership, 11)
-}
-
-func CreateTestL2WithConfigArbOS(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool, arbOS uint64,
+	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool, chainConfig *params.ChainConfig,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbOS
+
+	if chainConfig == nil {
+		chainConfig = params.ArbitrumDevTestChainConfig()
+	}
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", chainConfig)
 	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
-
 	// Give the node an init message
 	err = currentNode.TxStreamer.AddFakeInitMessage()
 	Require(t, err)

@@ -27,7 +27,7 @@ func TestContractTxDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	nodeconfig := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false, nil)
 	defer node.StopAndWait()
 
 	from := common.HexToAddress("0x123412341234")

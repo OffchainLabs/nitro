@@ -26,7 +26,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false, nil)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("Destination")
@@ -63,7 +63,7 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	defer cancel()
 
 	config := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false, nil)
 	defer node.StopAndWait()
 
 	l2info.GetInfoWithPrivKey("Owner").Nonce++
@@ -91,7 +91,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.NonceFailureCacheSize = 5
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false, nil)
 	defer node.StopAndWait()
 
 	count := 15

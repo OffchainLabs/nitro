@@ -13,7 +13,7 @@ import (
 func TestTransfer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, l2node, client := CreateTestL2(t, ctx)
+	l2info, l2node, client := CreateTestL2(t, ctx, nil)
 	defer l2node.StopAndWait()
 
 	l2info.GenerateAccount("User2")

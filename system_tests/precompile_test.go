@@ -21,7 +21,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
+	_, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
@@ -37,7 +37,7 @@ func TestViewLogReverts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
+	_, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
@@ -53,7 +53,7 @@ func TestCustomSolidityErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
+	_, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	callOpts := &bind.CallOpts{Context: ctx}
@@ -86,7 +86,7 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	info, node, client := CreateTestL2(t, ctx)
+	info, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	auth := info.GetDefaultTransactOpts("Faucet", ctx)

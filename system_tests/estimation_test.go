@@ -26,7 +26,7 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
+	l2info, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -51,7 +51,7 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
+	l2info, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -131,7 +131,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
+	l2info, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -143,7 +143,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
 	if arbmath.BigEquals(difficulty, common.Big1) {
-		Fail(t, "Expected difficulty to be 1 by got:", difficulty)
+		Fatal(t, "Expected difficulty to be 1 by got:", difficulty)
 	}
 }
 
@@ -151,7 +151,9 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2WithArbOS(t, ctx, 10)
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	l2info, node, client := CreateTestL2(t, ctx, chainConfig)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -163,7 +165,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
 	if arbmath.BigEquals(difficulty, common.Big1) {
-		Fail(t, "Expected difficulty to be 1 by got:", difficulty)
+		Fatal(t, "Expected difficulty to be 1 by got:", difficulty)
 	}
 }
 
@@ -171,7 +173,7 @@ func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
+	l2info, node, client := CreateTestL2(t, ctx, nil)
 	defer node.StopAndWait()
 
 	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)

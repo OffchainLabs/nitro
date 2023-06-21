@@ -28,7 +28,7 @@ func TestBloom(t *testing.T) {
 	nodeconfig := arbnode.ConfigDefaultL2Test()
 	nodeconfig.RPC.BloomBitsBlocks = 256
 	nodeconfig.RPC.BloomConfirms = 1
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false, nil)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("User2")
