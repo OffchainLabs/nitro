@@ -1,4 +1,4 @@
-package validator
+package edgetracker
 
 import (
 	"context"
@@ -21,22 +21,138 @@ import (
 
 var errBadOneStepProof = errors.New("bad one step proof data")
 
-func (et *edgeTracker) uniqueTrackerLogFields() logrus.Fields {
-	startHeight, startCommit := et.edge.StartCommitment()
-	endHeight, endCommit := et.edge.EndCommitment()
-	id := et.edge.Id()
-	return logrus.Fields{
-		"id":            containers.Trunc(id[:]),
-		"startHeight":   startHeight,
-		"startCommit":   containers.Trunc(startCommit.Bytes()),
-		"endHeight":     endHeight,
-		"endCommit":     containers.Trunc(endCommit.Bytes()),
-		"validatorName": et.cfg.validatorName,
-		"challengeType": et.edge.GetType(),
+var log = logrus.WithField("prefix", "edge-tracker")
+
+type ChallengeTracker interface {
+	IsTrackingEdge(protocol.EdgeId) bool
+	MarkTrackedEdge(protocol.EdgeId)
+}
+
+type Opt func(et *Tracker)
+
+func WithActInterval(d time.Duration) Opt {
+	return func(et *Tracker) {
+		et.actInterval = d
 	}
 }
 
-func (et *edgeTracker) act(ctx context.Context) error {
+func WithTimeReference(ref utilTime.Reference) Opt {
+	return func(et *Tracker) {
+		et.timeRef = ref
+	}
+}
+
+func WithValidatorName(name string) Opt {
+	return func(et *Tracker) {
+		et.validatorName = name
+	}
+}
+
+func WithValidatorAddress(addr common.Address) Opt {
+	return func(et *Tracker) {
+		et.validatorAddress = addr
+	}
+}
+
+func WithFSMOpts(opts ...fsm.Opt[edgeTrackerAction, edgeTrackerState]) Opt {
+	return func(et *Tracker) {
+		et.fsmOpts = opts
+	}
+}
+
+type HeightConfig struct {
+	StartBlockHeight           uint64
+	TopLevelClaimEndBatchCount uint64
+}
+
+type Tracker struct {
+	edge             protocol.SpecEdge
+	fsm              *fsm.Fsm[edgeTrackerAction, edgeTrackerState]
+	fsmOpts          []fsm.Opt[edgeTrackerAction, edgeTrackerState]
+	actInterval      time.Duration
+	timeRef          utilTime.Reference
+	validatorName    string
+	validatorAddress common.Address
+	chain            protocol.Protocol
+	stateProvider    l2stateprovider.Provider
+	chainWatcher     watcher.ConfirmationMetadataChecker
+	challengeManager ChallengeTracker
+	heightConfig     HeightConfig
+}
+
+func New(
+	edge protocol.SpecEdge,
+	chain protocol.Protocol,
+	stateProvider l2stateprovider.Provider,
+	chainWatcher watcher.ConfirmationMetadataChecker,
+	challengeManager ChallengeTracker,
+	heightConfig HeightConfig,
+	opts ...Opt,
+) (*Tracker, error) {
+	tr := &Tracker{
+		edge:             edge,
+		chain:            chain,
+		stateProvider:    stateProvider,
+		chainWatcher:     chainWatcher,
+		challengeManager: challengeManager,
+		heightConfig:     heightConfig,
+		actInterval:      time.Second,
+		timeRef:          utilTime.NewRealTimeReference(),
+	}
+	for _, o := range opts {
+		o(tr)
+	}
+	fsm, err := newEdgeTrackerFsm(
+		edgeStarted,
+		tr.fsmOpts...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	tr.fsm = fsm
+	return tr, nil
+}
+
+func (et *Tracker) TopLevelClaimEndBatchCount() uint64 {
+	return et.heightConfig.TopLevelClaimEndBatchCount
+}
+
+func (et *Tracker) StartBlockHeight() uint64 {
+	return et.heightConfig.StartBlockHeight
+}
+
+func (et *Tracker) Spawn(ctx context.Context) {
+	// No-op if we are already tracking this edge in our challenge manager.
+	if et.challengeManager.IsTrackingEdge(et.edge.Id()) {
+		return
+	}
+	fields := et.uniqueTrackerLogFields()
+	log.WithFields(fields).Info("Tracking edge")
+	et.challengeManager.MarkTrackedEdge(et.edge.Id())
+	t := et.timeRef.NewTicker(et.actInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C():
+			if et.shouldComplete() {
+				log.WithFields(fields).Infof("Edge tracker received notice of a confirmation, exiting")
+				return
+			}
+			if err := et.Act(ctx); err != nil {
+				log.Error(err)
+			}
+		case <-ctx.Done():
+			log.WithFields(fields).Debug("Edge tracker goroutine exiting")
+			return
+		}
+	}
+}
+
+func (et *Tracker) CurrentState() edgeTrackerState {
+	return et.fsm.Current().State
+}
+
+func (et *Tracker) Act(ctx context.Context) error {
 	fields := et.uniqueTrackerLogFields()
 	current := et.fsm.Current()
 	switch current.State {
@@ -98,30 +214,42 @@ func (et *edgeTracker) act(ctx context.Context) error {
 			log.WithError(err).WithFields(fields).Error("Could not bisect")
 			return et.fsm.Do(edgeBackToStart{})
 		}
-		firstTracker, err := newEdgeTracker(
-			ctx,
-			et.cfg,
+		firstTracker, err := New(
 			lowerChild,
-			et.startBlockHeight,
-			et.topLevelClaimEndBatchCount,
+			et.chain,
+			et.stateProvider,
+			et.chainWatcher,
+			et.challengeManager,
+			et.heightConfig,
+			WithActInterval(et.actInterval),
+			WithTimeReference(et.timeRef),
+			WithValidatorAddress(et.validatorAddress),
+			WithValidatorName(et.validatorName),
+			WithFSMOpts(et.fsmOpts...),
 		)
 		if err != nil {
 			log.WithError(err).WithFields(fields).Error("Could not create new edge tracker")
 			return et.fsm.Do(edgeBackToStart{})
 		}
-		secondTracker, err := newEdgeTracker(
-			ctx,
-			et.cfg,
+		secondTracker, err := New(
 			upperChild,
-			et.startBlockHeight,
-			et.topLevelClaimEndBatchCount,
+			et.chain,
+			et.stateProvider,
+			et.chainWatcher,
+			et.challengeManager,
+			et.heightConfig,
+			WithActInterval(et.actInterval),
+			WithTimeReference(et.timeRef),
+			WithValidatorAddress(et.validatorAddress),
+			WithValidatorName(et.validatorName),
+			WithFSMOpts(et.fsmOpts...),
 		)
 		if err != nil {
 			log.WithError(err).WithFields(fields).Error("Could not create new edge tracker")
 			return et.fsm.Do(edgeBackToStart{})
 		}
-		go firstTracker.spawn(ctx)
-		go secondTracker.spawn(ctx)
+		go firstTracker.Spawn(ctx)
+		go secondTracker.Spawn(ctx)
 		return et.fsm.Do(edgeAwaitConfirmation{})
 	case edgeConfirming:
 		wasConfirmed, err := et.tryToConfirm(ctx)
@@ -141,7 +269,26 @@ func (et *edgeTracker) act(ctx context.Context) error {
 	}
 }
 
-func (et *edgeTracker) childrenAreConfirmed(
+func (et *Tracker) shouldComplete() bool {
+	return et.fsm.Current().State == edgeConfirmed
+}
+
+func (et *Tracker) uniqueTrackerLogFields() logrus.Fields {
+	startHeight, startCommit := et.edge.StartCommitment()
+	endHeight, endCommit := et.edge.EndCommitment()
+	id := et.edge.Id()
+	return logrus.Fields{
+		"id":            containers.Trunc(id[:]),
+		"startHeight":   startHeight,
+		"startCommit":   containers.Trunc(startCommit.Bytes()),
+		"endHeight":     endHeight,
+		"endCommit":     containers.Trunc(endCommit.Bytes()),
+		"validatorName": et.validatorName,
+		"challengeType": et.edge.GetType(),
+	}
+}
+
+func (et *Tracker) childrenAreConfirmed(
 	ctx context.Context,
 	chalManager protocol.SpecChallengeManager,
 ) (bool, error) {
@@ -178,7 +325,7 @@ func (et *edgeTracker) childrenAreConfirmed(
 	return lowerStatus == protocol.EdgeConfirmed && upperStatus == protocol.EdgeConfirmed, nil
 }
 
-func (et *edgeTracker) tryToConfirm(ctx context.Context) (bool, error) {
+func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	status, err := et.edge.Status(ctx)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get edge status")
@@ -190,7 +337,7 @@ func (et *edgeTracker) tryToConfirm(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, errors.Wrap(err, "could not get prev assertion id")
 	}
-	manager, err := et.cfg.chain.SpecChallengeManager(ctx)
+	manager, err := et.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get challenge manager")
 	}
@@ -209,7 +356,7 @@ func (et *edgeTracker) tryToConfirm(ctx context.Context) (bool, error) {
 	}
 
 	// Check if we can confirm by claim.
-	claimingEdge, ok := et.cfg.chainWatcher.ConfirmedEdgeWithClaimExists(
+	claimingEdge, ok := et.chainWatcher.ConfirmedEdgeWithClaimExists(
 		assertionId,
 		protocol.ClaimId(et.edge.Id()),
 	)
@@ -222,7 +369,7 @@ func (et *edgeTracker) tryToConfirm(ctx context.Context) (bool, error) {
 	}
 
 	// Check if we can confirm by time.
-	timer, ancestors, err := et.cfg.chainWatcher.ComputeHonestPathTimer(ctx, assertionId, et.edge.Id())
+	timer, ancestors, err := et.chainWatcher.ComputeHonestPathTimer(ctx, assertionId, et.edge.Id())
 	if err != nil {
 		return false, errors.Wrap(err, "could not compute honest path timer")
 	}
@@ -242,7 +389,7 @@ func (et *edgeTracker) tryToConfirm(ctx context.Context) (bool, error) {
 
 // Determines the bisection point from parentHeight to toHeight and returns a history
 // commitment with a prefix proof for the action based on the challenge type.
-func (et *edgeTracker) determineBisectionHistoryWithProof(
+func (et *Tracker) determineBisectionHistoryWithProof(
 	ctx context.Context,
 ) (commitments.History, []byte, error) {
 	startHeight, _ := et.edge.StartCommitment()
@@ -252,11 +399,11 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 		return commitments.History{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", startHeight, endHeight)
 	}
 	if et.edge.GetType() == protocol.BlockChallengeEdge {
-		historyCommit, commitErr := et.cfg.stateManager.HistoryCommitmentUpToBatch(ctx, et.startBlockHeight, et.startBlockHeight+bisectTo, et.topLevelClaimEndBatchCount)
+		historyCommit, commitErr := et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, et.heightConfig.StartBlockHeight+bisectTo, et.heightConfig.TopLevelClaimEndBatchCount)
 		if commitErr != nil {
 			return commitments.History{}, nil, commitErr
 		}
-		proof, proofErr := et.cfg.stateManager.PrefixProofUpToBatch(ctx, et.startBlockHeight, bisectTo, uint64(endHeight), et.topLevelClaimEndBatchCount)
+		proof, proofErr := et.stateProvider.PrefixProofUpToBatch(ctx, et.heightConfig.StartBlockHeight, bisectTo, uint64(endHeight), et.heightConfig.TopLevelClaimEndBatchCount)
 		if proofErr != nil {
 			return commitments.History{}, nil, proofErr
 		}
@@ -277,14 +424,14 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 
 	switch et.edge.GetType() {
 	case protocol.BigStepChallengeEdge:
-		historyCommit, commitErr = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
-		proof, proofErr = et.cfg.stateManager.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
+		historyCommit, commitErr = et.stateProvider.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
+		proof, proofErr = et.stateProvider.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
 	case protocol.SmallStepChallengeEdge:
 		fromBigStep := uint64(originHeights.BigStepChallengeOriginHeight)
 		toBigStep := fromBigStep + 1
 
-		historyCommit, commitErr = et.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, fromBigStep, toBigStep, bisectTo)
-		proof, proofErr = et.cfg.stateManager.SmallStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, fromBigStep, toBigStep, bisectTo, uint64(endHeight))
+		historyCommit, commitErr = et.stateProvider.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, fromBigStep, toBigStep, bisectTo)
+		proof, proofErr = et.stateProvider.SmallStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, fromBigStep, toBigStep, bisectTo, uint64(endHeight))
 	default:
 		return commitments.History{}, nil, fmt.Errorf("unsupported challenge type: %s", et.edge.GetType())
 	}
@@ -297,7 +444,7 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 	return historyCommit, proof, nil
 }
 
-func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.SpecEdge, error) {
+func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.SpecEdge, error) {
 	historyCommit, proof, err := et.determineBisectionHistoryWithProof(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -309,7 +456,7 @@ func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.
 		return nil, nil, errors.Wrapf(
 			err,
 			"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
-			et.cfg.validatorName,
+			et.validatorName,
 			bisectTo,
 			containers.Trunc(historyCommit.Merkle.Bytes()),
 			endHeight,
@@ -317,7 +464,7 @@ func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.
 		)
 	}
 	log.WithFields(logrus.Fields{
-		"name":               et.cfg.validatorName,
+		"name":               et.validatorName,
 		"challengeType":      et.edge.GetType(),
 		"bisectedFrom":       endHeight,
 		"bisectedFromMerkle": containers.Trunc(endCommit.Bytes()),
@@ -327,7 +474,7 @@ func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.
 	return firstChild, secondChild, nil
 }
 
-func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
+func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	originHeights, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {
 		return errors.Wrap(err, "could not get top level claim height")
@@ -340,7 +487,7 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 	endHeight, _ := et.edge.EndCommitment()
 
 	fields := logrus.Fields{
-		"name":                et.cfg.validatorName,
+		"name":                et.validatorName,
 		"edgeStartHeight":     startHeight,
 		"edgeEndHeight":       endHeight,
 		"fromAssertionHeight": fromAssertionHeight,
@@ -353,55 +500,55 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 	var startEndPrefixProof []byte
 	switch et.edge.GetType() {
 	case protocol.BlockChallengeEdge:
-		fromBlock := fromAssertionHeight + et.startBlockHeight
-		toBlock := toAssertionHeight + et.startBlockHeight
-		startHistory, err = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, 0)
+		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
+		toBlock := toAssertionHeight + et.heightConfig.StartBlockHeight
+		startHistory, err = et.stateProvider.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, 0)
 		if err != nil {
 			return err
 		}
-		endHistory, err = et.cfg.stateManager.BigStepLeafCommitment(ctx, fromBlock, toBlock)
+		endHistory, err = et.stateProvider.BigStepLeafCommitment(ctx, fromBlock, toBlock)
 		if err != nil {
 			return err
 		}
-		startParentCommitment, err = et.cfg.stateManager.HistoryCommitmentUpToBatch(ctx, et.startBlockHeight, fromBlock, et.topLevelClaimEndBatchCount)
+		startParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, fromBlock, et.heightConfig.TopLevelClaimEndBatchCount)
 		if err != nil {
 			return err
 		}
-		endParentCommitment, err = et.cfg.stateManager.HistoryCommitmentUpToBatch(ctx, et.startBlockHeight, toBlock, et.topLevelClaimEndBatchCount)
+		endParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, toBlock, et.heightConfig.TopLevelClaimEndBatchCount)
 		if err != nil {
 			return err
 		}
-		startEndPrefixProof, err = et.cfg.stateManager.BigStepPrefixProof(ctx, fromBlock, toBlock, 0, endHistory.Height)
+		startEndPrefixProof, err = et.stateProvider.BigStepPrefixProof(ctx, fromBlock, toBlock, 0, endHistory.Height)
 		if err != nil {
 			return err
 		}
 	case protocol.BigStepChallengeEdge:
-		fromBlock := fromAssertionHeight + et.startBlockHeight
-		toBlock := toAssertionHeight + et.startBlockHeight
-		startHistory, err = et.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight), 0)
+		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
+		toBlock := toAssertionHeight + et.heightConfig.StartBlockHeight
+		startHistory, err = et.stateProvider.SmallStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight), 0)
 		if err != nil {
 			return err
 		}
-		endHistory, err = et.cfg.stateManager.SmallStepLeafCommitment(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight))
+		endHistory, err = et.stateProvider.SmallStepLeafCommitment(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight))
 		if err != nil {
 			return err
 		}
-		startParentCommitment, err = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(startHeight))
+		startParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(startHeight))
 		if err != nil {
 			return err
 		}
-		endParentCommitment, err = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(endHeight))
+		endParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, fromBlock, toBlock, uint64(endHeight))
 		if err != nil {
 			return err
 		}
-		startEndPrefixProof, err = et.cfg.stateManager.SmallStepPrefixProof(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight), 0, endHistory.Height)
+		startEndPrefixProof, err = et.stateProvider.SmallStepPrefixProof(ctx, fromBlock, toBlock, uint64(startHeight), uint64(endHeight), 0, endHistory.Height)
 		if err != nil {
 			return err
 		}
 	default:
 		return errors.New("unsupported subchallenge type for creating leaf commitment")
 	}
-	manager, err := et.cfg.chain.SpecChallengeManager(ctx)
+	manager, err := et.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return err
 	}
@@ -421,21 +568,27 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 	fields["startCommitment"] = containers.Trunc(startHistory.Merkle.Bytes())
 	fields["subChallengeType"] = addedLeaf.GetType()
 	log.WithFields(fields).Info("Created subchallenge edge")
-	tracker, err := newEdgeTracker(
-		ctx,
-		et.cfg,
+	tracker, err := New(
 		addedLeaf,
-		et.startBlockHeight,
-		et.topLevelClaimEndBatchCount,
+		et.chain,
+		et.stateProvider,
+		et.chainWatcher,
+		et.challengeManager,
+		et.heightConfig,
+		WithActInterval(et.actInterval),
+		WithTimeReference(et.timeRef),
+		WithValidatorAddress(et.validatorAddress),
+		WithValidatorName(et.validatorName),
+		WithFSMOpts(et.fsmOpts...),
 	)
 	if err != nil {
 		return err
 	}
-	go tracker.spawn(ctx)
+	go tracker.Spawn(ctx)
 	return nil
 }
 
-func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
+func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	fields := et.uniqueTrackerLogFields()
 	log.WithFields(fields).Info("Submitting one-step-proof to protocol")
 	originHeights, err := et.edge.TopLevelClaimHeight(ctx)
@@ -452,22 +605,18 @@ func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	parentAssertionCreationInfo, err := et.cfg.chain.ReadAssertionCreationInfo(ctx, assertionId)
-	if err != nil {
-		return err
-	}
-	manager, err := et.cfg.chain.SpecChallengeManager(ctx)
+	parentAssertionCreationInfo, err := et.chain.ReadAssertionCreationInfo(ctx, assertionId)
 	if err != nil {
 		return err
 	}
 	cfgSnapshot := &l2stateprovider.ConfigSnapshot{
 		RequiredStake:           parentAssertionCreationInfo.RequiredStake,
-		ChallengeManagerAddress: manager.Address(),
+		ChallengeManagerAddress: parentAssertionCreationInfo.ChallengeManager,
 		ConfirmPeriodBlocks:     parentAssertionCreationInfo.ConfirmPeriodBlocks,
 		WasmModuleRoot:          parentAssertionCreationInfo.WasmModuleRoot,
 		InboxMaxCount:           parentAssertionCreationInfo.InboxMaxCount,
 	}
-	data, beforeStateInclusionProof, afterStateInclusionProof, err := et.cfg.stateManager.OneStepProofData(
+	data, beforeStateInclusionProof, afterStateInclusionProof, err := et.stateProvider.OneStepProofData(
 		ctx,
 		cfgSnapshot,
 		parentAssertionCreationInfo.AfterState,
@@ -481,6 +630,10 @@ func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrapf(errBadOneStepProof, "could not get one step data: %v", err)
 	}
+	manager, err := et.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return err
+	}
 	if err = manager.ConfirmEdgeByOneStepProof(
 		ctx,
 		et.edge.Id(),
@@ -492,81 +645,6 @@ func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
 	}
 	log.WithFields(fields).Info("Succeeded one-step-proof for edge and confirmed it as winner")
 	return nil
-}
-
-type edgeTrackerConfig struct {
-	actEveryNSeconds time.Duration
-	timeRef          utilTime.Reference
-	chain            protocol.Protocol
-	stateManager     l2stateprovider.Provider
-	validatorName    string
-	validatorAddress common.Address
-	chainWatcher     watcher.ConfirmationMetadataChecker
-	challengeManager *Manager
-}
-
-type edgeTracker struct {
-	cfg                        *edgeTrackerConfig
-	edge                       protocol.SpecEdge
-	fsm                        *fsm.Fsm[edgeTrackerAction, edgeTrackerState]
-	startBlockHeight           uint64
-	topLevelClaimEndBatchCount uint64
-}
-
-func newEdgeTracker(
-	_ context.Context,
-	cfg *edgeTrackerConfig,
-	edge protocol.SpecEdge,
-	startHeightOffset uint64,
-	topLevelClaimEndBatchCount uint64,
-	fsmOpts ...fsm.Opt[edgeTrackerAction, edgeTrackerState],
-) (*edgeTracker, error) {
-	fsmOpts = append(fsmOpts, fsm.WithTrackedTransitions[edgeTrackerAction, edgeTrackerState]())
-	fsm, err := newEdgeTrackerFsm(
-		edgeStarted,
-		fsmOpts...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &edgeTracker{
-		cfg:                        cfg,
-		edge:                       edge,
-		fsm:                        fsm,
-		startBlockHeight:           startHeightOffset,
-		topLevelClaimEndBatchCount: topLevelClaimEndBatchCount,
-	}, nil
-}
-
-func (et *edgeTracker) spawn(ctx context.Context) {
-	// No-op if we are already tracking this edge in our challenge manager.
-	if et.cfg.challengeManager.trackedEdgeIds.Has(et.edge.Id()) {
-		return
-	}
-	fields := et.uniqueTrackerLogFields()
-	log.WithFields(fields).Info("Tracking edge")
-	et.cfg.challengeManager.trackedEdgeIds.Insert(et.edge.Id())
-	t := et.cfg.timeRef.NewTicker(et.cfg.actEveryNSeconds)
-	defer t.Stop()
-	for {
-		select {
-		case <-t.C():
-			if et.shouldComplete() {
-				log.WithFields(fields).Infof("Edge tracker received notice of a confirmation, exiting")
-				return
-			}
-			if err := et.act(ctx); err != nil {
-				log.Error(err)
-			}
-		case <-ctx.Done():
-			log.WithFields(fields).Debug("Edge tracker goroutine exiting")
-			return
-		}
-	}
-}
-
-func (et *edgeTracker) shouldComplete() bool {
-	return et.fsm.Current().State == edgeConfirmed
 }
 
 func canOneStepProve(edge protocol.SpecEdge) (bool, error) {

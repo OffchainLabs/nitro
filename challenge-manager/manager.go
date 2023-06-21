@@ -1,4 +1,4 @@
-package validator
+package challengemanager
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var log = logrus.WithField("prefix", "validator")
+var log = logrus.WithField("prefix", "challenge-manager")
 
 type Opt = func(val *Manager)
 
@@ -42,7 +42,7 @@ type Manager struct {
 	trackedEdgeIds          *threadsafe.Set[protocol.EdgeId]
 }
 
-// WithName is a human-readable identifier for this validator client for logging purposes.
+// WithName is a human-readable identifier for this challenge manager for logging purposes.
 func WithName(name string) Opt {
 	return func(val *Manager) {
 		val.name = name
@@ -64,8 +64,7 @@ func WithEdgeTrackerWakeInterval(d time.Duration) Opt {
 	}
 }
 
-// New sets up a validator client instances provided a protocol, state manager,
-// and additional options.
+// New sets up a challenge manager instance provided a protocol, state manager, and additional options.
 func New(
 	ctx context.Context,
 	chain protocol.Protocol,
@@ -74,7 +73,7 @@ func New(
 	rollupAddr common.Address,
 	opts ...Opt,
 ) (*Manager, error) {
-	v := &Manager{
+	m := &Manager{
 		backend:                 backend,
 		chain:                   chain,
 		stateManager:            stateManager,
@@ -87,9 +86,9 @@ func New(
 		trackedEdgeIds:          threadsafe.NewSet[protocol.EdgeId](),
 	}
 	for _, o := range opts {
-		o(v)
+		o(m)
 	}
-	chalManager, err := v.chain.SpecChallengeManager(ctx)
+	chalManager, err := m.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -107,34 +106,42 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	v.rollup = rollup
-	v.rollupFilterer = rollupFilterer
-	v.chalManagerAddr = chalManagerAddr
-	v.chalManager = chalManagerFilterer
-	v.watcher = watcher.New(v.chain, v.stateManager, backend, v.chainWatcherInterval, v.name)
-	return v, nil
+	m.rollup = rollup
+	m.rollupFilterer = rollupFilterer
+	m.chalManagerAddr = chalManagerAddr
+	m.chalManager = chalManagerFilterer
+	m.watcher = watcher.New(m.chain, m.stateManager, backend, m.chainWatcherInterval, m.name)
+	return m, nil
 }
 
-func (v *Manager) Start(ctx context.Context) {
+func (m *Manager) IsTrackingEdge(edgeId protocol.EdgeId) bool {
+	return m.trackedEdgeIds.Has(edgeId)
+}
+
+func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId) {
+	m.trackedEdgeIds.Insert(edgeId)
+}
+
+func (m *Manager) Start(ctx context.Context) {
 	log.WithField(
 		"address",
-		v.address.Hex(),
-	).Info("Started validator client")
+		m.address.Hex(),
+	).Info("Started challenge manager")
 
 	// Start watching for ongoing chain events in the background.
-	go v.watcher.Watch(ctx, v.initialSyncCompleted)
+	go m.watcher.Watch(ctx, m.initialSyncCompleted)
 
 	// Then, wait until the chain event watcher has synced up with
 	// all edges from the chain since the latest confirmed assertion up to the latest block number.
-	if err := v.syncEdges(ctx); err != nil {
+	if err := m.syncEdges(ctx); err != nil {
 		log.WithError(err).Errorf("Could sync with edges")
 	}
 }
 
 // waitForSync waits for a notificataion that initial sync of onchain edges is complete.
-func (v *Manager) waitForSync(ctx context.Context) error {
+func (m *Manager) waitForSync(ctx context.Context) error {
 	select {
-	case <-v.initialSyncCompleted:
+	case <-m.initialSyncCompleted:
 		return nil
 	case <-ctx.Done():
 		return errors.New("context closed, exiting goroutine")

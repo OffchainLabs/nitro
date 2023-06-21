@@ -1,4 +1,4 @@
-package validator
+package challengemanager
 
 import (
 	"context"
@@ -23,6 +23,6 @@ func Test_getEdgeTrackers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, trackers, 1)
 
-	require.Equal(t, uint64(1), trackers[0].startBlockHeight)
-	require.Equal(t, uint64(0x64), trackers[0].topLevelClaimEndBatchCount)
+	require.Equal(t, uint64(1), trackers[0].StartBlockHeight())
+	require.Equal(t, uint64(0x64), trackers[0].TopLevelClaimEndBatchCount())
 }

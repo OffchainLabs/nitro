@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "edge-tracker",
+    srcs = [
+        "fsm_states.go",
+        "tracker.go",
+        "transition_table.go",
+    ],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//challenge-manager/chain-watcher",
+        "//challenge-manager/challenge-tree",
+        "//containers",
+        "//containers/fsm",
+        "//layer2-state-provider",
+        "//math",
+        "//state-commitments/history",
+        "//time",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_sirupsen_logrus//:logrus",
+    ],
+)

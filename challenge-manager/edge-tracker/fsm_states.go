@@ -1,4 +1,4 @@
-package validator
+package edgetracker
 
 import (
 	"fmt"

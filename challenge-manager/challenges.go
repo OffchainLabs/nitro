@@ -1,10 +1,11 @@
-package validator
+package challengemanager
 
 import (
 	"context"
 	"fmt"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -34,26 +35,25 @@ func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionI
 		return errors.New("assertion creation info inbox max count was not a uint64")
 	}
 	// Start tracking the challenge.
-	tracker, err := newEdgeTracker(
-		ctx,
-		&edgeTrackerConfig{
-			timeRef:          v.timeRef,
-			actEveryNSeconds: v.edgeTrackerWakeInterval,
-			chain:            v.chain,
-			stateManager:     v.stateManager,
-			validatorName:    v.name,
-			validatorAddress: v.address,
-			chainWatcher:     v.watcher,
-			challengeManager: v,
-		},
+	tracker, err := edgetracker.New(
 		levelZeroEdge,
-		0,
-		creationInfo.InboxMaxCount.Uint64(),
+		v.chain,
+		v.stateManager,
+		v.watcher,
+		v,
+		edgetracker.HeightConfig{
+			StartBlockHeight:           0,
+			TopLevelClaimEndBatchCount: creationInfo.InboxMaxCount.Uint64(),
+		},
+		edgetracker.WithActInterval(v.edgeTrackerWakeInterval),
+		edgetracker.WithTimeReference(v.timeRef),
+		edgetracker.WithValidatorName(v.name),
+		edgetracker.WithValidatorAddress(v.address),
 	)
 	if err != nil {
 		return err
 	}
-	go tracker.spawn(ctx)
+	go tracker.Spawn(ctx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name

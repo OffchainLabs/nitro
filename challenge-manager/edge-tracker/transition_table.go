@@ -1,4 +1,4 @@
-package validator
+package edgetracker
 
 import (
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/fsm"
