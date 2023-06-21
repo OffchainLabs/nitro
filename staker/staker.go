@@ -514,11 +514,19 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
 		if stakeIsTooOutdated || stakeIsUnwanted {
 			// Note: we must have an address if rawInfo != nil
-			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), walletAddressOrZero)
+			auth, err := s.builder.Auth(ctx)
+			if err != nil {
+				return nil, err
+			}
+			_, err = s.rollup.ReturnOldDeposit(auth, walletAddressOrZero)
 			if err != nil {
 				return nil, fmt.Errorf("error returning old deposit (from our staker %v): %w", walletAddressOrZero, err)
 			}
-			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
+			auth, err = s.builder.Auth(ctx)
+			if err != nil {
+				return nil, err
+			}
+			_, err = s.rollup.WithdrawStakerFunds(auth)
 			if err != nil {
 				return nil, fmt.Errorf("error withdrawing staker funds from our staker %v: %w", walletAddressOrZero, err)
 			}
@@ -533,7 +541,11 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			return nil, fmt.Errorf("error checking withdrawable funds of our staker %v: %w", walletAddressOrZero, err)
 		}
 		if withdrawable.Sign() > 0 {
-			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
+			auth, err := s.builder.Auth(ctx)
+			if err != nil {
+				return nil, err
+			}
+			_, err = s.rollup.WithdrawStakerFunds(auth)
 			if err != nil {
 				return nil, fmt.Errorf("error withdrawing our staker %v funds: %w", walletAddressOrZero, err)
 			}
@@ -651,7 +663,11 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 		// We'll return early if we already have a stake
 		if info.StakeExists {
-			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
+			auth, err := s.builder.Auth(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = s.rollup.StakeOnNewNode(auth, action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
@@ -663,8 +679,12 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		if err != nil {
 			return fmt.Errorf("error getting current required stake: %w", err)
 		}
+		auth, err := s.builder.AuthWithAmount(ctx, stakeAmount)
+		if err != nil {
+			return err
+		}
 		_, err = s.rollup.NewStakeOnNewNode(
-			s.builder.AuthWithAmount(ctx, stakeAmount),
+			auth,
 			action.assertion.AsSolidityStruct(),
 			action.hash,
 			action.prevInboxMaxCount,
@@ -693,7 +713,11 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		log.Info("staking on existing node", "node", action.number)
 		// We'll return early if we already havea stake
 		if info.StakeExists {
-			_, err = s.rollup.StakeOnExistingNode(s.builder.Auth(ctx), action.number, action.hash)
+			auth, err := s.builder.Auth(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = s.rollup.StakeOnExistingNode(auth, action.number, action.hash)
 			if err != nil {
 				return fmt.Errorf("error staking on existing node: %w", err)
 			}
@@ -705,8 +729,12 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		if err != nil {
 			return fmt.Errorf("error getting current required stake: %w", err)
 		}
+		auth, err := s.builder.AuthWithAmount(ctx, stakeAmount)
+		if err != nil {
+			return err
+		}
 		_, err = s.rollup.NewStakeOnExistingNode(
-			s.builder.AuthWithAmount(ctx, stakeAmount),
+			auth,
 			action.number,
 			action.hash,
 		)
@@ -782,8 +810,12 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 			return fmt.Errorf("error looking up node %v: %w", conflictInfo.Node2, err)
 		}
 		log.Warn("creating challenge", "node1", conflictInfo.Node1, "node2", conflictInfo.Node2, "otherStaker", staker)
+		auth, err := s.builder.Auth(ctx)
+		if err != nil {
+			return err
+		}
 		_, err = s.rollup.CreateChallenge(
-			s.builder.Auth(ctx),
+			auth,
 			[2]common.Address{staker1, staker2},
 			[2]uint64{conflictInfo.Node1, conflictInfo.Node2},
 			node1Info.MachineStatuses(),
