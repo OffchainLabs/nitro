@@ -4,11 +4,11 @@
 package genericconf
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 

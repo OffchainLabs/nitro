@@ -5,12 +5,12 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -365,7 +365,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		if mustDeref {
 			v.recordingDatabase.Dereference(prevHeader)
 		}
-		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
+		return fmt.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
 	v.LaunchThread(func(ctx context.Context) {
 		if mustDeref {
@@ -603,15 +603,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			defer cancel()
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
-			if err != nil && validationCtx.Err() == nil {
+			if err != nil {
 				validationStatus.replaceStatus(Prepared, RecordFailed)
-				log.Error("error preparing validation", "err", err)
+				if validationCtx.Err() == nil {
+					log.Error("error preparing validation", "err", err)
+				}
 				return
 			}
 			input, err := validationStatus.Entry.ToInput()
-			if err != nil && validationCtx.Err() == nil {
+			if err != nil {
 				validationStatus.replaceStatus(Prepared, RecordFailed)
-				log.Error("error preparing validation", "err", err)
+				if validationCtx.Err() == nil {
+					log.Error("error preparing validation", "err", err)
+				}
 				return
 			}
 			for _, moduleRoot := range wasmRoots {
@@ -821,7 +825,7 @@ func (v *BlockValidator) progressValidated() {
 
 func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
-		return errors.Errorf("cannot handle AssumeValid while running")
+		return fmt.Errorf("cannot handle AssumeValid while running")
 	}
 
 	v.reorgMutex.Lock()

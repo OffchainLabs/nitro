@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/pkg/errors"
 )
 
 type StatelessBlockValidator struct {
@@ -418,7 +418,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, keepReference bool) error {
 	if e.Stage != ReadyForRecord {
-		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
+		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.PrevBlockHeader == nil {
 		e.Stage = Recorded

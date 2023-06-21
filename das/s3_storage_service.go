@@ -148,9 +148,8 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	if s3s.discardAfterTimeout {
 		return arbstate.DiscardAfterDataTimeout, nil
-	} else {
-		return arbstate.KeepForever, nil
 	}
+	return arbstate.KeepForever, nil
 }
 
 func (s3s *S3StorageService) String() string {

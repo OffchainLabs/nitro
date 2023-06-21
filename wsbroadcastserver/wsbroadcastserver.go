@@ -5,6 +5,7 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,7 +20,6 @@ import (
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -468,7 +468,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		s.acceptDescMutex.Unlock()
 		if err != nil {
 			log.Warn("error in poller.Resume", "err", err)
-			s.fatalErrChan <- errors.Wrap(err, "error in poller.Resume")
+			s.fatalErrChan <- fmt.Errorf("error in poller.Resume: %w", err)
 			return
 		}
 	})
