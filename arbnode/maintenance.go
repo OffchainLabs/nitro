@@ -31,8 +31,8 @@ type MaintenanceRunner struct {
 }
 
 type MaintenanceConfig struct {
-	TimeOfDay  string                `koanf:"time-of-day" reload:"hot"`
-	LockConfig SimpleRedisLockConfig `koanf:"maintenance-lock" reload:"hot"`
+	TimeOfDay string                `koanf:"time-of-day" reload:"hot"`
+	Lock      SimpleRedisLockConfig `koanf:"maintenance-lock" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
@@ -94,7 +94,7 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 	}
 
 	if seqCoordinator != nil {
-		c := func() *SimpleRedisLockConfig { return &cfg.LockConfig }
+		c := func() *SimpleRedisLockConfig { return &cfg.Lock }
 		r := func() bool { return true } // always ready to lock
 		rl, err := NewSimpleRedisLock(seqCoordinator.Client, c, r)
 		if err != nil {
