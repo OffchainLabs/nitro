@@ -157,10 +157,11 @@ func TestAddEdge(t *testing.T) {
 }
 
 type mockMetadataReader struct {
-	assertionId     protocol.AssertionId
-	assertionErr    error
-	claimHeights    *protocol.OriginHeights
-	claimHeightsErr error
+	assertionId              protocol.AssertionId
+	assertionErr             error
+	claimHeights             *protocol.OriginHeights
+	claimHeightsErr          error
+	unrivaledAssertionBlocks uint64
 }
 
 func (m *mockMetadataReader) TopLevelAssertion(
@@ -169,10 +170,10 @@ func (m *mockMetadataReader) TopLevelAssertion(
 	return m.assertionId, m.assertionErr
 }
 
-func (*mockMetadataReader) AssertionUnrivaledTime(
+func (m *mockMetadataReader) AssertionUnrivaledBlocks(
 	_ context.Context, _ protocol.AssertionId,
 ) (uint64, error) {
-	return 0, nil
+	return m.unrivaledAssertionBlocks, nil
 }
 
 func (m *mockMetadataReader) TopLevelClaimHeights(

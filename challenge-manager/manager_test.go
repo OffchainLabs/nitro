@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// --
 var _ = ChallengeCreator(&Manager{})
 
 func init() {

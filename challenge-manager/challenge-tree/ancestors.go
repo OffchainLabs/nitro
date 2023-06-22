@@ -60,7 +60,7 @@ func (ht *HonestChallengeTree) HonestPathTimer(
 
 	// Get assertion's unrivaled time and use that as the start
 	// of our path timer.
-	timer, err := ht.metadataReader.AssertionUnrivaledTime(ctx, ht.topLevelAssertionId)
+	timer, err := ht.metadataReader.AssertionUnrivaledBlocks(ctx, ht.topLevelAssertionId)
 	if err != nil {
 		return 0, nil, err
 	}

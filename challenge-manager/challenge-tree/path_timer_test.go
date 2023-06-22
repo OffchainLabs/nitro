@@ -262,12 +262,15 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 // edge inherits the local timers of all its honest ancestors through a cumulative update
 // for confirmation purposes.
 func TestPathTimer_AllChallengeLevels(t *testing.T) {
+	unrivaledAssertionBlocks := uint64(10) // Should incorporate the assertion's unrivaled blocks into the total timer.
 	ht := &HonestChallengeTree{
 		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
 		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		metadataReader:                &mockMetadataReader{},
+		metadataReader: &mockMetadataReader{
+			unrivaledAssertionBlocks: unrivaledAssertionBlocks,
+		},
 	}
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
@@ -313,8 +316,9 @@ func TestPathTimer_AllChallengeLevels(t *testing.T) {
 	}
 	require.Equal(t, wantedAncestors, ancestors)
 
-	// This gives a total of 14 seconds unrivaled along the honest path.
-	require.Equal(t, PathTimer(14), timer)
+	// This gives a total of 14 seconds unrivaled along the honest path plus the top-level assertion's
+	// total amount of blocks unrivaled.
+	require.Equal(t, PathTimer(14+unrivaledAssertionBlocks), timer)
 }
 
 func Test_localTimer(t *testing.T) {

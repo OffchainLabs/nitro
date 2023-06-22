@@ -90,11 +90,13 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		edgeId,
 	).Return(heights, nil)
+
+	assertionUnrivaledBlocks := uint64(5)
 	mockChain.On(
-		"AssertionUnrivaledTime",
+		"AssertionUnrivaledBlocks",
 		ctx,
 		assertionId,
-	).Return(uint64(0), nil)
+	).Return(assertionUnrivaledBlocks, nil)
 
 	mockChallengeManager.On(
 		"GetEdge", ctx, edgeId,
@@ -139,9 +141,10 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	chal, ok := watcher.challenges.TryGet(assertionId)
 	require.Equal(t, true, ok)
 
-	// Expect it to exist and be unrivaled for 10 blocks if we query at block number = 10.
+	// Expect it to exist and be unrivaled for 10 blocks if we query at block number = 10,
+	// plus the number of blocks the top level assertion was unrivaled (5).
 	blockNumber := uint64(10)
 	pathTimer, _, err := chal.honestEdgeTree.HonestPathTimer(ctx, edgeId, blockNumber)
 	require.NoError(t, err)
-	require.Equal(t, pathTimer, challengetree.PathTimer(blockNumber))
+	require.Equal(t, pathTimer, challengetree.PathTimer(blockNumber+assertionUnrivaledBlocks))
 }

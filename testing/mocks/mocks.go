@@ -425,7 +425,7 @@ func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionId
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) AssertionUnrivaledTime(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
+func (m *MockProtocol) AssertionUnrivaledBlocks(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
 	args := m.Called(ctx, assertionId)
 	return args.Get(0).(uint64), args.Error(1)
 }
