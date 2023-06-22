@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -19,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -66,6 +68,9 @@ type BatchPoster struct {
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 	backlog      uint64    // An estimate of the number of unposted batches
+
+	batchReverted         atomic.Bool   // indicates whether data poster batch was reverted
+	stopPollingForReverts chan struct{} // channel for stopping batch revert detections
 }
 
 type BatchPosterConfig struct {
@@ -205,7 +210,66 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
+	b.poolForReverts()
 	return b, nil
+}
+
+func (b *BatchPoster) checkReverts(ctx context.Context, hash common.Hash) (bool, error) {
+	block, err := b.l1Reader.Client().BlockByHash(ctx, hash)
+	if err != nil {
+		return false, fmt.Errorf("getting block by hash: %w", err)
+	}
+	for idx, tx := range block.Transactions() {
+		from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
+		if err != nil {
+			return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
+		}
+		if !bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
+			r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+			if err != nil {
+				return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+			}
+			if r.Status == types.ReceiptStatusFailed {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// poolForReverts runs a gouroutine that listens to l1 block headers, checks
+// if any transaction made by batch poster was reverted.
+func (b *BatchPoster) poolForReverts() {
+	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
+	defer unsubscribe()
+
+	go func() {
+		ctx := context.Background()
+		for {
+			// Poll until:
+			// - L1 headers reader channel is closed, or
+			// - polling is cancelled from outside (through returned channel), or
+			// - we see a transaction in the block from dataposter that was reverted.
+			select {
+			case h, closed := <-headerCh:
+				if closed {
+					log.Info("L1 headers channel has been closed")
+					return
+				}
+				reverted, err := b.checkReverts(ctx, h.Hash())
+				if err != nil {
+					log.Error("Checking batch reverts", "error", err)
+					continue
+				}
+				if reverted {
+					b.batchReverted.Store(true)
+					return
+				}
+			case <-b.stopPollingForReverts:
+				return
+			}
+		}
+	}()
 }
 
 func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
@@ -554,6 +618,9 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
+	if b.batchReverted.Load() {
+		log.Error("Batch was reverted, not posting any more batches")
+	}
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
@@ -749,4 +816,5 @@ func (b *BatchPoster) StopAndWait() {
 	b.StopWaiter.StopAndWait()
 	b.dataPoster.StopAndWait()
 	b.redisLock.StopAndWait()
+	b.stopPollingForReverts <- struct{}{}
 }
