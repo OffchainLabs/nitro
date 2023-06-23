@@ -187,22 +187,6 @@ func shouldPreserveFalse(_ *types.Header) bool {
 	return false
 }
 
-func ReorgToBlock(chain *core.BlockChain, blockNum uint64) (*types.Block, error) {
-	genesisNum := chain.Config().ArbitrumChainParams.GenesisBlockNum
-	if blockNum < genesisNum {
-		return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesisNum)
-	}
-	reorgingToBlock := chain.GetBlockByNumber(blockNum)
-	if reorgingToBlock == nil {
-		return nil, fmt.Errorf("didn't find reorg target block number %v", blockNum)
-	}
-	err := chain.ReorgToOldBlock(reorgingToBlock)
-	if err != nil {
-		return nil, err
-	}
-	return reorgingToBlock, nil
-}
-
 func init() {
 	gethhook.RequireHookedGeth()
 }

@@ -474,18 +474,15 @@ func ConfigDefaultL2Test() *Config {
 }
 
 type DangerousConfig struct {
-	NoL1Listener bool  `koanf:"no-l1-listener"`
-	ReorgToBlock int64 `koanf:"reorg-to-block"`
+	NoL1Listener bool `koanf:"no-l1-listener"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	NoL1Listener: false,
-	ReorgToBlock: -1,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
-	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
 }
 
 type Node struct {
@@ -584,15 +581,6 @@ func createNodeImpl(
 
 	l2Config := l2BlockChain.Config()
 	l2ChainId := l2Config.ChainID.Uint64()
-
-	//TODO:
-	// var reorgingToBlock *types.Block
-	if config.Dangerous.ReorgToBlock >= 0 {
-		_, err = execution.ReorgToBlock(l2BlockChain, uint64(config.Dangerous.ReorgToBlock))
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
 	var classicOutbox *ClassicOutboxRetriever
