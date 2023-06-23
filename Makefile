@@ -35,7 +35,7 @@ precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
 output_root=target
 
-repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
+repo_dirs = arbos arbnode arbstate cmd das precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
 color_pink = "\e[38;5;161;1m"
@@ -78,6 +78,8 @@ arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/
 arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
 arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
 
+das_wasm_lib = $(output_root)/lib-wasm/das/das.wasm
+
 # user targets
 
 push: lint test-go .make/fmt
@@ -87,7 +89,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val) build-das-wasm-lib
 	@printf $(done)
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
@@ -111,6 +113,8 @@ build-wasm-libs: $(arbitrator_wasm_libs)
 build-wasm-bin: $(replay_wasm)
 
 build-solidity: .make/solidity
+
+build-das-wasm-lib: $(das_wasm_lib)
 
 contracts: .make/solgen
 	@printf $(done)
@@ -183,6 +187,9 @@ $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/nitro-val: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro-val"
+
+$(das_wasm_lib): $(DEP_PREDICATE) $(go_source)
+	GOOS=js GOARCH=wasm go build -o $(das_wasm_lib) ./das/daswasm/...
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
