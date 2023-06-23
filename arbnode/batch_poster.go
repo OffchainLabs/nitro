@@ -69,8 +69,7 @@ type BatchPoster struct {
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 	backlog      uint64    // An estimate of the number of unposted batches
 
-	batchReverted         atomic.Bool   // indicates whether data poster batch was reverted
-	stopPollingForReverts chan struct{} // channel for stopping batch revert detections
+	batchReverted atomic.Bool // indicates whether data poster batch was reverted
 }
 
 type BatchPosterConfig struct {
@@ -210,66 +209,88 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
-	b.poolForReverts()
 	return b, nil
 }
 
-func (b *BatchPoster) checkReverts(ctx context.Context, hash common.Hash) (bool, error) {
-	block, err := b.l1Reader.Client().BlockByHash(ctx, hash)
-	if err != nil {
-		return false, fmt.Errorf("getting block by hash: %w", err)
+// checkRevert checks blocks with number in range [from, to] whether they
+// contain reverted batch_poster transaction.
+func (b *BatchPoster) checkReverts(ctx context.Context, from, to *big.Int) (bool, error) {
+
+	if from.Cmp(to) == 1 {
+		return false, fmt.Errorf("wrong range, from: %v is more to: %v", from.Int64(), to.Int64())
 	}
-	for idx, tx := range block.Transactions() {
-		from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
+
+	one := big.NewInt(1)
+
+	for number := new(big.Int).Set(from); number.Cmp(to) != 1; number.Add(number, one) {
+		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
-			return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
+			return false, fmt.Errorf("getting block: %v by number: %w", number.Int64(), err)
 		}
-		if !bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
-			r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+		for idx, tx := range block.Transactions() {
+			from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
 			if err != nil {
-				return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
 			}
-			if r.Status == types.ReceiptStatusFailed {
-				return true, nil
+			if !bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
+				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+				if err != nil {
+					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+				}
+				if r.Status == types.ReceiptStatusFailed {
+					return true, nil
+				}
 			}
 		}
 	}
 	return false, nil
 }
 
-// poolForReverts runs a gouroutine that listens to l1 block headers, checks
+// pollForReverts runs a gouroutine that listens to l1 block headers, checks
 // if any transaction made by batch poster was reverted.
-func (b *BatchPoster) poolForReverts() {
+func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
-
-	go func() {
-		ctx := context.Background()
-		for {
-			// Poll until:
-			// - L1 headers reader channel is closed, or
-			// - polling is cancelled from outside (through returned channel), or
-			// - we see a transaction in the block from dataposter that was reverted.
-			select {
-			case h, closed := <-headerCh:
-				if closed {
-					log.Info("L1 headers channel has been closed")
-					return
-				}
-				reverted, err := b.checkReverts(ctx, h.Hash())
-				if err != nil {
-					log.Error("Checking batch reverts", "error", err)
-					continue
-				}
-				if reverted {
-					b.batchReverted.Store(true)
-					return
-				}
-			case <-b.stopPollingForReverts:
+	var (
+		last *big.Int // number of last seen block
+		one  = big.NewInt(1)
+	)
+	for {
+		// Poll until:
+		// - L1 headers reader channel is closed, or
+		// - polling is through context, or
+		// - we see a transaction in the block from dataposter that was reverted.
+		select {
+		case h, closed := <-headerCh:
+			if closed {
+				log.Info("L1 headers channel has been closed")
 				return
 			}
+			// If this is the first block header, set last seen as number-1.
+			if last == nil {
+				last = new(big.Int).Set(h.Number)
+				last.Sub(last, one)
+			}
+			if h.Number.Int64()-last.Int64() > 100 {
+				log.Warn("Large gap between past seen: %v and current block number: %v, skipping check for reverts", last.Int64(), h.Number.Int64())
+				last.Set(h.Number)
+				continue
+			}
+
+			reverted, err := b.checkReverts(ctx, last.Add(last, big.NewInt(1)), h.Number)
+			if err != nil {
+				log.Error("Checking batch reverts", "error", err)
+				continue
+			}
+			if reverted {
+				b.batchReverted.Store(true)
+				return
+			}
+			last.Set(h.Number)
+		case <-ctx.Done():
+			return
 		}
-	}()
+	}
 }
 
 func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
@@ -619,7 +640,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	if b.batchReverted.Load() {
-		log.Error("Batch was reverted, not posting any more batches")
+		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
@@ -703,7 +724,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
-				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+				return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
 			}
 			log.Warn("Falling back to storing data on chain", "err", err)
 		} else if err != nil {
@@ -764,6 +785,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.dataPoster.Start(ctxIn)
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
+	b.LaunchThread(b.pollForReverts)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -816,5 +838,4 @@ func (b *BatchPoster) StopAndWait() {
 	b.StopWaiter.StopAndWait()
 	b.dataPoster.StopAndWait()
 	b.redisLock.StopAndWait()
-	b.stopPollingForReverts <- struct{}{}
 }
