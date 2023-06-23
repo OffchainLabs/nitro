@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -24,12 +23,4 @@ func GetLogEmitterTxData(ctx context.Context, client L1Interface, log types.Log)
 		return nil, fmt.Errorf("log emitting transaction %v unexpectedly does not have enough data", tx.Hash())
 	}
 	return tx.Data(), nil
-}
-
-func BlockTransactions(ctx context.Context, l1Client L1Interface, hash common.Hash) (types.Transactions, error) {
-	b, err := l1Client.BlockByHash(ctx, hash)
-	if err != nil {
-		return nil, fmt.Errorf("getting block by hash: %w", err)
-	}
-	return b.Transactions(), nil
 }

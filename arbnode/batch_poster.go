@@ -215,13 +215,10 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
 func (b *BatchPoster) checkReverts(ctx context.Context, from, to *big.Int) (bool, error) {
-
 	if from.Cmp(to) == 1 {
 		return false, fmt.Errorf("wrong range, from: %v is more to: %v", from.Int64(), to.Int64())
 	}
-
 	one := big.NewInt(1)
-
 	for number := new(big.Int).Set(from); number.Cmp(to) != 1; number.Add(number, one) {
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
@@ -232,7 +229,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to *big.Int) (bool
 			if err != nil {
 				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
 			}
-			if !bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
+			if bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
 				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 				if err != nil {
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
