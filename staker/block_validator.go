@@ -50,9 +50,11 @@ type BlockValidator struct {
 	nextCreatePrevDelayed   uint64
 
 	// can only be accessed from from validation thread or if holding reorg-write
-	lastValidGS        validator.GoGlobalState
-	valLoopPos         arbutil.MessageIndex
-	validInfoPrintTime time.Time
+	lastValidGS validator.GoGlobalState
+	valLoopPos  arbutil.MessageIndex
+
+	// only from logger thread
+	lastValidInfoPrinted *GlobalStateValidatedInfo
 
 	// can be read by anyone holding reorg-read
 	// written by appropriate thread or reorg-write
@@ -578,13 +580,33 @@ func (v *BlockValidator) iterativeValidationEntryRecorder(ctx context.Context, i
 	return v.config().ValidationPoll
 }
 
-func (v *BlockValidator) maybePrintNewlyValid() {
-	if time.Since(v.validInfoPrintTime) > time.Second {
-		log.Info("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
-		v.validInfoPrintTime = time.Now()
-	} else {
-		log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Duration {
+	validated, err := v.ReadLastValidatedInfo()
+	if err != nil {
+		log.Error("cannot read last validated data from database", "err", err)
+		return time.Second * 30
 	}
+	if validated == nil {
+		return time.Second
+	}
+	if v.lastValidInfoPrinted != nil {
+		if v.lastValidInfoPrinted.GlobalState.BlockHash == validated.GlobalState.BlockHash {
+			return time.Second
+		}
+	}
+	var batchMsgs arbutil.MessageIndex
+	var printedCount int64
+	if validated.GlobalState.Batch > 0 {
+		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch)
+	}
+	if err != nil {
+		printedCount = -1
+	} else {
+		printedCount = int64(batchMsgs) + int64(validated.GlobalState.PosInBatch)
+	}
+	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
+	v.lastValidInfoPrinted = validated
+	return time.Second
 }
 
 // return val:
@@ -669,7 +691,7 @@ validatiosLoop:
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTriger(v.testingProgressMadeChan)
 			}
-			v.maybePrintNewlyValid()
+			log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
 			continue
 		}
 		if room == 0 {
@@ -893,6 +915,7 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
+	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
 }
 
