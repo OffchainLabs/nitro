@@ -142,13 +142,13 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 	return err
 }
 
-const MsgPerBatch = int64(5)
+const makeBatch_MsgsPerBatch = int64(5)
 
 func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
-	for i := int64(0); i < MsgPerBatch; i++ {
+	for i := int64(0); i < makeBatch_MsgsPerBatch; i++ {
 		value := i
 		if i == modStep {
 			value++
@@ -287,7 +287,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
 
-	if challengeMsgIdx < 1 || challengeMsgIdx > 3*MsgPerBatch {
+	if challengeMsgIdx < 1 || challengeMsgIdx > 3*makeBatch_MsgsPerBatch {
 		Fatal(t, "challengeMsgIdx illegal")
 	}
 
@@ -297,11 +297,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	// seqNum.Add(seqNum, common.Big1)
 	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-MsgPerBatch-1)
+	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch-1)
 
 	// seqNum.Add(seqNum, common.Big1)
 	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-MsgPerBatch*2-1)
+	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch*2-1)
 
 	trueSeqInboxAddr := challengerSeqInboxAddr
 	trueDelayedBridge := challengerBridgeAddr
@@ -474,14 +474,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 func TestMockChallengeManagerAsserterIncorrect(t *testing.T) {
 	t.Parallel()
-	for i := int64(1); i <= MsgPerBatch*3; i++ {
+	for i := int64(1); i <= makeBatch_MsgsPerBatch*3; i++ {
 		RunChallengeTest(t, false, true, i)
 	}
 }
 
 func TestMockChallengeManagerAsserterCorrect(t *testing.T) {
 	t.Parallel()
-	for i := int64(1); i <= MsgPerBatch*3; i++ {
+	for i := int64(1); i <= makeBatch_MsgsPerBatch*3; i++ {
 		RunChallengeTest(t, true, true, i)
 	}
 }

@@ -174,7 +174,7 @@ type validationEntry struct {
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
-	// Valid since Recorded
+	// Valid since Ready
 	Preimages  map[common.Hash][]byte
 	DelayedMsg []byte
 }

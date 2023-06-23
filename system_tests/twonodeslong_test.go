@@ -174,6 +174,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
 		timeout := getDeadlineTimeout(t, time.Minute*30)
+		// messageindex is same as block number here
 		if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlockHeader.Number.Uint64()), timeout) {
 			Fatal(t, "did not validate all blocks")
 		}
