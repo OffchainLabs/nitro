@@ -188,7 +188,7 @@ $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/nitro-val: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro-val"
 
-$(das_wasm_lib): $(DEP_PREDICATE) $(go_source)
+$(das_wasm_lib): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $(das_wasm_lib) ./das/daswasm/...
 
 # recompile wasm, but don't change timestamp unless files differ
