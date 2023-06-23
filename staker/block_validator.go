@@ -49,10 +49,6 @@ type BlockValidator struct {
 	nextCreateStartGS       validator.GoGlobalState
 	nextCreatePrevDelayed   uint64
 
-	// only used by record loop or holding reorg-write
-	prepared           arbutil.MessageIndex
-	nextRecordPrepared *containers.Promise[arbutil.MessageIndex]
-
 	// can only be accessed from from validation thread or if holding reorg-write
 	lastValidGS        validator.GoGlobalState
 	valLoopPos         arbutil.MessageIndex
@@ -521,74 +517,58 @@ func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ig
 	return v.config().ValidationPoll
 }
 
-func (v *BlockValidator) sendNextRecordPrepare() error {
-	if v.nextRecordPrepared != nil {
-		if v.nextRecordPrepared.Ready() {
-			prepared, err := v.nextRecordPrepared.Current()
-			if err != nil {
-				return err
-			}
-			if prepared > v.prepared {
-				v.prepared = prepared
-			}
-			v.nextRecordPrepared = nil
-		} else {
-			return nil
-		}
-	}
-	nextPrepared := v.validated() + arbutil.MessageIndex(v.config().PrerecordedBlocks)
-	created := v.created()
-	if nextPrepared > created {
-		nextPrepared = created
-	}
-	if v.prepared >= nextPrepared {
-		return nil
-	}
-	nextPromise := containers.NewPromise[arbutil.MessageIndex](nil)
-	v.LaunchThread(func(ctx context.Context) {
-		err := v.recorder.PrepareForRecord(ctx, v.prepared, nextPrepared-1)
-		if err != nil {
-			nextPromise.ProduceError(err)
-		} else {
-			nextPromise.Produce(nextPrepared)
-			nonBlockingTriger(v.sendRecordChan)
-		}
-	})
-	v.nextRecordPrepared = &nextPromise
-	return nil
-}
-
-func (v *BlockValidator) sendNextRecordRequest(ctx context.Context) (bool, error) {
+func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
 	v.reorgMutex.RLock()
-	defer v.reorgMutex.RUnlock()
-	err := v.sendNextRecordPrepare()
-	if err != nil {
-		return false, err
-	}
 	pos := v.recordSent()
-	if pos >= v.prepared {
-		log.Trace("next record request: nothing to send", "pos", pos)
+	created := v.created()
+	validated := v.validated()
+	v.reorgMutex.RUnlock()
+
+	recordUntil := validated + arbutil.MessageIndex(v.config().PrerecordedBlocks) - 1
+	if recordUntil > created-1 {
+		recordUntil = created - 1
+	}
+	if recordUntil < pos {
 		return false, nil
 	}
-	validationStatus, found := v.validations.Load(pos)
-	if !found {
-		return false, fmt.Errorf("not found entry for pos %d", pos)
-	}
-	currentStatus := validationStatus.getStatus()
-	if currentStatus != Created {
-		return false, fmt.Errorf("bad status trying to send recordings for pos %d status: %v", pos, currentStatus)
-	}
-	err = v.sendRecord(validationStatus)
+	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
+	// prepare could take a long time so we do it without a lock
+	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
 	if err != nil {
 		return false, err
 	}
-	atomicStorePos(&v.recordSentA, pos+1)
-	log.Trace("next record request: sent", "pos", pos)
+
+	v.reorgMutex.RLock()
+	defer v.reorgMutex.RUnlock()
+	createdNew := v.created()
+	recordSentNew := v.recordSent()
+	if createdNew < created || recordSentNew < pos {
+		// there was a relevant reorg - quit and restart
+		return true, nil
+	}
+	for pos <= recordUntil {
+		validationStatus, found := v.validations.Load(pos)
+		if !found {
+			return false, fmt.Errorf("not found entry for pos %d", pos)
+		}
+		currentStatus := validationStatus.getStatus()
+		if currentStatus != Created {
+			return false, fmt.Errorf("bad status trying to send recordings for pos %d status: %v", pos, currentStatus)
+		}
+		err := v.sendRecord(validationStatus)
+		if err != nil {
+			return false, err
+		}
+		pos += 1
+		atomicStorePos(&v.recordSentA, pos)
+		log.Trace("next record request: sent", "pos", pos)
+	}
+
 	return true, nil
 }
 
 func (v *BlockValidator) iterativeValidationEntryRecorder(ctx context.Context, ignored struct{}) time.Duration {
-	moreWork, err := v.sendNextRecordRequest(ctx)
+	moreWork, err := v.sendNextRecordRequests(ctx)
 	if err != nil {
 		log.Error("error trying to record for validation node", "err", err)
 	}
@@ -851,9 +831,6 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		if err != nil {
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
-	}
-	if v.prepared > count {
-		v.prepared = count
 	}
 	nonBlockingTriger(v.createNodesChan)
 	return nil
