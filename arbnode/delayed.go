@@ -195,7 +195,8 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
-		parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, b.client, parsedLog.Raw.BlockNumber)
+		parentChainBlockNumber := parsedLog.Raw.BlockNumber
+		l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, b.client, parentChainBlockNumber)
 		if err != nil {
 			return nil, err
 		}
@@ -206,14 +207,14 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: parentChainBlockNumber,
+					BlockNumber: l1BlockNumber,
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
 				},
 				L2msg: data,
 			},
-			ParentChainBlockNumber: parentChainBlockNumber,
+			ParentChainBlockNumber: parsedLog.Raw.BlockNumber,
 		}
 		err = msg.Message.FillInBatchGasCost(batchFetcher)
 		if err != nil {
