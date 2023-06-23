@@ -250,7 +250,7 @@ func (v *BlockValidator) possiblyFatal(err error) {
 	}
 }
 
-func nonBlockingTriger(channel chan struct{}) {
+func nonBlockingTrigger(channel chan struct{}) {
 	select {
 	case channel <- struct{}{}:
 	default:
@@ -329,7 +329,7 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 	return true, count, nil
 }
 
-func (v *BlockValidator) checkValidatedGSCaughUp(ctx context.Context) (bool, error) {
+func (v *BlockValidator) checkValidatedGSCaughtUp(ctx context.Context) (bool, error) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	if v.chainCaughtUp {
@@ -381,7 +381,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
 		}
-		nonBlockingTriger(v.progressValidationsChan)
+		nonBlockingTrigger(v.progressValidationsChan)
 	})
 	return nil
 }
@@ -627,7 +627,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		}
 	}
 	pos := v.validated() - 1 // to reverse the first +1 in the loop
-validatiosLoop:
+validationsLoop:
 	for {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -660,7 +660,7 @@ validatiosLoop:
 			for i, run := range validationStatus.Runs {
 				if !run.Ready() {
 					log.Trace("advanceValidations: validation not ready", "pos", pos, "run", i)
-					continue validatiosLoop
+					continue validationsLoop
 				}
 				wasmRoots = append(wasmRoots, run.WasmModuleRoot())
 				runEnd, err := run.Current()
@@ -685,11 +685,11 @@ validatiosLoop:
 				log.Error("failed writing new validated to database", "pos", pos, "err", err)
 			}
 			atomicStorePos(&v.validatedA, pos+1)
-			nonBlockingTriger(v.createNodesChan)
-			nonBlockingTriger(v.sendRecordChan)
+			nonBlockingTrigger(v.createNodesChan)
+			nonBlockingTrigger(v.sendRecordChan)
 			validatorMsgCountValidatedGauge.Update(int64(pos + 1))
 			if v.testingProgressMadeChan != nil {
-				nonBlockingTriger(v.testingProgressMadeChan)
+				nonBlockingTrigger(v.testingProgressMadeChan)
 			}
 			log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
 			continue
@@ -735,7 +735,7 @@ validatiosLoop:
 						return
 					}
 				}
-				nonBlockingTriger(v.progressValidationsChan)
+				nonBlockingTrigger(v.progressValidationsChan)
 			})
 			room--
 		}
@@ -854,7 +854,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
 	}
-	nonBlockingTriger(v.createNodesChan)
+	nonBlockingTrigger(v.createNodesChan)
 	return nil
 }
 
@@ -885,7 +885,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 
 func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	for {
-		caughtUp, err := v.checkValidatedGSCaughUp(ctx)
+		caughtUp, err := v.checkValidatedGSCaughtUp(ctx)
 		if err != nil {
 			log.Error("validator got error waiting for chain to catch up", "err", err)
 		}
@@ -925,8 +925,8 @@ func (v *BlockValidator) StopAndWait() {
 
 // WaitForPos can only be used from One thread
 func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbutil.MessageIndex, timeout time.Duration) bool {
-	trigerchan := make(chan struct{})
-	v.testingProgressMadeChan = trigerchan
+	triggerchan := make(chan struct{})
+	v.testingProgressMadeChan = triggerchan
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	lastLoop := false
@@ -940,7 +940,7 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 		select {
 		case <-timer.C:
 			lastLoop = true
-		case <-trigerchan:
+		case <-triggerchan:
 		case <-ctx.Done():
 			lastLoop = true
 		}
