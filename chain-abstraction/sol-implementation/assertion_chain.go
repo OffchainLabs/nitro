@@ -106,8 +106,8 @@ func NewAssertionChain(
 	return chain, nil
 }
 
-func (a *AssertionChain) GetAssertion(ctx context.Context, assertionId protocol.AssertionId) (protocol.Assertion, error) {
-	res, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionId)
+func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
+	res, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash)
 	if err != nil {
 		return nil, err
 	}
@@ -115,11 +115,11 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, assertionId protocol.
 		return nil, errors.Wrapf(
 			ErrNotFound,
 			"assertion with id %#x",
-			assertionId,
+			assertionHash,
 		)
 	}
 	return &Assertion{
-		id:    assertionId,
+		id:    assertionHash,
 		chain: a,
 	}, nil
 }
@@ -132,7 +132,7 @@ func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertio
 	return a.GetAssertion(ctx, res)
 }
 
-// CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
+// CreateAssertion makes an on-chain claim given a previous assertion hash, execution state,
 // and a commitment to a post-state.
 func (a *AssertionChain) CreateAssertion(
 	ctx context.Context,
@@ -142,7 +142,7 @@ func (a *AssertionChain) CreateAssertion(
 	if !assertionCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("prev assertion creation info inbox max count not a uint64")
 	}
-	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionId(assertionCreationInfo.ParentAssertionHash))
+	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionHash(assertionCreationInfo.ParentAssertionHash))
 	if err != nil {
 		return nil, err
 	}
@@ -199,17 +199,17 @@ func (a *AssertionChain) CreateAssertion(
 // if there is a winning, level zero, block challenge edge that claims it.
 func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	ctx context.Context,
-	assertionId protocol.AssertionId,
+	assertionHash protocol.AssertionHash,
 	winningEdgeId protocol.EdgeId,
 ) error {
-	node, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionId)
+	node, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash)
 	if err != nil {
 		return err
 	}
 	if node.Status == uint8(protocol.AssertionConfirmed) {
 		return nil
 	}
-	creationInfo, err := a.ReadAssertionCreationInfo(ctx, assertionId)
+	creationInfo, err := a.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return err
 	}
@@ -217,7 +217,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if creationInfo.ParentAssertionHash == [32]byte{} {
 		return nil
 	}
-	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionId(creationInfo.ParentAssertionHash))
+	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionHash(creationInfo.ParentAssertionHash))
 	if err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
 		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
 			copyTxOpts(a.txOpts),
-			assertionId,
+			assertionHash,
 			creationInfo.ParentAssertionHash,
 			creationInfo.AfterState,
 			winningEdgeId,
@@ -282,8 +282,8 @@ func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Spe
 // AssertionUnrivaledBlocks gets the number of blocks an assertion was unrivaled. That is, it looks up the
 // assertion's parent, and from that parent, computes second_child_creation_block - first_child_creation_block.
 // If an assertion is a second child, this function will return 0.
-func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
-	wantNode, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, assertionId)
+func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error) {
+	wantNode, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash)
 	if err != nil {
 		return 0, err
 	}
@@ -291,7 +291,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		return 0, errors.Wrapf(
 			ErrNotFound,
 			"assertion with id %#x",
-			assertionId,
+			assertionHash,
 		)
 	}
 	// If the assertion requested is not the first child, it was never unrivaled.
@@ -299,7 +299,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		return 0, nil
 	}
 	assertion := &Assertion{
-		id:    assertionId,
+		id:    assertionHash,
 		chain: a,
 	}
 	prevId, err := assertion.PrevId(ctx)
@@ -314,7 +314,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		return 0, errors.Wrapf(
 			ErrNotFound,
 			"assertion with id %#x",
-			assertionId,
+			assertionHash,
 		)
 	}
 	// If there is no second child, we simply return the number of blocks
@@ -332,10 +332,10 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		// Should never happen.
 		if wantNode.CreatedAtBlock > num {
 			return 0, fmt.Errorf(
-				"assertion creation block %d > latest block number %d for assertion id %#x",
+				"assertion creation block %d > latest block number %d for assertion hash %#x",
 				wantNode.CreatedAtBlock,
 				num,
-				assertionId,
+				assertionHash,
 			)
 		}
 		return num - wantNode.CreatedAtBlock, nil
@@ -343,7 +343,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	// Should never happen.
 	if prevNode.FirstChildBlock > prevNode.SecondChildBlock {
 		return 0, fmt.Errorf(
-			"first child creation block %d > second child creation block %d for assertion id %#x",
+			"first child creation block %d > second child creation block %d for assertion hash %#x",
 			prevNode.FirstChildBlock,
 			prevNode.SecondChildBlock,
 			prevId,
@@ -352,19 +352,19 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	return prevNode.SecondChildBlock - prevNode.FirstChildBlock, nil
 }
 
-func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error) {
+func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error) {
 	cm, err := a.SpecChallengeManager(ctx)
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	edgeOpt, err := cm.GetEdge(ctx, edgeId)
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	if edgeOpt.IsNone() {
-		return protocol.AssertionId{}, errors.New("edge was nil")
+		return protocol.AssertionHash{}, errors.New("edge was nil")
 	}
-	return edgeOpt.Unwrap().AssertionId(ctx)
+	return edgeOpt.Unwrap().AssertionHash(ctx)
 }
 
 func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
@@ -415,11 +415,11 @@ func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.A
 // ReadAssertionCreationInfo for an assertion sequence number by looking up its creation
 // event from the rollup contracts.
 func (a *AssertionChain) ReadAssertionCreationInfo(
-	ctx context.Context, id protocol.AssertionId,
+	ctx context.Context, id protocol.AssertionHash,
 ) (*protocol.AssertionCreatedInfo, error) {
 	var creationBlock uint64
 	var topics [][]common.Hash
-	if id == (protocol.AssertionId{}) {
+	if id == (protocol.AssertionHash{}) {
 		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
 		if err != nil {
 			return nil, err

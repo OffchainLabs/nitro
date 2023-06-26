@@ -20,17 +20,17 @@ import (
 // methods that callers can use directly.
 type Assertion struct {
 	chain *AssertionChain
-	id    protocol.AssertionId
+	id    protocol.AssertionHash
 }
 
-func (a *Assertion) Id() protocol.AssertionId {
+func (a *Assertion) Id() protocol.AssertionHash {
 	return a.id
 }
 
-func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionId, error) {
+func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) {
 	createdAtBlock, err := a.CreatedAtBlock()
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
@@ -40,14 +40,14 @@ func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionId, error) {
 	}
 	logs, err := a.chain.backend.FilterLogs(ctx, query)
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	if len(logs) == 0 {
-		return protocol.AssertionId{}, errors.New("no assertion creation events found")
+		return protocol.AssertionHash{}, errors.New("no assertion creation events found")
 	}
 	creationEvent, err := a.chain.rollup.ParseAssertionCreated(logs[len(logs)-1])
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	return creationEvent.ParentAssertionHash, nil
 }

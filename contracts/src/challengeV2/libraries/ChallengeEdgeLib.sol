@@ -14,8 +14,8 @@ struct ChallengeEdge {
     ///         Intuitively all edges with the same origin id agree on the information committed to in the origin id
     ///         For a SmallStep edge the origin id is the 'mutual' id of the length one BigStep edge being claimed by the zero layer ancestors of this edge
     ///         For a BigStep edge the origin id is the 'mutual' id of the length one Block edge being claimed by the zero layer ancestors of this edge
-    ///         For a Block edge the origin id is the assertion id of the assertion that is the root of the challenge - all edges in this challenge agree
-    ///         that that assertion id is valid.
+    ///         For a Block edge the origin id is the assertion hash of the assertion that is the root of the challenge - all edges in this challenge agree
+    ///         that that assertion hash is valid.
     ///         The purpose of the origin id is to ensure that only edges that agree on a common start position
     ///         are being compared against one another.
     bytes32 originId;

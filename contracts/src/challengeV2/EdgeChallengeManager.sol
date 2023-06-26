@@ -166,7 +166,7 @@ interface IEdgeChallengeManager {
     /// @notice Get the id of the prev assertion that this edge is originates from
     /// @dev    Uses the parent chain to traverse upwards SmallStep->BigStep->Block->Assertion
     ///         until it gets to the origin assertion
-    function getPrevAssertionId(bytes32 edgeId) external view returns (bytes32);
+    function getPrevAssertionHash(bytes32 edgeId) external view returns (bytes32);
 
     /// @notice Fetch the raw first rival record for this edge
     /// @dev    Returns 0 if the edge does not exist
@@ -347,11 +347,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
                 abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
 
-            assertionChain.validateAssertionId(
+            assertionChain.validateAssertionHash(
                 args.claimId, claimStateData.executionState, claimStateData.prevAssertionHash, claimStateData.inboxAcc
             );
 
-            assertionChain.validateAssertionId(
+            assertionChain.validateAssertionHash(
                 claimStateData.prevAssertionHash,
                 predecessorStateData.executionState,
                 predecessorStateData.prevAssertionHash,
@@ -478,7 +478,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         // the this edge
         bool isFirstChild = assertionChain.isFirstChild(topEdge.claimId);
         if (isFirstChild) {
-            assertionChain.validateAssertionId(
+            assertionChain.validateAssertionHash(
                 topEdge.claimId,
                 claimStateData.executionState,
                 claimStateData.prevAssertionHash,
@@ -506,9 +506,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public {
-        bytes32 prevAssertionId = store.getPrevAssertionId(edgeId);
+        bytes32 prevAssertionHash = store.getPrevAssertionHash(edgeId);
 
-        assertionChain.validateConfig(prevAssertionId, prevConfig);
+        assertionChain.validateConfig(prevAssertionHash, prevConfig);
 
         ExecutionContext memory execCtx = ExecutionContext({
             maxInboxMessagesRead: prevConfig.nextInboxPosition,
@@ -611,8 +611,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function getPrevAssertionId(bytes32 edgeId) public view returns (bytes32) {
-        return store.getPrevAssertionId(edgeId);
+    function getPrevAssertionHash(bytes32 edgeId) public view returns (bytes32) {
+        return store.getPrevAssertionHash(edgeId);
     }
 
     /// @inheritdoc IEdgeChallengeManager

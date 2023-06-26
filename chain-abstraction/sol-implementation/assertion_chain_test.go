@@ -272,7 +272,7 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	_, err = chain.GetAssertion(ctx, latestConfirmed.Id())
 	require.NoError(t, err)
 
-	_, err = chain.GetAssertion(ctx, protocol.AssertionId(common.BytesToHash([]byte("foo"))))
+	_, err = chain.GetAssertion(ctx, protocol.AssertionHash(common.BytesToHash([]byte("foo"))))
 	require.ErrorIs(t, err, solimpl.ErrNotFound)
 }
 

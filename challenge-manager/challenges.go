@@ -11,16 +11,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ChallengeCreator defines a struct which can initiate a challenge on an assertion id
+// ChallengeCreator defines a struct which can initiate a challenge on an assertion hash
 // by creating a level zero, block challenge edge onchain.
 type ChallengeCreator interface {
-	ChallengeAssertion(ctx context.Context, id protocol.AssertionId) error
+	ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error
 }
 
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionId) error {
+func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error {
 	assertion, err := v.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
@@ -57,7 +57,7 @@ func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionI
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["assertionId"] = containers.Trunc(id[:])
+	logFields["assertionHash"] = containers.Trunc(id[:])
 	log.WithFields(logFields).Info("Successfully created level zero edge for block challenge")
 	return nil
 }

@@ -225,7 +225,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     }
 
     function forceCreateAssertion(
-        bytes32 prevAssertionId,
+        bytes32 prevAssertionHash,
         AssertionInputs calldata assertion,
         bytes32 expectedAssertionHash
     ) external override whenPaused {
@@ -240,19 +240,19 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         // Normally, a new assertion is created using its prev's confirmPeriodBlocks
         // in the case of a force create, we use the rollup's current confirmPeriodBlocks
-        createNewAssertion(assertion, prevAssertionId, expectedAssertionHash);
+        createNewAssertion(assertion, prevAssertionHash, expectedAssertionHash);
 
         emit OwnerFunctionCalled(23);
     }
 
     function forceConfirmAssertion(
-        bytes32 assertionId,
+        bytes32 assertionHash,
         bytes32 parentAssertionHash,
         ExecutionState calldata confirmState,
         bytes32 inboxAcc
     ) external override whenPaused {
         // this skips deadline, staker and zombie validation
-        confirmAssertionInternal(assertionId, parentAssertionHash, confirmState, inboxAcc);
+        confirmAssertionInternal(assertionHash, parentAssertionHash, confirmState, inboxAcc);
         emit OwnerFunctionCalled(24);
     }
 

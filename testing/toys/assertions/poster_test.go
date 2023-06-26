@@ -44,8 +44,8 @@ func Test_findLatestValidAssertion(t *testing.T) {
 	})
 }
 
-func mockId(x uint64) protocol.AssertionId {
-	return protocol.AssertionId(common.BytesToHash([]byte(fmt.Sprintf("%d", x))))
+func mockId(x uint64) protocol.AssertionHash {
+	return protocol.AssertionHash(common.BytesToHash([]byte(fmt.Sprintf("%d", x))))
 }
 
 func setupAssertions(

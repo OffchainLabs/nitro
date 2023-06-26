@@ -29,37 +29,37 @@ contract MockAssertionChain is IAssertionChain {
     address public challengeManager;
     uint64 public confirmPeriodBlocks;
 
-    function assertionExists(bytes32 assertionId) public view returns (bool) {
-        return assertions[assertionId].height != 0;
+    function assertionExists(bytes32 assertionHash) public view returns (bool) {
+        return assertions[assertionHash].height != 0;
     }
 
     function stakeToken() public view returns(address) {
         return address(0);
     }
 
-    function validateAssertionId(
-        bytes32 assertionId,
+    function validateAssertionHash(
+        bytes32 assertionHash,
         ExecutionState calldata state,
-        bytes32 prevAssertionId,
+        bytes32 prevAssertionHash,
         bytes32 inboxAcc
     ) external view {
-        require(assertionExists(assertionId), "Assertion does not exist");
-        // TODO: HN: This is not how the real assertion chain calculate assertion id
-        require(assertionId == calculateAssertionId(prevAssertionId, state), "INVALID_ASSERTION_HASH");
+        require(assertionExists(assertionHash), "Assertion does not exist");
+        // TODO: HN: This is not how the real assertion chain calculate assertion hash
+        require(assertionHash == calculateAssertionHash(prevAssertionHash, state), "INVALID_ASSERTION_HASH");
     }
 
-    function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
-        require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].firstChildCreationBlock;
+    function getFirstChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+        require(assertionExists(assertionHash), "Assertion does not exist");
+        return assertions[assertionHash].firstChildCreationBlock;
     }
 
-    function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
-        require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].secondChildCreationBlock;
+    function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+        require(assertionExists(assertionHash), "Assertion does not exist");
+        return assertions[assertionHash].secondChildCreationBlock;
     }
 
     function validateConfig(
-        bytes32 assertionId,
+        bytes32 assertionHash,
         ConfigData calldata configData
     ) external view {
         require(
@@ -69,22 +69,22 @@ contract MockAssertionChain is IAssertionChain {
                 challengeManager: configData.challengeManager,
                 confirmPeriodBlocks: configData.confirmPeriodBlocks,
                 nextInboxPosition: configData.nextInboxPosition
-            }) == assertions[assertionId].configHash,
+            }) == assertions[assertionHash].configHash,
             "BAD_CONFIG"
         );
     }
 
-    function isFirstChild(bytes32 assertionId) external view returns (bool) {
-        require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].isFirstChild;
+    function isFirstChild(bytes32 assertionHash) external view returns (bool) {
+        require(assertionExists(assertionHash), "Assertion does not exist");
+        return assertions[assertionHash].isFirstChild;
     }
 
-    function isPending(bytes32 assertionId) external view returns (bool) {
-        require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].isPending;
+    function isPending(bytes32 assertionHash) external view returns (bool) {
+        require(assertionExists(assertionHash), "Assertion does not exist");
+        return assertions[assertionHash].isPending;
     }
 
-    function calculateAssertionId(
+    function calculateAssertionHash(
         bytes32 predecessorId,
         ExecutionState memory afterState
     )
@@ -99,11 +99,11 @@ contract MockAssertionChain is IAssertionChain {
         });
     }
 
-    function childCreated(bytes32 assertionId) internal {
-        if (assertions[assertionId].firstChildCreationBlock == 0) {
-            assertions[assertionId].firstChildCreationBlock = block.number;
-        } else if (assertions[assertionId].secondChildCreationBlock == 0) {
-            assertions[assertionId].secondChildCreationBlock = block.number;
+    function childCreated(bytes32 assertionHash) internal {
+        if (assertions[assertionHash].firstChildCreationBlock == 0) {
+            assertions[assertionHash].firstChildCreationBlock = block.number;
+        } else if (assertions[assertionHash].secondChildCreationBlock == 0) {
+            assertions[assertionHash].secondChildCreationBlock = block.number;
         }
     }
 
@@ -114,8 +114,8 @@ contract MockAssertionChain is IAssertionChain {
         ExecutionState memory afterState,
         bytes32 successionChallenge
     ) public returns (bytes32) {
-        bytes32 assertionId = calculateAssertionId(predecessorId, afterState);
-        assertions[assertionId] = MockAssertion({
+        bytes32 assertionHash = calculateAssertionHash(predecessorId, afterState);
+        assertions[assertionHash] = MockAssertion({
             predecessorId: predecessorId,
             height: height,
             state: afterState,
@@ -133,7 +133,7 @@ contract MockAssertionChain is IAssertionChain {
             })
         });
         childCreated(predecessorId);
-        return assertionId;
+        return assertionHash;
     }
 
     function addAssertion(
@@ -145,8 +145,8 @@ contract MockAssertionChain is IAssertionChain {
         bytes32 successionChallenge
     ) public returns (bytes32) {
         bytes32 beforeStateHash = StateToolsLib.hash(beforeState);
-        bytes32 assertionId = calculateAssertionId(predecessorId, afterState);
-        require(!assertionExists(assertionId), "Assertion already exists");
+        bytes32 assertionHash = calculateAssertionHash(predecessorId, afterState);
+        require(!assertionExists(assertionHash), "Assertion already exists");
         require(assertionExists(predecessorId), "Predecessor does not exists");
         require(height > assertions[predecessorId].height, "Height too low");
         require(beforeStateHash == StateToolsLib.hash(assertions[predecessorId].state), "Before state hash does not match predecessor");

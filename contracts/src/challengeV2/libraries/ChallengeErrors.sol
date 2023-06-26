@@ -7,10 +7,10 @@ import "./Enums.sol";
 error EdgeNotExists(bytes32 edgeId);
 /// @dev The edge has already been stored
 error EdgeAlreadyExists(bytes32 edgeId);
-/// @dev The provided assertion id was empty
-error AssertionIdEmpty();
-/// @dev The assertion ids are not the same, but should have been
-error AssertionIdMismatch(bytes32 id1, bytes32 id2);
+/// @dev The provided assertion hash was empty
+error AssertionHashEmpty();
+/// @dev The assertion hashes are not the same, but should have been
+error AssertionHashMismatch(bytes32 h1, bytes32 h2);
 /// @dev The assertion is not currently pending
 error AssertionNotPending();
 /// @dev The assertion has no sibling

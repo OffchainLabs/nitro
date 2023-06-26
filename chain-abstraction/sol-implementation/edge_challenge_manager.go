@@ -39,8 +39,8 @@ func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.endHeight), e.inner.EndHistoryRoot
 }
 
-func (e *SpecEdge) AssertionId(ctx context.Context) (protocol.AssertionId, error) {
-	return e.manager.caller.GetPrevAssertionId(&bind.CallOpts{Context: ctx}, e.id)
+func (e *SpecEdge) AssertionHash(ctx context.Context) (protocol.AssertionHash, error) {
+	return e.manager.caller.GetPrevAssertionHash(&bind.CallOpts{Context: ctx}, e.id)
 }
 
 func (e *SpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
@@ -218,7 +218,7 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	if s == protocol.EdgeConfirmed {
 		return nil
 	}
-	var assertionId protocol.AssertionId
+	var assertionHash protocol.AssertionHash
 	if len(ancestorIds) != 0 {
 		topLevelAncestorId := ancestorIds[len(ancestorIds)-1]
 		topLevelAncestor, topLevelErr := e.manager.GetEdge(ctx, topLevelAncestorId)
@@ -232,11 +232,11 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 		if topEdge.GetType() != protocol.BlockChallengeEdge {
 			return errors.New("top level ancestor must be a block challenge edge")
 		}
-		assertionId = protocol.AssertionId(topEdge.ClaimId().Unwrap())
+		assertionHash = protocol.AssertionHash(topEdge.ClaimId().Unwrap())
 	} else {
-		assertionId = e.inner.ClaimId
+		assertionHash = e.inner.ClaimId
 	}
-	assertionCreation, err := e.manager.assertionChain.ReadAssertionCreationInfo(ctx, assertionId)
+	assertionCreation, err := e.manager.assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return err
 	}
@@ -503,11 +503,11 @@ func (cm *SpecChallengeManager) ConfirmEdgeByOneStepProof(
 		return nil
 	}
 
-	assertionId, err := edge.Unwrap().AssertionId(ctx)
+	assertionHash, err := edge.Unwrap().AssertionHash(ctx)
 	if err != nil {
 		return err
 	}
-	creationInfo, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertionId)
+	creationInfo, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return err
 	}

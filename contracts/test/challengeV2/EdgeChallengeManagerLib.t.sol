@@ -1534,7 +1534,7 @@ contract EdgeChallengeManagerLibTest is Test {
         AssertionReferenceData memory ard;
         if (mode != 144) {
             ard = AssertionReferenceData({
-                assertionId: claimId,
+                assertionHash: claimId,
                 predecessorId: rand.hash(),
                 isPending: true,
                 hasSibling: true,
@@ -1542,8 +1542,8 @@ contract EdgeChallengeManagerLibTest is Test {
                 endState: endExec.execState
             });
             if (mode == 141) {
-                ard.assertionId = rand.hash();
-                revertArg = abi.encodeWithSelector(AssertionIdMismatch.selector, ard.assertionId, claimId);
+                ard.assertionHash = rand.hash();
+                revertArg = abi.encodeWithSelector(AssertionHashMismatch.selector, ard.assertionHash, claimId);
             }
             if (mode == 142) {
                 ard.isPending = false;
@@ -1554,7 +1554,7 @@ contract EdgeChallengeManagerLibTest is Test {
                 revertArg = abi.encodeWithSelector(AssertionNoSibling.selector);
             }
         } else {
-            revertArg = abi.encodeWithSelector(AssertionIdEmpty.selector);
+            revertArg = abi.encodeWithSelector(AssertionHashEmpty.selector);
         }
 
         if (mode == 145) {

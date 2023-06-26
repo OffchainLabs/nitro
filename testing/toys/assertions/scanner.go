@@ -185,16 +185,16 @@ func (s *Scanner) checkForAssertionAdded(
 
 func (s *Scanner) ProcessAssertionCreation(
 	ctx context.Context,
-	assertionId protocol.AssertionId,
+	assertionHash protocol.AssertionHash,
 ) error {
 	log.WithFields(logrus.Fields{
 		"validatorName": s.validatorName,
 	}).Info("Processed assertion creation event")
-	creationInfo, err := s.chain.ReadAssertionCreationInfo(ctx, assertionId)
+	creationInfo, err := s.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return err
 	}
-	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionId(creationInfo.ParentAssertionHash))
+	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash(creationInfo.ParentAssertionHash))
 	if err != nil {
 		return err
 	}
@@ -213,5 +213,5 @@ func (s *Scanner) ProcessAssertionCreation(
 	if !agreesWithAssertion {
 		return nil
 	}
-	return s.challengeManager.ChallengeAssertion(ctx, assertionId)
+	return s.challengeManager.ChallengeAssertion(ctx, assertionHash)
 }

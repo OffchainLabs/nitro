@@ -29,12 +29,12 @@ var log = logrus.WithField("prefix", "edge-tracker")
 // This information is used in order to confirm edges onchain.
 type ConfirmationMetadataChecker interface {
 	ConfirmedEdgeWithClaimExists(
-		topLevelAssertionId protocol.AssertionId,
+		topLevelAssertionHash protocol.AssertionHash,
 		claimId protocol.ClaimId,
 	) (protocol.EdgeId, bool)
 	ComputeHonestPathTimer(
 		ctx context.Context,
-		topLevelAssertionId protocol.AssertionId,
+		topLevelAssertionHash protocol.AssertionHash,
 		edgeId protocol.EdgeId,
 	) (challengetree.PathTimer, challengetree.HonestAncestors, error)
 }
@@ -349,9 +349,9 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	if status == protocol.EdgeConfirmed {
 		return true, nil
 	}
-	assertionId, err := et.edge.AssertionId(ctx)
+	assertionHash, err := et.edge.AssertionHash(ctx)
 	if err != nil {
-		return false, errors.Wrap(err, "could not get prev assertion id")
+		return false, errors.Wrap(err, "could not get prev assertion hash")
 	}
 	manager, err := et.chain.SpecChallengeManager(ctx)
 	if err != nil {
@@ -373,7 +373,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 
 	// Check if we can confirm by claim.
 	claimingEdge, ok := et.chainWatcher.ConfirmedEdgeWithClaimExists(
-		assertionId,
+		assertionHash,
 		protocol.ClaimId(et.edge.Id()),
 	)
 	if ok {
@@ -385,7 +385,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	}
 
 	// Check if we can confirm by time.
-	timer, ancestors, err := et.chainWatcher.ComputeHonestPathTimer(ctx, assertionId, et.edge.Id())
+	timer, ancestors, err := et.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, et.edge.Id())
 	if err != nil {
 		return false, errors.Wrap(err, "could not compute honest path timer")
 	}
@@ -617,11 +617,11 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	toBigStep := fromBigStep + 1
 	pc, _ := et.edge.StartCommitment()
 
-	assertionId, err := et.edge.AssertionId(ctx)
+	assertionHash, err := et.edge.AssertionHash(ctx)
 	if err != nil {
 		return err
 	}
-	parentAssertionCreationInfo, err := et.chain.ReadAssertionCreationInfo(ctx, assertionId)
+	parentAssertionCreationInfo, err := et.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return err
 	}

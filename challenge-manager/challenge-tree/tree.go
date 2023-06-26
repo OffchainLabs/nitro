@@ -13,12 +13,12 @@ import (
 
 // MetadataReader can read certain information about edges from the backend.
 type MetadataReader interface {
-	AssertionUnrivaledBlocks(ctx context.Context, assertionId protocol.AssertionId) (uint64, error)
-	TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error)
+	AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error)
+	TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error)
 	TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error)
 	SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error)
 	ReadAssertionCreationInfo(
-		ctx context.Context, id protocol.AssertionId,
+		ctx context.Context, id protocol.AssertionHash,
 	) (*protocol.AssertionCreatedInfo, error)
 }
 
@@ -29,7 +29,7 @@ type creationTime uint64
 type HonestChallengeTree struct {
 	edges                         *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
 	mutualIds                     *threadsafe.Map[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
-	topLevelAssertionId           protocol.AssertionId
+	topLevelAssertionHash         protocol.AssertionHash
 	honestBlockChalLevelZeroEdge  option.Option[protocol.ReadOnlyEdge]
 	honestBigStepLevelZeroEdges   *threadsafe.Slice[protocol.ReadOnlyEdge]
 	honestSmallStepLevelZeroEdges *threadsafe.Slice[protocol.ReadOnlyEdge]
@@ -39,7 +39,7 @@ type HonestChallengeTree struct {
 }
 
 func New(
-	assertionId protocol.AssertionId,
+	assertionHash protocol.AssertionHash,
 	metadataReader MetadataReader,
 	histChecker l2stateprovider.HistoryChecker,
 	validatorName string,
@@ -47,7 +47,7 @@ func New(
 	return &HonestChallengeTree{
 		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
 		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		topLevelAssertionId:           assertionId,
+		topLevelAssertionHash:         assertionHash,
 		honestBlockChalLevelZeroEdge:  option.None[protocol.ReadOnlyEdge](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
@@ -60,15 +60,15 @@ func New(
 // AddEdge to the honest challenge tree. Only honest edges are tracked, but we also keep track
 // of rival ids in a mutual ids mapping internally for extra book-keeping.
 func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge) (protocol.Agreement, error) {
-	assertionId, err := ht.metadataReader.TopLevelAssertion(ctx, eg.Id())
+	assertionHash, err := ht.metadataReader.TopLevelAssertion(ctx, eg.Id())
 	if err != nil {
 		return protocol.Agreement{}, errors.Wrapf(err, "could not get top level assertion for edge %#x", eg.Id())
 	}
-	if ht.topLevelAssertionId != assertionId {
+	if ht.topLevelAssertionHash != assertionHash {
 		// Do nothing - this edge should not be part of this challenge tree.
 		return protocol.Agreement{}, nil
 	}
-	prevCreationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, assertionId)
+	prevCreationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return protocol.Agreement{}, err
 	}

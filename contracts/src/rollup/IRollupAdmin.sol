@@ -79,11 +79,11 @@ interface IRollupAdmin {
 
     function forceRefundStaker(address[] memory stacker) external;
 
-    function forceCreateAssertion(bytes32 prevAssertionId, AssertionInputs calldata assertion, bytes32 expectedAssertionHash)
+    function forceCreateAssertion(bytes32 prevAssertionHash, AssertionInputs calldata assertion, bytes32 expectedAssertionHash)
         external;
 
     function forceConfirmAssertion(
-        bytes32 assertionId,
+        bytes32 assertionHash,
         bytes32 parentAssertionHash,
         ExecutionState calldata confirmState,
         bytes32 inboxAcc

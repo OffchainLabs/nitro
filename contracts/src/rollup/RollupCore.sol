@@ -113,21 +113,21 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     }
 
     /**
-     * @notice Get a storage reference to the Assertion for the given assertion id
+     * @notice Get a storage reference to the Assertion for the given assertion hash
      * @dev The assertion may not exists
-     * @param assertionId Id of the assertion
+     * @param assertionHash Id of the assertion
      * @return Assertion struct
      */
-    function getAssertionStorage(bytes32 assertionId) internal view returns (AssertionNode storage) {
-        require(assertionId != bytes32(0), "ASSERTION_ID_CANNOT_BE_ZERO");
-        return _assertions[assertionId];
+    function getAssertionStorage(bytes32 assertionHash) internal view returns (AssertionNode storage) {
+        require(assertionHash != bytes32(0), "ASSERTION_ID_CANNOT_BE_ZERO");
+        return _assertions[assertionHash];
     }
 
     /**
      * @notice Get the Assertion for the given index.
      */
-    function getAssertion(bytes32 assertionId) public view override returns (AssertionNode memory) {
-        return getAssertionStorage(assertionId);
+    function getAssertion(bytes32 assertionHash) public view override returns (AssertionNode memory) {
+        return getAssertionStorage(assertionHash);
     }
 
     /**
@@ -205,22 +205,22 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     }
 
     /**
-     * @dev This function will validate the parentAssertionHash, confirmState and inboxAcc against the assertionId
-     *          and check if the assertionId is currently pending. If all checks pass, the assertion will be confirmed.
+     * @dev This function will validate the parentAssertionHash, confirmState and inboxAcc against the assertionHash
+     *          and check if the assertionHash is currently pending. If all checks pass, the assertion will be confirmed.
      */
     function confirmAssertionInternal(
-        bytes32 assertionId,
+        bytes32 assertionHash,
         bytes32 parentAssertionHash,
         ExecutionState calldata confirmState,
         bytes32 inboxAcc
     ) internal {
-        AssertionNode storage assertion = getAssertionStorage(assertionId);
+        AssertionNode storage assertion = getAssertionStorage(assertionHash);
         // Check that assertion is pending, this also checks that assertion exists
         require(assertion.status == AssertionStatus.Pending, "NOT_PENDING");
 
         // Authenticate data against assertionHash pre-image
         require(
-            assertionId
+            assertionHash
                 == RollupLib.assertionHash({
                     parentAssertionHash: parentAssertionHash,
                     afterState: confirmState,
@@ -235,10 +235,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         // trusted external call to outbox
         outbox.updateSendRoot(sendRoot, blockHash);
 
-        _latestConfirmed = assertionId;
+        _latestConfirmed = assertionHash;
         assertion.status = AssertionStatus.Confirmed;
 
-        emit AssertionConfirmed(assertionId, blockHash, sendRoot);
+        emit AssertionConfirmed(assertionHash, blockHash, sendRoot);
     }
 
     /**
@@ -337,12 +337,12 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     function createNewAssertion(
         AssertionInputs calldata assertion,
-        bytes32 prevAssertionId,
+        bytes32 prevAssertionHash,
         bytes32 expectedAssertionHash
     ) internal returns (bytes32) {
         // Validate the config hash
         RollupLib.validateConfigHash(
-            assertion.beforeStateData.configData, getAssertionStorage(prevAssertionId).configHash
+            assertion.beforeStateData.configData, getAssertionStorage(prevAssertionHash).configHash
         );
 
         // reading inbox messages always terminates in either a finished or errored state
@@ -360,7 +360,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 assertion.beforeStateData.prevPrevAssertionHash,
                 assertion.beforeState,
                 assertion.beforeStateData.sequencerBatchAcc
-            ) == prevAssertionId,
+            ) == prevAssertionHash,
             "INVALID_BEFORE_STATE"
         );
 
@@ -371,7 +371,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         // FINISHED state so that normal progress can continue
         require(assertion.beforeState.machineStatus == MachineStatus.FINISHED, "BAD_PREV_STATUS");
 
-        AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionId);
+        AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionHash);
         uint256 nextInboxPosition;
         bytes32 sequencerBatchAcc;
         {
@@ -435,7 +435,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxPosition - 1);
         }
 
-        bytes32 newAssertionHash = RollupLib.assertionHash(prevAssertionId, assertion.afterState, sequencerBatchAcc);
+        bytes32 newAssertionHash = RollupLib.assertionHash(prevAssertionHash, assertion.afterState, sequencerBatchAcc);
 
         // allow an assertion creator to ensure that they're creating their assertion against the expected state
         require(
@@ -467,7 +467,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
         emit AssertionCreated(
             newAssertionHash,
-            prevAssertionId,
+            prevAssertionHash,
             assertion,
             sequencerBatchAcc,
             nextInboxPosition,
@@ -480,7 +480,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         return newAssertionHash;
     }
 
-    function genesisAssertionId() external pure returns (bytes32) {
+    function genesisAssertionHash() external pure returns (bytes32) {
         GlobalState memory emptyGlobalState;
         ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
         bytes32 parentAssertionHash = bytes32(0);
@@ -492,33 +492,33 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         });
     }
 
-    function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
-        return getAssertionStorage(assertionId).firstChildBlock;
+    function getFirstChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+        return getAssertionStorage(assertionHash).firstChildBlock;
     }
 
-    function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
-        return getAssertionStorage(assertionId).secondChildBlock;
+    function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+        return getAssertionStorage(assertionHash).secondChildBlock;
     }
 
-    function validateAssertionId(
-        bytes32 assertionId,
+    function validateAssertionHash(
+        bytes32 assertionHash,
         ExecutionState calldata state,
-        bytes32 prevAssertionId,
+        bytes32 prevAssertionHash,
         bytes32 inboxAcc
     ) external pure {
-        require(assertionId == RollupLib.assertionHash(prevAssertionId, state, inboxAcc), "INVALID_ASSERTION_HASH");
+        require(assertionHash == RollupLib.assertionHash(prevAssertionHash, state, inboxAcc), "INVALID_ASSERTION_HASH");
     }
 
-    function validateConfig(bytes32 assertionId, ConfigData calldata configData) external view {
-        RollupLib.validateConfigHash(configData, getAssertionStorage(assertionId).configHash);
+    function validateConfig(bytes32 assertionHash, ConfigData calldata configData) external view {
+        RollupLib.validateConfigHash(configData, getAssertionStorage(assertionHash).configHash);
     }
 
-    function isFirstChild(bytes32 assertionId) external view returns (bool) {
-        return getAssertionStorage(assertionId).isFirstChild;
+    function isFirstChild(bytes32 assertionHash) external view returns (bool) {
+        return getAssertionStorage(assertionHash).isFirstChild;
     }
 
-    function isPending(bytes32 assertionId) external view returns (bool) {
-        return getAssertionStorage(assertionId).status == AssertionStatus.Pending;
+    function isPending(bytes32 assertionHash) external view returns (bool) {
+        return getAssertionStorage(assertionHash).status == AssertionStatus.Pending;
     }
 
     /**

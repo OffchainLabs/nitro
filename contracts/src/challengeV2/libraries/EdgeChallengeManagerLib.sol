@@ -12,7 +12,7 @@ import "./ChallengeErrors.sol";
 struct ExecutionStateData {
     /// @notice An execution state
     ExecutionState executionState;
-    /// @notice Assertion id of the prev assertion
+    /// @notice assertion Hash of the prev assertion
     bytes32 prevAssertionHash;
     /// @notice Inbox accumulator of the assertion
     bytes32 inboxAcc;
@@ -94,7 +94,7 @@ struct EdgeAddedData {
 /// @dev    This extra information that is needed in order to verify that a block edge can be created
 struct AssertionReferenceData {
     /// @notice The id of the assertion - will be used in a sanity check
-    bytes32 assertionId;
+    bytes32 assertionHash;
     /// @notice The predecessor of the assertion
     bytes32 predecessorId;
     /// @notice Is the assertion pending
@@ -208,11 +208,11 @@ library EdgeChallengeManagerLib {
             // Sanity check: The assertion reference data should be related to the claim
             // Of course the caller can provide whatever args they wish, so this is really just a helpful
             // check to avoid mistakes
-            if (ard.assertionId == 0) {
-                revert AssertionIdEmpty();
+            if (ard.assertionHash == 0) {
+                revert AssertionHashEmpty();
             }
-            if (ard.assertionId != args.claimId) {
-                revert AssertionIdMismatch(ard.assertionId, args.claimId);
+            if (ard.assertionHash != args.claimId) {
+                revert AssertionHashMismatch(ard.assertionHash, args.claimId);
             }
 
             // if the assertion is already confirmed or rejected then it cant be referenced as a claim
@@ -407,8 +407,8 @@ library EdgeChallengeManagerLib {
     }
 
     /// @notice From any given edge, get the id of the previous assertion
-    /// @param edgeId   The edge to get the prev assertion Id
-    function getPrevAssertionId(EdgeStore storage store, bytes32 edgeId) internal view returns (bytes32) {
+    /// @param edgeId   The edge to get the prev assertion Hash
+    function getPrevAssertionHash(EdgeStore storage store, bytes32 edgeId) internal view returns (bytes32) {
         ChallengeEdge storage edge = get(store, edgeId);
 
         // if the edge is small step, find a big step edge that it's linked to
@@ -428,7 +428,7 @@ library EdgeChallengeManagerLib {
             revert EdgeTypeNotBlock(edge.eType);
         }
 
-        // For Block type edges the origin id is the assertion id of claim prev
+        // For Block type edges the origin id is the assertion hash of claim prev
         return edge.originId;
     }
 

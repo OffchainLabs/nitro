@@ -24,7 +24,7 @@ func TestAddEdge(t *testing.T) {
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 	}
-	ht.topLevelAssertionId = protocol.AssertionId(common.BytesToHash([]byte("foo")))
+	ht.topLevelAssertionHash = protocol.AssertionHash(common.BytesToHash([]byte("foo")))
 	ctx := context.Background()
 	edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1})
 
@@ -35,10 +35,10 @@ func TestAddEdge(t *testing.T) {
 		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not get top level assertion for edge")
 	})
-	t.Run("ignores if disagrees with top level assertion id of edge", func(t *testing.T) {
+	t.Run("ignores if disagrees with top level assertion hash of edge", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
-			assertionErr: nil,
-			assertionId:  protocol.AssertionId(common.BytesToHash([]byte("bar"))),
+			assertionErr:  nil,
+			assertionHash: protocol.AssertionHash(common.BytesToHash([]byte("bar"))),
 		}
 		_, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestAddEdge(t *testing.T) {
 	t.Run("getting claim heights fails", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
 			assertionErr:    nil,
-			assertionId:     ht.topLevelAssertionId,
+			assertionHash:   ht.topLevelAssertionHash,
 			claimHeightsErr: errors.New("bad request"),
 		}
 		_, err := ht.AddEdge(ctx, edge)
@@ -54,8 +54,8 @@ func TestAddEdge(t *testing.T) {
 	})
 	t.Run("checking if agrees with commit fails", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
-			assertionErr: nil,
-			assertionId:  ht.topLevelAssertionId,
+			assertionErr:  nil,
+			assertionHash: ht.topLevelAssertionHash,
 		}
 		ht.histChecker = &mocks.MockStateManager{
 			AgreeErr: true,
@@ -157,7 +157,7 @@ func TestAddEdge(t *testing.T) {
 }
 
 type mockMetadataReader struct {
-	assertionId              protocol.AssertionId
+	assertionHash            protocol.AssertionHash
 	assertionErr             error
 	claimHeights             *protocol.OriginHeights
 	claimHeightsErr          error
@@ -166,12 +166,12 @@ type mockMetadataReader struct {
 
 func (m *mockMetadataReader) TopLevelAssertion(
 	_ context.Context, _ protocol.EdgeId,
-) (protocol.AssertionId, error) {
-	return m.assertionId, m.assertionErr
+) (protocol.AssertionHash, error) {
+	return m.assertionHash, m.assertionErr
 }
 
 func (m *mockMetadataReader) AssertionUnrivaledBlocks(
-	_ context.Context, _ protocol.AssertionId,
+	_ context.Context, _ protocol.AssertionHash,
 ) (uint64, error) {
 	return m.unrivaledAssertionBlocks, nil
 }
@@ -186,7 +186,7 @@ func (m *mockMetadataReader) SpecChallengeManager(_ context.Context) (protocol.S
 	return nil, nil
 }
 func (m *mockMetadataReader) ReadAssertionCreationInfo(
-	_ context.Context, _ protocol.AssertionId,
+	_ context.Context, _ protocol.AssertionHash,
 ) (*protocol.AssertionCreatedInfo, error) {
 	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
 }
@@ -284,10 +284,10 @@ func (*edge) MiniStaker() option.Option[common.Address] {
 	return option.None[common.Address]()
 }
 
-// The assertion id of the parent assertion that originated the challenge
+// The assertion hash of the parent assertion that originated the challenge
 // at the top-level.
-func (*edge) AssertionId(_ context.Context) (protocol.AssertionId, error) {
-	return protocol.AssertionId{}, errors.New("unimplemented")
+func (*edge) AssertionHash(_ context.Context) (protocol.AssertionHash, error) {
+	return protocol.AssertionHash{}, errors.New("unimplemented")
 }
 
 // The time in seconds an edge has been unrivaled.

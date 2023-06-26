@@ -41,7 +41,7 @@ type Manager struct {
 	chainWatcherInterval    time.Duration
 	watcher                 *watcher.Watcher
 	trackedEdgeIds          *threadsafe.Set[protocol.EdgeId]
-	assertionIdCache        *threadsafe.Map[protocol.AssertionId, [2]uint64]
+	assertionHashCache      *threadsafe.Map[protocol.AssertionHash, [2]uint64]
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -85,7 +85,7 @@ func New(
 		edgeTrackerWakeInterval: time.Millisecond * 100,
 		chainWatcherInterval:    time.Millisecond * 500,
 		trackedEdgeIds:          threadsafe.NewSet[protocol.EdgeId](),
-		assertionIdCache:        threadsafe.NewMap[protocol.AssertionId, [2]uint64](),
+		assertionHashCache:      threadsafe.NewMap[protocol.AssertionHash, [2]uint64](),
 	}
 	for _, o := range opts {
 		o(m)
@@ -141,9 +141,9 @@ func (m *Manager) TrackEdge(ctx context.Context, edge protocol.SpecEdge) error {
 
 // Gets an edge tracker for an edge by retrieving its associated assertion creation info.
 func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge) (*edgetracker.Tracker, error) {
-	// Retry until you get the previous assertion ID.
-	assertionId, err := retry.UntilSucceeds(ctx, func() (protocol.AssertionId, error) {
-		return edge.AssertionId(ctx)
+	// Retry until you get the previous assertion Hash.
+	assertionHash, err := retry.UntilSucceeds(ctx, func() (protocol.AssertionHash, error) {
+		return edge.AssertionHash(ctx)
 	})
 	if err != nil {
 		return nil, err
@@ -151,13 +151,13 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 
 	// Smart caching to avoid querying the same assertion number and creation info multiple times.
 	// Edges in the same challenge should have the same creation info.
-	cachedHeightAndInboxMsgCount, ok := m.assertionIdCache.TryGet(assertionId)
+	cachedHeightAndInboxMsgCount, ok := m.assertionHashCache.TryGet(assertionHash)
 	var assertionHeight uint64
 	var inboxMsgCount uint64
 	if !ok {
 		// Retry until you get the assertion creation info.
 		assertionCreationInfo, creationErr := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
-			return m.chain.ReadAssertionCreationInfo(ctx, assertionId)
+			return m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 		})
 		if creationErr != nil {
 			return nil, creationErr
@@ -172,7 +172,7 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 		}
 		assertionHeight = height
 		inboxMsgCount = assertionCreationInfo.InboxMaxCount.Uint64()
-		m.assertionIdCache.Put(assertionId, [2]uint64{assertionHeight, inboxMsgCount})
+		m.assertionHashCache.Put(assertionHash, [2]uint64{assertionHeight, inboxMsgCount})
 	} else {
 		assertionHeight, inboxMsgCount = cachedHeightAndInboxMsgCount[0], cachedHeightAndInboxMsgCount[1]
 	}

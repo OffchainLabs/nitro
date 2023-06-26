@@ -11,9 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// AssertionId represents a unique identifier for an assertion
+// AssertionHash represents a unique identifier for an assertion
 // constructed as a keccak256 hash of some of its internals.
-type AssertionId common.Hash
+type AssertionHash common.Hash
 
 // Protocol --
 type Protocol interface {
@@ -32,8 +32,8 @@ const (
 // chain state created by a validator that stakes on their claim.
 // Assertions can be challenged.
 type Assertion interface {
-	Id() AssertionId
-	PrevId(ctx context.Context) (AssertionId, error)
+	Id() AssertionHash
+	PrevId(ctx context.Context) (AssertionHash, error)
 	HasSecondChild() (bool, error)
 	CreatedAtBlock() (uint64, error)
 }
@@ -62,15 +62,15 @@ func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
 // which is used for all challenges in the protocol.
 type AssertionChain interface {
 	// Read-only methods.
-	GetAssertion(ctx context.Context, id AssertionId) (Assertion, error)
+	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
 	LatestCreatedAssertion(ctx context.Context) (Assertion, error)
 	ReadAssertionCreationInfo(
-		ctx context.Context, id AssertionId,
+		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)
 
-	AssertionUnrivaledBlocks(ctx context.Context, assertionId AssertionId) (uint64, error)
-	TopLevelAssertion(ctx context.Context, edgeId EdgeId) (AssertionId, error)
+	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
+	TopLevelAssertion(ctx context.Context, edgeId EdgeId) (AssertionHash, error)
 	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (*OriginHeights, error)
 
 	// Mutating methods.
@@ -81,7 +81,7 @@ type AssertionChain interface {
 	) (Assertion, error)
 	ConfirmAssertionByChallengeWinner(
 		ctx context.Context,
-		assertionId AssertionId,
+		assertionHash AssertionHash,
 		winningEdgeId EdgeId,
 	) error
 
@@ -250,9 +250,9 @@ type ReadOnlyEdge interface {
 	UpperChild(ctx context.Context) (option.Option[EdgeId], error)
 	// The ministaker of an edge. Only existing for level zero edges.
 	MiniStaker() option.Option[common.Address]
-	// The assertion id of the parent assertion that originated the challenge
+	// The assertion hash of the parent assertion that originated the challenge
 	// at the top-level.
-	AssertionId(ctx context.Context) (AssertionId, error)
+	AssertionHash(ctx context.Context) (AssertionHash, error)
 	// The time in seconds an edge has been unrivaled.
 	TimeUnrivaled(ctx context.Context) (uint64, error)
 	// Whether or not an edge has rivals.

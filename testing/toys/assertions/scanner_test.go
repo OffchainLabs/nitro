@@ -109,6 +109,6 @@ func setupChallengeManager(t *testing.T) (*challengemanager.Manager, *mocks.Mock
 	return v, p, s, cfg
 }
 
-func mockId(x uint64) protocol.AssertionId {
-	return protocol.AssertionId(common.BytesToHash([]byte(fmt.Sprintf("%d", x))))
+func mockId(x uint64) protocol.AssertionHash {
+	return protocol.AssertionHash(common.BytesToHash([]byte(fmt.Sprintf("%d", x))))
 }

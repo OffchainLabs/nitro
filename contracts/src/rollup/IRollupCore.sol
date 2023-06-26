@@ -33,7 +33,7 @@ interface IRollupCore is IAssertionChain {
         uint64 confirmPeriodBlocks
     );
 
-    event AssertionConfirmed(bytes32 indexed assertionId, bytes32 blockHash, bytes32 sendRoot);
+    event AssertionConfirmed(bytes32 indexed assertionHash, bytes32 blockHash, bytes32 sendRoot);
 
     event RollupChallengeStarted(
         uint64 indexed challengeIndex, address asserter, address challenger, uint64 challengedAssertion
@@ -69,12 +69,12 @@ interface IRollupCore is IAssertionChain {
 
     function validatorWhitelistDisabled() external view returns (bool);
 
-    function genesisAssertionId() external pure returns (bytes32);
+    function genesisAssertionHash() external pure returns (bytes32);
 
     /**
      * @notice Get the Assertion for the given id.
      */
-    function getAssertion(bytes32 assertionId) external view returns (AssertionNode memory);
+    function getAssertion(bytes32 assertionHash) external view returns (AssertionNode memory);
 
     /**
      * @notice Get the address of the staker at the given index

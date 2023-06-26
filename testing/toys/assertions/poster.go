@@ -96,14 +96,14 @@ func (p *Poster) PostLatestAssertion(ctx context.Context) (protocol.Assertion, e
 // Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
-func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.AssertionId, error) {
+func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.AssertionHash, error) {
 	latestConfirmed, err := p.chain.LatestConfirmed(ctx)
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	latestCreated, err := p.chain.LatestCreatedAssertion(ctx)
 	if err != nil {
-		return protocol.AssertionId{}, err
+		return protocol.AssertionHash{}, err
 	}
 	if latestConfirmed == latestCreated {
 		return latestConfirmed.Id(), nil
@@ -112,7 +112,7 @@ func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.Asserti
 	for curr.Id() != latestConfirmed.Id() {
 		info, err := p.chain.ReadAssertionCreationInfo(ctx, curr.Id())
 		if err != nil {
-			return protocol.AssertionId{}, err
+			return protocol.AssertionHash{}, err
 		}
 		_, hasState := p.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
 		if hasState {
@@ -120,11 +120,11 @@ func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.Asserti
 		}
 		prevId, err := curr.PrevId(ctx)
 		if err != nil {
-			return protocol.AssertionId{}, err
+			return protocol.AssertionHash{}, err
 		}
 		prev, err := p.chain.GetAssertion(ctx, prevId)
 		if err != nil {
-			return protocol.AssertionId{}, err
+			return protocol.AssertionHash{}, err
 		}
 		curr = prev
 	}

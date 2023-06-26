@@ -32,12 +32,12 @@ type EdgeManager interface {
 // This information is used in order to confirm edges onchain.
 type ConfirmationMetadataChecker interface {
 	ConfirmedEdgeWithClaimExists(
-		topLevelAssertionId protocol.AssertionId,
+		topLevelAssertionHash protocol.AssertionHash,
 		claimId protocol.ClaimId,
 	) (protocol.EdgeId, bool)
 	ComputeHonestPathTimer(
 		ctx context.Context,
-		topLevelAssertionId protocol.AssertionId,
+		topLevelAssertionHash protocol.AssertionHash,
 		edgeId protocol.EdgeId,
 	) (challengetree.PathTimer, challengetree.HonestAncestors, error)
 }
@@ -46,7 +46,7 @@ type ConfirmationMetadataChecker interface {
 // associated subchallenge honest edges along with some more metadata used for
 // computing information needed for confirmations. Each time an edge is created onchain,
 // the challenge watcher service will add it to its respective "trackedChallenge"
-// namespaced under the top-level assertion id the edge belongs to.
+// namespaced under the top-level assertion hash the edge belongs to.
 type trackedChallenge struct {
 	honestEdgeTree                 *challengetree.HonestChallengeTree
 	confirmedLevelZeroEdgeClaimIds *threadsafe.Map[protocol.ClaimId, protocol.EdgeId]
@@ -64,7 +64,7 @@ type Watcher struct {
 	chain                protocol.AssertionChain
 	edgeManager          EdgeManager
 	pollEventsInterval   time.Duration
-	challenges           *threadsafe.Map[protocol.AssertionId, *trackedChallenge]
+	challenges           *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
 	backend              bind.ContractBackend
 	validatorName        string
 	initialSyncCompleted atomic.Bool
@@ -84,7 +84,7 @@ func New(
 		chain:              chain,
 		edgeManager:        edgeManager,
 		pollEventsInterval: interval,
-		challenges:         threadsafe.NewMap[protocol.AssertionId, *trackedChallenge](),
+		challenges:         threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
 		backend:            backend,
 		histChecker:        histChecker,
 		validatorName:      validatorName,
@@ -95,22 +95,22 @@ func New(
 // edge id for a tracked challenge. This is used during the confirmation process of edges
 // within edge tracker goroutines. Returns the claiming edge id.
 func (w *Watcher) ConfirmedEdgeWithClaimExists(
-	topLevelAssertionId protocol.AssertionId,
+	topLevelAssertionHash protocol.AssertionHash,
 	claimId protocol.ClaimId,
 ) (protocol.EdgeId, bool) {
-	challenge, ok := w.challenges.TryGet(topLevelAssertionId)
+	challenge, ok := w.challenges.TryGet(topLevelAssertionHash)
 	if !ok {
 		return protocol.EdgeId{}, false
 	}
 	return challenge.confirmedLevelZeroEdgeClaimIds.TryGet(claimId)
 }
 
-// Computes the honest path timer for an edge id within an assertion id challenge
+// Computes the honest path timer for an edge id within an assertion hash challenge
 // namespace. This is used during the confirmation process for edges in
 // edge tracker goroutine logic.
 func (w *Watcher) ComputeHonestPathTimer(
 	ctx context.Context,
-	topLevelAssertionId protocol.AssertionId,
+	topLevelAssertionHash protocol.AssertionHash,
 	edgeId protocol.EdgeId,
 ) (challengetree.PathTimer, challengetree.HonestAncestors, error) {
 	header, err := w.backend.HeaderByNumber(ctx, nil)
@@ -121,11 +121,11 @@ func (w *Watcher) ComputeHonestPathTimer(
 		return 0, nil, errors.New("latest block header number is not a uint64")
 	}
 	blockNumber := header.Number.Uint64()
-	chal, ok := w.challenges.TryGet(topLevelAssertionId)
+	chal, ok := w.challenges.TryGet(topLevelAssertionHash)
 	if !ok {
 		return 0, nil, fmt.Errorf(
 			"could not get challenge for top level assertion %#x",
-			topLevelAssertionId,
+			topLevelAssertionHash,
 		)
 	}
 	return chal.honestEdgeTree.HonestPathTimer(ctx, edgeId, blockNumber)
@@ -278,7 +278,7 @@ func (w *Watcher) Watch(ctx context.Context) {
 func (w *Watcher) GetEdges() []protocol.SpecEdge {
 	syncEdges := make([]protocol.SpecEdge, 0)
 	//nolint:err
-	_ = w.challenges.ForEach(func(assertionID protocol.AssertionId, t *trackedChallenge) error {
+	_ = w.challenges.ForEach(func(AssertionHash protocol.AssertionHash, t *trackedChallenge) error {
 		//nolint:err
 		_ = t.honestEdgeTree.GetEdges().ForEach(func(edgeId protocol.EdgeId, edge protocol.SpecEdge) error {
 			syncEdges = append(syncEdges, edge)
@@ -341,11 +341,11 @@ func (w *Watcher) processEdgeAddedEvent(
 	}
 	edge := edgeOpt.Unwrap()
 
-	assertionId, err := edge.AssertionId(ctx)
+	assertionHash, err := edge.AssertionHash(ctx)
 	if err != nil {
 		return err
 	}
-	chal, ok := w.challenges.TryGet(assertionId)
+	chal, ok := w.challenges.TryGet(assertionHash)
 	if !ok {
 		tree := challengetree.New(
 			event.OriginId,
@@ -357,7 +357,7 @@ func (w *Watcher) processEdgeAddedEvent(
 			honestEdgeTree:                 tree,
 			confirmedLevelZeroEdgeClaimIds: threadsafe.NewMap[protocol.ClaimId, protocol.EdgeId](),
 		}
-		w.challenges.Put(assertionId, chal)
+		w.challenges.Put(assertionHash, chal)
 	}
 	// Check if honest, then spawn.
 	agreement, err := chal.honestEdgeTree.AddEdge(ctx, edge)
@@ -529,7 +529,7 @@ func (w *Watcher) processEdgeConfirmation(
 		return errors.New("no edge found")
 	}
 	edge := edgeOpt.Unwrap()
-	assertionId, err := edge.AssertionId(ctx)
+	assertionHash, err := edge.AssertionHash(ctx)
 	if err != nil {
 		return err
 	}
@@ -541,21 +541,21 @@ func (w *Watcher) processEdgeConfirmation(
 	}
 
 	claimId := edge.ClaimId().Unwrap()
-	chal, ok := w.challenges.TryGet(assertionId)
+	chal, ok := w.challenges.TryGet(assertionHash)
 	if !ok {
 		return nil
 	}
 
 	// Check if we should confirm the assertion by challenge winner.
 	if edge.GetType() == protocol.BlockChallengeEdge {
-		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionId(claimId), edgeId); confirmAssertionErr != nil {
+		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash(claimId), edgeId); confirmAssertionErr != nil {
 			return confirmAssertionErr
 		}
-		log.WithField("assertionId", containers.Trunc(assertionId[:])).Infof("Assertion confirmed by challenge win")
+		log.WithField("assertionHash", containers.Trunc(assertionHash[:])).Infof("Assertion confirmed by challenge win")
 	}
 
 	chal.confirmedLevelZeroEdgeClaimIds.Put(claimId, edge.Id())
-	w.challenges.Put(assertionId, chal)
+	w.challenges.Put(assertionHash, chal)
 	return nil
 }
 

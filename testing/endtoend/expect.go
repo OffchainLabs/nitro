@@ -34,7 +34,7 @@ func expectAssertionConfirmedByChallengeWinner(t *testing.T, ctx context.Context
 			}
 			for i.Next() {
 				assertionNode, err := retry.UntilSucceeds(ctx, func() (rollupgen.AssertionNode, error) {
-					return rc.GetAssertion(&bind.CallOpts{Context: ctx}, i.Event.AssertionId)
+					return rc.GetAssertion(&bind.CallOpts{Context: ctx}, i.Event.AssertionHash)
 				})
 				if err != nil {
 					t.Fatal(err)

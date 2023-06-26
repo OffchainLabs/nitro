@@ -21,8 +21,8 @@ var (
 )
 
 type MockAssertion struct {
-	MockId                protocol.AssertionId
-	MockPrevId            protocol.AssertionId
+	MockId                protocol.AssertionHash
+	MockPrevId            protocol.AssertionHash
 	Prev                  option.Option[*MockAssertion]
 	MockHeight            uint64
 	MockStateHash         common.Hash
@@ -32,11 +32,11 @@ type MockAssertion struct {
 	CreatedAt             uint64
 }
 
-func (m *MockAssertion) Id() protocol.AssertionId {
+func (m *MockAssertion) Id() protocol.AssertionHash {
 	return m.MockId
 }
 
-func (m *MockAssertion) PrevId(ctx context.Context) (protocol.AssertionId, error) {
+func (m *MockAssertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) {
 	return m.MockPrevId, nil
 }
 
@@ -328,9 +328,9 @@ func (m *MockSpecEdge) TopLevelClaimHeight(ctx context.Context) (*protocol.Origi
 	args := m.Called(ctx)
 	return args.Get(0).(*protocol.OriginHeights), args.Error(1)
 }
-func (m *MockSpecEdge) AssertionId(ctx context.Context) (protocol.AssertionId, error) {
+func (m *MockSpecEdge) AssertionHash(ctx context.Context) (protocol.AssertionHash, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(protocol.AssertionId), args.Error(1)
+	return args.Get(0).(protocol.AssertionHash), args.Error(1)
 }
 func (m *MockSpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
@@ -420,19 +420,19 @@ func (m *MockProtocol) NumAssertions(ctx context.Context) (uint64, error) {
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionId) (protocol.Assertion, error) {
+func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionHash) (protocol.Assertion, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) AssertionUnrivaledBlocks(ctx context.Context, assertionId protocol.AssertionId) (uint64, error) {
-	args := m.Called(ctx, assertionId)
+func (m *MockProtocol) AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error) {
+	args := m.Called(ctx, assertionHash)
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockProtocol) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionId, error) {
+func (m *MockProtocol) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error) {
 	args := m.Called(ctx, edgeId)
-	return args.Get(0).(protocol.AssertionId), args.Error(1)
+	return args.Get(0).(protocol.AssertionHash), args.Error(1)
 }
 
 func (m *MockProtocol) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
@@ -451,7 +451,7 @@ func (m *MockProtocol) LatestConfirmed(ctx context.Context) (protocol.Assertion,
 }
 
 func (m *MockProtocol) ReadAssertionCreationInfo(
-	ctx context.Context, id protocol.AssertionId,
+	ctx context.Context, id protocol.AssertionHash,
 ) (*protocol.AssertionCreatedInfo, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(*protocol.AssertionCreatedInfo), args.Error(1)
@@ -460,10 +460,10 @@ func (m *MockProtocol) ReadAssertionCreationInfo(
 // Mutating methods.
 func (m *MockProtocol) ConfirmAssertionByChallengeWinner(
 	ctx context.Context,
-	assertionId protocol.AssertionId,
+	assertionHash protocol.AssertionHash,
 	winningEdgeId protocol.EdgeId,
 ) error {
-	args := m.Called(ctx, assertionId)
+	args := m.Called(ctx, assertionHash)
 	return args.Error(0)
 }
 
