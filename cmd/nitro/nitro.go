@@ -215,6 +215,9 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
+			if l1Wallet.OnlyCreateKey {
+				return 0
+			}
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 			l1TransactionOptsValidator = l1TransactionOpts
 		}

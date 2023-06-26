@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -50,6 +51,10 @@ func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chai
 	account, err := openKeystore(ks, description, walletConfig, readPass)
 	if err != nil {
 		return nil, nil, err
+	}
+	if walletConfig.OnlyCreateKey {
+		log.Info(fmt.Sprintf("Wallet key created with address %s, backup wallet (%s) and remove --%s.wallet.only-create-key to run normally", account.Address.Hex(), walletConfig.Pathname, description))
+		return nil, nil, nil
 	}
 
 	var txOpts *bind.TransactOpts
@@ -91,47 +96,35 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 		}
 	}
 
+	if creatingNew {
+		a, err := ks.NewAccount(password)
+		return &a, err
+	}
+
 	var account accounts.Account
-	if creatingNew {
-		var err error
-		account, err = ks.NewAccount(password)
-		if err != nil {
-			return &accounts.Account{}, err
+	if walletConfig.Account == "" {
+		if len(ks.Accounts()) > 1 {
+			names := make([]string, 0, len(ks.Accounts()))
+			for _, acct := range ks.Accounts() {
+				names = append(names, acct.Address.Hex())
+			}
+			return nil, fmt.Errorf("too many existing accounts, choose one: %s", strings.Join(names, ","))
 		}
+		account = ks.Accounts()[0]
 	} else {
-		if walletConfig.Account == "" {
-			if len(ks.Accounts()) > 1 {
-				names := make([]string, 0, len(ks.Accounts()))
-				for _, acct := range ks.Accounts() {
-					names = append(names, acct.Address.Hex())
-				}
-				return nil, fmt.Errorf("too many existing accounts, choose one: %s", strings.Join(names, ","))
-			}
-			account = ks.Accounts()[0]
-		} else {
-			address := common.HexToAddress(walletConfig.Account)
-			var emptyAddress common.Address
-			if address == emptyAddress {
-				return nil, fmt.Errorf("supplied address is invalid: %s", walletConfig.Account)
-			}
-			var err error
-			account, err = ks.Find(accounts.Account{Address: address})
-			if err != nil {
-				return nil, err
-			}
+		address := common.HexToAddress(walletConfig.Account)
+		var emptyAddress common.Address
+		if address == emptyAddress {
+			return nil, fmt.Errorf("supplied address is invalid: %s", walletConfig.Account)
+		}
+		var err error
+		account, err = ks.Find(accounts.Account{Address: address})
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	if creatingNew {
-		return nil, fmt.Errorf("wallet key created with address %s, backup wallet (%s) and remove --%s.wallet.only-create-key to run normally", account.Address.Hex(), walletConfig.Pathname, description)
-	}
-
-	err := ks.Unlock(account, password)
-	if err != nil {
-		return nil, err
-	}
-
-	return &account, nil
+	return &account, ks.Unlock(account, password)
 }
 
 func readPass() (string, error) {
