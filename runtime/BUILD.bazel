@@ -5,7 +5,10 @@ go_library(
     srcs = ["retry.go"],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/runtime",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_sirupsen_logrus//:logrus"],
+    deps = [
+        "@com_github_ethereum_go_ethereum//metrics",
+        "@com_github_sirupsen_logrus//:logrus",
+    ],
 )
 
 go_test(

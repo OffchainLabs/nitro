@@ -14,6 +14,7 @@ import (
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	utilTime "github.com/OffchainLabs/challenge-protocol-v2/time"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -21,6 +22,13 @@ import (
 var errBadOneStepProof = errors.New("bad one step proof data")
 
 var log = logrus.WithField("prefix", "edge-tracker")
+
+var (
+	spawnedCounter       = metrics.NewRegisteredCounter("arb/validator/tracker/spawned", nil)
+	bisectedCounter      = metrics.NewRegisteredCounter("arb/validator/tracker/bisected", nil)
+	confirmedCounter     = metrics.NewRegisteredCounter("arb/validator/tracker/confirmed", nil)
+	layerZeroLeafCounter = metrics.NewRegisteredCounter("arb/validator/tracker/layer_zero_leaves", nil)
+)
 
 // ConfirmationMetadataChecker defines a struct which can retrieve information about
 // an edge to determine if it can be confirmed via different means. For example,
@@ -144,6 +152,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 	}
 	fields := et.uniqueTrackerLogFields()
 	log.WithFields(fields).Info("Tracking edge")
+	spawnedCounter.Inc(1)
 	et.challengeManager.MarkTrackedEdge(et.edge.Id())
 	t := et.timeRef.NewTicker(et.actInterval)
 	defer t.Stop()
@@ -152,6 +161,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 		case <-t.C():
 			if et.shouldComplete() {
 				log.WithFields(fields).Infof("Edge tracker received notice of a confirmation, exiting")
+				spawnedCounter.Dec(1)
 				return
 			}
 			if err := et.Act(ctx); err != nil {
@@ -159,6 +169,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 			}
 		case <-ctx.Done():
 			log.WithFields(fields).Debug("Edge tracker goroutine exiting")
+			spawnedCounter.Dec(1)
 			return
 		}
 	}
@@ -222,6 +233,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 			log.WithFields(fields).WithError(err).Error("Could not open subchallenge leaf")
 			return et.fsm.Do(edgeBackToStart{})
 		}
+		layerZeroLeafCounter.Inc(1)
 		return et.fsm.Do(edgeAwaitConfirmation{})
 	// Edge should bisect.
 	case edgeBisecting:
@@ -230,6 +242,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 			log.WithError(err).WithFields(fields).Error("Could not bisect")
 			return et.fsm.Do(edgeBackToStart{})
 		}
+		bisectedCounter.Inc(1)
+
 		firstTracker, err := New(
 			lowerChild,
 			et.chain,
@@ -368,6 +382,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 			return false, errors.Wrap(confirmErr, "could not confirm by children")
 		}
 		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by children")
+		confirmedCounter.Inc(1)
 		return true, nil
 	}
 
@@ -381,6 +396,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 			return false, errors.Wrap(confirmClaimErr, "could not confirm by claim")
 		}
 		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by claim")
+		confirmedCounter.Inc(1)
 		return true, nil
 	}
 
@@ -398,6 +414,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 			return false, errors.Wrap(err, "could not confirm by timer")
 		}
 		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by time")
+		confirmedCounter.Inc(1)
 		return true, nil
 	}
 	return false, nil

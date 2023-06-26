@@ -14,11 +14,20 @@ import (
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 var log = logrus.WithField("prefix", "challenge-watcher")
+
+var (
+	edgeAddedCounter               = metrics.NewRegisteredCounter("arb/validator/watcher/edge_added", nil)
+	edgeConfirmedByChildrenCounter = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_children", nil)
+	edgeConfirmedByTimeCounter     = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_time", nil)
+	edgeConfirmedByOSPCounter      = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_osp", nil)
+	edgeConfirmedByClaimCounter    = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_claim", nil)
+)
 
 // EdgeManager provides a method to track edges, via edge tracker goroutines.
 type EdgeManager interface {
@@ -319,6 +328,7 @@ func (w *Watcher) checkForEdgeAdded(
 		if processErr != nil {
 			return processErr
 		}
+		edgeAddedCounter.Inc(1)
 	}
 	return nil
 }
@@ -401,6 +411,7 @@ func (w *Watcher) checkForEdgeConfirmedByOneStepProof(
 		if processErr != nil {
 			return processErr
 		}
+		edgeConfirmedByOSPCounter.Inc(1)
 	}
 	return nil
 }
@@ -436,6 +447,7 @@ func (w *Watcher) checkForEdgeConfirmedByTime(
 		if processErr != nil {
 			return processErr
 		}
+		edgeConfirmedByTimeCounter.Inc(1)
 	}
 	return nil
 }
@@ -471,6 +483,7 @@ func (w *Watcher) checkForEdgeConfirmedByChildren(
 		if processErr != nil {
 			return processErr
 		}
+		edgeConfirmedByChildrenCounter.Inc(1)
 	}
 	return nil
 }
@@ -506,6 +519,7 @@ func (w *Watcher) checkForEdgeConfirmedByClaim(
 		if processErr != nil {
 			return processErr
 		}
+		edgeConfirmedByClaimCounter.Inc(1)
 	}
 	return nil
 }
