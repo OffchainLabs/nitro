@@ -124,7 +124,10 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 		}
 	}
 
-	return &account, ks.Unlock(account, password)
+	if err := ks.Unlock(account, password); err != nil {
+		return nil, err
+	}
+	return &account, nil
 }
 
 func readPass() (string, error) {
