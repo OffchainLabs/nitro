@@ -291,7 +291,11 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 	if err != nil {
 		return false, 0, err
 	}
-	if batchCount <= gs.Batch {
+	requiredBatchCount := gs.Batch + 1
+	if gs.PosInBatch == 0 {
+		requiredBatchCount -= 1
+	}
+	if batchCount < requiredBatchCount {
 		return false, 0, nil
 	}
 	var prevBatchMsgCount arbutil.MessageIndex
