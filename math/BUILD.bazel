@@ -5,15 +5,11 @@ go_library(
     srcs = ["math.go"],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/math",
     visibility = ["//visibility:public"],
-    deps = ["//containers/option"],
 )
 
 go_test(
     name = "math_test",
     srcs = ["math_test.go"],
     embed = [":math"],
-    deps = [
-        "//containers/option",
-        "@com_github_stretchr_testify//require",
-    ],
+    deps = ["@com_github_stretchr_testify//require"],
 )

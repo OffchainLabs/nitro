@@ -238,7 +238,6 @@ func (s *L2StateBackend) HistoryCommitmentUpTo(_ context.Context, blockChallenge
 	// be 8 elements being committed to from [0, 7] inclusive.
 	size := blockChallengeHeight + 1
 	return commitments.New(
-		blockChallengeHeight,
 		s.stateRoots[:size],
 	)
 }
@@ -283,7 +282,6 @@ func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, blockStar
 		return commitments.History{}, err
 	}
 	return commitments.New(
-		blockEnd-blockStart,
 		states,
 	)
 }
@@ -408,7 +406,7 @@ func (s *L2StateBackend) BigStepCommitmentUpTo(
 	if err != nil {
 		return commitments.History{}, err
 	}
-	return commitments.New(toBigStep, leaves)
+	return commitments.New(leaves)
 }
 
 func (s *L2StateBackend) maybeDivergeState(state *protocol.ExecutionState, block uint64, step uint64) {
@@ -521,7 +519,7 @@ func (s *L2StateBackend) SmallStepCommitmentUpTo(
 	if err != nil {
 		return commitments.History{}, err
 	}
-	return commitments.New(toSmallStep, leaves)
+	return commitments.New(leaves)
 }
 
 func (s *L2StateBackend) intermediateSmallStepLeaves(

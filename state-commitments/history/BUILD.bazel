@@ -9,7 +9,6 @@ go_library(
         "//state-commitments/inclusion-proofs",
         "//state-commitments/prefix-proofs",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//crypto",
     ],
 )
 

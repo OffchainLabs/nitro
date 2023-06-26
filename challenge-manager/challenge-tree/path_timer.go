@@ -6,7 +6,6 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
-	bisection "github.com/OffchainLabs/challenge-protocol-v2/math"
 )
 
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,
@@ -43,10 +42,18 @@ func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint
 func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) option.Option[uint64] {
 	rivals := ht.rivalsWithCreationTimes(e)
 	creationBlocks := make([]uint64, len(rivals))
+	earliestCreatedRivalBlock := option.None[uint64]()
 	for i, r := range rivals {
 		creationBlocks[i] = uint64(r.createdAtBlock)
+		if earliestCreatedRivalBlock.IsNone() {
+			earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
+		} else {
+			if uint64(r.createdAtBlock) < earliestCreatedRivalBlock.Unwrap() {
+				earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
+			}
+		}
 	}
-	return bisection.Min(creationBlocks)
+	return earliestCreatedRivalBlock
 }
 
 // Determines if an edge was unrivaled at a block num T. If any rival existed

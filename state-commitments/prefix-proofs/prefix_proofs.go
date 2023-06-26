@@ -350,6 +350,16 @@ func GeneratePrefixProof(
 	}
 	height := prefixHeight
 	postHeight := height + uint64(len(leaves))
+
+	if prefixHeight >= postHeight {
+		return nil, errors.Wrapf(
+			ErrStartNotLessThanEnd,
+			"preheight %d >= postheight %d",
+			prefixHeight,
+			postHeight,
+		)
+	}
+
 	proof, _ := prefixExpansion.Compact()
 	for height < postHeight {
 		// extHeight looks like   xxxxxxxyyy

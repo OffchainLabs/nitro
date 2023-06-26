@@ -3,7 +3,6 @@ package math
 import (
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,73 +38,5 @@ func TestBisectionPoint(t *testing.T) {
 		res, err := Bisect(testCase.pre, testCase.post)
 		require.NoError(t, err, testCase)
 		require.Equal(t, testCase.expected, res)
-	}
-}
-
-func TestMin(t *testing.T) {
-	type testCase[T Unsigned] struct {
-		items      []T
-		wanted     T
-		wantedNone bool
-	}
-	testCases := []testCase[uint64]{
-		{
-			items:      []uint64{},
-			wantedNone: true,
-		},
-		{
-			items:  []uint64{1},
-			wanted: 1,
-		},
-		{
-			items:  []uint64{1, 2, 3},
-			wanted: 1,
-		},
-		{
-			items:  []uint64{32, 333, 202, 11, 3, 5, 1000},
-			wanted: 3,
-		},
-	}
-	for _, tt := range testCases {
-		res := Min(tt.items)
-		if tt.wantedNone {
-			require.Equal(t, option.None[uint64](), res)
-		} else {
-			require.Equal(t, tt.wanted, res.Unwrap())
-		}
-	}
-}
-
-func TestMax(t *testing.T) {
-	type testCase[T Unsigned] struct {
-		items      []T
-		wanted     T
-		wantedNone bool
-	}
-	testCases := []testCase[uint64]{
-		{
-			items:      []uint64{},
-			wantedNone: true,
-		},
-		{
-			items:  []uint64{1},
-			wanted: 1,
-		},
-		{
-			items:  []uint64{1, 2, 3},
-			wanted: 3,
-		},
-		{
-			items:  []uint64{32, 333, 202, 11, 3, 5, 1000},
-			wanted: 1000,
-		},
-	}
-	for _, tt := range testCases {
-		res := Max(tt.items)
-		if tt.wantedNone {
-			require.Equal(t, option.None[uint64](), res)
-		} else {
-			require.Equal(t, tt.wanted, res.Unwrap())
-		}
 	}
 }
