@@ -34,14 +34,14 @@ func TestEdgeTracker_act(t *testing.T) {
 		tkr, _ := setupNonPSTracker(ctx, t)
 		err := tkr.Act(ctx)
 		require.NoError(t, err)
-		require.Equal(t, int(4), int(tkr.CurrentState()))
+		require.Equal(t, 4, int(tkr.CurrentState()))
 		err = tkr.Act(ctx)
 		require.NoError(t, err)
-		require.Equal(t, int(5), int(tkr.CurrentState()))
+		require.Equal(t, 5, int(tkr.CurrentState()))
 		logging.AssertLogsContain(t, hook, "Successfully bisected")
 		err = tkr.Act(ctx)
 		require.NoError(t, err)
-		require.Equal(t, int(5), int(tkr.CurrentState()))
+		require.Equal(t, 5, int(tkr.CurrentState()))
 	})
 }
 

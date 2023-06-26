@@ -70,7 +70,7 @@ func WithValidatorAddress(addr common.Address) Opt {
 	}
 }
 
-func WithFSMOpts(opts ...fsm.Opt[edgeTrackerAction, edgeTrackerState]) Opt {
+func WithFSMOpts(opts ...fsm.Opt[edgeTrackerAction, EdgeTrackerState]) Opt {
 	return func(et *Tracker) {
 		et.fsmOpts = opts
 	}
@@ -83,8 +83,8 @@ type HeightConfig struct {
 
 type Tracker struct {
 	edge             protocol.SpecEdge
-	fsm              *fsm.Fsm[edgeTrackerAction, edgeTrackerState]
-	fsmOpts          []fsm.Opt[edgeTrackerAction, edgeTrackerState]
+	fsm              *fsm.Fsm[edgeTrackerAction, EdgeTrackerState]
+	fsmOpts          []fsm.Opt[edgeTrackerAction, EdgeTrackerState]
 	actInterval      time.Duration
 	timeRef          utilTime.Reference
 	validatorName    string
@@ -164,7 +164,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 	}
 }
 
-func (et *Tracker) CurrentState() edgeTrackerState {
+func (et *Tracker) CurrentState() EdgeTrackerState {
 	return et.fsm.Current().State
 }
 

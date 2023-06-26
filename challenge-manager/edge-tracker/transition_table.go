@@ -5,15 +5,15 @@ import (
 )
 
 func newEdgeTrackerFsm(
-	startState edgeTrackerState,
-	fsmOpts ...fsm.Opt[edgeTrackerAction, edgeTrackerState],
-) (*fsm.Fsm[edgeTrackerAction, edgeTrackerState], error) {
-	transitions := []*fsm.Event[edgeTrackerAction, edgeTrackerState]{
+	startState EdgeTrackerState,
+	fsmOpts ...fsm.Opt[edgeTrackerAction, EdgeTrackerState],
+) (*fsm.Fsm[edgeTrackerAction, EdgeTrackerState], error) {
+	transitions := []*fsm.Event[edgeTrackerAction, EdgeTrackerState]{
 		{
 			// Returns the tracker to the very beginning. Several states can cause
 			// this, including challenge moves.
 			Typ: edgeBackToStart{},
-			From: []edgeTrackerState{
+			From: []EdgeTrackerState{
 				edgeBisecting,
 				edgeStarted,
 				edgeAtOneStepProof,
@@ -25,31 +25,31 @@ func newEdgeTrackerFsm(
 			// The tracker will take some action if it has reached a one-step-proof
 			// in a small step challenge.
 			Typ:  edgeHandleOneStepProof{},
-			From: []edgeTrackerState{edgeStarted},
+			From: []EdgeTrackerState{edgeStarted},
 			To:   edgeAtOneStepProof,
 		},
 		{
 			// The tracker will add a subchallenge leaf to its edge's subchallenge.
 			Typ:  edgeOpenSubchallengeLeaf{},
-			From: []edgeTrackerState{edgeStarted, edgeAddingSubchallengeLeaf},
+			From: []EdgeTrackerState{edgeStarted, edgeAddingSubchallengeLeaf},
 			To:   edgeAddingSubchallengeLeaf,
 		},
 		// Challenge moves.
 		{
 			Typ:  edgeBisect{},
-			From: []edgeTrackerState{edgeStarted},
+			From: []EdgeTrackerState{edgeStarted},
 			To:   edgeBisecting,
 		},
 		// Awaiting confirmation.
 		{
 			Typ:  edgeAwaitConfirmation{},
-			From: []edgeTrackerState{edgeStarted, edgeBisecting, edgeAddingSubchallengeLeaf, edgeConfirming},
+			From: []EdgeTrackerState{edgeStarted, edgeBisecting, edgeAddingSubchallengeLeaf, edgeConfirming},
 			To:   edgeConfirming,
 		},
 		// Terminal state.
 		{
 			Typ:  edgeConfirm{},
-			From: []edgeTrackerState{edgeStarted, edgeConfirming, edgeConfirmed, edgeAtOneStepProof},
+			From: []EdgeTrackerState{edgeStarted, edgeConfirming, edgeConfirmed, edgeAtOneStepProof},
 			To:   edgeConfirmed,
 		},
 	}

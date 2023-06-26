@@ -6,11 +6,11 @@ import (
 
 // Defines a state in a finite state machine that aids
 // in deciding a challenge edge tracker's actions.
-type edgeTrackerState uint8
+type EdgeTrackerState uint8
 
 const (
 	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
-	_ edgeTrackerState = iota
+	_ EdgeTrackerState = iota
 	// The start state of the tracker.
 	edgeStarted
 	// The edge being tracked is at a one step proof.
@@ -27,7 +27,7 @@ const (
 )
 
 // String turns an edge tracker state into a readable string.
-func (s edgeTrackerState) String() string {
+func (s EdgeTrackerState) String() string {
 	switch s {
 	case edgeStarted:
 		return "started"
