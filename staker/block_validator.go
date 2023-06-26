@@ -50,8 +50,9 @@ type BlockValidator struct {
 	nextCreatePrevDelayed   uint64
 
 	// can only be accessed from from validation thread or if holding reorg-write
-	lastValidGS validator.GoGlobalState
-	valLoopPos  arbutil.MessageIndex
+	lastValidGS     validator.GoGlobalState
+	valLoopPos      arbutil.MessageIndex
+	legacyValidInfo *legacyLastBlockValidatedDbInfo
 
 	// only from logger thread
 	lastValidInfoPrinted *GlobalStateValidatedInfo
@@ -190,10 +191,16 @@ func NewBlockValidator(
 		}
 		if validated != nil {
 			ret.lastValidGS = validated.GlobalState
+		} else {
+			legacyInfo, err := ret.legacyReadLastValidatedInfo()
+			if err != nil {
+				return nil, err
+			}
+			ret.legacyValidInfo = legacyInfo
 		}
 	}
 	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 {
+	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
 		genesis, err := streamer.ResultAtCount(1)
 		if err != nil {
 			return nil, err
@@ -282,6 +289,26 @@ func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, err
 	return ReadLastValidatedInfo(v.db)
 }
 
+func (v *BlockValidator) legacyReadLastValidatedInfo() (*legacyLastBlockValidatedDbInfo, error) {
+	exists, err := v.db.Has(legacyLastBlockValidatedInfoKey)
+	if err != nil {
+		return nil, err
+	}
+	var validated legacyLastBlockValidatedDbInfo
+	if !exists {
+		return nil, nil
+	}
+	gsBytes, err := v.db.Get(legacyLastBlockValidatedInfoKey)
+	if err != nil {
+		return nil, err
+	}
+	err = rlp.DecodeBytes(gsBytes, &validated)
+	if err != nil {
+		return nil, err
+	}
+	return &validated, nil
+}
+
 var ErrGlobalStateNotInChain = errors.New("globalstate not in chain")
 
 // false if chain not caught up to globalstate
@@ -331,37 +358,6 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 		return false, 0, fmt.Errorf("%w: count %d hash %v expected %v, sendroot %v expected %v", ErrGlobalStateNotInChain, count, gs.BlockHash, res.BlockHash, gs.SendRoot, res.SendRoot)
 	}
 	return true, count, nil
-}
-
-func (v *BlockValidator) checkValidatedGSCaughtUp(ctx context.Context) (bool, error) {
-	v.reorgMutex.Lock()
-	defer v.reorgMutex.Unlock()
-	if v.chainCaughtUp {
-		return true, nil
-	}
-	if v.lastValidGS.Batch == 0 {
-		return false, errors.New("lastValid not initialized. cannot validate genesis")
-	}
-	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
-	if err != nil {
-		return false, err
-	}
-	if !caughtUp {
-		return false, nil
-	}
-	msg, err := v.streamer.GetMessage(count - 1)
-	if err != nil {
-		return false, err
-	}
-	v.nextCreateBatchReread = true
-	v.nextCreateStartGS = v.lastValidGS
-	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	atomicStorePos(&v.createdA, count)
-	atomicStorePos(&v.recordSentA, count)
-	atomicStorePos(&v.validatedA, count)
-	validatorMsgCountValidatedGauge.Update(int64(count))
-	v.chainCaughtUp = true
-	return true, nil
 }
 
 func (v *BlockValidator) sendRecord(s *validationStatus) error {
@@ -887,9 +883,106 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	return nil
 }
 
+func (v *BlockValidator) checkLegacyValid() error {
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	if v.legacyValidInfo == nil {
+		return nil
+	}
+	batchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	requiredBatchCount := v.legacyValidInfo.AfterPosition.BatchNumber + 1
+	if v.legacyValidInfo.AfterPosition.PosInBatch == 0 {
+		requiredBatchCount -= 1
+	}
+	if batchCount < requiredBatchCount {
+		// waiting to read more batches
+		return nil
+	}
+	msgCount, err := v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber)
+	if err != nil {
+		return err
+	}
+	msgCount += arbutil.MessageIndex(v.legacyValidInfo.AfterPosition.PosInBatch)
+	processedCount, err := v.streamer.GetProcessedMessageCount()
+	if err != nil {
+		return err
+	}
+	if processedCount < msgCount {
+		// waiting to process more messages
+		return nil
+	}
+	result, err := v.streamer.ResultAtCount(msgCount)
+	if err != nil {
+		return err
+	}
+	if result.BlockHash != v.legacyValidInfo.BlockHash {
+		log.Error("legacy validated blockHash does not fit chain", "info.BlockHash", v.legacyValidInfo.BlockHash, "chain", result.BlockHash, "count", msgCount)
+		return fmt.Errorf("legacy validated blockHash does not fit chain")
+	}
+	v.lastValidGS = validator.GoGlobalState{
+		BlockHash:  result.BlockHash,
+		SendRoot:   result.SendRoot,
+		Batch:      v.legacyValidInfo.AfterPosition.BatchNumber,
+		PosInBatch: v.legacyValidInfo.AfterPosition.PosInBatch,
+	}
+	err = v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{})
+	if err == nil {
+		err = v.db.Delete(legacyLastBlockValidatedInfoKey)
+		if err != nil {
+			err = fmt.Errorf("deleting legacy: %w", err)
+		}
+	}
+	if err != nil {
+		log.Error("failed writing initial lastValid on upgrade from legacy", "new-info", v.lastValidGS, "err", err)
+	} else {
+		log.Info("updated last-valid from legacy", "lastValid", v.lastValidGS)
+	}
+	v.legacyValidInfo = nil
+	return nil
+}
+
+// checks that the chain caught up to lastValidGS, used in startup
+func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	if v.chainCaughtUp {
+		return true, nil
+	}
+	if v.lastValidGS.Batch == 0 {
+		return false, errors.New("lastValid not initialized. cannot validate genesis")
+	}
+	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
+	if err != nil {
+		return false, err
+	}
+	if !caughtUp {
+		return false, nil
+	}
+	msg, err := v.streamer.GetMessage(count - 1)
+	if err != nil {
+		return false, err
+	}
+	v.nextCreateBatchReread = true
+	v.nextCreateStartGS = v.lastValidGS
+	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
+	atomicStorePos(&v.createdA, count)
+	atomicStorePos(&v.recordSentA, count)
+	atomicStorePos(&v.validatedA, count)
+	validatorMsgCountValidatedGauge.Update(int64(count))
+	v.chainCaughtUp = true
+	return true, nil
+}
+
 func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	for {
-		caughtUp, err := v.checkValidatedGSCaughtUp(ctx)
+		err := v.checkLegacyValid()
+		if err != nil {
+			log.Error("validator got error updating legacy validated info", "err", err)
+		}
+		caughtUp, err := v.checkValidatedGSCaughtUp()
 		if err != nil {
 			log.Error("validator got error waiting for chain to catch up", "err", err)
 		}
