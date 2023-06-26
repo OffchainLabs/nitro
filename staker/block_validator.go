@@ -898,7 +898,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 		requiredBatchCount -= 1
 	}
 	if batchCount < requiredBatchCount {
-		// waiting to read more batches
+		log.Warn("legacy valid batch ahead of db", "current", batchCount, "required", requiredBatchCount)
 		return nil
 	}
 	msgCount, err := v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber)
@@ -911,7 +911,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 		return err
 	}
 	if processedCount < msgCount {
-		// waiting to process more messages
+		log.Warn("legacy valid message count ahead of db", "current", processedCount, "required", msgCount)
 		return nil
 	}
 	result, err := v.streamer.ResultAtCount(msgCount)
@@ -959,6 +959,22 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 		return false, err
 	}
 	if !caughtUp {
+		batchCount, err := v.inboxTracker.GetBatchCount()
+		if err != nil {
+			log.Error("failed reading batch count", "err", err)
+			batchCount = 0
+		}
+		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount)
+		if err != nil {
+			log.Error("failed reading batchMsgCount", "err", err)
+			batchMsgCount = 0
+		}
+		processedMsgCount, err := v.streamer.GetProcessedMessageCount()
+		if err != nil {
+			log.Error("failed reading processedMsgCount", "err", err)
+			processedMsgCount = 0
+		}
+		log.Warn("validator catching up to last valid", "lastValid.Batch", v.lastValidGS.Batch, "lastValid.PosInBatch", v.lastValidGS.PosInBatch, "batchCount", batchCount, "batchMsgCount", batchMsgCount, "processedMsgCount", processedMsgCount)
 		return false, nil
 	}
 	msg, err := v.streamer.GetMessage(count - 1)
@@ -980,11 +996,11 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	for {
 		err := v.checkLegacyValid()
 		if err != nil {
-			log.Error("validator got error updating legacy validated info", "err", err)
+			log.Error("validator got error updating legacy validated info. Consider restarting with dangerous.reset-block-validation", "err", err)
 		}
 		caughtUp, err := v.checkValidatedGSCaughtUp()
 		if err != nil {
-			log.Error("validator got error waiting for chain to catch up", "err", err)
+			log.Error("validator got error waiting for chain to catch up. Consider restarting with dangerous.reset-block-validation", "err", err)
 		}
 		if caughtUp {
 			break
