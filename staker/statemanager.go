@@ -10,10 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -109,7 +111,7 @@ func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot
 
 // SmallStepLeafCommitment Produces a small step history commitment for all small steps between
 // big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (commitments.History, error) {
+func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64) (commitments.History, error) {
 	return s.SmallStepCommitmentUpTo(
 		ctx,
 		wasmModuleRoot,
@@ -135,6 +137,15 @@ func (s *StateManager) PrefixProofUpToBatch(
 	loSize := fromBlockChallengeHeight + 1 - startHeight
 	hiSize := toBlockChallengeHeight + 1 - startHeight
 	return s.getPrefixProof(loSize, hiSize, states)
+}
+
+// PrefixProof Produces a prefix proof in a block challenge from height A to B.
+func (s *StateManager) PrefixProof(
+	ctx context.Context,
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight uint64,
+) ([]byte, error) {
+	return s.PrefixProofUpToBatch(ctx, 0, fromBlockChallengeHeight, toBlockChallengeHeight, math.MaxUint64)
 }
 
 // BigStepPrefixProof Produces a big step prefix proof from height A to B for heights fromBlockChallengeHeight to H+1
@@ -218,43 +229,40 @@ var ExecutionStateAbi = abi.Arguments{
 	},
 }
 
-func (s *StateManager) OneStepProofData(ctx context.Context, parentAssertionCreationInfo *protocol.AssertionCreatedInfo, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
-	execState := parentAssertionCreationInfo.AfterState
+func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stateprovider.ConfigSnapshot, postState rollupgen.ExecutionState, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
 	inboxMaxCountProof, err := ExecutionStateAbi.Pack(
-		execState.GlobalState.Bytes32Vals[0],
-		execState.GlobalState.Bytes32Vals[1],
-		execState.GlobalState.U64Vals[0],
-		execState.GlobalState.U64Vals[1],
-		execState.MachineStatus,
+		postState.GlobalState.Bytes32Vals[0],
+		postState.GlobalState.Bytes32Vals[1],
+		postState.GlobalState.U64Vals[0],
+		postState.GlobalState.U64Vals[1],
+		postState.MachineStatus,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	wasmModuleRootProof, err := WasmModuleProofAbi.Pack(
-		parentAssertionCreationInfo.ParentAssertionHash,
-		parentAssertionCreationInfo.ExecutionHash(),
-		parentAssertionCreationInfo.AfterInboxBatchAcc,
+		cfgSnapshot.RequiredStake,
+		cfgSnapshot.ChallengeManagerAddress,
+		cfgSnapshot.ConfirmPeriodBlocks,
 	)
 	if err != nil {
 		return nil, nil, nil, err
-
 	}
 
 	startCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
-		parentAssertionCreationInfo.WasmModuleRoot,
+		cfgSnapshot.WasmModuleRoot,
 		blockHeight,
 		bigStep,
 		fromSmallStep,
 	)
 	if err != nil {
 		return nil, nil, nil, err
-
 	}
 	endCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
-		parentAssertionCreationInfo.WasmModuleRoot,
+		cfgSnapshot.WasmModuleRoot,
 		blockHeight,
 		bigStep,
 		toSmallStep,
@@ -273,7 +281,7 @@ func (s *StateManager) OneStepProofData(ctx context.Context, parentAssertionCrea
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(parentAssertionCreationInfo.WasmModuleRoot, input).Await(ctx)
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(cfgSnapshot.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -301,15 +309,15 @@ func (s *StateManager) OneStepProofData(ctx context.Context, parentAssertionCrea
 	}
 	afterHash := machineStep.Hash
 	if afterHash != endCommit.LastLeaf {
-		return nil, nil, nil, fmt.Errorf("machine executed to end step %v hash %v but expected %v", step+1, afterHash, endCommit.LastLeaf)
+		return nil, nil, nil, fmt.Errorf("machine executed to end step %v hash %v but expected %v", step+1, beforeHash, endCommit.LastLeaf)
 	}
 
 	data := &protocol.OneStepData{
 		BeforeHash:             startCommit.LastLeaf,
 		Proof:                  oneStepProof,
-		InboxMsgCountSeen:      parentAssertionCreationInfo.InboxMaxCount,
+		InboxMsgCountSeen:      cfgSnapshot.InboxMaxCount,
 		InboxMsgCountSeenProof: inboxMaxCountProof,
-		WasmModuleRoot:         parentAssertionCreationInfo.WasmModuleRoot,
+		WasmModuleRoot:         cfgSnapshot.WasmModuleRoot,
 		WasmModuleRootProof:    wasmModuleRootProof,
 	}
 	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil
