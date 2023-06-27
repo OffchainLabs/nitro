@@ -310,11 +310,11 @@ func TestFindBatch(t *testing.T) {
 	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
 	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
 
-	for blockNum := uint64(0); blockNum < uint64(MsgPerBatch)*3; blockNum++ {
+	for blockNum := uint64(0); blockNum < uint64(makeBatch_MsgsPerBatch)*3; blockNum++ {
 		gotBatchNum := callFindBatchContainig(t, ctx, l2Client, nodeAbi, blockNum)
 		expBatchNum := uint64(0)
 		if blockNum > 0 {
-			expBatchNum = 1 + (blockNum-1)/uint64(MsgPerBatch)
+			expBatchNum = 1 + (blockNum-1)/uint64(makeBatch_MsgsPerBatch)
 		}
 		if expBatchNum != gotBatchNum {
 			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)

@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -356,7 +357,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.Init.ThenQuit {
+	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMsg < 0 {
 		return 0
 	}
 
@@ -471,6 +472,8 @@ func mainImpl() int {
 		err = currentNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		} else {
+			defer currentNode.StopAndWait()
 		}
 	}
 
@@ -478,6 +481,20 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	exitCode := 0
+
+	if err == nil && nodeConfig.Init.ResetToMsg > 0 {
+		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMsg))
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
+			exitCode = 1
+		}
+		if nodeConfig.Init.ThenQuit {
+			close(sigint)
+
+			return exitCode
+		}
+	}
+
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
@@ -489,8 +506,6 @@ func mainImpl() int {
 
 	// cause future ctrl+c's to panic
 	close(sigint)
-
-	currentNode.StopAndWait()
 
 	return exitCode
 }

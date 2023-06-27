@@ -319,7 +319,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				}
 			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
 				// Expected error when trying to re-stake after losing initial stake.
-			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+			} else if strings.Contains(err.Error(), "start state not in chain") && sawStakerZombie {
 				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
 			} else if strings.Contains(err.Error(), "STAKER_IS_ZOMBIE") && sawStakerZombie {
 				// Expected error when the staker is a zombie and thus can't advance its stake.
