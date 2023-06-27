@@ -526,9 +526,9 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func testEvmData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, evmDataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
 	defer cleanup()
-	dataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
+	evmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()

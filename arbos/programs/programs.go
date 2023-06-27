@@ -163,9 +163,9 @@ func (p Programs) CallProgram(
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
 		blockTimestamp:  evm.Context.Time,
-		contractAddress: contract.Address(),
-		msgSender:       contract.Caller(),
-		msgValue:        common.BigToHash(contract.Value()),
+		contractAddress: scope.Contract.Address(),
+		msgSender:       scope.Contract.Caller(),
+		msgValue:        common.BigToHash(scope.Contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 	}
