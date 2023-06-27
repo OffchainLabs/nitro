@@ -51,6 +51,7 @@ func TestProgramKeccak_ReusesOtherDuplicateProgramCompiledCode(t *testing.T) {
 	if programAddress == otherAddressSameCode {
 		Fail(t, "expected to deploy at two separate program addresses")
 	}
+	Fail(t, "something went wrong")
 }
 
 func keccakTest(t *testing.T, jit bool) {

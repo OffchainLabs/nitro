@@ -207,7 +207,7 @@ func (machine *JitMachine) prove(
 		return state, err
 	}
 	for call, wasm := range userWasms {
-		if err := writeExact(call.Address[:]); err != nil {
+		if err := writeExact(call.CodeHash[:]); err != nil {
 			return state, err
 		}
 		if err := writeBytes(wasm.Wasm); err != nil {

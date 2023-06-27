@@ -58,7 +58,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 	}
 	for call, wasm := range entry.UserWasms {
 		callBytes := arbmath.Uint32ToBytes(call.Version)
-		callBytes = append(callBytes, call.Address.Bytes()...)
+		callBytes = append(callBytes, call.CodeHash.Bytes()...)
 		encCall := base64.StdEncoding.EncodeToString(callBytes)
 		encWasm := UserWasmJson{
 			NoncanonicalHash: wasm.NoncanonicalHash,
@@ -113,8 +113,8 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			return nil, err
 		}
 		decCall := state.WasmCall{
-			Version: arbmath.BytesToUint32(callBytes[:4]),
-			Address: common.BytesToAddress(callBytes[4:]),
+			Version:  arbmath.BytesToUint32(callBytes[:4]),
+			CodeHash: common.BytesToHash(callBytes[4:]),
 		}
 		compressed, err := base64.StdEncoding.DecodeString(wasm.CompressedWasm)
 		if err != nil {

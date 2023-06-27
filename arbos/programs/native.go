@@ -67,11 +67,8 @@ func callUserWasm(
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
 	program := actingAddress
-	if contract.CodeAddr != nil {
-		program = *contract.CodeAddr
-	}
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program, stylusParams.version)
+		db.RecordProgram(program, contract.CodeHash, stylusParams.version)
 	}
 	module := db.GetCompiledWasmCode(program, stylusParams.version)
 
