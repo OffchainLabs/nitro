@@ -8,15 +8,11 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-// Todo: we could create an upgrade scheme for moving from lastMessageValidated to lastBlockValidated
-// not a must, since even without this index, we'll start validation from last assertion made
-// the other option is to remove lastBlockValidated* from code
-
-// type legacyLastBlockValidatedDbInfo struct {
-// 	BlockNumber   uint64
-// 	BlockHash     common.Hash
-// 	AfterPosition GlobalStatePosition
-// }
+type legacyLastBlockValidatedDbInfo struct {
+	BlockNumber   uint64
+	BlockHash     common.Hash
+	AfterPosition GlobalStatePosition
+}
 
 type GlobalStateValidatedInfo struct {
 	GlobalState validator.GoGlobalState
@@ -25,5 +21,5 @@ type GlobalStateValidatedInfo struct {
 
 var (
 	lastGlobalStateValidatedInfoKey = []byte("_lastGlobalStateValidatedInfo") // contains a rlp encoded lastBlockValidatedDbInfo
-	// legacyLastBlockValidatedInfoKey = []byte("_lastBlockValidatedInfo")       // contains a rlp encoded lastBlockValidatedDbInfo
+	legacyLastBlockValidatedInfoKey = []byte("_lastBlockValidatedInfo")       // LEGACY - contains a rlp encoded lastBlockValidatedDbInfo
 )
