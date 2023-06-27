@@ -17,7 +17,7 @@ type BlockValidatorAPI struct {
 	val *staker.BlockValidator
 }
 
-func (a *BlockValidatorAPI) LatestValidatedMsgNum(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
+func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
 	return a.val.ReadLastValidatedInfo()
 }
 
