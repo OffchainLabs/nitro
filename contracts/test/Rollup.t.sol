@@ -163,8 +163,14 @@ contract RollupTest is Test {
         assertEq(userRollup.bridge().sequencerMessageCount(), ++count);
         return count;
     }
+    
+    function testGenesisAssertionConfirmed() external {
+        bytes32 latestConfirmed = userRollup.latestConfirmed();
+        assertEq(latestConfirmed, genesisHash);
+        assertEq(userRollup.getAssertion(latestConfirmed).status == AssertionStatus.Confirmed, true);
+    }
 
-    function testSucessPause() public {
+    function testSuccessPause() public {
         vm.prank(owner);
         adminRollup.pause();
     }
@@ -193,13 +199,13 @@ contract RollupTest is Test {
         );
     }
 
-    function testSucessPauseResume() public {
-        testSucessPause();
+    function testSuccessPauseResume() public {
+        testSuccessPause();
         vm.prank(owner);
         adminRollup.resume();
     }
 
-    function testSucessERC20Disabled() public {
+    function testSuccessERC20Disabled() public {
         assertEq(userRollup.owner(), owner);
         assertEq(userRollup.isERC20Enabled(), false);
     }

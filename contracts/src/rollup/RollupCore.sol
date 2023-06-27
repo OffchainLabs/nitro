@@ -200,6 +200,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function initializeCore(AssertionNode memory initialAssertion, bytes32 assertionHash) internal {
         __Pausable_init();
+        initialAssertion.status = AssertionStatus.Confirmed;
         _assertions[assertionHash] = initialAssertion;
         _latestConfirmed = assertionHash;
     }
