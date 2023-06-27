@@ -29,20 +29,111 @@ var (
 	}
 )
 
-var AccumulatorNotFoundErr = errors.New("accumulator not found")
+var (
+	AccumulatorNotFoundErr = errors.New("accumulator not found")
+	ErrChainCatchingUp     = errors.New("chain catching up")
+)
 
 type StateManager struct {
 	validator            *StatelessBlockValidator
+	blockValidator       *BlockValidator
 	numOpcodesPerBigStep uint64
 	maxWavmOpcodes       uint64
 }
 
-func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64, ) (*StateManager, error) {
 	return &StateManager{
 		validator:            val,
+		blockValidator:       blockValidator,
 		numOpcodesPerBigStep: numOpcodesPerBigStep,
 		maxWavmOpcodes:       maxWavmOpcodes,
 	}, nil
+}
+
+// LatestExecutionState Produces the latest state to assert to L1 from the local state manager's perspective.
+func (s *StateManager) LatestExecutionState(ctx context.Context) (*protocol.ExecutionState, error) {
+	var validatedGlobalState validator.GoGlobalState
+	if s.blockValidator != nil {
+		valInfo, err := s.blockValidator.ReadLastValidatedInfo()
+		if err != nil {
+			return nil, err
+		}
+		validatedGlobalState = valInfo.GlobalState
+	} else {
+		validatedCount, err := s.validator.streamer.GetProcessedMessageCount()
+		if err != nil || validatedCount == 0 {
+			return nil, err
+		}
+		var batchNum uint64
+		localBatchCount, err := s.validator.inboxTracker.GetBatchCount()
+		if err != nil {
+			return nil, fmt.Errorf("error getting batch count from inbox tracker: %w", err)
+		}
+		messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
+		if err != nil {
+			return nil, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
+		}
+		if validatedCount >= messageCount {
+			batchNum = localBatchCount - 1
+			validatedCount = messageCount
+		} else {
+			batchNum, err = s.validator.inboxTracker.FindL1BatchForMessage(validatedCount - 1)
+			if err != nil {
+				return nil, err
+			}
+		}
+		execResult, err := s.validator.streamer.ResultAtCount(validatedCount)
+		if err != nil {
+			return nil, err
+		}
+		_, gsPos, err := GlobalStatePositionsAtCount(s.validator.inboxTracker, validatedCount, batchNum)
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed calculating GSposition for count %d", err, validatedCount)
+		}
+		validatedGlobalState = buildGlobalState(*execResult, gsPos)
+	}
+	return &protocol.ExecutionState{
+		GlobalState:   protocol.GoGlobalState(validatedGlobalState),
+		MachineStatus: protocol.MachineStatusRunning,
+	}, nil
+}
+
+// ExecutionStateBlockHeight If the state manager locally has this execution state, returns its message count and true.
+// Otherwise, returns false.
+// Returns ErrChainCatchingUp if catching up to chain.
+func (s *StateManager) ExecutionStateBlockHeight(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
+	if state.MachineStatus != protocol.MachineStatusRunning {
+		return 0, false, errors.New("state is not running")
+	}
+	validatedExecutaionState, err := s.LatestExecutionState(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	if validatedExecutaionState.GlobalState.Batch < state.GlobalState.Batch ||
+		(validatedExecutaionState.GlobalState.Batch == state.GlobalState.Batch &&
+			validatedExecutaionState.GlobalState.PosInBatch < state.GlobalState.PosInBatch) {
+		return 0, false, ErrChainCatchingUp
+	}
+	var prevBatchMsgCount arbutil.MessageIndex
+	if state.GlobalState.Batch > 0 {
+		var err error
+		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch - 1)
+		if err != nil {
+			return 0, false, err
+		}
+	}
+	count := prevBatchMsgCount
+	if state.GlobalState.PosInBatch > 0 {
+		count += arbutil.MessageIndex(state.GlobalState.PosInBatch)
+	}
+	res, err := s.validator.streamer.ResultAtCount(count)
+	if err != nil {
+		return 0, false, err
+	}
+	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
+		return 0, false, fmt.Errorf("count %d hash %v expected %v, sendroot %v expected %v", count, state.GlobalState.BlockHash, res.BlockHash, state.GlobalState.SendRoot, res.SendRoot)
+	}
+	return uint64(count), true, nil
 }
 
 // HistoryCommitmentUpTo Produces a block history commitment up to and including messageCount.
