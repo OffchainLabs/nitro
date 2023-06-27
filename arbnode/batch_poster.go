@@ -214,12 +214,12 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
-func (b *BatchPoster) checkReverts(ctx context.Context, from, to *big.Int) (bool, error) {
-	if from.Cmp(to) == 1 {
-		return false, fmt.Errorf("wrong range, from: %v is more to: %v", from.Int64(), to.Int64())
+func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, error) {
+	if from > to {
+		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
 	}
-	one := big.NewInt(1)
-	for number := new(big.Int).Set(from); number.Cmp(to) != 1; number.Add(number, one) {
+	for idx := from; idx < to; idx++ {
+		number := big.NewInt(idx)
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
 			return false, fmt.Errorf("getting block: %v by number: %w", number.Int64(), err)
@@ -235,6 +235,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to *big.Int) (bool
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
+					log.Error("Transaction: %v from batch poster was reverted", tx.Hash())
 					return true, nil
 				}
 			}
@@ -248,10 +249,8 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to *big.Int) (bool
 func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
-	var (
-		last *big.Int // number of last seen block
-		one  = big.NewInt(1)
-	)
+
+	var last int64 // number of last seen block
 	for {
 		// Poll until:
 		// - L1 headers reader channel is closed, or
@@ -264,17 +263,18 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 				return
 			}
 			// If this is the first block header, set last seen as number-1.
-			if last == nil {
-				last = new(big.Int).Set(h.Number)
-				last.Sub(last, one)
+			// We may see same block number again if there is L1 reorg, in that
+			// case we check the block again.
+			if last == 0 || last == h.Number.Int64() {
+				last = h.Number.Int64() - 1
 			}
-			if h.Number.Int64()-last.Int64() > 100 {
-				log.Warn("Large gap between past seen: %v and current block number: %v, skipping check for reverts", last.Int64(), h.Number.Int64())
-				last.Set(h.Number)
+			if h.Number.Int64()-last > 100 {
+				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", last, "current", h.Number)
+				last = h.Number.Int64()
 				continue
 			}
 
-			reverted, err := b.checkReverts(ctx, last.Add(last, big.NewInt(1)), h.Number)
+			reverted, err := b.checkReverts(ctx, last+1, h.Number.Int64())
 			if err != nil {
 				log.Error("Checking batch reverts", "error", err)
 				continue
@@ -283,7 +283,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 				b.batchReverted.Store(true)
 				return
 			}
-			last.Set(h.Number)
+			last = h.Number.Int64()
 		case <-ctx.Done():
 			return
 		}
