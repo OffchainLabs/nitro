@@ -42,23 +42,12 @@ func TestProgramKeccakArb(t *testing.T) {
 	keccakTest(t, false)
 }
 
-func TestProgramKeccak_ReusesOtherDuplicateProgramCompiledCode(t *testing.T) {
-	file := rustFile("keccak")
-	ctx, _, _, l2client, auth, cleanup := setupProgramTest(t, file, true)
-	defer cleanup()
-	programAddress := deployWasm(t, ctx, auth, l2client, file)
-	otherAddressSameCode := deployWasm(t, ctx, auth, l2client, file)
-	if programAddress == otherAddressSameCode {
-		Fail(t, "expected to deploy at two separate program addresses")
-	}
-	Fail(t, "something went wrong")
-}
-
 func keccakTest(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	otherAddressSameCode := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+
 	if programAddress == otherAddressSameCode {
 		Fail(t, "expected to deploy at two separate program addresses")
 	}
@@ -72,6 +61,11 @@ func keccakTest(t *testing.T, jit bool) {
 	if programVersion != stylusVersion || stylusVersion == 0 {
 		Fail(t, "unexpected versions", stylusVersion, programVersion)
 	}
+	otherVersion, err := arbWasm.ProgramVersion(nil, otherAddressSameCode)
+	Require(t, err)
+	if otherVersion != programVersion {
+		Fail(t, "mismatched versions", stylusVersion, programVersion)
+	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
@@ -81,6 +75,17 @@ func keccakTest(t *testing.T, jit bool) {
 
 	timed(t, "execute", func() {
 		result := sendContractCall(t, ctx, programAddress, l2client, args)
+		if len(result) != 32 {
+			Fail(t, "unexpected return result: ", "result", result)
+		}
+		hash := common.BytesToHash(result)
+		if hash != correct {
+			Fail(t, "computed hash mismatch", hash, correct)
+		}
+		colors.PrintGrey("keccak(x) = ", hash)
+	})
+	timed(t, "execute same code, different address", func() {
+		result := sendContractCall(t, ctx, otherAddressSameCode, l2client, args)
 		if len(result) != 32 {
 			Fail(t, "unexpected return result: ", "result", result)
 		}
@@ -103,6 +108,7 @@ func keccakTest(t *testing.T, jit bool) {
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
+	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
