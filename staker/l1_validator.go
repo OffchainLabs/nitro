@@ -239,7 +239,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 
 	caughtUp, startCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, startState.GlobalState)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("start state not in chain: %w", err)
 	}
 	if !caughtUp {
 		target := GlobalStatePosition{
@@ -359,31 +359,44 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			wrongNodesExist = true
 			continue
 		}
+		afterGS := nd.AfterState().GlobalState
+		requiredBatch := afterGS.Batch
+		if afterGS.PosInBatch == 0 && afterGS.Batch > 0 {
+			requiredBatch -= 1
+		}
+		if localBatchCount <= requiredBatch {
+			log.Info("staker: waiting for node to catch up to assertion batch", "current", localBatchCount, "target", requiredBatch-1)
+			return nil, false, nil
+		}
+		nodeBatchMsgCount, err := v.inboxTracker.GetBatchMessageCount(requiredBatch)
+		if err != nil {
+			return nil, false, err
+		}
+		if validatedCount < nodeBatchMsgCount {
+			log.Info("staker: waiting for validator to catch up to assertion batch messages", "current", validatedCount, "target", nodeBatchMsgCount)
+			return nil, false, nil
+		}
 		if nd.Assertion.AfterState.MachineStatus != validator.MachineStatusFinished {
 			wrongNodesExist = true
 			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
 			continue
 		}
-		afterGS := nd.AfterState().GlobalState
 		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, ErrGlobalStateNotInChain) {
 			wrongNodesExist = true
-			log.Error("Found incorrect assertion", "node", nd.NodeNum, "err", err)
+			log.Error("Found incorrect assertion", "node", nd.NodeNum, "afterGS", afterGS, "err", err)
 			continue
 		}
 		if err != nil {
-			return nil, false, fmt.Errorf("error getting block number from global state: %w", err)
+			return nil, false, fmt.Errorf("error getting message number from global state: %w", err)
 		}
 		if !caughtUp {
-			return nil, false, fmt.Errorf("waiting for node to catch up to assertion blocks. Current: %d target: %v", validatedCount, afterGS)
-		}
-		if validatedCount < nodeMsgCount {
-			return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks. %d / %d", validatedCount, nodeMsgCount)
+			return nil, false, fmt.Errorf("unexpected no-caught-up parsing assertion. Current: %d target: %v", validatedCount, afterGS)
 		}
 		log.Info(
 			"found correct assertion",
 			"node", nd.NodeNum,
-			"count", validatedCount,
+			"count", nodeMsgCount,
 			"blockHash", afterGS.BlockHash,
 		)
 		correctNode = existingNodeAction{
@@ -425,13 +438,14 @@ func (v *L1Validator) createNewNodeAction(
 	if !prevInboxMaxCount.IsUint64() {
 		return nil, fmt.Errorf("inbox max count %v isn't a uint64", prevInboxMaxCount)
 	}
-	if validatedCount < startCount {
+	if validatedCount <= startCount {
 		// we haven't validated any new blocks
 		return nil, nil
 	}
 	if validatedGS.Batch < prevInboxMaxCount.Uint64() {
 		// didn't validate enough batches
-		return nil, fmt.Errorf("waiting for validator to validate enough batches %d/%d", validatedGS.Batch, prevInboxMaxCount)
+		log.Info("staker: not enough batches validated to create new assertion", "validated.Batch", validatedGS.Batch, "posInBatch", validatedGS.PosInBatch, "required batch", prevInboxMaxCount)
+		return nil, nil
 	}
 	batchValidated := validatedGS.Batch
 	if validatedGS.PosInBatch == 0 {

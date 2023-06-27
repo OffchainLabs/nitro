@@ -560,7 +560,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, fmt.Errorf("error creating execution backend: %w", err)
 	}
 	machineStepCount := m.machineFinalStepCount
-	log.Info("issuing one step proof", "challenge", m.challengeIndex, "machineStepCount", machineStepCount, "initial count", m.initialMachineMessageCount)
+	log.Info("issuing one step proof", "challenge", m.challengeIndex, "machineStepCount", machineStepCount, "initialCount", m.initialMachineMessageCount)
 	return m.blockChallengeBackend.IssueExecChallenge(
 		m.challengeCore,
 		state,

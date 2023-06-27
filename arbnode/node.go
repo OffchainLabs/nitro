@@ -545,10 +545,6 @@ func createNodeImpl(
 
 	l2ChainId := l2Config.ChainID.Uint64()
 
-	//TODO:
-	// var reorgingToBlock *types.Block
-	// config.Dangerous.ReorgToBlock >= 0 {
-
 	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
