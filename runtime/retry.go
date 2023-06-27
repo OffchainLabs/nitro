@@ -17,13 +17,15 @@ var (
 
 // UntilSucceeds retries the given function until it succeeds or the context is cancelled.
 func UntilSucceeds[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+	count := 0
 	for {
 		if ctx.Err() != nil {
 			return zeroVal[T](), ctx.Err()
 		}
 		got, err := fn()
 		if err != nil {
-			log.WithError(err).Error("Failed to call function")
+			count++
+			log.WithError(err).Errorf("Failed to call function after %d attempts", count)
 			retryCounter.Inc(1)
 			time.Sleep(sleepTime)
 			continue
