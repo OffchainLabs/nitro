@@ -83,6 +83,8 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
+// return the globalState position before and after processing message at the specified count
+// batch-number must be provided by caller
 func GlobalStatePositionsAtCount(
 	tracker InboxTrackerInterface,
 	count arbutil.MessageIndex,
@@ -133,7 +135,7 @@ type validationEntry struct {
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
-	// Valid since Recorded
+	// Valid since Ready
 	Preimages  map[common.Hash][]byte
 	DelayedMsg []byte
 }
@@ -327,8 +329,12 @@ func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) vali
 	}
 }
 
+// return the globalState position before and after processing message at the specified count
 func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.MessageIndex) (GlobalStatePosition, GlobalStatePosition, error) {
 	if count == 0 {
+		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("no initial state for count==0")
+	}
+	if count == 1 {
 		return GlobalStatePosition{}, GlobalStatePosition{1, 0}, nil
 	}
 	batch, err := v.inboxTracker.FindL1BatchForMessage(count - 1)

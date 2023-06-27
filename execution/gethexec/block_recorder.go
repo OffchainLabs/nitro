@@ -21,10 +21,10 @@ import (
 )
 
 // BlockRecorder uses a separate statedatabase from the blockchain.
-// It has access to any state in the HD database, and can compute state as needed.
+// It has access to any state in the ethdb (hard-disk) database, and can compute state as needed.
 // We keep references for state of:
 // Any block that matches PrepareForRecord that was done recently (according to PrepareDelay config)
-// Most recent/advanced header we ever omputed (lastHdr)
+// Most recent/advanced header we ever computed (lastHdr)
 // Hopefully - some recent valid block. For that we always keep one candidate block until it becomes validated.
 type BlockRecorder struct {
 	recordingDatabase *arbitrum.RecordingDatabase

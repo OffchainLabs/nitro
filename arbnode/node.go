@@ -581,9 +581,6 @@ func createNodeImpl(
 
 	l2ChainId := l2Config.ChainID.Uint64()
 
-	//TODO:
-	// var reorgingToBlock *types.Block
-	// config.Dangerous.ReorgToBlock >= 0 {
 	syncConfigFetcher := func() *SyncMonitorConfig {
 		return &configFetcher.Get().SyncMonitor
 	}
