@@ -1020,7 +1020,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 		resBytes, err = s.db.Get(key)
 		if err == nil {
 			var res execution.MessageResult
-			err = rlp.DecodeBytes(resBytes, res)
+			err = rlp.DecodeBytes(resBytes, &res)
 			if err == nil {
 				return &res, nil
 			}
