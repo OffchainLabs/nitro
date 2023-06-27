@@ -218,7 +218,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 	if from > to {
 		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
 	}
-	for idx := from; idx < to; idx++ {
+	for idx := from; idx <= to; idx++ {
 		number := big.NewInt(idx)
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
@@ -250,7 +250,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	var last int64 // number of last seen block
+	last := int64(0) // number of last seen block
 	for {
 		// Poll until:
 		// - L1 headers reader channel is closed, or
