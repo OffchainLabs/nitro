@@ -224,13 +224,13 @@ func (s *L2StateBackend) LatestExecutionState(_ context.Context) (*protocol.Exec
 }
 
 // Checks if the execution manager locally has recorded this state
-func (s *L2StateBackend) ExecutionStateBlockHeight(_ context.Context, state *protocol.ExecutionState) (uint64, bool) {
+func (s *L2StateBackend) ExecutionStateBlockHeight(_ context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
 	for i, r := range s.executionStates {
 		if r.Equals(state) {
-			return uint64(i), true
+			return uint64(i), true, nil
 		}
 	}
-	return 0, false
+	return 0, false, nil
 }
 
 func (s *L2StateBackend) HistoryCommitmentUpTo(_ context.Context, blockChallengeHeight uint64) (commitments.History, error) {
@@ -316,7 +316,6 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 		localStartCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
 			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BlockChallengeOriginHeight)+1,
 			uint64(startCommit.Height),
 		)
 		if err != nil {
@@ -325,7 +324,6 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 		localEndCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
 			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BlockChallengeOriginHeight)+1,
 			uint64(endCommit.Height),
 		)
 		if err != nil {
@@ -335,9 +333,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 		localStartCommit, err = s.SmallStepCommitmentUpTo(
 			ctx,
 			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BlockChallengeOriginHeight)+1,
 			uint64(heights.BigStepChallengeOriginHeight),
-			uint64(heights.BigStepChallengeOriginHeight)+1,
 			startCommit.Height,
 		)
 		if err != nil {
@@ -346,9 +342,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 		localEndCommit, err = s.SmallStepCommitmentUpTo(
 			ctx,
 			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BlockChallengeOriginHeight)+1,
 			uint64(heights.BigStepChallengeOriginHeight),
-			uint64(heights.BigStepChallengeOriginHeight)+1,
 			endCommit.Height,
 		)
 		if err != nil {
@@ -368,8 +362,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 
 func (s *L2StateBackend) BigStepLeafCommitment(
 	ctx context.Context,
-	fromAssertionHeight,
-	toAssertionHeight uint64,
+	blockHeight uint64,
 ) (commitments.History, error) {
 	// Number of big steps between assertion heights A and B will be
 	// fixed in this simulated state manager. It is simply the max number of opcodes
@@ -377,29 +370,20 @@ func (s *L2StateBackend) BigStepLeafCommitment(
 	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
 	return s.BigStepCommitmentUpTo(
 		ctx,
-		fromAssertionHeight,
-		toAssertionHeight,
+		blockHeight,
 		numBigSteps,
 	)
 }
 
 func (s *L2StateBackend) BigStepCommitmentUpTo(
 	ctx context.Context,
-	fromAssertionHeight,
-	toAssertionHeight,
+	blockHeight,
 	toBigStep uint64,
 ) (commitments.History, error) {
-	if fromAssertionHeight+1 != toAssertionHeight {
-		return commitments.History{}, fmt.Errorf(
-			"from height %d is not one-step away from to height %d",
-			fromAssertionHeight,
-			toAssertionHeight,
-		)
-	}
 	leaves, err := s.intermediateBigStepLeaves(
 		ctx,
-		fromAssertionHeight,
-		toAssertionHeight,
+		blockHeight,
+		blockHeight+1,
 		0, // from big step.
 		toBigStep,
 	)
@@ -469,50 +453,29 @@ func (s *L2StateBackend) intermediateBigStepLeaves(
 
 func (s *L2StateBackend) SmallStepLeafCommitment(
 	ctx context.Context,
-	fromAssertionHeight,
-	toAssertionHeight,
-	fromBigStep,
-	toBigStep uint64,
+	blockHeight,
+	bigStep uint64,
 ) (commitments.History, error) {
 	return s.SmallStepCommitmentUpTo(
 		ctx,
-		fromAssertionHeight,
-		toAssertionHeight,
-		fromBigStep,
-		toBigStep,
+		blockHeight,
+		bigStep,
 		s.numOpcodesPerBigStep,
 	)
 }
 
 func (s *L2StateBackend) SmallStepCommitmentUpTo(
 	ctx context.Context,
-	fromBlockChallengeHeight,
-	toBlockChallengeHeight,
-	fromBigStep,
-	toBigStep,
+	blockHeight,
+	bigStep uint64,
 	toSmallStep uint64,
 ) (commitments.History, error) {
-	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
-		return commitments.History{}, fmt.Errorf(
-			"from height %d is not one-step away from to height %d",
-			fromBlockChallengeHeight,
-			toBlockChallengeHeight,
-		)
-	}
-	if fromBigStep+1 != toBigStep {
-		return commitments.History{}, fmt.Errorf(
-			"from height %d is not one-step away from to height %d",
-			fromBigStep,
-			toBigStep,
-		)
-	}
-
-	fromSmall := fromBigStep * s.numOpcodesPerBigStep
+	fromSmall := bigStep * s.numOpcodesPerBigStep
 	toSmall := fromSmall + toSmallStep
 	leaves, err := s.intermediateSmallStepLeaves(
 		ctx,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
+		blockHeight,
+		blockHeight+1,
 		fromSmall,
 		toSmall,
 	)
@@ -612,10 +575,8 @@ func (s *L2StateBackend) OneStepProofData(
 	ctx context.Context,
 	cfgSnapshot *l2stateprovider.ConfigSnapshot,
 	postState rollupgen.ExecutionState,
-	fromBlockChallengeHeight,
-	toBlockChallengeHeight,
-	fromBigStep,
-	toBigStep,
+	blockHeight,
+	bigStep,
 	fromSmallStep,
 	toSmallStep uint64,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
@@ -642,10 +603,8 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 	startCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
-		fromBigStep,
-		toBigStep,
+		blockHeight,
+		bigStep,
 		fromSmallStep,
 	)
 	if commitErr != nil {
@@ -654,10 +613,8 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 	endCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
-		fromBigStep,
-		toBigStep,
+		blockHeight,
+		bigStep,
 		toSmallStep,
 	)
 	if commitErr != nil {
@@ -665,12 +622,12 @@ func (s *L2StateBackend) OneStepProofData(
 		return
 	}
 
-	machine, machineErr := s.machineAtBlock(ctx, fromBlockChallengeHeight)
+	machine, machineErr := s.machineAtBlock(ctx, blockHeight)
 	if machineErr != nil {
 		err = machineErr
 		return
 	}
-	step := fromBigStep*s.numOpcodesPerBigStep + fromSmallStep
+	step := bigStep*s.numOpcodesPerBigStep + fromSmallStep
 	err = machine.Step(step)
 	if err != nil {
 		return
@@ -749,22 +706,14 @@ func (s *L2StateBackend) PrefixProofUpToBatch(ctx context.Context, start, lo, hi
 
 func (s *L2StateBackend) BigStepPrefixProof(
 	ctx context.Context,
-	fromBlockChallengeHeight,
-	toBlockChallengeHeight,
+	blockHeight,
 	fromBigStep,
 	toBigStep uint64,
 ) ([]byte, error) {
-	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
-		return nil, fmt.Errorf(
-			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
-			fromBlockChallengeHeight,
-			toBlockChallengeHeight,
-		)
-	}
 	return s.bigStepPrefixProofCalculation(
 		ctx,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
+		blockHeight,
+		blockHeight+1,
 		fromBigStep,
 		toBigStep,
 	)
@@ -809,32 +758,16 @@ func (s *L2StateBackend) bigStepPrefixProofCalculation(
 
 func (s *L2StateBackend) SmallStepPrefixProof(
 	ctx context.Context,
-	fromBlockChallengeHeight,
-	toBlockChallengeHeight,
-	fromBigStep,
-	toBigStep,
+	blockHeight,
+	bigStep,
 	fromSmallStep,
 	toSmallStep uint64,
 ) ([]byte, error) {
-	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
-		return nil, fmt.Errorf(
-			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
-			fromBlockChallengeHeight,
-			toBlockChallengeHeight,
-		)
-	}
-	if fromBigStep+1 != toBigStep {
-		return nil, fmt.Errorf(
-			"fromBigStep=%d is not 1 height apart from toBigStep=%d",
-			fromBigStep,
-			toBigStep,
-		)
-	}
 	return s.smallStepPrefixProofCalculation(
 		ctx,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
-		fromBigStep,
+		blockHeight,
+		blockHeight+1,
+		bigStep,
 		fromSmallStep,
 		toSmallStep,
 	)

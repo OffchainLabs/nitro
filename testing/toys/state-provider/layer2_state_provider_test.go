@@ -49,24 +49,19 @@ func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing
 	require.Equal(t, hashes[0], blockChalCommit.FirstLeaf)
 
 	fromAssertionHeight := uint64(0)
-	toAssertionHeight := fromAssertionHeight + 1
 	bigStep, err := manager.BigStepLeafCommitment(
 		ctx,
 		fromAssertionHeight,
-		toAssertionHeight,
 	)
 	require.NoError(t, err)
 	require.Equal(t, hashes[0], bigStep.FirstLeaf)
 	require.NotEqual(t, bigStep.FirstLeaf, bigStep.LastLeaf)
 
 	fromBigStep := uint64(0)
-	toBigStep := fromBigStep + 1
 	smallStep, err := manager.SmallStepLeafCommitment(
 		ctx,
 		fromAssertionHeight,
-		toAssertionHeight,
 		fromBigStep,
-		toBigStep,
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), bigStep.Height)
@@ -103,20 +98,17 @@ func TestGranularCommitments_SameStartHistory(t *testing.T) {
 
 	// Generating a big step challenge commitment
 	// for all big WAVM steps between blocks 4 to 5.
-	toBlockChallengeHeight = fromBlockChallengeHeight + 1
 	toBigStep := uint64(4)
 
 	start, err = manager.BigStepCommitmentUpTo(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 		toBigStep,
 	)
 	require.NoError(t, err)
 	end, err = manager.BigStepLeafCommitment(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 	)
 	require.NoError(t, err)
 	require.Equal(t, start.FirstLeaf, end.FirstLeaf)
@@ -124,23 +116,18 @@ func TestGranularCommitments_SameStartHistory(t *testing.T) {
 	require.NotEqual(t, start.Merkle, end.Merkle)
 
 	fromBigStep := uint64(0)
-	toBigStep = fromBigStep + 1
 	toSmallStep := uint64(4)
 	start, err = manager.SmallStepCommitmentUpTo(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 		fromBigStep,
-		toBigStep,
 		toSmallStep,
 	)
 	require.NoError(t, err)
 	end, err = manager.SmallStepLeafCommitment(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 		fromBigStep,
-		toBigStep,
 	)
 	require.NoError(t, err)
 	require.Equal(t, start.FirstLeaf, end.FirstLeaf)
@@ -177,21 +164,18 @@ func TestGranularCommitments_DifferentStartPoints(t *testing.T) {
 
 	// Generating a big step challenge commitment
 	// for all big WAVM steps between blocks 4 to 5.
-	toBlockChallengeHeight = fromBlockChallengeHeight + 1
 	fromBigStep := uint64(2)
 	toBigStep := fromBigStep + 1
 
 	start, err = manager.BigStepCommitmentUpTo(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 		toBigStep,
 	)
 	require.NoError(t, err)
 	end, err = manager.BigStepLeafCommitment(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 	)
 	require.NoError(t, err)
 	require.Equal(t, start.FirstLeaf, end.FirstLeaf)
@@ -202,18 +186,14 @@ func TestGranularCommitments_DifferentStartPoints(t *testing.T) {
 	start, err = manager.SmallStepCommitmentUpTo(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 		fromBigStep,
-		toBigStep,
 		toSmallStep,
 	)
 	require.NoError(t, err)
 	end, err = manager.SmallStepLeafCommitment(
 		ctx,
 		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
 		fromBigStep,
-		toBigStep,
 	)
 	require.NoError(t, err)
 	require.Equal(t, start.FirstLeaf, end.FirstLeaf)
@@ -272,15 +252,15 @@ func TestAllPrefixProofs(t *testing.T) {
 
 	bigFrom := uint64(1)
 
-	bigCommit, err := manager.BigStepLeafCommitment(ctx, from, to)
+	bigCommit, err := manager.BigStepLeafCommitment(ctx, from)
 	require.NoError(t, err)
 
-	bigBisectCommit, err := manager.BigStepCommitmentUpTo(ctx, from, to, bigFrom)
+	bigBisectCommit, err := manager.BigStepCommitmentUpTo(ctx, from, bigFrom)
 	require.NoError(t, err)
 	require.Equal(t, bigFrom, bigBisectCommit.Height)
 	require.Equal(t, bigCommit.FirstLeaf, bigBisectCommit.FirstLeaf)
 
-	bigProof, err := manager.BigStepPrefixProof(ctx, from, to, bigFrom, bigCommit.Height)
+	bigProof, err := manager.BigStepPrefixProof(ctx, from, bigFrom, bigCommit.Height)
 	require.NoError(t, err)
 
 	data, err = ProofArgs.Unpack(bigProof)
@@ -311,17 +291,17 @@ func TestAllPrefixProofs(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	smallCommit, err := manager.SmallStepLeafCommitment(ctx, from, to, bigFrom, bigFrom+1)
+	smallCommit, err := manager.SmallStepLeafCommitment(ctx, from, bigFrom)
 	require.NoError(t, err)
 
 	smallFrom := uint64(2)
 
-	smallBisectCommit, err := manager.SmallStepCommitmentUpTo(ctx, from, to, bigFrom, bigFrom+1, smallFrom)
+	smallBisectCommit, err := manager.SmallStepCommitmentUpTo(ctx, from, bigFrom, smallFrom)
 	require.NoError(t, err)
 	require.Equal(t, smallFrom, smallBisectCommit.Height)
 	require.Equal(t, smallCommit.FirstLeaf, smallBisectCommit.FirstLeaf)
 
-	smallProof, err := manager.SmallStepPrefixProof(ctx, from, to, bigFrom, bigFrom+1, smallFrom, smallCommit.Height)
+	smallProof, err := manager.SmallStepPrefixProof(ctx, from, bigFrom, smallFrom, smallCommit.Height)
 	require.NoError(t, err)
 
 	data, err = ProofArgs.Unpack(smallProof)
@@ -374,7 +354,6 @@ func TestDivergenceGranularity(t *testing.T) {
 	honestCommit, err := honestManager.BigStepLeafCommitment(
 		ctx,
 		fromBlock,
-		toBlock,
 	)
 	require.NoError(t, err)
 
@@ -399,7 +378,6 @@ func TestDivergenceGranularity(t *testing.T) {
 	evilCommit, err := evilManager.BigStepLeafCommitment(
 		ctx,
 		fromBlock,
-		toBlock,
 	)
 	require.NoError(t, err)
 
@@ -413,14 +391,12 @@ func TestDivergenceGranularity(t *testing.T) {
 	honestCommit, err = honestManager.BigStepCommitmentUpTo(
 		ctx,
 		fromBlock,
-		toBlock,
 		checkHeight,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.BigStepCommitmentUpTo(
 		ctx,
 		fromBlock,
-		toBlock,
 		checkHeight,
 	)
 	require.NoError(t, err)
@@ -432,14 +408,12 @@ func TestDivergenceGranularity(t *testing.T) {
 	honestCommit, err = honestManager.BigStepCommitmentUpTo(
 		ctx,
 		fromBlock,
-		toBlock,
 		divergenceHeight,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.BigStepCommitmentUpTo(
 		ctx,
 		fromBlock,
-		toBlock,
 		divergenceHeight,
 	)
 	require.NoError(t, err)
@@ -453,22 +427,17 @@ func TestDivergenceGranularity(t *testing.T) {
 
 	// Small step challenge granularity.
 	fromBigStep := divergenceHeight - 1
-	toBigStep := divergenceHeight
 	honestCommit, err = honestManager.SmallStepLeafCommitment(
 		ctx,
 		fromBlock,
-		toBlock,
 		fromBigStep,
-		toBigStep,
 	)
 	require.NoError(t, err)
 
 	evilCommit, err = evilManager.SmallStepLeafCommitment(
 		ctx,
 		fromBlock,
-		toBlock,
 		fromBigStep,
-		toBigStep,
 	)
 	require.NoError(t, err)
 
@@ -484,18 +453,14 @@ func TestDivergenceGranularity(t *testing.T) {
 	honestCommit, err = honestManager.SmallStepCommitmentUpTo(
 		ctx,
 		fromBlock,
-		toBlock,
 		fromBigStep,
-		toBigStep,
 		toSmallStep,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.SmallStepCommitmentUpTo(
 		ctx,
 		fromBlock,
-		toBlock,
 		fromBigStep,
-		toBigStep,
 		toSmallStep,
 	)
 	require.NoError(t, err)

@@ -207,7 +207,10 @@ func (m *Manager) Start(ctx context.Context) {
 
 // Gets the execution height for a rollup state from our state manager.
 func (m *Manager) getExecutionStateBlockHeight(ctx context.Context, st rollupgen.ExecutionState) (uint64, error) {
-	height, ok := m.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(st))
+	height, ok, err := m.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(st))
+	if err != nil {
+		return 0, err
+	}
 	if !ok {
 		return 0, fmt.Errorf("missing previous assertion after execution %+v in local state manager", st)
 	}

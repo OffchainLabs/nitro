@@ -57,17 +57,17 @@ func NewScanner(
 // Scan the blockchain for assertion creation events in a polling manner
 // from the latest confirmed assertion.
 func (s *Scanner) Scan(ctx context.Context) {
-	scanRange, err := retry.UntilSucceeds(ctx, func() (filterRange, error) {
-		return s.getStartEndBlockNum(ctx)
-	})
+	latestConfirmed, err := s.chain.LatestConfirmed(ctx)
 	if err != nil {
 		log.Error(err)
 		return
 	}
-	fromBlock := scanRange.startBlockNum
-	toBlock := scanRange.endBlockNum
+	fromBlock, err := latestConfirmed.CreatedAtBlock()
+	if err != nil {
+		log.Error(err)
+		return
+	}
 
-	// Do the initial scan...
 	filterer, err := retry.UntilSucceeds(ctx, func() (*rollupgen.RollupUserLogicFilterer, error) {
 		return rollupgen.NewRollupUserLogicFilterer(s.rollupAddr, s.backend)
 	})
@@ -75,79 +75,40 @@ func (s *Scanner) Scan(ctx context.Context) {
 		log.Error(err)
 		return
 	}
-	filterOpts := &bind.FilterOpts{
-		Start:   fromBlock,
-		End:     &toBlock,
-		Context: ctx,
-	}
-	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		return true, s.checkForAssertionAdded(ctx, filterer, filterOpts)
-	})
-	if err != nil {
-		log.Error(err)
-		return
-	}
-
-	fromBlock = toBlock
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 	for {
-		for {
-			select {
-			case <-ticker.C:
-
-				// Scan up up to the block delta once more.
-				latestBlock, err := s.backend.HeaderByNumber(ctx, nil)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				if !latestBlock.Number.IsUint64() {
-					log.Fatal("Latest block number was not a uint64")
-				}
-				toBlock := latestBlock.Number.Uint64()
-				if fromBlock == toBlock {
-					continue
-				}
-
-				// Do what we need to do...
-
-				fromBlock = toBlock
-			case <-ctx.Done():
+		select {
+		case <-ticker.C:
+			latestBlock, err := s.backend.HeaderByNumber(ctx, nil)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			if !latestBlock.Number.IsUint64() {
+				log.Fatal("Latest block number was not a uint64")
+			}
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Start:   fromBlock,
+				End:     &toBlock,
+				Context: ctx,
+			}
+			_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+				return true, s.checkForAssertionAdded(ctx, filterer, filterOpts)
+			})
+			if err != nil {
+				log.Error(err)
 				return
 			}
+			fromBlock = toBlock
+		case <-ctx.Done():
+			return
 		}
 	}
-}
-
-type filterRange struct {
-	startBlockNum uint64
-	endBlockNum   uint64
-}
-
-// Gets the start and end block numbers for our filter queries, starting from the
-// latest confirmed assertion's block number up to the latest block number.
-func (s *Scanner) getStartEndBlockNum(ctx context.Context) (filterRange, error) {
-	latestConfirmed, err := s.chain.LatestConfirmed(ctx)
-	if err != nil {
-		return filterRange{}, err
-	}
-	firstBlock, err := latestConfirmed.CreatedAtBlock()
-	if err != nil {
-		return filterRange{}, err
-	}
-	startBlock := firstBlock
-	header, err := s.backend.HeaderByNumber(ctx, nil)
-	if err != nil {
-		return filterRange{}, err
-	}
-	if !header.Number.IsUint64() {
-		return filterRange{}, errors.New("header number is not a uint64")
-	}
-	return filterRange{
-		startBlockNum: startBlock,
-		endBlockNum:   header.Number.Uint64(),
-	}, nil
 }
 
 func (s *Scanner) checkForAssertionAdded(
@@ -209,7 +170,10 @@ func (s *Scanner) ProcessAssertionCreation(
 		return nil
 	}
 	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	_, agreesWithAssertion := s.stateProvider.ExecutionStateBlockHeight(ctx, execState)
+	_, agreesWithAssertion, err := s.stateProvider.ExecutionStateBlockHeight(ctx, execState)
+	if err != nil {
+		return err
+	}
 	if !agreesWithAssertion {
 		return nil
 	}
