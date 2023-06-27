@@ -938,6 +938,9 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.chainCaughtUp {
 		return true, nil
 	}
+	if v.legacyValidInfo != nil {
+		return false, nil
+	}
 	if v.lastValidGS.Batch == 0 {
 		genesis, err := v.streamer.ResultAtCount(1)
 		if err != nil {
