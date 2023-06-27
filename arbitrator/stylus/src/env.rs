@@ -119,7 +119,7 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         Ok(self)
     }
 
-    pub fn _write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
+    pub fn write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x)?;
         Ok(self)
@@ -150,7 +150,7 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         Ok(())
     }
 
-    pub fn _write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
+    pub fn write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
         self.write_slice(ptr, &src.0)?;
         Ok(())
     }

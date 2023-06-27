@@ -1,29 +1,25 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "author": "Offchain Labs, Inc.",
   "license": "BUSL-1.1",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/offchainlabs/nitro.git",
-    "directory": "contracts"
+    "url": "git+https://github.com/offchainlabs/nitro-contracts.git"
   },
   "files": [
-    "src/",
-    "scripts/build.bash",
-    "hardhat.prod-config.js"
+    "src/"
   ],
   "bugs": {
-    "url": "https://github.com/offchainlabs/nitro/issues"
+    "url": "https://github.com/offchainlabs/nitro-contracts/issues"
   },
   "scripts": {
-    "build": "./scripts/build.bash",
+    "build": "hardhat compile",
     "lint:test": "eslint ./test",
     "solhint": "solhint -f table src/**/*.sol",
     "prettier:solidity": "prettier --write src/**/*.sol",
     "format": "prettier './**/*.{js,json,md,ts,yml,sol}' --write && yarn run lint:test --fix",
-    "hardhat:prod": "hardhat --config hardhat.prod-config.js",
     "build:0.6": "INTERFACE_TESTER_SOLC_VERSION=0.6.9 yarn run build",
     "build:0.7": "INTERFACE_TESTER_SOLC_VERSION=0.7.0 yarn run build",
     "test:compatibility": "yarn run build:0.6 && yarn run build:0.7",
@@ -33,7 +29,6 @@
   "dependencies": {
     "@openzeppelin/contracts": "4.5.0",
     "@openzeppelin/contracts-upgradeable": "4.5.2",
-    "hardhat": "^2.6.6",
     "patch-package": "^6.4.7"
   },
   "private": false,
@@ -56,6 +51,7 @@
     "eslint-plugin-prettier": "^4.0.0",
     "ethereum-waffle": "^3.4.0",
     "ethers": "^5.5.2",
+    "hardhat": "^2.6.6",
     "hardhat-deploy": "^0.11.4",
     "hardhat-gas-reporter": "^1.0.8",
     "postinstall-postinstall": "^2.1.0",

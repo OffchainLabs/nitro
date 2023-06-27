@@ -18,9 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ipfs/go-cid"
-	icore "github.com/ipfs/interface-go-ipfs-core"
+	coreiface "github.com/ipfs/interface-go-ipfs-core"
 	"github.com/ipfs/interface-go-ipfs-core/options"
-	path "github.com/ipfs/interface-go-ipfs-core/path"
+	"github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/multiformats/go-multihash"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
@@ -65,7 +65,7 @@ func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
 type IpfsStorageService struct {
 	config     IpfsStorageServiceConfig
 	ipfsHelper *ipfshelper.IpfsHelper
-	ipfsApi    icore.CoreAPI
+	ipfsApi    coreiface.CoreAPI
 }
 
 func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig) (*IpfsStorageService, error) {

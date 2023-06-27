@@ -6,6 +6,7 @@ package server_arb
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -15,38 +16,8 @@ import (
 type executionRun struct {
 	stopwaiter.StopWaiter
 	cache *MachineCache
+	close sync.Once
 }
-
-type machineStep struct {
-	containers.Promise[validator.MachineStepResult]
-	reqPosition uint64
-	cancel      func()
-}
-
-func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
-	if err != nil {
-		s.ProduceError(err)
-		return
-	}
-	machineStep := machine.GetStepCount()
-	if s.reqPosition != machineStep {
-		machineRunning := machine.IsRunning()
-		if (machineRunning && s.reqPosition != machineStep) || machineStep > s.reqPosition {
-			s.ProduceError(fmt.Errorf("machine is in wrong position want: %d, got: %d", s.reqPosition, machine.GetStepCount()))
-			return
-		}
-
-	}
-	result := validator.MachineStepResult{
-		Position:    machineStep,
-		Status:      validator.MachineStatus(machine.Status()),
-		GlobalState: machine.GetGlobalState(),
-		Hash:        machine.Hash(),
-	}
-	s.Produce(result)
-}
-
-func (s *machineStep) Close() { s.cancel() }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
@@ -62,54 +33,62 @@ func NewExecutionRun(
 }
 
 func (e *executionRun) Close() {
-	e.StopOnly()
+	go e.close.Do(func() {
+		e.StopAndWait()
+		if e.cache != nil {
+			e.cache.Destroy(e.GetParentContext())
+		}
+	})
 }
 
-func (e *executionRun) PrepareRange(start uint64, end uint64) {
-	newCache := e.cache.SpawnCacheWithLimits(e.GetContext(), start, end)
-	e.cache = newCache
+func (e *executionRun) PrepareRange(start uint64, end uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](e, func(ctx context.Context) (struct{}, error) {
+		err := e.cache.SetRange(ctx, start, end)
+		return struct{}{}, err
+	})
 }
 
-func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
-	mstep := &machineStep{
-		Promise:     containers.NewPromise[validator.MachineStepResult](),
-		reqPosition: position,
-	}
-	cancel := e.LaunchThreadWithCancel(func(ctx context.Context) {
+func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
+	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](e, func(ctx context.Context) (*validator.MachineStepResult, error) {
+		var machine MachineInterface
+		var err error
 		if position == ^uint64(0) {
-			mstep.consumeMachine(e.cache.GetFinalMachine(ctx))
+			machine, err = e.cache.GetFinalMachine(ctx)
 		} else {
 			// todo cache last machine
-			mstep.consumeMachine(e.cache.GetMachineAt(ctx, position))
+			machine, err = e.cache.GetMachineAt(ctx, position)
 		}
+		if err != nil {
+			return nil, err
+		}
+		machineStep := machine.GetStepCount()
+		if position != machineStep {
+			machineRunning := machine.IsRunning()
+			if machineRunning || machineStep > position {
+				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+			}
+
+		}
+		result := &validator.MachineStepResult{
+			Position:    machineStep,
+			Status:      validator.MachineStatus(machine.Status()),
+			GlobalState: machine.GetGlobalState(),
+			Hash:        machine.Hash(),
+		}
+		return result, nil
 	})
-	mstep.cancel = cancel
-	return mstep
 }
 
-type asyncProof struct {
-	containers.Promise[[]byte]
-	cancel func()
-}
-
-func (p *asyncProof) Close() {}
-
-func (e *executionRun) GetProofAt(position uint64) validator.ProofPromise {
-	proof := &asyncProof{
-		Promise: containers.NewPromise[[]byte](),
-	}
-	cancel := e.LaunchThreadWithCancel(func(ctx context.Context) {
+func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
+	return stopwaiter.LaunchPromiseThread[[]byte](e, func(ctx context.Context) ([]byte, error) {
 		machine, err := e.cache.GetMachineAt(ctx, position)
 		if err != nil {
-			proof.ProduceError(err)
-			return
+			return nil, err
 		}
-		proof.Produce(machine.ProveNextStep())
+		return machine.ProveNextStep(), nil
 	})
-	proof.cancel = cancel
-	return proof
 }
 
-func (e *executionRun) GetLastStep() validator.MachineStep {
+func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return e.GetStepAt(^uint64(0))
 }

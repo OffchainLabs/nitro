@@ -6,6 +6,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -525,7 +526,7 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func testEvmData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
+	ctx, node, l2info, l2client, auth, evmDataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
 	defer cleanup()
 	dataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
 
@@ -536,25 +537,61 @@ func testEvmData(t *testing.T, jit bool) {
 		Require(t, err)
 		return receipt
 	}
+	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
-	expected := testhelpers.RandomAddress()
-	opts := bind.CallOpts{
-		From: expected,
-	}
-	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
+	evmDataGas := uint64(1000000000)
+	gasToBurn := uint64(1000000)
+	callBurnData, err := burnArbGas(new(big.Int).SetUint64(gasToBurn))
 	Require(t, err)
-	if len(result) != 20 {
-		Fail(t, "unexpected return result: ", result)
-	}
-	origin := common.BytesToAddress(result)
-	if origin != expected {
-		Fail(t, "origin mismatch: ", expected, origin)
+	fundedAddr := l2info.Accounts["Faucet"].Address
+	ethPrecompile := common.BigToAddress(big.NewInt(1))
+	arbTestAddress := types.ArbosTestAddress
+
+	evmDataData := []byte{}
+	evmDataData = append(evmDataData, fundedAddr.Bytes()...)
+	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
+	evmDataData = append(evmDataData, arbTestAddress.Bytes()...)
+	evmDataData = append(evmDataData, evmDataAddr.Bytes()...)
+	evmDataData = append(evmDataData, callBurnData...)
+	opts := bind.CallOpts{
+		From: testhelpers.RandomAddress(),
 	}
 
-	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})
+	result, err := mock.StaticcallEvmData(&opts, evmDataAddr, fundedAddr, evmDataGas, evmDataData)
+	Require(t, err)
+
+	advance := func(count int, name string) []byte {
+		t.Helper()
+		if len(result) < count {
+			Fail(t, "not enough data left", name, count, len(result))
+		}
+		data := result[:count]
+		result = result[count:]
+		return data
+	}
+	getU64 := func(name string) uint64 {
+		t.Helper()
+		return binary.BigEndian.Uint64(advance(8, name))
+	}
+
+	inkPrice := getU64("ink price")
+	gasLeftBefore := getU64("gas left before")
+	inkLeftBefore := getU64("ink left before")
+	gasLeftAfter := getU64("gas left after")
+	inkLeftAfter := getU64("ink left after")
+
+	gasUsed := gasLeftBefore - gasLeftAfter
+	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
+
+	// Should be within 1 gas
+	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
+		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
+	}
+
+	tx = l2info.PrepareTxTo("Owner", &evmDataAddr, evmDataGas, nil, evmDataData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
@@ -566,7 +603,10 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
 
+	// TODO: track latest ArbOS version
 	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+
 	l2config := arbnode.ConfigDefaultL1Test()
 	l2config.BlockValidator.Enable = true
 	l2config.BatchPoster.Enable = true
@@ -675,6 +715,7 @@ func rustFile(name string) string {
 func validateBlocks(
 	t *testing.T, start uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
+	t.Helper()
 	if jit || start == 0 {
 		start = 1
 	}
@@ -692,12 +733,13 @@ func validateBlocks(
 func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
-	doUntil(t, 20*time.Millisecond, 250, func() bool {
+	t.Helper()
+	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
+		messageCount, err := node.TxStreamer.GetMessageCount()
 		Require(t, err)
 		return meta.MessageCount == messageCount
 	})

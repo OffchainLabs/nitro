@@ -45,7 +45,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.18.x
+          go-version: 1.19.x
 
       - name: Install wasm-ld
         run: |
@@ -134,16 +134,20 @@ jobs:
         run: |
           mkdir -p target/tmp
           echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
-          echo "GOMEMLIMIT=6GB" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+        run: |
+          packages=`go list ./...`
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -race -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+        run: |
+          packages=`go list ./...`
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -151,11 +155,15 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+        run: |
+          packages=`go list ./...`
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
-        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=stylustest -run=TestProgramArbitrator > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+        run: |
+          packages=`go list ./...`
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=stylustest -run=TestProgramArbitrator > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3

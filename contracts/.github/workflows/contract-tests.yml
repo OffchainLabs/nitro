@@ -3,6 +3,7 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
+  merge_group:
   push:
     branches:
       - master
@@ -15,12 +16,9 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: contracts
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        with:
-          token: ${{ secrets.PRIVATE_CHECKOUT }}
 
       - name: Setup nodejs
         uses: actions/setup-node@v2

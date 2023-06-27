@@ -143,4 +143,16 @@ impl EvmApi for TestEvmApi {
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {
         Ok(()) // pretend a log was emitted
     }
+
+    fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+        unimplemented!()
+    }
+
+    fn account_codehash(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+        unimplemented!()
+    }
+
+    fn evm_blockhash(&mut self, _num: Bytes32) -> Bytes32 {
+        unimplemented!()
+    }
 }

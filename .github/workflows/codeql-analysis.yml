@@ -69,7 +69,7 @@ jobs:
     - name: Install go
       uses: actions/setup-go@v2
       with:
-        go-version: 1.18.x
+        go-version: 1.19.x
 
     - name: Install rust stable
       uses: actions-rs/toolchain@v1
@@ -98,18 +98,6 @@ jobs:
       with:
         path: ~/wabt-prefix
         key: ${{ runner.os }}-wabt-codeql-${{ env.WABT_VERSION }}
-
-    - name: Install latest wabt
-      if: steps.cache-wabt.outputs.cache-hit != 'true'
-      run: |
-        cd "$(mktemp -d)"
-        git clone --recursive -b "$WABT_VERSION" https://github.com/WebAssembly/wabt .
-        mkdir build
-        cd build
-        mkdir -p ~/wabt-prefix
-        cmake .. -DCMAKE_INSTALL_PREFIX="$HOME/wabt-prefix"
-        make -j
-        make install
 
     - name: Cache cbrotli
       uses: actions/cache@v3

@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbstate
+package gethhook
 
 import (
 	"bytes"
@@ -15,11 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type TestChainContext struct {
@@ -64,8 +65,8 @@ func TestEthDepositMessage(t *testing.T) {
 	}
 
 	firstRequestId := common.BigToHash(big.NewInt(3))
-	header := arbos.L1IncomingMessageHeader{
-		Kind:        arbos.L1MessageType_EthDeposit,
+	header := arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_EthDeposit,
 		Poster:      addr,
 		BlockNumber: 864513,
 		Timestamp:   8794561564,
@@ -79,7 +80,7 @@ func TestEthDepositMessage(t *testing.T) {
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {
 		t.Error(err)
 	}
-	msg := arbos.L1IncomingMessage{
+	msg := arbostypes.L1IncomingMessage{
 		Header: &header,
 		L2msg:  msgBuf.Bytes(),
 	}
@@ -99,7 +100,7 @@ func TestEthDepositMessage(t *testing.T) {
 	if err := util.HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
 	}
-	msg2 := arbos.L1IncomingMessage{
+	msg2 := arbostypes.L1IncomingMessage{
 		Header: &header,
 		L2msg:  msgBuf2.Bytes(),
 	}
@@ -119,11 +120,11 @@ func TestEthDepositMessage(t *testing.T) {
 func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
 	chainId := big.NewInt(6456554)
 	for _, data := range msgs {
-		msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(data), nil)
+		msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data), nil)
 		if err != nil {
 			t.Error(err)
 		}
-		txes, err := msg.ParseL2Transactions(chainId, nil)
+		txes, err := arbos.ParseL2Transactions(msg, chainId, nil)
 		if err != nil {
 			t.Error(err)
 		}

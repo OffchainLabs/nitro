@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -70,11 +70,11 @@ func TestContractTxDeploy(t *testing.T) {
 		l2Msg = append(l2Msg, math.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = node.TxStreamer.AddMessages(pos, true, []arbstate.MessageWithMetadata{
+		err = node.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
 			{
-				Message: &arbos.L1IncomingMessage{
-					Header: &arbos.L1IncomingMessageHeader{
-						Kind:        arbos.L1MessageType_L2Message,
+				Message: &arbostypes.L1IncomingMessage{
+					Header: &arbostypes.L1IncomingMessageHeader{
+						Kind:        arbostypes.L1MessageType_L2Message,
 						Poster:      from,
 						BlockNumber: 0,
 						Timestamp:   0,

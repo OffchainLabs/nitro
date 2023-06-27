@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity >=0.4.21 <0.9.0;
@@ -94,6 +94,9 @@ interface ArbOwner {
 
     // @notice sets the cost of starting a stylus hostio call
     function setWasmHostioInk(uint64 cost) external;
+
+    /// @notice Sets serialized chain config in ArbOS state
+    function setChainConfig(string calldata chainConfig) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);

@@ -15,11 +15,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -79,8 +81,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
-	URL                      string                        `koanf:"url"`
-	JWTSecret                string                        `koanf:"jwtsecret"`
+	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -88,6 +89,10 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+}
+
+func (c *BlockValidatorConfig) Validate() error {
+	return c.ValidationServer.Validate()
 }
 
 type BlockValidatorDangerousConfig struct {
@@ -98,8 +103,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
-	f.String(prefix+".url", DefaultBlockValidatorConfig.URL, "url for valiation")
-	f.String(prefix+".jwtsecret", DefaultBlockValidatorConfig.JWTSecret, "path to file with jwtsecret for validation - empty disables jwt, 'self' uses the server's jwt")
+	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -115,8 +119,7 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "ws://127.0.0.1:8549/",
-	JWTSecret:                "self",
+	ValidationServer:         rpcclient.DefaultClientConfig,
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,
@@ -128,8 +131,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "",
-	JWTSecret:                "",
+	ValidationServer:         rpcclient.TestClientConfig,
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
 	PrerecordedBlocks:        64,
@@ -263,6 +265,28 @@ func (v *BlockValidator) recentShutdown() error {
 	return err
 }
 
+func ReadLastValidatedFromDb(db ethdb.Database) (*LastBlockValidatedDbInfo, error) {
+	exists, err := db.Has(lastBlockValidatedInfoKey)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+
+	infoBytes, err := db.Get(lastBlockValidatedInfoKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var info LastBlockValidatedDbInfo
+	err = rlp.DecodeBytes(infoBytes, &info)
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
 // only called by NewBlockValidator
 func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Block) error {
 	v.reorgMutex.Lock()
@@ -298,13 +322,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		return nil
 	}
 
-	infoBytes, err := v.db.Get(lastBlockValidatedInfoKey)
-	if err != nil {
-		return err
-	}
-
-	var info lastBlockValidatedDbInfo
-	err = rlp.DecodeBytes(infoBytes, &info)
+	info, err := ReadLastValidatedFromDb(v.db)
 	if err != nil {
 		return err
 	}
@@ -373,7 +391,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 	return nil
 }
 
-func (v *BlockValidator) newValidationStatus(prevHeader, header *types.Header, msg *arbstate.MessageWithMetadata) (*validationStatus, error) {
+func (v *BlockValidator) newValidationStatus(prevHeader, header *types.Header, msg *arbostypes.MessageWithMetadata) (*validationStatus, error) {
 	entry, err := newValidationEntry(prevHeader, header, msg, v.blockchain.Config())
 	if err != nil {
 		return nil, err
@@ -385,7 +403,7 @@ func (v *BlockValidator) newValidationStatus(prevHeader, header *types.Header, m
 	return status, nil
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
+func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbostypes.MessageWithMetadata) {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
 	blockNum := block.NumberU64()
@@ -438,7 +456,8 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	return v.execSpawner.WriteToFile(input, expOut, moduleRoot)
+	_, err = v.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(v.GetContext())
+	return err
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -579,18 +598,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
 		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
-		validatorPendingValidationsGauge.Inc(1)
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
 			if err != nil && validationCtx.Err() == nil {
+				validationStatus.replaceStatus(Prepared, RecordFailed)
 				log.Error("error preparing validation", "err", err)
 				return
 			}
 			input, err := validationStatus.Entry.ToInput()
 			if err != nil && validationCtx.Err() == nil {
+				validationStatus.replaceStatus(Prepared, RecordFailed)
 				log.Error("error preparing validation", "err", err)
 				return
 			}
@@ -600,6 +620,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 					validationStatus.Runs = append(validationStatus.Runs, run)
 				}
 			}
+			validatorPendingValidationsGauge.Inc(1)
 			replaced := validationStatus.replaceStatus(Prepared, ValidationSent)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set status"))
@@ -693,7 +714,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 }
 
 func (v *BlockValidator) writeLastValidatedToDb(blockNumber uint64, blockHash common.Hash, endPos GlobalStatePosition) error {
-	info := lastBlockValidatedDbInfo{
+	info := LastBlockValidatedDbInfo{
 		BlockNumber:   blockNumber,
 		BlockHash:     blockHash,
 		AfterPosition: endPos,
@@ -764,7 +785,7 @@ func (v *BlockValidator) progressValidated() {
 			}
 		}
 		for _, run := range validationStatus.Runs {
-			run.Close()
+			run.Cancel()
 		}
 		validationStatus.replaceStatus(ValidationSent, Valid)
 		validatorValidValidationsCounter.Inc(1)
@@ -990,12 +1011,12 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 }
 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
-func (v *BlockValidator) Initialize() error {
+func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.execSpawner.LatestWasmModuleRoot()
+		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
 		if err != nil {
 			return err
 		}
@@ -1016,7 +1037,7 @@ func (v *BlockValidator) Initialize() error {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
-	err := stopwaiter.CallIterativelyWith(&v.StopWaiterSafe,
+	err := stopwaiter.CallIterativelyWith[struct{}](v,
 		func(ctx context.Context, unused struct{}) time.Duration {
 			v.sendRecords(ctx)
 			v.sendValidations(ctx)

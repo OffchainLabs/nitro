@@ -195,6 +195,7 @@ fn main() -> Result<()> {
         opts.always_merkleize,
         opts.allow_hostapi,
         opts.debug_funcs,
+        true,
         global_state,
         inbox_contents,
         preimage_resolver,
@@ -517,7 +518,7 @@ fn main() -> Result<()> {
     }
 
     if opts.require_success && mach.get_status() != MachineStatus::Finished {
-        println!("Machine didn't finish: {}", mach.get_status().red());
+        eprintln!("Machine didn't finish: {}", mach.get_status().red());
         std::process::exit(1);
     }
 

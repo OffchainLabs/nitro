@@ -142,6 +142,11 @@ func BigGreaterThan(first, second *big.Int) bool {
 	return first.Cmp(second) > 0
 }
 
+// BigGreaterThanOrEqual check if a huge is greater than or equal to another
+func BigGreaterThanOrEqual(first, second *big.Int) bool {
+	return first.Cmp(second) >= 0
+}
+
 // BigMin returns a clone of the minimum of two big integers
 func BigMin(first, second *big.Int) *big.Int {
 	if BigLessThan(first, second) {

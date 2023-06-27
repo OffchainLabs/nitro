@@ -25,9 +25,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -63,13 +65,15 @@ type BatchPoster struct {
 	dataPoster   *dataposter.DataPoster[batchPosterPosition]
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
+	backlog      uint64    // An estimate of the number of unposted batches
 }
 
 type BatchPosterConfig struct {
 	Enable                             bool                        `koanf:"enable"`
 	DisableDasFallbackStoreDataOnChain bool                        `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
 	MaxBatchSize                       int                         `koanf:"max-size" reload:"hot"`
-	MaxBatchPostInterval               time.Duration               `koanf:"max-interval" reload:"hot"`
+	MaxBatchPostDelay                  time.Duration               `koanf:"max-delay" reload:"hot"`
+	WaitForMaxBatchPostDelay           bool                        `koanf:"wait-for-max-delay" reload:"hot"`
 	BatchPollDelay                     time.Duration               `koanf:"poll-delay" reload:"hot"`
 	PostingErrorDelay                  time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel                   int                         `koanf:"compression-level" reload:"hot"`
@@ -79,12 +83,16 @@ type BatchPosterConfig struct {
 	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	L1Wallet                           genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+
+	gasRefunder common.Address
 }
 
 func (c *BatchPosterConfig) Validate() error {
 	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
+	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
@@ -97,7 +105,8 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
-	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
+	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxBatchPostDelay, "maximum batch posting delay")
+	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxBatchPostDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
@@ -107,6 +116,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -115,28 +125,40 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxBatchSize:                       100000,
 	BatchPollDelay:                     time.Second * 10,
 	PostingErrorDelay:                  time.Second * 10,
-	MaxBatchPostInterval:               time.Hour,
-	CompressionLevel:                   brotli.DefaultCompression,
+	MaxBatchPostDelay:                  time.Hour,
+	WaitForMaxBatchPostDelay:           false,
+	CompressionLevel:                   brotli.BestCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
+	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
+}
+
+var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
+	Pathname:      "batch-poster-wallet",
+	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
+	Account:       genericconf.WalletConfigDefault.Account,
+	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	Enable:               true,
-	MaxBatchSize:         100000,
-	BatchPollDelay:       time.Millisecond * 10,
-	PostingErrorDelay:    time.Millisecond * 10,
-	MaxBatchPostInterval: 0,
-	CompressionLevel:     2,
-	DASRetentionPeriod:   time.Hour * 24 * 15,
-	GasRefunderAddress:   "",
-	ExtraBatchGas:        10_000,
-	DataPoster:           dataposter.TestDataPosterConfig,
+	Enable:                   true,
+	MaxBatchSize:             100000,
+	BatchPollDelay:           time.Millisecond * 10,
+	PostingErrorDelay:        time.Millisecond * 10,
+	MaxBatchPostDelay:        0,
+	WaitForMaxBatchPostDelay: false,
+	CompressionLevel:         2,
+	DASRetentionPeriod:       time.Hour * 24 * 15,
+	GasRefunderAddress:       "",
+	ExtraBatchGas:            10_000,
+	DataPoster:               dataposter.TestDataPosterConfig,
+	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -217,7 +239,7 @@ type batchSegments struct {
 	blockNum              uint64
 	delayedMsg            uint64
 	sizeLimit             int
-	compressionLevel      int
+	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
 	lastCompressedSize    int
@@ -231,24 +253,44 @@ type buildingBatch struct {
 	msgCount      arbutil.MessageIndex
 }
 
-func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
+func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
 	if config.MaxBatchSize <= 40 {
 		panic("MaxBatchSize too small")
 	}
+	compressionLevel := config.CompressionLevel
+	recompressionLevel := config.CompressionLevel
+	if backlog > 20 {
+		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
+	}
+	if backlog > 40 {
+		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
+	}
+	if backlog > 60 {
+		compressionLevel = arbmath.MinInt(compressionLevel, 4)
+	}
+	if recompressionLevel < compressionLevel {
+		// This should never be possible
+		log.Warn(
+			"somehow the recompression level was lower than the compression level",
+			"recompressionLevel", recompressionLevel,
+			"compressionLevel", compressionLevel,
+		)
+		recompressionLevel = compressionLevel
+	}
 	return &batchSegments{
-		compressedBuffer: compressedBuffer,
-		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),
-		sizeLimit:        config.MaxBatchSize - 40, // TODO
-		compressionLevel: config.CompressionLevel,
-		rawSegments:      make([][]byte, 0, 128),
-		delayedMsg:       firstDelayed,
+		compressedBuffer:   compressedBuffer,
+		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:          config.MaxBatchSize - 40, // TODO
+		recompressionLevel: recompressionLevel,
+		rawSegments:        make([][]byte, 0, 128),
+		delayedMsg:         firstDelayed,
 	}
 }
 
 func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
-	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.compressionLevel)
+	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
 	s.newUncompressedSize = 0
 	s.totalUncompressedSize = 0
 	for _, segment := range s.rawSegments {
@@ -385,7 +427,7 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 	return success, err
 }
 
-func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
+func (s *batchSegments) AddMessage(msg *arbostypes.MessageWithMetadata) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -441,7 +483,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 		seqNum,
 		message,
 		new(big.Int).SetUint64(delayedMsg),
-		common.HexToAddress(b.config().GasRefunderAddress),
+		b.config().gasRefunder,
 		new(big.Int).SetUint64(uint64(prevMsgNum)),
 		new(big.Int).SetUint64(uint64(newMsgNum)),
 	)
@@ -463,7 +505,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	}
 	safeDelayedMessagesBig, err := b.bridge.DelayedMessageCount(callOpts)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to get the confirmed delayed message count: %w", err)
 	}
 	if !safeDelayedMessagesBig.IsUint64() {
 		return 0, fmt.Errorf("calling delayedMessageCount() on the bridge returned a non-uint64 result %v", safeDelayedMessagesBig)
@@ -518,7 +560,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config()),
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.backlog),
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 		}
@@ -538,7 +580,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	config := b.config()
-	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostInterval
+	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostDelay
 	haveUsefulMessage := false
 
 	for b.building.msgCount < msgCount {
@@ -555,11 +597,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if !success {
 			// this batch is full
-			forcePostBatch = true
+			if !config.WaitForMaxBatchPostDelay {
+				forcePostBatch = true
+			}
 			haveUsefulMessage = true
 			break
 		}
-		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
+		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
 			haveUsefulMessage = true
 		}
 		b.building.msgCount++
@@ -620,6 +664,23 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"current delayed", b.building.segments.delayedMsg,
 		"total segments", len(b.building.segments.rawSegments),
 	)
+	postedMessages := b.building.msgCount - batchPosition.MessageCount
+	unpostedMessages := msgCount - b.building.msgCount
+	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
+	if b.backlog > 10 {
+		logLevel := log.Warn
+		if b.backlog > 30 {
+			logLevel = log.Error
+		}
+		logLevel(
+			"a large batch posting backlog exists",
+			"currentPosition", b.building.msgCount,
+			"messageCount", msgCount,
+			"lastPostedMessages", postedMessages,
+			"unpostedMessages", unpostedMessages,
+			"batchBacklogEstimate", b.backlog,
+		)
+	}
 	b.building = nil
 	return true, nil
 }
