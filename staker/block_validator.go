@@ -951,6 +951,9 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.chainCaughtUp {
 		return true, nil
 	}
+	if v.legacyValidInfo != nil {
+		return false, nil
+	}
 	if v.lastValidGS.Batch == 0 {
 		return false, errors.New("lastValid not initialized. cannot validate genesis")
 	}
