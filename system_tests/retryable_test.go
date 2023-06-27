@@ -386,7 +386,6 @@ func TestSubmissionGasCosts(t *testing.T) {
 		colors.PrintRed("Off by   ", arbmath.BigSub(expectedGasChange, diff))
 		Fatal(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
 	}
-	t.Errorf("anodar")
 }
 
 func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
