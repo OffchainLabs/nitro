@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -497,7 +496,6 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	}
 
 	if windowsLeft == 0 {
-		log.Warn("REAPING", "ticketId", *id)
 		// the retryable has expired, time to reap
 		expired := rs.OpenPotentialyExpiredRetryable(*id)
 		numTries, err := expired.NumTries()

@@ -9,7 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -71,8 +70,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if retryable == nil {
 		return hash{}, con.oldNotFoundError(c)
 	}
-	timeout, err := retryable.CalculateTimeout()
-	log.Warn("REDEEM retryable", "ticketId", common.BytesToHash(ticketId[:]), "calc_timeout", timeout, "calc_err", err)
 	nextNonce, err := retryable.IncrementNumTries()
 	if err != nil {
 		return hash{}, err

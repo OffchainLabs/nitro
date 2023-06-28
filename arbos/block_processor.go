@@ -321,10 +321,8 @@ func ProduceBlockAdvanced(
 					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
-			log.Warn("Applying transaction result", "txType", tx.Type(), "InternalType", types.ArbitrumInternalTxType, "err", err, "tx", fmt.Sprintf("%+v", tx))
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
-				log.Warn("Reverting")
 				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
@@ -348,7 +346,7 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
-			log.Warn("error applying transaction", "tx", tx, "err", err)
+			log.Debug("error applying transaction", "tx", tx, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				if blockGasLeft > params.TxGas {

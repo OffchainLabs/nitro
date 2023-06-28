@@ -109,7 +109,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 					log.Error("Failed to emit RetryableExpired event", "err", err)
 					break
 				}
-				log.Warn("RetryableExpired emitted", "ticketId", leaf.TicketId, "leafIndex", leaf.Index)
 			}
 		}
 		if err == nil {
@@ -119,7 +118,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 					log.Error("Failed to emit ExpiredMerkleUpdate event", "err", err)
 					break
 				}
-				log.Warn("ExpiredMerkleUpdate emitted", "merkleEvent", fmt.Sprintf("%+v", event))
 			}
 		}
 		if err != nil {
