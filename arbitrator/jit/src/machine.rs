@@ -7,7 +7,7 @@ use crate::{
     runtime, socket, syscall,
     syscall::JsRuntimeState,
     user, wavmio,
-    wavmio::{Bytes20, Bytes32},
+    wavmio::Bytes32,
     Opts,
 };
 use arbutil::Color;
@@ -197,7 +197,7 @@ impl From<RuntimeError> for Escape {
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
-pub type UserWasms = HashMap<(Bytes20, u32), (Vec<u8>, Bytes32)>;
+pub type UserWasms = HashMap<(Bytes32, u32), (Vec<u8>, Bytes32)>;
 
 #[derive(Default)]
 pub struct WasmEnv {
