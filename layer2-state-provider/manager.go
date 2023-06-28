@@ -2,6 +2,7 @@ package l2stateprovider
 
 import (
 	"context"
+	"errors"
 	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
@@ -9,6 +10,8 @@ import (
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 )
+
+var ErrChainCatchingUp = errors.New("chain catching up")
 
 type ConfigSnapshot struct {
 	RequiredStake           *big.Int
@@ -21,10 +24,10 @@ type ConfigSnapshot struct {
 type Provider interface {
 	// Produces the latest state to assert to L1 from the local state manager's perspective.
 	LatestExecutionState(ctx context.Context) (*protocol.ExecutionState, error)
-	// If the state manager locally has this execution state, returns its block height and true.
+	// If the state manager locally has this execution state, returns its message count and true.
 	// Otherwise, returns false.
-	// Returns error if catching up to chain.
-	ExecutionStateBlockHeight(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error)
+	// Returns ErrChainCatchingUp if catching up to chain.
+	ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error)
 	// Produces a block challenge history commitment up to and including a certain height.
 	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (commitments.History, error)
 	// Produces a block challenge history commitment in a certain inclusive block range,
@@ -40,12 +43,14 @@ type Provider interface {
 	// challenge heights H to H+1.
 	BigStepLeafCommitment(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		blockHeight uint64,
 	) (commitments.History, error)
 	// Produces a big step history commitment from big step 0 to N within block
 	// challenge heights A and B where B = A + 1.
 	BigStepCommitmentUpTo(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		blockHeight,
 		toBigStep uint64,
 	) (commitments.History, error)
@@ -53,6 +58,7 @@ type Provider interface {
 	// big steps S to S+1 within block challenge heights H to H+1.
 	SmallStepLeafCommitment(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		blockHeight,
 		bigStep uint64,
 	) (commitments.History, error)
@@ -60,6 +66,7 @@ type Provider interface {
 	// big steps S to S+1 within block challenge heights H to H+1.
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		blockHeight,
 		bigStep,
 		toSmallStep uint64,
@@ -82,6 +89,7 @@ type Provider interface {
 	// within a block challenge.
 	BigStepPrefixProof(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		blockHeight,
 		fromBigStep,
 		toBigStep uint64,
@@ -90,6 +98,7 @@ type Provider interface {
 	// block challenge height heights H to H+1.
 	SmallStepPrefixProof(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		blockHeight,
 		bigStep,
 		fromSmallStep,
@@ -110,6 +119,7 @@ type Provider interface {
 type HistoryChecker interface {
 	AgreesWithHistoryCommitment(
 		ctx context.Context,
+		wasmModuleRoot common.Hash,
 		edgeType protocol.EdgeType,
 		prevAssertionInboxMaxCount uint64,
 		heights *protocol.OriginHeights,

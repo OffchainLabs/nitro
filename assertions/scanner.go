@@ -170,7 +170,7 @@ func (s *Scanner) ProcessAssertionCreation(
 		return nil
 	}
 	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	_, agreesWithAssertion, err := s.stateProvider.ExecutionStateBlockHeight(ctx, execState)
+	_, agreesWithAssertion, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
 	if err != nil {
 		return err
 	}

@@ -224,7 +224,7 @@ func (s *L2StateBackend) LatestExecutionState(_ context.Context) (*protocol.Exec
 }
 
 // Checks if the execution manager locally has recorded this state
-func (s *L2StateBackend) ExecutionStateBlockHeight(_ context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
+func (s *L2StateBackend) ExecutionStateMsgCount(_ context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
 	for i, r := range s.executionStates {
 		if r.Equals(state) {
 			return uint64(i), true, nil
@@ -292,6 +292,7 @@ func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, blockStar
 // that we also agree with the end commitment.
 func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	edgeType protocol.EdgeType,
 	prevAssertionInboxMaxCount uint64,
 	heights *protocol.OriginHeights,
@@ -315,6 +316,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	case protocol.BigStepChallengeEdge:
 		localStartCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
+			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
 			uint64(startCommit.Height),
 		)
@@ -323,6 +325,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 		}
 		localEndCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
+			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
 			uint64(endCommit.Height),
 		)
@@ -332,6 +335,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	case protocol.SmallStepChallengeEdge:
 		localStartCommit, err = s.SmallStepCommitmentUpTo(
 			ctx,
+			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
 			uint64(heights.BigStepChallengeOriginHeight),
 			startCommit.Height,
@@ -341,6 +345,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 		}
 		localEndCommit, err = s.SmallStepCommitmentUpTo(
 			ctx,
+			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
 			uint64(heights.BigStepChallengeOriginHeight),
 			endCommit.Height,
@@ -362,6 +367,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 
 func (s *L2StateBackend) BigStepLeafCommitment(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight uint64,
 ) (commitments.History, error) {
 	// Number of big steps between assertion heights A and B will be
@@ -370,6 +376,7 @@ func (s *L2StateBackend) BigStepLeafCommitment(
 	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
 	return s.BigStepCommitmentUpTo(
 		ctx,
+		wasmModuleRoot,
 		blockHeight,
 		numBigSteps,
 	)
@@ -377,6 +384,7 @@ func (s *L2StateBackend) BigStepLeafCommitment(
 
 func (s *L2StateBackend) BigStepCommitmentUpTo(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	toBigStep uint64,
 ) (commitments.History, error) {
@@ -453,11 +461,13 @@ func (s *L2StateBackend) intermediateBigStepLeaves(
 
 func (s *L2StateBackend) SmallStepLeafCommitment(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	bigStep uint64,
 ) (commitments.History, error) {
 	return s.SmallStepCommitmentUpTo(
 		ctx,
+		wasmModuleRoot,
 		blockHeight,
 		bigStep,
 		s.numOpcodesPerBigStep,
@@ -466,6 +476,7 @@ func (s *L2StateBackend) SmallStepLeafCommitment(
 
 func (s *L2StateBackend) SmallStepCommitmentUpTo(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	bigStep uint64,
 	toSmallStep uint64,
@@ -603,6 +614,7 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 	startCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
+		cfgSnapshot.WasmModuleRoot,
 		blockHeight,
 		bigStep,
 		fromSmallStep,
@@ -613,6 +625,7 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 	endCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
+		cfgSnapshot.WasmModuleRoot,
 		blockHeight,
 		bigStep,
 		toSmallStep,
@@ -706,6 +719,7 @@ func (s *L2StateBackend) PrefixProofUpToBatch(ctx context.Context, start, lo, hi
 
 func (s *L2StateBackend) BigStepPrefixProof(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	fromBigStep,
 	toBigStep uint64,
@@ -758,6 +772,7 @@ func (s *L2StateBackend) bigStepPrefixProofCalculation(
 
 func (s *L2StateBackend) SmallStepPrefixProof(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	bigStep,
 	fromSmallStep,

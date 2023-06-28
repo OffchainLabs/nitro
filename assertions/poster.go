@@ -114,7 +114,7 @@ func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.Asserti
 		if err != nil {
 			return protocol.AssertionHash{}, err
 		}
-		_, hasState, err := p.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
+		_, hasState, err := p.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
 		if err != nil {
 			return protocol.AssertionHash{}, err
 		}

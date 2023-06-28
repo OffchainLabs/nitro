@@ -819,16 +819,16 @@ func setupOneStepProofScenario(
 
 	// Now opening big step level zero leaves at index 0
 	bigStepAdder := func(stateManager l2stateprovider.Provider, sourceEdge protocol.SpecEdge) protocol.SpecEdge {
-		startCommit, startErr := stateManager.BigStepCommitmentUpTo(ctx, 0, 0)
+		startCommit, startErr := stateManager.BigStepCommitmentUpTo(ctx, common.Hash{}, 0, 0)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.BigStepLeafCommitment(ctx, 0)
+		endCommit, endErr := stateManager.BigStepLeafCommitment(ctx, common.Hash{}, 0)
 		require.NoError(t, endErr)
 		require.Equal(t, startCommit.LastLeaf, endCommit.FirstLeaf)
 		startParentCommitment, parentErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 		require.NoError(t, parentErr)
 		endParentCommitment, endParentErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 1, 1)
 		require.NoError(t, endParentErr)
-		startEndPrefixProof, proofErr := stateManager.BigStepPrefixProof(ctx, 0, 0, endCommit.Height)
+		startEndPrefixProof, proofErr := stateManager.BigStepPrefixProof(ctx, common.Hash{}, 0, 0, endCommit.Height)
 		require.NoError(t, proofErr)
 		leaf, leafErr := challengeManager.AddSubChallengeLevelZeroEdge(
 			ctx,
@@ -854,16 +854,16 @@ func setupOneStepProofScenario(
 
 	var bigStepHeight uint64 = challenge_testing.LevelZeroBigStepEdgeHeight
 	for bigStepHeight > 1 {
-		honestBisectCommit, bisectErr := honestStateManager.BigStepCommitmentUpTo(ctx, 0, bigStepHeight/2)
+		honestBisectCommit, bisectErr := honestStateManager.BigStepCommitmentUpTo(ctx, common.Hash{}, 0, bigStepHeight/2)
 		require.NoError(t, bisectErr)
-		honestProof, honestErr := honestStateManager.BigStepPrefixProof(ctx, 0, bigStepHeight/2, bigStepHeight)
+		honestProof, honestErr := honestStateManager.BigStepPrefixProof(ctx, common.Hash{}, 0, bigStepHeight/2, bigStepHeight)
 		require.NoError(t, honestErr)
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
-		evilBisectCommit, bisectErr := evilStateManager.BigStepCommitmentUpTo(ctx, 0, bigStepHeight/2)
+		evilBisectCommit, bisectErr := evilStateManager.BigStepCommitmentUpTo(ctx, common.Hash{}, 0, bigStepHeight/2)
 		require.NoError(t, bisectErr)
-		evilProof, evilErr := evilStateManager.BigStepPrefixProof(ctx, 0, bigStepHeight/2, bigStepHeight)
+		evilProof, evilErr := evilStateManager.BigStepPrefixProof(ctx, common.Hash{}, 0, bigStepHeight/2, bigStepHeight)
 		require.NoError(t, evilErr)
 		evilEdge, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
 		require.NoError(t, err)
@@ -891,15 +891,15 @@ func setupOneStepProofScenario(
 
 	// Now opening small step level zero leaves at index 0
 	smallStepAdder := func(stateManager l2stateprovider.Provider, edge protocol.SpecEdge) protocol.SpecEdge {
-		startCommit, startErr := stateManager.SmallStepCommitmentUpTo(ctx, 0, 0, 0)
+		startCommit, startErr := stateManager.SmallStepCommitmentUpTo(ctx, common.Hash{}, 0, 0, 0)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.SmallStepLeafCommitment(ctx, 0, 0)
+		endCommit, endErr := stateManager.SmallStepLeafCommitment(ctx, common.Hash{}, 0, 0)
 		require.NoError(t, endErr)
-		startParentCommitment, parentErr := stateManager.BigStepCommitmentUpTo(ctx, 0, 0)
+		startParentCommitment, parentErr := stateManager.BigStepCommitmentUpTo(ctx, common.Hash{}, 0, 0)
 		require.NoError(t, parentErr)
-		endParentCommitment, endParentErr := stateManager.BigStepCommitmentUpTo(ctx, 0, 1)
+		endParentCommitment, endParentErr := stateManager.BigStepCommitmentUpTo(ctx, common.Hash{}, 0, 1)
 		require.NoError(t, endParentErr)
-		startEndPrefixProof, prefixErr := stateManager.SmallStepPrefixProof(ctx, 0, 0, 0, endCommit.Height)
+		startEndPrefixProof, prefixErr := stateManager.SmallStepPrefixProof(ctx, common.Hash{}, 0, 0, 0, endCommit.Height)
 		require.NoError(t, prefixErr)
 		leaf, leafErr := challengeManager.AddSubChallengeLevelZeroEdge(
 			ctx,
@@ -947,16 +947,16 @@ func setupOneStepProofScenario(
 
 	var smallStepHeight uint64 = challenge_testing.LevelZeroBigStepEdgeHeight
 	for smallStepHeight > 1 {
-		honestBisectCommit, bisectErr := honestStateManager.SmallStepCommitmentUpTo(ctx, 0, 0, smallStepHeight/2)
+		honestBisectCommit, bisectErr := honestStateManager.SmallStepCommitmentUpTo(ctx, common.Hash{}, 0, 0, smallStepHeight/2)
 		require.NoError(t, bisectErr)
-		honestProof, proofErr := honestStateManager.SmallStepPrefixProof(ctx, 0, 0, smallStepHeight/2, smallStepHeight)
+		honestProof, proofErr := honestStateManager.SmallStepPrefixProof(ctx, common.Hash{}, 0, 0, smallStepHeight/2, smallStepHeight)
 		require.NoError(t, proofErr)
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
-		evilBisectCommit, evilBisectErr := evilStateManager.SmallStepCommitmentUpTo(ctx, 0, 0, smallStepHeight/2)
+		evilBisectCommit, evilBisectErr := evilStateManager.SmallStepCommitmentUpTo(ctx, common.Hash{}, 0, 0, smallStepHeight/2)
 		require.NoError(t, evilBisectErr)
-		evilProof, evilProofErr := evilStateManager.SmallStepPrefixProof(ctx, 0, 0, smallStepHeight/2, smallStepHeight)
+		evilProof, evilProofErr := evilStateManager.SmallStepPrefixProof(ctx, common.Hash{}, 0, 0, smallStepHeight/2, smallStepHeight)
 		require.NoError(t, evilProofErr)
 		evilEdge, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
 		require.NoError(t, err)

@@ -102,9 +102,11 @@ type Tracker struct {
 	chainWatcher     ConfirmationMetadataChecker
 	challengeManager ChallengeTracker
 	heightConfig     HeightConfig
+	wasmModuleRoot   common.Hash
 }
 
 func New(
+	ctx context.Context,
 	edge protocol.SpecEdge,
 	chain protocol.Protocol,
 	stateProvider l2stateprovider.Provider,
@@ -113,6 +115,14 @@ func New(
 	heightConfig HeightConfig,
 	opts ...Opt,
 ) (*Tracker, error) {
+	assertionHash, err := edge.AssertionHash(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, assertionHash)
+	if err != nil {
+		return nil, err
+	}
 	tr := &Tracker{
 		edge:             edge,
 		chain:            chain,
@@ -122,6 +132,7 @@ func New(
 		heightConfig:     heightConfig,
 		actInterval:      time.Second,
 		timeRef:          utilTime.NewRealTimeReference(),
+		wasmModuleRoot:   parentAssertionCreationInfo.WasmModuleRoot,
 	}
 	for _, o := range opts {
 		o(tr)
@@ -245,6 +256,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		bisectedCounter.Inc(1)
 
 		firstTracker, err := New(
+			ctx,
 			lowerChild,
 			et.chain,
 			et.stateProvider,
@@ -262,6 +274,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		secondTracker, err := New(
+			ctx,
 			upperChild,
 			et.chain,
 			et.stateProvider,
@@ -456,13 +469,13 @@ func (et *Tracker) determineBisectionHistoryWithProof(
 
 	switch et.edge.GetType() {
 	case protocol.BigStepChallengeEdge:
-		historyCommit, commitErr = et.stateProvider.BigStepCommitmentUpTo(ctx, fromAssertionHeight, bisectTo)
-		proof, proofErr = et.stateProvider.BigStepPrefixProof(ctx, fromAssertionHeight, bisectTo, uint64(endHeight))
+		historyCommit, commitErr = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo)
+		proof, proofErr = et.stateProvider.BigStepPrefixProof(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo, uint64(endHeight))
 	case protocol.SmallStepChallengeEdge:
 		fromBigStep := uint64(originHeights.BigStepChallengeOriginHeight)
 
-		historyCommit, commitErr = et.stateProvider.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, fromBigStep, bisectTo)
-		proof, proofErr = et.stateProvider.SmallStepPrefixProof(ctx, fromAssertionHeight, fromBigStep, bisectTo, uint64(endHeight))
+		historyCommit, commitErr = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo)
+		proof, proofErr = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo, uint64(endHeight))
 	default:
 		return commitments.History{}, nil, fmt.Errorf("unsupported challenge type: %s", et.edge.GetType())
 	}
@@ -533,11 +546,11 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	case protocol.BlockChallengeEdge:
 		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
 		toBlock := toAssertionHeight + et.heightConfig.StartBlockHeight
-		startHistory, err = et.stateProvider.BigStepCommitmentUpTo(ctx, fromBlock, 0)
+		startHistory, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, 0)
 		if err != nil {
 			return err
 		}
-		endHistory, err = et.stateProvider.BigStepLeafCommitment(ctx, fromBlock)
+		endHistory, err = et.stateProvider.BigStepLeafCommitment(ctx, et.wasmModuleRoot, fromBlock)
 		if err != nil {
 			return err
 		}
@@ -549,29 +562,29 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		startEndPrefixProof, err = et.stateProvider.BigStepPrefixProof(ctx, fromBlock, 0, endHistory.Height)
+		startEndPrefixProof, err = et.stateProvider.BigStepPrefixProof(ctx, et.wasmModuleRoot, fromBlock, 0, endHistory.Height)
 		if err != nil {
 			return err
 		}
 	case protocol.BigStepChallengeEdge:
 		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
-		startHistory, err = et.stateProvider.SmallStepCommitmentUpTo(ctx, fromBlock, uint64(startHeight), 0)
+		startHistory, err = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0)
 		if err != nil {
 			return err
 		}
-		endHistory, err = et.stateProvider.SmallStepLeafCommitment(ctx, fromBlock, uint64(startHeight))
+		endHistory, err = et.stateProvider.SmallStepLeafCommitment(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
 		if err != nil {
 			return err
 		}
-		startParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, fromBlock, uint64(startHeight))
+		startParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
 		if err != nil {
 			return err
 		}
-		endParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, fromBlock, uint64(endHeight))
+		endParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(endHeight))
 		if err != nil {
 			return err
 		}
-		startEndPrefixProof, err = et.stateProvider.SmallStepPrefixProof(ctx, fromBlock, uint64(startHeight), 0, endHistory.Height)
+		startEndPrefixProof, err = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0, endHistory.Height)
 		if err != nil {
 			return err
 		}
@@ -599,6 +612,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	fields["subChallengeType"] = addedLeaf.GetType()
 	log.WithFields(fields).Info("Created subchallenge edge")
 	tracker, err := New(
+		ctx,
 		addedLeaf,
 		et.chain,
 		et.stateProvider,

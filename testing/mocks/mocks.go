@@ -80,6 +80,7 @@ func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uin
 
 func (m *MockStateManager) AgreesWithHistoryCommitment(
 	_ context.Context,
+	_ common.Hash,
 	_ protocol.EdgeType,
 	_ uint64,
 	_ *protocol.OriginHeights,
@@ -109,63 +110,69 @@ func (m *MockStateManager) PrefixProofUpToBatch(ctx context.Context, start, from
 
 func (m *MockStateManager) BigStepPrefixProof(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	fromBigStep,
 	toBigStep uint64,
 ) ([]byte, error) {
-	args := m.Called(ctx, blockHeight, fromBigStep, toBigStep)
+	args := m.Called(ctx, wasmModuleRoot, blockHeight, fromBigStep, toBigStep)
 	return args.Get(0).([]byte), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepPrefixProof(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	bigStep,
 	fromSmallStep,
 	toSmallStep uint64,
 ) ([]byte, error) {
-	args := m.Called(ctx, blockHeight, bigStep, fromSmallStep, toSmallStep)
+	args := m.Called(ctx, wasmModuleRoot, blockHeight, bigStep, fromSmallStep, toSmallStep)
 	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockStateManager) ExecutionStateBlockHeight(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
+func (m *MockStateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
 	args := m.Called(ctx, state)
 	return args.Get(0).(uint64), args.Bool(1), nil
 }
 
 func (m *MockStateManager) BigStepLeafCommitment(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight uint64,
 ) (commitments.History, error) {
-	args := m.Called(ctx, blockHeight)
+	args := m.Called(ctx, wasmModuleRoot, blockHeight)
 	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) BigStepCommitmentUpTo(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	toBigStep uint64,
 ) (commitments.History, error) {
-	args := m.Called(ctx, blockHeight, toBigStep)
+	args := m.Called(ctx, wasmModuleRoot, blockHeight, toBigStep)
 	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepLeafCommitment(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	bigStep uint64,
 ) (commitments.History, error) {
-	args := m.Called(ctx, blockHeight, bigStep)
+	args := m.Called(ctx, wasmModuleRoot, blockHeight, bigStep)
 	return args.Get(0).(commitments.History), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepCommitmentUpTo(
 	ctx context.Context,
+	wasmModuleRoot common.Hash,
 	blockHeight,
 	bigStep,
 	toSmallStep uint64,
 ) (commitments.History, error) {
-	args := m.Called(ctx, blockHeight, bigStep, toSmallStep)
+	args := m.Called(ctx, wasmModuleRoot, blockHeight, bigStep, toSmallStep)
 	return args.Get(0).(commitments.History), args.Error(1)
 }
 

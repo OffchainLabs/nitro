@@ -52,7 +52,7 @@ func Test_getEdgeTrackers(t *testing.T) {
 	edge := &mocks.MockSpecEdge{}
 	edge.On("AssertionHash", ctx).Return(protocol.AssertionHash{}, nil)
 	m.On("ReadAssertionCreationInfo", ctx, protocol.AssertionHash{}).Return(&protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(100)}, nil)
-	s.On("ExecutionStateBlockHeight", ctx, &protocol.ExecutionState{}).Return(uint64(1), true)
+	s.On("ExecutionStateMsgCount", ctx, &protocol.ExecutionState{}).Return(uint64(1), true)
 
 	trk, err := v.getTrackerForEdge(ctx, protocol.SpecEdge(edge))
 	require.NoError(t, err)
@@ -99,6 +99,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 	honestWatcher := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, "alice")
 	honestValidator.watcher = honestWatcher
 	tracker1, err := edgetracker.New(
+		ctx,
 		honestEdge,
 		honestValidator.chain,
 		createdData.HonestStateManager,
@@ -125,6 +126,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 	evilWatcher := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, "alice")
 	evilValidator.watcher = evilWatcher
 	tracker2, err := edgetracker.New(
+		ctx,
 		evilEdge,
 		evilValidator.chain,
 		createdData.EvilStateManager,

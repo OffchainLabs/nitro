@@ -165,7 +165,7 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 
 		// Retry until you get the execution state block height.
 		height, heightErr := retry.UntilSucceeds(ctx, func() (uint64, error) {
-			return m.getExecutionStateBlockHeight(ctx, assertionCreationInfo.AfterState)
+			return m.getExecutionStateMsgCount(ctx, assertionCreationInfo.AfterState)
 		})
 		if heightErr != nil {
 			return nil, heightErr
@@ -178,6 +178,7 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 	}
 	return retry.UntilSucceeds(ctx, func() (*edgetracker.Tracker, error) {
 		return edgetracker.New(
+			ctx,
 			edge,
 			m.chain,
 			m.stateManager,
@@ -206,8 +207,8 @@ func (m *Manager) Start(ctx context.Context) {
 }
 
 // Gets the execution height for a rollup state from our state manager.
-func (m *Manager) getExecutionStateBlockHeight(ctx context.Context, st rollupgen.ExecutionState) (uint64, error) {
-	height, ok, err := m.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(st))
+func (m *Manager) getExecutionStateMsgCount(ctx context.Context, st rollupgen.ExecutionState) (uint64, error) {
+	height, ok, err := m.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(st))
 	if err != nil {
 		return 0, err
 	}

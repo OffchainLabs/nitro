@@ -36,6 +36,7 @@ func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	}
 	// Start tracking the challenge.
 	tracker, err := edgetracker.New(
+		ctx,
 		levelZeroEdge,
 		v.chain,
 		v.stateManager,
