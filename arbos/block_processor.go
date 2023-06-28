@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"time"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -42,7 +43,7 @@ var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 var EmitExpiredMerkleUpdateEvent func(*vm.EVM, [32]byte, *big.Int) error
-var EmitRetryableExpiredEvent func(*vm.EVM, [32]byte, [32]byte, *big.Int) error
+var EmitRetryableExpiredEvent func(*vm.EVM, [32]byte, *big.Int, [32]byte, uint64) error
 
 type L1Info struct {
 	poster        common.Address
@@ -192,6 +193,7 @@ func ProduceBlockAdvanced(
 		l1BlockNumber: l1Header.BlockNumber,
 		l1Timestamp:   l1Header.Timestamp,
 	}
+	log.Warn("ProduceBlockAdvanced:", "l1Timestamp", l1Header.Timestamp, "diff:", int64(l1Header.Timestamp)-time.Now().Unix())
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
@@ -319,8 +321,10 @@ func ProduceBlockAdvanced(
 					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
+			log.Warn("Applying transaction result", "txType", tx.Type(), "InternalType", types.ArbitrumInternalTxType, "err", err, "tx", fmt.Sprintf("%+v", tx))
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
+				log.Warn("Reverting")
 				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
@@ -344,7 +348,7 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
-			log.Debug("error applying transaction", "tx", tx, "err", err)
+			log.Warn("error applying transaction", "tx", tx, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				if blockGasLeft > params.TxGas {

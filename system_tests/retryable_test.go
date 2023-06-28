@@ -9,15 +9,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -26,9 +33,11 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
-func retryableSetup(t *testing.T) (
+func retryableSetup(t *testing.T, timestampWorkaround bool) (
+	*arbnode.Node,
 	*BlockchainTestInfo,
 	*BlockchainTestInfo,
 	*ethclient.Client,
@@ -39,19 +48,21 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, l2node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
-
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	if timestampWorkaround {
+		nodeConfig.BatchPoster.MaxBatchPostDelay = 3 * retryables.RetryableLifetimeSeconds * time.Second
+	}
+	l2info, l2node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
 	l2info.GenerateAccount("Burn")
-
 	delayedInbox, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
 	delayedBridge, err := arbnode.NewDelayedBridge(l1client, l1info.GetAddress("Bridge"), 0)
 	Require(t, err)
 
-	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
+	lookupSubmitRetryableL2TxHash := func(l1receipt *types.Receipt) common.Hash {
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1receipt.BlockNumber, l1receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
 			Fatal(t, "didn't find message for retryable submission")
@@ -98,7 +109,7 @@ func retryableSetup(t *testing.T) (
 		l2node.StopAndWait()
 		requireClose(t, l1stack)
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
+	return l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
 }
 
 func TestRetryableNoExist(t *testing.T) {
@@ -117,7 +128,7 @@ func TestRetryableNoExist(t *testing.T) {
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	_, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, false)
 	defer teardown()
 
 	user2Address := l2info.GetAddress("User2")
@@ -130,12 +141,12 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	Require(t, err, "failed to deploy NodeInterface")
 
 	// estimate the gas needed to auto-redeem the retryable
-	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxoptsL2.NoSend = true
-	usertxoptsL2.GasMargin = 0
+	userTxOptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOptsL2.NoSend = true
+	userTxOptsL2.GasMargin = 0
 	tx, err := nodeInterface.EstimateRetryableTicket(
-		&usertxoptsL2,
-		usertxoptsL2.From,
+		&userTxOptsL2,
+		userTxOptsL2.From,
 		deposit,
 		user2Address,
 		callValue,
@@ -148,10 +159,10 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	colors.PrintBlue("estimate: ", estimate)
 
 	// submit & auto-redeem the retryable using the gas estimate
-	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxoptsL1.Value = deposit
+	userTxOptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOptsL1.Value = deposit
 	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&usertxoptsL1,
+		&userTxOptsL1,
 		user2Address,
 		callValue,
 		big.NewInt(1e16),
@@ -187,12 +198,12 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	_, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, false)
 	defer teardown()
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	userTxOpts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOpts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
@@ -200,7 +211,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&usertxopts,
+		&userTxOpts,
 		simpleAddr,
 		common.Big0,
 		big.NewInt(1e16),
@@ -268,7 +279,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
 	Require(t, err)
-	aliasedSender := util.RemapL1Address(usertxopts.From)
+	aliasedSender := util.RemapL1Address(userTxOpts.From)
 	if parsed.Caller != aliasedSender {
 		Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
 	}
@@ -279,11 +290,11 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 func TestSubmissionGasCosts(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
+	_, l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t, false)
 	defer teardown()
 
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	userTxOpts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOpts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Refund")
 	l2info.GenerateAccount("Receive")
@@ -309,7 +320,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	retryableCallData := []byte{}
 	gasFeeCap := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&usertxopts,
+		&userTxOpts,
 		receiveAddress,
 		retryableL2CallValue,
 		maxSubmissionFee,
@@ -344,7 +355,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	colors.PrintBlue("CallGas    ", retryableGas)
 	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
-	colors.PrintBlue("Payment    ", usertxopts.Value)
+	colors.PrintBlue("Payment    ", userTxOpts.Value)
 
 	colors.PrintMint("Faucet before ", fundsBeforeSubmit)
 	colors.PrintMint("Faucet after  ", fundsAfterSubmit)
@@ -374,7 +385,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	// the faucet must pay for both the gas used and the call value supplied
 	expectedGasChange := arbmath.BigMul(gasFeeCap, retryableGas)
-	expectedGasChange = arbmath.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
+	expectedGasChange = arbmath.BigSub(expectedGasChange, userTxOpts.Value) // the user is credited this
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
 
@@ -387,11 +398,441 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
+func TestSubmitRetryableFailThenExpire(t *testing.T) {
+	// _ = testhelpers.InitTestLog(t, log.LvlTrace)
+	// overwrite retrayable lifetime constant
+	t.Parallel()
+	l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, true)
+	defer teardown()
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	userTxOpts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOpts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+	submissionCtx := &submissionContext{
+		delayedInbox:                  delayedInbox,
+		userTxOpts:                    &userTxOpts,
+		l1info:                        l1info,
+		l1client:                      l1client,
+		l2client:                      l2client,
+		lookupSubmitRetryableL2TxHash: lookupSubmitRetryableL2TxHash,
+	}
+	retry := &retryables.TestRetryableData{
+		Id:          common.Hash{}, // filled later on
+		NumTries:    0,             // filled later on
+		From:        util.RemapL1Address(userTxOpts.From),
+		To:          simpleAddr,
+		CallValue:   common.Big0,
+		Beneficiary: l2info.GetAddress("Beneficiary"),
+		CallData:    simpleABI.Methods["incrementRedeem"].ID,
+	}
+	firstRetryTxId := submitRetryable(t, ctx, submissionCtx, retry)
+
+	// get receipt for the auto-redeem, make sure it failed
+	receipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		Fatal(t, receipt.GasUsed)
+	}
+
+	warpL1Time(t, ctx, l2node, l1client, l2client, retryables.RetryableLifetimeSeconds+1)
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	_, err = arbRetryableTx.Redeem(&ownerTxOpts, retry.Id)
+	if err == nil || err.Error() != "execution reverted: error NoTicketWithID()" {
+		Fatal(t, "didn't get expected NoTicketWithID error, err:", err)
+	}
+	waitForNextL2Block(t, ctx, l2client, l2info)
+	arbRetryableTx, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	_, err = arbRetryableTx.Redeem(&ownerTxOpts, retry.Id)
+	if err == nil || err.Error() != "execution reverted: error NoTicketWithID()" {
+		Fatal(t, "didn't get expected NoTicketWithID error, err:", err)
+	}
+
+	leafHash, leafIndex := findExpiredRetryableInLogs(t, ctx, l2client, retry)
+	treeSize := leafIndex + 1
+
+	query, nodes, partials := prepareQueryNeededNodesAndPartials(t, ctx, l2client, treeSize, leafIndex)
+
+	merkleNodes := fetchMerkleNodesFromLogs(t, ctx, l2client, query)
+
+	merkleProof, proofBytes := proofFromMerkleNodes(t, treeSize, leafIndex, leafHash, nodes, partials, merkleNodes)
+
+	arbRetryableTx, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	tx, err := arbRetryableTx.Revive(&ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)
+	Require(t, err)
+	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	arbRetryableTx, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	tx, err = arbRetryableTx.Redeem(&ownerTxOpts, retry.Id)
+	Require(t, err)
+	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	retryTxId := receipt.Logs[0].Topics[2]
+	// check the receipt for the retry
+	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	Require(t, err)
+	if receipt.Status != 1 {
+		Fatal(t, receipt.Status)
+	}
+	// verify that the increment happened, so we know the retry succeeded
+	counter, err := simple.Counter(&bind.CallOpts{})
+	Require(t, err)
+
+	if counter != 1 {
+		Fatal(t, "Unexpected counter:", counter)
+	}
+}
+
+type submissionContext struct {
+	delayedInbox                  *bridgegen.Inbox
+	userTxOpts                    *bind.TransactOpts
+	l1info                        *BlockchainTestInfo
+	l1client                      *ethclient.Client
+	l2client                      *ethclient.Client
+	lookupSubmitRetryableL2TxHash func(*types.Receipt) common.Hash
+}
+
+// sets retry.Id
+// returns first retry tx hash
+func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContext, retry *retryables.TestRetryableData) common.Hash {
+	l1tx, err := subCtx.delayedInbox.CreateRetryableTicket(
+		subCtx.userTxOpts,
+		retry.To,
+		retry.CallValue,
+		big.NewInt(1e16),
+		retry.Beneficiary,
+		retry.Beneficiary,
+		// send enough L2 gas for intrinsic but not compute
+		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		retry.CallData,
+	)
+	Require(t, err)
+	l1receipt, err := EnsureTxSucceeded(ctx, subCtx.l1client, l1tx)
+	Require(t, err)
+	if l1receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1receipt indicated failure")
+	}
+	waitForL1DelayBlocks(t, ctx, subCtx.l1client, subCtx.l1info)
+	receipt, err := WaitForTx(ctx, subCtx.l2client, subCtx.lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t)
+	}
+	if len(receipt.Logs) != 2 {
+		Fatal(t, "unexpected length of submit retryable tx receipt logs, want: 2, have:", len(receipt.Logs))
+	}
+	retry.Id = receipt.Logs[0].Topics[1]
+	return receipt.Logs[1].Topics[2]
+}
+
+func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1client *ethclient.Client, l2client *ethclient.Client, advanceTime uint64) {
+	t.Log("Warping L1 time...")
+	l1LatestHeader, err := l1client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
+	Require(t, err)
+	l2LatestHeader, err := l2client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
+	Require(t, err)
+	timeWarpHeader := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: l1LatestHeader.Number.Uint64(),
+		Timestamp:   l1LatestHeader.Time + advanceTime,
+		RequestId:   nil,
+		L1BaseFee:   nil,
+	}
+
+	msg := arbostypes.L1IncomingMessage{
+		Header: timeWarpHeader,
+		L2msg:  []byte{},
+	}
+	msgWithMeta := arbostypes.MessageWithMetadata{
+		Message:             &msg,
+		DelayedMessagesRead: l2LatestHeader.Nonce.Uint64(),
+	}
+	genesis := uint64(0)
+	pos := arbutil.BlockNumberToMessageCount(l2LatestHeader.Number.Uint64(), genesis)
+	err = l2node.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	Require(t, err)
+}
+
+// updates retry.NumTries
+// returns leaf hash and index in expired acc
+func findExpiredRetryableInLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client, retry *retryables.TestRetryableData) (common.Hash, uint64) {
+	arbRetryableAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	Require(t, err)
+	retryableExpiredTopic := arbRetryableAbi.Events["RetryableExpired"].ID
+	// find out expired retryable hash
+	logs, err := l2client.FilterLogs(ctx, ethereum.FilterQuery{
+		Addresses: []common.Address{
+			types.ArbRetryableTxAddress,
+		},
+		Topics: [][]common.Hash{
+			{retryableExpiredTopic},
+			nil,
+			nil,
+			{retry.Id},
+		},
+	})
+	Require(t, err)
+	if len(logs) == 0 {
+		Fatal(t, "found no logs for RetryableExpired event for ticket id:", retry.Id)
+	}
+	var maxNumTries uint64
+	var leafHash common.Hash
+	var leafIndex uint64
+	for _, log := range logs {
+		event := &precompilesgen.ArbRetryableTxRetryableExpired{}
+		l := log
+		err := util.ParseRetryableExpiredLog(event, &l)
+		Require(t, err)
+		if event.NumTries >= maxNumTries {
+			retry.NumTries = event.NumTries
+			leafHash = common.BytesToHash(event.Hash[:])
+			leafIndex = event.Position.Uint64()
+		}
+	}
+	return leafHash, leafIndex
+}
+
+func prepareQueryNeededNodesAndPartials(t *testing.T, ctx context.Context, l2client *ethclient.Client, treeSize, leafIndex uint64) ([]common.Hash, []merkletree.LevelAndLeaf, map[merkletree.LevelAndLeaf]common.Hash) {
+	// find which nodes we'll want in our proof up to a partial
+	balanced := treeSize == arbmath.NextPowerOf2(treeSize)/2
+	treeLevels := int(arbmath.Log2ceil(treeSize)) // the # of levels in the tree
+	proofLevels := treeLevels - 1                 // the # of levels where a hash is needed (all but root)
+	walkLevels := treeLevels                      // the # of levels we need to consider when building walks
+	if balanced {
+		walkLevels -= 1 // skip the root
+	}
+	t.Log("Tree has", treeSize, "leaves and", treeLevels, "levels")
+	t.Log("Balanced:", balanced)
+	query := make([]common.Hash, 0)             // the nodes we'll query for
+	nodes := make([]merkletree.LevelAndLeaf, 0) // the nodes needed (might not be found from query)
+	which := uint64(1)                          // which bit to flip & set
+	place := leafIndex                          // where we are in the tree
+	t.Log("start place:", place)
+	for level := 0; level < walkLevels; level++ {
+		sibling := place ^ which
+		position := merkletree.LevelAndLeaf{
+			Level: uint64(level),
+			Leaf:  sibling,
+		}
+		// TODO(magic) add position check if proving against old root
+		query = append(query, common.BigToHash(position.ToBigInt()))
+		nodes = append(nodes, position)
+		place |= which // set the bit so that we approach from the right
+		which <<= 1    // advance to the next bit
+	}
+	// find all the partials
+	partials := make(map[merkletree.LevelAndLeaf]common.Hash)
+	if !balanced {
+		power := uint64(1) << proofLevels
+		total := uint64(0)
+		for level := proofLevels; level >= 0; level-- {
+			if (power & treeSize) > 0 { // the partials map to the binary representation of the tree size
+				total += power    // The actual leaf for a given partial is the sum of the powers of 2
+				leaf := total - 1 // preceding it. We subtract 1 since we count from 0
+				partial := merkletree.LevelAndLeaf{
+					Level: uint64(level),
+					Leaf:  leaf,
+				}
+				query = append(query, common.BigToHash(partial.ToBigInt()))
+				partials[partial] = common.Hash{}
+			}
+			power >>= 1
+		}
+	}
+	t.Log("Query:", query)
+	t.Log("Found", len(partials), "partials:", partials)
+	return query, nodes, partials
+}
+
+func fetchMerkleNodesFromLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client, query []common.Hash) []merkleAccumulator.MerkleTreeNodeEvent {
+	logs := []types.Log{}
+	arbRetryableAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	Require(t, err)
+	retryableExpiredTopic := arbRetryableAbi.Events["RetryableExpired"].ID
+	expiredMerkleUpdateTopic := arbRetryableAbi.Events["ExpiredMerkleUpdate"].ID
+	if len(query) > 0 {
+		// in one lookup, query geth for all the data we need to construct a proof
+		logs, err = l2client.FilterLogs(ctx, ethereum.FilterQuery{
+			Addresses: []common.Address{
+				types.ArbRetryableTxAddress,
+			},
+			Topics: [][]common.Hash{
+				{expiredMerkleUpdateTopic, retryableExpiredTopic},
+				nil,
+				query,
+			},
+		})
+		Require(t, err, "couldn't get logs")
+	}
+	t.Log("logs:", logs)
+	// leaf and internal nodes
+	var merkleNodes []merkleAccumulator.MerkleTreeNodeEvent
+	for _, log := range logs {
+		var hash common.Hash
+		var place merkletree.LevelAndLeaf
+		l := log
+		switch log.Topics[0] {
+		case expiredMerkleUpdateTopic:
+			event := &precompilesgen.ArbRetryableTxExpiredMerkleUpdate{}
+			err := util.ParseExpiredMerkleUpdateLog(event, &l)
+			Require(t, err)
+			hash = common.BytesToHash(event.Hash[:])
+			place = merkletree.NewLevelAndLeafFromPostion(event.Position)
+		case retryableExpiredTopic:
+			event := &precompilesgen.ArbRetryableTxRetryableExpired{}
+			err := util.ParseRetryableExpiredLog(event, &l)
+			Require(t, err)
+			hash = common.BytesToHash(event.Hash[:])
+			place = merkletree.NewLevelAndLeafFromPostion(event.Position)
+		}
+		merkleNodes = append(merkleNodes, merkleAccumulator.MerkleTreeNodeEvent{
+			Level:     place.Level,
+			NumLeaves: place.Leaf,
+			Hash:      hash,
+		})
+	}
+	return merkleNodes
+}
+
+func proofFromMerkleNodes(t *testing.T, treeSize, leafIndex uint64, leafHash common.Hash, nodes []merkletree.LevelAndLeaf, partials map[merkletree.LevelAndLeaf]common.Hash, merkleNodes []merkleAccumulator.MerkleTreeNodeEvent) (merkletree.MerkleProof, [][32]byte) {
+	known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
+	partialsByLevel := make(map[uint64]common.Hash)        // maps for each level the partial it may have
+	var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
+	for _, merkleNode := range merkleNodes {
+		place := merkletree.LevelAndLeaf{Level: merkleNode.Level, Leaf: merkleNode.NumLeaves}
+		hash := merkleNode.Hash
+		known[place] = hash
+		if zero, ok := partials[place]; ok {
+			if zero != (common.Hash{}) {
+				Fatal(t, "Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash, "place:", place)
+			}
+			partials[place] = hash
+			partialsByLevel[place.Level] = hash
+			if minPartialPlace == nil || place.Level < minPartialPlace.Level {
+				minPartialPlace = &place
+			}
+		}
+	}
+	for place, hash := range known {
+		t.Log("known  ", place.Level, hash, "@", place)
+	}
+	t.Log(len(known), "values are known\n")
+	for place, hash := range partials {
+		t.Log("partial", place.Level, hash, "@", place)
+	}
+	balanced := treeSize == arbmath.NextPowerOf2(treeSize)/2
+	t.Log("resolving frontiers\n", "minPartialPlace:", minPartialPlace)
+	if !balanced {
+		// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
+		// To do this, we'll walk the boundary of what's known, computing hashes along the way
+		zero := common.Hash{}
+		step := *minPartialPlace
+		step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
+		known[step] = zero
+		t.Log("zeroing:", step)
+		treeLevels := int(arbmath.Log2ceil(treeSize)) // the # of levels in the tree
+		for step.Level < uint64(treeLevels) {
+			curr, ok := known[step]
+			if !ok {
+				Fatal(t, "We should know the current node's value")
+			}
+			left := curr
+			right := curr
+			if _, ok := partialsByLevel[step.Level]; ok {
+				// a partial on the frontier can only appear on the left
+				// moving leftward for a level l skips 2^l leaves
+				step.Leaf -= 1 << step.Level
+				partial, ok := known[step]
+				if !ok {
+					Fatal(t, "There should be a partial here")
+				}
+				left = partial
+			} else {
+				// getting to the next partial means covering its mirror subtree, so we look right
+				// moving rightward for a level l skips 2^l leaves
+				step.Leaf += 1 << step.Level
+				known[step] = zero
+				right = zero
+			}
+			// move to the parent
+			step.Level += 1
+			step.Leaf |= 1 << (step.Level - 1)
+			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
+		}
+		// if known[step] != rootHash {
+		//	// a correct walk of the frontier should end with resolving the root
+		//	t.Log("Walking up the tree didn't re-create the root", known[step], "vs", rootHash)
+		//}
+		for place, hash := range known {
+			t.Log("known", place, hash)
+		}
+	}
+	t.Log("Complete proof of leaf", leafIndex)
+	t.Log("needed nodes:", nodes)
+	proof := make([]common.Hash, len(nodes))
+	for i, place := range nodes {
+		hash, ok := known[place]
+		if !ok {
+			Fatal(t, "We're missing data for the node at position", place)
+		}
+		proof[i] = hash
+		t.Log("node", place, hash)
+	}
+	rootHash := leafHash
+	index := leafIndex
+	for _, hashFromProof := range proof {
+		if index&1 == 0 {
+			rootHash = crypto.Keccak256Hash(rootHash.Bytes(), hashFromProof.Bytes())
+		} else {
+			rootHash = crypto.Keccak256Hash(hashFromProof.Bytes(), rootHash.Bytes())
+		}
+		index = index / 2
+	}
+	merkleProof := merkletree.MerkleProof{
+		RootHash:  rootHash,
+		LeafHash:  leafHash,
+		LeafIndex: leafIndex,
+		Proof:     proof,
+	}
+	t.Logf("the proof: %+v", merkleProof)
+	if !merkleProof.IsCorrect() {
+		Fatal(t, "internal test error - incorrect proof")
+	}
+	proofBytes := make([][32]byte, len(proof))
+	for i, p := range proof {
+		proofBytes[i] = *(*[32]byte)(p.Bytes())
+	}
+	return merkleProof, proofBytes
+}
+
 func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
+	}
+}
+
+func waitForNextL2Block(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info *BlockchainTestInfo) {
+	header, err := l2client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
+	Require(t, err)
+	startBlockNum := header.Number.Uint64()
+	// sending l2 messages until new l2 block is created
+	for header.Number.Uint64() == startBlockNum {
+		SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
+			l2info.PrepareTx("Faucet", "User2", 3000000, big.NewInt(1e12), nil),
+		})
+		header, err = l2client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
+		Require(t, err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -24,13 +25,13 @@ type ArbRetryableTx struct {
 	RedeemScheduled            func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
 	Canceled                   func(ctx, mech, bytes32) error
 	ExpiredMerkleUpdate        func(ctx, mech, bytes32, huge) error
-	RetryableExpired           func(ctx, mech, bytes32, bytes32, huge) error
+	RetryableExpired           func(ctx, mech, bytes32, huge, bytes32, uint64) error
 	TicketCreatedGasCost       func(bytes32) (uint64, error)
 	LifetimeExtendedGasCost    func(bytes32, huge) (uint64, error)
 	RedeemScheduledGasCost     func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
 	CanceledGasCost            func(bytes32) (uint64, error)
 	ExpiredMerkleUpdateGasCost func(bytes32, huge) (uint64, error)
-	RetryableExpiredGasCost    func(bytes32, bytes32, huge) (uint64, error)
+	RetryableExpiredGasCost    func(bytes32, huge, bytes32, uint64) (uint64, error)
 
 	// deprecated event
 	Redeemed        func(ctx, mech, bytes32) error
@@ -70,6 +71,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if retryable == nil {
 		return hash{}, con.oldNotFoundError(c)
 	}
+	timeout, err := retryable.CalculateTimeout()
+	log.Warn("REDEEM retryable", "ticketId", common.BytesToHash(ticketId[:]), "calc_timeout", timeout, "calc_err", err)
 	nextNonce, err := retryable.IncrementNumTries()
 	if err != nil {
 		return hash{}, err

@@ -105,10 +105,11 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if err == nil {
 			for _, leaf := range expiredRetryableLeaves {
 				position := merkletree.LevelAndLeaf{Level: 0, Leaf: leaf.Index}
-				if err = EmitRetryableExpiredEvent(evm, leaf.TicketId, leaf.Hash, position.ToBigInt()); err != nil {
+				if err = EmitRetryableExpiredEvent(evm, leaf.Hash, position.ToBigInt(), leaf.TicketId, leaf.NumTries); err != nil {
 					log.Error("Failed to emit RetryableExpired event", "err", err)
 					break
 				}
+				log.Warn("RetryableExpired emitted", "ticketId", leaf.TicketId, "leafIndex", leaf.Index)
 			}
 		}
 		if err == nil {
@@ -118,10 +119,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 					log.Error("Failed to emit ExpiredMerkleUpdate event", "err", err)
 					break
 				}
+				log.Warn("ExpiredMerkleUpdate emitted", "merkleEvent", fmt.Sprintf("%+v", event))
 			}
 		}
 		if err != nil {
 			evm.StateDB.RevertToSnapshot(snapshot)
+			log.Warn("Reverting ticket reaping because of error", "err", err)
 		}
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)

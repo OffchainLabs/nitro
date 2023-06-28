@@ -73,7 +73,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
-		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
+		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),

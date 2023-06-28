@@ -41,6 +41,15 @@ func NewLevelAndLeaf(level, leaf uint64) LevelAndLeaf {
 	}
 }
 
+func NewLevelAndLeafFromPostion(position *big.Int) LevelAndLeaf {
+	leaf := position.Uint64()                   // lower 8 bytes
+	level := position.Rsh(position, 8).Uint64() // next 8 bytes
+	return LevelAndLeaf{
+		Level: level,
+		Leaf:  leaf,
+	}
+}
+
 func (place LevelAndLeaf) ToBigInt() *big.Int {
 	return new(big.Int).Add(
 		new(big.Int).Lsh(big.NewInt(int64(place.Level)), 192),

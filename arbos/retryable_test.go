@@ -28,20 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-type RetryableTestData struct {
-	id          common.Hash
-	numTries    uint64
-	from        common.Address
-	to          common.Address
-	callvalue   *big.Int
-	beneficiary common.Address
-	calldata    []byte
-}
-
-func (r *RetryableTestData) Hash() common.Hash {
-	return retryables.RetryableHash(r.id, r.numTries, r.from, r.to, r.callvalue, r.beneficiary, r.calldata)
-}
-
 func TestOpenNonexistentRetryable(t *testing.T) {
 	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
 	id := common.BigToHash(big.NewInt(978645611142))
@@ -93,17 +79,25 @@ func TestRetryableLifecycle(t *testing.T) {
 
 	// TODO(magic) remove ids (already in retries data)
 	ids := []common.Hash{}
-	retriesData := []RetryableTestData{}
+	retriesData := []retryables.TestRetryableData{}
 	for i := 0; i < 8; i++ {
 		id := common.BigToHash(big.NewInt(rand.Int63n(1 << 32)))
 		from := testhelpers.RandomAddress()
 		to := testhelpers.RandomAddress()
 		beneficiary := testhelpers.RandomAddress()
-		callvalue := big.NewInt(rand.Int63n(1 << 32))
-		calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
-		retriesData = append(retriesData, RetryableTestData{id, 0, from, to, callvalue, beneficiary, calldata})
+		callValue := big.NewInt(rand.Int63n(1 << 32))
+		callData := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
+		retriesData = append(retriesData, retryables.TestRetryableData{
+			Id:          id,
+			NumTries:    0,
+			From:        from,
+			To:          to,
+			CallValue:   callValue,
+			Beneficiary: beneficiary,
+			CallData:    callData,
+		})
 		timeout := timeoutAtCreation
-		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
+		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callValue, beneficiary, callData)
 		Require(t, err)
 		ids = append(ids, id)
 	}
@@ -226,15 +220,15 @@ func TestRetryableCleanup(t *testing.T) {
 	beneficiary := testhelpers.RandomAddress()
 
 	// could be non-zero because we haven't actually minted funds like going through the submit process does
-	callvalue := big.NewInt(0)
-	calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
+	callValue := big.NewInt(0)
+	callData := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
 
 	timeout := uint64(rand.Int63n(1 << 16))
 	timestamp := 2 * timeout
 
 	// TODO(magic) check if the only state change is update of Expired accumulator
 	stateCheck(t, statedb /*false*/, true, "state didn't change", func() {
-		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
+		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callValue, beneficiary, callData)
 		Require(t, err)
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		_, _, err = retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM)
@@ -255,14 +249,14 @@ func TestRetryableCreate(t *testing.T) {
 	timeout := lastTimestamp + 10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
-	callvalue := big.NewInt(0)
+	callValue := big.NewInt(0)
 	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
-	calldata := make([]byte, 42)
-	for i := range calldata {
-		calldata[i] = byte(i + 3)
+	callData := make([]byte, 42)
+	for i := range callData {
+		callData[i] = byte(i + 3)
 	}
 	rstate := state.RetryableState()
-	retryable, err := rstate.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
+	retryable, err := rstate.CreateRetryable(id, timeout, from, &to, callValue, beneficiary, callData)
 	Require(t, err)
 
 	reread, err := rstate.OpenRetryable(id, lastTimestamp)
@@ -293,7 +287,7 @@ func stateCheck(t *testing.T, statedb *state.StateDB, change bool, message strin
 
 func expiredRetryableReviveData(
 	t *testing.T,
-	retryData RetryableTestData,
+	retryData retryables.TestRetryableData,
 	events []merkleAccumulator.MerkleTreeNodeEvent,
 	leaves []retryables.ExpiredRetryableLeaf,
 	now,
@@ -303,9 +297,9 @@ func expiredRetryableReviveData(
 	numTries uint64,
 	from common.Address,
 	to common.Address,
-	callvalue *big.Int,
+	callValue *big.Int,
 	beneficiary common.Address,
-	calldata []byte,
+	callData []byte,
 	rootHash common.Hash,
 	leafIndex uint64,
 	proof []common.Hash,
@@ -315,7 +309,7 @@ func expiredRetryableReviveData(
 	leafHash := crypto.Keccak256Hash(retryData.Hash().Bytes())
 	var treeSize uint64
 	for _, leaf := range leaves {
-		if leaf.TicketId == retryData.id {
+		if leaf.TicketId == retryData.Id {
 			leafIndex = leaf.Index
 			if leaf.Hash != leafHash {
 				Fail(t, "invalid leaf hash in ExpiredRetryableLeaf, want:", leafHash, "have:", leaf.Hash)
@@ -448,10 +442,10 @@ func expiredRetryableReviveData(
 			step.Leaf |= 1 << (step.Level - 1)
 			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
 		}
-		if known[step] != rootHash {
-			// a correct walk of the frontier should end with resolving the root
-			t.Log("Walking up the tree didn't re-create the root", known[step], "vs", rootHash)
-		}
+		// if known[step] != rootHash {
+		//	// a correct walk of the frontier should end with resolving the root
+		//	t.Log("Walking up the tree didn't re-create the root", known[step], "vs", rootHash)
+		//}
 		for place, hash := range known {
 			t.Log("known", place, hash)
 		}
@@ -469,7 +463,6 @@ func expiredRetryableReviveData(
 	rootHash = leafHash
 	index := leafIndex
 	for _, hashFromProof := range proof {
-
 		if index&1 == 0 {
 			rootHash = crypto.Keccak256Hash(rootHash.Bytes(), hashFromProof.Bytes())
 		} else {
@@ -490,7 +483,7 @@ func expiredRetryableReviveData(
 	if !merkleProof.IsCorrect() {
 		Fail(t, "internal test error - incorrect proof")
 	}
-	ticketId, numTries, from, to, callvalue, beneficiary, calldata = retryData.id, retryData.numTries, retryData.from, retryData.to, retryData.callvalue, retryData.beneficiary, retryData.calldata
+	ticketId, numTries, from, to, callValue, beneficiary, callData = retryData.Id, retryData.NumTries, retryData.From, retryData.To, retryData.CallValue, retryData.Beneficiary, retryData.CallData
 	currentTimestamp = now
 	timeToAdd = lifetime
 	return

@@ -6,7 +6,6 @@ package merkleAccumulator
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -108,7 +107,6 @@ func (acc *MerkleAccumulator) GetPartials() ([]*common.Hash, error) {
 }
 
 func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) error {
-	log.Warn("setPartial", "level", level, "val", val)
 	if acc.backingStorage != nil {
 		err := acc.backingStorage.SetByUint64(2+level, *val)
 		if err != nil {

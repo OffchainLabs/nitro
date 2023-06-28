@@ -576,9 +576,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbRetryableImpl.ExpiredMerkleUpdateGasCost(hash{}, common.Big0))
 		return ArbRetryableImpl.ExpiredMerkleUpdate(context, evm, nodeHash, position)
 	}
-	arbos.EmitRetryableExpiredEvent = func(evm mech, ticketId bytes32, nodeHash bytes32, position huge) error {
-		context := eventCtx(ArbRetryableImpl.RetryableExpiredGasCost(hash{}, hash{}, common.Big0))
-		return ArbRetryableImpl.RetryableExpired(context, evm, ticketId, nodeHash, position)
+	arbos.EmitRetryableExpiredEvent = func(evm mech, nodeHash bytes32, position huge, ticketId bytes32, numTries uint64) error {
+		context := eventCtx(ArbRetryableImpl.RetryableExpiredGasCost(hash{}, common.Big0, hash{}, 0))
+		return ArbRetryableImpl.RetryableExpired(context, evm, nodeHash, position, ticketId, numTries)
 	}
 
 	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
