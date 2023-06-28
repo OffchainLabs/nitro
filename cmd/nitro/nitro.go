@@ -459,9 +459,8 @@ func mainImpl() int {
 		err = currentNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
-		} else {
-			defer currentNode.StopAndWait()
 		}
+		defer currentNode.StopAndWait()
 	}
 
 	sigint := make(chan os.Signal, 1)
