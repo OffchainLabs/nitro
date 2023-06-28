@@ -24,13 +24,14 @@ var log = logrus.WithField("prefix", "assertion-scanner")
 // up to the latest block, and keeps doing so as the chain advances. With each observed assertion,
 // it determines whether or not it should challenge it.
 type Scanner struct {
-	chain            protocol.AssertionChain
-	backend          bind.ContractBackend
-	challengeManager challengemanager.ChallengeCreator
-	stateProvider    l2stateprovider.Provider
-	pollInterval     time.Duration
-	rollupAddr       common.Address
-	validatorName    string
+	chain               protocol.AssertionChain
+	backend             bind.ContractBackend
+	challengeCreator    challengemanager.ChallengeCreator
+	challengeModeReader challengemanager.ChallengeModeReader
+	stateProvider       l2stateprovider.Provider
+	pollInterval        time.Duration
+	rollupAddr          common.Address
+	validatorName       string
 }
 
 // NewScanner creates a scanner from the required dependencies.
@@ -38,19 +39,20 @@ func NewScanner(
 	chain protocol.AssertionChain,
 	stateProvider l2stateprovider.Provider,
 	backend bind.ContractBackend,
-	challengeManager challengemanager.ChallengeCreator,
+	challengeManager challengemanager.ChallengeManager,
 	rollupAddr common.Address,
 	validatorName string,
 	pollInterval time.Duration,
 ) *Scanner {
 	return &Scanner{
-		chain:            chain,
-		backend:          backend,
-		stateProvider:    stateProvider,
-		challengeManager: challengeManager,
-		rollupAddr:       rollupAddr,
-		validatorName:    validatorName,
-		pollInterval:     pollInterval,
+		chain:               chain,
+		backend:             backend,
+		stateProvider:       stateProvider,
+		challengeCreator:    challengeManager,
+		challengeModeReader: challengeManager,
+		rollupAddr:          rollupAddr,
+		validatorName:       validatorName,
+		pollInterval:        pollInterval,
 	}
 }
 
@@ -170,12 +172,25 @@ func (s *Scanner) ProcessAssertionCreation(
 		return nil
 	}
 	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	_, agreesWithAssertion, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
+	msgCount, agreesWithAssertion, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
 	if err != nil {
 		return err
 	}
 	if !agreesWithAssertion {
 		return nil
 	}
-	return s.challengeManager.ChallengeAssertion(ctx, assertionHash)
+
+	if s.challengeModeReader.Mode() == challengemanager.DefensiveMode || s.challengeModeReader.Mode() == challengemanager.MakeMode {
+		if err := s.challengeCreator.ChallengeAssertion(ctx, assertionHash); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	log.WithFields(logrus.Fields{
+		"parentAssertionHash":   creationInfo.ParentAssertionHash,
+		"detectedAssertionHash": assertionHash,
+		"msgCount":              msgCount,
+	}).Error("Detected invalid assertion, but not configured to challenge")
+	return nil
 }

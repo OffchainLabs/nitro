@@ -11,25 +11,37 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// ChallengeManager defines an offchain, challenge manager, which will be
+// an active participant in interacting with the on-chain contracts.
+type ChallengeManager interface {
+	ChallengeCreator
+	ChallengeModeReader
+}
+
 // ChallengeCreator defines a struct which can initiate a challenge on an assertion hash
 // by creating a level zero, block challenge edge onchain.
 type ChallengeCreator interface {
 	ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error
 }
 
+// ChallengeModeReader defines a struct which can read the challenge mode of a challenge manager.
+type ChallengeModeReader interface {
+	Mode() Mode
+}
+
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error {
-	assertion, err := v.chain.GetAssertion(ctx, id)
+func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error {
+	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
 
 	// We then add a level zero edge to initiate a challenge.
-	levelZeroEdge, creationInfo, err := v.addBlockChallengeLevelZeroEdge(ctx, assertion)
+	levelZeroEdge, creationInfo, err := m.addBlockChallengeLevelZeroEdge(ctx, assertion)
 	if err != nil {
-		return fmt.Errorf("could not add block challenge level zero edge %v: %w", v.name, err)
+		return fmt.Errorf("could not add block challenge level zero edge %v: %w", m.name, err)
 	}
 	if !creationInfo.InboxMaxCount.IsUint64() {
 		return errors.New("assertion creation info inbox max count was not a uint64")
@@ -38,18 +50,18 @@ func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	tracker, err := edgetracker.New(
 		ctx,
 		levelZeroEdge,
-		v.chain,
-		v.stateManager,
-		v.watcher,
-		v,
+		m.chain,
+		m.stateManager,
+		m.watcher,
+		m,
 		edgetracker.HeightConfig{
 			StartBlockHeight:           0,
 			TopLevelClaimEndBatchCount: creationInfo.InboxMaxCount.Uint64(),
 		},
-		edgetracker.WithActInterval(v.edgeTrackerWakeInterval),
-		edgetracker.WithTimeReference(v.timeRef),
-		edgetracker.WithValidatorName(v.name),
-		edgetracker.WithValidatorAddress(v.address),
+		edgetracker.WithActInterval(m.edgeTrackerWakeInterval),
+		edgetracker.WithTimeReference(m.timeRef),
+		edgetracker.WithValidatorName(m.name),
+		edgetracker.WithValidatorAddress(m.address),
 	)
 	if err != nil {
 		return err
@@ -57,28 +69,28 @@ func (v *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	go tracker.Spawn(ctx)
 
 	logFields := logrus.Fields{}
-	logFields["name"] = v.name
+	logFields["name"] = m.name
 	logFields["assertionHash"] = containers.Trunc(id[:])
 	log.WithFields(logFields).Info("Successfully created level zero edge for block challenge")
 	return nil
 }
 
-func (v *Manager) addBlockChallengeLevelZeroEdge(
+func (m *Manager) addBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
 ) (protocol.SpecEdge, *protocol.AssertionCreatedInfo, error) {
-	creationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "could not get assertion creation info")
 	}
 	if !creationInfo.InboxMaxCount.IsUint64() {
 		return nil, nil, errors.New("creation info inbox max count was not a uint64")
 	}
-	startCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, 0)
+	startCommit, err := m.stateManager.HistoryCommitmentUpTo(ctx, 0)
 	if err != nil {
 		return nil, nil, err
 	}
-	manager, err := v.chain.SpecChallengeManager(ctx)
+	manager, err := m.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,7 +98,7 @@ func (v *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, nil, err
 	}
-	endCommit, err := v.stateManager.HistoryCommitmentUpToBatch(
+	endCommit, err := m.stateManager.HistoryCommitmentUpToBatch(
 		ctx,
 		0,
 		levelZeroBlockEdgeHeight,
@@ -95,7 +107,7 @@ func (v *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, nil, err
 	}
-	startEndPrefixProof, err := v.stateManager.PrefixProofUpToBatch(
+	startEndPrefixProof, err := m.stateManager.PrefixProofUpToBatch(
 		ctx,
 		0,
 		0,

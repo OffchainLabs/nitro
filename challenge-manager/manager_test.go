@@ -72,6 +72,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 		createdData.HonestStateManager,
 		createdData.Addrs.Rollup,
 		WithName("alice"),
+		WithMode(MakeMode),
 	)
 	require.NoError(t, err)
 
@@ -82,6 +83,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 		createdData.EvilStateManager,
 		createdData.Addrs.Rollup,
 		WithName("bob"),
+		WithMode(MakeMode),
 	)
 	require.NoError(t, err)
 
@@ -161,7 +163,7 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
-	v, err := New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup)
+	v, err := New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, WithMode(MakeMode))
 	require.NoError(t, err)
 	return v, p, s
 }

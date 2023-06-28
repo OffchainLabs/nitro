@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "challenges.go",
         "manager.go",
+        "mode.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager",
     visibility = ["//visibility:public"],

@@ -42,6 +42,7 @@ type Manager struct {
 	watcher                 *watcher.Watcher
 	trackedEdgeIds          *threadsafe.Set[protocol.EdgeId]
 	assertionHashCache      *threadsafe.Map[protocol.AssertionHash, [2]uint64]
+	mode                    Mode
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -63,6 +64,13 @@ func WithAddress(addr common.Address) Opt {
 func WithEdgeTrackerWakeInterval(d time.Duration) Opt {
 	return func(val *Manager) {
 		val.edgeTrackerWakeInterval = d
+	}
+}
+
+// WithMode specifies the mode of the challenge manager.
+func WithMode(m Mode) Opt {
+	return func(val *Manager) {
+		val.mode = m
 	}
 }
 
@@ -124,6 +132,11 @@ func (m *Manager) IsTrackingEdge(edgeId protocol.EdgeId) bool {
 // MarkTrackedEdge marks an edge id as being tracked by our challenge manager.
 func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId) {
 	m.trackedEdgeIds.Insert(edgeId)
+}
+
+// Mode returns the mode of the challenge manager.
+func (m *Manager) Mode() Mode {
+	return m.mode
 }
 
 // TrackEdge spawns an edge tracker for an edge if it is not currently being tracked.
@@ -201,6 +214,11 @@ func (m *Manager) Start(ctx context.Context) {
 		"address",
 		m.address.Hex(),
 	).Info("Started challenge manager")
+
+	// Watcher tower and resolve modes don't monitor challenges.
+	if m.mode == WatchTowerMode || m.mode == ResolveMode {
+		return
+	}
 
 	// Start watching for ongoing chain events in the background.
 	go m.watcher.Watch(ctx)
