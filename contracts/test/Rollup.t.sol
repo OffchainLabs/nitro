@@ -287,7 +287,7 @@ contract RollupTest is Test {
         bytes32 expectedAssertionHash = RollupLib.assertionHash({
             parentAssertionHash: genesisHash,
             afterState: afterState,
-            inboxAcc: userRollup.bridge().sequencerInboxAccs(1) // was 0, move forward 1 on errored state
+            inboxAcc: userRollup.bridge().sequencerInboxAccs(0)
         });
 
         vm.prank(validator1);
