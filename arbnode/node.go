@@ -1014,6 +1014,12 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
 	}
+	if n.DelayedSequencer != nil && n.SeqCoordinator == nil {
+		err = n.DelayedSequencer.ForceSequenceDelayed(ctx)
+		if err != nil {
+			return fmt.Errorf("error performing initial delayed sequencing: %w", err)
+		}
+	}
 	err = n.Execution.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)

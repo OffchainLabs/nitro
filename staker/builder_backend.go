@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -76,18 +77,27 @@ func (b *ValidatorTxBuilder) SendTransaction(ctx context.Context, tx *types.Tran
 	return nil
 }
 
-func (b *ValidatorTxBuilder) AuthWithAmount(ctx context.Context, amount *big.Int) *bind.TransactOpts {
+// While this is not currently required, it's recommended not to reuse the returned auth for multiple transactions,
+// as for an EOA this has the nonce in it. However, the EOA wwallet currently will only publish the first created tx,
+// which is why that doesn't really matter.
+func (b *ValidatorTxBuilder) AuthWithAmount(ctx context.Context, amount *big.Int) (*bind.TransactOpts, error) {
+	nonce, err := b.NonceAt(ctx, b.builderAuth.From, nil)
+	if err != nil {
+		return nil, err
+	}
 	return &bind.TransactOpts{
 		From:     b.builderAuth.From,
-		Nonce:    b.builderAuth.Nonce,
+		Nonce:    new(big.Int).SetUint64(nonce),
 		Signer:   b.builderAuth.Signer,
 		Value:    amount,
 		GasPrice: b.builderAuth.GasPrice,
 		GasLimit: b.builderAuth.GasLimit,
 		Context:  ctx,
-	}
+	}, nil
 }
 
-func (b *ValidatorTxBuilder) Auth(ctx context.Context) *bind.TransactOpts {
-	return b.AuthWithAmount(ctx, big.NewInt(0))
+// Auth is the same as AuthWithAmount with a 0 amount specified.
+// See AuthWithAmount docs for important details.
+func (b *ValidatorTxBuilder) Auth(ctx context.Context) (*bind.TransactOpts, error) {
+	return b.AuthWithAmount(ctx, common.Big0)
 }
