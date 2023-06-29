@@ -23,130 +23,6 @@ impl Default for RustVec {
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    fn call_contract(
-        contract: *const u8,
-        calldata: *const u8,
-        calldata_len: usize,
-        value: *const u8,
-        ink: u64,
-        return_data_len: *mut usize,
-    ) -> u8;
-
-    fn delegate_call_contract(
-        contract: *const u8,
-        calldata: *const u8,
-        calldata_len: usize,
-        ink: u64,
-        return_data_len: *mut usize,
-    ) -> u8;
-
-    fn static_call_contract(
-        contract: *const u8,
-        calldata: *const u8,
-        calldata_len: usize,
-        ink: u64,
-        return_data_len: *mut usize,
-    ) -> u8;
-
-    /// A noop when there's never been a call
-    fn read_return_data(dest: *mut u8);
-}
-
-/// Calls the contract at the given address, with options for passing value and to limit the amount of ink supplied.
-/// On failure, the output consists of the call's revert data.
-pub fn call(
-    contract: Bytes20,
-    calldata: &[u8],
-    value: Option<Bytes32>,
-    ink: Option<u64>,
-) -> Result<Vec<u8>, Vec<u8>> {
-    let mut outs_len = 0;
-    let value = value.unwrap_or_default();
-    let ink = ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    let status = unsafe {
-        call_contract(
-            contract.ptr(),
-            calldata.as_ptr(),
-            calldata.len(),
-            value.ptr(),
-            ink,
-            &mut outs_len as *mut _,
-        )
-    };
-    let outs = unsafe {
-        let mut outs = Vec::with_capacity(outs_len);
-        read_return_data(outs.as_mut_ptr());
-        outs.set_len(outs_len);
-        outs
-    };
-    match status {
-        0 => Ok(outs),
-        _ => Err(outs),
-    }
-}
-
-/// Delegate calls the contract at the given address, with the option to limit the amount of ink supplied.
-/// On failure, the output consists of the call's revert data.
-pub fn delegate_call(
-    contract: Bytes20,
-    calldata: &[u8],
-    ink: Option<u64>,
-) -> Result<Vec<u8>, Vec<u8>> {
-    let mut outs_len = 0;
-    let ink = ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    let status = unsafe {
-        delegate_call_contract(
-            contract.ptr(),
-            calldata.as_ptr(),
-            calldata.len(),
-            ink,
-            &mut outs_len as *mut _,
-        )
-    };
-    let outs = unsafe {
-        let mut outs = Vec::with_capacity(outs_len);
-        read_return_data(outs.as_mut_ptr());
-        outs.set_len(outs_len);
-        outs
-    };
-    match status {
-        0 => Ok(outs),
-        _ => Err(outs),
-    }
-}
-
-/// Static calls the contract at the given address, with the option to limit the amount of ink supplied.
-/// On failure, the output consists of the call's revert data.
-pub fn static_call(
-    contract: Bytes20,
-    calldata: &[u8],
-    ink: Option<u64>,
-) -> Result<Vec<u8>, Vec<u8>> {
-    let mut outs_len = 0;
-    let ink = ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    let status = unsafe {
-        static_call_contract(
-            contract.ptr(),
-            calldata.as_ptr(),
-            calldata.len(),
-            ink,
-            &mut outs_len as *mut _,
-        )
-    };
-    let outs = unsafe {
-        let mut outs = Vec::with_capacity(outs_len);
-        read_return_data(outs.as_mut_ptr());
-        outs.set_len(outs_len);
-        outs
-    };
-    match status {
-        0 => Ok(outs),
-        _ => Err(outs),
-    }
-}
-
-#[link(wasm_import_module = "forward")]
-extern "C" {
     fn create1(
         code: *const u8,
         code_len: usize,
@@ -163,6 +39,9 @@ extern "C" {
         contract: *mut u8,
         revert_data_len: *mut usize,
     );
+
+    /// A noop when there's never been a call
+    fn read_return_data(dest: *mut u8);
 
     /// Returns 0 when there's never been a call
     fn return_data_size() -> u32;

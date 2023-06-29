@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{contract, debug, Bytes20, Bytes32};
+use arbitrum::{call::Call, debug, Bytes20, Bytes32};
 
 arbitrum::arbitrum_main!(user_main);
 
@@ -44,9 +44,9 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         });
 
         let return_data = match kind {
-            0 => contract::call(addr, data, value, None)?,
-            1 => contract::delegate_call(addr, data, None)?,
-            2 => contract::static_call(addr, data, None)?,
+            0 => Call::new().value(value.unwrap_or_default()).call(addr, data)?,
+            1 => Call::new_delegate().call(addr, data)?,
+            2 => Call::new_static().call(addr, data)?,
             x => panic!("unknown call kind {x}"),
         };
         if !return_data.is_empty() {
