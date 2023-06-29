@@ -1049,7 +1049,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 			log.Error("failed reading batch count", "err", err)
 			batchCount = 0
 		}
-		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount)
+		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
 		if err != nil {
 			log.Error("failed reading batchMsgCount", "err", err)
 			batchMsgCount = 0
