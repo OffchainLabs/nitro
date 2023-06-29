@@ -271,7 +271,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	var validatedGlobalState validator.GoGlobalState
 	if v.blockValidator != nil {
 		valInfo, err := v.blockValidator.ReadLastValidatedInfo()
-		if err != nil {
+		if err != nil || valInfo == nil {
 			return nil, false, err
 		}
 		validatedGlobalState = valInfo.GlobalState
