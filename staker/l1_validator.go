@@ -169,7 +169,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			return false, nil
 		}
 		log.Warn("rejecting node", "node", unresolvedNodeIndex)
-		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
+		auth, err := v.builder.Auth(ctx)
+		if err != nil {
+			return false, err
+		}
+		_, err = v.rollup.RejectNextNode(auth, *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
 		nodeInfo, err := v.rollup.LookupNode(ctx, unresolvedNodeIndex)
@@ -178,7 +182,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
 		log.Info("confirming node", "node", unresolvedNodeIndex)
-		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
+		auth, err := v.builder.Auth(ctx)
+		if err != nil {
+			return false, err
+		}
+		_, err = v.rollup.ConfirmNextNode(auth, afterGs.BlockHash, afterGs.SendRoot)
 		if err != nil {
 			return false, err
 		}
@@ -253,14 +261,14 @@ func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (in
 }
 
 func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, makeAssertionInterval time.Duration) (nodeAction, bool, error) {
-	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+	startState, prevInboxMaxCount, startStateProposedL1, startStateProposedParentChain, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, fmt.Errorf("error looking up node %v (hash %v) start state: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
 	}
 
-	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposed))
+	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposedParentChain))
 	if err != nil {
-		return nil, false, fmt.Errorf("error looking up L1 header of block %v of node start state: %w", startStateProposed, err)
+		return nil, false, fmt.Errorf("error looking up L1 header of block %v of node start state: %w", startStateProposedParentChain, err)
 	}
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
@@ -340,7 +348,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
-	parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
+	l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
 	if err != nil {
 		return nil, false, err
 	}
@@ -350,7 +358,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
-	timeSinceProposed := big.NewInt(int64(parentChainBlockNumber) - int64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(l1BlockNumber) - int64(startStateProposedL1))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
@@ -594,28 +602,28 @@ func (v *L1Validator) createNewNodeAction(
 	return action, nil
 }
 
-// Returns (execution state, inbox max count, L1 block proposed, error)
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
+// Returns (execution state, inbox max count, L1 block proposed, parent chain block proposed, error)
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash common.Hash) (*validator.ExecutionState, *big.Int, uint64, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
+			return nil, nil, 0, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
 		}
-		parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, rollup.client, creationEvent.Raw.BlockNumber)
+		l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, rollup.client, creationEvent.Raw.BlockNumber)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, 0, 0, err
 		}
 		return &validator.ExecutionState{
 			GlobalState:   validator.GoGlobalState{},
 			MachineStatus: validator.MachineStatusFinished,
-		}, big.NewInt(1), parentChainBlockNumber, nil
+		}, big.NewInt(1), l1BlockNumber, creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, 0, err
 	}
 	if node.NodeHash != nodeHash {
-		return nil, nil, 0, errors.New("looked up starting node but found wrong hash")
+		return nil, nil, 0, 0, errors.New("looked up starting node but found wrong hash")
 	}
-	return node.AfterState(), node.InboxMaxCount, node.BlockProposed, nil
+	return node.AfterState(), node.InboxMaxCount, node.L1BlockProposed, node.ParentChainBlockProposed, nil
 }

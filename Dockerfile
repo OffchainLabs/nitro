@@ -6,20 +6,20 @@ RUN apt-get update && \
     cd emsdk && \
     ./emsdk install 3.1.7 && \
     ./emsdk activate 3.1.7
-COPY build-brotli.sh .
+COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./build-brotli.sh -w -t install/
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
 
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
 
 FROM debian:bullseye-slim as brotli-library-builder
 WORKDIR /workspace
-COPY build-brotli.sh .
+COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN apt-get update && \
     apt-get install -y cmake make gcc git && \
-    ./build-brotli.sh -l -t install/
+    ./scripts/build-brotli.sh -l -t /workspace/install/
 
 FROM scratch as brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
@@ -53,7 +53,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 
 FROM wasm-base as wasm-bin-builder
     # pinned go version
-RUN curl -L https://golang.org/dl/go1.19.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.20.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -146,7 +146,7 @@ FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 # Download WAVM machines
-COPY ./testnode-scripts/download-machine.sh .
+COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v1-rc1 0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41
 #RUN ./download-machine.sh consensus-v2.1 0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232
 #RUN ./download-machine.sh consensus-v3 0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7
@@ -161,7 +161,7 @@ COPY ./testnode-scripts/download-machine.sh .
 RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
 RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
 
-FROM golang:1.19-bullseye as node-builder
+FROM golang:1.20-bullseye as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -188,11 +188,11 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder as fuzz-builder
 RUN mkdir fuzzers/
-RUN ./fuzz.bash --build --binary-path /workspace/fuzzers/
+RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
 
 FROM debian:bullseye-slim as nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
-COPY ./fuzz.bash /usr/local/bin
+COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
 ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
@@ -215,7 +215,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     chown -R user:user /home/user && \
     chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
 
 USER user
@@ -234,7 +234,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     node-ws vim-tiny python3 \
     dnsutils && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
 
 USER user
@@ -258,7 +258,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     adduser user sudo && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
 
 USER user
