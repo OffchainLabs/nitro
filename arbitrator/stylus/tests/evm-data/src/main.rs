@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{address, block, call::Call, contract, evm, msg, tx, Bytes20, Bytes32};
+use arbitrum::{address, block, contract::{self, Call}, evm, msg, tx, Bytes20, Bytes32};
 
 arbitrum::arbitrum_main!(user_main);
 
