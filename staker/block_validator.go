@@ -774,20 +774,102 @@ func (v *BlockValidator) writeLastValidatedToDb(gs validator.GoGlobalState, wasm
 	return nil
 }
 
-func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error {
+func (v *BlockValidator) validGSIsNew(globalState validator.GoGlobalState) bool {
+	if v.legacyValidInfo != nil {
+		if v.legacyValidInfo.AfterPosition.BatchNumber > globalState.Batch {
+			return false
+		}
+		if v.legacyValidInfo.AfterPosition.BatchNumber == globalState.Batch && v.legacyValidInfo.AfterPosition.PosInBatch >= globalState.PosInBatch {
+			return false
+		}
+		return true
+	}
+	if v.lastValidGS.Batch > globalState.Batch {
+		return false
+	}
+	if v.lastValidGS.Batch == globalState.Batch && v.lastValidGS.PosInBatch >= globalState.PosInBatch {
+		return false
+	}
+	return true
+}
+
+// this accepts globalstate even if not caught up
+func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
 		return fmt.Errorf("cannot handle AssumeValid while running")
 	}
 
 	// don't do anything if we already validated past that
-	if v.lastValidGS.Batch > globalState.Batch {
-		return nil
-	}
-	if v.lastValidGS.Batch == globalState.Batch && v.lastValidGS.PosInBatch > globalState.PosInBatch {
+	if !v.validGSIsNew(globalState) {
 		return nil
 	}
 
+	v.legacyValidInfo = nil
 	v.lastValidGS = globalState
+
+	err := v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{})
+	if err != nil {
+		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
+	}
+
+	return nil
+}
+
+func (v *BlockValidator) AssumeValid(count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
+
+	if count <= v.validated() {
+		return nil
+	}
+
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+
+	if count <= v.validated() {
+		return nil
+	}
+
+	if !v.chainCaughtUp {
+		if !v.validGSIsNew(globalState) {
+			return nil
+		}
+		v.legacyValidInfo = nil
+		v.lastValidGS = globalState
+		return nil
+	}
+
+	countUint64 := uint64(count)
+	msg, err := v.streamer.GetMessage(count - 1)
+	if err != nil {
+		return err
+	}
+	// delete no-longer relevant entries
+	for iPos := v.validated(); iPos < count && iPos < v.created(); iPos++ {
+		status, found := v.validations.Load(iPos)
+		if found && status != nil && status.Cancel != nil {
+			status.Cancel()
+		}
+		v.validations.Delete(iPos)
+	}
+	if v.created() < count {
+		v.nextCreateStartGS = globalState
+		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
+		v.nextCreateBatchReread = true
+		v.createdA = countUint64
+	}
+	// under the reorg mutex we don't need atomic access
+	if v.recordSentA < countUint64 {
+		v.recordSentA = countUint64
+	}
+	v.validatedA = countUint64
+	v.valLoopPos = count
+	validatorMsgCountValidatedGauge.Update(int64(countUint64))
+	v.lastValidGS = globalState
+	err = v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{}) // we don't know which wasm roots were validated
+	if err != nil {
+		log.Error("failed writing valid state after reorg", "err", err)
+	}
+	nonBlockingTrigger(v.createNodesChan)
+
 	return nil
 }
 

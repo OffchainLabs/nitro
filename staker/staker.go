@@ -199,6 +199,7 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
+	fatalErr                chan<- error
 }
 
 func NewStaker(
@@ -209,6 +210,7 @@ func NewStaker(
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	validatorUtilsAddress common.Address,
+	fatalErr chan<- error,
 ) (*Staker, error) {
 
 	if err := config.Validate(); err != nil {
@@ -230,6 +232,7 @@ func NewStaker(
 		lastActCalledBlock:      nil,
 		inboxReader:             statelessBlockValidator.inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
+		fatalErr:                fatalErr,
 	}, nil
 }
 
@@ -257,9 +260,43 @@ func (s *Staker) Initialize(ctx context.Context) error {
 			return err
 		}
 
-		return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
+		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
+	}
+	return nil
+}
+
+func (s *Staker) checkLatestStaked(ctx context.Context) error {
+	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+	if err != nil {
+		return fmt.Errorf("couldn't get LatestStaked: %w", err)
+	}
+	stakerLatestStakedNodeGauge.Update(int64(latestStaked))
+	if latestStaked == 0 {
+		return nil
 	}
 
+	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
+	if err != nil {
+		return fmt.Errorf("couldn't look up latest node: %w", err)
+	}
+
+	stakedGlobalState := stakedInfo.AfterState().GlobalState
+	caughtUp, count, err := GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, stakedGlobalState)
+	if err != nil {
+		if errors.Is(err, ErrGlobalStateNotInChain) && s.fatalErr != nil {
+			fatal := fmt.Errorf("latest staked not in chain: %w", err)
+			s.fatalErr <- fatal
+		}
+		return fmt.Errorf("staker: latest staked %w", err)
+	}
+
+	if !caughtUp {
+		log.Info("latest valid not yet in our node", "staked", stakedGlobalState)
+		return nil
+	}
+	if s.blockValidator != nil && s.config.StartFromStaked {
+		return s.blockValidator.AssumeValid(count, stakedGlobalState)
+	}
 	return nil
 }
 
@@ -316,6 +353,13 @@ func (s *Staker) Start(ctxIn context.Context) {
 			log.Warn("error acting as staker", "err", err)
 		}
 		return backoff
+	})
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		err := s.checkLatestStaked(ctx)
+		if err != nil && ctx.Err() == nil {
+			log.Error("staker: error checking latest staked", "err", err)
+		}
+		return s.config.StakerInterval
 	})
 }
 
