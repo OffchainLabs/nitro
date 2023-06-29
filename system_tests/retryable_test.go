@@ -398,9 +398,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
-func TestSubmitRetryableFailThenExpire(t *testing.T) {
-	// _ = testhelpers.InitTestLog(t, log.LvlTrace)
-	// overwrite retrayable lifetime constant
+func TestSubmitRetryableFailExpireThenReviveAndRedeem(t *testing.T) {
 	t.Parallel()
 	l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, true)
 	defer teardown()
@@ -418,76 +416,37 @@ func TestSubmitRetryableFailThenExpire(t *testing.T) {
 		l2client:                      l2client,
 		lookupSubmitRetryableL2TxHash: lookupSubmitRetryableL2TxHash,
 	}
+
 	retry := &retryables.TestRetryableData{
-		Id:          common.Hash{}, // filled later on
-		NumTries:    0,             // filled later on
+		Id:          common.Hash{}, // filled later in submitRetryable
+		NumTries:    0,             // filled later in expiredRetryablFromnLogs
 		From:        util.RemapL1Address(userTxOpts.From),
 		To:          simpleAddr,
 		CallValue:   common.Big0,
 		Beneficiary: l2info.GetAddress("Beneficiary"),
 		CallData:    simpleABI.Methods["incrementRedeem"].ID,
 	}
-	firstRetryTxId := submitRetryable(t, ctx, submissionCtx, retry)
-
-	// get receipt for the auto-redeem, make sure it failed
-	receipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusFailed {
-		Fatal(t, receipt.GasUsed)
+	autoRedeemReceipt := submitRetryable(t, ctx, submissionCtx, retry)
+	if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
+		Fatal(t, autoRedeemReceipt.GasUsed)
 	}
 
+	// trigger the retryable expiry
 	warpL1Time(t, ctx, l2node, l1client, l2client, retryables.RetryableLifetimeSeconds+1)
 
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
-	Require(t, err)
-	_, err = arbRetryableTx.Redeem(&ownerTxOpts, retry.Id)
-	if err == nil || err.Error() != "execution reverted: error NoTicketWithID()" {
-		Fatal(t, "didn't get expected NoTicketWithID error, err:", err)
-	}
+	// check if expiry happened
+	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+
+	// wait one block and re-check if retyable expired
 	waitForNextL2Block(t, ctx, l2client, l2info)
-	arbRetryableTx, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
-	Require(t, err)
-	_, err = arbRetryableTx.Redeem(&ownerTxOpts, retry.Id)
-	if err == nil || err.Error() != "execution reverted: error NoTicketWithID()" {
-		Fatal(t, "didn't get expected NoTicketWithID error, err:", err)
-	}
+	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 
-	leafHash, leafIndex := findExpiredRetryableInLogs(t, ctx, l2client, retry)
-	treeSize := leafIndex + 1
+	// revive retryable and check that it can be redeemed
+	reviveRetryable(t, ctx, l2client, &ownerTxOpts, retry)
+	redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, 1)
 
-	query, nodes, partials := prepareQueryNeededNodesAndPartials(t, ctx, l2client, treeSize, leafIndex)
-
-	merkleNodes := fetchMerkleNodesFromLogs(t, ctx, l2client, query)
-
-	merkleProof, proofBytes := proofFromMerkleNodes(t, treeSize, leafIndex, leafHash, nodes, partials, merkleNodes)
-
-	arbRetryableTx, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
-	Require(t, err)
-	tx, err := arbRetryableTx.Revive(&ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)
-	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-
-	arbRetryableTx, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
-	Require(t, err)
-	tx, err = arbRetryableTx.Redeem(&ownerTxOpts, retry.Id)
-	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	retryTxId := receipt.Logs[0].Topics[2]
-	// check the receipt for the retry
-	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
-	Require(t, err)
-	if receipt.Status != 1 {
-		Fatal(t, receipt.Status)
-	}
-	// verify that the increment happened, so we know the retry succeeded
-	counter, err := simple.Counter(&bind.CallOpts{})
-	Require(t, err)
-
-	if counter != 1 {
-		Fatal(t, "Unexpected counter:", counter)
-	}
+	// second redeem shouldn't be possible
+	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 }
 
 type submissionContext struct {
@@ -501,7 +460,7 @@ type submissionContext struct {
 
 // sets retry.Id
 // returns first retry tx hash
-func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContext, retry *retryables.TestRetryableData) common.Hash {
+func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContext, retry *retryables.TestRetryableData) *types.Receipt {
 	l1tx, err := subCtx.delayedInbox.CreateRetryableTicket(
 		subCtx.userTxOpts,
 		retry.To,
@@ -530,7 +489,10 @@ func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContex
 		Fatal(t, "unexpected length of submit retryable tx receipt logs, want: 2, have:", len(receipt.Logs))
 	}
 	retry.Id = receipt.Logs[0].Topics[1]
-	return receipt.Logs[1].Topics[2]
+	firstRetryTxId := receipt.Logs[1].Topics[2]
+	autoRedeemReceipt, err := WaitForTx(ctx, subCtx.l2client, firstRetryTxId, time.Second*5)
+	Require(t, err)
+	return autoRedeemReceipt
 }
 
 func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1client *ethclient.Client, l2client *ethclient.Client, advanceTime uint64) {
@@ -564,7 +526,8 @@ func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1clien
 
 // updates retry.NumTries
 // returns leaf hash and index in expired acc
-func findExpiredRetryableInLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client, retry *retryables.TestRetryableData) (common.Hash, uint64) {
+func expiredRetryableFromLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client, retry *retryables.TestRetryableData) (uint64, common.Hash) {
+	t.Helper()
 	arbRetryableAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	Require(t, err)
 	retryableExpiredTopic := arbRetryableAbi.Events["RetryableExpired"].ID
@@ -580,7 +543,7 @@ func findExpiredRetryableInLogs(t *testing.T, ctx context.Context, l2client *eth
 			{retry.Id},
 		},
 	})
-	Require(t, err)
+	Require(t, err, "FilterLogs failed")
 	if len(logs) == 0 {
 		Fatal(t, "found no logs for RetryableExpired event for ticket id:", retry.Id)
 	}
@@ -591,14 +554,46 @@ func findExpiredRetryableInLogs(t *testing.T, ctx context.Context, l2client *eth
 		event := &precompilesgen.ArbRetryableTxRetryableExpired{}
 		l := log
 		err := util.ParseRetryableExpiredLog(event, &l)
-		Require(t, err)
+		Require(t, err, "ParseRetryableExpiredLog failed for log:", log)
 		if event.NumTries >= maxNumTries {
 			retry.NumTries = event.NumTries
 			leafHash = common.BytesToHash(event.Hash[:])
 			leafIndex = event.Position.Uint64()
 		}
 	}
-	return leafHash, leafIndex
+	return leafIndex, leafHash
+}
+
+// TODO(magic) replace with getting 30min / 1hour old root event
+func accumulatorSizeFromLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client) uint64 {
+	t.Helper()
+	arbRetryableAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	Require(t, err)
+	retryableExpiredTopic := arbRetryableAbi.Events["RetryableExpired"].ID
+	logs, err := l2client.FilterLogs(ctx, ethereum.FilterQuery{
+		Addresses: []common.Address{
+			types.ArbRetryableTxAddress,
+		},
+		Topics: [][]common.Hash{
+			{retryableExpiredTopic},
+		},
+	})
+	Require(t, err)
+	if len(logs) == 0 {
+		Fatal(t, "found no logs for RetryableExpired events")
+	}
+	var maxLeaf uint64
+	for _, log := range logs {
+		event := &precompilesgen.ArbRetryableTxRetryableExpired{}
+		l := log
+		err := util.ParseRetryableExpiredLog(event, &l)
+		Require(t, err, "ParseRetryableExpiredLog failed for log:", log)
+		place := merkletree.NewLevelAndLeafFromPostion(event.Position)
+		if place.Leaf > maxLeaf {
+			maxLeaf = place.Leaf
+		}
+	}
+	return maxLeaf
 }
 
 func prepareQueryNeededNodesAndPartials(t *testing.T, ctx context.Context, l2client *ethclient.Client, treeSize, leafIndex uint64) ([]common.Hash, []merkletree.LevelAndLeaf, map[merkletree.LevelAndLeaf]common.Hash) {
@@ -654,6 +649,7 @@ func prepareQueryNeededNodesAndPartials(t *testing.T, ctx context.Context, l2cli
 }
 
 func fetchMerkleNodesFromLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client, query []common.Hash) []merkleAccumulator.MerkleTreeNodeEvent {
+	t.Helper()
 	logs := []types.Log{}
 	arbRetryableAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	Require(t, err)
@@ -673,7 +669,6 @@ func fetchMerkleNodesFromLogs(t *testing.T, ctx context.Context, l2client *ethcl
 		})
 		Require(t, err, "couldn't get logs")
 	}
-	t.Log("logs:", logs)
 	// leaf and internal nodes
 	var merkleNodes []merkleAccumulator.MerkleTreeNodeEvent
 	for _, log := range logs {
@@ -812,6 +807,62 @@ func proofFromMerkleNodes(t *testing.T, treeSize, leafIndex uint64, leafHash com
 		proofBytes[i] = *(*[32]byte)(p.Bytes())
 	}
 	return merkleProof, proofBytes
+}
+
+func proofForLeaf(t *testing.T, ctx context.Context, l2client *ethclient.Client, treeSize, leafIndex uint64, leafHash common.Hash) (merkletree.MerkleProof, [][32]byte) {
+	query, nodes, partials := prepareQueryNeededNodesAndPartials(t, ctx, l2client, treeSize, leafIndex)
+	merkleNodes := fetchMerkleNodesFromLogs(t, ctx, l2client, query)
+	return proofFromMerkleNodes(t, treeSize, leafIndex, leafHash, nodes, partials, merkleNodes)
+}
+
+func reviveRetryable(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
+	t.Helper()
+	leafIndex, leafHash := expiredRetryableFromLogs(t, ctx, l2client, retry)
+	treeSize := accumulatorSizeFromLogs(t, ctx, l2client)
+	merkleProof, proofBytes := proofForLeaf(t, ctx, l2client, treeSize, leafIndex, leafHash)
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	tx, err := arbRetryableTx.Revive(ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "receipt indicated Revive failure")
+	}
+}
+
+func redeemRetryableShouldFailNoTicket(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
+	t.Helper()
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	_, err = arbRetryableTx.Redeem(ownerTxOpts, retry.Id)
+	if err == nil || err.Error() != "execution reverted: error NoTicketWithID()" {
+		Fatal(t, "didn't get expected NoTicketWithID error, err:", err)
+	}
+}
+
+func redeemRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData, simple *mocksgen.Simple, expectedCounter uint64) {
+	t.Helper()
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	tx, err := arbRetryableTx.Redeem(ownerTxOpts, retry.Id)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	retryTxId := receipt.Logs[0].Topics[2]
+	// check the receipt for the retry
+	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, receipt.Status)
+	}
+	// verify that the increment happened, so we know the retry succeeded
+	counter, err := simple.Counter(&bind.CallOpts{})
+	Require(t, err)
+
+	if counter != expectedCounter {
+		Fatal(t, "Unexpected counter, want:", expectedCounter, "have:", counter)
+	}
 }
 
 func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
