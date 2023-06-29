@@ -79,11 +79,6 @@ func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig)
 	}
 	log.Info("IPFS node started up", "hostAddresses", addrs)
 
-	if config.PinAfterGet {
-		if config.PinPercentage != 100.0 {
-			rand.Seed(time.Now().UnixNano())
-		}
-	}
 	return &IpfsStorageService{
 		config:     config,
 		ipfsHelper: ipfsHelper,

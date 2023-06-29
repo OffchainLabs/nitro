@@ -152,12 +152,25 @@ func (v *ContractValidatorWallet) From() common.Address {
 	return v.auth.From
 }
 
-func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
-	oldAuthValue := v.auth.Value
-	v.auth.Value = tx.Value()
-	defer (func() { v.auth.Value = oldAuthValue })()
+// nil value == 0 value
+func (v *ContractValidatorWallet) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
+	newAuth := *v.auth
+	newAuth.Context = ctx
+	newAuth.Value = value
+	nonce, err := v.L1Client().NonceAt(ctx, v.auth.From, nil)
+	if err != nil {
+		return nil, err
+	}
+	newAuth.Nonce = new(big.Int).SetUint64(nonce)
+	return &newAuth, nil
+}
 
-	return v.con.ExecuteTransactionWithGasRefunder(v.auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
+func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
+	auth, err := v.getAuth(ctx, tx.Value())
+	if err != nil {
+		return nil, err
+	}
+	return v.con.ExecuteTransactionWithGasRefunder(auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
 }
 
 func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -171,7 +184,11 @@ func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMi
 		return nil
 	}
 	if v.address == nil {
-		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing)
+		auth, err := v.getAuth(ctx, nil)
+		if err != nil {
+			return err
+		}
+		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, auth, v.l1Reader, createIfMissing)
 		if err != nil {
 			return err
 		}
@@ -248,14 +265,15 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 		return nil, err
 	}
 
-	oldAuthValue := v.auth.Value
-	v.auth.Value = new(big.Int).Sub(totalAmount, balanceInContract)
-	if v.auth.Value.Sign() < 0 {
-		v.auth.Value.SetInt64(0)
+	callValue := new(big.Int).Sub(totalAmount, balanceInContract)
+	if callValue.Sign() < 0 {
+		callValue.SetInt64(0)
 	}
-	defer (func() { v.auth.Value = oldAuthValue })()
-
-	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(v.auth, gasRefunder, data, dest, amount)
+	auth, err := v.getAuth(ctx, callValue)
+	if err != nil {
+		return nil, err
+	}
+	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(auth, gasRefunder, data, dest, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +282,11 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 }
 
 func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
-	return v.con.TimeoutChallenges(v.auth, v.challengeManagerAddress, challenges)
+	auth, err := v.getAuth(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return v.con.TimeoutChallenges(auth, v.challengeManagerAddress, challenges)
 }
 
 func (v *ContractValidatorWallet) L1Client() arbutil.L1Interface {

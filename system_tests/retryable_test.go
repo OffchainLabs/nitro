@@ -54,7 +54,7 @@ func retryableSetup(t *testing.T) (
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
-			Fail(t, "didn't find message for retryable submission")
+			Fatal(t, "didn't find message for retryable submission")
 		}
 		var submissionTxs []*types.Transaction
 		for _, message := range messages {
@@ -70,7 +70,7 @@ func retryableSetup(t *testing.T) (
 			}
 		}
 		if len(submissionTxs) != 1 {
-			Fail(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
+			Fatal(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
 		}
 
 		return submissionTxs[0].Hash()
@@ -89,7 +89,7 @@ func retryableSetup(t *testing.T) (
 			block, err := l2client.BlockByNumber(ctx, arbmath.UintToBig(number))
 			Require(t, err, "failed to get L2 block", number, "of", blockNum)
 			if block.Number().Uint64() != number {
-				Fail(t, "block number mismatch", number, block.Number().Uint64())
+				Fatal(t, "block number mismatch", number, block.Number().Uint64())
 			}
 		}
 
@@ -111,7 +111,7 @@ func TestRetryableNoExist(t *testing.T) {
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
 	if err.Error() != "execution reverted: error NoTicketWithID()" {
-		Fail(t, "didn't get expected NoTicketWithID error")
+		Fatal(t, "didn't get expected NoTicketWithID error")
 	}
 }
 
@@ -166,7 +166,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fail(t, "l1receipt indicated failure")
+		Fatal(t, "l1receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
@@ -174,14 +174,14 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fail(t)
+		Fatal(t)
 	}
 
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 
 	if !arbmath.BigEquals(l2balance, big.NewInt(1e6)) {
-		Fail(t, "Unexpected balance:", l2balance)
+		Fatal(t, "Unexpected balance:", l2balance)
 	}
 }
 
@@ -216,7 +216,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fail(t, "l1receipt indicated failure")
+		Fatal(t, "l1receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
@@ -224,10 +224,10 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fail(t)
+		Fatal(t)
 	}
 	if len(receipt.Logs) != 2 {
-		Fail(t, len(receipt.Logs))
+		Fatal(t, len(receipt.Logs))
 	}
 	ticketId := receipt.Logs[0].Topics[1]
 	firstRetryTxId := receipt.Logs[1].Topics[2]
@@ -236,7 +236,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
-		Fail(t, receipt.GasUsed)
+		Fatal(t, receipt.GasUsed)
 	}
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
@@ -252,7 +252,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
-		Fail(t, receipt.Status)
+		Fatal(t, receipt.Status)
 	}
 
 	// verify that the increment happened, so we know the retry succeeded
@@ -260,20 +260,20 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 
 	if counter != 1 {
-		Fail(t, "Unexpected counter:", counter)
+		Fatal(t, "Unexpected counter:", counter)
 	}
 
 	if len(receipt.Logs) != 1 {
-		Fail(t, "Unexpected log count:", len(receipt.Logs))
+		Fatal(t, "Unexpected log count:", len(receipt.Logs))
 	}
 	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
 	Require(t, err)
 	aliasedSender := util.RemapL1Address(usertxopts.From)
 	if parsed.Caller != aliasedSender {
-		Fail(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
+		Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
 	}
 	if parsed.Redeemer != ownerTxOpts.From {
-		Fail(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
+		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fail(t, "l1receipt indicated failure")
+		Fatal(t, "l1receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
@@ -353,13 +353,13 @@ func TestSubmissionGasCosts(t *testing.T) {
 	colors.PrintMint("Receive       ", receiveFunds)
 	colors.PrintBlue("L2 Call Value ", retryableL2CallValue)
 	if !arbmath.BigEquals(receiveFunds, retryableL2CallValue) {
-		Fail(t, "Recipient didn't receive the right funds")
+		Fatal(t, "Recipient didn't receive the right funds")
 	}
 
 	// the beneficiary should receive nothing
 	colors.PrintMint("Beneficiary   ", beneficiaryFunds)
 	if beneficiaryFunds.Sign() != 0 {
-		Fail(t, "The beneficiary shouldn't have received funds")
+		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
 	// the fee refund address should recieve the excess gas
@@ -369,7 +369,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	colors.PrintBlue("Excess Wei       ", excessWei)
 	colors.PrintMint("Fee Refund       ", refundFunds)
 	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, maxSubmissionFee)) {
-		Fail(t, "The Fee Refund Address didn't receive the right funds")
+		Fatal(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
 	// the faucet must pay for both the gas used and the call value supplied
@@ -383,7 +383,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		colors.PrintRed("Expected ", expectedGasChange)
 		colors.PrintRed("Observed ", diff)
 		colors.PrintRed("Off by   ", arbmath.BigSub(expectedGasChange, diff))
-		Fail(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
+		Fatal(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
 	}
 }
 

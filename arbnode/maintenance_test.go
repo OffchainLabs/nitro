@@ -4,39 +4,38 @@
 package arbnode
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
 
 func TestWentPastTimeOfDay(t *testing.T) {
-	checkWentPastTimeOfDay := func(before time.Time, after time.Time, timeOfDay string, expected bool) {
-		config := MaintenanceConfig{
-			TimeOfDay: timeOfDay,
-		}
-		Require(t, config.Validate(), "Failed to validate sample config")
-		have := wentPastTimeOfDay(before, after, config.minutesAfterMidnight)
-		if have != expected {
-			Fail(t, fmt.Sprintf("Expected wentPastTimeOfDay(%v, %v, \"%v\") to return %v but it returned %v", before, after, timeOfDay, expected, have))
-		}
-	}
-
 	eleven_pm := time.Date(2000, 1, 1, 23, 0, 0, 0, time.UTC)
 	midnight := time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)
 	one_am := time.Date(2000, 1, 2, 1, 0, 0, 0, time.UTC)
 
-	checkWentPastTimeOfDay(eleven_pm, eleven_pm, "23:00", false)
-	checkWentPastTimeOfDay(midnight, midnight, "00:00", false)
-	checkWentPastTimeOfDay(one_am, one_am, "1:00", false)
+	for _, tc := range []struct {
+		before, after time.Time
+		timeOfDay     string
+		want          bool
+	}{
+		{before: eleven_pm, after: eleven_pm, timeOfDay: "23:00"},
+		{before: midnight, after: midnight, timeOfDay: "00:00"},
+		{before: one_am, after: one_am, timeOfDay: "1:00"},
+		{before: eleven_pm, after: midnight, timeOfDay: "23:30", want: true},
+		{before: eleven_pm, after: midnight, timeOfDay: "00:00", want: true},
+		{before: eleven_pm, after: one_am, timeOfDay: "00:00", want: true},
+		{before: eleven_pm, after: one_am, timeOfDay: "01:00", want: true},
+		{before: eleven_pm, after: one_am, timeOfDay: "02:00"},
+		{before: eleven_pm, after: one_am, timeOfDay: "12:00"},
+		{before: midnight, after: one_am, timeOfDay: "00:00"},
+		{before: midnight, after: one_am, timeOfDay: "00:30", want: true},
+		{before: midnight, after: one_am, timeOfDay: "01:00", want: true},
+	} {
+		config := MaintenanceConfig{TimeOfDay: tc.timeOfDay}
+		Require(t, config.Validate(), "Failed to validate sample config")
 
-	checkWentPastTimeOfDay(eleven_pm, midnight, "23:30", true)
-	checkWentPastTimeOfDay(eleven_pm, midnight, "00:00", true)
-	checkWentPastTimeOfDay(eleven_pm, one_am, "00:00", true)
-	checkWentPastTimeOfDay(eleven_pm, one_am, "01:00", true)
-	checkWentPastTimeOfDay(eleven_pm, one_am, "02:00", false)
-	checkWentPastTimeOfDay(eleven_pm, one_am, "12:00", false)
-
-	checkWentPastTimeOfDay(midnight, one_am, "00:00", false)
-	checkWentPastTimeOfDay(midnight, one_am, "00:30", true)
-	checkWentPastTimeOfDay(midnight, one_am, "01:00", true)
+		if got := wentPastTimeOfDay(tc.before, tc.after, config.minutesAfterMidnight); got != tc.want {
+			t.Errorf("wentPastTimeOfDay(%v, %v, %q) = %T want %T", tc.before, tc.after, tc.timeOfDay, got, tc.want)
+		}
+	}
 }
