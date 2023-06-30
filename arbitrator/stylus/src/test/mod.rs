@@ -61,8 +61,7 @@ impl TestInstance {
     }
 
     fn new_linked(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
-        let (evm, evm_data) = TestEvmApi::new(compile.clone());
-        Self::from_path(path, evm, evm_data, compile, config)
+        Self::new_with_evm(path, compile, config).map(|x| x.0)
     }
 
     fn new_with_evm(
