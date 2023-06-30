@@ -3,6 +3,12 @@ run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_r
 
 on:
   workflow_dispatch:
+    inputs:
+      enable_tmate:
+        type: boolean
+        description: 'Enable tmate'
+        required: false
+        default: false
   pull_request:
     paths:
       - 'arbitrator/**'
@@ -23,6 +29,12 @@ jobs:
     name: Run Arbitrator tests
     runs-on: ubuntu-8
     steps:
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_tmate }}
+        with:
+          detached: true
+
       - name: Checkout
         uses: actions/checkout@v1
         with:
