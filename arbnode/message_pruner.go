@@ -37,6 +37,7 @@ type MessagePrunerConfig struct {
 	Enable                 bool          `koanf:"enable"`
 	MessagePruneInterval   time.Duration `koanf:"prune-interval" reload:"hot"`
 	SearchBatchReportLimit int64         `koanf:"search-batch-report" reload:"hot"`
+	MinBatchesLeft         uint64        `koanf:"min-batches-left" reload:"hot"`
 }
 
 type MessagePrunerConfigFetcher func() *MessagePrunerConfig
@@ -45,12 +46,14 @@ var DefaultMessagePrunerConfig = MessagePrunerConfig{
 	Enable:                 true,
 	MessagePruneInterval:   time.Minute,
 	SearchBatchReportLimit: 100000,
+	MinBatchesLeft:         2,
 }
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
 	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
 	f.Int64(prefix+"search-batch-report", DefaultMessagePrunerConfig.SearchBatchReportLimit, "limit for searching for a batch report when pruning (negative disables)")
+	f.Uint64(prefix+"min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
 func NewMessagePruner(transactionStreamer *TransactionStreamer, inboxTracker *InboxTracker, config MessagePrunerConfigFetcher) *MessagePruner {
@@ -157,11 +160,22 @@ func (m *MessagePruner) findBatchReport(ctx context.Context, delayedMsgStart uin
 }
 
 func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
-	endBatchCount := globalState.Batch
-	if endBatchCount == 0 {
+	trimBatchCount := globalState.Batch
+	minBatchesLeft := m.config().MinBatchesLeft
+	if trimBatchCount < minBatchesLeft {
 		return nil
 	}
-	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(endBatchCount - 1)
+	batchCount, err := m.inboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	if trimBatchCount+minBatchesLeft < batchCount {
+		if batchCount < minBatchesLeft {
+			return nil
+		}
+		trimBatchCount = batchCount - minBatchesLeft
+	}
+	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(trimBatchCount - 1)
 	if err != nil {
 		return err
 	}
@@ -172,10 +186,10 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	if err != nil {
 		return fmt.Errorf("failed finding batch report: %w", err)
 	}
-	if batchPruneLimit < endBatchCount {
-		endBatchCount = batchPruneLimit
+	if batchPruneLimit < trimBatchCount {
+		trimBatchCount = batchPruneLimit
 	}
-	return deleteOldMessageFromDB(ctx, endBatchCount, msgCount, delayedCount, m.inboxTracker.db, m.transactionStreamer.db)
+	return deleteOldMessageFromDB(ctx, trimBatchCount, msgCount, delayedCount, m.inboxTracker.db, m.transactionStreamer.db)
 }
 
 func deleteOldMessageFromDB(ctx context.Context, endBatchCount uint64, messageCount arbutil.MessageIndex, delayedMessageCount uint64, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) error {
