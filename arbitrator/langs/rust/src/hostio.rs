@@ -210,6 +210,16 @@ extern "C" {
     /// [`Ink and Gas`]: <https://developer.arbitrum.io/TODO>
     pub(crate) fn evm_ink_left() -> u64;
 
+    /// This hostio must be imported if a program's memory grows. Otherwise compilation through the
+    /// `ArbWasm` precompile will revert. Internally the Stylus VM forces calls to this hostio
+    /// whenever new WASM pages are allocated. Calls made voluntarily will unproductively consume
+    /// gas.
+    ///
+    /// To determine if the import is needed, check the `(memory x y)` section of the program WASM.
+    /// If `y` exists and equals `x`, `memory_grow` is not needed. Otherwise, `memory_grow` must
+    /// be imported.
+    pub fn memory_grow(pages: u16);
+
     /// Gets the address of the account that called the program. For normal L2-to-L2 transactions
     /// the semantics are equivalent to that of the EVM's [`CALLER`] opcode, including in cases
     /// arising from [`DELEGATE_CALL`].
