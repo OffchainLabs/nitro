@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package programs
 
@@ -18,15 +18,23 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const MaxWasmSize = 64 * 1024
-
 type Programs struct {
-	backingStorage  *storage.Storage
-	machineVersions *storage.Storage
-	inkPrice        storage.StorageBackedUBips
-	wasmMaxDepth    storage.StorageBackedUint32
-	wasmHostioInk   storage.StorageBackedUint64
-	version         storage.StorageBackedUint32
+	backingStorage *storage.Storage
+	programs       *storage.Storage
+	inkPrice       storage.StorageBackedUBips
+	wasmMaxDepth   storage.StorageBackedUint32
+	wasmHostioInk  storage.StorageBackedUint64
+	freePages      storage.StorageBackedUint16
+	pageGas        storage.StorageBackedUint32
+	pageRamp       storage.StorageBackedUint64
+	pageLimit      storage.StorageBackedUint16
+	version        storage.StorageBackedUint32
+}
+
+type Program struct {
+	footprint uint16
+	version   uint32
+	address   common.Address // not saved in state
 }
 
 var machineVersionsKey = []byte{0}
@@ -36,31 +44,53 @@ const (
 	inkPriceOffset
 	wasmMaxDepthOffset
 	wasmHostioInkOffset
+	freePagesOffset
+	pageGasOffset
+	pageRampOffset
+	pageLimitOffset
 )
 
 var ProgramNotCompiledError func() error
 var ProgramOutOfDateError func(version uint32) error
 var ProgramUpToDateError func() error
 
+const MaxWasmSize = 64 * 1024
+const initialFreePages = 2
+const initialPageGas = 1000
+const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
+const initialPageLimit = 128      // reject wasms with memories larger than 8MB
+
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
 	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
+	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
+	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
+	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
+	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = inkPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
 	_ = wasmHostioInk.Set(0)
+	_ = freePages.Set(initialFreePages)
+	_ = pageGas.Set(initialPageGas)
+	_ = pageRamp.Set(initialPageRamp)
+	_ = pageLimit.Set(initialPageLimit)
 	_ = version.Set(1)
 }
 
 func Open(sto *storage.Storage) *Programs {
 	return &Programs{
-		backingStorage:  sto,
-		machineVersions: sto.OpenSubStorage(machineVersionsKey),
-		inkPrice:        sto.OpenStorageBackedUBips(inkPriceOffset),
-		wasmMaxDepth:    sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHostioInk:   sto.OpenStorageBackedUint64(wasmHostioInkOffset),
-		version:         sto.OpenStorageBackedUint32(versionOffset),
+		backingStorage: sto,
+		programs:       sto.OpenSubStorage(machineVersionsKey),
+		inkPrice:       sto.OpenStorageBackedUBips(inkPriceOffset),
+		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
+		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
+		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
+		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
+		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
+		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
+		version:        sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
 
@@ -91,35 +121,88 @@ func (p Programs) WasmHostioInk() (uint64, error) {
 	return p.wasmHostioInk.Get()
 }
 
-func (p Programs) SetWasmHostioInk(cost uint64) error {
-	return p.wasmHostioInk.Set(cost)
+func (p Programs) SetWasmHostioInk(ink uint64) error {
+	return p.wasmHostioInk.Set(ink)
+}
+
+func (p Programs) FreePages() (uint16, error) {
+	return p.freePages.Get()
+}
+
+func (p Programs) SetFreePages(pages uint16) error {
+	return p.freePages.Set(pages)
+}
+
+func (p Programs) PageGas() (uint32, error) {
+	return p.pageGas.Get()
+}
+
+func (p Programs) SetPageGas(gas uint32) error {
+	return p.pageGas.Set(gas)
+}
+
+func (p Programs) PageRamp() (uint64, error) {
+	return p.pageRamp.Get()
+}
+
+func (p Programs) SetPageRamp(ramp uint64) error {
+	return p.pageRamp.Set(ramp)
+}
+
+func (p Programs) PageLimit() (uint16, error) {
+	return p.pageLimit.Get()
+}
+
+func (p Programs) SetPageLimit(limit uint16) error {
+	return p.pageLimit.Set(limit)
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
-	return p.machineVersions.GetUint32(program.Hash())
+	return p.programs.GetUint32(program.Hash())
 }
 
-func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
+func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, bool, error) {
+	statedb := evm.StateDB
+
 	version, err := p.StylusVersion()
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	latest, err := p.machineVersions.GetUint32(program.Hash())
+	latest, err := p.ProgramVersion(program)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if latest >= version {
-		return 0, ProgramUpToDateError()
+		return 0, false, ProgramUpToDateError()
 	}
 
 	wasm, err := getWasm(statedb, program)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
-		return 0, err
+
+	// require the program's footprint not exceed the remaining memory budget
+	pageLimit, err := p.PageLimit()
+	if err != nil {
+		return 0, false, err
 	}
-	return version, p.machineVersions.SetUint32(program.Hash(), version)
+	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
+
+	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
+	if err != nil {
+		return 0, true, err
+	}
+
+	// reflect the fact that, briefly, the footprint was allocated
+	// note: the actual payment for the expansion happens in Rust
+	statedb.AddStylusPagesEver(footprint)
+
+	programData := Program{
+		footprint: footprint,
+		version:   version,
+		address:   program,
+	}
+	return version, false, p.programs.Set(program.Hash(), programData.serialize())
 }
 
 func (p Programs) CallProgram(
@@ -129,22 +212,26 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 ) ([]byte, error) {
+
+	// ensure the program is runnable
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
 		return nil, err
 	}
 	contract := scope.Contract
-	programVersion, err := p.machineVersions.GetUint32(contract.Address().Hash())
+	program, err := p.getProgram(contract)
 	if err != nil {
 		return nil, err
 	}
-	if programVersion == 0 {
+	if program.version == 0 {
 		return nil, ProgramNotCompiledError()
 	}
-	if programVersion != stylusVersion {
-		return nil, ProgramOutOfDateError(programVersion)
+	if program.version != stylusVersion {
+		return nil, ProgramOutOfDateError(program.version)
 	}
-	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
+
+	debugMode := interpreter.Evm().ChainConfig().DebugMode()
+	params, err := p.goParams(program.version, debugMode)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +242,19 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 
+	// pay for program init
+	open, ever := statedb.GetStylusPages()
+	model, err := p.memoryModel()
+	if err != nil {
+		return nil, err
+	}
+	cost := model.GasCost(program.footprint, open, ever)
+	if err := contract.BurnGas(cost); err != nil {
+		return nil, err
+	}
+	statedb.AddStylusPages(program.footprint)
+	defer statedb.SetStylusPagesOpen(open)
+
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		blockChainId:    common.BigToHash(evm.ChainConfig().ChainID),
@@ -163,13 +263,14 @@ func (p Programs) CallProgram(
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
 		blockTimestamp:  evm.Context.Time,
-		contractAddress: contract.Address(),
+		contractAddress: contract.Address(), // acting address
 		msgSender:       contract.Caller(),
 		msgValue:        common.BigToHash(contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 	}
-	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
+
+	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -182,6 +283,26 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 		return nil, err
 	}
 	return arbcompress.Decompress(wasm, MaxWasmSize)
+}
+
+func (p Program) serialize() common.Hash {
+	data := common.Hash{}
+	copy(data[26:], arbmath.Uint16ToBytes(p.footprint))
+	copy(data[28:], arbmath.Uint32ToBytes(p.version))
+	return data
+}
+
+func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
+	address := contract.Address()
+	if contract.CodeAddr != nil {
+		address = *contract.CodeAddr
+	}
+	data, err := p.programs.Get(address.Hash())
+	return Program{
+		footprint: arbmath.BytesToUint16(data[26:28]),
+		version:   arbmath.BytesToUint32(data[28:]),
+		address:   address,
+	}, err
 }
 
 type goParams struct {
@@ -205,6 +326,7 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	config := &goParams{
 		version:   version,
 		maxDepth:  maxDepth,
@@ -238,7 +360,7 @@ const (
 	userSuccess userStatus = iota
 	userRevert
 	userFailure
-	userOutOfGas
+	userOutOfInk
 	userOutOfStack
 )
 
@@ -250,7 +372,7 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 		return data, vm.ErrExecutionReverted
 	case userFailure:
 		return nil, vm.ErrExecutionReverted
-	case userOutOfGas:
+	case userOutOfInk:
 		return nil, vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, vm.ErrDepth

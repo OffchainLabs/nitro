@@ -12,12 +12,23 @@ pub unsafe fn caller_load8(ptr: usize) -> u8 {
     wavm_caller_load8(ptr)
 }
 
+pub unsafe fn caller_load16(ptr: usize) -> u16 {
+    let lower = caller_load8(ptr);
+    let upper = caller_load8(ptr + 1);
+    lower as u16 | ((upper as u16) << 8)
+}
+
 pub unsafe fn caller_load32(ptr: usize) -> u32 {
     wavm_caller_load32(ptr)
 }
 
 pub unsafe fn caller_store8(ptr: usize, val: u8) {
     wavm_caller_store8(ptr, val)
+}
+
+pub unsafe fn caller_store16(ptr: usize, val: u16) {
+    caller_store8(ptr, val as u8);
+    caller_store8(ptr + 1, (val >> 8) as u8);
 }
 
 pub unsafe fn caller_store32(ptr: usize, val: u32) {

@@ -345,6 +345,13 @@ pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     Ok(())
 }
 
+pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    let gas_cost = env.evm_api.add_pages(pages);
+    env.buy_gas(gas_cost)?;
+    Ok(())
+}
+
 pub(crate) fn console_log_text<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     ptr: u32,

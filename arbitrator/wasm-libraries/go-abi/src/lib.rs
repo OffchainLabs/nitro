@@ -33,6 +33,10 @@ impl GoStack {
         wavm::caller_load8(self.advance(1))
     }
 
+    pub unsafe fn read_u16(&mut self) -> u16 {
+        wavm::caller_load16(self.advance(2))
+    }
+
     pub unsafe fn read_u32(&mut self) -> u32 {
         wavm::caller_load32(self.advance(4))
     }
@@ -49,12 +53,21 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    pub unsafe fn unbox<T>(&mut self) -> T {
+        *Box::from_raw(self.read_ptr_mut())
+    }
+
     pub unsafe fn read_go_ptr(&mut self) -> usize {
         self.read_u64().try_into().expect("go pointer doesn't fit")
     }
 
     pub unsafe fn write_u8(&mut self, x: u8) -> &mut Self {
         wavm::caller_store8(self.advance(1), x);
+        self
+    }
+
+    pub unsafe fn write_u16(&mut self, x: u16) -> &mut Self {
+        wavm::caller_store16(self.advance(2), x);
         self
     }
 

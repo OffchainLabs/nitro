@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{contract::Call, debug, Bytes20, Bytes32};
+use arbitrum::{contract::Call, Bytes20, Bytes32};
 
 arbitrum::arbitrum_main!(user_main);
 
@@ -15,7 +15,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     // combined output of all calls
     let mut output = vec![];
 
-    debug::println(format!("Calling {count} contract(s)"));
+    println(format!("Calling {count} contract(s)"));
     for _ in 0..count {
         let length = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
         input = &input[4..];
@@ -34,11 +34,11 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
         let addr = Bytes20::from_slice(&curr[..20]).unwrap();
         let data = &curr[20..];
-        debug::println(match value {
+        println(match value {
             Some(value) if value != Bytes32::default() => format!(
                 "Calling {addr} with {} bytes and value {} {kind}",
                 data.len(),
-                hex::encode(&value)
+                hex::encode(value)
             ),
             _ => format!("Calling {addr} with {} bytes {kind}", curr.len()),
         });
@@ -50,7 +50,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             x => panic!("unknown call kind {x}"),
         }.call(addr, data)?;
         if !return_data.is_empty() {
-            debug::println(format!(
+            println(format!(
                 "Contract {addr} returned {} bytes",
                 return_data.len()
             ));
@@ -60,4 +60,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     Ok(output)
+}
+
+fn println(_text: impl AsRef<str>) {
+    // arbitrum::debug::println(text)
 }

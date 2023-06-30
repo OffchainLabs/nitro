@@ -25,6 +25,7 @@ pub struct ApiValue(pub Vec<u8>);
 
 #[derive(Debug)]
 enum ApiValueKind {
+    U16(u16),
     U32(u32),
     U64(u64),
     Bytes(Bytes),
@@ -47,13 +48,14 @@ impl Debug for ApiValue {
 impl ApiValueKind {
     fn discriminant(&self) -> u8 {
         match self {
-            ApiValueKind::U32(_) => 0,
-            ApiValueKind::U64(_) => 1,
-            ApiValueKind::Bytes(_) => 2,
-            ApiValueKind::Bytes20(_) => 3,
-            ApiValueKind::Bytes32(_) => 4,
-            ApiValueKind::String(_) => 5,
-            ApiValueKind::Nil => 6,
+            ApiValueKind::U16(_) => 0,
+            ApiValueKind::U32(_) => 1,
+            ApiValueKind::U64(_) => 2,
+            ApiValueKind::Bytes(_) => 3,
+            ApiValueKind::Bytes20(_) => 4,
+            ApiValueKind::Bytes32(_) => 5,
+            ApiValueKind::String(_) => 6,
+            ApiValueKind::Nil => 7,
         }
     }
 }
@@ -63,13 +65,14 @@ impl From<ApiValue> for ApiValueKind {
         let kind = value.0[0];
         let data = &value.0[1..];
         match kind {
-            0 => ApiValueKind::U32(u32::from_be_bytes(data.try_into().unwrap())),
-            1 => ApiValueKind::U64(u64::from_be_bytes(data.try_into().unwrap())),
-            2 => ApiValueKind::Bytes(data.to_vec()),
-            3 => ApiValueKind::Bytes20(data.try_into().unwrap()),
-            4 => ApiValueKind::Bytes32(data.try_into().unwrap()),
-            5 => ApiValueKind::String(String::from_utf8(data.to_vec()).unwrap()),
-            6 => ApiValueKind::Nil,
+            0 => ApiValueKind::U16(u16::from_be_bytes(data.try_into().unwrap())),
+            1 => ApiValueKind::U32(u32::from_be_bytes(data.try_into().unwrap())),
+            2 => ApiValueKind::U64(u64::from_be_bytes(data.try_into().unwrap())),
+            3 => ApiValueKind::Bytes(data.to_vec()),
+            4 => ApiValueKind::Bytes20(data.try_into().unwrap()),
+            5 => ApiValueKind::Bytes32(data.try_into().unwrap()),
+            6 => ApiValueKind::String(String::from_utf8(data.to_vec()).unwrap()),
+            7 => ApiValueKind::Nil,
             _ => unreachable!(),
         }
     }
@@ -80,6 +83,7 @@ impl From<ApiValueKind> for ApiValue {
         use ApiValueKind::*;
         let mut data = vec![value.discriminant()];
         data.extend(match value {
+            U16(x) => x.to_be_bytes().to_vec(),
             U32(x) => x.to_be_bytes().to_vec(),
             U64(x) => x.to_be_bytes().to_vec(),
             Bytes(x) => x,
@@ -89,6 +93,12 @@ impl From<ApiValueKind> for ApiValue {
             Nil => vec![],
         });
         Self(data)
+    }
+}
+
+impl From<u16> for ApiValue {
+    fn from(value: u16) -> Self {
+        ApiValueKind::U16(value).into()
     }
 }
 
@@ -296,5 +306,10 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32 {
         let [value] = call!(self, 1, EvmBlockHash, num);
         value.assert_bytes32()
+    }
+
+    fn add_pages(&mut self, pages: u16) -> u64 {
+        let [cost] = call!(self, 1, AddPages, pages);
+        cost.assert_u64()
     }
 }

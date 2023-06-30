@@ -44,6 +44,7 @@ type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type evmBlockHashType func(block common.Hash) (value common.Hash)
+type addPagesType func(pages uint16) (cost uint64)
 
 type goClosures struct {
 	getBytes32      getBytes32Type
@@ -58,12 +59,14 @@ type goClosures struct {
 	accountBalance  accountBalanceType
 	accountCodeHash accountCodehashType
 	evmBlockHash    evmBlockHashType
+	addPages        addPagesType
 }
 
 func newApiClosures(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
 ) *goClosures {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
@@ -267,6 +270,10 @@ func newApiClosures(
 	evmBlockHash := func(block common.Hash) common.Hash {
 		return vm.BlockHashOp(evm, block.Big())
 	}
+	addPages := func(pages uint16) uint64 {
+		open, ever := db.AddStylusPages(pages)
+		return memoryModel.GasCost(pages, open, ever)
+	}
 
 	return &goClosures{
 		getBytes32:      getBytes32,
@@ -281,5 +288,6 @@ func newApiClosures(
 		accountBalance:  accountBalance,
 		accountCodeHash: accountCodehash,
 		evmBlockHash:    evmBlockHash,
+		addPages:        addPages,
 	}
 }

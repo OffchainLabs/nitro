@@ -61,8 +61,7 @@ impl TestInstance {
     }
 
     fn new_linked(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
-        let (evm, evm_data) = TestEvmApi::new(compile.clone());
-        Self::from_path(path, evm, evm_data, compile, config)
+        Self::new_with_evm(path, compile, config).map(|x| x.0)
     }
 
     fn new_with_evm(
@@ -70,8 +69,10 @@ impl TestInstance {
         compile: &CompileConfig,
         config: StylusConfig,
     ) -> Result<(Self, TestEvmApi)> {
-        let (evm, evm_data) = TestEvmApi::new(compile.clone());
+        let (mut evm, evm_data) = TestEvmApi::new(compile.clone());
         let native = Self::from_path(path, evm.clone(), evm_data, compile, config)?;
+        let footprint = native.memory().ty(&native.store).minimum.0 as u16;
+        evm.set_pages(footprint);
         Ok((native, evm))
     }
 }

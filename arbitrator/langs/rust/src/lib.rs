@@ -16,6 +16,7 @@ mod util;
 extern "C" {
     pub(crate) fn read_args(dest: *mut u8);
     pub(crate) fn return_data(data: *const u8, len: usize);
+    pub fn memory_grow(pages: u16);
 }
 
 pub fn args(len: usize) -> Vec<u8> {
@@ -36,6 +37,14 @@ pub fn output(data: Vec<u8>) {
 #[macro_export]
 macro_rules! arbitrum_main {
     ($name:expr) => {
+        /// Force the compiler to import these symbols
+        /// Note: calling these functions will unproductively consume gas
+        #[no_mangle]
+        pub unsafe fn mark_used() {
+            arbitrum::memory_grow(0);
+            panic!();
+        }
+
         #[no_mangle]
         pub extern "C" fn arbitrum_main(len: usize) -> usize {
             let input = arbitrum::args(len);

@@ -9,7 +9,8 @@ use arbutil::{
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::config::{CompileConfig, GoParams, StylusConfig},
+    binary::WasmBinary,
+    programs::config::{CompileConfig, PricingParams, StylusConfig},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -36,7 +37,7 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
+/// Safety: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u16, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
@@ -45,24 +46,24 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let wasm = sp.read_go_slice_owned();
     let version = sp.read_u32();
     let debug = sp.read_u32() != 0;
-    let compile = CompileConfig::version(version, debug);
+    let page_limit = sp.read_u16();
+    sp.skip_space();
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
-            let error = format!("{}: {:?}", $msg, $error).as_bytes().to_vec();
+            let error = $error.wrap_err($msg);
+            let error = format!("{error:?}").as_bytes().to_vec();
             sp.write_nullptr();
+            sp.skip_space(); // skip footprint
             sp.write_ptr(heapify(error));
             return;
         }};
     }
 
-    let mut bin = match prover::binary::parse(&wasm, Path::new("user")) {
-        Ok(bin) => bin,
-        Err(err) => error!("failed to parse user program", err),
-    };
-    let stylus_data = match bin.instrument(&compile) {
-        Ok(stylus_data) => stylus_data,
-        Err(err) => error!("failed to instrument user program", err),
+    let compile = CompileConfig::version(version, debug);
+    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
+        Ok(parse) => parse,
+        Err(error) => error!("failed to parse program", error),
     };
 
     let forward = include_bytes!("../../../../target/machines/latest/forward_stub.wasm");
@@ -83,9 +84,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     );
     let machine = match machine {
         Ok(machine) => machine,
-        Err(err) => error!("failed to instrument user program", err),
+        Err(err) => error!("failed to instrument program", err),
     };
     sp.write_ptr(heapify(machine));
+    sp.write_u16(footprint).skip_space();
     sp.write_nullptr();
 }
 
@@ -97,16 +99,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    macro_rules! unbox {
-        () => {
-            *Box::from_raw(sp.read_ptr_mut())
-        };
-    }
-    let machine: Machine = unbox!();
+    let machine: Machine = sp.unbox();
     let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = unbox!();
+    let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
-    let evm_data: EvmData = unbox!();
+    let evm_data: EvmData = sp.unbox();
 
     // buy ink
     let pricing = config.pricing;
@@ -180,7 +177,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let vec: Vec<u8> = *Box::from_raw(sp.read_ptr_mut());
+    let vec: Vec<u8> = sp.unbox();
     let ptr: *mut u8 = sp.read_ptr_mut();
     wavm::write_slice(&vec, ptr as u64);
     mem::drop(vec)
@@ -193,21 +190,23 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let params = GoParams {
+    let config = StylusConfig {
         version: sp.read_u32(),
         max_depth: sp.read_u32(),
-        ink_price: sp.read_u64(),
-        hostio_ink: sp.read_u64(),
-        debug_mode: sp.read_u32(),
+        pricing: PricingParams {
+            ink_price: sp.read_u64(),
+            hostio_ink: sp.read_u64(),
+        },
     };
-    sp.skip_space().write_ptr(heapify(params.configs().1));
+    sp.skip_space(); // skip debugMode
+    sp.write_ptr(heapify(config));
 }
 
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(
-///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
-///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
-///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///     blockBasefee, blockChainid *[32]byte, blockCoinbase *[20]byte, blockDifficulty *[32]byte,
+///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, startPages *StartPages,
 ///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(

@@ -25,7 +25,7 @@ pub enum UserOutcomeKind {
 
 impl UserOutcome {
     pub fn into_data(self) -> (UserOutcomeKind, Vec<u8>) {
-        let kind = (&self).into();
+        let kind = self.kind();
         let data = match self {
             Self::Success(out) => out,
             Self::Revert(out) => out,
@@ -33,6 +33,10 @@ impl UserOutcome {
             _ => vec![],
         };
         (kind, data)
+    }
+
+    pub fn kind(&self) -> UserOutcomeKind {
+        self.into()
     }
 }
 

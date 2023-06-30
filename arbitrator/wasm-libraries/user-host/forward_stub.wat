@@ -31,4 +31,6 @@
     (func (export "forward__msg_value")              (param i32) unreachable)
     (func (export "forward__tx_gas_price")           (param i32) unreachable)
     (func (export "forward__tx_ink_price")           (result i64) unreachable)
-    (func (export "forward__tx_origin")              (param i32) unreachable))
+    (func (export "forward__tx_origin")              (param i32) unreachable)
+    (func (export "forward__memory_grow")            (param i32) unreachable)
+)

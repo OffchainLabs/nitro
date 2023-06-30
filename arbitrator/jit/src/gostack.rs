@@ -93,6 +93,11 @@ impl GoStack {
         self.read_u8_raw(ptr)
     }
 
+    pub fn read_u16(&mut self) -> u16 {
+        let ptr = self.advance(2);
+        self.read_u16_raw(ptr)
+    }
+
     pub fn read_u32(&mut self) -> u32 {
         let ptr = self.advance(4);
         self.read_u32_raw(ptr)
@@ -105,6 +110,11 @@ impl GoStack {
 
     pub fn read_u8_raw(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+        ptr.deref(self.view()).read().unwrap()
+    }
+
+    pub fn read_u16_raw(&self, ptr: u32) -> u16 {
+        let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(self.view()).read().unwrap()
     }
 
@@ -126,9 +136,18 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    pub fn unbox<T>(&mut self) -> T {
+        unsafe { *Box::from_raw(self.read_ptr_mut()) }
+    }
+
     pub fn write_u8(&mut self, x: u8) -> &mut Self {
         let ptr = self.advance(1);
         self.write_u8_raw(ptr, x)
+    }
+
+    pub fn write_u16(&mut self, x: u16) -> &mut Self {
+        let ptr = self.advance(2);
+        self.write_u16_raw(ptr, x)
     }
 
     pub fn write_u32(&mut self, x: u32) -> &mut Self {
@@ -143,6 +162,12 @@ impl GoStack {
 
     pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> &mut Self {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+        ptr.deref(self.view()).write(x).unwrap();
+        self
+    }
+
+    pub fn write_u16_raw(&mut self, ptr: u32, x: u16) -> &mut Self {
+        let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
         self
     }

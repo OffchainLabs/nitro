@@ -15,7 +15,9 @@ pub mod user;
 pub(crate) static mut ARGS: Vec<u8> = vec![];
 pub(crate) static mut OUTS: Vec<u8> = vec![];
 pub(crate) static mut LOGS: Vec<Vec<u8>> = vec![];
-pub(crate) static mut CONFIG: StylusConfig = StylusConfig::new(0, u32::MAX, 1, 0);
+pub(crate) static mut CONFIG: Option<StylusConfig> = None;
+pub(crate) static mut OPEN_PAGES: u16 = 0;
+pub(crate) static mut EVER_PAGES: u16 = 0;
 
 lazy_static! {
     static ref KEYS: Mutex<HashMap<Bytes32, Bytes32>> = Mutex::new(HashMap::default());
@@ -32,9 +34,16 @@ pub unsafe extern "C" fn user_test__prepare(
     ink_price: u64,
     hostio_ink: u64,
 ) -> *const u8 {
-    CONFIG = StylusConfig::new(version, max_depth, ink_price, hostio_ink);
+    let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink);
+    CONFIG = Some(config);
     ARGS = vec![0; len];
     ARGS.as_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_test__set_pages(pages: u16) {
+    OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
+    EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
 }
 
 #[no_mangle]

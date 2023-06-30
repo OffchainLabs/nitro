@@ -4,12 +4,12 @@
 use crate::{
     programs::{
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware,
-        StylusGlobals,
+        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
+        StylusData,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
-use arbutil::Color;
+use arbutil::{Color, DebugColor};
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -292,7 +292,7 @@ pub struct WasmBinary<'a> {
     pub names: NameCustomSection,
 }
 
-pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>> {
+pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
     let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
@@ -457,6 +457,22 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
         }
     }
 
+    // reject the module if it imports the same func with inconsistent signatures
+    let mut imports = HashMap::default();
+    for import in &binary.imports {
+        let offset = import.offset;
+        let module = import.module;
+        let name = import.name;
+
+        let key = (module, name);
+        if let Some(prior) = imports.insert(key, offset) {
+            if prior != offset {
+                let name = name.debug_red();
+                bail!("inconsistent imports for {} {name}", module.red());
+            }
+        }
+    }
+
     // reject the module if it re-exports an import with the same name
     let mut exports = HashSet::default();
     for export in binary.exports.keys() {
@@ -511,7 +527,7 @@ impl<'a> Debug for WasmBinary<'a> {
 
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
-    pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusGlobals> {
+    pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusData> {
         let meter = Meter::new(compile.pricing.costs);
         let dygas = DynamicMeter::new(&compile.pricing);
         let depth = DepthChecker::new(compile.bounds);
@@ -566,12 +582,33 @@ impl<'a> WasmBinary<'a> {
             code.expr = build;
         }
 
+        // 4GB maximum implies `footprint` fits in a u16
+        let footprint = self.memory_size()?.map(|x| x.min.0).unwrap_or_default() as u16;
+
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
-        Ok(StylusGlobals {
+        Ok(StylusData {
             ink_left,
             ink_status,
             depth_left,
+            footprint,
         })
+    }
+
+    /// Parses and instruments a user wasm
+    pub fn parse_user(
+        wasm: &'a [u8],
+        page_limit: u16,
+        compile: &CompileConfig,
+    ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
+        let mut bin = parse(wasm, Path::new("user"))?;
+        let stylus_data = bin.instrument(compile)?;
+
+        let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
+        if pages > page_limit as u64 {
+            let limit = page_limit.red();
+            bail!("memory exceeds limit: {} > {limit}", pages.red());
+        }
+        Ok((bin, stylus_data, pages as u16))
     }
 }

@@ -15,6 +15,7 @@ extern "C" {
 
 extern __attribute__((USER_HOST, import_name("read_args"))) void read_args(const uint8_t * data);
 extern __attribute__((USER_HOST, import_name("return_data"))) void return_data(const uint8_t * data, size_t len);
+extern __attribute__((USER_HOST, import_name("memory_grow"))) void memory_grow(uint32_t pages);
 
 typedef enum ArbStatus {
     Success = 0,
@@ -27,14 +28,21 @@ typedef struct ArbResult {
     const size_t output_len;
 } ArbResult;
 
-#define ARBITRUM_MAIN(user_main)                                  \
-    __attribute__((export_name("arbitrum_main")))                 \
-    int arbitrum_main(int args_len) {                             \
-        const uint8_t args[args_len];                             \
-        read_args(args);                                          \
-        const ArbResult result = user_main(args, args_len);       \
-        return_data(result.output, result.output_len);             \
-        return result.status;                                     \
+#define ARBITRUM_MAIN(user_main)                                        \
+    /* Force the compiler to import these symbols                    */ \
+    /* Note: calling these functions will unproductively consume gas */ \
+    __attribute__((export_name("mark_used")))                           \
+    void mark_used() {                                                  \
+        memory_grow(0);                                                 \
+    }                                                                   \
+                                                                        \
+    __attribute__((export_name("arbitrum_main")))                       \
+    int arbitrum_main(int args_len) {                                   \
+        const uint8_t args[args_len];                                   \
+        read_args(args);                                                \
+        const ArbResult result = user_main(args, args_len);             \
+        return_data(result.output, result.output_len);                  \
+        return result.status;                                           \
     }
 
 #ifdef __cplusplus
