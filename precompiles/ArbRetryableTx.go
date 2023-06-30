@@ -36,8 +36,12 @@ type ArbRetryableTx struct {
 	Redeemed        func(ctx, mech, bytes32) error
 	RedeemedGasCost func(bytes32) (uint64, error)
 
-	NoTicketWithIDError func() error
-	NotCallableError    func() error
+	NoTicketWithIDError  func() error
+	NotCallableError     func() error
+	AlreadyRevivedError  func() error
+	InvalidRootHashError func() error
+	WrongProofError      func() error
+	AlreadyExistsError   func() error
 }
 
 var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
@@ -200,7 +204,7 @@ func (con ArbRetryableTx) Revive(c ctx, evm mech,
 	retryableState := c.State.RetryableState()
 	newTimeout, err := retryableState.Revive(ticketId, numTries, from, to, callvalue, beneficiary, calldata, common.BytesToHash(rootHash[:]), leafIndex, proofHashes, evm.Context.Time, retryables.RetryableLifetimeSeconds)
 	if err != nil {
-		return big.NewInt(0), err
+		return big.NewInt(0), con.toSolidityError(err)
 	}
 	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
 	return big.NewInt(int64(newTimeout)), err
@@ -262,4 +266,19 @@ func (con ArbRetryableTx) SubmitRetryable(
 	retryData []byte,
 ) error {
 	return con.NotCallableError()
+}
+
+func (con ArbRetryableTx) toSolidityError(err error) error {
+	switch err {
+	case retryables.ErrTicketNotFound:
+		return con.NoTicketWithIDError()
+	case retryables.ErrAlreadyRevived:
+		return con.AlreadyRevivedError()
+	case retryables.ErrInvalidRoot:
+		return con.InvalidRootHashError()
+	case retryables.ErrWrongProof:
+		return con.WrongProofError()
+	}
+	// retryables.ErrTimeoutTooFar is an internal error
+	return err
 }

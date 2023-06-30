@@ -42,8 +42,8 @@ func NewLevelAndLeaf(level, leaf uint64) LevelAndLeaf {
 }
 
 func NewLevelAndLeafFromPostion(position *big.Int) LevelAndLeaf {
-	leaf := position.Uint64()                   // lower 8 bytes
-	level := position.Rsh(position, 8).Uint64() // next 8 bytes
+	leaf := position.Uint64()                     // lower 8 bytes
+	level := position.Rsh(position, 192).Uint64() // upper 8 bytes
 	return LevelAndLeaf{
 		Level: level,
 		Leaf:  leaf,

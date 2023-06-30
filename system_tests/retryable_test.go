@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -24,7 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -38,8 +38,8 @@ import (
 
 func retryableSetup(t *testing.T, timestampWorkaround bool) (
 	*arbnode.Node,
-	*BlockchainTestInfo,
-	*BlockchainTestInfo,
+	info,
+	info,
 	*ethclient.Client,
 	*ethclient.Client,
 	*bridgegen.Inbox,
@@ -432,7 +432,7 @@ func TestSubmitRetryableFailExpireThenReviveAndRedeem(t *testing.T) {
 	}
 
 	// trigger the retryable expiry
-	warpL1Time(t, ctx, l2node, l1client, l2client, retryables.RetryableLifetimeSeconds+1)
+	warpL1Time(t, ctx, l2node, l1client, l2info, retryables.RetryableLifetimeSeconds+1)
 
 	// check if expiry happened
 	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
@@ -442,17 +442,95 @@ func TestSubmitRetryableFailExpireThenReviveAndRedeem(t *testing.T) {
 	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 
 	// revive retryable and check that it can be redeemed
-	reviveRetryable(t, ctx, l2client, &ownerTxOpts, retry)
+	reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
 	redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, 1)
+
+	// second revival shouldn't be possible
+	reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
 
 	// second redeem shouldn't be possible
 	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+}
+func TestRetryableRevival(t *testing.T) {
+	t.Parallel()
+	testRetryableRevival(t, 1)
+	testRetryableRevival(t, 3)
+	testRetryableRevival(t, 4)
+}
+
+func testRetryableRevival(t *testing.T, numRetryables int) {
+	l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, true)
+	defer teardown()
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	userTxOpts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOpts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+	submissionCtx := &submissionContext{
+		delayedInbox:                  delayedInbox,
+		userTxOpts:                    &userTxOpts,
+		l1info:                        l1info,
+		l1client:                      l1client,
+		l2client:                      l2client,
+		lookupSubmitRetryableL2TxHash: lookupSubmitRetryableL2TxHash,
+	}
+
+	var retriesData []*retryables.TestRetryableData
+	for i := 0; i < numRetryables; i++ {
+		retry := &retryables.TestRetryableData{
+			Id:          common.Hash{}, // filled later in submitRetryable
+			NumTries:    0,             // filled later in expiredRetryableFromLogs just before revival
+			From:        util.RemapL1Address(userTxOpts.From),
+			To:          simpleAddr,
+			CallValue:   common.Big0,
+			Beneficiary: l2info.GetAddress("Beneficiary"),
+			CallData:    simpleABI.Methods["incrementRedeem"].ID,
+		}
+		retriesData = append(retriesData, retry)
+	}
+
+	// submit retryables
+	for _, retry := range retriesData {
+		autoRedeemReceipt := submitRetryable(t, ctx, submissionCtx, retry)
+		if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
+			Fatal(t, autoRedeemReceipt.GasUsed)
+		}
+	}
+	// trigger expiry, 2 retryables at a time
+	for i := 0; i < (numRetryables+1)/2; i++ {
+		warpL1Time(t, ctx, l2node, l1client, l2info, retryables.RetryableLifetimeSeconds+1)
+	}
+	// check if expiry happened
+	for _, retry := range retriesData {
+		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// wait one block and re-check expiry
+	waitForNextL2Block(t, ctx, l2client, l2info)
+	for _, retry := range retriesData {
+		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// revive retryable and check that it can be redeemed
+	for _, retry := range retriesData {
+		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	for i, retry := range retriesData {
+		redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, uint64(i+1))
+	}
+	// second revival shouldn't be possible
+	for _, retry := range retriesData {
+		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// second redeem shouldn't be possible
+	for _, retry := range retriesData {
+		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
 }
 
 type submissionContext struct {
 	delayedInbox                  *bridgegen.Inbox
 	userTxOpts                    *bind.TransactOpts
-	l1info                        *BlockchainTestInfo
+	l1info                        info
 	l1client                      *ethclient.Client
 	l2client                      *ethclient.Client
 	lookupSubmitRetryableL2TxHash func(*types.Receipt) common.Hash
@@ -495,11 +573,9 @@ func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContex
 	return autoRedeemReceipt
 }
 
-func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1client *ethclient.Client, l2client *ethclient.Client, advanceTime uint64) {
+func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1client *ethclient.Client, l2info info, advanceTime uint64) {
 	t.Log("Warping L1 time...")
 	l1LatestHeader, err := l1client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
-	Require(t, err)
-	l2LatestHeader, err := l2client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
 	Require(t, err)
 	timeWarpHeader := &arbostypes.L1IncomingMessageHeader{
 		Kind:        arbostypes.L1MessageType_L2Message,
@@ -509,18 +585,10 @@ func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1clien
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-
-	msg := arbostypes.L1IncomingMessage{
-		Header: timeWarpHeader,
-		L2msg:  []byte{},
-	}
-	msgWithMeta := arbostypes.MessageWithMetadata{
-		Message:             &msg,
-		DelayedMessagesRead: l2LatestHeader.Nonce.Uint64(),
-	}
-	genesis := uint64(0)
-	pos := arbutil.BlockNumberToMessageCount(l2LatestHeader.Number.Uint64(), genesis)
-	err = l2node.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	hooks := arbos.NoopSequencingHooks()
+	_, err = l2node.Execution.ExecEngine.SequenceTransactions(timeWarpHeader, types.Transactions{
+		l2info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil),
+	}, hooks)
 	Require(t, err)
 }
 
@@ -593,7 +661,7 @@ func accumulatorSizeFromLogs(t *testing.T, ctx context.Context, l2client *ethcli
 			maxLeaf = place.Leaf
 		}
 	}
-	return maxLeaf
+	return maxLeaf + 1
 }
 
 func prepareQueryNeededNodesAndPartials(t *testing.T, ctx context.Context, l2client *ethclient.Client, treeSize, leafIndex uint64) ([]common.Hash, []merkletree.LevelAndLeaf, map[merkletree.LevelAndLeaf]common.Hash) {
@@ -618,8 +686,10 @@ func prepareQueryNeededNodesAndPartials(t *testing.T, ctx context.Context, l2cli
 			Level: uint64(level),
 			Leaf:  sibling,
 		}
-		// TODO(magic) add position check if proving against old root
-		query = append(query, common.BigToHash(position.ToBigInt()))
+		if sibling < treeSize {
+			// the sibling must not be newer than the root
+			query = append(query, common.BigToHash(position.ToBigInt()))
+		}
 		nodes = append(nodes, position)
 		place |= which // set the bit so that we approach from the right
 		which <<= 1    // advance to the next bit
@@ -815,7 +885,7 @@ func proofForLeaf(t *testing.T, ctx context.Context, l2client *ethclient.Client,
 	return proofFromMerkleNodes(t, treeSize, leafIndex, leafHash, nodes, partials, merkleNodes)
 }
 
-func reviveRetryable(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
+func reviveRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
 	t.Helper()
 	leafIndex, leafHash := expiredRetryableFromLogs(t, ctx, l2client, retry)
 	treeSize := accumulatorSizeFromLogs(t, ctx, l2client)
@@ -823,11 +893,24 @@ func reviveRetryable(t *testing.T, ctx context.Context, l2client *ethclient.Clie
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)
 	tx, err := arbRetryableTx.Revive(ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)
-	Require(t, err)
+	Require(t, err, "Revive failed, retry data:", fmt.Sprintf("%+v", retry))
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "receipt indicated Revive failure")
+	}
+}
+
+func reviveRetryableShouldFail(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
+	t.Helper()
+	leafIndex, leafHash := expiredRetryableFromLogs(t, ctx, l2client, retry)
+	treeSize := accumulatorSizeFromLogs(t, ctx, l2client)
+	merkleProof, proofBytes := proofForLeaf(t, ctx, l2client, treeSize, leafIndex, leafHash)
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err, "NewArbRetryableTx failed")
+	_, err = arbRetryableTx.Revive(ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)
+	if err == nil || err.Error() != "execution reverted: error AlreadyRevived()" {
+		Fatal(t, "didn't get expected AlreadyRevived error, err:", err)
 	}
 }
 
@@ -865,7 +948,7 @@ func redeemRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *e
 	}
 }
 
-func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
+func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info info) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
@@ -874,14 +957,14 @@ func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient
 	}
 }
 
-func waitForNextL2Block(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info *BlockchainTestInfo) {
+func waitForNextL2Block(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info info) {
 	header, err := l2client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
 	Require(t, err)
 	startBlockNum := header.Number.Uint64()
 	// sending l2 messages until new l2 block is created
 	for header.Number.Uint64() == startBlockNum {
 		SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-			l2info.PrepareTx("Faucet", "User2", 3000000, big.NewInt(1e12), nil),
+			l2info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1e12), nil),
 		})
 		header, err = l2client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
 		Require(t, err)

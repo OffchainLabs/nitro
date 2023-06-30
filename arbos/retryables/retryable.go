@@ -24,6 +24,11 @@ import (
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
 
+var ErrTicketNotFound = errors.New("ticketId not found")
+var ErrInvalidRoot = errors.New("invalid root hash")
+var ErrWrongProof = errors.New("wrong proof")
+var ErrAlreadyRevived = errors.New("already revived")
+
 type RetryableState struct {
 	retryables   *storage.Storage
 	TimeoutQueue *storage.Queue
@@ -314,7 +319,7 @@ func (rs *RetryableState) Keepalive(
 		return 0, err
 	}
 	if retryable == nil {
-		return 0, errors.New("ticketId not found")
+		return 0, ErrTicketNotFound
 	}
 	timeout, err := retryable.CalculateTimeout()
 	if err != nil {
@@ -357,7 +362,7 @@ func (rs *RetryableState) Revive(
 		return 0, err
 	}
 	if !bytes.Equal(rootHash.Bytes(), expiredRoot.Bytes()) {
-		return 0, errors.New("invalid root hash")
+		return 0, ErrInvalidRoot
 	}
 	retryableHash := RetryableHash(ticketId, numTries, from, to, callValue, beneficiary, callData)
 	merkleProof := merkletree.MerkleProof{
@@ -367,14 +372,14 @@ func (rs *RetryableState) Revive(
 		Proof:     proof,
 	}
 	if !merkleProof.IsCorrect() {
-		return 0, errors.New("wrong proof")
+		return 0, ErrWrongProof
 	}
 	inserted, err := rs.revived.Add(leafIndex)
 	if err != nil {
 		return 0, err
 	}
 	if !inserted {
-		return 0, errors.New("already revived")
+		return 0, ErrAlreadyRevived
 	}
 	ret := rs.OpenPotentialyExpiredRetryable(ticketId)
 	timeout, err := ret.timeout.Get()
@@ -384,7 +389,7 @@ func (rs *RetryableState) Revive(
 	// TODO(magic) do we want to skip this check?
 	if timeout != 0 {
 		// shouldn't ever happen
-		return 0, errors.New("already exists")
+		return 0, ErrAlreadyRevived
 	}
 	newTimeout := currentTimestamp + timeToAdd
 	if err = ret.numTries.Set(numTries); err != nil {
