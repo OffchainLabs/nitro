@@ -29,7 +29,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
 	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
-		Fail(t, "Wrong ChainID", chainId.Uint64())
+		Fatal(t, "Wrong ChainID", chainId.Uint64())
 	}
 }
 
@@ -45,7 +45,7 @@ func TestViewLogReverts(t *testing.T) {
 
 	err = arbDebug.EventsView(nil)
 	if err == nil {
-		Fail(t, "unexpected success")
+		Fatal(t, "unexpected success")
 	}
 }
 
@@ -61,24 +61,24 @@ func TestCustomSolidityErrors(t *testing.T) {
 	Require(t, err, "could not bind ArbDebug contract")
 	customError := arbDebug.CustomRevert(callOpts, 1024)
 	if customError == nil {
-		Fail(t, "customRevert call should have errored")
+		Fatal(t, "customRevert call should have errored")
 	}
 	observedMessage := customError.Error()
 	expectedMessage := "execution reverted: error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
 	if observedMessage != expectedMessage {
-		Fail(t, observedMessage)
+		Fatal(t, observedMessage)
 	}
 
 	arbSys, err := precompilesgen.NewArbSys(arbos.ArbSysAddress, client)
 	Require(t, err, "could not bind ArbSys contract")
 	_, customError = arbSys.ArbBlockHash(callOpts, big.NewInt(1e9))
 	if customError == nil {
-		Fail(t, "out of range ArbBlockHash call should have errored")
+		Fatal(t, "out of range ArbBlockHash call should have errored")
 	}
 	observedMessage = customError.Error()
 	expectedMessage = "execution reverted: error InvalidBlockNumber(1000000000, 1)"
 	if observedMessage != expectedMessage {
-		Fail(t, observedMessage)
+		Fatal(t, observedMessage)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 		Require(t, err, "Failed to call CheckGasUsed to precompile", to)
 		maxGas := big.NewInt(100_000)
 		if arbmath.BigGreaterThan(gas, maxGas) {
-			Fail(t, "Precompile", to, "used", gas, "gas reverting, greater than max expected", maxGas)
+			Fatal(t, "Precompile", to, "used", gas, "gas reverting, greater than max expected", maxGas)
 		}
 	}
 

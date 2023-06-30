@@ -54,7 +54,7 @@ func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 	}
 }
 
-func NewExecutionStateFromSolidity(eth rollupgen.RollupLibExecutionState) *ExecutionState {
+func NewExecutionStateFromSolidity(eth rollupgen.ExecutionState) *ExecutionState {
 	return &ExecutionState{
 		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
 		MachineStatus: MachineStatus(eth.MachineStatus),
@@ -70,8 +70,8 @@ func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
 	}
 }
 
-func (s *ExecutionState) AsSolidityStruct() rollupgen.RollupLibExecutionState {
-	return rollupgen.RollupLibExecutionState{
+func (s *ExecutionState) AsSolidityStruct() rollupgen.ExecutionState {
+	return rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
 		MachineStatus: uint8(s.MachineStatus),
 	}
