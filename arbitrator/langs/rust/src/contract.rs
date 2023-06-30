@@ -93,6 +93,9 @@ impl Call {
     }
 
     pub fn value(mut self, value: Bytes32) -> Self {
+        if self.kind != CallKind::Basic {
+            panic!("cannot set value for delegate or static calls");
+        }
         self.value = value;
         self
     }
@@ -104,10 +107,6 @@ impl Call {
 
     pub fn call(self, contract: Bytes20, calldata: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
         let mut outs_len = 0;
-        if !self.value.is_zero() && self.kind != CallKind::Basic {
-            return Err("unexpected value".into());
-        }
-
         let ink = self.ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
         let status = unsafe {
             match self.kind {
@@ -137,10 +136,9 @@ impl Call {
         };
 
         let len = outs_len;
-        let outs = if len == 0 {
-            vec![]
-        } else {
-            unsafe {
+        let mut outs = vec![];
+        if len != 0 {
+            outs = unsafe {
                 let mut outs = Vec::with_capacity(len);
                 read_return_data(outs.as_mut_ptr());
                 outs.set_len(len);
