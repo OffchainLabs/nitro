@@ -3,6 +3,27 @@
 
 use crate::{address as addr, Bytes20, Bytes32};
 
+#[derive(Clone, Default)]
+#[must_use]
+pub struct Call {
+    kind: CallKind,
+    value: Bytes32,
+    ink: Option<u64>,
+}
+
+#[derive(Clone, PartialEq)]
+enum CallKind {
+    Basic,
+    Delegate,
+    Static,
+}
+
+impl Default for CallKind {
+    fn default() -> Self {
+        CallKind::Basic
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct RustVec {
@@ -52,99 +73,81 @@ extern "C" {
     fn read_return_data(dest: *mut u8);
 }
 
-/// Calls the contract at the given address, with options for passing value and to limit the amount of ink supplied.
-/// On failure, the output consists of the call's revert data.
-pub fn call(
-    contract: Bytes20,
-    calldata: &[u8],
-    value: Option<Bytes32>,
-    ink: Option<u64>,
-) -> Result<Vec<u8>, Vec<u8>> {
-    let mut outs_len = 0;
-    let value = value.unwrap_or_default();
-    let ink = ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    let status = unsafe {
-        call_contract(
-            contract.ptr(),
-            calldata.as_ptr(),
-            calldata.len(),
-            value.ptr(),
-            ink,
-            &mut outs_len as *mut _,
-        )
-    };
-    let outs = unsafe {
+impl Call {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn new_delegate() -> Self {
+        Self {
+            kind: CallKind::Delegate,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_static() -> Self {
+        Self {
+            kind: CallKind::Static,
+            ..Default::default()
+        }
+    }
+
+    pub fn value(mut self, value: Bytes32) -> Self {
+        if self.kind != CallKind::Basic {
+            panic!("cannot set value for delegate or static calls");
+        }
+        self.value = value;
+        self
+    }
+
+    pub fn ink(mut self, ink: u64) -> Self {
+        self.ink = Some(ink);
+        self
+    }
+
+    pub fn call(self, contract: Bytes20, calldata: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
+        let mut outs_len = 0;
+        let ink = self.ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
+        let status = unsafe {
+            match self.kind {
+                CallKind::Basic => call_contract(
+                    contract.ptr(),
+                    calldata.as_ptr(),
+                    calldata.len(),
+                    self.value.ptr(),
+                    ink,
+                    &mut outs_len,
+                ),
+                CallKind::Delegate => delegate_call_contract(
+                    contract.ptr(),
+                    calldata.as_ptr(),
+                    calldata.len(),
+                    ink,
+                    &mut outs_len,
+                ),
+                CallKind::Static => static_call_contract(
+                    contract.ptr(),
+                    calldata.as_ptr(),
+                    calldata.len(),
+                    ink,
+                    &mut outs_len,
+                ),
+            }
+        };
+
         let mut outs = Vec::with_capacity(outs_len);
-        read_return_data(outs.as_mut_ptr());
-        outs.set_len(outs_len);
-        outs
-    };
-    match status {
-        0 => Ok(outs),
-        _ => Err(outs),
+        if outs_len != 0 {
+            unsafe {
+                read_return_data(outs.as_mut_ptr());
+                outs.set_len(outs_len);
+            }
+        };
+        match status {
+            0 => Ok(outs),
+            _ => Err(outs),
+        }
     }
 }
-
-/// Delegate calls the contract at the given address, with the option to limit the amount of ink supplied.
-/// On failure, the output consists of the call's revert data.
-pub fn delegate_call(
-    contract: Bytes20,
-    calldata: &[u8],
-    ink: Option<u64>,
-) -> Result<Vec<u8>, Vec<u8>> {
-    let mut outs_len = 0;
-    let ink = ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    let status = unsafe {
-        delegate_call_contract(
-            contract.ptr(),
-            calldata.as_ptr(),
-            calldata.len(),
-            ink,
-            &mut outs_len as *mut _,
-        )
-    };
-    let outs = unsafe {
-        let mut outs = Vec::with_capacity(outs_len);
-        read_return_data(outs.as_mut_ptr());
-        outs.set_len(outs_len);
-        outs
-    };
-    match status {
-        0 => Ok(outs),
-        _ => Err(outs),
-    }
-}
-
-/// Static calls the contract at the given address, with the option to limit the amount of ink supplied.
-/// On failure, the output consists of the call's revert data.
-pub fn static_call(
-    contract: Bytes20,
-    calldata: &[u8],
-    ink: Option<u64>,
-) -> Result<Vec<u8>, Vec<u8>> {
-    let mut outs_len = 0;
-    let ink = ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    let status = unsafe {
-        static_call_contract(
-            contract.ptr(),
-            calldata.as_ptr(),
-            calldata.len(),
-            ink,
-            &mut outs_len as *mut _,
-        )
-    };
-    let outs = unsafe {
-        let mut outs = Vec::with_capacity(outs_len);
-        read_return_data(outs.as_mut_ptr());
-        outs.set_len(outs_len);
-        outs
-    };
-    match status {
-        0 => Ok(outs),
-        _ => Err(outs),
-    }
-}
-
 #[link(wasm_import_module = "forward")]
 extern "C" {
     fn create1(
