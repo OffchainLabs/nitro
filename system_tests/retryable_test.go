@@ -398,8 +398,16 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
-func TestSubmitRetryableFailExpireThenReviveAndRedeem(t *testing.T) {
+func TestRetryableExpiryAndRevival(t *testing.T) {
 	t.Parallel()
+	testRetryableExpiryAndRevival(t, 1)
+	testRetryableExpiryAndRevival(t, 3)
+	testRetryableExpiryAndRevival(t, 4)
+	testRetryableExpiryAndRevival(t, 8)
+	testRetryableExpiryAndRevival(t, 9)
+}
+
+func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 	l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, true)
 	defer teardown()
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -416,65 +424,8 @@ func TestSubmitRetryableFailExpireThenReviveAndRedeem(t *testing.T) {
 		l2client:                      l2client,
 		lookupSubmitRetryableL2TxHash: lookupSubmitRetryableL2TxHash,
 	}
-
-	retry := &retryables.TestRetryableData{
-		Id:          common.Hash{}, // filled later in submitRetryable
-		NumTries:    0,             // filled later in expiredRetryablFromnLogs
-		From:        util.RemapL1Address(userTxOpts.From),
-		To:          simpleAddr,
-		CallValue:   common.Big0,
-		Beneficiary: l2info.GetAddress("Beneficiary"),
-		CallData:    simpleABI.Methods["incrementRedeem"].ID,
-	}
-	autoRedeemReceipt := submitRetryable(t, ctx, submissionCtx, retry)
-	if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
-		Fatal(t, autoRedeemReceipt.GasUsed)
-	}
-
-	// trigger the retryable expiry
-	warpL1Time(t, ctx, l2node, l1client, l2info, retryables.RetryableLifetimeSeconds+1)
-
-	// check if expiry happened
-	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
-
-	// wait one block and re-check if retyable expired
-	waitForNextL2Block(t, ctx, l2client, l2info)
-	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
-
-	// revive retryable and check that it can be redeemed
-	reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
-	redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, 1)
-
-	// second revival shouldn't be possible
-	reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
-
-	// second redeem shouldn't be possible
-	redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
-}
-func TestRetryableRevival(t *testing.T) {
-	t.Parallel()
-	testRetryableRevival(t, 1)
-	testRetryableRevival(t, 3)
-	testRetryableRevival(t, 4)
-}
-
-func testRetryableRevival(t *testing.T, numRetryables int) {
-	l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, true)
-	defer teardown()
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
-	userTxOpts := l1info.GetDefaultTransactOpts("Faucet", ctx)
-	userTxOpts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
-	Require(t, err)
-	submissionCtx := &submissionContext{
-		delayedInbox:                  delayedInbox,
-		userTxOpts:                    &userTxOpts,
-		l1info:                        l1info,
-		l1client:                      l1client,
-		l2client:                      l2client,
-		lookupSubmitRetryableL2TxHash: lookupSubmitRetryableL2TxHash,
-	}
+	var currentL1time uint64 // 0 means unitialized, will be fetched from latests l1 header
+	var expectedSimpleCounter uint64
 
 	var retriesData []*retryables.TestRetryableData
 	for i := 0; i < numRetryables; i++ {
@@ -498,8 +449,8 @@ func testRetryableRevival(t *testing.T, numRetryables int) {
 		}
 	}
 	// trigger expiry, 2 retryables at a time
-	for i := 0; i < (numRetryables+1)/2; i++ {
-		warpL1Time(t, ctx, l2node, l1client, l2info, retryables.RetryableLifetimeSeconds+1)
+	for i := 0; i < (len(retriesData)+1)/2; i++ {
+		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.RetryableLifetimeSeconds+1)
 	}
 	// check if expiry happened
 	for _, retry := range retriesData {
@@ -510,20 +461,79 @@ func testRetryableRevival(t *testing.T, numRetryables int) {
 	for _, retry := range retriesData {
 		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 	}
-	// revive retryable and check that it can be redeemed
+	// revive retryables
 	for _, retry := range retriesData {
 		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
 	}
-	for i, retry := range retriesData {
-		redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, uint64(i+1))
-	}
-	// second revival shouldn't be possible
+	// repeated revival shouldn't be possible
 	for _, retry := range retriesData {
 		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
 	}
-	// second redeem shouldn't be possible
+	// check that they can be redeemed
+	for _, retry := range retriesData {
+		expectedSimpleCounter++
+		redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, expectedSimpleCounter)
+	}
+	// repeated redeem shouldn't be possible
 	for _, retry := range retriesData {
 		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// repeated revival shouldn't be possible
+	for _, retry := range retriesData {
+		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+
+	// submit again the retryables
+	for _, retry := range retriesData {
+		autoRedeemReceipt := submitRetryable(t, ctx, submissionCtx, retry)
+		if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
+			Fatal(t, autoRedeemReceipt.GasUsed)
+		}
+	}
+	// trigger expiry, 2 retryables at a time
+	for i := 0; i < (len(retriesData)+1)/2; i++ {
+		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.RetryableLifetimeSeconds+1)
+	}
+	// check if expiry happened
+	for _, retry := range retriesData {
+		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// revive retryables
+	for _, retry := range retriesData {
+		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// repeated revival shouldn't be possible
+	for _, retry := range retriesData {
+		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// trigger 2nd expiry, 2 retryables at a time
+	for i := 0; i < (len(retriesData)+1)/2; i++ {
+		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.RetryableLifetimeSeconds+1)
+	}
+	// check if 2nd expiry happened
+	for _, retry := range retriesData {
+		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// revive retryables for the 2nd time
+	for _, retry := range retriesData {
+		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// repeated revival shouldn't be possible
+	for _, retry := range retriesData {
+		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// check that they can be redeemed
+	for _, retry := range retriesData {
+		expectedSimpleCounter++
+		redeemRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry, simple, expectedSimpleCounter)
+	}
+	// repeated redeem shouldn't be possible
+	for _, retry := range retriesData {
+		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
+	}
+	// repeated revival shouldn't be possible
+	for _, retry := range retriesData {
+		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
 	}
 }
 
@@ -573,15 +583,19 @@ func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContex
 	return autoRedeemReceipt
 }
 
-func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1client *ethclient.Client, l2info info, advanceTime uint64) {
+func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1client *ethclient.Client, l2info info, currentL1time, advanceTime uint64) uint64 {
 	t.Log("Warping L1 time...")
 	l1LatestHeader, err := l1client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
 	Require(t, err)
+	if currentL1time == 0 {
+		currentL1time = l1LatestHeader.Time
+	}
+	newL1Timestamp := currentL1time + advanceTime
 	timeWarpHeader := &arbostypes.L1IncomingMessageHeader{
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1LatestHeader.Number.Uint64(),
-		Timestamp:   l1LatestHeader.Time + advanceTime,
+		Timestamp:   newL1Timestamp,
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
@@ -590,6 +604,7 @@ func warpL1Time(t *testing.T, ctx context.Context, l2node *arbnode.Node, l1clien
 		l2info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil),
 	}, hooks)
 	Require(t, err)
+	return newL1Timestamp
 }
 
 // updates retry.NumTries
