@@ -52,8 +52,8 @@ var DefaultMessagePrunerConfig = MessagePrunerConfig{
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
 	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
-	f.Int64(prefix+"search-batch-report", DefaultMessagePrunerConfig.SearchBatchReportLimit, "limit for searching for a batch report when pruning (negative disables)")
-	f.Uint64(prefix+"min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
+	f.Int64(prefix+".search-batch-report", DefaultMessagePrunerConfig.SearchBatchReportLimit, "limit for searching for a batch report when pruning (negative disables)")
+	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
 func NewMessagePruner(transactionStreamer *TransactionStreamer, inboxTracker *InboxTracker, config MessagePrunerConfigFetcher) *MessagePruner {
