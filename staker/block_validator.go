@@ -699,38 +699,39 @@ validationsLoop:
 			return nil, nil
 		}
 		if currentStatus == Prepared {
+			input, err := validationStatus.Entry.ToInput()
+			if err != nil && ctx.Err() == nil {
+				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+				continue
+			}
 			replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
-			v.LaunchThread(func(ctx context.Context) {
-				validationCtx, cancel := context.WithCancel(ctx)
+			validatorPendingValidationsGauge.Inc(1)
+			defer validatorPendingValidationsGauge.Dec(1)
+			var runs []validator.ValidationRun
+			for _, moduleRoot := range wasmRoots {
+				for i, spawner := range v.validationSpawners {
+					run := spawner.Launch(input, moduleRoot)
+					log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot, "spawner", i)
+					runs = append(runs, run)
+				}
+			}
+			validationCtx, cancel := context.WithCancel(ctx)
+			validationStatus.Runs = runs
+			validationStatus.Cancel = cancel
+			v.LaunchUntrackedThread(func() {
 				defer cancel()
-				validationStatus.Cancel = cancel
-				input, err := validationStatus.Entry.ToInput()
-				if err != nil && validationCtx.Err() == nil {
-					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
-					return
-				}
-				validatorPendingValidationsGauge.Inc(1)
-				defer validatorPendingValidationsGauge.Dec(1)
-				var runs []validator.ValidationRun
-				for _, moduleRoot := range wasmRoots {
-					for i, spawner := range v.validationSpawners {
-						run := spawner.Launch(input, moduleRoot)
-						log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot, "spawner", i)
-						runs = append(runs, run)
-					}
-				}
-				validationStatus.Runs = runs
-				replaced := validationStatus.replaceStatus(SendingValidation, ValidationSent)
+				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
 				if !replaced {
 					v.possiblyFatal(errors.New("failed to set status to ValidationSent"))
 				}
+
 				// validationStatus might be removed from under us
 				// trigger validation progress when done
 				for _, run := range runs {
-					_, err := run.Await(ctx)
+					_, err := run.Await(validationCtx)
 					if err != nil {
 						return
 					}
