@@ -135,13 +135,11 @@ impl Call {
             }
         };
 
-        let mut outs = vec![];
+        let mut outs = Vec::with_capacity(outs_len);
         if outs_len != 0 {
-            outs = unsafe {
-                let mut outs = Vec::with_capacity(outs_len);
+            unsafe {
                 read_return_data(outs.as_mut_ptr());
                 outs.set_len(outs_len);
-                outs
             }
         };
         match status {
