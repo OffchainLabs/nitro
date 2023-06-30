@@ -269,14 +269,16 @@ func (con ArbRetryableTx) SubmitRetryable(
 }
 
 func (con ArbRetryableTx) toSolidityError(err error) error {
-	switch err {
-	case retryables.ErrTicketNotFound:
+	if errors.Is(err, retryables.ErrTicketNotFound) {
 		return con.NoTicketWithIDError()
-	case retryables.ErrAlreadyRevived:
+	}
+	if errors.Is(err, retryables.ErrAlreadyRevived) {
 		return con.AlreadyRevivedError()
-	case retryables.ErrInvalidRoot:
+	}
+	if errors.Is(err, retryables.ErrInvalidRoot) {
 		return con.InvalidRootHashError()
-	case retryables.ErrWrongProof:
+	}
+	if errors.Is(err, retryables.ErrWrongProof) {
 		return con.WrongProofError()
 	}
 	// retryables.ErrTimeoutTooFar is an internal error
