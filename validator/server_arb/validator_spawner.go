@@ -57,32 +57,6 @@ type ArbitratorSpawner struct {
 	config        ArbitratorSpawnerConfigFecher
 }
 
-type valRun struct {
-	containers.Promise[validator.GoGlobalState]
-	root common.Hash
-}
-
-func (r *valRun) WasmModuleRoot() common.Hash {
-	return r.root
-}
-
-func (r *valRun) Close() {}
-
-func NewvalRun(root common.Hash) *valRun {
-	return &valRun{
-		Promise: containers.NewPromise[validator.GoGlobalState](nil),
-		root:    root,
-	}
-}
-
-func (r *valRun) consumeResult(res validator.GoGlobalState, err error) {
-	if err != nil {
-		r.ProduceError(err)
-	} else {
-		r.Produce(res)
-	}
-}
-
 func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
@@ -180,12 +154,11 @@ func (v *ArbitratorSpawner) execute(
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&v.count, 1)
-	run := NewvalRun(moduleRoot)
-	v.LaunchThread(func(ctx context.Context) {
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
 		defer atomic.AddInt32(&v.count, -1)
-		run.consumeResult(v.execute(ctx, entry, moduleRoot))
+		return v.execute(ctx, entry, moduleRoot)
 	})
-	return run
+	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (v *ArbitratorSpawner) Room() int {
@@ -193,11 +166,7 @@ func (v *ArbitratorSpawner) Room() int {
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
-	current := int(atomic.LoadInt32(&v.count))
-	if current >= avail {
-		return 0
-	}
-	return avail - current
+	return avail
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
