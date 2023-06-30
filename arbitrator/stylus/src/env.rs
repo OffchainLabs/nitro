@@ -15,7 +15,8 @@ use std::{
 };
 use thiserror::Error;
 use wasmer::{
-    AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, StoreMut, WasmPtr,
+    AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut,
+    WasmPtr,
 };
 
 pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
@@ -105,6 +106,10 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
 
     pub fn view(&self) -> MemoryView {
         self.memory.view(&self.store.as_store_ref())
+    }
+
+    pub fn memory_size(&self) -> Pages {
+        self.memory.ty(&self.store).minimum
     }
 
     pub fn _write_u8(&mut self, ptr: u32, x: u8) -> Result<&mut Self, MemoryAccessError> {

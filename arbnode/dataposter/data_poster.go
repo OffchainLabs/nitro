@@ -222,6 +222,9 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	if err != nil {
 		return nil, nil, err
 	}
+	if latestHeader.BaseFee == nil {
+		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
+	}
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
 	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
 
@@ -408,7 +411,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	if p.lastBlock != nil && arbmath.BigEquals(p.lastBlock, header.Number) {
 		return nil
 	}
-	nonce, err := p.client.NonceAt(ctx, p.auth.From, p.lastBlock)
+	nonce, err := p.client.NonceAt(ctx, p.auth.From, header.Number)
 	if err != nil {
 		if p.lastBlock != nil {
 			log.Warn("failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
@@ -417,13 +420,16 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 		return err
 	}
 	if nonce > p.nonce {
-		log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "l1Block", p.lastBlock)
+		log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 		if len(p.errorCount) > 0 {
 			for x := p.nonce; x < nonce; x++ {
 				delete(p.errorCount, x)
 			}
 		}
-		err := p.queue.Prune(ctx, nonce)
+		// We don't prune the most recent transaction in order to ensure that the data poster
+		// always has a reference point in its queue of the latest transaction nonce and metadata.
+		// nonce > 0 is implied by nonce > p.nonce, so this won't underflow.
+		err := p.queue.Prune(ctx, nonce-1)
 		if err != nil {
 			return err
 		}
@@ -473,7 +479,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
 		if !p.redisLock.AttemptLock(ctx) {
-			return p.replacementTimes[0]
+			return minWait
 		}
 		err := p.updateBalance(ctx)
 		if err != nil {

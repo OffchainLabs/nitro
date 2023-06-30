@@ -6,9 +6,9 @@ use arbutil::evm::{
     user::{UserOutcome, UserOutcomeKind},
     EvmData,
 };
-use eyre::{eyre, ErrReport};
+use eyre::ErrReport;
 use native::NativeInstance;
-use prover::programs::{config::GoParams, prelude::*};
+use prover::{binary::WasmBinary, programs::prelude::*};
 use run::RunProgram;
 use std::mem;
 
@@ -67,8 +67,15 @@ impl RustVec {
         mem::forget(vec);
     }
 
-    unsafe fn write_err(&mut self, err: ErrReport) {
+    unsafe fn write_err(&mut self, err: ErrReport) -> UserOutcomeKind {
         self.write(format!("{err:?}").into_bytes());
+        UserOutcomeKind::Failure
+    }
+
+    unsafe fn write_outcome(&mut self, outcome: UserOutcome) -> UserOutcomeKind {
+        let (status, outs) = outcome.into_data();
+        self.write(outs);
+        status
     }
 }
 
@@ -82,23 +89,28 @@ impl RustVec {
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u32,
-    debug_mode: usize,
+    page_limit: u16,
+    footprint: *mut u16,
     output: *mut RustVec,
+    debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-    let config = CompileConfig::version(version, debug_mode != 0);
+    let compile = CompileConfig::version(version, debug_mode != 0);
 
-    match native::module(wasm, config) {
-        Ok(module) => {
-            output.write(module);
-            UserOutcomeKind::Success
-        }
-        Err(error) => {
-            output.write_err(error);
-            UserOutcomeKind::Failure
-        }
-    }
+    // ensure the wasm compiles during proving
+    *footprint = match WasmBinary::parse_user(wasm, page_limit, &compile) {
+        Ok((.., pages)) => pages,
+        Err(err) => return output.write_err(err.wrap_err("failed to parse program")),
+    };
+
+    // TODO: compilation pricing, including memory charges
+    let module = match native::module(wasm, compile) {
+        Ok(module) => module,
+        Err(err) => return output.write_err(err),
+    };
+    output.write(module);
+    UserOutcomeKind::Success
 }
 
 /// Calls a compiled user program.
@@ -111,36 +123,30 @@ pub unsafe extern "C" fn stylus_compile(
 pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
-    params: GoParams,
+    config: StylusConfig,
     go_api: GoEvmApi,
     evm_data: EvmData,
+    debug_chain: u32,
     output: *mut RustVec,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let (compile_config, stylus_config) = params.configs();
-    let pricing = stylus_config.pricing;
-    let ink = pricing.gas_to_ink(*gas);
+    let compile = CompileConfig::version(config.version, debug_chain != 0);
+    let pricing = config.pricing;
     let output = &mut *output;
+    let ink = pricing.gas_to_ink(*gas);
 
-    // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, compile_config, go_api, evm_data) };
+    // Safety: module came from compile_user_wasm and we've paid for memory expansion
+    let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
 
-    let status = match instance.run_main(&calldata, stylus_config, ink) {
-        Err(err) | Ok(UserOutcome::Failure(err)) => {
-            output.write_err(err.wrap_err(eyre!("failed to execute program")));
-            UserOutcomeKind::Failure
-        }
-        Ok(outcome) => {
-            let (status, outs) = outcome.into_data();
-            output.write(outs);
-            status
-        }
+    let status = match instance.run_main(&calldata, config, ink) {
+        Err(e) | Ok(UserOutcome::Failure(e)) => output.write_err(e.wrap_err("call failed")),
+        Ok(outcome) => output.write_outcome(outcome),
     };
     let ink_left = match status {
         UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack

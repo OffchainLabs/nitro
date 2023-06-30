@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package arbmath
 
@@ -81,6 +81,11 @@ func Within[T Unsigned](a, b, bound T) bool {
 	min := MinInt(a, b)
 	max := MaxInt(a, b)
 	return max-min <= bound
+}
+
+// Checks if an int belongs to [a, b]
+func WithinRange[T Unsigned](value, a, b T) bool {
+	return a <= value && value <= b
 }
 
 // UintToBig casts an int to a huge
@@ -246,23 +251,23 @@ func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
-// SaturatingAdd add two int64's without overflow
-func SaturatingAdd(augend, addend int64) int64 {
-	sum := augend + addend
-	if addend > 0 && sum < augend {
-		sum = math.MaxInt64
+// SaturatingAdd add two integers without overflow
+func SaturatingAdd[T Signed](a, b T) T {
+	sum := a + b
+	if b > 0 && sum < a {
+		sum = ^T(0) >> 1
 	}
-	if addend < 0 && sum > augend {
-		sum = math.MinInt64
+	if b < 0 && sum > a {
+		sum = (^T(0) >> 1) + 1
 	}
 	return sum
 }
 
-// SaturatingUAdd add two uint64's without overflow
-func SaturatingUAdd(augend uint64, addend uint64) uint64 {
-	sum := augend + addend
-	if sum < augend || sum < addend {
-		sum = math.MaxUint64
+// SaturatingUAdd add two integers without overflow
+func SaturatingUAdd[T Unsigned](a, b T) T {
+	sum := a + b
+	if sum < a || sum < b {
+		sum = ^T(0)
 	}
 	return sum
 }
@@ -272,31 +277,31 @@ func SaturatingSub(minuend, subtrahend int64) int64 {
 	return SaturatingAdd(minuend, -subtrahend)
 }
 
-// SaturatingUSub subtract a uint64 from another without underflow
-func SaturatingUSub(minuend uint64, subtrahend uint64) uint64 {
-	if subtrahend >= minuend {
+// SaturatingUSub subtract an integer from another without underflow
+func SaturatingUSub[T Unsigned](a, b T) T {
+	if b >= a {
 		return 0
 	}
-	return minuend - subtrahend
+	return a - b
 }
 
-// SaturatingUMul multiply two uint64's without overflow
-func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
-	product := multiplicand * multiplier
-	if multiplier != 0 && product/multiplier != multiplicand {
-		product = math.MaxUint64
+// SaturatingMul multiply two integers without over/underflow
+func SaturatingUMul[T Unsigned](a, b T) T {
+	product := a * b
+	if b != 0 && product/b != a {
+		product = ^T(0)
 	}
 	return product
 }
 
-// SaturatingMul multiply two int64's without over/underflow
-func SaturatingMul(multiplicand int64, multiplier int64) int64 {
-	product := multiplicand * multiplier
-	if multiplier != 0 && product/multiplier != multiplicand {
-		if (multiplicand > 0 && multiplier > 0) || (multiplicand < 0 && multiplier < 0) {
-			product = math.MaxInt64
+// SaturatingMul multiply two integers without over/underflow
+func SaturatingMul[T Signed](a, b T) T {
+	product := a * b
+	if b != 0 && product/b != a {
+		if (a > 0 && b > 0) || (a < 0 && b < 0) {
+			product = ^T(0) >> 1
 		} else {
-			product = math.MinInt64
+			product = (^T(0) >> 1) + 1
 		}
 	}
 	return product

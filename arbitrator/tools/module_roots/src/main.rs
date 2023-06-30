@@ -9,7 +9,9 @@ use structopt::StructOpt;
 #[derive(StructOpt)]
 #[structopt(name = "module-roots")]
 struct Opts {
+    #[structopt(long)]
     binary: PathBuf,
+    #[structopt(long)]
     stylus_modules: Vec<PathBuf>,
 }
 
@@ -19,6 +21,7 @@ fn main() -> Result<()> {
     let mut mach = Machine::from_paths(
         &[],
         &opts.binary,
+        true,
         true,
         true,
         true,

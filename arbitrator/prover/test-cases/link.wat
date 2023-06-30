@@ -25,9 +25,9 @@
     (data (i32.const 0x120)
         "\35\fb\41\8d\94\da\56\dc\3b\2e\8f\6c\7f\43\bf\dd\9a\30\7c\27\b9\b2\e0\dd\7d\15\29\36\53\ca\b7\77") ;; math
     (data (i32.const 0x140)
-        "\0e\c0\86\4e\e8\4b\34\e1\f6\41\fa\af\92\fd\c3\fe\33\9b\89\21\0e\c1\09\67\54\5c\9a\53\27\5e\86\09") ;; memory
+        "\26\d0\56\ce\4a\fa\f1\ef\cd\d2\7a\4d\64\48\a3\86\5a\00\5f\6f\89\7e\a4\95\5c\b9\2d\b8\f1\04\eb\3e") ;; iops
     (data (i32.const 0x160)
-        "\79\b0\f4\09\5b\58\38\31\e9\a5\d2\1c\1f\92\f5\71\49\03\22\34\9f\34\20\c0\9a\18\03\6d\20\1c\cc\11") ;; grow
+        "\dd\13\30\ba\64\c6\e1\e9\e9\c3\b0\f9\63\c8\d9\69\c9\f0\13\70\42\17\f3\9e\60\c3\0d\13\5b\48\a5\88") ;; user
     (data (i32.const 0x180)
         "\07\33\43\e0\1d\b9\16\3e\99\1a\99\bd\cc\93\bf\26\15\f4\4c\11\c3\32\c0\2c\65\ba\76\11\76\eb\c1\7b") ;; return
     (func $start (local $counter i32)

@@ -43,6 +43,7 @@ pub enum EvmApiMethod {
     AccountBalance,
     AccountCodeHash,
     EvmBlockHash,
+    AddPages,
 }
 
 pub trait EvmApi: Send + 'static {
@@ -132,4 +133,9 @@ pub trait EvmApi: Send + 'static {
     /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's history.
     /// Analogous to `vm.BLOCKHASH`.
     fn evm_blockhash(&mut self, number: Bytes32) -> Bytes32;
+
+    /// Determines the cost in gas of allocating additional wasm pages.
+    /// Note: has the side effect of updating Geth's memory usage tracker.
+    /// Not analogous to any EVM opcode.
+    fn add_pages(&mut self, pages: u16) -> u64;
 }

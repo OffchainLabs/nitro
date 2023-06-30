@@ -19,7 +19,7 @@ hex = "0.4.3"
 structopt = "0.3.26"
 sha3 = "0.9.1"
 libc = "0.2.132"
-ouroboros = "0.15.5"
+ouroboros = "0.16.0"
 
 [features]
 llvm = ["dep:wasmer-compiler-llvm"]

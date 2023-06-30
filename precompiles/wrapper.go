@@ -41,10 +41,9 @@ func (wrapper *DebugPrecompile) Call(
 	if debugMode {
 		con := wrapper.precompile
 		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
-	} else {
-		// take all gas
-		return nil, 0, errors.New("debug precompiles are disabled")
 	}
+	// Take all gas.
+	return nil, 0, errors.New("debug precompiles are disabled")
 }
 
 func (wrapper *DebugPrecompile) Precompile() *Precompile {

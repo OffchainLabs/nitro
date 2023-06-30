@@ -189,6 +189,14 @@ impl Display for MachineMeter {
 #[derive(Debug)]
 pub struct OutOfInkError;
 
+impl std::error::Error for OutOfInkError {}
+
+impl Display for OutOfInkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "out of ink")
+    }
+}
+
 /// Note: implementers may panic if uninstrumented
 pub trait MeteredMachine {
     fn ink_left(&mut self) -> MachineMeter;

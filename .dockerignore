@@ -24,6 +24,7 @@ test-node.bash
 
 # Arbitrator ignores
 arbitrator/tools/module_roots
+arbitrator/tools/pricer
 
 # Rust outputs
 arbitrator/target/**/*

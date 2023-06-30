@@ -11,6 +11,7 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
+typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
@@ -74,6 +75,11 @@ Bytes32 evmBlockHashImpl(usize api, Bytes32 block);
 Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
     return evmBlockHashImpl(api, block);
 }
+
+u64 addPagesImpl(usize api, u16 pages);
+u64 addPagesWrap(usize api, u16 pages) {
+    return addPagesImpl(api, pages);
+}
 */
 import "C"
 import (
@@ -92,8 +98,9 @@ func newApi(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
 ) (C.GoEvmApi, usize) {
-	closures := newApiClosures(interpreter, tracingInfo, scope)
+	closures := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	apiId := atomic.AddUintptr(&apiIds, 1)
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
@@ -110,6 +117,7 @@ func newApi(
 		account_balance:  (*[0]byte)(C.accountBalanceWrap),
 		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
 		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
+		add_pages:        (*[0]byte)(C.addPagesWrap),
 		id:               id,
 	}, id
 }

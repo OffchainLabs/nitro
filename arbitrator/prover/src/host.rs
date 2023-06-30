@@ -6,7 +6,7 @@
 use crate::{
     binary, host,
     machine::{Function, InboxIdentifier},
-    programs::StylusGlobals,
+    programs::StylusData,
     utils,
     value::{ArbValueType, FunctionType, IntegerValType},
     wavm::{wasm_to_wavm, IBinOpType, Instruction, Opcode},
@@ -363,7 +363,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn new_internal_funcs(globals: Option<StylusGlobals>) -> Vec<Function> {
+pub fn new_internal_funcs(globals: Option<StylusData>) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -413,7 +413,7 @@ pub fn new_internal_funcs(globals: Option<StylusGlobals>) -> Vec<Function> {
     let mut add_func = |code: &[_], internal| add_func(code_func(code, internal), internal);
 
     if let Some(globals) = globals {
-        let (gas, status, depth) = globals.offsets();
+        let (gas, status, depth) = globals.global_offsets();
         add_func(&[Instruction::with_data(GlobalGet, gas)], UserInkLeft);
         add_func(&[Instruction::with_data(GlobalGet, status)], UserInkStatus);
         add_func(

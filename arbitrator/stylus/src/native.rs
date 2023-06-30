@@ -25,10 +25,11 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Module, Store, TypedFunction,
-    Value, WasmTypeList,
+    imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Memory, Module, Pages, Store,
+    TypedFunction, Value, WasmTypeList,
 };
 
+#[derive(Debug)]
 pub struct NativeInstance<E: EvmApi> {
     pub instance: Instance,
     pub store: Store,
@@ -58,6 +59,14 @@ impl<E: EvmApi> NativeInstance<E> {
 
     pub fn config(&self) -> StylusConfig {
         self.env().config.expect("no config")
+    }
+
+    pub fn memory(&self) -> Memory {
+        self.env().memory.as_ref().unwrap().clone()
+    }
+
+    pub fn memory_size(&self) -> Pages {
+        self.memory().ty(&self.store).minimum
     }
 
     pub fn read_slice(&self, mem: &str, ptr: usize, len: usize) -> Result<Vec<u8>> {
@@ -139,6 +148,7 @@ impl<E: EvmApi> NativeInstance<E> {
                 "tx_gas_price" => func!(host::tx_gas_price),
                 "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
+                "memory_grow" => func!(host::memory_grow),
             },
         };
         if debug_funcs {
@@ -331,6 +341,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "tx_gas_price" => stub!(|_: u32|),
             "tx_ink_price" => stub!(u64 <- ||),
             "tx_origin" => stub!(|_: u32|),
+            "memory_grow" => stub!(|_: u16|),
         },
     };
     if compile.debug.debug_funcs {

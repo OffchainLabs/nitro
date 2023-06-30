@@ -7,7 +7,7 @@
 package programs
 
 import (
-	"errors"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -22,6 +22,7 @@ type hash = common.Hash
 
 // rust types
 type u8 = uint8
+type u16 = uint16
 type u32 = uint32
 type u64 = uint64
 type usize = uintptr
@@ -32,7 +33,10 @@ type rustConfig byte
 type rustMachine byte
 type rustEvmData byte
 
-func compileUserWasmRustImpl(wasm []byte, version, debugMode u32) (machine *rustMachine, err *rustVec)
+func compileUserWasmRustImpl(
+	wasm []byte, version, debugMode u32, pageLimit u16,
+) (machine *rustMachine, footprint u16, err *rustVec)
+
 func callUserWasmRustImpl(
 	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
 	evmData *rustEvmData, gas *u64, root *hash,
@@ -56,16 +60,14 @@ func rustEvmDataImpl(
 	txOrigin *addr,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32, debug bool) error {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, err := compileMachine(db, program, wasm, version, debugMode)
-	if err != nil {
-		println("COMPILE:", debug, err.Error())
-	}
-	return err
+	_, footprint, err := compileMachine(db, program, wasm, pageLimit, version, debugMode)
+	return footprint, err
 }
 
 func callUserWasm(
+	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -73,25 +75,22 @@ func callUserWasm(
 	calldata []byte,
 	evmData *evmData,
 	params *goParams,
+	memoryModel *MemoryModel,
 ) ([]byte, error) {
-	contract := scope.Contract
-	actingAddress := contract.Address() // not necessarily WASM
-	program := actingAddress
-	if contract.CodeAddr != nil {
-		program = *contract.CodeAddr
-	}
+	// since the program has previously passed compilation, don't limit memory
+	pageLimit := uint16(math.MaxUint16)
 
-	wasm, err := getWasm(db, program)
+	wasm, err := getWasm(db, program.address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, err := compileMachine(db, program, wasm, params.version, params.debugMode)
+	machine, _, err := compileMachine(db, program.address, wasm, pageLimit, params.version, params.debugMode)
 	if err != nil {
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 
-	root := db.NoncanonicalProgramHash(program, params.version)
-	evmApi := newApi(interpreter, tracingInfo, scope)
+	root := db.NoncanonicalProgramHash(program.address, params.version)
+	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 
 	status, output := callUserWasmRustImpl(
@@ -107,12 +106,15 @@ func callUserWasm(
 	return status.output(result)
 }
 
-func compileMachine(db vm.StateDB, program addr, wasm []byte, version, debugMode u32) (*rustMachine, error) {
-	machine, err := compileUserWasmRustImpl(wasm, version, debugMode)
+func compileMachine(
+	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
+) (*rustMachine, u16, error) {
+	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
 	if err != nil {
-		return nil, errors.New(string(err.intoSlice()))
+		_, err := userFailure.output(err.intoSlice())
+		return nil, footprint, err
 	}
-	return machine, nil
+	return machine, footprint, nil
 }
 
 func (vec *rustVec) intoSlice() []byte {

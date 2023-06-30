@@ -31,6 +31,14 @@ pub fn output(data: Vec<u8>) {
 #[macro_export]
 macro_rules! arbitrum_main {
     ($name:expr) => {
+        /// Force the compiler to import these symbols
+        /// Note: calling these functions will unproductively consume gas
+        #[no_mangle]
+        pub unsafe fn mark_used() {
+            hostio::memory_grow(0);
+            panic!();
+        }
+
         #[no_mangle]
         pub extern "C" fn arbitrum_main(len: usize) -> usize {
             let input = arbitrum::args(len);

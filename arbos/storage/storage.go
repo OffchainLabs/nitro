@@ -388,6 +388,28 @@ func (sbu *StorageBackedUBips) Set(bips arbmath.UBips) error {
 	return sbu.backing.Set(bips.Uint64())
 }
 
+type StorageBackedUint16 struct {
+	StorageSlot
+}
+
+func (store *Storage) OpenStorageBackedUint16(offset uint64) StorageBackedUint16 {
+	return StorageBackedUint16{store.NewSlot(offset)}
+}
+
+func (sbu *StorageBackedUint16) Get() (uint16, error) {
+	raw, err := sbu.StorageSlot.Get()
+	big := raw.Big()
+	if !big.IsUint64() || big.Uint64() > math.MaxUint16 {
+		panic("expected uint16 compatible value in storage")
+	}
+	return uint16(big.Uint64()), err
+}
+
+func (sbu *StorageBackedUint16) Set(value uint16) error {
+	bigValue := new(big.Int).SetUint64(uint64(value))
+	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
+}
+
 type StorageBackedUint32 struct {
 	StorageSlot
 }
@@ -519,7 +541,8 @@ func (sbbu *StorageBackedBigUint) Get() (*big.Int, error) {
 func (sbbu *StorageBackedBigUint) SetChecked(val *big.Int) error {
 	if val.Sign() < 0 {
 		return sbbu.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
-	} else if val.BitLen() > 256 {
+	}
+	if val.BitLen() > 256 {
 		return sbbu.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
 	}
 	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
@@ -637,9 +660,8 @@ func (sba *StorageBackedAddressOrNil) Get() (*common.Address, error) {
 func (sba *StorageBackedAddressOrNil) Set(val *common.Address) error {
 	if val == nil {
 		return sba.StorageSlot.Set(NilAddressRepresentation)
-	} else {
-		return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 	}
+	return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 type StorageBackedBytes struct {

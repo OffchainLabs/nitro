@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(clippy::field_reassign_with_default)]
 
@@ -20,6 +20,7 @@ use {
 };
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct StylusConfig {
     /// Version the program was compiled against
     pub version: u32,
@@ -30,6 +31,7 @@ pub struct StylusConfig {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct PricingParams {
     /// The price of ink, measured in bips of an evm gas
     pub ink_price: u64,
@@ -101,7 +103,7 @@ pub struct CompileConfig {
 
 #[derive(Clone, Copy, Debug)]
 pub struct CompileMemoryParams {
-    /// The maximum number of pages a program may use
+    /// The maximum number of pages a program may start with
     pub heap_bound: Pages,
     /// The maximum size of a stack frame, measured in words
     pub max_frame_size: u32,
@@ -158,7 +160,7 @@ impl CompileConfig {
             0 => {}
             1 => {
                 // TODO: settle on reasonable values for the v1 release
-                config.bounds.heap_bound = Pages(2);
+                config.bounds.heap_bound = Pages(128); // 8 mb
                 config.bounds.max_frame_size = 1024 * 1024;
                 config.pricing = CompilePricingParams {
                     costs: |_| 1,
@@ -205,27 +207,5 @@ impl CompileConfig {
         }
 
         Store::new(compiler)
-    }
-}
-
-#[repr(C)]
-pub struct GoParams {
-    pub version: u32,
-    pub max_depth: u32,
-    pub ink_price: u64,
-    pub hostio_ink: u64,
-    pub debug_mode: u32,
-}
-
-impl GoParams {
-    pub fn configs(self) -> (CompileConfig, StylusConfig) {
-        let stylus_config = StylusConfig::new(
-            self.version,
-            self.max_depth,
-            self.ink_price,
-            self.hostio_ink,
-        );
-        let compile_config = CompileConfig::version(self.version, self.debug_mode != 0);
-        (compile_config, stylus_config)
     }
 }

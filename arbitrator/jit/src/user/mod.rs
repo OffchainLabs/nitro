@@ -7,37 +7,50 @@ use crate::{
     user::evm_api::exec_wasm,
 };
 use arbutil::{
-    evm::{
-        user::{UserOutcome, UserOutcomeKind},
-        EvmData,
-    },
+    evm::{user::UserOutcome, EvmData},
     heapify,
 };
-use eyre::eyre;
-use prover::programs::{config::GoParams, prelude::*};
+use prover::{
+    binary::WasmBinary,
+    programs::{config::PricingParams, prelude::*},
+};
 use std::mem;
 use stylus::native;
 
 mod evm_api;
 
 /// Compiles and instruments user wasm.
-/// go side: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
+/// go side: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u32, err *Vec<u8>)
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
     let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
+    let page_limit = sp.read_u16();
+    sp.skip_space();
 
-    match native::module(&wasm, compile) {
-        Ok(module) => {
-            sp.write_ptr(heapify(module));
+    macro_rules! error {
+        ($error:expr) => {{
+            let error = $error.wrap_err("failed to compile");
+            let error = format!("{:?}", error).as_bytes().to_vec();
             sp.write_nullptr();
-        }
-        Err(error) => {
-            let error = format!("failed to compile: {error:?}").as_bytes().to_vec();
-            sp.write_nullptr();
+            sp.skip_space(); // skip footprint
             sp.write_ptr(heapify(error));
-        }
+            return;
+        }};
     }
+
+    // ensure the wasm compiles during proving
+    let footprint = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
+        Ok((.., pages)) => pages,
+        Err(error) => error!(error),
+    };
+    let module = match native::module(&wasm, compile) {
+        Ok(module) => module,
+        Err(error) => error!(error),
+    };
+    sp.write_ptr(heapify(module));
+    sp.write_u16(footprint).skip_space();
+    sp.write_nullptr();
 }
 
 /// Links and executes a user wasm.
@@ -45,19 +58,14 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 ///     -> (status byte, out *Vec<u8>)
 pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let sp = &mut GoStack::simple(sp, &env);
-    macro_rules! unbox {
-        () => {
-            unsafe { *Box::from_raw(sp.read_ptr_mut()) }
-        };
-    }
-    use UserOutcomeKind::*;
+    use UserOutcome::*;
 
     // move inputs
-    let module: Vec<u8> = unbox!();
+    let module: Vec<u8> = sp.unbox();
     let calldata = sp.read_go_slice_owned();
-    let (compile, config): (CompileConfig, StylusConfig) = unbox!();
+    let (compile, config): (CompileConfig, StylusConfig) = sp.unbox();
     let evm_api = sp.read_go_slice_owned();
-    let evm_data: EvmData = unbox!();
+    let evm_data: EvmData = sp.unbox();
 
     // buy ink
     let pricing = config.pricing;
@@ -72,18 +80,13 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     );
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
-    match outcome {
-        Err(err) | Ok(UserOutcome::Failure(err)) => {
-            let outs = format!("{:?}", err.wrap_err(eyre!("failed to execute program")));
-            sp.write_u8(Failure.into()).skip_space();
-            sp.write_ptr(heapify(outs.into_bytes()));
-        }
-        Ok(outcome) => {
-            let (status, outs) = outcome.into_data();
-            sp.write_u8(status.into()).skip_space();
-            sp.write_ptr(heapify(outs));
-        }
-    }
+    let outcome = match outcome {
+        Err(e) | Ok(Failure(e)) => Failure(e.wrap_err("call failed")),
+        Ok(outcome) => outcome,
+    };
+    let (kind, outs) = outcome.into_data();
+    sp.write_u8(kind.into()).skip_space();
+    sp.write_ptr(heapify(outs));
     sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left));
     Ok(())
 }
@@ -110,21 +113,24 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 /// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let params = GoParams {
+
+    let config = StylusConfig {
         version: sp.read_u32(),
         max_depth: sp.read_u32(),
-        ink_price: sp.read_u64(),
-        hostio_ink: sp.read_u64(),
-        debug_mode: sp.read_u32(),
+        pricing: PricingParams {
+            ink_price: sp.read_u64(),
+            hostio_ink: sp.read_u64(),
+        },
     };
-    sp.skip_space().write_ptr(heapify(params.configs()));
+    let compile = CompileConfig::version(config.version, sp.read_u32() != 0);
+    sp.skip_space().write_ptr(heapify((compile, config)));
 }
 
 /// Creates an `EvmData` from its component parts.
 /// go side: λ(
-///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
-///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
-///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///     blockBasefee, blockChainid *[32]byte, blockCoinbase *[20]byte, blockDifficulty *[32]byte,
+///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
