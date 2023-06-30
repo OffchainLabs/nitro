@@ -206,19 +206,20 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 }
 
 // deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
-func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([][]byte, error) {
+func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, error) {
 	batch := db.NewBatch()
 	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
 	defer startIter.Release()
-	var prunedKeysRange [][]byte
+	var prunedKeysRange []uint64
 	for startIter.Next() {
-		if binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix)) >= endMinKey {
+		currentKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+		if currentKey >= endMinKey {
 			break
 		}
 		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
-			prunedKeysRange = append(prunedKeysRange, startIter.Key())
+			prunedKeysRange = append(prunedKeysRange, currentKey)
 		} else {
-			prunedKeysRange[1] = startIter.Key()
+			prunedKeysRange[1] = currentKey
 		}
 		err := batch.Delete(startIter.Key())
 		if err != nil {
