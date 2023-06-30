@@ -6,7 +6,6 @@ package arbtest
 import (
 	"context"
 	"math/big"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -393,17 +391,14 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 100; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 }
 
-func TestL1FundedUnsignedTransaction(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(glogger)
+func TestArbitrumContractTx(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	l2Info, node, l2Client, l1Info, _, l1Client, l1Stack := createTestNodeOnL1(t, ctx, true)
@@ -425,8 +420,10 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	}
 	unsignedTx := types.NewTx(&types.ArbitrumContractTx{
 		ChainId:   l2Info.Signer.ChainID(),
-		GasFeeCap: l2Info.GasPrice,
+		GasFeeCap: l2Info.GasPrice.Mul(l2Info.GasPrice, big.NewInt(2)),
+		RequestId: common.BigToHash(common.Big1),
 		Gas:       1e6,
+		From:      faucetL2Addr,
 		To:        &l2ContractAddr,
 		Value:     common.Big0,
 		Data:      data,
