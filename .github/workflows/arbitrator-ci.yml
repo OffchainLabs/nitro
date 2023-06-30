@@ -2,6 +2,12 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      debug_mode:
+        type: boolean
+        description: 'Enables tmate'
+        required: false
+        default: false
   pull_request:
     paths:
       - 'arbitrator/**'
@@ -22,6 +28,12 @@ jobs:
     name: Run Arbitrator tests
     runs-on: ubuntu-8
     steps:
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        with:
+          detached: true
+
       - name: Checkout
         uses: actions/checkout@v1
         with:
