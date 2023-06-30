@@ -44,18 +44,12 @@ macro_rules! arbitrum_main {
     };
 }
 
-#[link(wasm_import_module = "forward")]
-extern "C" {
-    pub(crate) fn account_load_bytes32(key: *const u8, dest: *mut u8);
-    pub(crate) fn account_store_bytes32(key: *const u8, value: *const u8);
-}
-
 pub fn load_bytes32(key: Bytes32) -> Bytes32 {
     let mut data = [0; 32];
-    unsafe { account_load_bytes32(key.ptr(), data.as_mut_ptr()) };
+    unsafe { hostio::account_load_bytes32(key.ptr(), data.as_mut_ptr()) };
     Bytes32(data)
 }
 
 pub fn store_bytes32(key: Bytes32, data: Bytes32) {
-    unsafe { account_store_bytes32(key.ptr(), data.ptr()) };
+    unsafe { hostio::account_store_bytes32(key.ptr(), data.ptr()) };
 }

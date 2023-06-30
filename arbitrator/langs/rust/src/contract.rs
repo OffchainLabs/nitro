@@ -157,14 +157,9 @@ pub fn return_data_len() -> usize {
     unsafe { hostio::return_data_size() as usize }
 }
 
-#[link(wasm_import_module = "forward")]
-extern "C" {
-    pub(crate) fn contract_address(address: *mut u8);
-}
-
 pub fn address() -> Bytes20 {
     let mut data = [0; 20];
-    unsafe { contract_address(data.as_mut_ptr()) };
+    unsafe { hostio::contract_address(data.as_mut_ptr()) };
     Bytes20(data)
 }
 
