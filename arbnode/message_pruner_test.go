@@ -4,6 +4,7 @@
 package arbnode
 
 import (
+	"context"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -11,13 +12,17 @@ import (
 )
 
 func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	endBatchCount := uint64(2 * 100 * 1024)
 	endBatchMetadata := BatchMetadata{
 		MessageCount:        2 * 100 * 1024,
 		DelayedMessageCount: 2 * 100 * 1024,
 	}
 	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, endBatchCount, endBatchMetadata)
-	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	err := deleteOldMessageFromDB(ctx, endBatchCount, endBatchMetadata.MessageCount, endBatchMetadata.DelayedMessageCount, inboxTrackerDb, transactionStreamerDb)
+	Require(t, err)
 
 	checkDbKeys(t, endBatchCount, inboxTrackerDb, sequencerBatchMetaPrefix)
 	checkDbKeys(t, uint64(endBatchMetadata.MessageCount), transactionStreamerDb, messagePrefix)
@@ -26,29 +31,38 @@ func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
 }
 
 func TestMessagePrunerTraverseEachMessageOnlyOnce(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	endBatchCount := uint64(10)
 	endBatchMetadata := BatchMetadata{}
 	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, endBatchCount, endBatchMetadata)
 	// In first iteration message till endBatchCount are tried to be deleted.
-	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	err := deleteOldMessageFromDB(ctx, endBatchCount, endBatchMetadata.MessageCount, endBatchMetadata.DelayedMessageCount, inboxTrackerDb, transactionStreamerDb)
+	Require(t, err)
 	// In first iteration all the message till endBatchCount are deleted.
 	checkDbKeys(t, endBatchCount, inboxTrackerDb, sequencerBatchMetaPrefix)
 	// After first iteration endBatchCount/2 is reinserted in inbox db
-	err := inboxTrackerDb.Put(dbKey(sequencerBatchMetaPrefix, endBatchCount/2), []byte{})
+	err = inboxTrackerDb.Put(dbKey(sequencerBatchMetaPrefix, endBatchCount/2), []byte{})
 	Require(t, err)
 	// In second iteration message till endBatchCount are again tried to be deleted.
-	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	err = deleteOldMessageFromDB(ctx, endBatchCount, endBatchMetadata.MessageCount, endBatchMetadata.DelayedMessageCount, inboxTrackerDb, transactionStreamerDb)
+	Require(t, err)
 	// In second iteration all the message till endBatchCount are deleted again.
 	checkDbKeys(t, endBatchCount, inboxTrackerDb, sequencerBatchMetaPrefix)
 }
 
 func TestMessagePrunerPruneTillLessThenEqualTo(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	endBatchCount := uint64(10)
 	endBatchMetadata := BatchMetadata{}
 	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, 2*endBatchCount, endBatchMetadata)
 	err := inboxTrackerDb.Delete(dbKey(sequencerBatchMetaPrefix, 9))
 	Require(t, err)
-	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	err = deleteOldMessageFromDB(ctx, endBatchCount, endBatchMetadata.MessageCount, endBatchMetadata.DelayedMessageCount, inboxTrackerDb, transactionStreamerDb)
+	Require(t, err)
 	hasKey, err := inboxTrackerDb.Has(dbKey(sequencerBatchMetaPrefix, 10))
 	Require(t, err)
 	if !hasKey {
@@ -57,13 +71,17 @@ func TestMessagePrunerPruneTillLessThenEqualTo(t *testing.T) {
 }
 
 func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	endBatchCount := uint64(2)
 	endBatchMetadata := BatchMetadata{
 		MessageCount:        2,
 		DelayedMessageCount: 2,
 	}
 	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, endBatchCount, endBatchMetadata)
-	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	err := deleteOldMessageFromDB(ctx, endBatchCount, endBatchMetadata.MessageCount, endBatchMetadata.DelayedMessageCount, inboxTrackerDb, transactionStreamerDb)
+	Require(t, err)
 
 	checkDbKeys(t, endBatchCount, inboxTrackerDb, sequencerBatchMetaPrefix)
 	checkDbKeys(t, uint64(endBatchMetadata.MessageCount), transactionStreamerDb, messagePrefix)

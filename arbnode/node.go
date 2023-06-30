@@ -791,6 +791,8 @@ func createNodeImpl(
 	}
 
 	var stakerObj *staker.Staker
+	var messagePruner *MessagePruner
+
 	if config.Staker.Enable {
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
@@ -817,7 +819,13 @@ func createNodeImpl(
 			}
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils, fatalErrChan)
+		notifiers := make([]staker.LatestStakedNotifier, 0)
+		if config.MessagePruner.Enable && !config.Caching.Archive {
+			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
+			notifiers = append(notifiers, messagePruner)
+		}
+
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, notifiers, deployInfo.ValidatorUtils, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
@@ -848,10 +856,6 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	}
-	var messagePruner *MessagePruner
-	if config.MessagePruner.Enable && !config.Caching.Archive && stakerObj != nil {
-		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
 	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec.ExecEngine, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })

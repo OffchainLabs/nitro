@@ -19,9 +19,11 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	flag "github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 var (
@@ -186,10 +188,15 @@ type nodeAndHash struct {
 	hash common.Hash
 }
 
+type LatestStakedNotifier interface {
+	UpdateLatestStaked(count arbutil.MessageIndex, globalState validator.GoGlobalState)
+}
+
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
 	l1Reader                L1ReaderInterface
+	notifiers               []LatestStakedNotifier
 	activeChallenge         *ChallengeManager
 	baseCallOpts            bind.CallOpts
 	config                  L1ValidatorConfig
@@ -209,6 +216,7 @@ func NewStaker(
 	config L1ValidatorConfig,
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
+	notifiers []LatestStakedNotifier,
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
@@ -226,6 +234,7 @@ func NewStaker(
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
+		notifiers:               notifiers,
 		baseCallOpts:            callOpts,
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
@@ -294,8 +303,22 @@ func (s *Staker) checkLatestStaked(ctx context.Context) error {
 		log.Info("latest valid not yet in our node", "staked", stakedGlobalState)
 		return nil
 	}
+
+	processedCount, err := s.txStreamer.GetProcessedMessageCount()
+	if err != nil {
+		return err
+	}
+
+	if processedCount < count {
+		log.Info("execution catching up to last validated", "validatedCount", count, "processedCount", processedCount)
+		return nil
+	}
+
 	if s.blockValidator != nil && s.config.StartFromStaked {
-		return s.blockValidator.AssumeValid(count, stakedGlobalState)
+		s.blockValidator.UpdateLatestStaked(count, stakedGlobalState)
+	}
+	for _, notifier := range s.notifiers {
+		notifier.UpdateLatestStaked(count, stakedGlobalState)
 	}
 	return nil
 }
