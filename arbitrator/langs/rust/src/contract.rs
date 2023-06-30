@@ -135,13 +135,12 @@ impl Call {
             }
         };
 
-        let len = outs_len;
         let mut outs = vec![];
-        if len != 0 {
+        if outs_len != 0 {
             outs = unsafe {
-                let mut outs = Vec::with_capacity(len);
+                let mut outs = Vec::with_capacity(outs_len);
                 read_return_data(outs.as_mut_ptr());
-                outs.set_len(len);
+                outs.set_len(outs_len);
                 outs
             }
         };
