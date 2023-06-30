@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_dispatch:
     inputs:
-      debug_mode:
+      enable_tmate:
         type: boolean
-        description: 'Enables tmate'
+        description: 'Enable tmate'
         required: false
         default: false
   pull_request:
@@ -30,7 +30,7 @@ jobs:
     steps:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_tmate }}
         with:
           detached: true
 
