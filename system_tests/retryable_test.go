@@ -453,16 +453,19 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error sending unsigned transaction: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, l1Client, l1tx); err != nil {
+	receipt, err := EnsureTxSucceeded(ctx, l1Client, l1tx)
+	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", l1tx.Hash(), err)
-
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
 	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
-	receipt, err := EnsureTxSucceeded(ctx, l2Client, unsignedTx)
+	receipt, err = EnsureTxSucceeded(ctx, l2Client, unsignedTx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		t.Errorf("Transaction: %v was unsuccessful", receipt.TxHash)
+		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
 }
