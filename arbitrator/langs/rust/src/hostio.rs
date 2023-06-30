@@ -48,7 +48,11 @@ extern "C" {
     pub(crate) fn evm_ink_left() -> u64;
     pub(crate) fn msg_sender(sender: *mut u8);
     pub(crate) fn msg_value(value: *mut u8);
+    pub(crate) fn read_args(dest: *mut u8);
+    /// A noop when there's never been a call
     pub(crate) fn read_return_data(dest: *mut u8);
+    pub(crate) fn return_data(data: *const u8, len: usize);
+    /// Returns 0 when there's never been a call
     pub(crate) fn return_data_size() -> u32;
     pub(crate) fn static_call_contract(
         contract: *const u8,

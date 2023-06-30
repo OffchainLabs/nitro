@@ -13,16 +13,10 @@ pub mod msg;
 pub mod tx;
 mod util;
 
-#[link(wasm_import_module = "forward")]
-extern "C" {
-    pub(crate) fn read_args(dest: *mut u8);
-    pub(crate) fn return_data(data: *const u8, len: usize);
-}
-
 pub fn args(len: usize) -> Vec<u8> {
     let mut input = Vec::with_capacity(len);
     unsafe {
-        read_args(input.as_mut_ptr());
+        hostio::read_args(input.as_mut_ptr());
         input.set_len(len);
     }
     input
@@ -30,7 +24,7 @@ pub fn args(len: usize) -> Vec<u8> {
 
 pub fn output(data: Vec<u8>) {
     unsafe {
-        return_data(data.as_ptr(), data.len());
+        hostio::return_data(data.as_ptr(), data.len());
     }
 }
 
