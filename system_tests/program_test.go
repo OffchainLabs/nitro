@@ -11,12 +11,14 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -111,6 +113,156 @@ func keccakTest(t *testing.T, jit bool) {
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
+}
+
+func TestProgramCompilationReuse(t *testing.T) {
+	t.Parallel()
+	testCompilationReuse(t, true)
+}
+
+func testCompilationReuse(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
+	defer cleanup()
+	_ = node
+	_ = l2info
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&auth, 1))
+	ensure(arbOwner.SetWasmHostioInk(&auth, 1))
+
+	colors.PrintMint("Deploying keccaks")
+
+	wasm := readWasmFile(t, rustFile("keccak"))
+	keccakA := deployContract(t, ctx, auth, l2client, wasm)
+	colors.PrintBlue("keccak program A deployed to ", keccakA.Hex())
+	keccakB := deployContract(t, ctx, auth, l2client, wasm)
+	colors.PrintBlue("keccak program B deployed to ", keccakB.Hex())
+
+	colors.PrintMint("Deploying multiaddr and compiling it")
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
+	correct := crypto.Keccak256Hash(preimage)
+
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	colors.PrintMint("Attempting to call keccak before it is compiled")
+
+	// Calling the contract precompilation should fail.
+	msg := ethereum.CallMsg{
+		To:    &keccakA,
+		Value: big.NewInt(0),
+		Data:  keccakArgs,
+	}
+	_, err = l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "ProgramNotCompiled") {
+		Fail(t, "call should have failed with ProgramNotCompiled")
+	}
+
+	compileProgramData := hexutil.MustDecode("0x2e50f32b")
+	programArg := make([]byte, 32)
+	copy(programArg[12:], keccakA[:])
+	compileProgramData = append(compileProgramData, programArg...)
+
+	// We begin preparing a complex multicall operation.
+	// First, we create an inner call that attempts to compile a program,
+	// and then reverts. We configure the inner multicall to revert entirely
+	// if a single revert occurs.
+	innerCallArgs := []byte{0x01}
+	innerCallArgs = append(
+		innerCallArgs,
+		argsForMulticall(
+			vm.CALL,
+			types.ArbWasmAddress,
+			nil,
+			compileProgramData,
+		)...,
+	)
+	legacyErrorMethod := "0x1e48fe82"
+	innerCallArgs = multicallAppend(innerCallArgs, vm.CALL, types.ArbDebugAddress, hexutil.MustDecode(legacyErrorMethod))
+
+	// Next, we configure a multicall that does our inner call from above, as well as additional
+	// calls beyond that. It attempts to call keccak program A, which should fail due to it not
+	// being compiled. It then compiles keccak program A, and then calls keccak program B, which
+	// will succeed if they are compiled correctly and share the same codehash.
+	args := []byte{0x00}
+	args = append(
+		args,
+		argsForMulticall(
+			vm.CALL,
+			multiAddr,
+			nil,
+			innerCallArgs,
+		)...,
+	)
+	// Call the contract and watch it revert due to it not being compiled.
+	args = multicallAppend(args, vm.CALL, keccakA, keccakArgs)
+	// Compile keccak program A.
+	args = multicallAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
+	// Call keccak program B, which should succeed as it shares the same code as program A.
+	args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
+
+	colors.PrintMint("Sending multicall tx")
+
+	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	colors.PrintMint("Attempting to call keccak program B after multicall is done")
+
+	// Calling the contract precompilation should fail.
+	msg = ethereum.CallMsg{
+		To:    &keccakB,
+		Value: big.NewInt(0),
+		Data:  keccakArgs,
+	}
+	result, err := l2client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	if !bytes.Equal(correct[:], result) {
+		Fail(t, "unexpected return result: ", "result", result)
+	}
+
+	validateBlocks(t, 7, jit, ctx, node, l2client)
+	Fail(t, "TODO")
+}
+
+func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
+	kinds := make(map[vm.OpCode]byte)
+	kinds[vm.CALL] = 0x00
+	kinds[vm.DELEGATECALL] = 0x01
+	kinds[vm.STATICCALL] = 0x02
+
+	args := []byte{0x01}
+	length := 21 + len(calldata)
+	if opcode == vm.CALL {
+		length += 32
+	}
+	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
+	args = append(args, kinds[opcode])
+	if opcode == vm.CALL {
+		if value == nil {
+			value = common.Big0
+		}
+		args = append(args, common.BigToHash(value).Bytes()...)
+	}
+	args = append(args, address.Bytes()...)
+	args = append(args, calldata...)
+	return args
+}
+
+func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
+	calls[1] += 1 // add another call
+	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
+	return calls
 }
 
 func TestProgramErrors(t *testing.T) {

@@ -136,7 +136,9 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			logger = log.Info
 			limit = 0
 		}
-		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal(limit, result), "attempt", i, "args", logArgs(limit, args...))
+		_ = logger
+		_ = limit
+		//logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal(limit, result), "attempt", i, "args", logArgs(limit, args...))
 		if err == nil {
 			return nil
 		}

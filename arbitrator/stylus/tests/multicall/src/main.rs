@@ -9,14 +9,15 @@ arbitrum::arbitrum_main!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();
-    let count = input[0];
-    input = &input[1..];
+    let should_revert_all = input[0];
+    let count = input[1];
+    input = &input[2..];
 
     // combined output of all calls
     let mut output = vec![];
 
-    debug::println(format!("Calling {count} contract(s)"));
-    for _ in 0..count {
+    debug::println(format!("Calling {count} contract(s), and reverting all? {}", should_revert_all));
+    for i in 0..count {
         let length = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
         input = &input[4..];
 
@@ -36,28 +37,41 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         let data = &curr[20..];
         debug::println(match value {
             Some(value) if value != Bytes32::default() => format!(
-                "Calling {addr} with {} bytes and value {} {kind}",
-                data.len(),
+                "{i} Calling {addr} with {} bytes and value {} {kind}",
+                hex::encode(data),
                 hex::encode(&value)
             ),
-            _ => format!("Calling {addr} with {} bytes {kind}", curr.len()),
+            _ => format!("{i} Calling {addr} with {} bytes {kind}", hex::encode(data)),
         });
-
         let return_data = match kind {
-            0 => contract::call(addr, data, value, None)?,
-            1 => contract::delegate_call(addr, data, None)?,
-            2 => contract::static_call(addr, data, None)?,
+            0 => contract::call(addr, data, value, None),
+            1 => contract::delegate_call(addr, data, None),
+            2 => contract::static_call(addr, data, None),
             x => panic!("unknown call kind {x}"),
         };
-        if !return_data.is_empty() {
+        let results: Vec<u8> = match return_data {
+            Ok(data) => {
+                debug::println(format!("SUCCESS Call {}", i));
+                Ok::<Vec<u8>, Vec<u8>>(data)
+            },
+            Err(data) => {
+                debug::println(format!("FAILED Call {}", i));
+                if should_revert_all == 1 {
+                    return Err(data);
+                }
+                Ok(data)
+            }
+        }?;
+        if !results.is_empty() {
             debug::println(format!(
-                "Contract {addr} returned {} bytes",
-                return_data.len()
+                "{i} Contract {addr} returned {} bytes",
+                results.len(),
             ));
         }
-        output.extend(return_data);
+        output.extend(results);
         input = next;
     }
+    debug::println("finito");
 
     Ok(output)
 }
