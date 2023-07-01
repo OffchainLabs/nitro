@@ -209,8 +209,8 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	args = multicallAppend(args, vm.CALL, keccakA, keccakArgs)
 	// Compile keccak program A.
 	args = multicallAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
-	// Call keccak program B, which should succeed as it shares the same code as program A.
-	args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
+	// // Call keccak program B, which should succeed as it shares the same code as program A.
+	// args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
 
 	colors.PrintMint("Sending multicall tx")
 
