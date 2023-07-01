@@ -2,11 +2,170 @@ package server_api
 
 import (
 	"encoding/base64"
+	"fmt"
+	"io"
 
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/validator"
 )
+
+type PreimagesMapJson struct {
+	Map map[common.Hash][]byte
+}
+
+func (m *PreimagesMapJson) MarshalJSON() ([]byte, error) {
+	size := 2 // {}
+	encoding := base64.StdEncoding
+	for key, value := range m.Map {
+		size += 5 // "":""
+		size += encoding.EncodedLen(len(key))
+		size += encoding.EncodedLen(len(value))
+	}
+	if len(m.Map) > 0 {
+		// commas
+		size += len(m.Map) - 1
+	}
+	out := make([]byte, size)
+	i := 0
+	out[i] = '{'
+	i++
+	for key, value := range m.Map {
+		if i > 1 {
+			out[i] = ','
+			i++
+		}
+		out[i] = '"'
+		i++
+		encoding.Encode(out[i:], key[:])
+		i += encoding.EncodedLen(len(key))
+		out[i] = '"'
+		i++
+		out[i] = ':'
+		i++
+		out[i] = '"'
+		i++
+		encoding.Encode(out[i:], value)
+		i += encoding.EncodedLen(len(value))
+		out[i] = '"'
+		i++
+	}
+	out[i] = '}'
+	i++
+	if i != len(out) {
+		return nil, fmt.Errorf("preimage map wrote %v bytes but expected to write %v", i, len(out))
+	}
+	return out, nil
+}
+
+func readNonWhitespace(data *[]byte) (byte, error) {
+	c := byte('\t')
+	for c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ' {
+		if len(*data) == 0 {
+			return 0, io.ErrUnexpectedEOF
+		}
+		c = (*data)[0]
+		*data = (*data)[1:]
+	}
+	return c, nil
+}
+
+func expectCharacter(data *[]byte, expected rune) error {
+	got, err := readNonWhitespace(data)
+	if err != nil {
+		return fmt.Errorf("while looking for '%v' got %w", expected, err)
+	}
+	if rune(got) != expected {
+		return fmt.Errorf("while looking for '%v' got '%v'", expected, rune(got))
+	}
+	return nil
+}
+
+func getStrLen(data []byte) (int, error) {
+	strLen := 0
+	for {
+		if strLen >= len(data) {
+			return 0, fmt.Errorf("%w: hit end of preimage map looking for end quote", io.ErrUnexpectedEOF)
+		}
+		c := data[strLen]
+		if c == '"' {
+			break
+		} else if c == '\\' {
+			return 0, fmt.Errorf("preimage map cannot contain escapes")
+		}
+		strLen++
+	}
+	return strLen, nil
+}
+
+func (m *PreimagesMapJson) UnmarshalJSON(data []byte) error {
+	err := expectCharacter(&data, '{')
+	if err != nil {
+		return err
+	}
+	m.Map = make(map[common.Hash][]byte)
+	encoding := base64.StdEncoding
+	keyBuf := make([]byte, 64)
+	for {
+		c, err := readNonWhitespace(&data)
+		if err != nil {
+			return fmt.Errorf("while looking for key in preimages map got %w", err)
+		}
+		if len(m.Map) == 0 && c == '}' {
+			break
+		} else if c != '"' {
+			return fmt.Errorf("expected '\"' to begin key in preimages map but got '%v'", c)
+		}
+		strLen, err := getStrLen(data)
+		if err != nil {
+			return err
+		}
+		maxKeyLen := encoding.DecodedLen(strLen)
+		if maxKeyLen > len(keyBuf) {
+			return fmt.Errorf("preimage key base64 possible length %v is greater than buffer size of %v", maxKeyLen, len(keyBuf))
+		}
+		keyLen, err := encoding.Decode(keyBuf, data[:strLen])
+		if err != nil {
+			return fmt.Errorf("error base64 decoding preimage key: %w", err)
+		}
+		var key common.Hash
+		if keyLen != len(key) {
+			return fmt.Errorf("expected preimage to be %v bytes long, but got %v bytes", len(key), keyLen)
+		}
+		copy(key[:], keyBuf[:len(key)])
+		data = data[strLen+1:]
+		err = expectCharacter(&data, ':')
+		if err != nil {
+			return err
+		}
+		err = expectCharacter(&data, '"')
+		if err != nil {
+			return err
+		}
+		strLen, err = getStrLen(data)
+		if err != nil {
+			return err
+		}
+		value := make([]byte, encoding.DecodedLen(strLen))
+		valueLen, err := encoding.Decode(value, data[:strLen])
+		if err != nil {
+			return fmt.Errorf("error base64 decoding preimage value: %w", err)
+		}
+		value = value[:valueLen]
+		m.Map[key] = value
+		data = data[strLen+1:]
+		c, err = readNonWhitespace(&data)
+		if err != nil {
+			return fmt.Errorf("after value in preimages map got %w", err)
+		}
+		if c == '}' {
+			break
+		} else if c != ',' {
+			return fmt.Errorf("expected ',' or '}' after value in preimages map but got '%v'", c)
+		}
+	}
+	return nil
+}
 
 type BatchInfoJson struct {
 	Number  uint64
@@ -17,7 +176,7 @@ type ValidationInputJson struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	PreimagesB64  map[string]string
+	PreimagesB64  PreimagesMapJson
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
@@ -30,12 +189,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
-		PreimagesB64:  make(map[string]string),
-	}
-	for hash, data := range entry.Preimages {
-		encHash := base64.StdEncoding.EncodeToString(hash.Bytes())
-		encData := base64.StdEncoding.EncodeToString(data)
-		res.PreimagesB64[encHash] = encData
+		PreimagesB64:  PreimagesMapJson{entry.Preimages},
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
@@ -50,24 +204,13 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
-		Preimages:     make(map[common.Hash][]byte),
+		Preimages:     entry.PreimagesB64.Map,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
 		return nil, err
 	}
 	valInput.DelayedMsg = delayed
-	for encHash, encData := range entry.PreimagesB64 {
-		hash, err := base64.StdEncoding.DecodeString(encHash)
-		if err != nil {
-			return nil, err
-		}
-		data, err := base64.StdEncoding.DecodeString(encData)
-		if err != nil {
-			return nil, err
-		}
-		valInput.Preimages[common.BytesToHash(hash)] = data
-	}
 	for _, binfo := range entry.BatchInfo {
 		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
 		if err != nil {
