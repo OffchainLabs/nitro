@@ -1,3 +1,6 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+
 // Package solimpl includes an easy-to-use abstraction
 // around the challenge protocol contracts using their Go
 // bindings and exposes minimal details of Ethereum's internals.

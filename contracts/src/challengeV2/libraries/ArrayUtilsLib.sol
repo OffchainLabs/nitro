@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: UNLICENSED
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// SPDX-License-Identifier: BUSL-1.1
+//
 pragma solidity ^0.8.17;
 
 /// @title  Array utils library

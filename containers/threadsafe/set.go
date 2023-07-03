@@ -1,3 +1,6 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+
 // Package threadsafe includes generic utilities for maps and sets that can
 // be safely used concurrently for type-safety at compile time with the
 // bare minimum methods needed in this repository.

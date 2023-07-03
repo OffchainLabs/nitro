@@ -1,3 +1,6 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+
 // Package assertions contains testing utilities for posting and scanning for
 // assertions on chain, which are useful for simulating the responsibilities
 // of Arbitrum Nitro and initiating challenges as needed using our challenge manager.
