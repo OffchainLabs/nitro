@@ -50,14 +50,23 @@ func keccakTest(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
-	otherAddressSameCode := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+
+	wasm := readWasmFile(t, rustFile("keccak"))
+	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	colors.PrintBlue("program deployed to ", programAddress.Hex())
+	timed(t, "compile same code", func() {
+		if _, err := arbWasm.CompileProgram(&auth, otherAddressSameCode); err == nil || !strings.Contains(err.Error(), "ProgramUpToDate") {
+			Fatal(t, "compile should have failed with ProgramUpToDate")
+		}
+	})
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
 	}
 
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
-	Require(t, err)
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
 	programVersion, err := arbWasm.ProgramVersion(nil, programAddress)
