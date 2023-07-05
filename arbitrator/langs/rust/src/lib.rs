@@ -13,6 +13,12 @@ pub mod msg;
 pub mod tx;
 mod util;
 
+pub fn memory_grow(pages: u16) {
+    unsafe {
+        hostio::memory_grow(pages)
+    }
+}
+
 pub fn args(len: usize) -> Vec<u8> {
     let mut input = Vec::with_capacity(len);
     unsafe {
@@ -35,7 +41,7 @@ macro_rules! arbitrum_main {
         /// Note: calling these functions will unproductively consume gas
         #[no_mangle]
         pub unsafe fn mark_used() {
-            hostio::memory_grow(0);
+            arbitrum::memory_grow(0);
             panic!();
         }
 
