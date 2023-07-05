@@ -9,7 +9,7 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     programs::{
-        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT,
+        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData, STYLUS_ENTRY_POINT,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
@@ -295,7 +295,7 @@ impl Module {
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
         debug_funcs: bool,
-        stylus_data: Option<StylusGlobals>,
+        stylus_data: Option<StylusData>,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
@@ -1044,8 +1044,11 @@ impl Machine {
         )
     }
 
+    /// Creates an instrumented user Machine from the wasm or wat at the given `path`.
+    #[cfg(feature = "native")]
     pub fn from_user_path(path: &Path, compile: &CompileConfig) -> Result<Self> {
-        let wasm = std::fs::read(path)?;
+        let data = std::fs::read(path)?;
+        let wasm = wasmer::wat2wasm(&data)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
 
@@ -1056,7 +1059,7 @@ impl Machine {
         let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
         let soft_float = parse(&soft_float, Path::new("soft-float"))?;
 
-        Self::from_binaries(
+        let mut machine = Self::from_binaries(
             &[soft_float, wasi_stub, user_test],
             bin,
             false,
@@ -1068,7 +1071,11 @@ impl Machine {
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
             Some(stylus_data),
-        )
+        )?;
+
+        let footprint: u32 = stylus_data.footprint.into();
+        machine.call_function("user_test", "set_pages", vec![footprint.into()])?;
+        Ok(machine)
     }
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
@@ -1118,7 +1125,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
-        stylus_data: Option<StylusGlobals>,
+        stylus_data: Option<StylusData>,
     ) -> Result<Machine> {
         use ArbValueType::*;
 
@@ -1719,7 +1726,8 @@ impl Machine {
     }
 
     fn test_next_instruction(func: &Function, pc: &ProgramCounter) {
-        debug_assert!(func.code.len() > pc.inst.try_into().unwrap());
+        let inst: usize = pc.inst.try_into().unwrap();
+        debug_assert!(func.code.len() > inst);
     }
 
     pub fn get_steps(&self) -> u64 {

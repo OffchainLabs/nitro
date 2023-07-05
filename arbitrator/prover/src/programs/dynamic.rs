@@ -11,6 +11,8 @@ use parking_lot::Mutex;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
+pub const SCRATCH_GLOBAL: &str = "stylus_scratch_global";
+
 #[derive(Debug)]
 pub struct DynamicMeter {
     memory_fill: u64,
@@ -19,8 +21,6 @@ pub struct DynamicMeter {
 }
 
 impl DynamicMeter {
-    const SCRATCH_GLOBAL: &str = "stylus_dynamic_scratch_global";
-
     pub fn new(pricing: &CompilePricingParams) -> Self {
         Self {
             memory_fill: pricing.memory_fill_ink,
@@ -36,8 +36,7 @@ impl<M: ModuleMod> Middleware<M> for DynamicMeter {
     fn update_module(&self, module: &mut M) -> Result<()> {
         let ink = module.get_global(STYLUS_INK_LEFT)?;
         let status = module.get_global(STYLUS_INK_STATUS)?;
-        let scratch = Self::SCRATCH_GLOBAL;
-        let scratch = module.add_global(scratch, Type::I32, GlobalInit::I32Const(0))?;
+        let scratch = module.add_global(SCRATCH_GLOBAL, Type::I32, GlobalInit::I32Const(0))?;
         *self.globals.lock() = Some([ink, status, scratch]);
         Ok(())
     }

@@ -9,16 +9,19 @@
 use crate::{
     run::RunProgram,
     test::{
-        check_instrumentation, new_test_machine, random_bytes20, random_bytes32, random_ink,
-        run_machine, run_native, test_compile_config, test_configs, TestInstance,
+        check_instrumentation, random_bytes20, random_bytes32, random_ink, run_machine, run_native,
+        test_compile_config, test_configs, TestInstance,
     },
 };
 use arbutil::{
     crypto,
-    evm::{api::EvmApi, user::UserOutcome},
+    evm::{
+        api::EvmApi,
+        user::{UserOutcome, UserOutcomeKind},
+    },
     format, Bytes20, Bytes32, Color,
 };
-use eyre::{bail, Result};
+use eyre::{bail, ensure, Result};
 use prover::{
     binary,
     programs::{
@@ -31,7 +34,7 @@ use prover::{
 };
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 use wasmer::wasmparser::Operator;
-use wasmer::{CompilerConfig, ExportIndex, Imports, MemoryType, Pages, Store};
+use wasmer::{CompilerConfig, ExportIndex, Imports, Pages, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
 #[test]
@@ -233,37 +236,49 @@ fn test_module_mod() -> Result<()> {
 
 #[test]
 fn test_heap() -> Result<()> {
-    // test wasms
-    //     memory.wat   there's a 2-page memory with an upper limit of 4
-    //     memory2.wat  there's a 2-page memory with no upper limit
+    // in memory.wat
+    //     the input is the target size and amount to step each `memory.grow`
+    //     the output is the memory size in pages
 
-    let mut compile = CompileConfig::default();
-    compile.bounds.heap_bound = Pages(1);
-    assert!(TestInstance::new_test("tests/memory.wat", compile.clone()).is_err());
-    assert!(TestInstance::new_test("tests/memory2.wat", compile).is_err());
+    let (mut compile, mut config, _) = test_configs();
+    compile.bounds.heap_bound = Pages(128);
+    compile.pricing.costs = |_| 0;
+    config.pricing.hostio_ink = 0;
 
-    let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
-        let mut compile = CompileConfig::default();
-        compile.bounds.heap_bound = Pages(bound);
+    let extra: u8 = rand::random::<u8>() % 128;
 
-        let instance = TestInstance::new_test(file, compile.clone())?;
-        let machine = new_test_machine(file, &compile)?;
+    for step in 1..128 {
+        let (mut native, _) = TestInstance::new_with_evm("tests/memory.wat", &compile, config)?;
+        let ink = random_ink(32_000_000);
+        let args = vec![128, step];
 
-        let ty = MemoryType::new(start, Some(expected), false);
-        let memory = instance.exports.get_memory("mem")?;
-        assert_eq!(ty, memory.ty(&instance.store));
+        let pages = run_native(&mut native, &args, ink)?[0];
+        assert_eq!(pages, 128);
 
-        let memory = machine.main_module_memory();
-        assert_eq!(expected as u64, memory.max_size);
-        Ok(())
-    };
+        let used = ink - native.ink_ready()?;
+        ensure!((used as i64 - 32_000_000).abs() < 3_000, "wrong ink");
+        assert_eq!(native.memory_size(), Pages(128));
 
-    check(2, 2, 2, "tests/memory.wat")?;
-    check(2, 2, 2, "tests/memory2.wat")?;
-    check(2, 3, 3, "tests/memory.wat")?;
-    check(2, 3, 3, "tests/memory2.wat")?;
-    check(2, 5, 4, "tests/memory.wat")?; // the upper limit of 4 is stricter
-    check(2, 5, 5, "tests/memory2.wat")
+        if step == extra {
+            let mut machine = Machine::from_user_path(Path::new("tests/memory.wat"), &compile)?;
+            run_machine(&mut machine, &args, config, ink)?;
+            check_instrumentation(native, machine)?;
+        }
+    }
+
+    // in memory2.wat
+    //     the user program calls memory_grow directly with malicious arguments
+    //     the cost should exceed a maximum u32, consuming more gas than can ever be bought
+
+    let (mut native, _) = TestInstance::new_with_evm("tests/memory2.wat", &compile, config)?;
+    let outcome = native.run_main(&[], config, config.pricing.ink_to_gas(u32::MAX.into()))?;
+    assert_eq!(outcome.kind(), UserOutcomeKind::OutOfInk);
+
+    // ensure we reject programs with excessive footprints
+    compile.bounds.heap_bound = Pages(0);
+    _ = TestInstance::new_with_evm("tests/memory.wat", &compile, config).unwrap_err();
+    _ = Machine::from_user_path(Path::new("tests/memory.wat"), &compile).unwrap_err();
+    Ok(())
 }
 
 #[test]
@@ -288,8 +303,10 @@ fn test_rust() -> Result<()> {
     assert_eq!(hex::encode(output), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let start = Instant::now();
     let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), hash);
+    println!("Exec {}", format::time(start.elapsed()));
 
     check_instrumentation(native, machine)
 }

@@ -5,12 +5,12 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -365,7 +365,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		if mustDeref {
 			v.recordingDatabase.Dereference(prevHeader)
 		}
-		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
+		return fmt.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
 	v.LaunchThread(func(ctx context.Context) {
 		if mustDeref {
@@ -603,15 +603,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			defer cancel()
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
-			if err != nil && validationCtx.Err() == nil {
+			if err != nil {
 				validationStatus.replaceStatus(Prepared, RecordFailed)
-				log.Error("error preparing validation", "err", err)
+				if validationCtx.Err() == nil {
+					log.Error("error preparing validation", "err", err)
+				}
 				return
 			}
 			input, err := validationStatus.Entry.ToInput()
-			if err != nil && validationCtx.Err() == nil {
+			if err != nil {
 				validationStatus.replaceStatus(Prepared, RecordFailed)
-				log.Error("error preparing validation", "err", err)
+				if validationCtx.Err() == nil {
+					log.Error("error preparing validation", "err", err)
+				}
 				return
 			}
 			for _, moduleRoot := range wasmRoots {
@@ -750,12 +754,18 @@ func (v *BlockValidator) progressValidated() {
 		}
 		validationEntry := validationStatus.Entry
 		if validationEntry.BlockNumber != checkingBlock {
-			log.Error("bad block number for validation entry", "expected", checkingBlock, "found", validationEntry.BlockNumber)
+			log.Error(
+				"bad block number for validation entry",
+				"expected", checkingBlock, "found", validationEntry.BlockNumber,
+			)
 			return
 		}
 		// It's safe to read lastBlockValidatedHash without the lastBlockValidatedMutex as we have the reorgMutex
 		if v.lastBlockValidatedHash != validationEntry.PrevBlockHash {
-			log.Error("lastBlockValidatedHash is %v but validationEntry has prevBlockHash %v for block number %v", v.lastBlockValidatedHash, validationEntry.PrevBlockHash, v.lastBlockValidated)
+			log.Error(
+				"lastBlockValidatedHash is %v but validationEntry has prevBlockHash %v for block number %v",
+				v.lastBlockValidatedHash, validationEntry.PrevBlockHash, v.lastBlockValidated,
+			)
 			return
 		}
 		expectedEnd, err := validationEntry.expectedEnd()
@@ -769,7 +779,10 @@ func (v *BlockValidator) progressValidated() {
 			}
 			runEnd, err := run.Current()
 			if err == nil && runEnd != expectedEnd {
-				err = fmt.Errorf("validation failed: expected %v got %v", expectedEnd, runEnd)
+				err = fmt.Errorf(
+					"validation failed %v: expected %v got %v",
+					checkingBlock, expectedEnd, runEnd,
+				)
 				writeErr := v.writeToFile(validationEntry, run.WasmModuleRoot())
 				if writeErr != nil {
 					log.Warn("failed to write validation debugging info", "err", err)
@@ -821,7 +834,7 @@ func (v *BlockValidator) progressValidated() {
 
 func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
-		return errors.Errorf("cannot handle AssumeValid while running")
+		return fmt.Errorf("cannot handle AssumeValid while running")
 	}
 
 	v.reorgMutex.Lock()

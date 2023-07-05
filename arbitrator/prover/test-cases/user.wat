@@ -1,3 +1,5 @@
+;; Copyright 2023, Offchain Labs, Inc.
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
     (func $safe (param $args_len i32) (result i32)
@@ -9,4 +11,4 @@
     (func $out_of_bounds (param $args_len i32) (result i32)
         i32.const 0xFFFFFF
         i32.load)
-    (memory 1))
+    (memory 1 1))

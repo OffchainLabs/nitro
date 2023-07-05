@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{contract, debug, Bytes20, Bytes32};
+use arbitrum::{contract::Call, Bytes20, Bytes32};
 
 arbitrum::arbitrum_main!(user_main);
 
@@ -16,7 +16,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     // combined output of all calls
     let mut output = vec![];
 
-    debug::println(format!("Calling {count} contract(s), and reverting all? {}", should_revert_all));
+    println(format!("Calling {count} contract(s), and reverting all? {}", should_revert_all));
     for i in 0..count {
         let length = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
         input = &input[4..];
@@ -35,7 +35,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
         let addr = Bytes20::from_slice(&curr[..20]).unwrap();
         let data = &curr[20..];
-        debug::println(match value {
+        println(match value {
             Some(value) if value != Bytes32::default() => format!(
                 "{i} Calling {addr} with {} bytes and value {} {kind}",
                 hex::encode(data),
@@ -51,11 +51,11 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         };
         let results = match return_data {
             Ok(data) => {
-                debug::println(format!("SUCCESS Call {}", i));
+                println(format!("SUCCESS Call {}", i));
                 Ok::<Vec<u8>, Vec<u8>>(data)
             },
             Err(data) => {
-                debug::println(format!("FAILED Call {}", i));
+                println(format!("FAILED Call {}", i));
                 if should_revert_all == 1 {
                     return Err(data);
                 }
@@ -63,7 +63,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             }
         }?;
         if !results.is_empty() {
-            debug::println(format!(
+            println(format!(
                 "{i} Contract {addr} returned {} bytes",
                 results.len(),
             ));
@@ -73,4 +73,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     Ok(output)
+}
+
+fn println(_text: impl AsRef<str>) {
+    // arbitrum::debug::println(text)
 }

@@ -37,3 +37,7 @@ func TestProgramArbitratorCreate(t *testing.T) {
 func TestProgramArbitratorEvmData(t *testing.T) {
 	testEvmData(t, false)
 }
+
+func TestProgramArbitratorMemory(t *testing.T) {
+	testMemory(t, false)
+}

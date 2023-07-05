@@ -20,7 +20,6 @@ import (
 	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
-	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -270,7 +269,7 @@ func serializeMessage(cm *ClientManager, bm interface{}, enableNonCompressedOutp
 			var err error
 			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
 			if err != nil {
-				return bytes.Buffer{}, bytes.Buffer{}, errors.Wrap(err, "unable to create flate writer")
+				return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to create flate writer: %w", err)
 			}
 		}
 		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
@@ -284,19 +283,19 @@ func serializeMessage(cm *ClientManager, bm interface{}, enableNonCompressedOutp
 	multiWriter := io.MultiWriter(writers...)
 	encoder := json.NewEncoder(multiWriter)
 	if err := encoder.Encode(bm); err != nil {
-		return bytes.Buffer{}, bytes.Buffer{}, errors.Wrap(err, "unable to encode message")
+		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to encode message: %w", err)
 	}
 	if notCompressedWriter != nil {
 		if err := notCompressedWriter.Flush(); err != nil {
-			return bytes.Buffer{}, bytes.Buffer{}, errors.Wrap(err, "unable to flush message")
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to flush message: %w", err)
 		}
 	}
 	if compressedWriter != nil {
 		if err := cm.flateWriter.Close(); err != nil {
-			return bytes.Buffer{}, bytes.Buffer{}, errors.Wrap(err, "unable to close flate writer")
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to close flate writer: %w", err)
 		}
 		if err := compressedWriter.Flush(); err != nil {
-			return bytes.Buffer{}, bytes.Buffer{}, errors.Wrap(err, "unable to flush message")
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to flush message: %w", err)
 		}
 	}
 	return notCompressed, compressed, nil

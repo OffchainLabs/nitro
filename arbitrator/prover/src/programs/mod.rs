@@ -3,14 +3,15 @@
 
 use crate::{
     binary::{ExportKind, WasmBinary},
+    memory::MemoryType,
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;
-use eyre::{bail, Report, Result};
+use eyre::{bail, eyre, Report, Result};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
 use wasmer_types::{
-    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, Pages,
+    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
 use wasmparser::{Operator, Type as WpType};
@@ -30,6 +31,7 @@ pub mod counter;
 pub mod depth;
 pub mod dynamic;
 pub mod heap;
+pub mod memory;
 pub mod meter;
 pub mod prelude;
 pub mod start;
@@ -43,8 +45,9 @@ pub trait ModuleMod {
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
     fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>>;
     fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>>;
+    fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
-    fn limit_heap(&mut self, limit: Pages) -> Result<()>;
+    fn memory_size(&self) -> Result<Option<MemoryType>>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -211,6 +214,14 @@ impl ModuleMod for ModuleInfo {
         Ok(signatures)
     }
 
+    fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex> {
+        self.imports
+            .iter()
+            .find(|(k, _)| k.module == module && k.field == name)
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| eyre!("missing import {}", name.red()))
+    }
+
     fn move_start_function(&mut self, name: &str) -> Result<()> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
@@ -224,22 +235,11 @@ impl ModuleMod for ModuleInfo {
         Ok(())
     }
 
-    fn limit_heap(&mut self, limit: Pages) -> Result<()> {
+    fn memory_size(&self) -> Result<Option<MemoryType>> {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
         }
-        for (_, memory) in &mut self.memories {
-            let bound = memory.maximum.unwrap_or(limit);
-            let bound = bound.min(limit);
-            memory.maximum = Some(bound);
-
-            if memory.minimum > bound {
-                let minimum = memory.minimum.0.red();
-                let limit = bound.0.red();
-                bail!("module memory minimum {} exceeds limit {}", minimum, limit);
-            }
-        }
-        Ok(())
+        Ok(self.memories.last().map(|x| x.into()))
     }
 }
 
@@ -320,6 +320,14 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(signatures)
     }
 
+    fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex> {
+        self.imports
+            .iter()
+            .position(|x| x.module == module && x.name == Some(name))
+            .map(|x| ImportIndex::Function(FunctionIndex::from_u32(x as u32)))
+            .ok_or_else(|| eyre!("missing import {}", name.red()))
+    }
+
     fn move_start_function(&mut self, name: &str) -> Result<()> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
@@ -333,33 +341,24 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(())
     }
 
-    fn limit_heap(&mut self, limit: Pages) -> Result<()> {
+    fn memory_size(&self) -> Result<Option<MemoryType>> {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
         }
-        if let Some(memory) = self.memories.first_mut() {
-            let bound = memory.maximum.unwrap_or_else(|| limit.0.into());
-            let bound = bound.min(limit.0.into());
-            memory.maximum = Some(bound);
-
-            if memory.initial > bound {
-                let minimum = memory.initial.red();
-                let limit = bound.red();
-                bail!("module memory minimum {} exceeds limit {}", minimum, limit);
-            }
-        }
-        Ok(())
+        self.memories.last().map(|x| x.try_into()).transpose()
     }
 }
 
-pub struct StylusGlobals {
+#[derive(Clone, Copy)]
+pub struct StylusData {
     pub ink_left: GlobalIndex,
     pub ink_status: GlobalIndex,
     pub depth_left: GlobalIndex,
+    pub footprint: u16,
 }
 
-impl StylusGlobals {
-    pub fn offsets(&self) -> (u64, u64, u64) {
+impl StylusData {
+    pub fn global_offsets(&self) -> (u64, u64, u64) {
         (
             self.ink_left.as_u32() as u64,
             self.ink_status.as_u32() as u64,
