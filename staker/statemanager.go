@@ -320,7 +320,7 @@ var ExecutionStateAbi = abi.Arguments{
 	},
 }
 
-func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stateprovider.ConfigSnapshot, postState rollupgen.ExecutionState, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
+func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stateprovider.ConfigSnapshot, postState rollupgen.RollupLibExecutionState, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
 	inboxMaxCountProof, err := ExecutionStateAbi.Pack(
 		postState.GlobalState.Bytes32Vals[0],
 		postState.GlobalState.Bytes32Vals[1],
