@@ -14,9 +14,7 @@ pub mod tx;
 mod util;
 
 pub fn memory_grow(pages: u16) {
-    unsafe {
-        hostio::memory_grow(pages)
-    }
+    unsafe { hostio::memory_grow(pages) }
 }
 
 pub fn args(len: usize) -> Vec<u8> {
