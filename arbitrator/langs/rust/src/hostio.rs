@@ -50,11 +50,6 @@ extern "C" {
     /// determines the coinbase.
     pub(crate) fn block_coinbase(coinbase: *mut u8);
 
-    /// Gets the "difficulty" of the current block, which on Arbitrum chains is always the
-    /// constant `0x1`. This differs from Ethereum post-merge where this opcode has been
-    /// repurposed for secure random number generation.
-    pub(crate) fn block_difficulty(difficulty: *mut u8);
-
     /// Gets the gas limit of the current block. The semantics are equivalent to that of the EVM's
     /// [`GAS_LIMIT`] opcode. Note that as of the time of this writing, `evm.codes` incorrectly
     /// implies that the opcode returns the gas limit of the current transaction.  When in doubt,

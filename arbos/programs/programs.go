@@ -259,7 +259,6 @@ func (p Programs) CallProgram(
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		blockChainId:    common.BigToHash(evm.ChainConfig().ChainID),
 		blockCoinbase:   evm.Context.Coinbase,
-		blockDifficulty: common.BigToHash(evm.Context.Difficulty),
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
 		blockTimestamp:  evm.Context.Time,
@@ -343,7 +342,6 @@ type evmData struct {
 	blockBasefee    common.Hash
 	blockChainId    common.Hash
 	blockCoinbase   common.Address
-	blockDifficulty common.Hash
 	blockGasLimit   uint64
 	blockNumber     common.Hash
 	blockTimestamp  uint64

@@ -21,7 +21,6 @@
     (func (export "forward__block_basefee")          (param i32) unreachable)
     (func (export "forward__block_chainid")          (param i32) unreachable)
     (func (export "forward__block_coinbase")         (param i32) unreachable)
-    (func (export "forward__block_difficulty")       (param i32) unreachable)
     (func (export "forward__block_gas_limit")        (result i64) unreachable)
     (func (export "forward__block_number")           (param i32) unreachable)
     (func (export "forward__block_timestamp")        (result i64) unreachable)

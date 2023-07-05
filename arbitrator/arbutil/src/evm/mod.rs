@@ -26,17 +26,11 @@ pub const ADDRESS_GAS: u64 = GAS_QUICK_STEP;
 // vm.GasQuickStep (see eips.go)
 pub const BASEFEE_GAS: u64 = GAS_QUICK_STEP;
 
-// vm.GasExtStep (see jump_table.go)
-pub const BLOCKHASH_GAS: u64 = 20;
-
 // vm.GasQuickStep (see eips.go)
 pub const CHAINID_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
 pub const COINBASE_GAS: u64 = GAS_QUICK_STEP;
-
-// vm.GasQuickStep (see jump_table.go)
-pub const DIFFICULTY_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
 pub const GASLIMIT_GAS: u64 = GAS_QUICK_STEP;
@@ -68,7 +62,6 @@ pub struct EvmData {
     pub block_basefee: Bytes32,
     pub block_chainid: Bytes32,
     pub block_coinbase: Bytes20,
-    pub block_difficulty: Bytes32,
     pub block_gas_limit: u64,
     pub block_number: Bytes32,
     pub block_timestamp: u64,

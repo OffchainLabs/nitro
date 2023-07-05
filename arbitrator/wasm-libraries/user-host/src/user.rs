@@ -252,14 +252,6 @@ pub unsafe extern "C" fn user_host__block_coinbase(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_difficulty(ptr: usize) {
-    let program = Program::start();
-    program.buy_gas(evm::DIFFICULTY_GAS).unwrap();
-    let difficulty = program.evm_data.block_difficulty.as_ref();
-    wavm::write_slice_usize(difficulty, ptr)
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn user_host__block_gas_limit() -> u64 {
     let program = Program::start();
     program.buy_gas(evm::GASLIMIT_GAS).unwrap();

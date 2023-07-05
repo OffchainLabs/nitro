@@ -21,7 +21,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let basefee = block::basefee();
     let chainid = block::chainid();
     let coinbase = block::coinbase();
-    let difficulty = block::difficulty();
     let gas_limit = block::gas_limit();
     let timestamp = block::timestamp();
     let address = contract::address();
@@ -48,7 +47,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(gas_price);
     output.extend(Bytes32::from(gas_limit));
     output.extend(value);
-    output.extend(difficulty);
     output.extend(Bytes32::from(timestamp));
     output.extend(address_balance);
 

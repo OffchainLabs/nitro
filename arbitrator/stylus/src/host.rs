@@ -264,13 +264,6 @@ pub(crate) fn block_coinbase<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> May
     Ok(())
 }
 
-pub(crate) fn block_difficulty<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env)?;
-    env.buy_gas(evm::DIFFICULTY_GAS)?;
-    env.write_bytes32(ptr, env.evm_data.block_difficulty)?;
-    Ok(())
-}
-
 pub(crate) fn block_gas_limit<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::GASLIMIT_GAS)?;

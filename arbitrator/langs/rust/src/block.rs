@@ -21,12 +21,6 @@ pub fn coinbase() -> Bytes20 {
     Bytes20(data)
 }
 
-pub fn difficulty() -> Bytes32 {
-    let mut data = [0; 32];
-    unsafe { hostio::block_difficulty(data.as_mut_ptr()) };
-    Bytes32(data)
-}
-
 pub fn gas_limit() -> u64 {
     unsafe { hostio::block_gas_limit() }
 }

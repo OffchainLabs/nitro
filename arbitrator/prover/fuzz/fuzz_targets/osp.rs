@@ -54,7 +54,6 @@ lazy_static::lazy_static! {
             block_number: Default::default(),
             block_coinbase: Default::default(),
             block_timestamp: Default::default(),
-            block_difficulty: Default::default(),
             block_gas_limit: Default::default(),
             block_base_fee_per_gas: Default::default(),
         }
