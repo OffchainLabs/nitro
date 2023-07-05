@@ -34,7 +34,7 @@ extern "C" {
     pub(crate) fn account_store_bytes32(key: *const u8, value: *const u8);
 
     /// Gets the basefee of the current block. The semantics are equivalent to that of the EVM's
-    /// [`BASEFEE`] opcode
+    /// [`BASEFEE`] opcode.
     ///
     /// [`BASEFEE`]: <https://www.evm.codes/#48>
     pub(crate) fn block_basefee(basefee: *mut u8);
@@ -58,7 +58,7 @@ extern "C" {
     /// Gets the gas limit of the current block. The semantics are equivalent to that of the EVM's
     /// [`GAS_LIMIT`] opcode. Note that as of the time of this writing, `evm.codes` incorrectly
     /// implies that the opcode returns the gas limit of the current transaction.  When in doubt,
-    /// consult [`The Ethereum Yellow Paper`]
+    /// consult [`The Ethereum Yellow Paper`].
     ///
     /// [`GAS_LIMIT`]: <https://www.evm.codes/#45>
     /// [`The Ethereum Yellow Paper`]: <https://ethereum.github.io/yellowpaper/paper.pdf>
@@ -189,7 +189,7 @@ extern "C" {
     pub(crate) fn emit_log(data: *const u8, len: usize, topics: usize);
 
     /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's
-    /// history based on the L1 block number provided. If the number is taht of the current block,
+    /// history based on the L1 block number provided. If the number is that of the current block,
     /// or more than 256 blocks ago, the value returned will be `0`. This reflects the behavior of
     /// the [`BLOCKHASH`] opcode on L2.
     ///
@@ -197,7 +197,7 @@ extern "C" {
     pub(crate) fn evm_blockhash(number: *const u8, dest: *mut u8);
 
     /// Gets the amount of gas left after paying for the cost of this hostio. The semantics are
-    /// equivalent to that of the EVM's [`GAS`] opcode
+    /// equivalent to that of the EVM's [`GAS`] opcode.
     ///
     /// [`GAS`]: <https://www.evm.codes/#5a>
     pub(crate) fn evm_gas_left() -> u64;
@@ -210,14 +210,10 @@ extern "C" {
     /// [`Ink and Gas`]: <https://developer.arbitrum.io/TODO>
     pub(crate) fn evm_ink_left() -> u64;
 
-    /// This hostio must be imported if a program's memory grows. Otherwise compilation through the
-    /// `ArbWasm` precompile will revert. Internally the Stylus VM forces calls to this hostio
-    /// whenever new WASM pages are allocated. Calls made voluntarily will unproductively consume
-    /// gas.
-    ///
-    /// To determine if the import is needed, check the `(memory x y)` section of the program WASM.
-    /// If `y` exists and equals `x`, `memory_grow` is not needed. Otherwise, `memory_grow` must
-    /// be imported.
+    /// The `arbitrum_main!` macro handles importing this hostio, which is required if the
+    /// program's memory grows. Otherwise compilation through the `ArbWasm` precompile will revert.
+    /// Internally the Stylus VM forces calls to this hostio whenever new WASM pages are allocated.
+    /// Calls made voluntarily will unproductively consume gas.
     #[allow(dead_code)]
     pub(crate) fn memory_grow(pages: u16);
 
@@ -248,21 +244,17 @@ extern "C" {
     /// Copies the bytes of the last EVM call or deployment return result. Reverts if out of
     /// bounds. Te semantics are equivalent to that of the EVM's [`RETURN_DATA_COPY`] opcode.
     ///
-    /// A noop when there's never been a call
-    ///
     /// [`RETURN_DATA_COPY`]: <https://www.evm.codes/#3e>
     pub(crate) fn read_return_data(dest: *mut u8);
 
     /// Writes the final return data. If not called before the program exists, the return data will
-    /// be 0 bytes long. Note taht this hostio does not cause the program to exit, which happens
+    /// be 0 bytes long. Note that this hostio does not cause the program to exit, which happens
     /// naturally when the `arbitrum_main` entry-point returns.
     pub(crate) fn return_data(data: *const u8, len: usize);
 
     /// Returns the length of the last EVM call or deployment return result, or `0` if neither have
     /// happened during the program's execution. The semantics are equivalent to that of the EVM's
     /// [`RETURN_DATA_SIZE`] opcode.
-    ///
-    /// Returns 0 when there's never been a call
     ///
     /// [`RETURN_DATA_SIZE`]: <https://www.evm.codes/#3d>
     pub(crate) fn return_data_size() -> u32;
