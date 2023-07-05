@@ -157,7 +157,7 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount u
 		}
 		stateRoots = append(stateRoots, root)
 	}
-	return commitments.New(messageCount, stateRoots)
+	return commitments.New(stateRoots)
 }
 
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
@@ -167,7 +167,7 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 	if err != nil {
 		return commitments.History{}, err
 	}
-	return commitments.New(toBigStep, result)
+	return commitments.New(result)
 }
 
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
@@ -177,7 +177,7 @@ func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRo
 	if err != nil {
 		return commitments.History{}, err
 	}
-	return commitments.New(toSmallStep, result)
+	return commitments.New(result)
 }
 
 // HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,
@@ -187,7 +187,7 @@ func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStar
 	if err != nil {
 		return commitments.History{}, err
 	}
-	return commitments.New(blockEnd-blockStart, stateRoots)
+	return commitments.New(stateRoots)
 }
 
 // BigStepLeafCommitment Produces a big step history commitment for all big steps within block
