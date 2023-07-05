@@ -107,8 +107,8 @@ impl Call {
         let mut outs = Vec::with_capacity(outs_len);
         if outs_len != 0 {
             unsafe {
-                hostio::read_return_data(outs.as_mut_ptr());
-                outs.set_len(outs_len);
+                let used_len = hostio::read_return_data(outs.as_mut_ptr());
+                outs.set_len(used_len);
             }
         };
         match status {
@@ -145,8 +145,8 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
     if contract.is_zero() {
         unsafe {
             let mut revert_data = Vec::with_capacity(revert_data_len);
-            hostio::read_return_data(revert_data.as_mut_ptr());
-            revert_data.set_len(revert_data_len);
+            let used_len = hostio::read_return_data(revert_data.as_mut_ptr());
+            revert_data.set_len(used_len);
             return Err(revert_data);
         }
     }

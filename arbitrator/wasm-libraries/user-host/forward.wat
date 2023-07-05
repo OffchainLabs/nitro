@@ -14,7 +14,7 @@
         (func $static_call   (param i32 i32 i32 i64 i32) (result i32)))
     (import "user_host" "arbitrator_forward__create1"          (func $create1 (param i32 i32 i32 i32 i32)))
     (import "user_host" "arbitrator_forward__create2"          (func $create2 (param i32 i32 i32 i32 i32 i32)))
-    (import "user_host" "arbitrator_forward__read_return_data" (func $read_return_data (param i32)))
+    (import "user_host" "arbitrator_forward__read_return_data" (func $read_return_data (param i32) (result i32)))
     (import "user_host" "arbitrator_forward__return_data_size" (func $return_data_size (result i32)))
     (import "user_host" "arbitrator_forward__emit_log"         (func $emit_log  (param i32 i32 i32)))
     (import "user_host" "arbitrator_forward__account_balance"  (func $account_balance  (param i32 i32)))

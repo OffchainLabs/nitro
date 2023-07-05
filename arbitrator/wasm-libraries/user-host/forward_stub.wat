@@ -11,7 +11,7 @@
     (func (export "forward__static_call_contract")   (param i32 i32 i32 i64 i32) (result i32) unreachable)
     (func (export "forward__create1")                (param i32 i32 i32 i32 i32) unreachable)
     (func (export "forward__create2")                (param i32 i32 i32 i32 i32 i32) unreachable)
-    (func (export "forward__read_return_data")       (param i32) unreachable)
+    (func (export "forward__read_return_data")       (param i32) (result i32) unreachable)
     (func (export "forward__return_data_size")       (result i32) unreachable)
     (func (export "forward__emit_log")               (param i32 i32 i32) unreachable)
     (func (export "forward__account_balance")        (param i32 i32) unreachable)

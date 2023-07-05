@@ -171,7 +171,10 @@ pub(crate) fn create2<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn read_return_data<E: EvmApi>(mut env: WasmEnvMut<E>, dest: u32) -> MaybeEscape {
+pub(crate) fn read_return_data<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    dest: u32,
+) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     let len = env.evm_data.return_data_len;
     env.pay_for_evm_copy(len.into())?;
@@ -179,7 +182,7 @@ pub(crate) fn read_return_data<E: EvmApi>(mut env: WasmEnvMut<E>, dest: u32) -> 
     let data = env.evm_api.get_return_data();
     env.write_slice(dest, &data)?;
     assert_eq!(data.len(), len as usize);
-    Ok(())
+    Ok(data.len() as u32)
 }
 
 pub(crate) fn return_data_size<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
