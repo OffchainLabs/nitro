@@ -54,6 +54,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         loserStakeEscrow = config.loserStakeEscrow;
 
         stakeToken = config.stakeToken;
+        anyTrustFastConfirmer = config.anyTrustFastConfirmer;
 
         GlobalState memory emptyGlobalState;
         ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
@@ -251,7 +252,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         ExecutionState calldata confirmState,
         bytes32 inboxAcc
     ) external override whenPaused {
-        // this skips deadline, staker and zombie validation
+        // this skip deadline, prev, challenge validations
         confirmAssertionInternal(assertionHash, parentAssertionHash, confirmState, inboxAcc);
         emit OwnerFunctionCalled(24);
     }
@@ -298,5 +299,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     function setValidatorWhitelistDisabled(bool _validatorWhitelistDisabled) external {
         validatorWhitelistDisabled = _validatorWhitelistDisabled;
         emit OwnerFunctionCalled(30);
+    }
+
+    /**
+     * @notice set the anyTrustFastConfirmer address
+     * @param _anyTrustFastConfirmer new value of anyTrustFastConfirmer
+     */
+    function setAnyTrustFastConfirmer(address _anyTrustFastConfirmer) external {
+        anyTrustFastConfirmer = _anyTrustFastConfirmer;
+        emit OwnerFunctionCalled(31);
     }
 }

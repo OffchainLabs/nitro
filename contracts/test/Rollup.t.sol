@@ -29,6 +29,7 @@ contract RollupTest is Test {
     address constant validator2 = address(100002);
     address constant validator3 = address(100003);
     address constant loserStakeEscrow = address(200001);
+    address constant anyTrustFastConfirmer = address(300001);
 
     bytes32 constant WASM_MODULE_ROOT = keccak256("WASM_MODULE_ROOT");
     uint256 constant BASE_STAKE = 10;
@@ -106,7 +107,8 @@ contract RollupTest is Test {
             miniStakeValue: 0,
             layerZeroBlockEdgeHeight: 2 ** 5,
             layerZeroBigStepEdgeHeight: 2 ** 5,
-            layerZeroSmallStepEdgeHeight: 2 ** 5
+            layerZeroSmallStepEdgeHeight: 2 ** 5,
+            anyTrustFastConfirmer: anyTrustFastConfirmer
         });
 
         address expectedRollupAddr = address(
@@ -163,7 +165,7 @@ contract RollupTest is Test {
         assertEq(userRollup.bridge().sequencerMessageCount(), ++count);
         return count;
     }
-    
+
     function testGenesisAssertionConfirmed() external {
         bytes32 latestConfirmed = userRollup.latestConfirmed();
         assertEq(latestConfirmed, genesisHash);
@@ -176,7 +178,7 @@ contract RollupTest is Test {
     }
 
     function testConfirmAssertionWhenPaused() public {
-        (bytes32 assertionHash, ExecutionState memory state, uint64 inboxcount) = testSuccessCreateAssertions();
+        (bytes32 assertionHash, ExecutionState memory state, uint64 inboxcount) = testSuccessCreateAssertion();
         vm.roll(userRollup.getAssertion(genesisHash).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         bytes32 inboxAccs = userRollup.bridge().sequencerInboxAccs(0);
         vm.prank(owner);
@@ -226,7 +228,7 @@ contract RollupTest is Test {
         userRollup.removeWhitelistAfterFork();
     }
 
-    function testSuccessCreateAssertions() public returns (bytes32, ExecutionState memory, uint64) {
+    function testSuccessCreateAssertion() public returns (bytes32, ExecutionState memory, uint64) {
         uint64 inboxcount = uint64(_createNewBatch());
         ExecutionState memory beforeState;
         beforeState.machineStatus = MachineStatus.FINISHED;
@@ -268,7 +270,7 @@ contract RollupTest is Test {
 
     function testSuccessGetStaker() public {
         assertEq(userRollup.stakerCount(), 0);
-        testSuccessCreateAssertions();
+        testSuccessCreateAssertion();
         assertEq(userRollup.stakerCount(), 1);
         assertEq(userRollup.getStakerAddress(userRollup.getStaker(validator1).index), validator1);
     }
@@ -533,7 +535,7 @@ contract RollupTest is Test {
     }
 
     function testRevertConfirmWrongInput() public {
-        (bytes32 assertionHash1,,) = testSuccessCreateAssertions();
+        (bytes32 assertionHash1,,) = testSuccessCreateAssertion();
         vm.roll(userRollup.getAssertion(genesisHash).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         bytes32 inboxAccs = userRollup.bridge().sequencerInboxAccs(0);
         vm.prank(validator1);
@@ -555,7 +557,7 @@ contract RollupTest is Test {
     }
 
     function testSuccessConfirmUnchallengedAssertions() public returns (bytes32, ExecutionState memory, uint64) {
-        (bytes32 assertionHash, ExecutionState memory state, uint64 inboxcount) = testSuccessCreateAssertions();
+        (bytes32 assertionHash, ExecutionState memory state, uint64 inboxcount) = testSuccessCreateAssertion();
         vm.roll(userRollup.getAssertion(genesisHash).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         bytes32 inboxAccs = userRollup.bridge().sequencerInboxAccs(0);
         vm.prank(validator1);
@@ -769,7 +771,7 @@ contract RollupTest is Test {
     }
 
     function testRevertWithdrawNoExcessStake() public {
-        testSuccessCreateAssertions();
+        testSuccessCreateAssertion();
         vm.prank(loserStakeEscrow);
         vm.expectRevert("NO_FUNDS_TO_WITHDRAW");
         userRollup.withdrawStakerFunds();
@@ -782,7 +784,7 @@ contract RollupTest is Test {
     }
 
     function testRevertReduceDepositActive() public {
-        testSuccessCreateAssertions();
+        testSuccessCreateAssertion();
         vm.prank(validator1);
         vm.expectRevert("STAKE_ACTIVE");
         userRollup.reduceDeposit(1);
@@ -808,17 +810,15 @@ contract RollupTest is Test {
         userRollup.addToDeposit{value: 1}(sequencer);
     }
 
-    function testSuccessCreateChild() public {
-        (bytes32 prevHash, ExecutionState memory beforeState, uint64 prevInboxCount) = testSuccessCreateAssertions();
+    function testSuccessCreateSecondAssertion() public returns (bytes32, bytes32, ExecutionState memory, bytes32) {
+        (bytes32 prevHash, ExecutionState memory beforeState, uint64 prevInboxCount) = testSuccessCreateAssertion();
 
         ExecutionState memory afterState;
         afterState.machineStatus = MachineStatus.FINISHED;
         afterState.globalState.u64Vals[0] = prevInboxCount;
-        bytes32 expectedAssertionHash2 = RollupLib.assertionHash({
-            parentAssertionHash: prevHash,
-            afterState: afterState,
-            inboxAcc: userRollup.bridge().sequencerInboxAccs(1) // 1 because we moved the position within message
-        });
+        bytes32 inboxAcc = userRollup.bridge().sequencerInboxAccs(1); // 1 because we moved the position within message
+        bytes32 expectedAssertionHash2 =
+            RollupLib.assertionHash({parentAssertionHash: prevHash, afterState: afterState, inboxAcc: inboxAcc});
         bytes32 prevInboxAcc = userRollup.bridge().sequencerInboxAccs(0);
         vm.roll(block.number + 75);
         vm.prank(validator1);
@@ -840,6 +840,7 @@ contract RollupTest is Test {
             }),
             expectedAssertionHash: expectedAssertionHash2
         });
+        return (prevHash, expectedAssertionHash2, afterState, inboxAcc);
     }
 
     function testRevertCreateChildReducedStake() public {
@@ -879,5 +880,113 @@ contract RollupTest is Test {
             }),
             expectedAssertionHash: expectedAssertionHash2
         });
+    }
+
+    function testSuccessFastConfirmNext() public {
+        (bytes32 assertionHash,,) = testSuccessCreateAssertion();
+        bytes32 inboxAccs = userRollup.bridge().sequencerInboxAccs(0);
+        assertEq(userRollup.latestConfirmed(), genesisHash);
+        vm.prank(anyTrustFastConfirmer);
+        userRollup.fastConfirmAssertion(assertionHash, genesisHash, firstState, inboxAccs);
+        assertEq(userRollup.latestConfirmed(), assertionHash);
+    }
+
+    function testSuccessFastConfirmSkipOne() public {
+        (bytes32 prevHash, bytes32 assertionHash, ExecutionState memory afterState, bytes32 inboxAcc) =
+            testSuccessCreateSecondAssertion();
+        assertEq(userRollup.latestConfirmed() != prevHash, true);
+        vm.prank(anyTrustFastConfirmer);
+        userRollup.fastConfirmAssertion(assertionHash, prevHash, afterState, inboxAcc);
+        assertEq(userRollup.latestConfirmed(), assertionHash);
+    }
+
+    function testRevertFastConfirmNotPending() public {
+        (bytes32 assertionHash,,) = testSuccessConfirmUnchallengedAssertions();
+        bytes32 inboxAccs = userRollup.bridge().sequencerInboxAccs(0);
+        vm.expectRevert("NOT_PENDING");
+        vm.prank(anyTrustFastConfirmer);
+        userRollup.fastConfirmAssertion(assertionHash, genesisHash, firstState, inboxAccs);
+    }
+
+    function testRevertFastConfirmNotConfirmer() public {
+        (bytes32 assertionHash,,) = testSuccessCreateAssertion();
+        bytes32 inboxAccs = userRollup.bridge().sequencerInboxAccs(0);
+        vm.expectRevert("NOT_FAST_CONFIRMER");
+        userRollup.fastConfirmAssertion(assertionHash, genesisHash, firstState, inboxAccs);
+    }
+
+    function _testFastConfirmNewAssertion(address by, string memory err, bool isCreated)
+        internal
+        returns (AssertionInputs memory, bytes32)
+    {
+        uint64 inboxcount = uint64(_createNewBatch());
+        ExecutionState memory beforeState;
+        beforeState.machineStatus = MachineStatus.FINISHED;
+        ExecutionState memory afterState;
+        afterState.machineStatus = MachineStatus.FINISHED;
+        afterState.globalState.bytes32Vals[0] = FIRST_ASSERTION_BLOCKHASH; // blockhash
+        afterState.globalState.bytes32Vals[1] = FIRST_ASSERTION_SENDROOT; // sendroot
+        afterState.globalState.u64Vals[0] = 1; // inbox count
+        afterState.globalState.u64Vals[1] = 0; // pos in msg
+
+        bytes32 expectedAssertionHash = RollupLib.assertionHash({
+            parentAssertionHash: genesisHash,
+            afterState: afterState,
+            inboxAcc: userRollup.bridge().sequencerInboxAccs(0)
+        });
+
+        AssertionInputs memory assertion = AssertionInputs({
+            beforeStateData: BeforeStateData({
+                sequencerBatchAcc: bytes32(0),
+                prevPrevAssertionHash: bytes32(0),
+                configData: ConfigData({
+                    wasmModuleRoot: WASM_MODULE_ROOT,
+                    requiredStake: BASE_STAKE,
+                    challengeManager: address(challengeManager),
+                    confirmPeriodBlocks: CONFIRM_PERIOD_BLOCKS,
+                    nextInboxPosition: afterState.globalState.u64Vals[0]
+                })
+            }),
+            beforeState: beforeState,
+            afterState: afterState
+        });
+
+        if (isCreated) {
+            vm.prank(validator1);
+            userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
+                assertion: assertion,
+                expectedAssertionHash: expectedAssertionHash
+            });
+        }
+
+        if (bytes(err).length > 0) {
+            vm.expectRevert(bytes(err));
+        }
+        vm.prank(by);
+        userRollup.fastConfirmNewAssertion({assertion: assertion, expectedAssertionHash: expectedAssertionHash});
+        if (bytes(err).length == 0) {
+            assertEq(userRollup.latestConfirmed(), expectedAssertionHash);
+        }
+        return (assertion, expectedAssertionHash);
+    }
+
+    function testSuccessFastConfirmNewAssertion() public {
+        _testFastConfirmNewAssertion(anyTrustFastConfirmer, "", false);
+    }
+
+    function testRevertFastConfirmNewAssertionNotConfirmer() public {
+        _testFastConfirmNewAssertion(validator1, "NOT_FAST_CONFIRMER", false);
+    }
+
+    function testSuccessFastConfirmNewAssertionPending() public {
+        _testFastConfirmNewAssertion(anyTrustFastConfirmer, "", true);
+    }
+
+    function testRevertFastConfirmNewAssertionConfirmed() public {
+        (AssertionInputs memory assertion, bytes32 expectedAssertionHash) =
+            _testFastConfirmNewAssertion(anyTrustFastConfirmer, "", true);
+        vm.expectRevert("NOT_PENDING");
+        vm.prank(anyTrustFastConfirmer);
+        userRollup.fastConfirmNewAssertion({assertion: assertion, expectedAssertionHash: expectedAssertionHash});
     }
 }

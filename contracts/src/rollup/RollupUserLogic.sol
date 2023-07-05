@@ -218,6 +218,67 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
         reduceStakeTo(msg.sender, target);
     }
 
+    /**
+     * @notice This allow the anyTrustFastConfirmer to force confirm any pending assertion
+     *         the anyTrustFastConfirmer is supposed to be set only on an AnyTrust chain to
+     *         a contract that can call this function when received sufficient signatures
+     */
+    function fastConfirmAssertion(
+        bytes32 assertionHash,
+        bytes32 parentAssertionHash,
+        ExecutionState calldata confirmState,
+        bytes32 inboxAcc
+    ) public whenNotPaused {
+        require(msg.sender == anyTrustFastConfirmer, "NOT_FAST_CONFIRMER");
+        // this skip deadline, prev, challenge validations
+        confirmAssertionInternal(assertionHash, parentAssertionHash, confirmState, inboxAcc);
+    }
+
+    /**
+     * @notice This allow the anyTrustFastConfirmer to immediately create and confirm an assertion
+     *         the anyTrustFastConfirmer is supposed to be set only on an AnyTrust chain to
+     *         a contract that can call this function when received sufficient signatures
+     *         The logic in this function is similar to stakeOnNewAssertion, but without staker checks
+     *
+     *         We trust the anyTrustFastConfirmer to not call this function multiple times on the same prev,
+     *         as doing so would result in incorrect accounting of withdrawable funds in the loserStakeEscrow.
+     *         This is because the protocol assume there is only 1 unique confirmable child assertion.
+     */
+    function fastConfirmNewAssertion(AssertionInputs calldata assertion, bytes32 expectedAssertionHash)
+        external
+        whenNotPaused
+    {
+        // Must supply expectedAssertionHash to fastConfirmNewAssertion
+        require(expectedAssertionHash != bytes32(0), "EXPECTED_ASSERTION_HASH");
+        AssertionStatus status = getAssertionStorage(expectedAssertionHash).status;
+
+        bytes32 prevAssertion = RollupLib.assertionHash(
+            assertion.beforeStateData.prevPrevAssertionHash,
+            assertion.beforeState,
+            assertion.beforeStateData.sequencerBatchAcc
+        );
+        getAssertionStorage(prevAssertion).requireExists();
+
+        if (status == AssertionStatus.NoAssertion) {
+            // If not exists, we create the new assertion
+            bytes32 newAssertionHash = createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
+            if (!getAssertionStorage(newAssertionHash).isFirstChild) {
+                // only 1 of the children can be confirmed and get their stake refunded
+                // so we send the other children's stake to the loserStakeEscrow
+                // NOTE: if the losing staker have staked more than requiredStake, the excess stake will be stuck
+                increaseWithdrawableFunds(loserStakeEscrow, assertion.beforeStateData.configData.requiredStake);
+            }
+        }
+
+        // This would revert if the assertion is already confirmed
+        fastConfirmAssertion(
+            expectedAssertionHash,
+            prevAssertion,
+            assertion.afterState,
+            bridge.sequencerInboxAccs(assertion.afterState.globalState.getInboxPosition() - 1)
+        );
+    }
+
     function owner() external view returns (address) {
         return _getAdmin();
     }

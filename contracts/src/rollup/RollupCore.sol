@@ -103,10 +103,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     uint256 public totalWithdrawableFunds;
     uint256 public rollupDeploymentBlock;
 
-    // The assertion number of the initial assertion
-    uint64 internal constant GENESIS_NODE = 1;
-
     bool public validatorWhitelistDisabled;
+    address public anyTrustFastConfirmer;
 
     function sequencerInbox() public view virtual returns (ISequencerInbox) {
         return ISequencerInbox(bridge.sequencerInbox());
