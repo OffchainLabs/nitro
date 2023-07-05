@@ -36,6 +36,10 @@ func (r *PseudoRandomDataSource) GetUint64() uint64 {
 	return r.rand.Uint64()
 }
 
+func (r *PseudoRandomDataSource) GetIntRange(start, end int) int {
+	return r.rand.Intn(end-start) + start
+}
+
 func (r *PseudoRandomDataSource) GetData(size int) []byte {
 	outArray := make([]byte, size)
 	r.rand.Read(outArray)
