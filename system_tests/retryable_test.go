@@ -399,7 +399,6 @@ func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient
 }
 
 func TestArbitrumContractTx(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	l2Info, node, l2Client, l1Info, _, l1Client, l1Stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1Stack)
