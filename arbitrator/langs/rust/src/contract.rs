@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{address as addr, Bytes20, Bytes32};
+use crate::{address as addr, hostio, Bytes20, Bytes32};
 
 #[derive(Clone, Default)]
 #[must_use]
@@ -42,37 +42,6 @@ impl Default for RustVec {
     }
 }
 
-#[link(wasm_import_module = "forward")]
-extern "C" {
-    fn call_contract(
-        contract: *const u8,
-        calldata: *const u8,
-        calldata_len: usize,
-        value: *const u8,
-        ink: u64,
-        return_data_len: *mut usize,
-    ) -> u8;
-
-    fn delegate_call_contract(
-        contract: *const u8,
-        calldata: *const u8,
-        calldata_len: usize,
-        ink: u64,
-        return_data_len: *mut usize,
-    ) -> u8;
-
-    fn static_call_contract(
-        contract: *const u8,
-        calldata: *const u8,
-        calldata_len: usize,
-        ink: u64,
-        return_data_len: *mut usize,
-    ) -> u8;
-
-    /// A noop when there's never been a call
-    fn read_return_data(dest: *mut u8);
-}
-
 impl Call {
     pub fn new() -> Self {
         Default::default()
@@ -110,7 +79,7 @@ impl Call {
         let ink = self.ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
         let status = unsafe {
             match self.kind {
-                CallKind::Basic => call_contract(
+                CallKind::Basic => hostio::call_contract(
                     contract.ptr(),
                     calldata.as_ptr(),
                     calldata.len(),
@@ -118,14 +87,14 @@ impl Call {
                     ink,
                     &mut outs_len,
                 ),
-                CallKind::Delegate => delegate_call_contract(
+                CallKind::Delegate => hostio::delegate_call_contract(
                     contract.ptr(),
                     calldata.as_ptr(),
                     calldata.len(),
                     ink,
                     &mut outs_len,
                 ),
-                CallKind::Static => static_call_contract(
+                CallKind::Static => hostio::static_call_contract(
                     contract.ptr(),
                     calldata.as_ptr(),
                     calldata.len(),
@@ -138,7 +107,7 @@ impl Call {
         let mut outs = Vec::with_capacity(outs_len);
         if outs_len != 0 {
             unsafe {
-                read_return_data(outs.as_mut_ptr());
+                hostio::read_return_data(outs.as_mut_ptr());
                 outs.set_len(outs_len);
             }
         };
@@ -148,35 +117,13 @@ impl Call {
         }
     }
 }
-#[link(wasm_import_module = "forward")]
-extern "C" {
-    fn create1(
-        code: *const u8,
-        code_len: usize,
-        endowment: *const u8,
-        contract: *mut u8,
-        revert_data_len: *mut usize,
-    );
-
-    fn create2(
-        code: *const u8,
-        code_len: usize,
-        endowment: *const u8,
-        salt: *const u8,
-        contract: *mut u8,
-        revert_data_len: *mut usize,
-    );
-
-    /// Returns 0 when there's never been a call
-    fn return_data_size() -> u32;
-}
 
 pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<Bytes20, Vec<u8>> {
     let mut contract = [0; 20];
     let mut revert_data_len = 0;
     let contract = unsafe {
         if let Some(salt) = salt {
-            create2(
+            hostio::create2(
                 code.as_ptr(),
                 code.len(),
                 endowment.ptr(),
@@ -185,7 +132,7 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
                 &mut revert_data_len as *mut _,
             );
         } else {
-            create1(
+            hostio::create1(
                 code.as_ptr(),
                 code.len(),
                 endowment.ptr(),
@@ -198,7 +145,7 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
     if contract.is_zero() {
         unsafe {
             let mut revert_data = Vec::with_capacity(revert_data_len);
-            read_return_data(revert_data.as_mut_ptr());
+            hostio::read_return_data(revert_data.as_mut_ptr());
             revert_data.set_len(revert_data_len);
             return Err(revert_data);
         }
@@ -207,17 +154,12 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
 }
 
 pub fn return_data_len() -> usize {
-    unsafe { return_data_size() as usize }
-}
-
-#[link(wasm_import_module = "forward")]
-extern "C" {
-    pub(crate) fn contract_address(address: *mut u8);
+    unsafe { hostio::return_data_size() as usize }
 }
 
 pub fn address() -> Bytes20 {
     let mut data = [0; 20];
-    unsafe { contract_address(data.as_mut_ptr()) };
+    unsafe { hostio::contract_address(data.as_mut_ptr()) };
     Bytes20(data)
 }
 
