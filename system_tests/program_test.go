@@ -139,10 +139,11 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	ensure(arbOwner.SetInkPrice(&auth, 1))
 	ensure(arbOwner.SetWasmHostioInk(&auth, 1))
 
-	colors.PrintMint("Deploying keccaks")
+	colors.PrintMint("Deploying same keccak code to two different addresses")
 
 	wasm := readWasmFile(t, rustFile("keccak"))
 	keccakA := deployContract(t, ctx, auth, l2client, wasm)
+
 	colors.PrintBlue("keccak program A deployed to ", keccakA.Hex())
 	keccakB := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("keccak program B deployed to ", keccakB.Hex())
@@ -156,7 +157,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	keccakArgs := []byte{0x01} // keccak the preimage once
 	keccakArgs = append(keccakArgs, preimage...)
 
-	colors.PrintMint("Attempting to call keccak before it is compiled")
+	colors.PrintMint("Attempting to call keccak before it is compiled, expecting to fail")
 
 	// Calling the contract precompilation should fail.
 	msg := ethereum.CallMsg{
@@ -191,9 +192,22 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	legacyErrorMethod := "0x1e48fe82"
 	innerCallArgs = multicallAppend(innerCallArgs, vm.CALL, types.ArbDebugAddress, hexutil.MustDecode(legacyErrorMethod))
 
-	// Next, we configure a multicall that does our inner call from above, as well as additional
-	// calls beyond that. It attempts to call keccak program A, which should fail due to it not
-	// being compiled. It then compiles keccak program A, and then calls keccak program B, which
+	// Our second inner call will attempt to call a program that has not yet been compiled, and revert on error.
+	secondInnerCallArgs := []byte{0x01}
+	secondInnerCallArgs = append(
+		secondInnerCallArgs,
+		argsForMulticall(
+			vm.CALL,
+			keccakA,
+			nil,
+			keccakArgs,
+		)...,
+	)
+
+	// Next, we configure a multicall that does two inner calls from above, as well as additional
+	// calls beyond that.
+
+	// It then compiles keccak program A, and then calls keccak program B, which
 	// will succeed if they are compiled correctly and share the same codehash.
 	args := []byte{0x00}
 	args = append(
@@ -205,12 +219,12 @@ func testCompilationReuse(t *testing.T, jit bool) {
 			innerCallArgs,
 		)...,
 	)
-	// Call the contract and watch it revert due to it not being compiled.
-	args = multicallAppend(args, vm.CALL, keccakA, keccakArgs)
+	// Call the contract in a second inner call and watch it revert due to it not being compiled.
+	args = multicallAppend(args, vm.CALL, multiAddr, secondInnerCallArgs)
 	// Compile keccak program A.
 	args = multicallAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
-	// // Call keccak program B, which should succeed as it shares the same code as program A.
-	// args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
+	// Call keccak program B, which should succeed as it shares the same code as program A.
+	args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
 
 	colors.PrintMint("Sending multicall tx")
 
@@ -219,7 +233,6 @@ func testCompilationReuse(t *testing.T, jit bool) {
 
 	colors.PrintMint("Attempting to call keccak program B after multicall is done")
 
-	// Calling the contract precompilation should fail.
 	msg = ethereum.CallMsg{
 		To:    &keccakB,
 		Value: big.NewInt(0),
@@ -232,7 +245,6 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	}
 
 	validateBlocks(t, 7, jit, ctx, node, l2client)
-	Fail(t, "TODO")
 }
 
 func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {

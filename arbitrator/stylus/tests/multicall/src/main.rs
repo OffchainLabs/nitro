@@ -49,7 +49,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             2 => contract::static_call(addr, data, None),
             x => panic!("unknown call kind {x}"),
         };
-        let results: Vec<u8> = match return_data {
+        let results = match return_data {
             Ok(data) => {
                 debug::println(format!("SUCCESS Call {}", i));
                 Ok::<Vec<u8>, Vec<u8>>(data)
@@ -71,7 +71,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         output.extend(results);
         input = next;
     }
-    debug::println("finito");
 
     Ok(output)
 }

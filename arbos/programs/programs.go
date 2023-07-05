@@ -103,24 +103,34 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	codeHash := statedb.GetCodeHash(program)
 	version, err := p.StylusVersion()
 	if err != nil {
+		fmt.Printf("Compiling %#x, got err %v\n", program, err)
 		return 0, err
 	}
 	latest, err := p.machineVersions.GetUint32(codeHash)
 	if err != nil {
+		fmt.Printf("versions %#x, got err %v\n", program, err)
 		return 0, err
 	}
 	// Already compiled and found in the machine versions mapping.
 	if latest >= version {
+		fmt.Printf("already %#x\n", program)
 		return version, nil
 	}
 	wasm, err := getWasm(statedb, program)
 	if err != nil {
+		fmt.Printf("bad get wasm %#x %v\n", program, err)
 		return 0, err
 	}
 	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
+		fmt.Printf("bad compile %#x %v\n", program, err)
 		return 0, err
 	}
-	return version, p.machineVersions.SetUint32(codeHash, version)
+	if err = p.machineVersions.SetUint32(codeHash, version); err != nil {
+		fmt.Printf("bad set %#x %v\n", program, err)
+		return 0, err
+	}
+	fmt.Println("All doneee")
+	return version, nil
 }
 
 func (p Programs) CallProgram(
@@ -130,28 +140,35 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 ) ([]byte, error) {
+	fmt.Printf("Trying to call program with %v\n", scope.Contract.Address())
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
+		fmt.Printf("Failed stylus version %v\n", scope.Contract.Address())
 		return nil, err
 	}
 	programVersion, err := p.machineVersions.GetUint32(scope.Contract.CodeHash)
 	if err != nil {
+		fmt.Printf("Failed program version %v\n", scope.Contract.Address())
 		return nil, err
 	}
 	if programVersion == 0 {
+		fmt.Printf("version 0 %v\n", scope.Contract.Address())
 		return nil, ProgramNotCompiledError()
 	}
 	if programVersion != stylusVersion {
+		fmt.Printf("outdated %v\n", scope.Contract.Address())
 		return nil, ProgramOutOfDateError(programVersion)
 	}
 	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
 	if err != nil {
+		fmt.Printf("bad go params %v\n", scope.Contract.Address())
 		return nil, err
 	}
 
 	evm := interpreter.Evm()
 	l1BlockNumber, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
 	if err != nil {
+		fmt.Printf("no hook %v\n", scope.Contract.Address())
 		return nil, err
 	}
 
