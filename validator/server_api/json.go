@@ -1,6 +1,7 @@
 package server_api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -82,18 +83,12 @@ func expectCharacter(data *[]byte, expected rune) error {
 }
 
 func getStrLen(data []byte) (int, error) {
-	strLen := 0
-	for {
-		if strLen >= len(data) {
-			return 0, fmt.Errorf("%w: hit end of preimage map looking for end quote", io.ErrUnexpectedEOF)
-		}
-		c := data[strLen]
-		if c == '"' {
-			break
-		} else if c == '\\' {
-			return 0, fmt.Errorf("preimage map cannot contain escapes")
-		}
-		strLen++
+	// We don't allow strings to contain an escape sequence.
+	// Searching for a backslash here would be duplicated work.
+	// If the returned string length includes a backslash, base64 decoding will fail and error there.
+	strLen := bytes.IndexByte(data, '"')
+	if strLen == -1 {
+		return 0, fmt.Errorf("%w: hit end of preimages map looking for end quote", io.ErrUnexpectedEOF)
 	}
 	return strLen, nil
 }
