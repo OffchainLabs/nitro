@@ -53,7 +53,7 @@ func keccakTest(t *testing.T, jit bool) {
 	otherAddressSameCode := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
 	if programAddress == otherAddressSameCode {
-		Fail(t, "expected to deploy at two separate program addresses")
+		Fatal(t, "expected to deploy at two separate program addresses")
 	}
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -68,7 +68,7 @@ func keccakTest(t *testing.T, jit bool) {
 	otherVersion, err := arbWasm.ProgramVersion(nil, otherAddressSameCode)
 	Require(t, err)
 	if otherVersion != programVersion {
-		Fail(t, "mismatched versions", stylusVersion, programVersion)
+		Fatal(t, "mismatched versions", stylusVersion, programVersion)
 	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -91,11 +91,11 @@ func keccakTest(t *testing.T, jit bool) {
 	timed(t, "execute same code, different address", func() {
 		result := sendContractCall(t, ctx, otherAddressSameCode, l2client, args)
 		if len(result) != 32 {
-			Fail(t, "unexpected return result: ", "result", result)
+			Fatal(t, "unexpected return result: ", "result", result)
 		}
 		hash := common.BytesToHash(result)
 		if hash != correct {
-			Fail(t, "computed hash mismatch", hash, correct)
+			Fatal(t, "computed hash mismatch", hash, correct)
 		}
 		colors.PrintGrey("keccak(x) = ", hash)
 	})
@@ -125,8 +125,6 @@ func TestProgramCompilationReuse(t *testing.T) {
 func testCompilationReuse(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()
-	_ = node
-	_ = l2info
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -151,6 +149,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	colors.PrintBlue("keccak program B deployed to ", keccakB.Hex())
 
 	colors.PrintMint("Deploying multiaddr and compiling it")
+
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -169,7 +168,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	}
 	_, err = l2client.CallContract(ctx, msg, nil)
 	if err == nil || !strings.Contains(err.Error(), "ProgramNotCompiled") {
-		Fail(t, "call should have failed with ProgramNotCompiled")
+		Fatal(t, "call should have failed with ProgramNotCompiled")
 	}
 
 	compileProgramData := hexutil.MustDecode("0x2e50f32b")
@@ -243,7 +242,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	result, err := l2client.CallContract(ctx, msg, nil)
 	Require(t, err)
 	if !bytes.Equal(correct[:], result) {
-		Fail(t, "unexpected return result: ", "result", result)
+		Fatal(t, "unexpected return result: ", "result", result)
 	}
 
 	validateBlocks(t, 7, jit, ctx, node, l2client)
@@ -271,12 +270,6 @@ func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, 
 	args = append(args, address.Bytes()...)
 	args = append(args, calldata...)
 	return args
-}
-
-func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
-	calls[1] += 1 // add another call
-	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
-	return calls
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -753,9 +746,10 @@ func TestProgramMemory(t *testing.T) {
 }
 
 func testMemory(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, memoryAddr, cleanup := setupProgramTest(t, watFile("memory"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, watFile("memory"), jit)
 	defer cleanup()
 
+	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
 
@@ -958,32 +952,8 @@ func argsForStorageWrite(key, value common.Hash) []byte {
 	return args
 }
 
-func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
-	kinds := make(map[vm.OpCode]byte)
-	kinds[vm.CALL] = 0x00
-	kinds[vm.DELEGATECALL] = 0x01
-	kinds[vm.STATICCALL] = 0x02
-
-	args := []byte{0x01}
-	length := 21 + len(calldata)
-	if opcode == vm.CALL {
-		length += 32
-	}
-	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
-	args = append(args, kinds[opcode])
-	if opcode == vm.CALL {
-		if value == nil {
-			value = common.Big0
-		}
-		args = append(args, common.BigToHash(value).Bytes()...)
-	}
-	args = append(args, address.Bytes()...)
-	args = append(args, calldata...)
-	return args
-}
-
 func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
-	calls[0] += 1 // add another call
+	calls[1] += 1 // add another call
 	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
 	return calls
 }

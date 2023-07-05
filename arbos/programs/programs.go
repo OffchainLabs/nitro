@@ -51,6 +51,7 @@ const (
 )
 
 var ProgramNotCompiledError func() error
+var ProgramUpToDateError func() error
 var ProgramOutOfDateError func(version uint32) error
 
 const MaxWasmSize = 64 * 1024
@@ -156,8 +157,7 @@ func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
 }
 
-func (p Programs) ProgramVersion(statedb vm.StateDB, program common.Address) (uint32, error) {
-	codeHash := statedb.GetCodeHash(program)
+func (p Programs) ProgramVersion(codeHash common.Hash) (uint32, error) {
 	return p.programs.GetUint32(codeHash)
 }
 
@@ -169,7 +169,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	if err != nil {
 		return 0, false, err
 	}
-	latest, err := p.ProgramVersion(statedb, program)
+	latest, err := p.ProgramVersion(codeHash)
 	if err != nil {
 		return 0, false, err
 	}
@@ -298,7 +298,7 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	data, err := p.programs.Get(address.Hash())
+	data, err := p.programs.Get(contract.CodeHash)
 	return Program{
 		footprint: arbmath.BytesToUint16(data[26:28]),
 		version:   arbmath.BytesToUint32(data[28:]),

@@ -44,11 +44,11 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             _ => format!("{i} Calling {addr} with {} bytes {kind}", hex::encode(data)),
         });
         let return_data = match kind {
-            0 => contract::call(addr, data, value, None),
-            1 => contract::delegate_call(addr, data, None),
-            2 => contract::static_call(addr, data, None),
+            0 => Call::new().value(value.unwrap_or_default()),
+            1 => Call::new_delegate(),
+            2 => Call::new_static(),
             x => panic!("unknown call kind {x}"),
-        };
+        }.call(addr, data);
         let results = match return_data {
             Ok(data) => {
                 println(format!("SUCCESS Call {}", i));
@@ -76,5 +76,5 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 }
 
 fn println(_text: impl AsRef<str>) {
-    // arbitrum::debug::println(text)
+    //arbitrum::debug::println(text)
 }

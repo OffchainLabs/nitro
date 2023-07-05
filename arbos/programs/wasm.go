@@ -89,7 +89,7 @@ func callUserWasm(
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 
-	root := db.NoncanonicalProgramHash(contract.CodeHash, params.version)
+	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, params.version)
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 

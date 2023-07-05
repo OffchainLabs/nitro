@@ -8,6 +8,7 @@ type ArbWasm struct {
 
 	ProgramNotCompiledError func() error
 	ProgramOutOfDateError   func(version uint32) error
+	ProgramUpToDateError    func() error
 }
 
 // Compile a wasm program with the latest instrumentation
@@ -63,5 +64,5 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 
 // Gets the current program version
 func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint32, error) {
-	return c.State.Programs().ProgramVersion(evm.StateDB, program)
+	return c.State.Programs().ProgramVersion(evm.StateDB.GetCodeHash(program))
 }
