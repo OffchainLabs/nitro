@@ -71,11 +71,6 @@ Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
     return accountCodeHashImpl(api, address, cost);
 }
 
-Bytes32 evmBlockHashImpl(usize api, Bytes32 block);
-Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
-    return evmBlockHashImpl(api, block);
-}
-
 u64 addPagesImpl(usize api, u16 pages);
 u64 addPagesWrap(usize api, u16 pages) {
     return addPagesImpl(api, pages);
@@ -116,7 +111,6 @@ func newApi(
 		emit_log:         (*[0]byte)(C.emitLogWrap),
 		account_balance:  (*[0]byte)(C.accountBalanceWrap),
 		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
-		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
 		add_pages:        (*[0]byte)(C.addPagesWrap),
 		id:               id,
 	}, id

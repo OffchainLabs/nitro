@@ -16,7 +16,6 @@
     (func (export "forward__emit_log")               (param i32 i32 i32) unreachable)
     (func (export "forward__account_balance")        (param i32 i32) unreachable)
     (func (export "forward__account_codehash")       (param i32 i32) unreachable)
-    (func (export "forward__evm_blockhash")          (param i32 i32) unreachable)
     (func (export "forward__evm_gas_left")           (result i64) unreachable)
     (func (export "forward__evm_ink_left")           (result i64) unreachable)
     (func (export "forward__block_basefee")          (param i32) unreachable)

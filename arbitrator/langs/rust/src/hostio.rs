@@ -188,14 +188,6 @@ extern "C" {
     /// [`LOG4`]: <https://www.evm.codes/#a4>
     pub(crate) fn emit_log(data: *const u8, len: usize, topics: usize);
 
-    /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's
-    /// history based on the L1 block number provided. If the number is that of the current block,
-    /// or more than 256 blocks ago, the value returned will be `0`. This reflects the behavior of
-    /// the [`BLOCKHASH`] opcode on L2.
-    ///
-    /// [`BLOCKHASH`]: <https://developer.arbitrum.io/solidity-support>
-    pub(crate) fn evm_blockhash(number: *const u8, dest: *mut u8);
-
     /// Gets the amount of gas left after paying for the cost of this hostio. The semantics are
     /// equivalent to that of the EVM's [`GAS`] opcode.
     ///

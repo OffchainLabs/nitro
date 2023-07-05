@@ -233,13 +233,6 @@ func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	return hashToBytes32(codehash)
 }
 
-//export evmBlockHashImpl
-func evmBlockHashImpl(api usize, block bytes32) bytes32 {
-	closures := getApi(api)
-	hash := closures.evmBlockHash(block.toHash())
-	return hashToBytes32(hash)
-}
-
 //export addPagesImpl
 func addPagesImpl(api usize, pages u16) u64 {
 	closures := getApi(api)

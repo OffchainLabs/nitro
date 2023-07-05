@@ -214,16 +214,6 @@ pub unsafe extern "C" fn user_host__account_codehash(address: usize, ptr: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__evm_blockhash(number: usize, ptr: usize) {
-    let program = Program::start();
-    program.buy_gas(evm::BLOCKHASH_GAS).unwrap();
-
-    let number = wavm::read_bytes32(number);
-    let value = program.evm_api.evm_blockhash(number.into());
-    wavm::write_slice_usize(&value.0, ptr);
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
     let program = Program::start();
     program.buy_gas(evm::GASLEFT_GAS).unwrap();

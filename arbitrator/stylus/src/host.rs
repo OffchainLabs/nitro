@@ -231,20 +231,6 @@ pub(crate) fn account_codehash<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn evm_blockhash<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
-    number: u32,
-    ptr: u32,
-) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env)?;
-    env.buy_gas(evm::BLOCKHASH_GAS)?;
-
-    let number = env.read_bytes32(number)?;
-    let hash = env.evm_api.evm_blockhash(number);
-    env.write_slice(ptr, &hash.0)?;
-    Ok(())
-}
-
 pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::GASLEFT_GAS)?;

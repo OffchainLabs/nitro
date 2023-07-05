@@ -33,7 +33,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
     let mut block_number = block::number();
     block_number[31] -= 1;
-    let blockhash = evm::blockhash(block_number);
 
     // Call burnArbGas
     let gas_left_before = evm::gas_left();
@@ -44,7 +43,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
     let mut output = vec![];
     output.extend(block_number);
-    output.extend(blockhash.unwrap_or_default());
     output.extend(chainid);
     output.extend(basefee);
     output.extend(gas_price);
