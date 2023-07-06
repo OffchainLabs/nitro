@@ -36,7 +36,7 @@ type MessagePruner struct {
 type MessagePrunerConfig struct {
 	Enable                 bool          `koanf:"enable"`
 	MessagePruneInterval   time.Duration `koanf:"prune-interval" reload:"hot"`
-	SearchBatchReportLimit int64         `koanf:"search-batch-report" reload:"hot"`
+	SearchBatchReportLimit uint64        `koanf:"search-batch-report" reload:"hot"`
 	MinBatchesLeft         uint64        `koanf:"min-batches-left" reload:"hot"`
 }
 
@@ -52,7 +52,7 @@ var DefaultMessagePrunerConfig = MessagePrunerConfig{
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
 	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
-	f.Int64(prefix+".search-batch-report", DefaultMessagePrunerConfig.SearchBatchReportLimit, "limit for searching for a batch report when pruning (negative disables)")
+	f.Uint64(prefix+".search-batch-report", DefaultMessagePrunerConfig.SearchBatchReportLimit, "limit for searching for a batch report when pruning (0 disables)")
 	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
@@ -81,7 +81,7 @@ func (m *MessagePruner) UpdateLatestStaked(count arbutil.MessageIndex, globalSta
 	err := m.LaunchThreadSafe(func(ctx context.Context) {
 		defer m.pruningLock.Unlock()
 		err := m.prune(ctx, count, globalState)
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			log.Error("error while pruning", "err", err)
 		}
 	})
@@ -95,8 +95,8 @@ func (m *MessagePruner) UpdateLatestStaked(count arbutil.MessageIndex, globalSta
 // returns number of batch for which report was found (meaning - it should not be pruned)
 // if not found - returns maxUint64 (no limit on pruning)
 func (m *MessagePruner) findBatchReport(ctx context.Context, delayedMsgStart uint64) (uint64, error) {
-	searchLimit := m.config().SearchBatchReportLimit
-	if searchLimit < 0 {
+	searchLimitCfg := m.config().SearchBatchReportLimit
+	if searchLimitCfg == 0 {
 		return math.MaxUint64, nil
 	}
 	delayedCount, err := m.inboxTracker.GetDelayedCount()
@@ -106,12 +106,11 @@ func (m *MessagePruner) findBatchReport(ctx context.Context, delayedMsgStart uin
 	if delayedCount <= delayedMsgStart {
 		return 0, errors.New("delayedCount behind pruning target")
 	}
-	searchUpTil := delayedCount
-	searchUpLimit := delayedMsgStart + uint64(searchLimit)
-	if searchLimit > 0 && searchUpLimit < searchUpTil {
-		searchUpTil = searchUpLimit
+	searchLimit := delayedMsgStart + searchLimitCfg
+	if searchLimit < delayedCount {
+		searchLimit = delayedCount
 	}
-	for delayed := delayedMsgStart; delayed < searchUpTil; delayed++ {
+	for delayed := delayedMsgStart; delayed < searchLimit; delayed++ {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
@@ -127,53 +126,24 @@ func (m *MessagePruner) findBatchReport(ctx context.Context, delayedMsgStart uin
 			return batchNum, nil
 		}
 	}
-	searchDownLimit := uint64(0)
-	if searchLimit > 0 {
-		searchedUp := searchUpTil - delayedMsgStart
-		limitRemaining := uint64(searchLimit) - searchedUp
-		if limitRemaining < delayedMsgStart {
-			searchDownLimit = delayedMsgStart - limitRemaining
-		}
-	}
-	for delayed := delayedMsgStart - 1; delayed >= searchDownLimit; delayed-- {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		msg, err := m.inboxTracker.GetDelayedMessage(delayed)
-		if errors.Is(err, AccumulatorNotFoundErr) {
-			// older delayed probably pruned - assume we won't find a report
-			return math.MaxUint64, nil
-		}
-		if err != nil {
-			return 0, err
-		}
-		if msg.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
-			_, _, _, batchNum, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
-			if err != nil {
-				return 0, fmt.Errorf("trying to parse batch-posting report: %w", err)
-			}
-			// found below delayedMessage - so batchnum can be pruned but above it cannot
-			return batchNum + 1, nil
-		}
-	}
-	return math.MaxUint64, nil
+	return 0, errors.New("Batch post report not found. Try adjusting search-batch-report")
 }
 
 func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
 	trimBatchCount := globalState.Batch
 	minBatchesLeft := m.config().MinBatchesLeft
-	if trimBatchCount < minBatchesLeft {
-		return nil
-	}
 	batchCount, err := m.inboxTracker.GetBatchCount()
 	if err != nil {
 		return err
 	}
-	if trimBatchCount+minBatchesLeft > batchCount {
+	if batchCount < trimBatchCount+minBatchesLeft {
 		if batchCount < minBatchesLeft {
 			return nil
 		}
 		trimBatchCount = batchCount - minBatchesLeft
+	}
+	if trimBatchCount < 1 {
+		return nil
 	}
 	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(trimBatchCount - 1)
 	if err != nil {
