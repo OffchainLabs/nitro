@@ -370,17 +370,17 @@ func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.
 	return edgeOpt.Unwrap().AssertionHash(ctx)
 }
 
-func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (*protocol.OriginHeights, error) {
+func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (protocol.OriginHeights, error) {
 	cm, err := a.SpecChallengeManager(ctx)
 	if err != nil {
-		return nil, err
+		return protocol.OriginHeights{}, err
 	}
 	edgeOpt, err := cm.GetEdge(ctx, edgeId)
 	if err != nil {
-		return nil, err
+		return protocol.OriginHeights{}, err
 	}
 	if edgeOpt.IsNone() {
-		return nil, errors.New("edge was nil")
+		return protocol.OriginHeights{}, errors.New("edge was nil")
 	}
 	edge := edgeOpt.Unwrap()
 	return edge.TopLevelClaimHeight(ctx)

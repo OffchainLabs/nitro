@@ -5,6 +5,7 @@ package challengemanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -276,12 +277,13 @@ func (m *Manager) Start(ctx context.Context) {
 
 // Gets the execution height for a rollup state from our state manager.
 func (m *Manager) getExecutionStateMsgCount(ctx context.Context, st rollupgen.ExecutionState) (uint64, error) {
-	height, ok, err := m.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(st))
-	if err != nil {
-		return 0, err
-	}
-	if !ok {
+	height, err := m.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(st))
+	switch {
+	case errors.Is(err, l2stateprovider.ErrNoExecutionState):
 		return 0, fmt.Errorf("missing previous assertion after execution %+v in local state manager", st)
+	case err != nil:
+		return 0, err
+	default:
 	}
 	return height, nil
 }

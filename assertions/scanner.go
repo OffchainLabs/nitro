@@ -175,12 +175,13 @@ func (s *Scanner) ProcessAssertionCreation(
 		return nil
 	}
 	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	msgCount, agreesWithAssertion, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
-	if err != nil {
-		return err
-	}
-	if !agreesWithAssertion {
+	msgCount, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
+	switch {
+	case errors.Is(err, l2stateprovider.ErrNoExecutionState):
 		return nil
+	case err != nil:
+		return err
+	default:
 	}
 
 	if s.challengeModeReader.Mode() == types.DefensiveMode || s.challengeModeReader.Mode() == types.MakeMode {

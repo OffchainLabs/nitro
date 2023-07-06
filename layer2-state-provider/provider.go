@@ -14,7 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-var ErrChainCatchingUp = errors.New("chain catching up")
+var (
+	ErrChainCatchingUp  = errors.New("chain catching up")
+	ErrNoExecutionState = errors.New("chain does not have execution state")
+)
 
 type ConfigSnapshot struct {
 	RequiredStake           *big.Int
@@ -25,44 +28,32 @@ type ConfigSnapshot struct {
 }
 
 type Provider interface {
+	ExecutionProvider
+	HistoryCommitter
+	HistoryLeafCommitter
+	PrefixProver
+	OneStepProofProvider
+	HistoryChecker
+}
+
+type ExecutionProvider interface {
 	// Produces the latest state to assert to L1 from the local state manager's perspective.
-	LatestExecutionState(ctx context.Context) (*protocol.ExecutionState, error)
-	// If the state manager locally has this execution state, returns its message count and true.
-	// Otherwise, returns false.
+	ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error)
+	// If the state manager locally has this execution state, returns its message count and no error.
 	// Returns ErrChainCatchingUp if catching up to chain.
-	ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error)
-	// Produces a block challenge history commitment up to and including a certain height.
-	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (commitments.History, error)
-	// Produces a block challenge history commitment in a certain inclusive block range,
-	// but padding states with duplicates after the first state with a
-	// batch count of at least the specified max.
-	HistoryCommitmentUpToBatch(
-		ctx context.Context,
-		blockStart,
-		blockEnd,
-		batchCount uint64,
-	) (commitments.History, error)
-	// Produces a big step history commitment for all big steps within block
-	// challenge heights H to H+1.
-	BigStepLeafCommitment(
-		ctx context.Context,
-		wasmModuleRoot common.Hash,
-		blockHeight uint64,
-	) (commitments.History, error)
+	// Returns ErrNoExecutionState if the state manager does not have this execution state.
+	ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error)
+}
+
+type HistoryCommitter interface {
+	// Produces a block challenge history commitment up to and including a certain message number.
+	HistoryCommitmentUpTo(ctx context.Context, messageNumber uint64) (commitments.History, error)
 	// Produces a big step history commitment from big step 0 to N within block
 	// challenge heights A and B where B = A + 1.
 	BigStepCommitmentUpTo(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		blockHeight,
-		toBigStep uint64,
-	) (commitments.History, error)
-	// Produces a small step history commitment for all small steps between
-	// big steps S to S+1 within block challenge heights H to H+1.
-	SmallStepLeafCommitment(
-		ctx context.Context,
-		wasmModuleRoot common.Hash,
-		blockHeight,
+		messageNumber,
 		bigStep uint64,
 	) (commitments.History, error)
 	// Produces a small step history commitment from small step 0 to N between
@@ -70,30 +61,55 @@ type Provider interface {
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		blockHeight,
+		messageNumber,
 		bigStep,
 		toSmallStep uint64,
 	) (commitments.History, error)
-	// Produces a prefix proof in a block challenge from height A to B.
-	PrefixProof(
+}
+
+type HistoryLeafCommitter interface {
+	// Produces a block challenge history commitment in a certain inclusive message number range,
+	// but padding states with duplicates after the first state with a
+	// batch count of at least the specified max.
+	HistoryCommitmentUpToBatch(
 		ctx context.Context,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight uint64,
-	) ([]byte, error)
-	// Produces a prefix proof in a block challenge from height A to B, but padding states with duplicates after the first state with a batch count of at least the specified max.
+		messageNumberStart,
+		messageNumberEnd,
+		batchCount uint64,
+	) (commitments.History, error)
+	// Produces a big step history commitment for all big steps within block
+	// challenge heights H to H+1.
+	BigStepLeafCommitment(
+		ctx context.Context,
+		wasmModuleRoot common.Hash,
+		messageNumber uint64,
+	) (commitments.History, error)
+	// Produces a small step history commitment for all small steps between
+	// big steps S to S+1 within block challenge heights H to H+1.
+	SmallStepLeafCommitment(
+		ctx context.Context,
+		wasmModuleRoot common.Hash,
+		messageNumber,
+		bigStep uint64,
+	) (commitments.History, error)
+}
+
+type PrefixProver interface {
+	// Produces a prefix proof in a block challenge from height A to B, but padding states with duplicates after the
+	// first state with a batch count of at least the specified max.
 	PrefixProofUpToBatch(
 		ctx context.Context,
 		startHeight,
-		fromBlockChallengeHeight,
-		toBlockChallengeHeight,
-		batchCount uint64,
+		fromMessageNumber,
+		toMessageNumber,
+		maxBatchCount uint64,
 	) ([]byte, error)
 	// Produces a big step prefix proof from height A to B for heights H to H+1
 	// within a block challenge.
 	BigStepPrefixProof(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		blockHeight,
+		messageNumber,
 		fromBigStep,
 		toBigStep uint64,
 	) ([]byte, error)
@@ -102,31 +118,36 @@ type Provider interface {
 	SmallStepPrefixProof(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		blockHeight,
+		messageNumber,
 		bigStep,
 		fromSmallStep,
 		toSmallStep uint64,
 	) ([]byte, error)
+}
+
+type OneStepProofProvider interface {
 	OneStepProofData(
 		ctx context.Context,
 		cfgSnapshot *ConfigSnapshot,
 		postState rollupgen.ExecutionState,
-		blockHeight,
+		messageNumber,
 		bigStep,
-		fromSmallStep,
-		toSmallStep uint64,
+		smallStep uint64,
 	) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error)
-	HistoryChecker
+}
+
+type History struct {
+	Height     uint64
+	MerkleRoot common.Hash
 }
 
 type HistoryChecker interface {
 	AgreesWithHistoryCommitment(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		edgeType protocol.EdgeType,
 		prevAssertionInboxMaxCount uint64,
-		heights *protocol.OriginHeights,
-		startCommit,
-		endCommit commitments.History,
-	) (protocol.Agreement, error)
+		edgeType protocol.EdgeType,
+		heights protocol.OriginHeights,
+		history History,
+	) (bool, error)
 }

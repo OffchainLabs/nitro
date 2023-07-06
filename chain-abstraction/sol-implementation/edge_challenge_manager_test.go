@@ -539,8 +539,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		honestStateManager := scenario.honestStateManager
 		fromBlockChallengeHeight := uint64(0)
 		fromBigStep := uint64(0)
-		fromSmallStep := uint64(0)
-		toSmallStep := uint64(1)
+		smallStep := uint64(0)
 
 		id, err := honestEdge.AssertionHash(ctx)
 		require.NoError(t, err)
@@ -561,8 +560,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			parentAssertionCreationInfo.AfterState,
 			fromBlockChallengeHeight,
 			fromBigStep,
-			fromSmallStep,
-			toSmallStep,
+			smallStep,
 		)
 		require.NoError(t, err)
 

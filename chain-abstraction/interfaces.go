@@ -74,7 +74,7 @@ type AssertionChain interface {
 
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
 	TopLevelAssertion(ctx context.Context, edgeId EdgeId) (AssertionHash, error)
-	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (*OriginHeights, error)
+	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (OriginHeights, error)
 
 	// Mutating methods.
 	CreateAssertion(
@@ -90,13 +90,6 @@ type AssertionChain interface {
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
-}
-
-// Agreement encompasses whether or not a local node agrees with a edge's commitments.
-// Either the edge is honest, we agree with its start commit, or disagree entirely.
-type Agreement struct {
-	IsHonestEdge          bool
-	AgreesWithStartCommit bool
 }
 
 // EdgeType corresponds to the three different challenge
@@ -125,6 +118,11 @@ func (et EdgeType) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+type Agreement struct {
+	AgreesWithStartCommit bool
+	IsHonestEdge          bool
 }
 
 // OriginId is the id of the item that originated a challenge an edge
@@ -266,7 +264,7 @@ type ReadOnlyEdge interface {
 	HasLengthOneRival(ctx context.Context) (bool, error)
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
-	TopLevelClaimHeight(ctx context.Context) (*OriginHeights, error)
+	TopLevelClaimHeight(ctx context.Context) (OriginHeights, error)
 }
 
 // SpecEdge according to the protocol specification.

@@ -235,7 +235,7 @@ func TestAllPrefixProofs(t *testing.T) {
 	require.NoError(t, err)
 	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, to)
 	require.NoError(t, err)
-	packedProof, err := manager.PrefixProof(ctx, from, to)
+	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, from, to, 1)
 	require.NoError(t, err)
 
 	data, err := ProofArgs.Unpack(packedProof)
@@ -540,7 +540,7 @@ func TestPrefixProofs(t *testing.T) {
 		manager, err := New(leaves)
 		require.NoError(t, err)
 
-		packedProof, err := manager.PrefixProof(ctx, c.lo, c.hi)
+		packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, c.lo, c.hi, 1)
 		require.NoError(t, err)
 
 		data, err := ProofArgs.Unpack(packedProof)

@@ -218,7 +218,7 @@ func NewForSimpleMachine(
 }
 
 // Produces the latest state to assert to L1 from the local state manager's perspective.
-func (s *L2StateBackend) LatestExecutionState(_ context.Context) (*protocol.ExecutionState, error) {
+func (s *L2StateBackend) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	if len(s.executionStates) == 0 {
 		return nil, errors.New("no execution states")
 	}
@@ -226,19 +226,19 @@ func (s *L2StateBackend) LatestExecutionState(_ context.Context) (*protocol.Exec
 }
 
 // Checks if the execution manager locally has recorded this state
-func (s *L2StateBackend) ExecutionStateMsgCount(_ context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
+func (s *L2StateBackend) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
 	for i, r := range s.executionStates {
 		if r.Equals(state) {
-			return uint64(i), true, nil
+			return uint64(i), nil
 		}
 	}
-	return 0, false, nil
+	return 0, l2stateprovider.ErrNoExecutionState
 }
 
-func (s *L2StateBackend) HistoryCommitmentUpTo(_ context.Context, blockChallengeHeight uint64) (commitments.History, error) {
+func (s *L2StateBackend) HistoryCommitmentUpTo(_ context.Context, messageNumber uint64) (commitments.History, error) {
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
-	size := blockChallengeHeight + 1
+	size := messageNumber + 1
 	return commitments.New(
 		s.stateRoots[:size],
 	)
@@ -278,8 +278,8 @@ func (s *L2StateBackend) statesUpTo(blockStart, blockEnd, nextBatchCount uint64)
 	return states, nil
 }
 
-func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, blockStart, blockEnd, nextBatchCount uint64) (commitments.History, error) {
-	states, err := s.statesUpTo(blockStart, blockEnd, nextBatchCount)
+func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, messageNumberStart, messageNumberEnd, nextBatchCount uint64) (commitments.History, error) {
+	states, err := s.statesUpTo(messageNumberStart, messageNumberEnd, nextBatchCount)
 	if err != nil {
 		return commitments.History{}, err
 	}
@@ -295,76 +295,44 @@ func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, blockStar
 func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	edgeType protocol.EdgeType,
 	prevAssertionInboxMaxCount uint64,
-	heights *protocol.OriginHeights,
-	startCommit,
-	endCommit commitments.History,
-) (protocol.Agreement, error) {
-	agreement := protocol.Agreement{}
-	var localStartCommit commitments.History
-	var localEndCommit commitments.History
+	edgeType protocol.EdgeType,
+	heights protocol.OriginHeights,
+	commit l2stateprovider.History,
+) (bool, error) {
+	var localCommit commitments.History
 	var err error
 	switch edgeType {
 	case protocol.BlockChallengeEdge:
-		localStartCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(startCommit.Height), prevAssertionInboxMaxCount)
+		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(commit.Height), prevAssertionInboxMaxCount)
 		if err != nil {
-			return protocol.Agreement{}, err
-		}
-		localEndCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(endCommit.Height), prevAssertionInboxMaxCount)
-		if err != nil {
-			return protocol.Agreement{}, err
+			return false, err
 		}
 	case protocol.BigStepChallengeEdge:
-		localStartCommit, err = s.BigStepCommitmentUpTo(
+		localCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
 			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
-			uint64(startCommit.Height),
+			uint64(commit.Height),
 		)
 		if err != nil {
-			return protocol.Agreement{}, err
-		}
-		localEndCommit, err = s.BigStepCommitmentUpTo(
-			ctx,
-			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
-			uint64(endCommit.Height),
-		)
-		if err != nil {
-			return protocol.Agreement{}, err
+			return false, err
 		}
 	case protocol.SmallStepChallengeEdge:
-		localStartCommit, err = s.SmallStepCommitmentUpTo(
+		localCommit, err = s.SmallStepCommitmentUpTo(
 			ctx,
 			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
 			uint64(heights.BigStepChallengeOriginHeight),
-			startCommit.Height,
+			commit.Height,
 		)
 		if err != nil {
-			return protocol.Agreement{}, err
-		}
-		localEndCommit, err = s.SmallStepCommitmentUpTo(
-			ctx,
-			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BigStepChallengeOriginHeight),
-			endCommit.Height,
-		)
-		if err != nil {
-			return protocol.Agreement{}, err
+			return false, err
 		}
 	default:
-		return agreement, errors.New("unsupported edge type")
+		return false, errors.New("unsupported edge type")
 	}
-	if localStartCommit.Height == startCommit.Height && localStartCommit.Merkle == startCommit.Merkle {
-		agreement.AgreesWithStartCommit = true
-	}
-	if localEndCommit.Height == endCommit.Height && localEndCommit.Merkle == endCommit.Merkle {
-		agreement.IsHonestEdge = true
-	}
-	return agreement, nil
+	return localCommit.Height == commit.Height && localCommit.Merkle == commit.MerkleRoot, nil
 }
 
 func (s *L2StateBackend) BigStepLeafCommitment(
@@ -588,10 +556,9 @@ func (s *L2StateBackend) OneStepProofData(
 	ctx context.Context,
 	cfgSnapshot *l2stateprovider.ConfigSnapshot,
 	postState rollupgen.ExecutionState,
-	blockHeight,
+	messageNumber,
 	bigStep,
-	fromSmallStep,
-	toSmallStep uint64,
+	smallStep uint64,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
 	inboxMaxCountProof, packErr := ExecutionStateAbi.Pack(
 		postState.GlobalState.Bytes32Vals[0],
@@ -617,9 +584,9 @@ func (s *L2StateBackend) OneStepProofData(
 	startCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
 		cfgSnapshot.WasmModuleRoot,
-		blockHeight,
+		messageNumber,
 		bigStep,
-		fromSmallStep,
+		smallStep,
 	)
 	if commitErr != nil {
 		err = commitErr
@@ -628,21 +595,21 @@ func (s *L2StateBackend) OneStepProofData(
 	endCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
 		cfgSnapshot.WasmModuleRoot,
-		blockHeight,
+		messageNumber,
 		bigStep,
-		toSmallStep,
+		smallStep+1,
 	)
 	if commitErr != nil {
 		err = commitErr
 		return
 	}
 
-	machine, machineErr := s.machineAtBlock(ctx, blockHeight)
+	machine, machineErr := s.machineAtBlock(ctx, messageNumber)
 	if machineErr != nil {
 		err = machineErr
 		return
 	}
-	step := bigStep*s.numOpcodesPerBigStep + fromSmallStep
+	step := bigStep*s.numOpcodesPerBigStep + smallStep
 	err = machine.Step(step)
 	if err != nil {
 		return
@@ -709,10 +676,6 @@ func (s *L2StateBackend) prefixProofImpl(_ context.Context, start, lo, hi, batch
 	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
 	onlyProof := prefixProof[numRead:]
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
-}
-
-func (s *L2StateBackend) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
-	return s.prefixProofImpl(ctx, 0, lo, hi, math.MaxUint64)
 }
 
 func (s *L2StateBackend) PrefixProofUpToBatch(ctx context.Context, start, lo, hi, batchCount uint64) ([]byte, error) {

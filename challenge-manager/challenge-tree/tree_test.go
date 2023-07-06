@@ -15,6 +15,7 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -60,20 +61,78 @@ func TestAddEdge(t *testing.T) {
 			assertionErr:  nil,
 			assertionHash: ht.topLevelAssertionHash,
 		}
-		ht.histChecker = &mocks.MockStateManager{
-			AgreeErr: true,
-		}
+		start, startCommit := edge.StartCommitment()
+		end, endCommit := edge.EndCommitment()
+		mockStateManager := &mocks.MockStateManager{}
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(start),
+				MerkleRoot: startCommit,
+			},
+		).Return(false, errors.New("something went wrong"))
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(end),
+				MerkleRoot: endCommit,
+			},
+		).Return(false, errors.New("something went wrong"))
+		ht.histChecker = mockStateManager
 		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not check if agrees with")
 	})
 	t.Run("fully disagrees with edge", func(t *testing.T) {
-		ht.histChecker = &mocks.MockStateManager{
-			Agreement: protocol.Agreement{
-				IsHonestEdge:          false,
-				AgreesWithStartCommit: false,
-			},
+		ht.metadataReader = &mockMetadataReader{
+			assertionErr:  nil,
+			assertionHash: ht.topLevelAssertionHash,
 		}
 		badEdge := newEdge(&newCfg{t: t, edgeId: "blk-0.f-16.a", createdAt: 1})
+		startHeight, startCommit := badEdge.StartCommitment()
+		endHeight, endCommit := badEdge.EndCommitment()
+		mockStateManager := &mocks.MockStateManager{}
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(startHeight),
+				MerkleRoot: startCommit,
+			},
+		).Return(false, nil)
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(endHeight),
+				MerkleRoot: endCommit,
+			},
+		).Return(false, nil)
+		ht.histChecker = mockStateManager
 		agreement, err := ht.AddEdge(ctx, badEdge)
 		require.NoError(t, err)
 		require.Equal(t, protocol.Agreement{
@@ -88,13 +147,43 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, false, ok)
 	})
 	t.Run("agrees with edge but is not a level zero edge", func(t *testing.T) {
-		ht.histChecker = &mocks.MockStateManager{
-			Agreement: protocol.Agreement{
-				IsHonestEdge:          true,
-				AgreesWithStartCommit: true,
-			},
+		ht.metadataReader = &mockMetadataReader{
+			assertionErr:  nil,
+			assertionHash: ht.topLevelAssertionHash,
 		}
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1})
+		startHeight, startCommit := edge.StartCommitment()
+		endHeight, endCommit := edge.EndCommitment()
+		mockStateManager := &mocks.MockStateManager{}
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(startHeight),
+				MerkleRoot: startCommit,
+			},
+		).Return(true, nil)
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(endHeight),
+				MerkleRoot: endCommit,
+			},
+		).Return(true, nil)
+		ht.histChecker = mockStateManager
 		agreement, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
 		require.Equal(t, protocol.Agreement{
@@ -115,13 +204,45 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, true, ht.honestSmallStepLevelZeroEdges.Len() == 0)
 	})
 	t.Run("agrees with edge and is a level zero edge", func(t *testing.T) {
+		ht.metadataReader = &mockMetadataReader{
+			assertionErr:  nil,
+			assertionHash: ht.topLevelAssertionHash,
+		}
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-32.a", createdAt: 1, claimId: "foo"})
-		agreement, err := ht.AddEdge(ctx, edge)
+		startHeight, startCommit := edge.StartCommitment()
+		endHeight, endCommit := edge.EndCommitment()
+		mockStateManager := &mocks.MockStateManager{}
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(startHeight),
+				MerkleRoot: startCommit,
+			},
+		).Return(true, nil)
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(endHeight),
+				MerkleRoot: endCommit,
+			},
+		).Return(true, nil)
+		ht.histChecker = mockStateManager
+		_, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
-		require.Equal(t, protocol.Agreement{
-			IsHonestEdge:          true,
-			AgreesWithStartCommit: true,
-		}, agreement)
 
 		// Exists.
 		_, ok := ht.edges.TryGet(edge.Id())
@@ -134,13 +255,43 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, false, ht.honestBlockChalLevelZeroEdge.IsNone())
 	})
 	t.Run("edge is not honest but we agree with start commit and keep it as a rival", func(t *testing.T) {
-		ht.histChecker = &mocks.MockStateManager{
-			Agreement: protocol.Agreement{
-				IsHonestEdge:          false,
-				AgreesWithStartCommit: true,
-			},
+		ht.metadataReader = &mockMetadataReader{
+			assertionErr:  nil,
+			assertionHash: ht.topLevelAssertionHash,
 		}
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-32.b", createdAt: 1, claimId: "bar"})
+		startHeight, startCommit := edge.StartCommitment()
+		endHeight, endCommit := edge.EndCommitment()
+		mockStateManager := &mocks.MockStateManager{}
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(startHeight),
+				MerkleRoot: startCommit,
+			},
+		).Return(true, nil)
+		mockStateManager.On(
+			"AgreesWithHistoryCommitment",
+			ctx,
+			common.Hash{},
+			uint64(1),
+			protocol.BlockChallengeEdge,
+			protocol.OriginHeights{
+				BlockChallengeOriginHeight: 0,
+			},
+			l2stateprovider.History{
+				Height:     uint64(endHeight),
+				MerkleRoot: endCommit,
+			},
+		).Return(false, nil)
+		ht.histChecker = mockStateManager
 		agreement, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)
 		require.Equal(t, protocol.Agreement{
@@ -162,7 +313,7 @@ func TestAddEdge(t *testing.T) {
 type mockMetadataReader struct {
 	assertionHash            protocol.AssertionHash
 	assertionErr             error
-	claimHeights             *protocol.OriginHeights
+	claimHeights             protocol.OriginHeights
 	claimHeightsErr          error
 	unrivaledAssertionBlocks uint64
 }
@@ -181,7 +332,7 @@ func (m *mockMetadataReader) AssertionUnrivaledBlocks(
 
 func (m *mockMetadataReader) TopLevelClaimHeights(
 	_ context.Context, _ protocol.EdgeId,
-) (*protocol.OriginHeights, error) {
+) (protocol.OriginHeights, error) {
 	return m.claimHeights, m.claimHeightsErr
 }
 
@@ -315,8 +466,8 @@ func (*edge) HasLengthOneRival(_ context.Context) (bool, error) {
 
 // The history commitment for the top-level edge the current edge's challenge is made upon.
 // This is used at subchallenge creation boundaries.
-func (*edge) TopLevelClaimHeight(_ context.Context) (*protocol.OriginHeights, error) {
-	return nil, errors.New("unimplemented")
+func (*edge) TopLevelClaimHeight(_ context.Context) (protocol.OriginHeights, error) {
+	return protocol.OriginHeights{}, errors.New("unimplemented")
 }
 
 func (*edge) Bisect(

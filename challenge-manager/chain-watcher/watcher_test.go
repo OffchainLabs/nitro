@@ -12,6 +12,7 @@ import (
 	challengetree "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
+	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/ethereum/go-ethereum/common"
@@ -87,7 +88,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		assertionHash,
 	).Return(info, nil)
-	heights := &protocol.OriginHeights{}
+	heights := protocol.OriginHeights{}
 	mockChain.On(
 		"TopLevelClaimHeights",
 		ctx,
@@ -119,12 +120,35 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 	).Return(assertionHash, nil)
 
-	mockStateManager := &mocks.MockStateManager{
-		Agreement: protocol.Agreement{
-			IsHonestEdge:          true,
-			AgreesWithStartCommit: true,
+	mockStateManager := &mocks.MockStateManager{}
+	mockStateManager.On(
+		"AgreesWithHistoryCommitment",
+		ctx,
+		common.Hash{},
+		uint64(1),
+		protocol.BlockChallengeEdge,
+		protocol.OriginHeights{
+			BlockChallengeOriginHeight: 0,
 		},
-	}
+		l2stateprovider.History{
+			Height:     uint64(0),
+			MerkleRoot: startCommit,
+		},
+	).Return(true, nil)
+	mockStateManager.On(
+		"AgreesWithHistoryCommitment",
+		ctx,
+		common.Hash{},
+		uint64(1),
+		protocol.BlockChallengeEdge,
+		protocol.OriginHeights{
+			BlockChallengeOriginHeight: 0,
+		},
+		l2stateprovider.History{
+			Height:     uint64(4),
+			MerkleRoot: endCommit,
+		},
+	).Return(true, nil)
 
 	mockManager := &mocks.MockEdgeTracker{}
 	mockManager.On("TrackEdge", ctx, edge).Return(nil)

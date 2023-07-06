@@ -102,7 +102,7 @@ func CreateTwoValidatorFork(
 		InboxMaxCount: big.NewInt(1),
 	}
 
-	honestPostState, err := honestStateManager.LatestExecutionState(ctx)
+	honestPostState, err := honestStateManager.ExecutionStateAtMessageNumber(ctx, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	evilPostState, err := evilStateManager.LatestExecutionState(ctx)
+	evilPostState, err := evilStateManager.ExecutionStateAtMessageNumber(ctx, 1)
 	if err != nil {
 		return nil, err
 	}

@@ -34,6 +34,7 @@ go_test(
         "//challenge-manager",
         "//challenge-manager/types",
         "//containers/option",
+        "//layer2-state-provider",
         "//solgen/go/rollupgen",
         "//testing/logging",
         "//testing/mocks",

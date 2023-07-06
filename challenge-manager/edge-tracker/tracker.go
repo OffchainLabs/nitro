@@ -668,7 +668,6 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 		fromAssertionHeight,
 		fromBigStep,
 		uint64(pc),
-		uint64(pc)+1,
 	)
 	if err != nil {
 		return errors.Wrapf(errBadOneStepProof, "could not get one step data: %v", err)

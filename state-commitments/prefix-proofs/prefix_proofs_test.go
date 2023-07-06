@@ -62,7 +62,7 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	require.NoError(t, err)
 	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, 7)
 	require.NoError(t, err)
-	packedProof, err := manager.PrefixProof(ctx, 3, 7)
+	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, 3, 7, 1)
 	require.NoError(t, err)
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
@@ -115,7 +115,7 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	require.NoError(t, err)
 	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, 6)
 	require.NoError(t, err)
-	packedProof, err := manager.PrefixProof(ctx, 3, 6)
+	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, 3, 6, 1)
 	require.NoError(t, err)
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
@@ -178,7 +178,7 @@ func FuzzVerifyPrefixProof_Go(f *testing.F) {
 	require.NoError(f, err)
 	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, 7)
 	require.NoError(f, err)
-	packedProof, err := manager.PrefixProof(ctx, 3, 7)
+	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, 3, 7, 1)
 	require.NoError(f, err)
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)

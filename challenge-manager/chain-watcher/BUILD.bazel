@@ -29,6 +29,7 @@ go_test(
         "//challenge-manager/challenge-tree",
         "//containers/option",
         "//containers/threadsafe",
+        "//layer2-state-provider",
         "//solgen/go/challengeV2gen",
         "//testing/mocks",
         "@com_github_ethereum_go_ethereum//common",

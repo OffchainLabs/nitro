@@ -72,8 +72,11 @@ func (p *Poster) PostLatestAssertion(ctx context.Context) (protocol.Assertion, e
 	if err != nil {
 		return nil, err
 	}
+	if !parentAssertionCreationInfo.InboxMaxCount.IsUint64() {
+		return nil, errors.New("inbox max count not a uint64")
+	}
 	// TODO: this should really only go up to the prevInboxMaxCount batch state
-	newState, err := p.stateManager.LatestExecutionState(ctx)
+	newState, err := p.stateManager.ExecutionStateAtMessageNumber(ctx, parentAssertionCreationInfo.InboxMaxCount.Uint64())
 	if err != nil {
 		return nil, err
 	}
@@ -117,22 +120,23 @@ func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.Asserti
 		if err != nil {
 			return protocol.AssertionHash{}, err
 		}
-		_, hasState, err := p.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
-		if err != nil {
-			return protocol.AssertionHash{}, err
-		}
-		if hasState {
+		_, err = p.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
+		switch {
+		case errors.Is(err, l2stateprovider.ErrNoExecutionState):
+			prevId, prevErr := curr.PrevId(ctx)
+			if prevErr != nil {
+				return protocol.AssertionHash{}, prevErr
+			}
+			prev, getErr := p.chain.GetAssertion(ctx, prevId)
+			if getErr != nil {
+				return protocol.AssertionHash{}, getErr
+			}
+			curr = prev
+		case err != nil:
+			return protocol.AssertionHash{}, nil
+		default:
 			return curr.Id(), nil
 		}
-		prevId, err := curr.PrevId(ctx)
-		if err != nil {
-			return protocol.AssertionHash{}, err
-		}
-		prev, err := p.chain.GetAssertion(ctx, prevId)
-		if err != nil {
-			return protocol.AssertionHash{}, err
-		}
-		curr = prev
 	}
 	return latestConfirmed.Id(), nil
 }

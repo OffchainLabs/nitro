@@ -16,7 +16,6 @@ go_library(
         "//containers/threadsafe",
         "//layer2-state-provider",
         "//math",
-        "//state-commitments/history",
         "@com_github_pkg_errors//:errors",
     ],
 )
@@ -33,6 +32,7 @@ go_test(
         "//chain-abstraction:protocol",
         "//containers/option",
         "//containers/threadsafe",
+        "//layer2-state-provider",
         "//testing/mocks",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",
