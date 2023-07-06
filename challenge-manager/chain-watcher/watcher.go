@@ -149,7 +149,7 @@ func (w *Watcher) IsSynced() bool {
 
 // Starts watching the chain via a polling mechanism for all edge added and confirmation events
 // in order to process some of this data into internal representations for confirmation purposes.
-func (w *Watcher) Watch(ctx context.Context) {
+func (w *Watcher) Start(ctx context.Context) {
 	scanRange, err := retry.UntilSucceeds(ctx, func() (filterRange, error) {
 		return w.getStartEndBlockNum(ctx)
 	})

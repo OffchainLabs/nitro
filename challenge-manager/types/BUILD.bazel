@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "types",
+    srcs = [
+        "interfaces.go",
+        "mode.go",
+    ],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types",
+    visibility = ["//visibility:public"],
+    deps = ["//chain-abstraction:protocol"],
+)

@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
 	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
@@ -29,23 +31,27 @@ type Opt = func(val *Manager)
 // Manager defines an offchain, challenge manager, which will be
 // an active participant in interacting with the on-chain contracts.
 type Manager struct {
-	chain                   protocol.Protocol
-	chalManagerAddr         common.Address
-	rollupAddr              common.Address
-	rollup                  *rollupgen.RollupCore
-	rollupFilterer          *rollupgen.RollupCoreFilterer
-	chalManager             *challengeV2gen.EdgeChallengeManagerFilterer
-	backend                 bind.ContractBackend
-	stateManager            l2stateprovider.Provider
-	address                 common.Address
-	name                    string
-	timeRef                 utilTime.Reference
-	edgeTrackerWakeInterval time.Duration
-	chainWatcherInterval    time.Duration
-	watcher                 *watcher.Watcher
-	trackedEdgeIds          *threadsafe.Set[protocol.EdgeId]
-	assertionHashCache      *threadsafe.Map[protocol.AssertionHash, [2]uint64]
-	mode                    Mode
+	chain                     protocol.Protocol
+	chalManagerAddr           common.Address
+	rollupAddr                common.Address
+	rollup                    *rollupgen.RollupCore
+	rollupFilterer            *rollupgen.RollupCoreFilterer
+	chalManager               *challengeV2gen.EdgeChallengeManagerFilterer
+	backend                   bind.ContractBackend
+	stateManager              l2stateprovider.Provider
+	address                   common.Address
+	name                      string
+	timeRef                   utilTime.Reference
+	edgeTrackerWakeInterval   time.Duration
+	chainWatcherInterval      time.Duration
+	watcher                   *watcher.Watcher
+	trackedEdgeIds            *threadsafe.Set[protocol.EdgeId]
+	assertionHashCache        *threadsafe.Map[protocol.AssertionHash, [2]uint64]
+	poster                    *assertions.Poster
+	scanner                   *assertions.Scanner
+	assertionPostingInterval  time.Duration
+	assertionScanningInterval time.Duration
+	mode                      types.Mode
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -71,9 +77,24 @@ func WithEdgeTrackerWakeInterval(d time.Duration) Opt {
 }
 
 // WithMode specifies the mode of the challenge manager.
-func WithMode(m Mode) Opt {
+func WithMode(m types.Mode) Opt {
 	return func(val *Manager) {
 		val.mode = m
+	}
+}
+
+// WithAssertionPostingInterval specifies how often to post new assertions, if in MakeMode.
+// act on its responsibilities.
+func WithAssertionPostingInterval(d time.Duration) Opt {
+	return func(val *Manager) {
+		val.assertionPostingInterval = d
+	}
+}
+
+// WithAssertionScanningInterval specifies how often to scan for new assertions.
+func WithAssertionScanningInterval(d time.Duration) Opt {
+	return func(val *Manager) {
+		val.assertionScanningInterval = d
 	}
 }
 
@@ -87,16 +108,18 @@ func New(
 	opts ...Opt,
 ) (*Manager, error) {
 	m := &Manager{
-		backend:                 backend,
-		chain:                   chain,
-		stateManager:            stateManager,
-		address:                 common.Address{},
-		timeRef:                 utilTime.NewRealTimeReference(),
-		rollupAddr:              rollupAddr,
-		edgeTrackerWakeInterval: time.Millisecond * 100,
-		chainWatcherInterval:    time.Millisecond * 500,
-		trackedEdgeIds:          threadsafe.NewSet[protocol.EdgeId](),
-		assertionHashCache:      threadsafe.NewMap[protocol.AssertionHash, [2]uint64](),
+		backend:                   backend,
+		chain:                     chain,
+		stateManager:              stateManager,
+		address:                   common.Address{},
+		timeRef:                   utilTime.NewRealTimeReference(),
+		rollupAddr:                rollupAddr,
+		edgeTrackerWakeInterval:   time.Millisecond * 100,
+		chainWatcherInterval:      time.Millisecond * 500,
+		trackedEdgeIds:            threadsafe.NewSet[protocol.EdgeId](),
+		assertionHashCache:        threadsafe.NewMap[protocol.AssertionHash, [2]uint64](),
+		assertionPostingInterval:  time.Hour,
+		assertionScanningInterval: time.Minute,
 	}
 	for _, o := range opts {
 		o(m)
@@ -119,11 +142,27 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+
 	m.rollup = rollup
 	m.rollupFilterer = rollupFilterer
 	m.chalManagerAddr = chalManagerAddr
 	m.chalManager = chalManagerFilterer
 	m.watcher = watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, m.name)
+	m.poster = assertions.NewPoster(
+		m.chain,
+		m.stateManager,
+		m.name,
+		m.assertionPostingInterval,
+	)
+	m.scanner = assertions.NewScanner(
+		m.chain,
+		m.stateManager,
+		m.backend,
+		m,
+		m.rollupAddr,
+		m.name,
+		m.assertionScanningInterval,
+	)
 	return m, nil
 }
 
@@ -138,7 +177,7 @@ func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId) {
 }
 
 // Mode returns the mode of the challenge manager.
-func (m *Manager) Mode() Mode {
+func (m *Manager) Mode() types.Mode {
 	return m.mode
 }
 
@@ -218,13 +257,21 @@ func (m *Manager) Start(ctx context.Context) {
 		m.address.Hex(),
 	).Info("Started challenge manager")
 
+	// Start the assertion scanner.
+	go m.scanner.Start(ctx)
+
 	// Watcher tower and resolve modes don't monitor challenges.
-	if m.mode == WatchTowerMode || m.mode == ResolveMode {
+	if m.mode == types.WatchTowerMode || m.mode == types.ResolveMode {
 		return
 	}
 
+	// Start the assertion poster if we are in make mode.
+	if m.mode == types.MakeMode {
+		go m.poster.Start(ctx)
+	}
+
 	// Start watching for ongoing chain events in the background.
-	go m.watcher.Watch(ctx)
+	go m.watcher.Start(ctx)
 }
 
 // Gets the execution height for a rollup state from our state manager.

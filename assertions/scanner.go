@@ -11,7 +11,7 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
@@ -29,8 +29,8 @@ var log = logrus.WithField("prefix", "assertion-scanner")
 type Scanner struct {
 	chain               protocol.AssertionChain
 	backend             bind.ContractBackend
-	challengeCreator    challengemanager.ChallengeCreator
-	challengeModeReader challengemanager.ChallengeModeReader
+	challengeCreator    types.ChallengeCreator
+	challengeModeReader types.ChallengeModeReader
 	stateProvider       l2stateprovider.Provider
 	pollInterval        time.Duration
 	rollupAddr          common.Address
@@ -42,7 +42,7 @@ func NewScanner(
 	chain protocol.AssertionChain,
 	stateProvider l2stateprovider.Provider,
 	backend bind.ContractBackend,
-	challengeManager challengemanager.ChallengeManager,
+	challengeManager types.ChallengeManager,
 	rollupAddr common.Address,
 	validatorName string,
 	pollInterval time.Duration,
@@ -61,7 +61,7 @@ func NewScanner(
 
 // Scan the blockchain for assertion creation events in a polling manner
 // from the latest confirmed assertion.
-func (s *Scanner) Scan(ctx context.Context) {
+func (s *Scanner) Start(ctx context.Context) {
 	latestConfirmed, err := s.chain.LatestConfirmed(ctx)
 	if err != nil {
 		log.Error(err)
@@ -183,7 +183,7 @@ func (s *Scanner) ProcessAssertionCreation(
 		return nil
 	}
 
-	if s.challengeModeReader.Mode() == challengemanager.DefensiveMode || s.challengeModeReader.Mode() == challengemanager.MakeMode {
+	if s.challengeModeReader.Mode() == types.DefensiveMode || s.challengeModeReader.Mode() == types.MakeMode {
 		if err := s.challengeCreator.ChallengeAssertion(ctx, assertionHash); err != nil {
 			return err
 		}

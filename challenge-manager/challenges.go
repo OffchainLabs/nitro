@@ -14,24 +14,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ChallengeManager defines an offchain, challenge manager, which will be
-// an active participant in interacting with the on-chain contracts.
-type ChallengeManager interface {
-	ChallengeCreator
-	ChallengeModeReader
-}
-
-// ChallengeCreator defines a struct which can initiate a challenge on an assertion hash
-// by creating a level zero, block challenge edge onchain.
-type ChallengeCreator interface {
-	ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error
-}
-
-// ChallengeModeReader defines a struct which can read the challenge mode of a challenge manager.
-type ChallengeModeReader interface {
-	Mode() Mode
-}
-
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.

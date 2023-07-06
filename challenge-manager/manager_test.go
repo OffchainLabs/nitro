@@ -13,6 +13,7 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
 	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/logging"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
@@ -22,8 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --
-var _ = ChallengeCreator(&Manager{})
+var _ = types.ChallengeManager(&Manager{})
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
@@ -75,7 +75,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 		createdData.HonestStateManager,
 		createdData.Addrs.Rollup,
 		WithName("alice"),
-		WithMode(MakeMode),
+		WithMode(types.MakeMode),
 	)
 	require.NoError(t, err)
 
@@ -86,7 +86,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 		createdData.EvilStateManager,
 		createdData.Addrs.Rollup,
 		WithName("bob"),
-		WithMode(MakeMode),
+		WithMode(types.MakeMode),
 	)
 	require.NoError(t, err)
 
@@ -120,7 +120,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 	)
 	require.NoError(t, err)
 
-	go honestWatcher.Watch(ctx)
+	go honestWatcher.Start(ctx)
 	for {
 		if honestWatcher.IsSynced() {
 			break
@@ -147,7 +147,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 	)
 	require.NoError(t, err)
 
-	go evilWatcher.Watch(ctx)
+	go evilWatcher.Start(ctx)
 	for {
 		if evilWatcher.IsSynced() {
 			break
@@ -166,7 +166,7 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
-	v, err := New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, WithMode(MakeMode))
+	v, err := New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, WithMode(types.MakeMode))
 	require.NoError(t, err)
 	return v, p, s
 }

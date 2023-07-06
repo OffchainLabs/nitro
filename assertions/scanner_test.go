@@ -12,6 +12,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/logging"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
@@ -69,7 +70,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			createdData.Backend,
 			createdData.HonestStateManager,
 			createdData.Addrs.Rollup,
-			challengemanager.WithMode(challengemanager.MakeMode),
+			challengemanager.WithMode(types.MakeMode),
 		)
 		require.NoError(t, err)
 		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second)
@@ -83,7 +84,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			createdData.Backend,
 			createdData.EvilStateManager,
 			createdData.Addrs.Rollup,
-			challengemanager.WithMode(challengemanager.MakeMode),
+			challengemanager.WithMode(types.MakeMode),
 		)
 		require.NoError(t, err)
 
@@ -112,7 +113,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			createdData.Backend,
 			createdData.HonestStateManager,
 			createdData.Addrs.Rollup,
-			challengemanager.WithMode(challengemanager.DefensiveMode),
+			challengemanager.WithMode(types.DefensiveMode),
 		)
 		require.NoError(t, err)
 		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second)
@@ -126,7 +127,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			createdData.Backend,
 			createdData.EvilStateManager,
 			createdData.Addrs.Rollup,
-			challengemanager.WithMode(challengemanager.DefensiveMode),
+			challengemanager.WithMode(types.DefensiveMode),
 		)
 		require.NoError(t, err)
 
@@ -152,7 +153,7 @@ func setupChallengeManager(t *testing.T) (*challengemanager.Manager, *mocks.Mock
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
-	v, err := challengemanager.New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, challengemanager.WithMode(challengemanager.MakeMode))
+	v, err := challengemanager.New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, challengemanager.WithMode(types.MakeMode))
 	require.NoError(t, err)
 	return v, p, s, cfg
 }

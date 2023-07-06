@@ -11,7 +11,7 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//chain-abstraction/sol-implementation",
-        "//challenge-manager",
+        "//challenge-manager/types",
         "//layer2-state-provider",
         "//runtime",
         "//solgen/go/rollupgen",
@@ -32,6 +32,7 @@ go_test(
     deps = [
         "//chain-abstraction:protocol",
         "//challenge-manager",
+        "//challenge-manager/types",
         "//containers/option",
         "//solgen/go/rollupgen",
         "//testing/logging",
