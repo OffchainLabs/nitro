@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -55,6 +56,8 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	EnableLevelDB          bool                       `koanf:"leveldb-enable" reload:"hot"`
+	LevelDBFile            string                     `koanf:"leveldb-file"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -68,6 +71,8 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Bool(prefix+".leveldb-enable", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
+	f.String(prefix+".leveldb-file", DefaultDataPosterConfig.LevelDBFile, "path to the leveldb")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -78,6 +83,8 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
+	LevelDBFile:            "/tmp/level.db",
 }
 
 var TestDataPosterConfig = DataPosterConfig{
@@ -88,6 +95,8 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
+	LevelDBFile:            "/tmp/level.db",
 }
 
 // DataPoster must be RLP serializable and deserializable
@@ -134,14 +143,17 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	// To avoid special casing "don't replace again", replace in 10 years
 	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
 	var queue QueueStorage[queuedTransaction[Meta]]
-	if redisClient == nil {
+	var err error
+	switch {
+	case config().EnableLevelDB:
+		queue, err = leveldb.New[queuedTransaction[Meta]](config().LevelDBFile)
+	case redisClient == nil:
 		queue = NewSliceStorage[queuedTransaction[Meta]]()
-	} else {
-		var err error
+	default:
 		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
-		if err != nil {
-			return nil, err
-		}
+	}
+	if err != nil {
+		return nil, err
 	}
 	return &DataPoster[Meta]{
 		headerReader:      headerReader,
