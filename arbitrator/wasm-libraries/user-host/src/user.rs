@@ -165,7 +165,7 @@ pub unsafe extern "C" fn user_host__create2(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__read_return_data(ptr: usize) -> usize {
+pub unsafe extern "C" fn user_host__read_return_data(ptr: usize, _offset: usize, _size: usize) -> usize {
     let program = Program::start();
     let len = program.evm_data.return_data_len;
     program.pay_for_evm_copy(len.into()).unwrap();

@@ -318,7 +318,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "create1" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
             "create2" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32, _: u32|),
-            "read_return_data" => stub!(u32 <- |_: u32|),
+            "read_return_data" => stub!(u32 <- |_: u32, _: u32, _: u32|),
             "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
             "account_balance" => stub!(|_: u32, _: u32|),

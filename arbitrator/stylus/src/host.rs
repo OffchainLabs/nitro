@@ -174,6 +174,8 @@ pub(crate) fn create2<E: EvmApi>(
 pub(crate) fn read_return_data<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     dest: u32,
+    offset: u32,
+    size: u32,
 ) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     let len = env.evm_data.return_data_len;

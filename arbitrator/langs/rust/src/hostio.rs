@@ -232,7 +232,7 @@ extern "C" {
     /// bounds. Te semantics are equivalent to that of the EVM's [`RETURN_DATA_COPY`] opcode.
     ///
     /// [`RETURN_DATA_COPY`]: <https://www.evm.codes/#3e>
-    pub(crate) fn read_return_data(dest: *mut u8) -> usize;
+    pub(crate) fn read_return_data(dest: *mut u8, offset: usize, size: usize) -> usize;
 
     /// Writes the final return data. If not called before the program exists, the return data will
     /// be 0 bytes long. Note that this hostio does not cause the program to exit, which happens
