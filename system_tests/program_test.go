@@ -159,7 +159,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 
 	colors.PrintMint("Deploying multiaddr and compiling it")
 
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall-norevert"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("norevert-multicall"))
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
@@ -932,7 +932,7 @@ func argsForStorageRead(key common.Hash) []byte {
 }
 
 func argsForStorageWrite(key, value common.Hash) []byte {
-	args := []byte{0x01, 0x01}
+	args := []byte{0x01}
 	args = append(args, key[:]...)
 	args = append(args, value[:]...)
 	return args
