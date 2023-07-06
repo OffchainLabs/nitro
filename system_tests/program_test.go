@@ -159,7 +159,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 
 	colors.PrintMint("Deploying multiaddr and compiling it")
 
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall-norevert"))
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
@@ -800,7 +800,8 @@ func testMemory(t *testing.T, jit bool) {
 	// expand to 128 pages, retract, then expand again to 128.
 	//   - multicall takes 1 page to init, and then 1 more at runtime.
 	//   - grow-and-call takes 1 page, then grows to the first arg by second arg steps.
-	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
+	args := []byte{0x01}
+	args = append(args, argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})...)
 	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
 
 	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
@@ -955,7 +956,7 @@ func argsForStorageRead(key common.Hash) []byte {
 }
 
 func argsForStorageWrite(key, value common.Hash) []byte {
-	args := []byte{0x01}
+	args := []byte{0x01, 0x01}
 	args = append(args, key[:]...)
 	args = append(args, value[:]...)
 	return args
