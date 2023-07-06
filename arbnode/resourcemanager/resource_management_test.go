@@ -7,29 +7,40 @@ import (
 	"fmt"
 	"os"
 	"testing"
-
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func updateFakeCgroupv1Files(t *testing.T, c *cgroupsV1MemoryLimitChecker, limit, usage, inactive int) {
+func updateFakeCgroupv1Files(c *cgroupsV1MemoryLimitChecker, limit, usage, inactive int) error {
 	limitFile, err := os.Create(c.limitFile)
-	Require(t, err)
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(limitFile, "%d\n", limit)
-	Require(t, err)
+	if err != nil {
+		return err
+	}
 
 	usageFile, err := os.Create(c.usageFile)
-	Require(t, err)
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(usageFile, "%d\n", usage)
-	Require(t, err)
+	if err != nil {
+		return err
+	}
 
 	statsFile, err := os.Create(c.statsFile)
-	Require(t, err)
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(statsFile, `total_cache 1029980160
 total_rss 1016209408
 total_inactive_file %d
 total_active_file 321544192
 `, inactive)
-	Require(t, err)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func TestCgroupsv1MemoryLimit(t *testing.T) {
@@ -37,31 +48,31 @@ func TestCgroupsv1MemoryLimit(t *testing.T) {
 	c := newCgroupsV1MemoryLimitChecker(cgroupDir, 95)
 	_, err := c.isLimitExceeded()
 	if err == nil {
-		Fail(t, "Should fail open if can't read files")
+		t.Error("Should fail open if can't read files")
 	}
 
-	updateFakeCgroupv1Files(t, c, 1000, 1000, 51)
+	err = updateFakeCgroupv1Files(c, 1000, 1000, 51)
+	if err != nil {
+		t.Error(err)
+	}
 	exceeded, err := c.isLimitExceeded()
-	Require(t, err)
+	if err != nil {
+		t.Error(err)
+	}
 	if exceeded {
-		Fail(t, "Expected under limit")
+		t.Error("Expected under limit")
 	}
 
-	updateFakeCgroupv1Files(t, c, 1000, 1000, 50)
+	err = updateFakeCgroupv1Files(c, 1000, 1000, 50)
+	if err != nil {
+		t.Error(err)
+	}
 	exceeded, err = c.isLimitExceeded()
-	Require(t, err)
+	if err != nil {
+		t.Error(err)
+	}
 	if !exceeded {
-		Fail(t, "Expected over limit")
+		t.Error("Expected over limit")
 	}
 
-}
-
-func Require(t *testing.T, err error, printables ...interface{}) {
-	t.Helper()
-	testhelpers.RequireImpl(t, err, printables...)
-}
-
-func Fail(t *testing.T, printables ...interface{}) {
-	t.Helper()
-	testhelpers.FailImpl(t, printables...)
 }

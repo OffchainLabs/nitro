@@ -145,12 +145,13 @@ func (c cgroupsV1MemoryLimitChecker) readIntFromFile(fileName string) (int, erro
 	}
 
 	var limit int
-	_, err = fmt.Fscanf(file, "%d", &limit)
-	if err != nil {
+	if _, err = fmt.Fscanf(file, "%d", &limit); err != nil {
 		return 0, err
 	}
 	return limit, nil
 }
+
+var re = regexp.MustCompile(`total_inactive_file (\d+)`)
 
 func (c cgroupsV1MemoryLimitChecker) readInactive() (int, error) {
 	file, err := os.Open(c.statsFile)
@@ -159,7 +160,6 @@ func (c cgroupsV1MemoryLimitChecker) readInactive() (int, error) {
 	}
 
 	scanner := bufio.NewScanner(file)
-	re := regexp.MustCompile(`total_inactive_file (\d+)`)
 	for scanner.Scan() {
 		line := scanner.Text()
 
