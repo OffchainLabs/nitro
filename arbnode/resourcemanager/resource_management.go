@@ -123,22 +123,22 @@ func isSupported(c limitChecker) bool {
 func (c *cgroupsV1MemoryLimitChecker) isLimitExceeded() (bool, error) {
 	var limit, usage, inactive int
 	var err error
-	limit, err = c.getIntFromFile(c.limitFile)
+	limit, err = c.readIntFromFile(c.limitFile)
 	if err != nil {
 		return false, err
 	}
-	usage, err = c.getIntFromFile(c.usageFile)
+	usage, err = c.readIntFromFile(c.usageFile)
 	if err != nil {
 		return false, err
 	}
-	inactive, err = c.getInactive()
+	inactive, err = c.readInactive()
 	if err != nil {
 		return false, err
 	}
 	return usage-inactive >= ((limit * c.memoryLimitPercent) / 100), nil
 }
 
-func (c cgroupsV1MemoryLimitChecker) getIntFromFile(fileName string) (int, error) {
+func (c cgroupsV1MemoryLimitChecker) readIntFromFile(fileName string) (int, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
 		return 0, err
@@ -152,7 +152,7 @@ func (c cgroupsV1MemoryLimitChecker) getIntFromFile(fileName string) (int, error
 	return limit, nil
 }
 
-func (c cgroupsV1MemoryLimitChecker) getInactive() (int, error) {
+func (c cgroupsV1MemoryLimitChecker) readInactive() (int, error) {
 	file, err := os.Open(c.statsFile)
 	if err != nil {
 		return 0, err
