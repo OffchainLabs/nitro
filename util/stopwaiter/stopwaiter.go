@@ -235,10 +235,10 @@ func CallIterativelyWith[T any](
 			if ctx.Err() != nil {
 				return
 			}
+			val = defaultVal
 			if interval == time.Duration(0) {
 				continue
 			}
-			val = defaultVal
 			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():
