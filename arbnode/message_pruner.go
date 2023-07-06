@@ -169,7 +169,7 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	if err != nil {
 		return err
 	}
-	if trimBatchCount+minBatchesLeft < batchCount {
+	if trimBatchCount+minBatchesLeft > batchCount {
 		if batchCount < minBatchesLeft {
 			return nil
 		}
