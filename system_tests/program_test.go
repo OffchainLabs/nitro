@@ -605,7 +605,15 @@ func testCreate(t *testing.T, jit bool) {
 		// compile the program
 		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 		Require(t, err)
-		ensure(arbWasm.CompileProgram(&auth, storeAddr))
+		tx, err = arbWasm.CompileProgram(&auth, storeAddr)
+		if err != nil {
+			if !strings.Contains(err.Error(), "ProgramUpToDate") {
+				Fatal(t, err)
+			}
+		} else {
+			_, succeedErr := EnsureTxSucceeded(ctx, l2client, tx)
+			Require(t, succeedErr)
+		}
 
 		// check the program works
 		key := testhelpers.RandomHash()
@@ -776,8 +784,7 @@ func testMemory(t *testing.T, jit bool) {
 	// expand to 128 pages, retract, then expand again to 128.
 	//   - multicall takes 1 page to init, and then 1 more at runtime.
 	//   - grow-and-call takes 1 page, then grows to the first arg by second arg steps.
-	args := []byte{0x01}
-	args = append(args, argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})...)
+	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
 	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
 
 	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
