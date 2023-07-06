@@ -148,22 +148,22 @@ func isSupported(c limitChecker) bool {
 func (c *cgroupsV1MemoryLimitChecker) isLimitExceeded() (bool, error) {
 	var limit, usage, inactive int
 	var err error
-	limit, err = c.readIntFromFile(c.limitFile)
+	limit, err = readIntFromFile(c.limitFile)
 	if err != nil {
 		return false, err
 	}
-	usage, err = c.readIntFromFile(c.usageFile)
+	usage, err = readIntFromFile(c.usageFile)
 	if err != nil {
 		return false, err
 	}
-	inactive, err = c.readInactive()
+	inactive, err = readInactive(c.statsFile)
 	if err != nil {
 		return false, err
 	}
 	return usage-inactive >= ((limit * c.memoryLimitPercent) / 100), nil
 }
 
-func (c cgroupsV1MemoryLimitChecker) readIntFromFile(fileName string) (int, error) {
+func readIntFromFile(fileName string) (int, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
 		return 0, err
@@ -178,8 +178,8 @@ func (c cgroupsV1MemoryLimitChecker) readIntFromFile(fileName string) (int, erro
 
 var re = regexp.MustCompile(`total_inactive_file (\d+)`)
 
-func (c cgroupsV1MemoryLimitChecker) readInactive() (int, error) {
-	file, err := os.Open(c.statsFile)
+func readInactive(fileName string) (int, error) {
+	file, err := os.Open(fileName)
 	if err != nil {
 		return 0, err
 	}
@@ -199,7 +199,7 @@ func (c cgroupsV1MemoryLimitChecker) readInactive() (int, error) {
 		}
 	}
 
-	return 0, errors.New("total_inactive_file not found in " + c.statsFile)
+	return 0, errors.New("total_inactive_file not found in " + fileName)
 }
 
 func (c cgroupsV1MemoryLimitChecker) String() string {
