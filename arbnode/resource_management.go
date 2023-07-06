@@ -11,10 +11,18 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
 	flag "github.com/spf13/pflag"
+)
+
+var (
+	limitCheckDurationHistogram = metrics.NewRegisteredHistogram("arb/rpc/limitcheck/duration", nil, metrics.NewBoundedHistogramSample())
+	limitCheckSuccessCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/success", nil)
+	limitCheckFailureCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/failure", nil)
 )
 
 func InitResourceManagement(conf *ResourceManagementConfig) {
@@ -47,15 +55,18 @@ func newResourceManagementHttpServer(inner http.Handler, c limitChecker) *resour
 }
 
 func (s *resourceManagementHttpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	start := time.Now()
 	exceeded, err := s.c.isLimitExceeded()
+	limitCheckDurationHistogram.Update(time.Since(start).Nanoseconds())
 	if err != nil {
 		log.Error("Error checking memory limit", "err", err, "checker", s.c)
 	} else if exceeded {
 		http.Error(w, "Too many requests", http.StatusTooManyRequests)
+		limitCheckFailureCounter.Inc(1)
 		return
 	}
 
-	log.Info("Limit not exceeded, serving request.")
+	limitCheckSuccessCounter.Inc(1)
 	s.inner.ServeHTTP(w, req)
 }
 
