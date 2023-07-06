@@ -100,7 +100,9 @@ func (m *PreimagesMapJson) UnmarshalJSON(data []byte) error {
 	}
 	m.Map = make(map[common.Hash][]byte)
 	encoding := base64.StdEncoding
-	keyBuf := make([]byte, 64)
+	// Used to store base64 decoded data
+	// Returned unmarshalled preimage slices will just be parts of this one
+	buf := make([]byte, encoding.DecodedLen(len(data)))
 	for {
 		c, err := readNonWhitespace(&data)
 		if err != nil {
@@ -116,10 +118,10 @@ func (m *PreimagesMapJson) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		maxKeyLen := encoding.DecodedLen(strLen)
-		if maxKeyLen > len(keyBuf) {
-			return fmt.Errorf("preimage key base64 possible length %v is greater than buffer size of %v", maxKeyLen, len(keyBuf))
+		if maxKeyLen > len(buf) {
+			return fmt.Errorf("preimage key base64 possible length %v is greater than buffer size of %v", maxKeyLen, len(buf))
 		}
-		keyLen, err := encoding.Decode(keyBuf, data[:strLen])
+		keyLen, err := encoding.Decode(buf, data[:strLen])
 		if err != nil {
 			return fmt.Errorf("error base64 decoding preimage key: %w", err)
 		}
@@ -127,7 +129,8 @@ func (m *PreimagesMapJson) UnmarshalJSON(data []byte) error {
 		if keyLen != len(key) {
 			return fmt.Errorf("expected preimage to be %v bytes long, but got %v bytes", len(key), keyLen)
 		}
-		copy(key[:], keyBuf[:len(key)])
+		copy(key[:], buf[:len(key)])
+		// We don't need to advance buf here because we already copied the data we needed out of it
 		data = data[strLen+1:]
 		err = expectCharacter(&data, ':')
 		if err != nil {
@@ -141,13 +144,16 @@ func (m *PreimagesMapJson) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		value := make([]byte, encoding.DecodedLen(strLen))
-		valueLen, err := encoding.Decode(value, data[:strLen])
+		maxValueLen := encoding.DecodedLen(strLen)
+		if maxValueLen > len(buf) {
+			return fmt.Errorf("preimage value base64 possible length %v is greater than buffer size of %v", maxValueLen, len(buf))
+		}
+		valueLen, err := encoding.Decode(buf, data[:strLen])
 		if err != nil {
 			return fmt.Errorf("error base64 decoding preimage value: %w", err)
 		}
-		value = value[:valueLen]
-		m.Map[key] = value
+		m.Map[key] = buf[:valueLen]
+		buf = buf[valueLen:]
 		data = data[strLen+1:]
 		c, err = readNonWhitespace(&data)
 		if err != nil {
