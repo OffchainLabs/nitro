@@ -178,12 +178,11 @@ pub(crate) fn read_return_data<E: EvmApi>(
     size: u32,
 ) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    let len = env.evm_data.return_data_len;
-    env.pay_for_evm_copy(len.into())?;
 
-    let data = env.evm_api.get_return_data();
+    let data = env.evm_api.get_return_data(offset, size);
+    env.pay_for_evm_copy(data.len() as u64)?;
+    assert!(data.len() <= size as usize);
     env.write_slice(dest, &data)?;
-    assert_eq!(data.len(), len as usize);
     Ok(data.len() as u32)
 }
 

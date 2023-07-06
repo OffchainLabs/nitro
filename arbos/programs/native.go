@@ -200,10 +200,10 @@ func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64,
 }
 
 //export getReturnDataImpl
-func getReturnDataImpl(api usize, output *rustVec) {
+func getReturnDataImpl(api usize, output *rustVec, offset u32, size u32) {
 	closures := getApi(api)
-	return_data := closures.getReturnData()
-	output.setBytes(return_data)
+	returnData := closures.getReturnData(uint32(offset), uint32(size))
+	output.setBytes(returnData)
 }
 
 //export emitLogImpl

@@ -144,8 +144,20 @@ impl EvmApi for TestEvmApi {
         unimplemented!("create2 not supported")
     }
 
-    fn get_return_data(&mut self) -> Vec<u8> {
-        self.return_data.lock().clone()
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
+        let data = self.return_data.lock();
+        let data_len = data.len();
+        let mut offset = offset as usize;
+        if offset > data_len {
+            offset = data_len;
+        }
+        let mut end = offset + size as usize;
+        if end > data_len || end < offset {
+            // offset + size larger than data or offset + size overflowed
+            end = data_len;
+        }
+
+        data[offset..end].to_vec()
     }
 
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {

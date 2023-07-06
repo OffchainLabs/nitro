@@ -51,9 +51,9 @@ EvmApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 s
     return create2Impl(api, code, endowment, salt, gas, len);
 }
 
-void getReturnDataImpl(usize api, RustVec * data);
-void getReturnDataWrap(usize api, RustVec * data) {
-    return getReturnDataImpl(api, data);
+void getReturnDataImpl(usize api, RustVec * data, u32 offset, u32 size);
+void getReturnDataWrap(usize api, RustVec * data, u32 offset, u32 size) {
+    return getReturnDataImpl(api, data, offset, size);
 }
 
 EvmApiStatus emitLogImpl(usize api, RustVec * data, usize topics);

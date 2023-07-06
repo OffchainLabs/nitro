@@ -165,13 +165,16 @@ pub unsafe extern "C" fn user_host__create2(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__read_return_data(ptr: usize, _offset: usize, _size: usize) -> usize {
+pub unsafe extern "C" fn user_host__read_return_data(
+    ptr: usize,
+    offset: usize,
+    size: usize,
+) -> usize {
     let program = Program::start();
-    let len = program.evm_data.return_data_len;
-    program.pay_for_evm_copy(len.into()).unwrap();
 
-    let data = program.evm_api.get_return_data();
-    assert_eq!(data.len(), len as usize);
+    let data = program.evm_api.get_return_data(offset as u32, size as u32);
+    program.pay_for_evm_copy(data.len() as u64).unwrap();
+    assert!(data.len() <= size as usize);
     wavm::write_slice_usize(&data, ptr);
     data.len()
 }

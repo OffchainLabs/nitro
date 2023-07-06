@@ -39,7 +39,7 @@ type create2Type func(
 	code []byte, salt, endowment *big.Int, gas uint64) (
 	addr common.Address, retdata_len uint32, cost uint64, err error,
 )
-type getReturnDataType func() []byte
+type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
@@ -228,8 +228,8 @@ func newApiClosures(
 	create2 := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
 		return create(code, endowment, salt, gas)
 	}
-	getReturnData := func() []byte {
-		data := interpreter.GetReturnData()
+	getReturnData := func(offset uint32, size uint32) []byte {
+		data := interpreter.GetReturnData(offset, size)
 		if data == nil {
 			return []byte{}
 		}
