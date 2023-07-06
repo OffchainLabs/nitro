@@ -114,9 +114,6 @@ func bytesTpMap(input []byte) (map[common.Hash][]byte, error) {
 		if len(input)-i < length {
 			return nil, errors.New("bad buffer size")
 		}
-		// buf := make([]byte, length)
-		// copy(buf[:], input[i:i+length])
-		// output[hash] = buf
 		output[hash] = input[i : i+length]
 		i += length
 	}
