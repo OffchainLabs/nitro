@@ -11,11 +11,11 @@ import (
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -98,10 +98,10 @@ func (s *StateManager) LatestExecutionState(ctx context.Context) (*protocol.Exec
 	}, nil
 }
 
-// ExecutionStateBlockHeight If the state manager locally has this execution state, returns its message count and true.
+// ExecutionStateMsgCount If the state manager locally has this execution state, returns its message count and true.
 // Otherwise, returns false.
 // Returns ErrChainCatchingUp if catching up to chain.
-func (s *StateManager) ExecutionStateBlockHeight(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
+func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
 	if state.MachineStatus != protocol.MachineStatusRunning {
 		return 0, false, errors.New("state is not running")
 	}
@@ -320,7 +320,7 @@ var ExecutionStateAbi = abi.Arguments{
 	},
 }
 
-func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stateprovider.ConfigSnapshot, postState rollupgen.RollupLibExecutionState, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
+func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stateprovider.ConfigSnapshot, postState rollupgen.ExecutionState, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
 	inboxMaxCountProof, err := ExecutionStateAbi.Pack(
 		postState.GlobalState.Bytes32Vals[0],
 		postState.GlobalState.Bytes32Vals[1],
