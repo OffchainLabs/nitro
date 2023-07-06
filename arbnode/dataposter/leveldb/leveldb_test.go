@@ -6,17 +6,18 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func newStorage[Item any](t *testing.T) *Storage[Item] {
 	t.Helper()
-	s, err := New[Item](path.Join(t.TempDir(), "level.db"))
+	db, err := rawdb.NewLevelDBDatabase(path.Join(t.TempDir(), "level.db"), 0, 0, "default", false)
 	if err != nil {
-		t.Fatalf("Error creating a test storage: %v", err)
+		t.Fatalf("NewLevelDBDatabase() unexpected error: %v", err)
 	}
-	return s
+	return New[Item](db)
 }
 
 // Returns storage that is already initialized with some elements.

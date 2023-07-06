@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -38,14 +37,8 @@ var (
 
 const DataPosterPrefix string = "d" // the prefix for all data poster keys
 
-func New[Item any](file string) (*Storage[Item], error) {
-	db, err := rawdb.NewLevelDBDatabase(file, 0, 0, "default", false)
-	if err != nil {
-		return nil, err
-	}
-	return &Storage[Item]{
-		db: rawdb.NewTable(db, DataPosterPrefix),
-	}, nil
+func New[Item any](db ethdb.Database) *Storage[Item] {
+	return &Storage[Item]{db: db}
 }
 
 func (s *Storage[Item]) decodeItem(data []byte) (*Item, error) {
