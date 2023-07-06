@@ -1,5 +1,5 @@
 [package]
-name = "multicall-norevert"
+name = "norevert-multicall"
 version = "0.1.0"
 edition = "2021"
 
