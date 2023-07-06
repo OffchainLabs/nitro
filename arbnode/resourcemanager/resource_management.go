@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package resourcemanager
 
 import (
 	"bufio"
@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -25,36 +25,36 @@ var (
 	limitCheckFailureCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/failure", nil)
 )
 
-func InitResourceManagement(conf *ResourceManagementConfig) {
+func Init(conf *Config) {
 	if conf.MemoryLimitPercent > 0 {
 		node.WrapHTTPHandler = func(srv http.Handler) (http.Handler, error) {
-			return newResourceManagementHttpServer(srv, newLimitChecker(conf)), nil
+			return newHttpServer(srv, newLimitChecker(conf)), nil
 		}
 	}
 }
 
-type ResourceManagementConfig struct {
+type Config struct {
 	MemoryLimitPercent int `koanf:"mem-limit-percent" reload:"hot"`
 }
 
-var DefaultResourceManagementConfig = ResourceManagementConfig{
+var DefaultConfig = Config{
 	MemoryLimitPercent: 0,
 }
 
-func ResourceManagementConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".mem-limit-percent", DefaultResourceManagementConfig.MemoryLimitPercent, "RPC calls are throttled if system memory utilization exceeds this percent value, zero (default) is disabled")
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Int(prefix+".mem-limit-percent", DefaultConfig.MemoryLimitPercent, "RPC calls are throttled if system memory utilization exceeds this percent value, zero (default) is disabled")
 }
 
-type resourceManagementHttpServer struct {
+type httpServer struct {
 	inner http.Handler
 	c     limitChecker
 }
 
-func newResourceManagementHttpServer(inner http.Handler, c limitChecker) *resourceManagementHttpServer {
-	return &resourceManagementHttpServer{inner: inner, c: c}
+func newHttpServer(inner http.Handler, c limitChecker) *httpServer {
+	return &httpServer{inner: inner, c: c}
 }
 
-func (s *resourceManagementHttpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	start := time.Now()
 	exceeded, err := s.c.isLimitExceeded()
 	limitCheckDurationHistogram.Update(time.Since(start).Nanoseconds())
@@ -75,7 +75,7 @@ type limitChecker interface {
 	String() string
 }
 
-func newLimitChecker(conf *ResourceManagementConfig) limitChecker {
+func newLimitChecker(conf *Config) limitChecker {
 	{
 		c := newCgroupsV1MemoryLimitChecker(DefaultCgroupsV1MemoryDirectory, conf.MemoryLimitPercent)
 		if isSupported(c) {

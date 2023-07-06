@@ -1,12 +1,14 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package resourcemanager
 
 import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func updateFakeCgroupv1Files(t *testing.T, c *cgroupsV1MemoryLimitChecker, limit, usage, inactive int) {
@@ -52,4 +54,14 @@ func TestCgroupsv1MemoryLimit(t *testing.T) {
 		Fail(t, "Expected over limit")
 	}
 
+}
+
+func Require(t *testing.T, err error, printables ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, printables...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

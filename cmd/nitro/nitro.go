@@ -38,6 +38,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -321,7 +322,7 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
-	arbnode.InitResourceManagement(&nodeConfig.Node.ResourceManagement)
+	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
 
 	stack, err := node.New(&stackConf)
 	if err != nil {
