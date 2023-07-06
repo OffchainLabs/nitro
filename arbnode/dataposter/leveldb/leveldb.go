@@ -54,7 +54,6 @@ func idxToKey(idx uint64) []byte {
 }
 
 func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
-
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -147,7 +146,6 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 	if err := b.Put(countKey, []byte(strconv.Itoa(cnt+1))); err != nil {
 		return fmt.Errorf("updating length counter: %w", err)
 	}
-
 	return b.Write()
 }
 

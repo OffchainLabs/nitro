@@ -57,7 +57,7 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
-	EnableLevelDB          bool                       `koanf:"leveldb-enable" reload:"hot"`
+	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -71,7 +71,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Bool(prefix+".leveldb-enable", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
