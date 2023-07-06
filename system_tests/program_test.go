@@ -200,7 +200,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 		)...,
 	)
 	legacyErrorMethod := "0x1e48fe82"
-	innerCallArgs = multicallAppend(innerCallArgs, vm.CALL, types.ArbDebugAddress, hexutil.MustDecode(legacyErrorMethod))
+	innerCallArgs = multicallNorevertAppend(innerCallArgs, vm.CALL, types.ArbDebugAddress, hexutil.MustDecode(legacyErrorMethod))
 
 	// Our second inner call will attempt to call a program that has not yet been compiled, and revert on error.
 	secondInnerCallArgs := []byte{0x01}
@@ -230,11 +230,11 @@ func testCompilationReuse(t *testing.T, jit bool) {
 		)...,
 	)
 	// Call the contract in a second inner call and watch it revert due to it not being compiled.
-	args = multicallAppend(args, vm.CALL, multiAddr, secondInnerCallArgs)
+	args = multicallNorevertAppend(args, vm.CALL, multiAddr, secondInnerCallArgs)
 	// Compile keccak program A.
-	args = multicallAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
+	args = multicallNorevertAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
 	// Call keccak program B, which should succeed as it shares the same code as program A.
-	args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
+	args = multicallNorevertAppend(args, vm.CALL, keccakB, keccakArgs)
 
 	colors.PrintMint("Sending multicall tx")
 
@@ -255,30 +255,6 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	}
 
 	validateBlocks(t, 7, jit, ctx, node, l2client)
-}
-
-func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
-	kinds := make(map[vm.OpCode]byte)
-	kinds[vm.CALL] = 0x00
-	kinds[vm.DELEGATECALL] = 0x01
-	kinds[vm.STATICCALL] = 0x02
-
-	args := []byte{0x01}
-	length := 21 + len(calldata)
-	if opcode == vm.CALL {
-		length += 32
-	}
-	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
-	args = append(args, kinds[opcode])
-	if opcode == vm.CALL {
-		if value == nil {
-			value = common.Big0
-		}
-		args = append(args, common.BigToHash(value).Bytes()...)
-	}
-	args = append(args, address.Bytes()...)
-	args = append(args, calldata...)
-	return args
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -962,8 +938,38 @@ func argsForStorageWrite(key, value common.Hash) []byte {
 	return args
 }
 
-func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
+func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
+	kinds := make(map[vm.OpCode]byte)
+	kinds[vm.CALL] = 0x00
+	kinds[vm.DELEGATECALL] = 0x01
+	kinds[vm.STATICCALL] = 0x02
+
+	args := []byte{0x01}
+	length := 21 + len(calldata)
+	if opcode == vm.CALL {
+		length += 32
+	}
+	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
+	args = append(args, kinds[opcode])
+	if opcode == vm.CALL {
+		if value == nil {
+			value = common.Big0
+		}
+		args = append(args, common.BigToHash(value).Bytes()...)
+	}
+	args = append(args, address.Bytes()...)
+	args = append(args, calldata...)
+	return args
+}
+
+func multicallNorevertAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
 	calls[1] += 1 // add another call
+	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
+	return calls
+}
+
+func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
+	calls[0] += 1 // add another call
 	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
 	return calls
 }
