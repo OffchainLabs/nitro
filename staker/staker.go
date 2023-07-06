@@ -231,6 +231,9 @@ func NewStaker(
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
+	if config.StartFromStaked {
+		notifiers = append(notifiers, blockValidator)
+	}
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -314,9 +317,6 @@ func (s *Staker) checkLatestStaked(ctx context.Context) error {
 		return nil
 	}
 
-	if s.blockValidator != nil && s.config.StartFromStaked {
-		s.blockValidator.UpdateLatestStaked(count, stakedGlobalState)
-	}
 	for _, notifier := range s.notifiers {
 		notifier.UpdateLatestStaked(count, stakedGlobalState)
 	}
