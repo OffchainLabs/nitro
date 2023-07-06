@@ -18,7 +18,6 @@ import (
 
 // Storage implements leveldb based storage for batch poster.
 type Storage[Item any] struct {
-
 	// Lock is used for using iterator and WriteBatch.
 	// https://fuchsia.googlesource.com/third_party/leveldb/+/HEAD/doc/index.md#concurrency
 	// Not necessary since there should be a single batchposter active at any
@@ -34,8 +33,6 @@ var (
 	lastItemKey = []byte(".last_item_key")
 	countKey    = []byte(".count_key")
 )
-
-const DataPosterPrefix string = "d" // the prefix for all data poster keys
 
 func New[Item any](db ethdb.Database) *Storage[Item] {
 	return &Storage[Item]{db: db}
