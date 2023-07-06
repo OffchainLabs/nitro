@@ -321,6 +321,8 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
+	arbnode.InitResourceManagement(&nodeConfig.Node.ResourceManagement)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()

@@ -329,6 +329,7 @@ type Config struct {
 	TxLookupLimit        uint64                       `koanf:"tx-lookup-limit"`
 	TransactionStreamer  TransactionStreamerConfig    `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance          MaintenanceConfig            `koanf:"maintenance" reload:"hot"`
+	ResourceManagement   ResourceManagementConfig     `koanf:"resource-mgmt" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -402,6 +403,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	ResourceManagementConfigAddOptions(prefix+".resource-mgmt", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -428,6 +430,7 @@ var ConfigDefault = Config{
 	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
 	Caching:              execution.DefaultCachingConfig,
 	TransactionStreamer:  DefaultTransactionStreamerConfig,
+	ResourceManagement:   DefaultResourceManagementConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
