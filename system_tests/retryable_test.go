@@ -549,6 +549,7 @@ type submissionContext struct {
 // sets retry.Id
 // returns first retry tx hash
 func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContext, retry *retryables.TestRetryableData) *types.Receipt {
+	t.Helper()
 	l1tx, err := subCtx.delayedInbox.CreateRetryableTicket(
 		subCtx.userTxOpts,
 		retry.To,
@@ -561,17 +562,17 @@ func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContex
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		retry.CallData,
 	)
-	Require(t, err)
+	Require(t, err, "CreateRetryableTicket failed")
 	l1receipt, err := EnsureTxSucceeded(ctx, subCtx.l1client, l1tx)
-	Require(t, err)
+	Require(t, err, "EnsureTxSucceeded failed")
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1receipt indicated failure")
 	}
 	waitForL1DelayBlocks(t, ctx, subCtx.l1client, subCtx.l1info)
 	receipt, err := WaitForTx(ctx, subCtx.l2client, subCtx.lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
-	Require(t, err)
+	Require(t, err, "WaitForTx failed, waited for retryable submission tx")
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t)
+		Fatal(t, "unexpected receipt status, expected success")
 	}
 	if len(receipt.Logs) != 2 {
 		Fatal(t, "unexpected length of submit retryable tx receipt logs, want: 2, have:", len(receipt.Logs))
@@ -579,7 +580,7 @@ func submitRetryable(t *testing.T, ctx context.Context, subCtx *submissionContex
 	retry.Id = receipt.Logs[0].Topics[1]
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 	autoRedeemReceipt, err := WaitForTx(ctx, subCtx.l2client, firstRetryTxId, time.Second*5)
-	Require(t, err)
+	Require(t, err, "WaitForTx failed, waited for first retry tx")
 	return autoRedeemReceipt
 }
 
@@ -944,13 +945,13 @@ func redeemRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *e
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(ownerTxOpts, retry.Id)
-	Require(t, err)
+	Require(t, err, "Redeem failed")
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
+	Require(t, err, "EnsureTxSucceeded failed")
 	retryTxId := receipt.Logs[0].Topics[2]
 	// check the receipt for the retry
 	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
-	Require(t, err)
+	Require(t, err, "WaitForTx failed")
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, receipt.Status)
 	}

@@ -17,8 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
-	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -87,42 +85,45 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		// Try to reap 2 retryables, revert the state on failure
 		snapshot := evm.StateDB.Snapshot()
-		var merkleUpdateEvents []merkleAccumulator.MerkleTreeNodeEvent
-		var expiredRetryableLeaves []*retryables.ExpiredRetryableLeaf
+	reapingLoop:
 		for i := 0; i < 2; i++ {
-			var events []merkleAccumulator.MerkleTreeNodeEvent
-			var leaf *retryables.ExpiredRetryableLeaf
-			events, leaf, err = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+			merkleUpdateEvents, leaf, err := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 			if err != nil {
 				log.Error("Failed to try reaping one retryable", "err", err)
 				break
 			}
-			merkleUpdateEvents = append(merkleUpdateEvents, events...)
 			if leaf != nil {
-				expiredRetryableLeaves = append(expiredRetryableLeaves, leaf)
-			}
-		}
-		if err == nil {
-			for _, leaf := range expiredRetryableLeaves {
 				position := merkletree.LevelAndLeaf{Level: 0, Leaf: leaf.Index}
 				if err = EmitRetryableExpiredEvent(evm, leaf.Hash, position.ToBigInt(), leaf.TicketId, leaf.NumTries); err != nil {
 					log.Error("Failed to emit RetryableExpired event", "err", err)
 					break
 				}
 			}
-		}
-		if err == nil {
 			for _, event := range merkleUpdateEvents {
 				position := merkletree.LevelAndLeaf{Level: event.Level, Leaf: event.NumLeaves}
 				if err = EmitExpiredMerkleUpdateEvent(evm, event.Hash, position.ToBigInt()); err != nil {
 					log.Error("Failed to emit ExpiredMerkleUpdate event", "err", err)
-					break
+					break reapingLoop
+				}
+			}
+			// we succeeded reaping, so take new snapshot
+			snapshot = evm.StateDB.Snapshot()
+		}
+		if err == nil {
+			newRootSnapshot, err := state.RetryableState().TryRotatingExpiredRootSnapshots(currentTime)
+			if err != nil {
+				log.Error("Failed to try rotating expired root snapshots", "err", err)
+			} else if newRootSnapshot != nil {
+				// TODO(magic) do we want to emit current time? it could be sourced later on based on block number in log, but probably would require query for the block header
+				if err = EmitExpiredMerkleRootSnapshotEvent(evm, *newRootSnapshot, currentTime); err != nil {
+					log.Error("Failed to emit ExpiredMerkleRootSnapshot event", "err", err)
 				}
 			}
 		}
+
 		if err != nil {
 			evm.StateDB.RevertToSnapshot(snapshot)
-			log.Warn("Reverting ticket reaping because of error", "err", err)
+			log.Warn("Reverting ticket handling because of an error (fully or partially)")
 		}
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)

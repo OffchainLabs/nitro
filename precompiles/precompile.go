@@ -557,6 +557,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	arbos.ExpiredMerkleUpdateEventID = ArbRetryable.events["ExpiredMerkleUpdate"].template.ID
+	arbos.ExpiredMerkleRootSnapshotEventID = ArbRetryable.events["ExpiredMerkleRootSnapshot"].template.ID
 	arbos.RetryableExpiredEventID = ArbRetryable.events["RetryableExpired"].template.ID
 	arbos.EmitReedeemScheduledEvent = func(
 		evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32,
@@ -575,6 +576,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.EmitExpiredMerkleUpdateEvent = func(evm mech, nodeHash bytes32, position huge) error {
 		context := eventCtx(ArbRetryableImpl.ExpiredMerkleUpdateGasCost(hash{}, common.Big0))
 		return ArbRetryableImpl.ExpiredMerkleUpdate(context, evm, nodeHash, position)
+	}
+	arbos.EmitExpiredMerkleRootSnapshotEvent = func(evm mech, root bytes32, timestamp uint64) error {
+		context := eventCtx(ArbRetryableImpl.ExpiredMerkleRootSnapshotGasCost(hash{}, 0))
+		return ArbRetryableImpl.ExpiredMerkleRootSnapshot(context, evm, root, timestamp)
 	}
 	arbos.EmitRetryableExpiredEvent = func(evm mech, nodeHash bytes32, position huge, ticketId bytes32, numTries uint64) error {
 		context := eventCtx(ArbRetryableImpl.RetryableExpiredGasCost(hash{}, common.Big0, hash{}, 0))

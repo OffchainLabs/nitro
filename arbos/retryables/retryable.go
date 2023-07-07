@@ -23,6 +23,8 @@ import (
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
+const ExpiredSnapshotsCapacity = 2
+const ExpiredSnapshotsRotationIntervalSeconds = 30 * 60 // 30 minutes
 
 var ErrTicketNotFound = errors.New("ticketId not found")
 var ErrInvalidRoot = errors.New("invalid root hash")
@@ -30,23 +32,28 @@ var ErrWrongProof = errors.New("wrong proof")
 var ErrAlreadyRevived = errors.New("already revived")
 
 type RetryableState struct {
-	retryables   *storage.Storage
-	TimeoutQueue *storage.Queue
-	Expired      *merkleAccumulator.MerkleAccumulator
-	revived      *storage.Uint64Set
+	retryables       *storage.Storage
+	TimeoutQueue     *storage.Queue
+	Expired          *merkleAccumulator.MerkleAccumulator
+	expiredSnapshots *storage.RingBuffer
+	revived          *storage.Uint64Set
 }
 
 var (
-	timeoutQueueKey = []byte{0}
-	calldataKey     = []byte{1}
-	archiveKey      = []byte{2}
-	revivedKey      = []byte{3}
+	timeoutQueueKey     = []byte{0}
+	calldataKey         = []byte{1}
+	archiveKey          = []byte{2}
+	expiredSnapshotsKey = []byte{3}
+	revivedKey          = []byte{4}
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(archiveKey))
 	storage.InitializeUint64Set(sto.OpenSubStorage(revivedKey))
-	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
+	if err := storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey)); err != nil {
+		return err
+	}
+	return storage.InitializeRingBuffer(sto.OpenSubStorage(expiredSnapshotsKey), ExpiredSnapshotsCapacity)
 }
 
 func OpenRetryableState(sto *storage.Storage) *RetryableState {
@@ -54,6 +61,7 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
 		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
+		storage.OpenRingBuffer(sto.OpenSubStorage(expiredSnapshotsKey)),
 		storage.OpenUint64Set(sto.OpenSubStorage(revivedKey)),
 	}
 }
@@ -357,12 +365,24 @@ func (rs *RetryableState) Revive(
 	currentTimestamp,
 	timeToAdd uint64,
 ) (uint64, error) {
-	expiredRoot, err := rs.Expired.Root()
+	var found bool
+	err := rs.expiredSnapshots.ForEach(func(_ uint64, previousRoot common.Hash) (bool, error) {
+		if bytes.Equal(rootHash.Bytes(), previousRoot.Bytes()) {
+			found = true
+		}
+		return !found, nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	if !bytes.Equal(rootHash.Bytes(), expiredRoot.Bytes()) {
-		return 0, ErrInvalidRoot
+	if !found {
+		currentRoot, err := rs.Expired.Root()
+		if err != nil {
+			return 0, err
+		}
+		if !bytes.Equal(rootHash.Bytes(), currentRoot.Bytes()) {
+			return 0, ErrInvalidRoot
+		}
 	}
 	retryableHash := RetryableHash(ticketId, numTries, from, to, callValue, beneficiary, callData)
 	merkleProof := merkletree.MerkleProof{
@@ -526,6 +546,26 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		return nil, nil, err
 	}
 	return nil, nil, windowsLeftStorage.Set(windowsLeft - 1)
+}
+
+func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) (*common.Hash, error) {
+	var rotatedRoot *common.Hash
+	err := rs.expiredSnapshots.RotateAndSetExtraConditionaly(func(timestamp uint64) (bool, common.Hash, uint64, error) {
+		var err error
+		if timestamp < currentTime && currentTime-timestamp > ExpiredSnapshotsRotationIntervalSeconds {
+			var root common.Hash
+			root, err = rs.Expired.Root()
+			if err == nil {
+				rotatedRoot = &root
+				return true, root, currentTime, nil
+			}
+		}
+		return false, common.Hash{}, 0, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rotatedRoot, nil
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {
