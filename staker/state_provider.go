@@ -41,7 +41,7 @@ type StateManager struct {
 	maxWavmOpcodes       uint64
 }
 
-func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64, ) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
 	return &StateManager{
 		validator:            val,
 		blockValidator:       blockValidator,
@@ -50,8 +50,8 @@ func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidato
 	}, nil
 }
 
-// LatestExecutionState Produces the latest state to assert to L1 from the local state manager's perspective.
-func (s *StateManager) LatestExecutionState(ctx context.Context) (*protocol.ExecutionState, error) {
+// ExecutionStateAtMessageNumber produces a validated execution state at a specified message number.
+func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	var validatedGlobalState validator.GoGlobalState
 	if s.blockValidator != nil {
 		valInfo, err := s.blockValidator.ReadLastValidatedInfo()
@@ -98,28 +98,32 @@ func (s *StateManager) LatestExecutionState(ctx context.Context) (*protocol.Exec
 	}, nil
 }
 
-// ExecutionStateMsgCount If the state manager locally has this execution state, returns its message count and true.
-// Otherwise, returns false.
-// Returns ErrChainCatchingUp if catching up to chain.
-func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, bool, error) {
+// ExecutionStateMsgCount If the state manager locally has this validated execution state.
+// Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
+// validated / syncing.
+func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
 	if state.MachineStatus != protocol.MachineStatusRunning {
-		return 0, false, errors.New("state is not running")
+		return 0, errors.New("state is not running")
 	}
-	validatedExecutaionState, err := s.LatestExecutionState(ctx)
+	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch)
 	if err != nil {
-		return 0, false, err
+		return 0, err
+	}
+	validatedExecutaionState, err := s.ExecutionStateAtMessageNumber(ctx, uint64(messageCount))
+	if err != nil {
+		return 0, err
 	}
 	if validatedExecutaionState.GlobalState.Batch < state.GlobalState.Batch ||
 		(validatedExecutaionState.GlobalState.Batch == state.GlobalState.Batch &&
 			validatedExecutaionState.GlobalState.PosInBatch < state.GlobalState.PosInBatch) {
-		return 0, false, ErrChainCatchingUp
+		return 0, l2stateprovider.ErrChainCatchingUp
 	}
 	var prevBatchMsgCount arbutil.MessageIndex
 	if state.GlobalState.Batch > 0 {
 		var err error
 		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch - 1)
 		if err != nil {
-			return 0, false, err
+			return 0, err
 		}
 	}
 	count := prevBatchMsgCount
@@ -128,22 +132,22 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	}
 	res, err := s.validator.streamer.ResultAtCount(count)
 	if err != nil {
-		return 0, false, err
+		return 0, err
 	}
 	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
-		return 0, false, fmt.Errorf("count %d hash %v expected %v, sendroot %v expected %v", count, state.GlobalState.BlockHash, res.BlockHash, state.GlobalState.SendRoot, res.SendRoot)
+		return 0, fmt.Errorf("%w: count %d hash %v expected %v, sendroot %v expected %v", l2stateprovider.ErrNoExecutionState, count, state.GlobalState.BlockHash, res.BlockHash, state.GlobalState.SendRoot, res.SendRoot)
 	}
-	return uint64(count), true, nil
+	return uint64(count), nil
 }
 
 // HistoryCommitmentUpTo Produces a block history commitment up to and including messageCount.
-func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount uint64) (commitments.History, error) {
+func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageNumber uint64) (commitments.History, error) {
 	batch, err := s.findBatchAfterMessageCount(0)
 	if err != nil {
 		return commitments.History{}, err
 	}
 	var stateRoots []common.Hash
-	for i := arbutil.MessageIndex(0); i <= arbutil.MessageIndex(messageCount); i++ {
+	for i := arbutil.MessageIndex(0); i <= arbutil.MessageIndex(messageNumber); i++ {
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
 			return commitments.History{}, err
@@ -162,8 +166,8 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageCount u
 
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
 // challenge heights blockHeight and blockHeight+1.
-func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) (commitments.History, error) {
-	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, blockHeight, toBigStep)
+func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, toBigStep uint64) (commitments.History, error) {
+	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return commitments.History{}, err
 	}
@@ -172,8 +176,8 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
 // big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) (commitments.History, error) {
-	result, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, blockHeight, bigStep, toSmallStep)
+func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, bigStep uint64, toSmallStep uint64) (commitments.History, error) {
+	result, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, messageNumber, bigStep, toSmallStep)
 	if err != nil {
 		return commitments.History{}, err
 	}
@@ -182,8 +186,8 @@ func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRo
 
 // HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,
 // but padding states with duplicates after the first state with a batch count of at least the specified max.
-func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStart uint64, blockEnd uint64, nextBatchCount uint64) (commitments.History, error) {
-	stateRoots, err := s.statesUpTo(blockStart, blockEnd, nextBatchCount)
+func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, messageNumberStart uint64, messageNumberEnd uint64, nextBatchCount uint64) (commitments.History, error) {
+	stateRoots, err := s.statesUpTo(messageNumberStart, messageNumberEnd, nextBatchCount)
 	if err != nil {
 		return commitments.History{}, err
 	}
@@ -192,21 +196,21 @@ func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, blockStar
 
 // BigStepLeafCommitment Produces a big step history commitment for all big steps within block
 // challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64) (commitments.History, error) {
+func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64) (commitments.History, error) {
 	// Number of big steps between assertion heights A and B will be
 	// fixed. It is simply the max number of opcodes
 	// per block divided by the size of a big step.
 	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
-	return s.BigStepCommitmentUpTo(ctx, wasmModuleRoot, blockHeight, numBigSteps)
+	return s.BigStepCommitmentUpTo(ctx, wasmModuleRoot, messageNumber, numBigSteps)
 }
 
 // SmallStepLeafCommitment Produces a small step history commitment for all small steps between
 // big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64) (commitments.History, error) {
+func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, bigStep uint64) (commitments.History, error) {
 	return s.SmallStepCommitmentUpTo(
 		ctx,
 		wasmModuleRoot,
-		blockHeight,
+		messageNumber,
 		bigStep,
 		s.numOpcodesPerBigStep,
 	)
@@ -217,26 +221,17 @@ func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRo
 func (s *StateManager) PrefixProofUpToBatch(
 	ctx context.Context,
 	startHeight,
-	fromBlockChallengeHeight,
-	toBlockChallengeHeight,
+	fromMessageNumber,
+	toMessageNumber,
 	batchCount uint64,
 ) ([]byte, error) {
-	states, err := s.statesUpTo(startHeight, toBlockChallengeHeight, batchCount)
+	states, err := s.statesUpTo(startHeight, toMessageNumber, batchCount)
 	if err != nil {
 		return nil, err
 	}
-	loSize := fromBlockChallengeHeight + 1 - startHeight
-	hiSize := toBlockChallengeHeight + 1 - startHeight
+	loSize := fromMessageNumber + 1 - startHeight
+	hiSize := toMessageNumber + 1 - startHeight
 	return s.getPrefixProof(loSize, hiSize, states)
-}
-
-// PrefixProof Produces a prefix proof in a block challenge from height A to B.
-func (s *StateManager) PrefixProof(
-	ctx context.Context,
-	fromBlockChallengeHeight,
-	toBlockChallengeHeight uint64,
-) ([]byte, error) {
-	return s.PrefixProofUpToBatch(ctx, 0, fromBlockChallengeHeight, toBlockChallengeHeight, math.MaxUint64)
 }
 
 // BigStepPrefixProof Produces a big step prefix proof from height A to B for heights fromBlockChallengeHeight to H+1
@@ -244,11 +239,11 @@ func (s *StateManager) PrefixProof(
 func (s *StateManager) BigStepPrefixProof(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	blockHeight uint64,
+	messageNumber uint64,
 	fromBigStep uint64,
 	toBigStep uint64,
 ) ([]byte, error) {
-	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, blockHeight, toBigStep)
+	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return nil, err
 	}
@@ -259,8 +254,8 @@ func (s *StateManager) BigStepPrefixProof(
 
 // SmallStepPrefixProof Produces a small step prefix proof from height A to B for big step S to S+1 and
 // block challenge height heights H to H+1.
-func (s *StateManager) SmallStepPrefixProof(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) ([]byte, error) {
-	prefixLeaves, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, blockHeight, bigStep, toSmallStep)
+func (s *StateManager) SmallStepPrefixProof(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) ([]byte, error) {
+	prefixLeaves, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, messageNumber, bigStep, toSmallStep)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +315,14 @@ var ExecutionStateAbi = abi.Arguments{
 	},
 }
 
-func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stateprovider.ConfigSnapshot, postState rollupgen.ExecutionState, blockHeight uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
+func (s *StateManager) OneStepProofData(
+	ctx context.Context,
+	cfgSnapshot *l2stateprovider.ConfigSnapshot,
+	postState rollupgen.ExecutionState,
+	messageNumber,
+	bigStep,
+	smallStep uint64,
+) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
 	inboxMaxCountProof, err := ExecutionStateAbi.Pack(
 		postState.GlobalState.Bytes32Vals[0],
 		postState.GlobalState.Bytes32Vals[1],
@@ -344,9 +346,9 @@ func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stat
 	startCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
 		cfgSnapshot.WasmModuleRoot,
-		blockHeight,
+		messageNumber,
 		bigStep,
-		fromSmallStep,
+		smallStep,
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -354,17 +356,17 @@ func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stat
 	endCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
 		cfgSnapshot.WasmModuleRoot,
-		blockHeight,
+		messageNumber,
 		bigStep,
-		toSmallStep,
+		smallStep,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	step := bigStep*s.numOpcodesPerBigStep + fromSmallStep
+	step := bigStep*s.numOpcodesPerBigStep + smallStep
 
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(messageNumber))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -417,76 +419,44 @@ func (s *StateManager) OneStepProofData(ctx context.Context, cfgSnapshot *l2stat
 func (s *StateManager) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	edgeType protocol.EdgeType,
 	prevAssertionInboxMaxCount uint64,
-	heights *protocol.OriginHeights,
-	startCommit,
-	endCommit commitments.History,
-) (protocol.Agreement, error) {
-	agreement := protocol.Agreement{}
-	var localStartCommit commitments.History
-	var localEndCommit commitments.History
+	edgeType protocol.EdgeType,
+	heights protocol.OriginHeights,
+	history l2stateprovider.History,
+) (bool, error) {
+	var localCommit commitments.History
 	var err error
 	switch edgeType {
 	case protocol.BlockChallengeEdge:
-		localStartCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(startCommit.Height), prevAssertionInboxMaxCount)
+		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(history.Height), prevAssertionInboxMaxCount)
 		if err != nil {
-			return protocol.Agreement{}, err
-		}
-		localEndCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(endCommit.Height), prevAssertionInboxMaxCount)
-		if err != nil {
-			return protocol.Agreement{}, err
+			return false, err
 		}
 	case protocol.BigStepChallengeEdge:
-		localStartCommit, err = s.BigStepCommitmentUpTo(
+		localCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
 			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
-			startCommit.Height,
+			history.Height,
 		)
 		if err != nil {
-			return protocol.Agreement{}, err
-		}
-		localEndCommit, err = s.BigStepCommitmentUpTo(
-			ctx,
-			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
-			endCommit.Height,
-		)
-		if err != nil {
-			return protocol.Agreement{}, err
+			return false, err
 		}
 	case protocol.SmallStepChallengeEdge:
-		localStartCommit, err = s.SmallStepCommitmentUpTo(
+		localCommit, err = s.SmallStepCommitmentUpTo(
 			ctx,
 			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
 			uint64(heights.BigStepChallengeOriginHeight),
-			startCommit.Height,
+			history.Height,
 		)
 		if err != nil {
-			return protocol.Agreement{}, err
-		}
-		localEndCommit, err = s.SmallStepCommitmentUpTo(
-			ctx,
-			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BigStepChallengeOriginHeight),
-			endCommit.Height,
-		)
-		if err != nil {
-			return protocol.Agreement{}, err
+			return false, err
 		}
 	default:
-		return agreement, errors.New("unsupported edge type")
+		return false, errors.New("unsupported edge type")
 	}
-	if localStartCommit.Height == startCommit.Height && localStartCommit.Merkle == startCommit.Merkle {
-		agreement.AgreesWithStartCommit = true
-	}
-	if localEndCommit.Height == endCommit.Height && localEndCommit.Merkle == endCommit.Merkle {
-		agreement.IsHonestEdge = true
-	}
-	return agreement, nil
+	return localCommit.Height == history.Height && localCommit.Merkle == history.MerkleRoot, nil
 }
 
 func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
