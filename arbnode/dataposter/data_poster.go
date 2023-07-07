@@ -21,6 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -144,10 +147,10 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 	case config().EnableLevelDB:
 		queue = leveldb.New[queuedTransaction[Meta]](db)
 	case redisClient == nil:
-		queue = NewSliceStorage[queuedTransaction[Meta]]()
+		queue = slice.NewSliceStorage[queuedTransaction[Meta]]()
 	default:
 		var err error
-		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +472,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, ErrStorageRace) {
+	if errors.Is(err, storage.ErrStorageRace) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			logLevel = log.Debug
