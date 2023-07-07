@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -41,7 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 )
 
 type InitConfig struct {
@@ -75,7 +76,7 @@ var InitConfigDefault = InitConfig{
 	PruneBloomSize:  2048,
 }
 
-func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
+func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
 	f.String(prefix+".url", InitConfigDefault.Url, "url to download initializtion data - will poll if download fails")
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
@@ -326,7 +327,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
+		validatorDb := rawdb.NewTable(arbDb, storage.BlockValidatorPrefix)
 		lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
 		if err != nil {
 			return nil, err
