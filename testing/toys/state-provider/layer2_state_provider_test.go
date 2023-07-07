@@ -6,12 +6,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math"
 	"testing"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -38,7 +41,7 @@ func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
 	_ = ctx
-	manager, err := New(
+	manager, err := NewWithMockedStateRoots(
 		hashes,
 		WithMaxWavmOpcodesPerBlock(8),
 		WithNumOpcodesPerBigStep(8),
@@ -80,7 +83,7 @@ func TestGranularCommitments_SameStartHistory(t *testing.T) {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
 	_ = ctx
-	manager, err := New(
+	manager, err := NewWithMockedStateRoots(
 		hashes,
 		WithMaxWavmOpcodesPerBlock(56),
 		WithNumOpcodesPerBigStep(8),
@@ -150,7 +153,7 @@ func TestGranularCommitments_DifferentStartPoints(t *testing.T) {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
 	_ = ctx
-	manager, err := New(
+	manager, err := NewWithMockedStateRoots(
 		hashes,
 		WithMaxWavmOpcodesPerBlock(56),
 		WithNumOpcodesPerBigStep(8),
@@ -219,7 +222,7 @@ func TestAllPrefixProofs(t *testing.T) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager, err := New(
+	manager, err := NewWithMockedStateRoots(
 		hashes,
 		WithMaxWavmOpcodesPerBlock(20),
 		WithNumOpcodesPerBigStep(4),
@@ -352,7 +355,7 @@ func TestDivergenceGranularity(t *testing.T) {
 	maxOpcodesPerBlock := uint64(100)
 
 	honestStates, _ := setupStates(t, numStates, 0 /* honest */)
-	honestManager, err := NewWithAssertionStates(
+	honestManager, err := newTestingMachine(
 		honestStates,
 		WithMaxWavmOpcodesPerBlock(maxOpcodesPerBlock),
 		WithNumOpcodesPerBigStep(bigStepSize),
@@ -375,7 +378,7 @@ func TestDivergenceGranularity(t *testing.T) {
 	divergenceHeight := toBlock
 	evilStates, _ := setupStates(t, numStates, divergenceHeight)
 
-	evilManager, err := NewWithAssertionStates(
+	evilManager, err := newTestingMachine(
 		evilStates,
 		WithMaxWavmOpcodesPerBlock(maxOpcodesPerBlock),
 		WithNumOpcodesPerBigStep(bigStepSize),
@@ -537,7 +540,7 @@ func TestPrefixProofs(t *testing.T) {
 		{20, 511},
 	} {
 		leaves := hashesForUints(0, c.hi+1)
-		manager, err := New(leaves)
+		manager, err := NewWithMockedStateRoots(leaves)
 		require.NoError(t, err)
 
 		packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, c.lo, c.hi, 1)
@@ -574,6 +577,41 @@ func TestPrefixProofs(t *testing.T) {
 		err = prefixproofs.VerifyPrefixProof(cfg)
 		require.NoError(t, err)
 	}
+}
+
+func newTestingMachine(
+	assertionChainExecutionStates []*protocol.ExecutionState,
+	opts ...Opt,
+) (*L2StateBackend, error) {
+	if len(assertionChainExecutionStates) == 0 {
+		return nil, errors.New("must have execution states")
+	}
+	stateRoots := make([]common.Hash, len(assertionChainExecutionStates))
+	var lastBatch uint64 = math.MaxUint64
+	var lastPosInBatch uint64 = math.MaxUint64
+	for i := 0; i < len(stateRoots); i++ {
+		state := assertionChainExecutionStates[i]
+		if state.GlobalState.Batch == lastBatch && state.GlobalState.PosInBatch == lastPosInBatch {
+			return nil, fmt.Errorf("execution states %v and %v have the same batch %v and position in batch %v", i-1, i, lastBatch, lastPosInBatch)
+		}
+		lastBatch = state.GlobalState.Batch
+		lastPosInBatch = state.GlobalState.PosInBatch
+		stateRoots[i] = protocol.ComputeSimpleMachineChallengeHash(state)
+	}
+	s := &L2StateBackend{
+		stateRoots:      stateRoots,
+		executionStates: assertionChainExecutionStates,
+		machineAtBlock: func(context.Context, uint64) (Machine, error) {
+			return nil, errors.New("state manager created with NewWithAssertionStates() cannot provide machines")
+		},
+		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
+		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
+		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
 }
 
 func hashesForUints(lo, hi uint64) []common.Hash {

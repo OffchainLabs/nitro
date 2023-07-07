@@ -151,7 +151,7 @@ type ChainSetup struct {
 
 func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 	ctx := context.Background()
-	accs, backend, err := Accounts(3)
+	accs, backend, err := Accounts(4)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 
 	headerReader := headerreader.New(simulated_backend.Wrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
 	headerReader.Start(ctx)
-	chains := make([]*solimpl.AssertionChain, 2)
+	chains := make([]*solimpl.AssertionChain, 3)
 	chain1, err := solimpl.NewAssertionChain(
 		ctx,
 		addresses.Rollup,
@@ -206,6 +206,17 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		return nil, err
 	}
 	chains[1] = chain2
+	chain3, err := solimpl.NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		accs[3].TxOpts,
+		backend,
+		headerReader,
+	)
+	if err != nil {
+		return nil, err
+	}
+	chains[2] = chain3
 	return &ChainSetup{
 		Chains:       chains,
 		Accounts:     accs,

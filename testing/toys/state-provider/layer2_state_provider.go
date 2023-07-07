@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
@@ -44,10 +43,11 @@ type L2StateBackend struct {
 	levelZeroBlockEdgeHeight     uint64
 	levelZeroBigStepEdgeHeight   uint64
 	levelZeroSmallStepEdgeHeight uint64
+	maliciousMachineIndex        uint64
 }
 
-// New simulated manager from a list of predefined state roots, useful for tests and simulations.
-func New(stateRoots []common.Hash, opts ...Opt) (*L2StateBackend, error) {
+// Initialize with a list of predefined state roots, useful for tests and simulations.
+func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBackend, error) {
 	if len(stateRoots) == 0 {
 		return nil, errors.New("no state roots provided")
 	}
@@ -116,43 +116,10 @@ func WithLevelZeroEdgeHeights(heights *challenge_testing.LevelZeroHeights) Opt {
 	}
 }
 
-// NewWithAssertionStates creates a simulated state manager from a list of predefined state roots for
-// the top-level assertion chain, useful for tests and simulation purposes in block challenges.
-// This also allows for specifying the honest states for big and small step subchallenges along
-// with the point at which the state manager should diverge from the honest computation.
-func NewWithAssertionStates(
-	assertionChainExecutionStates []*protocol.ExecutionState,
-	opts ...Opt,
-) (*L2StateBackend, error) {
-	if len(assertionChainExecutionStates) == 0 {
-		return nil, errors.New("must have execution states")
+func WithMaliciousMachineIndex(index uint64) Opt {
+	return func(s *L2StateBackend) {
+		s.maliciousMachineIndex = index
 	}
-	stateRoots := make([]common.Hash, len(assertionChainExecutionStates))
-	var lastBatch uint64 = math.MaxUint64
-	var lastPosInBatch uint64 = math.MaxUint64
-	for i := 0; i < len(stateRoots); i++ {
-		state := assertionChainExecutionStates[i]
-		if state.GlobalState.Batch == lastBatch && state.GlobalState.PosInBatch == lastPosInBatch {
-			return nil, fmt.Errorf("execution states %v and %v have the same batch %v and position in batch %v", i-1, i, lastBatch, lastPosInBatch)
-		}
-		lastBatch = state.GlobalState.Batch
-		lastPosInBatch = state.GlobalState.PosInBatch
-		stateRoots[i] = protocol.ComputeSimpleMachineChallengeHash(state)
-	}
-	s := &L2StateBackend{
-		stateRoots:      stateRoots,
-		executionStates: assertionChainExecutionStates,
-		machineAtBlock: func(context.Context, uint64) (Machine, error) {
-			return nil, errors.New("state manager created with NewWithAssertionStates() cannot provide machines")
-		},
-		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
-		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
-		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
-	}
-	for _, o := range opts {
-		o(s)
-	}
-	return s, nil
 }
 
 func NewForSimpleMachine(
@@ -162,6 +129,7 @@ func NewForSimpleMachine(
 		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
 		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
 		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
+		maliciousMachineIndex:        0,
 	}
 	for _, o := range opts {
 		o(s)
@@ -192,7 +160,7 @@ func NewForSimpleMachine(
 				state.GlobalState.PosInBatch -= uint64(s.posInBatchDivergence)
 			}
 			if block >= s.blockDivergenceHeight {
-				state.GlobalState.BlockHash[0] = 1
+				state.GlobalState.BlockHash[s.maliciousMachineIndex] = 1
 			}
 			machHash = protocol.ComputeSimpleMachineChallengeHash(state)
 		}
@@ -217,12 +185,20 @@ func NewForSimpleMachine(
 	return s, nil
 }
 
-// Produces the latest state to assert to L1 from the local state manager's perspective.
+// Produces the l2 state to assert at the message number specified.
 func (s *L2StateBackend) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	if len(s.executionStates) == 0 {
 		return nil, errors.New("no execution states")
 	}
-	return s.executionStates[len(s.executionStates)-1], nil
+	if messageNumber >= uint64(len(s.executionStates)) {
+		return nil, fmt.Errorf("message number %v is greater than number of execution states %v", messageNumber, len(s.executionStates))
+	}
+	for _, st := range s.executionStates {
+		if st.GlobalState.Batch == messageNumber {
+			return st, nil
+		}
+	}
+	return nil, fmt.Errorf("no execution state at message number %d found", messageNumber)
 }
 
 // Checks if the execution manager locally has recorded this state
@@ -376,7 +352,7 @@ func (s *L2StateBackend) maybeDivergeState(state *protocol.ExecutionState, block
 		*state = *s.executionStates[block+1]
 	}
 	if block+1 > s.blockDivergenceHeight || step >= s.machineDivergenceStep {
-		state.GlobalState.BlockHash[0] = 1
+		state.GlobalState.BlockHash[s.maliciousMachineIndex] = 1
 	}
 }
 

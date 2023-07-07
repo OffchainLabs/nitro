@@ -32,6 +32,7 @@ go_test(
         "//chain-abstraction:protocol",
         "//layer2-state-provider",
         "//state-commitments/prefix-proofs",
+        "//testing",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_stretchr_testify//require",

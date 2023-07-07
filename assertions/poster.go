@@ -75,8 +75,8 @@ func (p *Poster) PostLatestAssertion(ctx context.Context) (protocol.Assertion, e
 	if !parentAssertionCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("inbox max count not a uint64")
 	}
-	// TODO: this should really only go up to the prevInboxMaxCount batch state
-	newState, err := p.stateManager.ExecutionStateAtMessageNumber(ctx, parentAssertionCreationInfo.InboxMaxCount.Uint64())
+	prevInboxMaxCount := parentAssertionCreationInfo.InboxMaxCount.Uint64()
+	newState, err := p.stateManager.ExecutionStateAtMessageNumber(ctx, prevInboxMaxCount)
 	if err != nil {
 		return nil, err
 	}
