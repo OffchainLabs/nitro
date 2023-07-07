@@ -8,6 +8,8 @@ package assertions
 
 import (
 	"context"
+	"crypto/rand"
+	"math/big"
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
@@ -27,14 +29,14 @@ var log = logrus.WithField("prefix", "assertion-scanner")
 // up to the latest block, and keeps doing so as the chain advances. With each observed assertion,
 // it determines whether or not it should challenge it.
 type Scanner struct {
-	chain               protocol.AssertionChain
-	backend             bind.ContractBackend
-	challengeCreator    types.ChallengeCreator
-	challengeModeReader types.ChallengeModeReader
-	stateProvider       l2stateprovider.Provider
-	pollInterval        time.Duration
-	rollupAddr          common.Address
-	validatorName       string
+	chain            protocol.AssertionChain
+	backend          bind.ContractBackend
+	challengeCreator types.ChallengeCreator
+	challengeReader  types.ChallengeReader
+	stateProvider    l2stateprovider.Provider
+	pollInterval     time.Duration
+	rollupAddr       common.Address
+	validatorName    string
 }
 
 // NewScanner creates a scanner from the required dependencies.
@@ -48,14 +50,14 @@ func NewScanner(
 	pollInterval time.Duration,
 ) *Scanner {
 	return &Scanner{
-		chain:               chain,
-		backend:             backend,
-		stateProvider:       stateProvider,
-		challengeCreator:    challengeManager,
-		challengeModeReader: challengeManager,
-		rollupAddr:          rollupAddr,
-		validatorName:       validatorName,
-		pollInterval:        pollInterval,
+		chain:            chain,
+		backend:          backend,
+		stateProvider:    stateProvider,
+		challengeCreator: challengeManager,
+		challengeReader:  challengeManager,
+		rollupAddr:       rollupAddr,
+		validatorName:    validatorName,
+		pollInterval:     pollInterval,
 	}
 }
 
@@ -184,7 +186,21 @@ func (s *Scanner) ProcessAssertionCreation(
 	default:
 	}
 
-	if s.challengeModeReader.Mode() == types.DefensiveMode || s.challengeModeReader.Mode() == types.MakeMode {
+	if s.challengeReader.Mode() == types.DefensiveMode || s.challengeReader.Mode() == types.MakeMode {
+
+		// Generating a random integer between 0 and max delay second to wait before challenging.
+		// This is to avoid all validators challenging at the same time.
+		mds := 1 // default max delay seconds to 1 to avoid panic
+		if s.challengeReader.MaxDelaySeconds() > 1 {
+			mds = s.challengeReader.MaxDelaySeconds()
+		}
+		randSecs, err := randUint64(uint64(mds))
+		if err != nil {
+			return err
+		}
+		log.WithField("seconds", randSecs).Info("Waiting before challenging")
+		time.Sleep(time.Duration(randSecs) * time.Second)
+
 		if err := s.challengeCreator.ChallengeAssertion(ctx, assertionHash); err != nil {
 			return err
 		}
@@ -197,4 +213,15 @@ func (s *Scanner) ProcessAssertionCreation(
 		"msgCount":              msgCount,
 	}).Error("Detected invalid assertion, but not configured to challenge")
 	return nil
+}
+
+func randUint64(max uint64) (uint64, error) {
+	n, err := rand.Int(rand.Reader, new(big.Int).SetUint64(max))
+	if err != nil {
+		return 0, err
+	}
+	if !n.IsUint64() {
+		return 0, errors.New("not a uint64")
+	}
+	return n.Uint64(), nil
 }

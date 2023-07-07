@@ -10,7 +10,7 @@ import (
 // an active participant in interacting with the on-chain contracts.
 type ChallengeManager interface {
 	ChallengeCreator
-	ChallengeModeReader
+	ChallengeReader
 }
 
 // ChallengeCreator defines a struct which can initiate a challenge on an assertion hash
@@ -19,7 +19,8 @@ type ChallengeCreator interface {
 	ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error
 }
 
-// ChallengeModeReader defines a struct which can read the challenge mode of a challenge manager.
-type ChallengeModeReader interface {
+// ChallengeReader defines a struct which can read the challenge of a challenge manager.
+type ChallengeReader interface {
 	Mode() Mode
+	MaxDelaySeconds() int
 }

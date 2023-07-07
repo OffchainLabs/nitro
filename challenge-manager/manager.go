@@ -53,6 +53,7 @@ type Manager struct {
 	assertionPostingInterval  time.Duration
 	assertionScanningInterval time.Duration
 	mode                      types.Mode
+	maxDelaySeconds           int
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -96,6 +97,13 @@ func WithAssertionPostingInterval(d time.Duration) Opt {
 func WithAssertionScanningInterval(d time.Duration) Opt {
 	return func(val *Manager) {
 		val.assertionScanningInterval = d
+	}
+}
+
+// WithMaxDelaySeconds specifies the maximum number of seconds that the challenge manager will open a challenge.
+func WithMaxDelaySeconds(maxDelaySeconds int) Opt {
+	return func(val *Manager) {
+		val.maxDelaySeconds = maxDelaySeconds
 	}
 }
 
@@ -180,6 +188,11 @@ func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId) {
 // Mode returns the mode of the challenge manager.
 func (m *Manager) Mode() types.Mode {
 	return m.mode
+}
+
+// MaxDelaySeconds returns the maximum number of seconds that the challenge manager will wait open a challenge.
+func (m *Manager) MaxDelaySeconds() int {
+	return m.maxDelaySeconds
 }
 
 // TrackEdge spawns an edge tracker for an edge if it is not currently being tracked.
