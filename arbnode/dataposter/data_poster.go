@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -29,7 +28,9 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
+
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 type queuedTransaction[Meta any] struct {
@@ -65,7 +66,7 @@ type DataPosterConfig struct {
 
 type DataPosterConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
