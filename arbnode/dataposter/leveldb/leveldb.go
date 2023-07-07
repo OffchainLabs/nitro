@@ -82,9 +82,13 @@ func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error 
 	if err != nil {
 		return err
 	}
-	it := s.db.NewIterator([]byte{}, idxToKey(keepStartingAt))
+	end := idxToKey(keepStartingAt)
+	it := s.db.NewIterator([]byte{}, idxToKey(0))
 	b := s.db.NewBatch()
 	for it.Next() {
+		if bytes.Compare(it.Key(), end) >= 0 {
+			break
+		}
 		if err := b.Delete(it.Key()); err != nil {
 			return fmt.Errorf("deleting key: %w", err)
 		}

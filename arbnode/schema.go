@@ -4,8 +4,6 @@
 package arbnode
 
 var (
-	BlockValidatorPrefix         string = "v"         // the prefix for all block validator keys
-	DataPosterPrefix             string = "d"         // the prefix for all data poster keys
 	messagePrefix                []byte = []byte("m") // maps a message sequence number to a message
 	legacyDelayedMessagePrefix   []byte = []byte("d") // maps a delayed sequence number to an accumulator and a message as serialized on L1
 	rlpDelayedMessagePrefix      []byte = []byte("e") // maps a delayed sequence number to an accumulator and an RLP encoded message

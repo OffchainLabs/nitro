@@ -20,9 +20,10 @@ func NewStorage[Item any]() *Storage[Item] {
 
 func (s *Storage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	ret := s.queue
-	if startingIndex >= s.firstNonce+uint64(len(s.queue)) {
-		ret = nil
-	} else if startingIndex > s.firstNonce {
+	if startingIndex >= s.firstNonce+uint64(len(s.queue)) || maxResults == 0 {
+		return nil, nil
+	}
+	if startingIndex > s.firstNonce {
 		ret = ret[startingIndex-s.firstNonce:]
 	}
 	if uint64(len(ret)) > maxResults {
