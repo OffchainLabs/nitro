@@ -8,16 +8,27 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func requirePanic(t *testing.T, testCase interface{}, f func()) {
 	t.Helper()
 	defer func() {
 		if recover() == nil {
-			t.Fatal("panic expected but function exited successfully for test case", testCase)
+			Fatal(t, "panic expected but function exited successfully for test case", testCase)
 		}
 	}()
 	f()
+}
+
+func Require(t *testing.T, err error, printables ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, printables...)
+}
+
+func Fatal(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }
 
 func TestStorageBackedBigInt(t *testing.T) {
@@ -40,41 +51,31 @@ func TestStorageBackedBigInt(t *testing.T) {
 		minUint256,
 	} {
 		err := sbbi.SetChecked(in)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 		rawVal, err := rawSlot.Get()
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 		// Verify that our encoding matches geth's signed complement impl
 		expectedRawVal := common.BigToHash(math.U256(new(big.Int).Set(in)))
 		if rawVal != expectedRawVal {
-			t.Fatal("for input", in, "expected raw value", expectedRawVal, "but got", rawVal)
+			Fatal(t, "for input", in, "expected raw value", expectedRawVal, "but got", rawVal)
 		}
 		gotInverse := math.S256(rawVal.Big())
 		if !arbmath.BigEquals(gotInverse, in) {
-			t.Fatal("for input", in, "expected raw value", rawVal, "to convert back into input but got", gotInverse)
+			Fatal(t, "for input", in, "expected raw value", rawVal, "to convert back into input but got", gotInverse)
 		}
 		out, err := sbbi.Get()
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 		if in.Cmp(out) != 0 {
-			t.Fatal(in, out, common.BytesToHash(out.Bytes()))
+			Fatal(t, in, out, common.BytesToHash(out.Bytes()))
 		}
 
 		if in.BitLen() < 200 {
 			err = sbbi.Set_preVersion7(in)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			out, err = sbbi.Get()
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			if new(big.Int).Abs(in).Cmp(out) != 0 {
-				t.Fatal(in, out, common.BytesToHash(out.Bytes()))
+				Fatal(t, in, out, common.BytesToHash(out.Bytes()))
 			}
 		}
 	}

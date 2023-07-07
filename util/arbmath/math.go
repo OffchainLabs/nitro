@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"math/bits"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -370,4 +371,20 @@ func SquareFloat(value float64) float64 {
 func BalancePerEther(balance *big.Int) float64 {
 	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
 	return balancePerEther
+}
+
+func QuadUint64ToHash(a, b, c, d uint64) common.Hash {
+	bytes := make([]byte, 32)
+	new(big.Int).SetUint64(a).FillBytes(bytes[:8])
+	new(big.Int).SetUint64(b).FillBytes(bytes[8:16])
+	new(big.Int).SetUint64(c).FillBytes(bytes[16:24])
+	new(big.Int).SetUint64(d).FillBytes(bytes[24:])
+	return common.BytesToHash(bytes)
+}
+
+func QuadUint64FromHash(h common.Hash) (uint64, uint64, uint64, uint64) {
+	return new(big.Int).SetBytes(h[:8]).Uint64(),
+		new(big.Int).SetBytes(h[8:16]).Uint64(),
+		new(big.Int).SetBytes(h[16:24]).Uint64(),
+		new(big.Int).SetBytes(h[24:]).Uint64()
 }
