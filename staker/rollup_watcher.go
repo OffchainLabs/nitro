@@ -143,13 +143,14 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 		return nil, err
 	}
 	return &NodeInfo{
-		NodeNum:            parsedLog.NodeNum,
-		L1BlockProposed:    l1BlockProposed,
-		Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
-		InboxMaxCount:      parsedLog.InboxMaxCount,
-		AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
-		NodeHash:           parsedLog.NodeHash,
-		WasmModuleRoot:     parsedLog.WasmModuleRoot,
+		NodeNum:                  parsedLog.NodeNum,
+		L1BlockProposed:          l1BlockProposed,
+		ParentChainBlockProposed: ethLog.BlockNumber,
+		Assertion:                NewAssertionFromSolidity(parsedLog.Assertion),
+		InboxMaxCount:            parsedLog.InboxMaxCount,
+		AfterInboxBatchAcc:       parsedLog.AfterInboxBatchAcc,
+		NodeHash:                 parsedLog.NodeHash,
+		WasmModuleRoot:           parsedLog.WasmModuleRoot,
 	}, nil
 }
 
@@ -195,13 +196,14 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 			return nil, err
 		}
 		infos = append(infos, &NodeInfo{
-			NodeNum:            parsedLog.NodeNum,
-			L1BlockProposed:    l1BlockProposed,
-			Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
-			InboxMaxCount:      parsedLog.InboxMaxCount,
-			AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
-			NodeHash:           lastHash,
-			WasmModuleRoot:     parsedLog.WasmModuleRoot,
+			NodeNum:                  parsedLog.NodeNum,
+			L1BlockProposed:          l1BlockProposed,
+			ParentChainBlockProposed: ethLog.BlockNumber,
+			Assertion:                NewAssertionFromSolidity(parsedLog.Assertion),
+			InboxMaxCount:            parsedLog.InboxMaxCount,
+			AfterInboxBatchAcc:       parsedLog.AfterInboxBatchAcc,
+			NodeHash:                 lastHash,
+			WasmModuleRoot:           parsedLog.WasmModuleRoot,
 		})
 	}
 	return infos, nil

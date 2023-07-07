@@ -20,6 +20,6 @@
 [submodule "arbitrator/tools/wasmer"]
 	path = arbitrator/tools/wasmer
 	url = https://github.com/OffchainLabs/wasmer.git
-[submodule "blockscout"]
-	path = blockscout
-	url = https://github.com/OffchainLabs/blockscout.git
+[submodule "nitro-testnode"]
+	path = nitro-testnode
+	url = https://github.com/OffchainLabs/nitro-testnode.git
