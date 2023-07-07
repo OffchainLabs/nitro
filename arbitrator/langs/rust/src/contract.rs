@@ -9,6 +9,8 @@ pub struct Call {
     kind: CallKind,
     value: Bytes32,
     ink: Option<u64>,
+    offset: usize,
+    size: Option<usize>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -61,17 +63,27 @@ impl Call {
         }
     }
 
-    pub fn value(mut self, value: Bytes32) -> Self {
+    pub fn value(mut self, callvalue: Bytes32) -> Self {
         if self.kind != CallKind::Basic {
             panic!("cannot set value for delegate or static calls");
         }
-        self.value = value;
+        self.value = callvalue;
         self
     }
 
     pub fn ink(mut self, ink: u64) -> Self {
         self.ink = Some(ink);
         self
+    }
+
+    pub fn limit_return_data(mut self, offset: usize, size: usize) -> Self {
+        self.offset = offset;
+        self.size = Some(size);
+        self
+    }
+
+    pub fn skip_return_data(self) -> Self {
+        self.limit_return_data(0, 0)
     }
 
     pub fn call(self, contract: Bytes20, calldata: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
@@ -104,10 +116,20 @@ impl Call {
             }
         };
 
-        let mut outs = Vec::with_capacity(outs_len);
-        if outs_len != 0 {
+        let mut corrected_offset = self.offset;
+        if corrected_offset > outs_len {
+            corrected_offset = outs_len;
+        }
+        let mut allocated_len = self.size.unwrap_or(outs_len - self.offset);
+        if allocated_len > outs_len {
+            allocated_len = outs_len;
+        }
+        let mut outs = Vec::with_capacity(allocated_len);
+        if allocated_len > 0 {
             unsafe {
-                let used_len = hostio::read_return_data(outs.as_mut_ptr(), 0, outs_len);
+                let used_len =
+                    hostio::read_return_data(outs.as_mut_ptr(), corrected_offset, allocated_len);
+                assert!(used_len <= allocated_len);
                 outs.set_len(used_len);
             }
         };
