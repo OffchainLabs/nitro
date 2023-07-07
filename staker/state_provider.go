@@ -30,8 +30,7 @@ var (
 )
 
 var (
-	AccumulatorNotFoundErr = errors.New("accumulator not found")
-	ErrChainCatchingUp     = errors.New("chain catching up")
+	ErrAccumulatorNotFound = errors.New("accumulator not found")
 )
 
 type StateManager struct {
@@ -109,13 +108,13 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	if err != nil {
 		return 0, err
 	}
-	validatedExecutaionState, err := s.ExecutionStateAtMessageNumber(ctx, uint64(messageCount))
+	validatedExecutionState, err := s.ExecutionStateAtMessageNumber(ctx, uint64(messageCount))
 	if err != nil {
 		return 0, err
 	}
-	if validatedExecutaionState.GlobalState.Batch < state.GlobalState.Batch ||
-		(validatedExecutaionState.GlobalState.Batch == state.GlobalState.Batch &&
-			validatedExecutaionState.GlobalState.PosInBatch < state.GlobalState.PosInBatch) {
+	if validatedExecutionState.GlobalState.Batch < state.GlobalState.Batch ||
+		(validatedExecutionState.GlobalState.Batch == state.GlobalState.Batch &&
+			validatedExecutionState.GlobalState.PosInBatch < state.GlobalState.PosInBatch) {
 		return 0, l2stateprovider.ErrChainCatchingUp
 	}
 	var prevBatchMsgCount arbutil.MessageIndex
@@ -578,7 +577,7 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 		mid := (low + high) / 2
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(mid)
 		if err != nil {
-			if errors.Is(err, AccumulatorNotFoundErr) {
+			if errors.Is(err, ErrAccumulatorNotFound) {
 				high = mid
 			} else {
 				return 0, fmt.Errorf("failed to get batch metadata while binary searching: %w", err)
