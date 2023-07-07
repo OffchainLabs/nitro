@@ -7,16 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -34,25 +31,22 @@ type MessagePruner struct {
 }
 
 type MessagePrunerConfig struct {
-	Enable                 bool          `koanf:"enable"`
-	MessagePruneInterval   time.Duration `koanf:"prune-interval" reload:"hot"`
-	SearchBatchReportLimit uint64        `koanf:"search-batch-report" reload:"hot"`
-	MinBatchesLeft         uint64        `koanf:"min-batches-left" reload:"hot"`
+	Enable               bool          `koanf:"enable"`
+	MessagePruneInterval time.Duration `koanf:"prune-interval" reload:"hot"`
+	MinBatchesLeft       uint64        `koanf:"min-batches-left" reload:"hot"`
 }
 
 type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 
 var DefaultMessagePrunerConfig = MessagePrunerConfig{
-	Enable:                 true,
-	MessagePruneInterval:   time.Minute,
-	SearchBatchReportLimit: 100000,
-	MinBatchesLeft:         2,
+	Enable:               true,
+	MessagePruneInterval: time.Minute,
+	MinBatchesLeft:       2,
 }
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
 	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
-	f.Uint64(prefix+".search-batch-report", DefaultMessagePrunerConfig.SearchBatchReportLimit, "limit for searching for a batch report when pruning (0 disables)")
 	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
@@ -91,44 +85,6 @@ func (m *MessagePruner) UpdateLatestStaked(count arbutil.MessageIndex, globalSta
 	}
 }
 
-// looks for batch posting report starting from delayed message delayedMsgStart
-// returns number of batch for which report was found (meaning - it should not be pruned)
-// if not found - returns maxUint64 (no limit on pruning)
-func (m *MessagePruner) findBatchReport(ctx context.Context, delayedMsgStart uint64) (uint64, error) {
-	searchLimitCfg := m.config().SearchBatchReportLimit
-	if searchLimitCfg == 0 {
-		return math.MaxUint64, nil
-	}
-	delayedCount, err := m.inboxTracker.GetDelayedCount()
-	if err != nil {
-		return 0, err
-	}
-	if delayedCount <= delayedMsgStart {
-		return 0, errors.New("delayedCount behind pruning target")
-	}
-	searchLimit := delayedMsgStart + searchLimitCfg
-	if searchLimit < delayedCount {
-		searchLimit = delayedCount
-	}
-	for delayed := delayedMsgStart; delayed < searchLimit; delayed++ {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		msg, err := m.inboxTracker.GetDelayedMessage(delayed)
-		if err != nil {
-			return 0, err
-		}
-		if msg.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
-			_, _, _, batchNum, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
-			if err != nil {
-				return 0, fmt.Errorf("trying to parse batch-posting report: %w", err)
-			}
-			return batchNum, nil
-		}
-	}
-	return 0, errors.New("Batch post report not found. Try adjusting search-batch-report")
-}
-
 func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
 	trimBatchCount := globalState.Batch
 	minBatchesLeft := m.config().MinBatchesLeft
@@ -152,26 +108,11 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	msgCount := endBatchMetadata.MessageCount
 	delayedCount := endBatchMetadata.DelayedMessageCount
 
-	batchPruneLimit, err := m.findBatchReport(ctx, delayedCount)
-	if err != nil {
-		return fmt.Errorf("failed finding batch report: %w", err)
-	}
-	if batchPruneLimit < trimBatchCount {
-		trimBatchCount = batchPruneLimit
-	}
-	return deleteOldMessageFromDB(ctx, trimBatchCount, msgCount, delayedCount, m.inboxTracker.db, m.transactionStreamer.db)
+	return deleteOldMessageFromDB(ctx, msgCount, delayedCount, m.inboxTracker.db, m.transactionStreamer.db)
 }
 
-func deleteOldMessageFromDB(ctx context.Context, endBatchCount uint64, messageCount arbutil.MessageIndex, delayedMessageCount uint64, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) error {
-	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, inboxTrackerDb, sequencerBatchMetaPrefix, endBatchCount)
-	if err != nil {
-		return fmt.Errorf("error deleting batch metadata: %w", err)
-	}
-	if len(prunedKeysRange) > 0 {
-		log.Info("Pruned batches:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
-	}
-
-	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, transactionStreamerDb, messagePrefix, uint64(messageCount))
+func deleteOldMessageFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) error {
+	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, transactionStreamerDb, messagePrefix, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting last batch messages: %w", err)
 	}
