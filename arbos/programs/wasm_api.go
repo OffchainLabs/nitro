@@ -204,7 +204,7 @@ func newApi(
 		return write(stylus, cost)
 	})
 
-	ids := make([]byte, 0, 13*4)
+	ids := make([]byte, 0, 14*4)
 	funcs := js.Global().Get("stylus").Call("setCallbacks",
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
