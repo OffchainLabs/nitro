@@ -184,11 +184,13 @@ func testCalls(t *testing.T, jit bool) {
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
+	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
 
-	colors.PrintGrey("multicall.wasm ", callsAddr)
-	colors.PrintGrey("storage.wasm   ", storeAddr)
-	colors.PrintGrey("keccak.wasm    ", keccakAddr)
-	colors.PrintGrey("mock.evm       ", mockAddr)
+	colors.PrintGrey("multicall.wasm       ", callsAddr)
+	colors.PrintGrey("storage.wasm         ", storeAddr)
+	colors.PrintGrey("keccak.wasm          ", keccakAddr)
+	colors.PrintGrey("mock.evm             ", mockAddr)
+	colors.PrintGrey("read-return-data.evm ", readReturnDataAddr)
 
 	kinds := make(map[vm.OpCode]byte)
 	kinds[vm.CALL] = 0x00
@@ -321,6 +323,21 @@ func testCalls(t *testing.T, jit bool) {
 	if !arbmath.BigEquals(balance, value) {
 		Fatal(t, balance, value)
 	}
+
+	colors.PrintBlue("Checking calls with partial return data")
+	testReadReturnData := func(offset uint32, size uint32, expectedSize uint32) {
+		callData := [12]byte{}
+		binary.BigEndian.PutUint32(callData[0:4], offset)
+		binary.BigEndian.PutUint32(callData[4:8], size)
+		binary.BigEndian.PutUint32(callData[8:12], expectedSize)
+		tx = l2info.PrepareTxTo("Owner", &readReturnDataAddr, 1e9, nil, callData[:])
+		ensure(tx, l2client.SendTransaction(ctx, tx))
+	}
+	testReadReturnData(0, 5, 4)
+	testReadReturnData(0, 1, 1)
+	testReadReturnData(5, 1, 0)
+	testReadReturnData(0, 0, 0)
+	testReadReturnData(0, 4, 4)
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)

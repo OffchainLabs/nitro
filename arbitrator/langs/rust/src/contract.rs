@@ -3,6 +3,8 @@
 
 use crate::{address as addr, hostio, Bytes20, Bytes32};
 
+static mut CACHED_RETURN_DATA_SIZE: Option<u32> = Some(0);
+
 #[derive(Clone, Default)]
 #[must_use]
 pub struct Call {
@@ -116,28 +118,38 @@ impl Call {
             }
         };
 
-        let mut corrected_offset = self.offset;
-        if corrected_offset > outs_len {
-            corrected_offset = outs_len;
+        unsafe {
+            CACHED_RETURN_DATA_SIZE = Some(outs_len as u32);
         }
-        let mut allocated_len = self.size.unwrap_or(outs_len - self.offset);
-        if allocated_len > outs_len {
-            allocated_len = outs_len;
-        }
-        let mut outs = Vec::with_capacity(allocated_len);
-        if allocated_len > 0 {
-            unsafe {
-                let used_len =
-                    hostio::read_return_data(outs.as_mut_ptr(), corrected_offset, allocated_len);
-                assert!(used_len <= allocated_len);
-                outs.set_len(used_len);
-            }
-        };
+
+        let outs = partial_return_data_impl(self.offset, self.size, outs_len);
         match status {
             0 => Ok(outs),
             _ => Err(outs),
         }
     }
+}
+
+fn partial_return_data_impl(offset: usize, size: Option<usize>, full_size: usize) -> Vec<u8> {
+    let mut offset = offset;
+    if offset > full_size {
+        offset = full_size;
+    }
+    let remaining_size = full_size - offset;
+    let mut allocated_len = size.unwrap_or(remaining_size);
+    if allocated_len > remaining_size {
+        allocated_len = remaining_size;
+    }
+    let mut data = Vec::with_capacity(allocated_len);
+    if allocated_len > 0 {
+        unsafe {
+            let written_size = hostio::read_return_data(data.as_mut_ptr(), offset, allocated_len);
+            assert!(written_size <= allocated_len);
+            data.set_len(written_size);
+        }
+    };
+
+    data
 }
 
 pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<Bytes20, Vec<u8>> {
@@ -175,10 +187,6 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
     Ok(contract)
 }
 
-pub fn return_data_len() -> usize {
-    unsafe { hostio::return_data_size() as usize }
-}
-
 pub fn address() -> Bytes20 {
     let mut data = [0; 20];
     unsafe { hostio::contract_address(data.as_mut_ptr()) };
@@ -188,3 +196,20 @@ pub fn address() -> Bytes20 {
 pub fn balance() -> Bytes32 {
     addr::balance(address())
 }
+pub fn partial_return_data(offset: usize, size: usize) -> Vec<u8> {
+    partial_return_data_impl(offset, Some(size), return_data_len())
+}
+
+fn return_data_len() -> usize {
+    unsafe {
+        if let Some(data_size) = CACHED_RETURN_DATA_SIZE {
+            return data_size as usize;
+        }
+
+        let data_size = hostio::return_data_size();
+        CACHED_RETURN_DATA_SIZE = Some(data_size);
+
+        data_size as usize
+    }
+}
+
