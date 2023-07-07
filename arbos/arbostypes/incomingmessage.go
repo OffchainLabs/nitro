@@ -158,7 +158,7 @@ func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetch
 	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport || msg.BatchGasCost != nil {
 		return nil
 	}
-	_, _, batchHash, batchNum, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
+	_, _, batchHash, batchNum, _, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
 	if err != nil {
 		return fmt.Errorf("failed to parse batch posting report: %w", err)
 	}
@@ -290,30 +290,39 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 	return nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
 }
 
-func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, error) {
+func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
 	batchTimestamp, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	batchPosterAddr, err := util.AddressFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	dataHash, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	batchNum, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	l1BaseFee, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
+	}
+	extraGas, err := util.Uint64FromReader(rd)
+	if errors.Is(err, io.EOF) {
+		// This field isn't always present
+		extraGas = 0
+		err = nil
+	}
+	if err != nil {
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	batchNumBig := batchNum.Big()
 	if !batchNumBig.IsUint64() {
-		return nil, common.Address{}, common.Hash{}, 0, nil, fmt.Errorf("batch number %v is not a uint64", batchNumBig)
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, fmt.Errorf("batch number %v is not a uint64", batchNumBig)
 	}
-	return batchTimestamp.Big(), batchPosterAddr, dataHash, batchNumBig.Uint64(), l1BaseFee.Big(), nil
+	return batchTimestamp.Big(), batchPosterAddr, dataHash, batchNumBig.Uint64(), l1BaseFee.Big(), extraGas, nil
 }
