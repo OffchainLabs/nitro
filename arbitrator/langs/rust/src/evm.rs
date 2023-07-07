@@ -14,12 +14,6 @@ pub fn log(topics: &[Bytes32], data: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn blockhash(number: Bytes32) -> Option<Bytes32> {
-    let mut dest = [0; 32];
-    unsafe { hostio::evm_blockhash(number.ptr(), dest.as_mut_ptr()) };
-    (dest != [0; 32]).then_some(Bytes32(dest))
-}
-
 pub fn gas_left() -> u64 {
     unsafe { hostio::evm_gas_left() }
 }

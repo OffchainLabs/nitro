@@ -160,10 +160,6 @@ impl EvmApi for TestEvmApi {
         unimplemented!()
     }
 
-    fn evm_blockhash(&mut self, _num: Bytes32) -> Bytes32 {
-        unimplemented!()
-    }
-
     fn add_pages(&mut self, new: u16) -> u64 {
         let model = MemoryModel::new(2, 1000);
         let (open, ever) = *self.pages.lock();
