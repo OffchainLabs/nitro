@@ -67,12 +67,12 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
 		})
 	if err != nil {
-		log.Error("error getting latest confirmed node: %w", err)
+		log.Error("error getting latest confirmed node", "err", err)
 		return m.config().MessagePruneInterval
 	}
 	nodeInfo, err := m.staker.Rollup().LookupNode(ctx, latestConfirmedNode)
 	if err != nil {
-		log.Error("error getting latest confirmed node info: %w", err)
+		log.Error("error getting latest confirmed node info", "node", latestConfirmedNode, "err", err)
 		return m.config().MessagePruneInterval
 	}
 	endBatchCount := nodeInfo.Assertion.AfterState.GlobalState.Batch
@@ -81,7 +81,7 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 	}
 	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(endBatchCount - 1)
 	if err != nil {
-		log.Error("error getting last batch metadata: %w", err)
+		log.Error("error getting last batch metadata", "batch", endBatchCount-1, "err", err)
 		return m.config().MessagePruneInterval
 	}
 	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, m.inboxTracker.db, m.transactionStreamer.db)
@@ -91,7 +91,7 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
 	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(inboxTrackerDb, sequencerBatchMetaPrefix, endBatchCount)
 	if err != nil {
-		log.Error("error deleting batch metadata: %w", err)
+		log.Error("error deleting batch metadata", "err", err)
 		return
 	}
 	if len(prunedKeysRange) > 0 {
@@ -100,7 +100,7 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 
 	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(transactionStreamerDb, messagePrefix, uint64(endBatchMetadata.MessageCount))
 	if err != nil {
-		log.Error("error deleting last batch messages: %w", err)
+		log.Error("error deleting last batch messages", "err", err)
 		return
 	}
 	if len(prunedKeysRange) > 0 {
@@ -109,7 +109,7 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 
 	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(inboxTrackerDb, rlpDelayedMessagePrefix, endBatchMetadata.DelayedMessageCount)
 	if err != nil {
-		log.Error("error deleting last batch delayed messages: %w", err)
+		log.Error("error deleting last batch delayed messages", "err", err)
 		return
 	}
 	if len(prunedKeysRange) > 0 {
