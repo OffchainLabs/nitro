@@ -147,10 +147,10 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 	case config().EnableLevelDB:
 		queue = leveldb.New[queuedTransaction[Meta]](db)
 	case redisClient == nil:
-		queue = slice.NewSliceStorage[queuedTransaction[Meta]]()
+		queue = slice.NewStorage[queuedTransaction[Meta]]()
 	default:
 		var err error
-		queue, err = redisstorage.NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
 		if err != nil {
 			return nil, err
 		}

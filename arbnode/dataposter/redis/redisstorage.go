@@ -15,19 +15,19 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// RedisStorage requires that Item is RLP encodable/decodable
-type RedisStorage[Item any] struct {
+// Storage requires that Item is RLP encodable/decodable
+type Storage[Item any] struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac
 	key    string
 }
 
-func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*RedisStorage[Item], error) {
+func NewStorage[Item any](client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*Storage[Item], error) {
 	signer, err := signature.NewSimpleHmac(signerConf)
 	if err != nil {
 		return nil, err
 	}
-	return &RedisStorage[Item]{client, signer, key}, nil
+	return &Storage[Item]{client, signer, key}, nil
 }
 
 func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
@@ -37,7 +37,7 @@ func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
 	return append(sig, msg...), nil
 }
 
-func (s *RedisStorage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
+func (s *Storage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	if len(data) < 32 {
 		return nil, errors.New("data is too short to contain message signature")
 	}
@@ -49,7 +49,7 @@ func (s *RedisStorage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	return data[32:], nil
 }
 
-func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:     s.key,
 		ByScore: true,
@@ -76,7 +76,7 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	return items, nil
 }
 
-func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,
 		Start: 0,
@@ -106,14 +106,14 @@ func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	return ret, nil
 }
 
-func (s *RedisStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
+func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
 	if keepStartingAt > 0 {
 		return s.client.ZRemRangeByScore(ctx, s.key, "-inf", fmt.Sprintf("%v", keepStartingAt-1)).Err()
 	}
 	return nil
 }
 
-func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
+func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
 	if newItem == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
 	}
@@ -186,7 +186,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 	return s.client.Watch(ctx, action, s.key)
 }
 
-func (s *RedisStorage[Item]) Length(ctx context.Context) (int, error) {
+func (s *Storage[Item]) Length(ctx context.Context) (int, error) {
 	count, err := s.client.ZCount(ctx, s.key, "-inf", "+inf").Result()
 	if err != nil {
 		return 0, err
@@ -194,6 +194,6 @@ func (s *RedisStorage[Item]) Length(ctx context.Context) (int, error) {
 	return int(count), nil
 }
 
-func (s *RedisStorage[Item]) IsPersistent() bool {
+func (s *Storage[Item]) IsPersistent() bool {
 	return true
 }

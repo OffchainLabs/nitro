@@ -9,16 +9,16 @@ import (
 	"fmt"
 )
 
-type SliceStorage[Item any] struct {
+type Storage[Item any] struct {
 	firstNonce uint64
 	queue      []*Item
 }
 
-func NewSliceStorage[Item any]() *SliceStorage[Item] {
-	return &SliceStorage[Item]{}
+func NewStorage[Item any]() *Storage[Item] {
+	return &Storage[Item]{}
 }
 
-func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	ret := s.queue
 	if startingIndex >= s.firstNonce+uint64(len(s.queue)) {
 		ret = nil
@@ -31,14 +31,14 @@ func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	return ret, nil
 }
 
-func (s *SliceStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	if len(s.queue) == 0 {
 		return nil, nil
 	}
 	return s.queue[len(s.queue)-1], nil
 }
 
-func (s *SliceStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
+func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
 	if keepStartingAt >= s.firstNonce+uint64(len(s.queue)) {
 		s.queue = nil
 	} else if keepStartingAt >= s.firstNonce {
@@ -48,7 +48,7 @@ func (s *SliceStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) e
 	return nil
 }
 
-func (s *SliceStorage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
+func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
 	if newItem == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
 	}
@@ -78,10 +78,10 @@ func (s *SliceStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 	return nil
 }
 
-func (s *SliceStorage[Item]) Length(ctx context.Context) (int, error) {
+func (s *Storage[Item]) Length(ctx context.Context) (int, error) {
 	return len(s.queue), nil
 }
 
-func (s *SliceStorage[Item]) IsPersistent() bool {
+func (s *Storage[Item]) IsPersistent() bool {
 	return false
 }
