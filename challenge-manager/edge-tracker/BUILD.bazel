@@ -19,8 +19,8 @@ go_library(
         "//state-commitments/history",
         "//time",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//log",
         "@com_github_ethereum_go_ethereum//metrics",
         "@com_github_pkg_errors//:errors",
-        "@com_github_sirupsen_logrus//:logrus",
     ],
 )

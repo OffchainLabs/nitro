@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
@@ -22,10 +23,16 @@ import (
 	utilTime "github.com/OffchainLabs/challenge-protocol-v2/time"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sirupsen/logrus"
+	"github.com/ethereum/go-ethereum/log"
 )
 
-var log = logrus.WithField("prefix", "challenge-manager")
+var (
+	srvlog = log.New("service", "challenge-manager")
+)
+
+func init() {
+	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
+}
 
 type Opt = func(val *Manager)
 
@@ -266,10 +273,9 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 }
 
 func (m *Manager) Start(ctx context.Context) {
-	log.WithField(
-		"address",
-		m.address.Hex(),
-	).Info("Started challenge manager")
+	srvlog.Info("Started challenge manager", log.Ctx{
+		"validatorAddress": m.address.Hex(),
+	})
 
 	// Start the assertion scanner.
 	go m.scanner.Start(ctx)

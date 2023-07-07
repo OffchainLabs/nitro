@@ -17,8 +17,8 @@ go_library(
         "//solgen/go/rollupgen",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//log",
         "@com_github_pkg_errors//:errors",
-        "@com_github_sirupsen_logrus//:logrus",
     ],
 )
 
@@ -36,11 +36,9 @@ go_test(
         "//containers/option",
         "//layer2-state-provider",
         "//solgen/go/rollupgen",
-        "//testing/logging",
         "//testing/mocks",
         "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_sirupsen_logrus//hooks/test",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -14,9 +14,9 @@ go_library(
         "//runtime",
         "//solgen/go/challengeV2gen",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//log",
         "@com_github_ethereum_go_ethereum//metrics",
         "@com_github_pkg_errors//:errors",
-        "@com_github_sirupsen_logrus//:logrus",
     ],
 )
 

@@ -6,6 +6,7 @@ package watcher
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -17,20 +18,23 @@ import (
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
-var log = logrus.WithField("prefix", "challenge-watcher")
-
 var (
+	srvlog                         = log.New("service", "chain-watcher")
 	edgeAddedCounter               = metrics.NewRegisteredCounter("arb/validator/watcher/edge_added", nil)
 	edgeConfirmedByChildrenCounter = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_children", nil)
 	edgeConfirmedByTimeCounter     = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_time", nil)
 	edgeConfirmedByOSPCounter      = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_osp", nil)
 	edgeConfirmedByClaimCounter    = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_claim", nil)
 )
+
+func init() {
+	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
+}
 
 // EdgeManager provides a method to track edges, via edge tracker goroutines.
 type EdgeManager interface {
@@ -154,7 +158,7 @@ func (w *Watcher) Start(ctx context.Context) {
 		return w.getStartEndBlockNum(ctx)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not get start and end block num", err)
 		return
 	}
 	fromBlock := scanRange.startBlockNum
@@ -165,14 +169,14 @@ func (w *Watcher) Start(ctx context.Context) {
 		return w.chain.SpecChallengeManager(ctx)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not get spec challenge manager", err)
 		return
 	}
 	filterer, err := retry.UntilSucceeds(ctx, func() (*challengeV2gen.EdgeChallengeManagerFilterer, error) {
 		return challengeV2gen.NewEdgeChallengeManagerFilterer(challengeManager.Address(), w.backend)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not initialize edge challenge manager filterer", err)
 		return
 	}
 	filterOpts := &bind.FilterOpts{
@@ -186,35 +190,35 @@ func (w *Watcher) Start(ctx context.Context) {
 		return true, w.checkForEdgeAdded(ctx, filterer, filterOpts)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not check for edge added", err)
 		return
 	}
 	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 		return true, w.checkForEdgeConfirmedByOneStepProof(ctx, filterer, filterOpts)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not check for edge confirmed by osp", err)
 		return
 	}
 	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 		return true, w.checkForEdgeConfirmedByChildren(ctx, filterer, filterOpts)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not check for edge confirmed by children", err)
 		return
 	}
 	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 		return true, w.checkForEdgeConfirmedByClaim(ctx, filterer, filterOpts)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not check for edge confirmed by claim", err)
 		return
 	}
 	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 		return true, w.checkForEdgeConfirmedByTime(ctx, filterer, filterOpts)
 	})
 	if err != nil {
-		log.Error(err)
+		srvlog.Error("Could not check for edge confirmed by time", err)
 		return
 	}
 
@@ -228,11 +232,11 @@ func (w *Watcher) Start(ctx context.Context) {
 		case <-ticker.C:
 			latestBlock, err := w.backend.HeaderByNumber(ctx, nil)
 			if err != nil {
-				log.Error(err)
+				srvlog.Error("Could not get latest header", err)
 				continue
 			}
 			if !latestBlock.Number.IsUint64() {
-				log.Error("latest block header number is not a uint64")
+				srvlog.Error("latest block header number is not a uint64")
 				continue
 			}
 			toBlock := latestBlock.Number.Uint64()
@@ -244,14 +248,14 @@ func (w *Watcher) Start(ctx context.Context) {
 				return w.chain.SpecChallengeManager(ctx)
 			})
 			if err != nil {
-				log.Error(err)
+				srvlog.Error("Could not get spec challenge manager", err)
 				return
 			}
 			filterer, err = retry.UntilSucceeds(ctx, func() (*challengeV2gen.EdgeChallengeManagerFilterer, error) {
 				return challengeV2gen.NewEdgeChallengeManagerFilterer(challengeManager.Address(), w.backend)
 			})
 			if err != nil {
-				log.Error(err)
+				srvlog.Error("Could not get challenge manager filterer", err)
 				return
 			}
 			filterOpts := &bind.FilterOpts{
@@ -260,23 +264,23 @@ func (w *Watcher) Start(ctx context.Context) {
 				Context: ctx,
 			}
 			if err = w.checkForEdgeAdded(ctx, filterer, filterOpts); err != nil {
-				log.Error(err)
+				srvlog.Error("Could not check for edge added", err)
 				continue
 			}
 			if err = w.checkForEdgeConfirmedByOneStepProof(ctx, filterer, filterOpts); err != nil {
-				log.Error(err)
+				srvlog.Error("Could not check for edge confirmed by osp", err)
 				continue
 			}
 			if err = w.checkForEdgeConfirmedByChildren(ctx, filterer, filterOpts); err != nil {
-				log.Error(err)
+				srvlog.Error("Could not check for edge confirmed by children", err)
 				continue
 			}
 			if err = w.checkForEdgeConfirmedByTime(ctx, filterer, filterOpts); err != nil {
-				log.Error(err)
+				srvlog.Error("Could not check for edge confirmed by time", err)
 				continue
 			}
 			if err = w.checkForEdgeConfirmedByClaim(ctx, filterer, filterOpts); err != nil {
-				log.Error(err)
+				srvlog.Error("Could not check for edge confirmed by claim", err)
 				continue
 			}
 			fromBlock = toBlock
@@ -313,7 +317,7 @@ func (w *Watcher) checkForEdgeAdded(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			log.WithError(err).Error("Could not close filter iterator")
+			srvlog.Error("Could not close filter iterator", err)
 		}
 	}()
 	for it.Next() {
@@ -396,7 +400,7 @@ func (w *Watcher) checkForEdgeConfirmedByOneStepProof(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			log.WithError(err).Error("Could not close filter iterator")
+			srvlog.Error("Could not close filter iterator", err)
 		}
 	}()
 	for it.Next() {
@@ -432,7 +436,7 @@ func (w *Watcher) checkForEdgeConfirmedByTime(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			log.WithError(err).Error("Could not close filter iterator")
+			srvlog.Error("Could not close filter iterator", err)
 		}
 	}()
 	for it.Next() {
@@ -468,7 +472,7 @@ func (w *Watcher) checkForEdgeConfirmedByChildren(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			log.WithError(err).Error("Could not close filter iterator")
+			srvlog.Error("Could not close filter iterator", err)
 		}
 	}()
 	for it.Next() {
@@ -504,7 +508,7 @@ func (w *Watcher) checkForEdgeConfirmedByClaim(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			log.WithError(err).Error("Could not close filter iterator")
+			srvlog.Error("Could not close filter iterator", err)
 		}
 	}()
 	for it.Next() {
@@ -568,7 +572,9 @@ func (w *Watcher) processEdgeConfirmation(
 		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash(claimId), edgeId); confirmAssertionErr != nil {
 			return confirmAssertionErr
 		}
-		log.WithField("assertionHash", containers.Trunc(assertionHash[:])).Infof("Assertion confirmed by challenge win")
+		srvlog.Info("Assertion confirmed by challenge win", log.Ctx{
+			"assertionHash": containers.Trunc(assertionHash[:]),
+		})
 	}
 
 	chal.confirmedLevelZeroEdgeClaimIds.Put(claimId, edge.Id())

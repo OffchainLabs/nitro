@@ -10,8 +10,8 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 // Poster defines a service which frequently posts assertions onchain at some intervals,
@@ -40,7 +40,7 @@ func NewPoster(
 
 func (p *Poster) Start(ctx context.Context) {
 	if _, err := p.PostLatestAssertion(ctx); err != nil {
-		log.WithError(err).Error("Could not submit latest assertion to L1")
+		srvlog.Error("Could not submit latest assertion to L1", err)
 	}
 	ticker := time.NewTicker(p.postInterval)
 	defer ticker.Stop()
@@ -48,7 +48,7 @@ func (p *Poster) Start(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if _, err := p.PostLatestAssertion(ctx); err != nil {
-				log.WithError(err).Error("Could not submit latest assertion to L1")
+				srvlog.Error("Could not submit latest assertion to L1", err)
 			}
 		case <-ctx.Done():
 			return
@@ -91,10 +91,7 @@ func (p *Poster) PostLatestAssertion(ctx context.Context) (protocol.Assertion, e
 	case err != nil:
 		return nil, err
 	}
-	logFields := logrus.Fields{
-		"validatorName": p.validatorName,
-	}
-	log.WithFields(logFields).Info("Submitted latest L2 state claim as an assertion to L1")
+	srvlog.Info("Submitted latest L2 state claim as an assertion to L1", log.Ctx{"validatorName": p.validatorName})
 
 	return assertion, nil
 }

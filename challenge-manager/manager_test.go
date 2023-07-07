@@ -5,7 +5,6 @@ package challengemanager
 
 import (
 	"context"
-	"io"
 	"math/big"
 	"testing"
 	"time"
@@ -14,26 +13,17 @@ import (
 	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
 	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/logging"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	customTime "github.com/OffchainLabs/challenge-protocol-v2/time"
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
 )
 
 var _ = types.ChallengeManager(&Manager{})
 
-func init() {
-	logrus.SetLevel(logrus.DebugLevel)
-	logrus.SetOutput(io.Discard)
-}
-
 func TestEdgeTracker_act(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bisects", func(t *testing.T) {
-		hook := test.NewGlobal()
 		tkr, _ := setupNonPSTracker(ctx, t)
 		err := tkr.Act(ctx)
 		require.NoError(t, err)
@@ -41,7 +31,6 @@ func TestEdgeTracker_act(t *testing.T) {
 		err = tkr.Act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 5, int(tkr.CurrentState()))
-		logging.AssertLogsContain(t, hook, "Successfully bisected")
 		err = tkr.Act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 5, int(tkr.CurrentState()))

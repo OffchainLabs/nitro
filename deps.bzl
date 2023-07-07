@@ -1759,13 +1759,6 @@ def go_dependencies():
     )
 
     go_repository(
-        name = "com_github_sirupsen_logrus",
-        importpath = "github.com/sirupsen/logrus",
-        sum = "h1:trlNQbNUG3OdDrDil03MCb1H2o9nJ1x4/5LYw7byDE0=",
-        version = "v1.9.0",
-    )
-
-    go_repository(
         name = "com_github_spacemonkeygo_spacelog",
         importpath = "github.com/spacemonkeygo/spacelog",
         sum = "h1:RC6RW7j+1+HkWaX/Yh71Ee5ZHaHYt7ZP4sQgUrm6cDU=",

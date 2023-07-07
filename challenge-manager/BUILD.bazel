@@ -23,8 +23,8 @@ go_library(
         "//time",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//log",
         "@com_github_pkg_errors//:errors",
-        "@com_github_sirupsen_logrus//:logrus",
     ],
 )
 
@@ -37,12 +37,9 @@ go_test(
         "//challenge-manager/chain-watcher",
         "//challenge-manager/edge-tracker",
         "//challenge-manager/types",
-        "//testing/logging",
         "//testing/mocks",
         "//testing/setup:setup_lib",
         "//time",
-        "@com_github_sirupsen_logrus//:logrus",
-        "@com_github_sirupsen_logrus//hooks/test",
         "@com_github_stretchr_testify//require",
     ],
 )

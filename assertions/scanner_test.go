@@ -14,18 +14,15 @@ import (
 	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/logging"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestScanner_ProcessAssertionCreation(t *testing.T) {
 	ctx := context.Background()
 	t.Run("no fork detected", func(t *testing.T) {
-		logsHook := test.NewGlobal()
 		manager, _, mockStateProvider, cfg := setupChallengeManager(t)
 
 		prev := &mocks.MockAssertion{
@@ -53,11 +50,11 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 
 		err := scanner.ProcessAssertionCreation(ctx, ev.Id())
 		require.NoError(t, err)
-		logging.AssertLogsContain(t, logsHook, "Processed assertion creation event")
-		logging.AssertLogsContain(t, logsHook, "No fork detected in assertion chain")
+		require.Equal(t, uint64(1), scanner.AssertionsProcessed())
+		require.Equal(t, uint64(0), scanner.ForksDetected())
+		require.Equal(t, uint64(0), scanner.ChallengesSubmitted())
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
-		logsHook := test.NewGlobal()
 		ctx := context.Background()
 		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
 			DivergeBlockHeight: 5,
@@ -93,14 +90,14 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)
 
-		logging.AssertLogsContain(t, logsHook, "Processed assertion creation event")
-		logging.AssertLogsContain(t, logsHook, "Successfully created level zero edge")
-
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)
+
+		require.Equal(t, uint64(2), otherScanner.AssertionsProcessed())
+		require.Equal(t, uint64(2), otherScanner.ForksDetected())
+		require.Equal(t, uint64(2), otherScanner.ChallengesSubmitted())
 	})
 	t.Run("defensive validator can still challenge leaf", func(t *testing.T) {
-		logsHook := test.NewGlobal()
 		ctx := context.Background()
 		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
 			DivergeBlockHeight: 5,
@@ -136,11 +133,12 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)
 
-		logging.AssertLogsContain(t, logsHook, "Processed assertion creation event")
-		logging.AssertLogsContain(t, logsHook, "Successfully created level zero edge")
-
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)
+
+		require.Equal(t, uint64(2), otherScanner.AssertionsProcessed())
+		require.Equal(t, uint64(2), otherScanner.ForksDetected())
+		require.Equal(t, uint64(2), otherScanner.ChallengesSubmitted())
 	})
 }
 

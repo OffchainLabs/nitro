@@ -6,6 +6,7 @@ package edgetracker
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
@@ -17,21 +18,23 @@ import (
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	utilTime "github.com/OffchainLabs/challenge-protocol-v2/time"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
-var errBadOneStepProof = errors.New("bad one step proof data")
-
-var log = logrus.WithField("prefix", "edge-tracker")
-
 var (
+	srvlog               = log.New("service", "edge-tracker")
+	errBadOneStepProof   = errors.New("bad one step proof data")
 	spawnedCounter       = metrics.NewRegisteredCounter("arb/validator/tracker/spawned", nil)
 	bisectedCounter      = metrics.NewRegisteredCounter("arb/validator/tracker/bisected", nil)
 	confirmedCounter     = metrics.NewRegisteredCounter("arb/validator/tracker/confirmed", nil)
 	layerZeroLeafCounter = metrics.NewRegisteredCounter("arb/validator/tracker/layer_zero_leaves", nil)
 )
+
+func init() {
+	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
+}
 
 // ConfirmationMetadataChecker defines a struct which can retrieve information about
 // an edge to determine if it can be confirmed via different means. For example,
@@ -165,7 +168,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 		return
 	}
 	fields := et.uniqueTrackerLogFields()
-	log.WithFields(fields).Info("Tracking edge")
+	srvlog.Info("Tracking edge", fields)
 	spawnedCounter.Inc(1)
 	et.challengeManager.MarkTrackedEdge(et.edge.Id())
 	t := et.timeRef.NewTicker(et.actInterval)
@@ -174,15 +177,15 @@ func (et *Tracker) Spawn(ctx context.Context) {
 		select {
 		case <-t.C():
 			if et.shouldComplete() {
-				log.WithFields(fields).Infof("Edge tracker received notice of a confirmation, exiting")
+				srvlog.Info("Edge tracker received notice of a confirmation, exiting", fields)
 				spawnedCounter.Dec(1)
 				return
 			}
 			if err := et.Act(ctx); err != nil {
-				log.Error(err)
+				srvlog.Error("Could not act with edge tracker", err)
 			}
 		case <-ctx.Done():
-			log.WithFields(fields).Debug("Edge tracker goroutine exiting")
+			srvlog.Debug("Edge tracker goroutine exiting", fields)
 			spawnedCounter.Dec(1)
 			return
 		}
@@ -201,7 +204,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case edgeStarted:
 		canOsp, err := canOneStepProve(et.edge)
 		if err != nil {
-			log.WithFields(fields).WithError(err).Error("Could not check if edge can be one step proven")
+			srvlog.Error("Could not check if edge can be one step proven", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if canOsp {
@@ -209,7 +212,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		wasConfirmed, err := et.tryToConfirm(ctx)
 		if err != nil {
-			log.WithFields(fields).WithError(err).Debug("Could not confirm edge yet")
+			srvlog.Debug("Could not confirm edge yet", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if wasConfirmed {
@@ -224,7 +227,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		atOneStepFork, err := et.edge.HasLengthOneRival(ctx)
 		if err != nil {
-			log.WithFields(fields).WithError(err).Error("Could not check if edge has length one rival")
+			srvlog.Error("Could not check if edge has length one rival", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if atOneStepFork {
@@ -237,14 +240,14 @@ func (et *Tracker) Act(ctx context.Context) error {
 			if errors.Is(err, errBadOneStepProof) {
 				return et.fsm.Do(edgeConfirm{})
 			}
-			log.WithFields(fields).WithError(err).Error("Could not submit one step proof")
+			srvlog.Error("Could not submit one step proof", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		return et.fsm.Do(edgeConfirm{})
 	// Edge tracker should add a subchallenge level zero leaf.
 	case edgeAddingSubchallengeLeaf:
 		if err := et.openSubchallengeLeaf(ctx); err != nil {
-			log.WithFields(fields).WithError(err).Error("Could not open subchallenge leaf")
+			srvlog.Error("Could not open subchallenge leaf", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		layerZeroLeafCounter.Inc(1)
@@ -253,7 +256,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case edgeBisecting:
 		lowerChild, upperChild, err := et.bisect(ctx)
 		if err != nil {
-			log.WithError(err).WithFields(fields).Error("Could not bisect")
+			srvlog.Error("Could not bisect", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		bisectedCounter.Inc(1)
@@ -273,7 +276,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 			WithFSMOpts(et.fsmOpts...),
 		)
 		if err != nil {
-			log.WithError(err).WithFields(fields).Error("Could not create new edge tracker")
+			srvlog.Error("Could not create new edge tracker", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		secondTracker, err := New(
@@ -291,7 +294,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 			WithFSMOpts(et.fsmOpts...),
 		)
 		if err != nil {
-			log.WithError(err).WithFields(fields).Error("Could not create new edge tracker")
+			srvlog.Error("Could not create new edge tracker", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		go firstTracker.Spawn(ctx)
@@ -300,7 +303,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case edgeConfirming:
 		wasConfirmed, err := et.tryToConfirm(ctx)
 		if err != nil {
-			log.WithFields(fields).WithError(err).Debug("Could not confirm edge yet")
+			srvlog.Debug("Could not confirm edge yet", err, fields)
 			return et.fsm.Do(edgeAwaitConfirmation{})
 		}
 		if !wasConfirmed {
@@ -308,7 +311,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		return et.fsm.Do(edgeConfirm{})
 	case edgeConfirmed:
-		log.WithFields(fields).Info("Edge reached confirmed state")
+		srvlog.Info("Edge reached confirmed state", fields)
 		return et.fsm.Do(edgeConfirm{})
 	default:
 		return fmt.Errorf("invalid state: %s", current.State)
@@ -319,11 +322,11 @@ func (et *Tracker) shouldComplete() bool {
 	return et.fsm.Current().State == edgeConfirmed
 }
 
-func (et *Tracker) uniqueTrackerLogFields() logrus.Fields {
+func (et *Tracker) uniqueTrackerLogFields() log.Ctx {
 	startHeight, startCommit := et.edge.StartCommitment()
 	endHeight, endCommit := et.edge.EndCommitment()
 	id := et.edge.Id()
-	return logrus.Fields{
+	return log.Ctx{
 		"id":            containers.Trunc(id[:]),
 		"startHeight":   startHeight,
 		"startCommit":   containers.Trunc(startCommit.Bytes()),
@@ -397,7 +400,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 		if confirmErr := et.edge.ConfirmByChildren(ctx); confirmErr != nil {
 			return false, errors.Wrap(confirmErr, "could not confirm by children")
 		}
-		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by children")
+		srvlog.Info("Confirmed by children", et.uniqueTrackerLogFields())
 		confirmedCounter.Inc(1)
 		return true, nil
 	}
@@ -411,7 +414,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 		if confirmClaimErr := et.edge.ConfirmByClaim(ctx, protocol.ClaimId(claimingEdge)); confirmClaimErr != nil {
 			return false, errors.Wrap(confirmClaimErr, "could not confirm by claim")
 		}
-		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by claim")
+		srvlog.Info("Confirmed by claim", et.uniqueTrackerLogFields())
 		confirmedCounter.Inc(1)
 		return true, nil
 	}
@@ -429,7 +432,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 		if err := et.edge.ConfirmByTimer(ctx, ancestors); err != nil {
 			return false, errors.Wrap(err, "could not confirm by timer")
 		}
-		log.WithFields(et.uniqueTrackerLogFields()).Info("Confirmed by time")
+		srvlog.Info("Confirmed by time", et.uniqueTrackerLogFields())
 		confirmedCounter.Inc(1)
 		return true, nil
 	}
@@ -510,14 +513,14 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 			containers.Trunc(endCommit.Bytes()),
 		)
 	}
-	log.WithFields(logrus.Fields{
+	srvlog.Info("Successfully bisected edge", log.Ctx{
 		"name":               et.validatorName,
 		"challengeType":      et.edge.GetType(),
 		"bisectedFrom":       endHeight,
 		"bisectedFromMerkle": containers.Trunc(endCommit.Bytes()),
 		"bisectedTo":         bisectTo,
 		"bisectedToMerkle":   containers.Trunc(historyCommit.Merkle.Bytes()),
-	}).Info("Successfully bisected edge")
+	})
 	return firstChild, secondChild, nil
 }
 
@@ -533,7 +536,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	startHeight, _ := et.edge.StartCommitment()
 	endHeight, _ := et.edge.EndCommitment()
 
-	fields := logrus.Fields{
+	fields := log.Ctx{
 		"name":                et.validatorName,
 		"edgeStartHeight":     startHeight,
 		"edgeEndHeight":       endHeight,
@@ -613,7 +616,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	fields["firstLeaf"] = containers.Trunc(startHistory.FirstLeaf.Bytes())
 	fields["startCommitment"] = containers.Trunc(startHistory.Merkle.Bytes())
 	fields["subChallengeType"] = addedLeaf.GetType()
-	log.WithFields(fields).Info("Created subchallenge edge")
+	srvlog.Info("Created subchallenge edge", fields)
 	tracker, err := New(
 		ctx,
 		addedLeaf,
@@ -637,7 +640,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 
 func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	fields := et.uniqueTrackerLogFields()
-	log.WithFields(fields).Info("Submitting one-step-proof to protocol")
+	srvlog.Info("Submitting one-step-proof to protocol", fields)
 	originHeights, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {
 		return errors.Wrap(err, "could not get top level claim height")
@@ -685,7 +688,7 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	); err != nil {
 		return errors.Wrap(err, "could not confirm one step proof against protocol")
 	}
-	log.WithFields(fields).Info("Succeeded one-step-proof for edge and confirmed it as winner")
+	srvlog.Info("Succeeded one-step-proof for edge and confirmed it as winner", fields)
 	return nil
 }
 

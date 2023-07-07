@@ -10,8 +10,8 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
@@ -53,10 +53,10 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	}
 	go tracker.Spawn(ctx)
 
-	logFields := logrus.Fields{}
-	logFields["name"] = m.name
-	logFields["assertionHash"] = containers.Trunc(id[:])
-	log.WithFields(logFields).Info("Successfully created level zero edge for block challenge")
+	srvlog.Info("Successfully created level zero edge for block challenge", log.Ctx{
+		"name":          m.name,
+		"assertionHash": containers.Trunc(id[:]),
+	})
 	return nil
 }
 
