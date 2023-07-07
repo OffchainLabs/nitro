@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -723,7 +724,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.ErrStorageRace) {
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace) {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {
