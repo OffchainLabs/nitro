@@ -295,7 +295,8 @@ func TestRedisForwarder(t *testing.T) {
 	}
 }
 
-func TestRedisForwarderFallbackNoRedis(t *testing.T) {
+// TestRFFallbackNoRedis is shortened from "TestRedisForwarderFallbackNoRedis" name for ipc url path to be less than "max_socket_path_size"
+func TestRFFallbackNoRedis(t *testing.T) {
 	ctx := context.Background()
 
 	fallbackIpcPath := tmpPath(t, "fallback.ipc")
