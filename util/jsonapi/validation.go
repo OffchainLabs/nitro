@@ -1,4 +1,7 @@
-package server_api
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+package jsonapi
 
 import (
 	"bytes"
@@ -16,16 +19,14 @@ type PreimagesMapJson struct {
 }
 
 func (m *PreimagesMapJson) MarshalJSON() ([]byte, error) {
-	size := 2 // {}
 	encoding := base64.StdEncoding
-	for key, value := range m.Map {
-		size += 5 // "":""
-		size += encoding.EncodedLen(len(key))
-		size += encoding.EncodedLen(len(value))
-	}
+	size := 2                                          // {}
+	size += (5 + encoding.EncodedLen(32)) * len(m.Map) // "000..000":""
 	if len(m.Map) > 0 {
-		// commas
-		size += len(m.Map) - 1
+		size += len(m.Map) - 1 // commas
+	}
+	for _, value := range m.Map {
+		size += encoding.EncodedLen(len(value))
 	}
 	out := make([]byte, size)
 	i := 0

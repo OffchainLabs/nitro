@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -29,8 +30,8 @@ func (a *ValidationServerAPI) Room() int {
 	return a.spawner.Room()
 }
 
-func (a *ValidationServerAPI) Validate(ctx context.Context, entry *ValidationInputJson, moduleRoot common.Hash) (validator.GoGlobalState, error) {
-	valInput, err := ValidationInputFromJson(entry)
+func (a *ValidationServerAPI) Validate(ctx context.Context, entry *jsonapi.ValidationInputJson, moduleRoot common.Hash) (validator.GoGlobalState, error) {
+	valInput, err := jsonapi.ValidationInputFromJson(entry)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
@@ -69,8 +70,8 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
-	input, err := ValidationInputFromJson(jsonInput)
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *jsonapi.ValidationInputJson) (uint64, error) {
+	input, err := jsonapi.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
@@ -107,8 +108,8 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := ValidationInputFromJson(jsonInput)
+func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *jsonapi.ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+	input, err := jsonapi.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return err
 	}
@@ -129,7 +130,7 @@ func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
 	return entry.run, nil
 }
 
-func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*MachineStepResultJson, error) {
+func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*jsonapi.MachineStepResultJson, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	if err != nil {
 		return nil, err
 	}
-	return MachineStepResultToJson(res), nil
+	return jsonapi.MachineStepResultToJson(res), nil
 }
 
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
