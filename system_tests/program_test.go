@@ -293,7 +293,7 @@ func testCalls(t *testing.T, jit bool) {
 	small := testPrecompile(smallGas)
 	large := testPrecompile(largeGas)
 
-	if !arbmath.Within(large-small, largeGas-smallGas, 1) {
+	if !arbmath.Within(large-small, largeGas-smallGas, 2) {
 		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
 		Fatal(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}

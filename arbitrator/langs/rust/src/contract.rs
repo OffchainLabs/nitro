@@ -1,14 +1,14 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{address as addr, hostio, Bytes20, Bytes32};
+use crate::{address as addr, hostio, tx, Bytes20, Bytes32};
 
 #[derive(Clone, Default)]
 #[must_use]
 pub struct Call {
     kind: CallKind,
     value: Bytes32,
-    ink: Option<u64>,
+    gas: Option<u64>,
     offset: usize,
     size: Option<usize>,
 }
@@ -71,8 +71,13 @@ impl Call {
         self
     }
 
+    pub fn gas(mut self, gas: u64) -> Self {
+        self.gas = Some(gas);
+        self
+    }
+
     pub fn ink(mut self, ink: u64) -> Self {
-        self.ink = Some(ink);
+        self.gas = Some(tx::ink_to_gas(ink));
         self
     }
 
@@ -88,7 +93,7 @@ impl Call {
 
     pub fn call(self, contract: Bytes20, calldata: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
         let mut outs_len = 0;
-        let ink = self.ink.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
+        let gas = self.gas.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
         let status = unsafe {
             match self.kind {
                 CallKind::Basic => hostio::call_contract(
@@ -96,21 +101,21 @@ impl Call {
                     calldata.as_ptr(),
                     calldata.len(),
                     self.value.ptr(),
-                    ink,
+                    gas,
                     &mut outs_len,
                 ),
                 CallKind::Delegate => hostio::delegate_call_contract(
                     contract.ptr(),
                     calldata.as_ptr(),
                     calldata.len(),
-                    ink,
+                    gas,
                     &mut outs_len,
                 ),
                 CallKind::Static => hostio::static_call_contract(
                     contract.ptr(),
                     calldata.as_ptr(),
                     calldata.len(),
-                    ink,
+                    gas,
                     &mut outs_len,
                 ),
             }

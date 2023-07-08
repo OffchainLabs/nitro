@@ -92,7 +92,7 @@ extern "C" {
         calldata: *const u8,
         calldata_len: usize,
         value: *const u8,
-        ink: u64,
+        gas: u64,
         return_data_len: *mut usize,
     ) -> u8;
 
@@ -167,7 +167,7 @@ extern "C" {
         contract: *const u8,
         calldata: *const u8,
         calldata_len: usize,
-        ink: u64,
+        gas: u64,
         return_data_len: *mut usize,
     ) -> u8;
 
@@ -264,7 +264,7 @@ extern "C" {
         contract: *const u8,
         calldata: *const u8,
         calldata_len: usize,
-        ink: u64,
+        gas: u64,
         return_data_len: *mut usize,
     ) -> u8;
 

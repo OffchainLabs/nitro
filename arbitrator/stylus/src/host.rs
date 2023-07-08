@@ -58,14 +58,14 @@ pub(crate) fn call_contract<E: EvmApi>(
     data: u32,
     data_len: u32,
     value: u32,
-    ink: u64,
+    gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
     let value = Some(value);
     let call = |api: &mut E, contract, data, gas, value: Option<_>| {
         api.contract_call(contract, data, gas, value.unwrap())
     };
-    do_call(env, contract, data, data_len, value, ink, ret_len, call)
+    do_call(env, contract, data, data_len, value, gas, ret_len, call)
 }
 
 pub(crate) fn delegate_call_contract<E: EvmApi>(
@@ -73,11 +73,11 @@ pub(crate) fn delegate_call_contract<E: EvmApi>(
     contract: u32,
     data: u32,
     data_len: u32,
-    ink: u64,
+    gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
     let call = |api: &mut E, contract, data, gas, _| api.delegate_call(contract, data, gas);
-    do_call(env, contract, data, data_len, None, ink, ret_len, call)
+    do_call(env, contract, data, data_len, None, gas, ret_len, call)
 }
 
 pub(crate) fn static_call_contract<E: EvmApi>(
@@ -85,11 +85,11 @@ pub(crate) fn static_call_contract<E: EvmApi>(
     contract: u32,
     data: u32,
     data_len: u32,
-    ink: u64,
+    gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
     let call = |api: &mut E, contract, data, gas, _| api.static_call(contract, data, gas);
-    do_call(env, contract, data, data_len, None, ink, ret_len, call)
+    do_call(env, contract, data, data_len, None, gas, ret_len, call)
 }
 
 pub(crate) fn do_call<F, E>(
@@ -98,7 +98,7 @@ pub(crate) fn do_call<F, E>(
     calldata: u32,
     calldata_len: u32,
     value: Option<u32>,
-    mut ink: u64,
+    mut gas: u64,
     return_data_len: u32,
     call: F,
 ) -> Result<u8, Escape>
@@ -108,9 +108,8 @@ where
 {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(calldata_len.into())?;
-    ink = ink.min(env.ink_ready()?); // provide no more than what the user has
+    gas = gas.min(env.gas_left()?); // provide no more than what the user has
 
-    let gas = env.pricing().ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
     let value = value.map(|x| env.read_bytes32(x)).transpose()?;

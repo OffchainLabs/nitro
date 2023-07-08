@@ -53,14 +53,14 @@ pub unsafe extern "C" fn user_host__call_contract(
     calldata: usize,
     calldata_len: usize,
     value: usize,
-    ink: u64,
+    gas: u64,
     ret_len: usize,
 ) -> u8 {
     let value = Some(value);
     let call = |api: EvmCaller, contract, input, gas, value: Option<_>| {
         api.contract_call(contract, input, gas, value.unwrap())
     };
-    do_call(contract, calldata, calldata_len, value, ink, ret_len, call)
+    do_call(contract, calldata, calldata_len, value, gas, ret_len, call)
 }
 
 #[no_mangle]
@@ -68,11 +68,11 @@ pub unsafe extern "C" fn user_host__delegate_call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
-    ink: u64,
+    gas: u64,
     ret_len: usize,
 ) -> u8 {
     let call = |api: EvmCaller, contract, input, gas, _| api.delegate_call(contract, input, gas);
-    do_call(contract, calldata, calldata_len, None, ink, ret_len, call)
+    do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
 }
 
 #[no_mangle]
@@ -80,11 +80,11 @@ pub unsafe extern "C" fn user_host__static_call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
-    ink: u64,
+    gas: u64,
     ret_len: usize,
 ) -> u8 {
     let call = |api: EvmCaller, contract, input, gas, _| api.static_call(contract, input, gas);
-    do_call(contract, calldata, calldata_len, None, ink, ret_len, call)
+    do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
 }
 
 unsafe fn do_call<F>(
@@ -92,7 +92,7 @@ unsafe fn do_call<F>(
     calldata: usize,
     calldata_len: usize,
     value: Option<usize>,
-    mut ink: u64,
+    mut gas: u64,
     return_data_len: usize,
     call: F,
 ) -> u8
@@ -101,9 +101,8 @@ where
 {
     let program = Program::start();
     program.pay_for_evm_copy(calldata_len as u64).unwrap();
-    ink = ink.min(program.ink_ready().unwrap());
+    gas = gas.min(program.gas_left().unwrap());
 
-    let gas = program.pricing().ink_to_gas(ink);
     let contract = wavm::read_bytes20(contract).into();
     let input = wavm::read_slice_usize(calldata, calldata_len);
     let value = value.map(|x| Bytes32(wavm::read_bytes32(x)));
