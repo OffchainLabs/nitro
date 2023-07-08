@@ -357,7 +357,7 @@ mod tests {
     fn test_cached_result() {
         let mut cache: CachedResult<u32, fn() -> u32> = CachedResult {
             value: None,
-            callback: || unsafe { 41 },
+            callback: || 41,
         };
 
         assert_eq!(cache.get(), 41);
