@@ -59,7 +59,7 @@ extern "C" {
     /// [`The Ethereum Yellow Paper`]: <https://ethereum.github.io/yellowpaper/paper.pdf>
     pub(crate) fn block_gas_limit() -> u64;
 
-    /// Gets a bound3ed estimate of the L1 block number at which the Sequencer sequenced the
+    /// Gets a bounded estimate of the L1 block number at which the Sequencer sequenced the
     /// transaction. See [`Block Numbers and Time`] for more information on how this value is
     /// determined.
     ///
@@ -308,4 +308,66 @@ extern "C" {
 
     /// Prints a UTF-8 encoded string to the console. Only available in debug mode.
     pub(crate) fn log_txt(text: *const u8, len: usize);
+}
+
+pub(crate) static mut CACHED_RETURN_DATA_SIZE: CachedResult<u32, fn() -> u32> =
+    CachedResult{
+        value: None,
+        callback: || unsafe{return_data_size()},
+    };
+
+
+pub(crate) struct CachedResult<T: Copy, CB: Fn() -> T> {
+    pub(crate) value: Option<T>,
+    pub(crate) callback: CB,
+}
+
+impl<T: Copy, CB: Fn() -> T> CachedResult<T, CB> {
+    #[allow(dead_code)]
+    pub(crate) fn new(callback: CB) -> Self {
+        Self {
+            value: None,
+            callback,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn clear(&mut self) {
+        self.value = None;
+    }
+
+    pub(crate) fn set(&mut self, value: T) {
+        self.value = Some(value);
+    }
+
+    pub(crate) fn get(&mut self) -> T {
+        if let Some(value) = &self.value {
+            return *value;
+        }
+
+        let value = (self.callback)();
+        self.value = Some(value);
+        value
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cached_result() {
+        let mut cache: CachedResult<u32, fn() -> u32> =
+            CachedResult{
+                value: None,
+                callback: || unsafe{41},
+            };
+
+        assert_eq!(cache.get(), 41);
+        cache.set(42);
+        assert_eq!(cache.get(), 42);
+        cache.clear();
+        assert_eq!(cache.get(), 41);
+
+    }
 }

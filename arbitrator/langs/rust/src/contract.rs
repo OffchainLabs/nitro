@@ -3,8 +3,6 @@
 
 use crate::{address as addr, hostio, Bytes20, Bytes32};
 
-static mut CACHED_RETURN_DATA_SIZE: Option<u32> = None;
-
 #[derive(Clone, Default)]
 #[must_use]
 pub struct Call {
@@ -119,7 +117,7 @@ impl Call {
         };
 
         unsafe {
-            CACHED_RETURN_DATA_SIZE = Some(outs_len as u32);
+            hostio::CACHED_RETURN_DATA_SIZE.set(outs_len as u32);
         }
 
         let outs = partial_return_data_impl(self.offset, self.size, outs_len);
@@ -202,13 +200,6 @@ pub fn partial_return_data(offset: usize, size: usize) -> Vec<u8> {
 
 fn return_data_len() -> usize {
     unsafe {
-        if let Some(data_size) = CACHED_RETURN_DATA_SIZE {
-            return data_size as usize;
-        }
-
-        let data_size = hostio::return_data_size();
-        CACHED_RETURN_DATA_SIZE = Some(data_size);
-
-        data_size as usize
+        hostio::CACHED_RETURN_DATA_SIZE.get() as usize
     }
 }
