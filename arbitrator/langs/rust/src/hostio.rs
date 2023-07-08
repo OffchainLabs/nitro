@@ -315,6 +315,11 @@ pub(crate) static mut CACHED_RETURN_DATA_SIZE: CachedResult<u32, fn() -> u32> = 
     callback: || unsafe { return_data_size() },
 };
 
+pub(crate) static mut CACHED_INK_PRICE: CachedResult<u64, fn() -> u64> = CachedResult {
+    value: None,
+    callback: || unsafe { tx_ink_price() },
+};
+
 pub(crate) struct CachedResult<T: Copy, CB: Fn() -> T> {
     pub(crate) value: Option<T>,
     pub(crate) callback: CB,

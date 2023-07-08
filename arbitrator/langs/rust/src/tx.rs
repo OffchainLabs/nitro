@@ -10,7 +10,19 @@ pub fn gas_price() -> Bytes32 {
 }
 
 pub fn ink_price() -> u64 {
-    unsafe { hostio::tx_ink_price() }
+    unsafe { hostio::CACHED_INK_PRICE.get() }
+}
+
+#[allow(clippy::inconsistent_digit_grouping)]
+pub fn gas_to_ink(gas: u64) -> u64 {
+    let ink_price = unsafe { hostio::CACHED_INK_PRICE.get() };
+    gas.saturating_mul(100_00) / ink_price
+}
+
+#[allow(clippy::inconsistent_digit_grouping)]
+pub fn ink_to_gas(ink: u64) -> u64 {
+    let ink_price = unsafe { hostio::CACHED_INK_PRICE.get() };
+    ink.saturating_mul(ink_price) / 100_00
 }
 
 pub fn origin() -> Bytes20 {
