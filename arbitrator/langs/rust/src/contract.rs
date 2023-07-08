@@ -199,7 +199,5 @@ pub fn partial_return_data(offset: usize, size: usize) -> Vec<u8> {
 }
 
 fn return_data_len() -> usize {
-    unsafe {
-        hostio::CACHED_RETURN_DATA_SIZE.get() as usize
-    }
+    unsafe { hostio::CACHED_RETURN_DATA_SIZE.get() as usize }
 }

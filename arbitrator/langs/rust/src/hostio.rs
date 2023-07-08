@@ -310,12 +310,10 @@ extern "C" {
     pub(crate) fn log_txt(text: *const u8, len: usize);
 }
 
-pub(crate) static mut CACHED_RETURN_DATA_SIZE: CachedResult<u32, fn() -> u32> =
-    CachedResult{
-        value: None,
-        callback: || unsafe{return_data_size()},
-    };
-
+pub(crate) static mut CACHED_RETURN_DATA_SIZE: CachedResult<u32, fn() -> u32> = CachedResult {
+    value: None,
+    callback: || unsafe { return_data_size() },
+};
 
 pub(crate) struct CachedResult<T: Copy, CB: Fn() -> T> {
     pub(crate) value: Option<T>,
@@ -357,17 +355,15 @@ mod tests {
 
     #[test]
     fn test_cached_result() {
-        let mut cache: CachedResult<u32, fn() -> u32> =
-            CachedResult{
-                value: None,
-                callback: || unsafe{41},
-            };
+        let mut cache: CachedResult<u32, fn() -> u32> = CachedResult {
+            value: None,
+            callback: || unsafe { 41 },
+        };
 
         assert_eq!(cache.get(), 41);
         cache.set(42);
         assert_eq!(cache.get(), 42);
         cache.clear();
         assert_eq!(cache.get(), 41);
-
     }
 }
