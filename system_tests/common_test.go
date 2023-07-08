@@ -969,5 +969,5 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 		}
 		time.Sleep(delay)
 	}
-	Fatal(t, "failed to complete")
+	Fatal(t, "failed to complete after ", delay*time.Duration(max))
 }
