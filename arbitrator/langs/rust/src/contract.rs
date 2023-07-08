@@ -3,7 +3,7 @@
 
 use crate::{address as addr, hostio, Bytes20, Bytes32};
 
-static mut CACHED_RETURN_DATA_SIZE: Option<u32> = Some(0);
+static mut CACHED_RETURN_DATA_SIZE: Option<u32> = None;
 
 #[derive(Clone, Default)]
 #[must_use]
