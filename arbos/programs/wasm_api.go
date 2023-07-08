@@ -179,8 +179,8 @@ func newApi(
 		return write(stylus, maybe(addr, err), len, cost)
 	})
 	getReturnData := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-	    offset := jsU32(args[0])
-	    size := jsU32(args[1])
+		offset := jsU32(args[0])
+		size := jsU32(args[1])
 		data := closures.getReturnData(offset, size)
 		return write(stylus, data)
 	})
