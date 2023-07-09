@@ -155,39 +155,74 @@ fn partial_return_data_impl(offset: usize, size: Option<usize>, full_size: usize
     data
 }
 
-pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<Bytes20, Vec<u8>> {
-    let mut contract = [0; 20];
-    let mut revert_data_len = 0;
-    let contract = unsafe {
-        if let Some(salt) = salt {
-            hostio::create2(
-                code.as_ptr(),
-                code.len(),
-                endowment.ptr(),
-                salt.ptr(),
-                contract.as_mut_ptr(),
-                &mut revert_data_len as *mut _,
-            );
-        } else {
-            hostio::create1(
-                code.as_ptr(),
-                code.len(),
-                endowment.ptr(),
-                contract.as_mut_ptr(),
-                &mut revert_data_len as *mut _,
-            );
-        }
-        Bytes20(contract)
-    };
-    if contract.is_zero() {
-        unsafe {
-            let mut revert_data = Vec::with_capacity(revert_data_len);
-            let used_len = hostio::read_return_data(revert_data.as_mut_ptr(), 0, revert_data_len);
-            revert_data.set_len(used_len);
-            return Err(revert_data);
-        }
+#[derive(Clone, Default)]
+#[must_use]
+pub struct Deploy {
+    salt: Option<Bytes32>,
+    offset: usize,
+    size: Option<usize>,
+}
+
+impl Deploy {
+    pub fn new() -> Self {
+        Default::default()
     }
-    Ok(contract)
+
+    pub fn salt(mut self, salt: Bytes32) -> Self {
+        self.salt = Some(salt);
+        self
+    }
+
+    pub fn optional_salt(mut self, salt: Option<Bytes32>) -> Self {
+        self.salt = salt;
+        self
+    }
+
+    pub fn limit_return_data(mut self, offset: usize, size: usize) -> Self {
+        self.offset = offset;
+        self.size = Some(size);
+        self
+    }
+
+    pub fn skip_return_data(self) -> Self {
+        self.limit_return_data(0, 0)
+    }
+
+    pub fn deploy(self, code: &[u8], endowment: Bytes32) -> Result<Bytes20, Vec<u8>> {
+        let mut contract = [0; 20];
+        let mut revert_data_len = 0;
+        let contract = unsafe {
+            if let Some(salt) = self.salt {
+                hostio::create2(
+                    code.as_ptr(),
+                    code.len(),
+                    endowment.ptr(),
+                    salt.ptr(),
+                    contract.as_mut_ptr(),
+                    &mut revert_data_len as *mut _,
+                );
+            } else {
+                hostio::create1(
+                    code.as_ptr(),
+                    code.len(),
+                    endowment.ptr(),
+                    contract.as_mut_ptr(),
+                    &mut revert_data_len as *mut _,
+                );
+            }
+            Bytes20(contract)
+        };
+        if contract.is_zero() {
+            let revert_data = if revert_data_len == 0 {
+                vec![]
+            } else {
+                partial_return_data_impl(self.offset, self.size, revert_data_len)
+            };
+            return Err(revert_data);
+
+        }
+        Ok(contract)
+    }
 }
 
 pub fn address() -> Bytes20 {

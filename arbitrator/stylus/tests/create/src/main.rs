@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{contract, evm, Bytes32};
+use arbitrum::{contract::Deploy, evm, Bytes32};
 
 arbitrum::arbitrum_main!(user_main);
 
@@ -21,7 +21,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     let code = input;
-    let contract = contract::create(code, endowment, salt)?;
+    let contract = Deploy::new().optional_salt(salt).deploy(code, endowment)?;
     evm::log(&[contract.into()], &[]).unwrap();
     Ok(contract.to_vec())
 }
