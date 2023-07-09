@@ -218,8 +218,8 @@ impl Deploy {
             } else {
                 partial_return_data_impl(self.offset, self.size, revert_data_len)
             };
-            return Err(revert_data);
 
+            return Err(revert_data);
         }
         Ok(contract)
     }
