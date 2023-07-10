@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 func NewManager(
@@ -21,7 +20,6 @@ func NewManager(
 	txOpts *bind.TransactOpts,
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
-	headerReader *headerreader.HeaderReader,
 	statelessBlockValidator *StatelessBlockValidator,
 	blockValidator *BlockValidator,
 ) (*challengemanager.Manager, error) {

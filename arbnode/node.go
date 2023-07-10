@@ -505,7 +505,7 @@ type Node struct {
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
 	Staker                  *staker.Staker
-	manager                 *challengemanager.Manager
+	Manager                 *challengemanager.Manager
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -810,7 +810,7 @@ func createNodeImpl(
 			}
 		}
 
-		manager, err = staker.NewManager(ctx, wallet.RollupAddress(), txOptsValidator, bind.CallOpts{}, l1Reader.Client(), l1Reader, statelessBlockValidator, blockValidator)
+		manager, err = staker.NewManager(ctx, wallet.RollupAddress(), txOptsValidator, bind.CallOpts{}, l1Reader.Client(), statelessBlockValidator, blockValidator)
 		if err != nil {
 			return nil, err
 		}
@@ -1048,8 +1048,8 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.Staker != nil {
 		n.Staker.Start(ctx)
 	}
-	if n.manager != nil {
-		n.manager.Start(ctx)
+	if n.Manager != nil {
+		n.Manager.Start(ctx)
 	}
 	if n.L1Reader != nil {
 		n.L1Reader.Start(ctx)
