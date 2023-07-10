@@ -16,7 +16,7 @@ pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__return_data(ptr: usize, len: usize) {
+pub unsafe extern "C" fn user_host__write_result(ptr: usize, len: usize) {
     let program = Program::start();
     program.pay_for_evm_copy(len as u64).unwrap();
     program.outs = wavm::read_slice_usize(ptr, len);

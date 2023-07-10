@@ -17,7 +17,7 @@ pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     Ok(())
 }
 
-pub(crate) fn return_data<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
+pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(len.into())?;
     env.outs = env.read_slice(ptr, len)?;

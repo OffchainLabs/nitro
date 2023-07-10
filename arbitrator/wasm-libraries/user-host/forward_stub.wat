@@ -3,7 +3,7 @@
 
 (module
     (func (export "forward__read_args")              (param i32) unreachable)
-    (func (export "forward__return_data")            (param i32 i32) unreachable)
+    (func (export "forward__write_result")           (param i32 i32) unreachable)
     (func (export "forward__account_load_bytes32")   (param i32 i32) unreachable)
     (func (export "forward__account_store_bytes32")  (param i32 i32) unreachable)
     (func (export "forward__call_contract")          (param i32 i32 i32 i32 i64 i32) (result i32) unreachable)

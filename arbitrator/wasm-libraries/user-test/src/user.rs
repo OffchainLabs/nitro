@@ -15,7 +15,7 @@ pub unsafe extern "C" fn forward__read_args(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn forward__return_data(ptr: usize, len: usize) {
+pub unsafe extern "C" fn forward__write_result(ptr: usize, len: usize) {
     let mut program = Program::start();
     program.pay_for_evm_copy(len as u64).unwrap();
     OUTS = wavm::read_slice_usize(ptr, len);

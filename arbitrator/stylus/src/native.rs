@@ -119,7 +119,7 @@ impl<E: EvmApi> NativeInstance<E> {
         let mut imports = imports! {
             "forward" => {
                 "read_args" => func!(host::read_args),
-                "return_data" => func!(host::return_data),
+                "write_result" => func!(host::write_result),
                 "account_load_bytes32" => func!(host::account_load_bytes32),
                 "account_store_bytes32" => func!(host::account_store_bytes32),
                 "call_contract" => func!(host::call_contract),
@@ -310,7 +310,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
     let mut imports = imports! {
         "forward" => {
             "read_args" => stub!(|_: u32|),
-            "return_data" => stub!(|_: u32, _: u32|),
+            "write_result" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),

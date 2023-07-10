@@ -28,7 +28,7 @@ pub fn args(len: usize) -> Vec<u8> {
 
 pub fn output(data: Vec<u8>) {
     unsafe {
-        hostio::return_data(data.as_ptr(), data.len());
+        hostio::write_result(data.as_ptr(), data.len());
     }
 }
 

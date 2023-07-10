@@ -237,7 +237,7 @@ extern "C" {
     /// Writes the final return data. If not called before the program exists, the return data will
     /// be 0 bytes long. Note that this hostio does not cause the program to exit, which happens
     /// naturally when the `arbitrum_main` entry-point returns.
-    pub(crate) fn return_data(data: *const u8, len: usize);
+    pub(crate) fn write_result(data: *const u8, len: usize);
 
     /// Returns the length of the last EVM call or deployment return result, or `0` if neither have
     /// happened during the program's execution. The semantics are equivalent to that of the EVM's

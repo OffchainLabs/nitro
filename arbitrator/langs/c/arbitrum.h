@@ -14,7 +14,7 @@ extern "C" {
 #define USER_HOST import_module("forward")
 
 extern __attribute__((USER_HOST, import_name("read_args"))) void read_args(const uint8_t * data);
-extern __attribute__((USER_HOST, import_name("return_data"))) void return_data(const uint8_t * data, size_t len);
+extern __attribute__((USER_HOST, import_name("write_result"))) void write_result(const uint8_t * data, size_t len);
 extern __attribute__((USER_HOST, import_name("memory_grow"))) void memory_grow(uint32_t pages);
 
 typedef enum ArbStatus {
@@ -41,7 +41,7 @@ typedef struct ArbResult {
         const uint8_t args[args_len];                                   \
         read_args(args);                                                \
         const ArbResult result = user_main(args, args_len);             \
-        return_data(result.output, result.output_len);                  \
+        write_result(result.output, result.output_len);                 \
         return result.status;                                           \
     }
 

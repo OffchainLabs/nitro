@@ -4,7 +4,7 @@
 (module
     (import "forward" "memory_grow"   (func (param i32)))
     (import "forward" "read_args"     (func $read_args     (param i32)))
-    (import "forward" "return_data"   (func $return_data   (param i32 i32)))
+    (import "forward" "write_result"  (func $write_result  (param i32 i32)))
     (import "forward" "call_contract" (func $call_contract (param i32 i32 i32 i32 i64 i32) (result i32)))
     (import "console" "tee_i32"       (func $tee           (param i32) (result i32)))
     (func (export "arbitrum_main") (param $args_len i32) (result i32)
