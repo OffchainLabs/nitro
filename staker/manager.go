@@ -30,7 +30,6 @@ func NewManager(
 		rollupAddress,
 		txOpts,
 		client,
-		headerReader,
 	)
 	if err != nil {
 		return nil, err
