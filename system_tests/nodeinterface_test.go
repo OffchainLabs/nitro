@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -137,7 +137,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
-	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
+	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)

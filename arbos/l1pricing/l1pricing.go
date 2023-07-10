@@ -74,7 +74,6 @@ const (
 const (
 	InitialInertia           = 10
 	InitialPerUnitReward     = 10
-	InitialPricePerUnitWei   = 50 * params.GWei
 	InitialPerBatchGasCostV6 = 100000
 )
 
@@ -82,7 +81,7 @@ const (
 var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
 var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
-func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
+func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
@@ -109,7 +108,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 		return err
 	}
 	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
-	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
+	if err := pricePerUnit.SetSaturatingWithWarning(initialL1BaseFee, "initial L1 base fee (storing in price per unit)"); err != nil {
 		return err
 	}
 	return nil

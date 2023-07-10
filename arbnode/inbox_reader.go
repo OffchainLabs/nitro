@@ -135,17 +135,17 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, initChainConfig, _, err := message.ParseInitMessage()
+			initMessage, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}
 			chainConfig := r.tracker.txStreamer.chainConfig
 			configChainId := chainConfig.ChainID
-			if initChainId.Cmp(configChainId) != 0 {
-				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			if initMessage.ChainId.Cmp(configChainId) != 0 {
+				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initMessage.ChainId)
 			}
-			if initChainConfig != nil {
-				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+			if initMessage.ChainConfig != nil {
+				if err := initMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 					return fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
@@ -161,7 +161,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 }
 
 // assumes l1block is recent so we could do a simple-search from the end
-func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (arbutil.MessageIndex, error) {
+func (r *InboxReader) recentParentChainBlockToMsg(ctx context.Context, parentChainBlock uint64) (arbutil.MessageIndex, error) {
 	batch, err := r.tracker.GetBatchCount()
 	if err != nil {
 		return 0, err
@@ -178,7 +178,7 @@ func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (a
 		if err != nil {
 			return 0, err
 		}
-		if meta.L1Block <= l1block {
+		if meta.ParentChainBlock <= parentChainBlock {
 			return meta.MessageCount, nil
 		}
 	}
@@ -189,7 +189,7 @@ func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex
 	if err != nil {
 		return 0, err
 	}
-	return r.recentL1BlockToMsg(ctx, l1block)
+	return r.recentParentChainBlockToMsg(ctx, l1block)
 }
 
 func (r *InboxReader) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
@@ -197,7 +197,7 @@ func (r *InboxReader) GetFinalizedMsgCount(ctx context.Context) (arbutil.Message
 	if err != nil {
 		return 0, err
 	}
-	return r.recentL1BlockToMsg(ctx, l1block)
+	return r.recentParentChainBlockToMsg(ctx, l1block)
 }
 
 func (r *InboxReader) Tracker() *InboxTracker {
@@ -561,7 +561,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	if err != nil {
 		return nil, err
 	}
-	blockNum := arbmath.UintToBig(metadata.L1Block)
+	blockNum := arbmath.UintToBig(metadata.ParentChainBlock)
 	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
 	if err != nil {
 		return nil, err
@@ -573,7 +573,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 		}
 		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
-	return nil, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.L1Block, seenBatches)
+	return nil, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
 }
 
 func (r *InboxReader) GetLastReadBatchCount() uint64 {

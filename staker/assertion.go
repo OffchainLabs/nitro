@@ -63,13 +63,14 @@ type Assertion struct {
 }
 
 type NodeInfo struct {
-	NodeNum            uint64
-	L1BlockProposed    uint64
-	Assertion          *Assertion
-	InboxMaxCount      *big.Int
-	AfterInboxBatchAcc common.Hash
-	NodeHash           common.Hash
-	WasmModuleRoot     common.Hash
+	NodeNum                  uint64
+	L1BlockProposed          uint64
+	ParentChainBlockProposed uint64
+	Assertion                *Assertion
+	InboxMaxCount            *big.Int
+	AfterInboxBatchAcc       common.Hash
+	NodeHash                 common.Hash
+	WasmModuleRoot           common.Hash
 }
 
 func (n *NodeInfo) AfterState() *validator.ExecutionState {

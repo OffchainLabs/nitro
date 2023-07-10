@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -321,6 +322,7 @@ type Config struct {
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
+	ResourceManagement  resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -739,6 +741,8 @@ func createNodeImpl(
 	}
 
 	var stakerObj *staker.Staker
+	var messagePruner *MessagePruner
+
 	if config.Staker.Enable {
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
@@ -765,7 +769,13 @@ func createNodeImpl(
 			}
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
+		notifiers := make([]staker.LatestStakedNotifier, 0)
+		if config.MessagePruner.Enable {
+			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
+			notifiers = append(notifiers, messagePruner)
+		}
+
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, notifiers, deployInfo.ValidatorUtils, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
@@ -797,10 +807,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	var messagePruner *MessagePruner
-	if config.MessagePruner.Enable && stakerObj != nil {
-		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
-	}
+
 	// always create DelayedSequencer, it won't do anything if it is disabled
 	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
@@ -935,9 +942,6 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
-	}
-	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
