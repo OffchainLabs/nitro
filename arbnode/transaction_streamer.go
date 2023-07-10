@@ -46,6 +46,7 @@ type TransactionStreamer struct {
 	chainConfig      *params.ChainConfig
 	exec             *execution.ExecutionEngine
 	execLastMsgCount arbutil.MessageIndex
+	validator        *staker.BlockValidator
 
 	db           ethdb.Database
 	fatalErrChan chan<- error
@@ -128,7 +129,13 @@ func uint64ToKey(x uint64) []byte {
 }
 
 func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
-	s.exec.SetBlockValidator(validator)
+	if s.Started() {
+		panic("trying to set coordinator after start")
+	}
+	if s.validator != nil {
+		panic("trying to set coordinator when already set")
+	}
+	s.validator = validator
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
@@ -196,6 +203,45 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 		}
 	}
 	return iter.Error()
+}
+
+// deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
+// might have deleted some keys even if returning an error
+func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, error) {
+	batch := db.NewBatch()
+	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
+	defer startIter.Release()
+	var prunedKeysRange []uint64
+	for startIter.Next() {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		currentKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+		if currentKey >= endMinKey {
+			break
+		}
+		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
+			prunedKeysRange = append(prunedKeysRange, currentKey)
+		} else {
+			prunedKeysRange[1] = currentKey
+		}
+		err := batch.Delete(startIter.Key())
+		if err != nil {
+			return nil, err
+		}
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			if err := batch.Write(); err != nil {
+				return nil, err
+			}
+			batch.Reset()
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return nil, err
+		}
+	}
+	return prunedKeysRange, nil
 }
 
 // The insertion mutex must be held. This acquires the reorg mutex.
@@ -294,6 +340,13 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 
+	if s.validator != nil {
+		err = s.validator.Reorg(s.GetContext(), count)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
@@ -351,6 +404,21 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 		return 0, err
 	}
 	return arbutil.MessageIndex(pos), nil
+}
+
+func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	digestedHead, err := s.exec.HeadMessageNumber()
+	if err != nil {
+		return 0, err
+	}
+	if msgCount > digestedHead+1 {
+		return digestedHead + 1, nil
+	}
+	return msgCount, nil
 }
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
@@ -847,6 +915,14 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	}
 
 	return nil
+}
+
+// TODO: eventually there will be a table maintained by txStreamer itself
+func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
+	if count == 0 {
+		return &execution.MessageResult{}, nil
+	}
+	return s.exec.ResultAtPos(count - 1)
 }
 
 // return value: true if should be called again immediately

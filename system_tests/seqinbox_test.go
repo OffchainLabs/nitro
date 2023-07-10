@@ -123,7 +123,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
-				Fail(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
+				Fatal(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
 			}
 			t.Logf("Reorganizing to L1 block %v", reorgTargetNumber)
 			reorgTarget := l1BlockChain.GetBlockByNumber(reorgTargetNumber)
@@ -244,12 +244,12 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		for i := 0; ; i++ {
 			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})
 			if err != nil {
-				Fail(t, err)
+				Fatal(t, err)
 			}
 			if batchCount.Cmp(big.NewInt(int64(len(blockStates)))) == 0 {
 				break
 			} else if i >= 100 {
-				Fail(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
+				Fatal(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -260,18 +260,20 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			if blockNumber == expectedBlockNumber {
 				break
 			} else if i >= 1000 {
-				Fail(t, "timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
+				Fatal(t, "timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				lastValidated := arbNode.BlockValidator.LastBlockValidated()
-				if lastValidated == expectedBlockNumber {
+				expectedPos, err := arbNode.Execution.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
+				Require(t, err)
+				lastValidated := arbNode.BlockValidator.Validated(t)
+				if lastValidated == expectedPos+1 {
 					break
 				} else if i >= 1000 {
-					Fail(t, "timed out waiting for block validator; have", lastValidated, "want", expectedBlockNumber)
+					Fatal(t, "timed out waiting for block validator; have", lastValidated, "want", expectedPos+1)
 				}
 				time.Sleep(time.Second)
 			}
@@ -281,14 +283,14 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
 			if block == nil {
-				Fail(t, "missing state block", state.l2BlockNumber)
+				Fatal(t, "missing state block", state.l2BlockNumber)
 			}
 			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
 			for acct, expectedBalance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
 				if expectedBalance.Cmp(haveBalance) < 0 {
-					Fail(t, "unexpected balance for account", acct, "; expected", expectedBalance, "got", haveBalance)
+					Fatal(t, "unexpected balance for account", acct, "; expected", expectedBalance, "got", haveBalance)
 				}
 			}
 		}
