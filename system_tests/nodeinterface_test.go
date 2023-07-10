@@ -289,14 +289,14 @@ func TestFindBatch(t *testing.T) {
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	fatalErrChan := make(chan error, 10)
-	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
 
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
 	rollupAddresses.Bridge = bridgeAddr
 	rollupAddresses.SequencerInbox = seqInboxAddr
 	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	consensus, _ := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, nil, nil, fatalErrChan)
+	consensus, _ := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
 	err := consensus.Start(ctx)
 	Require(t, err)
 
@@ -319,7 +319,7 @@ func TestFindBatch(t *testing.T) {
 		if expBatchNum != gotBatchNum {
 			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
 		}
-		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum)
+		batchL1Block, err := consensus.InboxTracker.GetBatchParentChainBlock(gotBatchNum)
 		Require(t, err)
 		blockHeader, err := l2Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
 		Require(t, err)
