@@ -3,56 +3,54 @@
 
 #![no_main]
 
-use arbitrum::{contract::{self, Call}, debug};
+use arbitrum::{
+    contract::{self, Call},
+    debug, Bytes20,
+};
+
+macro_rules! error {
+    ($($msg:tt)*) => {{
+        debug::println($($msg)*);
+        panic!("invalid data")
+    }};
+}
 
 arbitrum::arbitrum_main!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let offset = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
-    let size = u32::from_be_bytes(input[4..8].try_into().unwrap()) as usize;
-    let expected_size = u32::from_be_bytes(input[8..12].try_into().unwrap()) as usize;
+    let offset = usize::from_be_bytes(input[..4].try_into().unwrap());
+    let size = usize::from_be_bytes(input[4..8].try_into().unwrap());
+    let expected_size = usize::from_be_bytes(input[8..12].try_into().unwrap());
 
-    debug::println(format!("checking return data subset: {offset} {size}"));
+    debug::println(format!("checking subset: {offset} {size} {expected_size}"));
+
     // Call identity precompile to test return data
-    let call_data: [u8; 4] = [0, 1, 2, 3];
-    let identity_precompile: u32 = 0x4;
-    let mut safe_offset = offset;
-    if safe_offset > call_data.len() {
-        safe_offset = call_data.len();
-    }
-    let mut safe_size = size;
-    if safe_size > call_data.len() - safe_offset {
-        safe_size = call_data.len() - safe_offset;
+    let calldata: [u8; 4] = [0, 1, 2, 3];
+    let precompile = Bytes20::from(0x4_u32);
+
+    let safe_offset = offset.min(calldata.len());
+    let safe_size = size.min(calldata.len() - safe_offset);
+
+    let full = Call::new().call(precompile, &calldata)?;
+    if full != calldata {
+        error!("data: {calldata:?}, offset: {offset}, size: {size} → {full:?}");
     }
 
-    let full_call_return_data = Call::new().
-        call(identity_precompile.into(), &call_data)?;
-    if full_call_return_data != call_data {
-        debug::println(
-            format!("data: {call_data:#?}, offset: {offset}, size: {size}, incorrect full call data: {full_call_return_data:#?}"),
+    let limited = Call::new()
+        .limit_return_data(offset, size)
+        .call(precompile, &calldata)?;
+    if limited.len() != expected_size || limited != calldata[safe_offset..][..safe_size] {
+        error!(
+            "data: {calldata:?}, offset: {offset}, size: {size}, expected size: {expected_size} → {limited:?}"
         );
-        panic!("invalid data");
     }
 
-    let limit_call_return_data = Call::new().
-        limit_return_data(offset, size).
-        call(identity_precompile.into(), &call_data)?;
-    if limit_call_return_data.len() != expected_size ||
-        limit_call_return_data != call_data[safe_offset..safe_offset+safe_size] {
-        debug::println(
-            format!("data: {call_data:#?}, offset: {offset}, size: {size}, expected size: {expected_size}, incorrect limit call data: {limit_call_return_data:#?}"),
+    let direct = contract::read_return_data(offset, Some(size));
+    if direct != limited {
+        error!(
+            "data: {calldata:?}, offset: {offset}, size: {size}, expected size: {expected_size} → {direct:?}"
         );
-        panic!("invalid data");
     }
 
-    let partial_return_data = contract::partial_return_data(offset, size);
-    if partial_return_data != limit_call_return_data {
-        debug::println(
-            format!("data: {call_data:#?}, offset: {offset}, size: {size}, expected size: {expected_size}, incorrect partial call data: {partial_return_data:#?}"),
-        );
-        panic!("invalid data");
-    }
-
-    Ok(limit_call_return_data)
+    Ok(limited)
 }
-

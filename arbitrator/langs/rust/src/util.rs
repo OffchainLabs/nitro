@@ -17,6 +17,10 @@ impl Bytes20 {
         self.0.as_ptr()
     }
 
+    pub fn ptr_mut(&mut self) -> *mut u8 {
+        self.0.as_mut_ptr()
+    }
+
     pub fn from_slice(data: &[u8]) -> Result<Self, TryFromSliceError> {
         Ok(Self(data.try_into()?))
     }
