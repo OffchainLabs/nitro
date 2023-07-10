@@ -24,7 +24,7 @@ pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32
     Ok(())
 }
 
-pub(crate) fn account_load_bytes32<E: EvmApi>(
+pub(crate) fn storage_load_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     dest: u32,
@@ -37,7 +37,7 @@ pub(crate) fn account_load_bytes32<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn account_store_bytes32<E: EvmApi>(
+pub(crate) fn storage_store_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     value: u32,

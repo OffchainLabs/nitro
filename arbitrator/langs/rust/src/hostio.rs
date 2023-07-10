@@ -23,7 +23,7 @@ extern "C" {
     /// set. The semantics, then, are equivalent to that of the EVM's [`SLOAD`] opcode.
     ///
     /// [`SLOAD`]: <https://www.evm.codes/#54>
-    pub(crate) fn account_load_bytes32(key: *const u8, dest: *mut u8);
+    pub(crate) fn storage_load_bytes32(key: *const u8, dest: *mut u8);
 
     /// Stores a 32-byte value to permanent storage. Stylus's storage format is identical to that
     /// of the EVM. This means that, under the hood, this hostio is storing a 32-byte value into
@@ -31,7 +31,7 @@ extern "C" {
     /// EVM. The semantics, then, are equivalent to that of the EVM's [`SSTORE`] opcode.
     ///
     /// [`SSTORE`]: <https://www.evm.codes/#55>
-    pub(crate) fn account_store_bytes32(key: *const u8, value: *const u8);
+    pub(crate) fn storage_store_bytes32(key: *const u8, value: *const u8);
 
     /// Gets the basefee of the current block. The semantics are equivalent to that of the EVM's
     /// [`BASEFEE`] opcode.

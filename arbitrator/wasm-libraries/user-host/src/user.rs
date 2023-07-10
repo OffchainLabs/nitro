@@ -23,7 +23,7 @@ pub unsafe extern "C" fn user_host__write_result(ptr: usize, len: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize) {
+pub unsafe extern "C" fn user_host__storage_load_bytes32(key: usize, ptr: usize) {
     let program = Program::start();
     let key = wavm::read_bytes32(key);
 
@@ -33,7 +33,7 @@ pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_store_bytes32(key: usize, value: usize) {
+pub unsafe extern "C" fn user_host__storage_store_bytes32(key: usize, value: usize) {
     let program = Program::start();
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
 
