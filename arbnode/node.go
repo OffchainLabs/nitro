@@ -14,7 +14,6 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -371,7 +370,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
-	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
@@ -380,32 +378,22 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
-
-	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
-	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 }
 
 var ConfigDefault = Config{
-	RPC:                  arbitrum.DefaultConfig,
-	Sequencer:            execution.DefaultSequencerConfig,
-	L1Reader:             headerreader.DefaultConfig,
-	InboxReader:          DefaultInboxReaderConfig,
-	DelayedSequencer:     DefaultDelayedSequencerConfig,
-	BatchPoster:          DefaultBatchPosterConfig,
-	MessagePruner:        DefaultMessagePrunerConfig,
-	ForwardingTargetImpl: "",
-	TxPreChecker:         execution.DefaultTxPreCheckerConfig,
-	BlockValidator:       staker.DefaultBlockValidatorConfig,
-	Feed:                 broadcastclient.FeedConfigDefault,
-	Staker:               staker.DefaultL1ValidatorConfig,
-	SeqCoordinator:       DefaultSeqCoordinatorConfig,
-	DataAvailability:     das.DefaultDataAvailabilityConfig,
-	SyncMonitor:          DefaultSyncMonitorConfig,
-	Dangerous:            DefaultDangerousConfig,
-	Archive:              false,
-	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
-	Caching:              execution.DefaultCachingConfig,
-	TransactionStreamer:  DefaultTransactionStreamerConfig,
+	L1Reader:            headerreader.DefaultConfig,
+	InboxReader:         DefaultInboxReaderConfig,
+	DelayedSequencer:    DefaultDelayedSequencerConfig,
+	BatchPoster:         DefaultBatchPosterConfig,
+	MessagePruner:       DefaultMessagePrunerConfig,
+	BlockValidator:      staker.DefaultBlockValidatorConfig,
+	Feed:                broadcastclient.FeedConfigDefault,
+	Staker:              staker.DefaultL1ValidatorConfig,
+	SeqCoordinator:      DefaultSeqCoordinatorConfig,
+	DataAvailability:    das.DefaultDataAvailabilityConfig,
+	SyncMonitor:         DefaultSyncMonitorConfig,
+	Dangerous:           DefaultDangerousConfig,
+	TransactionStreamer: DefaultTransactionStreamerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -577,15 +565,6 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
-	txprecheckConfigFetcher := func() *execution.TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
-	exec, err := execution.CreateExecutionNode(stack, chainDb, l2BlockChain, l1Reader, syncMonitor,
-		config.ForwardingTarget(), &config.Forwarder, config.RPC,
-		sequencerConfigFetcher, txprecheckConfigFetcher)
-	if err != nil {
-		return nil, err
 	}
 
 	var broadcastServer *broadcaster.Broadcaster
@@ -797,7 +776,7 @@ func createNodeImpl(
 		}
 
 		notifiers := make([]staker.LatestStakedNotifier, 0)
-		if config.MessagePruner.Enable && !config.Caching.Archive {
+		if config.MessagePruner.Enable {
 			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			notifiers = append(notifiers, messagePruner)
 		}
@@ -834,10 +813,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	var messagePruner *MessagePruner
-	if config.MessagePruner.Enable && !config.Caching.Archive && stakerObj != nil {
-		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
-	}
+
 	// always create DelayedSequencer, it won't do anything if it is disabled
 	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
@@ -972,10 +948,6 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
-	}
-	err = n.Execution.TxPublisher.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
