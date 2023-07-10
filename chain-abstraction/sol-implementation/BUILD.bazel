@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//containers/option",
+        "//solgen/go/bridgegen",
         "//solgen/go/challengeV2gen",
         "//solgen/go/rollupgen",
         "//state-commitments/history",

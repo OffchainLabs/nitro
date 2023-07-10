@@ -63,13 +63,14 @@ func CreateTwoValidatorFork(
 		setup.Backend.Commit()
 	}
 
-	genesisState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: common.Hash{},
-		},
-		MachineStatus: protocol.MachineStatusFinished,
+	genesisHash, err := setup.Chains[1].GenesisAssertionHash(ctx)
+	if err != nil {
+		return nil, err
 	}
-	_ = genesisState
+	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash(genesisHash))
+	if err != nil {
+		return nil, err
+	}
 
 	honestStateManager, err := statemanager.NewForSimpleMachine()
 	if err != nil {
@@ -92,14 +93,6 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	genesisCreationInfo := &protocol.AssertionCreatedInfo{
-		AfterState: (&protocol.ExecutionState{
-			GlobalState:   protocol.GoGlobalState{},
-			MachineStatus: protocol.MachineStatusFinished,
-		}).AsSolidityStruct(),
-		InboxMaxCount: big.NewInt(1),
-	}
-
 	honestPostState, err := honestStateManager.ExecutionStateAtMessageNumber(ctx, 1)
 	if err != nil {
 		return nil, err

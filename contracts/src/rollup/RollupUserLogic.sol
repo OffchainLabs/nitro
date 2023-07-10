@@ -132,6 +132,20 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
     }
 
     /**
+     * @notice Computes the hash of an assertion
+     * @param state The execution state for the assertion
+     * @param prevAssertionHash The hash of the assertion's parent
+     * @param inboxAcc The inbox batch accumulator
+     */
+    function computeAssertionHash(
+        bytes32 prevAssertionHash,
+        ExecutionState calldata state,
+        bytes32 inboxAcc
+    ) public pure returns (bytes32) {
+        return RollupLib.assertionHash(prevAssertionHash, state, inboxAcc);
+    }
+
+    /**
      * @notice Create a new assertion and move stake onto it
      * @param assertion The assertion data
      * @param expectedAssertionHash The hash of the assertion being created (protects against reorgs)
