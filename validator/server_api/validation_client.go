@@ -9,7 +9,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
@@ -35,7 +34,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	valrun := server_common.NewValRun(moduleRoot)
 	c.LaunchThread(func(ctx context.Context) {
-		input := jsonapi.ValidationInputToJson(entry)
+		input := ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
 		valrun.ConsumeResult(res, err)
@@ -99,7 +98,7 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, jsonapi.ValidationInputToJson(input))
+		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +129,7 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 }
 
 func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	jsonInput := jsonapi.ValidationInputToJson(input)
+	jsonInput := ValidationInputToJson(input)
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
 		return struct{}{}, err
@@ -152,12 +151,12 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 
 func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](r, func(ctx context.Context) (*validator.MachineStepResult, error) {
-		var resJson jsonapi.MachineStepResultJson
+		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
 			return nil, err
 		}
-		res, err := jsonapi.MachineStepResultFromJson(&resJson)
+		res, err := MachineStepResultFromJson(&resJson)
 		if err != nil {
 			return nil, err
 		}
