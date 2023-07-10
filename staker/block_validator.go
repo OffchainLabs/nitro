@@ -816,32 +816,33 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 	return nil
 }
 
-func (v *BlockValidator) AssumeValid(count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
+func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalState validator.GoGlobalState) {
 
 	if count <= v.validated() {
-		return nil
+		return
 	}
 
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 
 	if count <= v.validated() {
-		return nil
+		return
 	}
 
 	if !v.chainCaughtUp {
 		if !v.validGSIsNew(globalState) {
-			return nil
+			return
 		}
 		v.legacyValidInfo = nil
 		v.lastValidGS = globalState
-		return nil
+		return
 	}
 
 	countUint64 := uint64(count)
 	msg, err := v.streamer.GetMessage(count - 1)
 	if err != nil {
-		return err
+		log.Error("getMessage error", "err", err, "count", count)
+		return
 	}
 	// delete no-longer relevant entries
 	for iPos := v.validated(); iPos < count && iPos < v.created(); iPos++ {
@@ -870,8 +871,6 @@ func (v *BlockValidator) AssumeValid(count arbutil.MessageIndex, globalState val
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
 	nonBlockingTrigger(v.createNodesChan)
-
-	return nil
 }
 
 // Because batches and blocks are handled at separate layers in the node,
@@ -1060,7 +1059,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 			log.Error("failed reading processedMsgCount", "err", err)
 			processedMsgCount = 0
 		}
-		log.Warn("validator catching up to last valid", "lastValid.Batch", v.lastValidGS.Batch, "lastValid.PosInBatch", v.lastValidGS.PosInBatch, "batchCount", batchCount, "batchMsgCount", batchMsgCount, "processedMsgCount", processedMsgCount)
+		log.Info("validator catching up to last valid", "lastValid.Batch", v.lastValidGS.Batch, "lastValid.PosInBatch", v.lastValidGS.PosInBatch, "batchCount", batchCount, "batchMsgCount", batchMsgCount, "processedMsgCount", processedMsgCount)
 		return false, nil
 	}
 	msg, err := v.streamer.GetMessage(count - 1)
