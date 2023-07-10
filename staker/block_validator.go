@@ -57,8 +57,8 @@ type BlockValidator struct {
 	// only from logger thread
 	lastValidInfoPrinted *GlobalStateValidatedInfo
 
-	// can be read by anyone holding reorg-read
-	// written by appropriate thread or reorg-write
+	// can be read (atomic.Load) by anyone holding reorg-read
+	// written (atomic.Set) by appropriate thread or (any way) holding reorg-write
 	createdA    uint64
 	recordSentA uint64
 	validatedA  uint64
@@ -678,12 +678,11 @@ validationsLoop:
 				}
 				validatorValidValidationsCounter.Inc(1)
 			}
-			v.lastValidGS = validationStatus.Entry.End
-			go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
-			err := v.writeLastValidatedToDb(validationStatus.Entry.End, wasmRoots)
+			err := v.writeLastValidated(validationStatus.Entry.End, wasmRoots)
 			if err != nil {
 				log.Error("failed writing new validated to database", "pos", pos, "err", err)
 			}
+			go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
 			atomicStorePos(&v.validatedA, pos+1)
 			v.validations.Delete(pos)
 			nonBlockingTrigger(v.createNodesChan)
@@ -760,7 +759,8 @@ func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignore
 
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
-func (v *BlockValidator) writeLastValidatedToDb(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
+func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
+	v.lastValidGS = gs
 	info := GlobalStateValidatedInfo{
 		GlobalState: gs,
 		WasmRoots:   wasmRoots,
@@ -798,7 +798,7 @@ func (v *BlockValidator) validGSIsNew(globalState validator.GoGlobalState) bool 
 // this accepts globalstate even if not caught up
 func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
-		return fmt.Errorf("cannot handle AssumeValid while running")
+		return fmt.Errorf("cannot handle InitAssumeValid while running")
 	}
 
 	// don't do anything if we already validated past that
@@ -807,9 +807,8 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 	}
 
 	v.legacyValidInfo = nil
-	v.lastValidGS = globalState
 
-	err := v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{})
+	err := v.writeLastValidated(v.lastValidGS, nil)
 	if err != nil {
 		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
 	}
@@ -835,7 +834,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 			return
 		}
 		v.legacyValidInfo = nil
-		v.lastValidGS = globalState
+		v.writeLastValidated(globalState, nil)
 		return
 	}
 
@@ -866,8 +865,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	v.validatedA = countUint64
 	v.valLoopPos = count
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
-	v.lastValidGS = globalState
-	err = v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{}) // we don't know which wasm roots were validated
+	err = v.writeLastValidated(v.lastValidGS, nil) // we don't know which wasm roots were validated
 	if err != nil {
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
@@ -931,8 +929,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	if v.validatedA > countUint64 {
 		v.validatedA = countUint64
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
-		v.lastValidGS = v.nextCreateStartGS
-		err := v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{}) // we don't know which wasm roots were validated
+		err := v.writeLastValidated(v.lastValidGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
@@ -1005,13 +1002,13 @@ func (v *BlockValidator) checkLegacyValid() error {
 		log.Error("legacy validated blockHash does not fit chain", "info.BlockHash", v.legacyValidInfo.BlockHash, "chain", result.BlockHash, "count", msgCount)
 		return fmt.Errorf("legacy validated blockHash does not fit chain")
 	}
-	v.lastValidGS = validator.GoGlobalState{
+	validGS := validator.GoGlobalState{
 		BlockHash:  result.BlockHash,
 		SendRoot:   result.SendRoot,
 		Batch:      v.legacyValidInfo.AfterPosition.BatchNumber,
 		PosInBatch: v.legacyValidInfo.AfterPosition.PosInBatch,
 	}
-	err = v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{})
+	err = v.writeLastValidated(validGS, nil)
 	if err == nil {
 		err = v.db.Delete(legacyLastBlockValidatedInfoKey)
 		if err != nil {
