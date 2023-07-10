@@ -49,6 +49,43 @@ type challengeProtocolTestConfig struct {
 	smallStepDivergenceHeight uint64
 }
 
+func TestAssertionPostingV2(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	setupCfg, err := setup.ChainsWithEdgeChallengeManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chains := setupCfg.Chains
+	// accs := setupCfg.Accounts
+	// addrs := setupCfg.Addrs
+	backend := setupCfg.Backend
+
+	// Advance the chain by 100 blocks as there needs to be a minimum period of time
+	// before any assertions can be made on-chain.
+	for i := 0; i < 100; i++ {
+		backend.Commit()
+	}
+
+	stateManager, err := NewStateManager(
+		nil,
+		nil,
+		32,
+		32*32,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Post assertions in the background.
+	alicePoster := assertions.NewPoster(chains[0], stateManager, "alice", postNewAssertionInterval)
+	aliceLeaf, err := alicePoster.PostLatestAssertion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%+v", aliceLeaf)
+}
+
 func TestChallengeProtocolV2(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
