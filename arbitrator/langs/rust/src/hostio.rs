@@ -43,7 +43,7 @@ extern "C" {
     /// that of the EVM's [`CHAIN_ID`] opcode.
     ///
     /// [`CHAIN_ID`]: <https://www.evm.codes/#46>
-    pub(crate) fn block_chainid(chainid: *mut u8);
+    pub(crate) fn chainid(chainid: *mut u8);
 
     /// Gets the coinbase of the current block, which on Arbitrum chains is the L1 batch poster's
     /// address. This differs from Ethereum where the validator including the transaction

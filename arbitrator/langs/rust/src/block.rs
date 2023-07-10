@@ -11,7 +11,7 @@ pub fn basefee() -> Bytes32 {
 
 pub fn chainid() -> Bytes32 {
     let mut data = [0; 32];
-    unsafe { hostio::block_chainid(data.as_mut_ptr()) };
+    unsafe { hostio::chainid(data.as_mut_ptr()) };
     Bytes32(data)
 }
 

@@ -239,11 +239,11 @@ pub unsafe extern "C" fn user_host__block_basefee(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_chainid(ptr: usize) {
+pub unsafe extern "C" fn user_host__chainid(ptr: usize) {
     let program = Program::start();
     program.buy_gas(evm::CHAINID_GAS).unwrap();
-    let block_chainid = program.evm_data.block_chainid.as_ref();
-    wavm::write_slice_usize(block_chainid, ptr)
+    let chainid = program.evm_data.chainid.as_ref();
+    wavm::write_slice_usize(chainid, ptr)
 }
 
 #[no_mangle]
