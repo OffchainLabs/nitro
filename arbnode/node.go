@@ -1090,8 +1090,8 @@ func (n *Node) FindL1BatchForMessage(message arbutil.MessageIndex) (uint64, erro
 	return n.InboxTracker.FindL1BatchForMessage(message)
 }
 
-func (n *Node) GetBatchL1Block(seqNum uint64) (uint64, error) {
-	return n.InboxTracker.GetBatchL1Block(seqNum)
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
 }
 
 func (n *Node) SyncProgressMap() map[string]interface{} {

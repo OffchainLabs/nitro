@@ -69,7 +69,7 @@ type FullExecutionClient interface {
 type BatchFetcher interface {
 	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error)
 	FindL1BatchForMessage(message arbutil.MessageIndex) (uint64, error)
-	GetBatchL1Block(seqNum uint64) (uint64, error)
+	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
 }
 
 type ConsensusInfo interface {

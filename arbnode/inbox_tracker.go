@@ -194,9 +194,9 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
-func (t *InboxTracker) GetBatchL1Block(seqNum uint64) (uint64, error) {
+func (t *InboxTracker) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
-	return metadata.L1Block, err
+	return metadata.ParentChainBlock, err
 }
 
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
