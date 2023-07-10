@@ -685,6 +685,7 @@ validationsLoop:
 				log.Error("failed writing new validated to database", "pos", pos, "err", err)
 			}
 			atomicStorePos(&v.validatedA, pos+1)
+			v.validations.Delete(pos)
 			nonBlockingTrigger(v.createNodesChan)
 			nonBlockingTrigger(v.sendRecordChan)
 			validatorMsgCountValidatedGauge.Update(int64(pos + 1))

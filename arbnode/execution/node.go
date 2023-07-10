@@ -31,6 +31,7 @@ func CreateExecutionNode(
 	fwTarget string,
 	fwConfig *ForwarderConfig,
 	rpcConfig arbitrum.Config,
+	recordingDbConfig *arbitrum.RecordingDatabaseConfig,
 	seqConfigFetcher SequencerConfigFetcher,
 	precheckConfigFetcher TxPreCheckerConfigFetcher,
 ) (*ExecutionNode, error) {
@@ -38,7 +39,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(execEngine, chainDB)
+	recorder := NewBlockRecorder(recordingDbConfig, execEngine, chainDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 	seqConfig := seqConfigFetcher()
