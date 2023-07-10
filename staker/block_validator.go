@@ -834,7 +834,10 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 			return
 		}
 		v.legacyValidInfo = nil
-		v.writeLastValidated(globalState, nil)
+		err := v.writeLastValidated(globalState, nil)
+		if err != nil {
+			log.Error("error writing last validated", "err", err)
+		}
 		return
 	}
 
