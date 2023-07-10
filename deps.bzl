@@ -1579,12 +1579,6 @@ def go_dependencies():
         version = "v1.4.8",
     )
     go_repository(
-        name = "com_github_offchainlabs_nitro",
-        importpath = "github.com/offchainlabs/nitro",
-        sum = "h1:uYe0Iec1k1YTPvacOzOw3Jk9xNpzgA/bW3c/FMyE4iE=",
-        version = "v0.0.0-20230323152619-5e9f4228e641",
-    )
-    go_repository(
         name = "com_github_oklog_ulid",
         importpath = "github.com/oklog/ulid",
         sum = "h1:EGfNDEx6MqHz8B3uNV6QAib1UR2Lm97sHi3ocA6ESJ4=",

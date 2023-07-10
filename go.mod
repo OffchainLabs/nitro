@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/ethereum/go-ethereum v1.10.26
-	github.com/offchainlabs/nitro v0.0.0-20230323152619-5e9f4228e641
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.2
 	golang.org/x/sync v0.1.0
@@ -31,6 +30,7 @@ require (
 	github.com/huin/goupnp v1.1.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -38,7 +38,6 @@ require (
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/rjeczalik/notify v0.9.2 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect

@@ -16,7 +16,6 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
-	simulated_backend "github.com/OffchainLabs/challenge-protocol-v2/testing/setup/simulated-backend"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -24,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
 )
 
@@ -145,7 +143,6 @@ type ChainSetup struct {
 	Accounts     []*TestAccount
 	Addrs        *RollupAddresses
 	Backend      *backends.SimulatedBackend
-	L1Reader     *headerreader.HeaderReader
 	RollupConfig rollupgen.Config
 }
 
@@ -181,15 +178,12 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		return nil, err
 	}
 
-	headerReader := headerreader.New(simulated_backend.Wrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
-	headerReader.Start(ctx)
 	chains := make([]*solimpl.AssertionChain, 3)
 	chain1, err := solimpl.NewAssertionChain(
 		ctx,
 		addresses.Rollup,
 		accs[1].TxOpts,
 		backend,
-		headerReader,
 	)
 	if err != nil {
 		return nil, err
@@ -200,7 +194,6 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		addresses.Rollup,
 		accs[2].TxOpts,
 		backend,
-		headerReader,
 	)
 	if err != nil {
 		return nil, err
@@ -211,7 +204,6 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		addresses.Rollup,
 		accs[3].TxOpts,
 		backend,
-		headerReader,
 	)
 	if err != nil {
 		return nil, err
@@ -221,7 +213,6 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		Chains:       chains,
 		Accounts:     accs,
 		Addrs:        addresses,
-		L1Reader:     headerReader,
 		Backend:      backend,
 		RollupConfig: cfg,
 	}, nil

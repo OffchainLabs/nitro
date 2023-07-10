@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
 )
 
@@ -180,7 +179,7 @@ func (e *SpecEdge) Bisect(
 		return lowerEdge.Unwrap(), upperEdge.Unwrap(), nil
 	}
 
-	_, err = transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
 		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, prefixHistoryRoot, prefixProof)
 	})
 	if err != nil {
@@ -247,7 +246,7 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	for i, r := range ancestorIds {
 		ancestors[i] = r
 	}
-	_, err = transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByTime(e.manager.txOpts, e.id, ancestors, challengeV2gen.ExecutionStateData{
 			ExecutionState: challengeV2gen.ExecutionState{
 				GlobalState:   challengeV2gen.GlobalState(assertionCreation.AfterState.GlobalState),
@@ -269,7 +268,7 @@ func (e *SpecEdge) ConfirmByChildren(ctx context.Context) error {
 		return nil
 	}
 
-	_, err = transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByChildren(e.manager.txOpts, e.id)
 	})
 	return err
@@ -285,7 +284,7 @@ func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 	}
 
 	// TODO: Add in fields.
-	_, err = transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByClaim(e.manager.txOpts, e.id, claimId)
 	})
 	return err
@@ -359,7 +358,6 @@ type SpecChallengeManager struct {
 	addr           common.Address
 	backend        ChainBackend
 	assertionChain *AssertionChain
-	reader         *headerreader.HeaderReader
 	txOpts         *bind.TransactOpts
 	caller         *challengeV2gen.EdgeChallengeManagerCaller
 	writer         *challengeV2gen.EdgeChallengeManagerTransactor
@@ -373,7 +371,6 @@ func NewSpecChallengeManager(
 	addr common.Address,
 	assertionChain *AssertionChain,
 	backend ChainBackend,
-	reader *headerreader.HeaderReader,
 	txOpts *bind.TransactOpts,
 ) (protocol.SpecChallengeManager, error) {
 	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(addr, backend)
@@ -384,7 +381,6 @@ func NewSpecChallengeManager(
 		addr:           addr,
 		assertionChain: assertionChain,
 		backend:        backend,
-		reader:         reader,
 		txOpts:         txOpts,
 		caller:         &managerBinding.EdgeChallengeManagerCaller,
 		writer:         &managerBinding.EdgeChallengeManagerTransactor,
@@ -529,7 +525,6 @@ func (cm *SpecChallengeManager) ConfirmEdgeByOneStepProof(
 	_, err = transact(
 		ctx,
 		cm.assertionChain.backend,
-		cm.assertionChain.headerReader,
 		func() (*types.Transaction, error) {
 			return cm.writer.ConfirmEdgeByOneStepProof(
 				cm.assertionChain.txOpts,
@@ -695,7 +690,7 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	if err == nil && !someLevelZeroEdge.IsNone() {
 		return someLevelZeroEdge.Unwrap(), nil
 	}
-	_, err = transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
+	_, err = transact(ctx, cm.backend, func() (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
 			cm.txOpts,
 			challengeV2gen.CreateEdgeArgs{
@@ -799,7 +794,7 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, err
 	}
-	_, err = transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
+	_, err = transact(ctx, cm.backend, func() (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
 			cm.txOpts,
 			challengeV2gen.CreateEdgeArgs{

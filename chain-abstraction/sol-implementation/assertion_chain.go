@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
 )
 
@@ -69,12 +68,11 @@ type ReceiptFetcher interface {
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend      ChainBackend
-	rollup       *rollupgen.RollupCore
-	userLogic    *rollupgen.RollupUserLogic
-	txOpts       *bind.TransactOpts
-	headerReader *headerreader.HeaderReader
-	rollupAddr   common.Address
+	backend    ChainBackend
+	rollup     *rollupgen.RollupCore
+	userLogic  *rollupgen.RollupUserLogic
+	txOpts     *bind.TransactOpts
+	rollupAddr common.Address
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -84,13 +82,11 @@ func NewAssertionChain(
 	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
 	backend ChainBackend,
-	headerReader *headerreader.HeaderReader,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
-		backend:      backend,
-		txOpts:       txOpts,
-		headerReader: headerReader,
-		rollupAddr:   rollupAddr,
+		backend:    backend,
+		txOpts:     txOpts,
+		rollupAddr: rollupAddr,
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,
@@ -154,7 +150,7 @@ func (a *AssertionChain) CreateAssertion(
 	if !assertionCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("inbox max count was not a uint64")
 	}
-	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
+	receipt, err := transact(ctx, a.backend, func() (*types.Transaction, error) {
 		return a.userLogic.NewStakeOnNewAssertion(
 			newOpts,
 			rollupgen.AssertionInputs{
@@ -238,7 +234,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if !prevCreationInfo.InboxMaxCount.IsUint64() {
 		return errors.New("assertion prev creation info inbox max count was not a uint64")
 	}
-	receipt, err := transact(ctx, a.backend, a.headerReader, func() (*types.Transaction, error) {
+	receipt, err := transact(ctx, a.backend, func() (*types.Transaction, error) {
 		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
 			copyTxOpts(a.txOpts),
 			assertionHash,
@@ -277,7 +273,6 @@ func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Spe
 		challengeManagerAddr,
 		a,
 		a.backend,
-		a.headerReader,
 		a.txOpts,
 	)
 }
@@ -503,7 +498,7 @@ func handleCreateAssertionError(err error, blockHash common.Hash) error {
 // an optional transaction receipt. It returns an error if the
 // transaction had a failed status on-chain, or if the execution of the callback
 // failed directly.
-func transact(ctx context.Context, backend ChainBackend, _ *headerreader.HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
 	tx, err := fn()
 	if err != nil {
 		return nil, err
