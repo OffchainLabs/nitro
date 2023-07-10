@@ -4,7 +4,6 @@
 package arbtest
 
 import (
-	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -13,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
@@ -34,11 +33,7 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 		burner := burn.NewSystemBurner(nil, false)
 		chainConfig := params.ArbitrumDevTestChainConfig()
-		serializedChainConfig, err := json.Marshal(chainConfig)
-		if err != nil {
-			log.Crit("failed to serialize chain config", "error", err)
-		}
-		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, serializedChainConfig)
+		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, arbostypes.TestInitMessage)
 		if err != nil {
 			panic(err)
 		}
@@ -59,7 +54,7 @@ func FuzzPrecompiles(f *testing.F) {
 			GasLimit:    fuzzGas,
 			BaseFee:     common.Big1,
 		}
-		evm := vm.NewEVM(blockContext, txContext, sdb, params.ArbitrumDevTestChainConfig(), vm.Config{})
+		evm := vm.NewEVM(blockContext, txContext, sdb, chainConfig, vm.Config{})
 
 		// Pick a precompile address based on the first byte of the input
 		var addr common.Address

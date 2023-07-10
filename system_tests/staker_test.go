@@ -168,7 +168,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
@@ -201,7 +203,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessB,
+		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
@@ -221,7 +225,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	if stakerC.Strategy() != staker.WatchtowerStrategy {

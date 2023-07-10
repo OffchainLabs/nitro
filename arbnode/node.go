@@ -14,6 +14,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -24,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -320,6 +322,7 @@ type Config struct {
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
+	ResourceManagement  resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -368,6 +371,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
+	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
@@ -376,22 +380,32 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+
+	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
+	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 }
 
 var ConfigDefault = Config{
-	L1Reader:            headerreader.DefaultConfig,
-	InboxReader:         DefaultInboxReaderConfig,
-	DelayedSequencer:    DefaultDelayedSequencerConfig,
-	BatchPoster:         DefaultBatchPosterConfig,
-	MessagePruner:       DefaultMessagePrunerConfig,
-	BlockValidator:      staker.DefaultBlockValidatorConfig,
-	Feed:                broadcastclient.FeedConfigDefault,
-	Staker:              staker.DefaultL1ValidatorConfig,
-	SeqCoordinator:      DefaultSeqCoordinatorConfig,
-	DataAvailability:    das.DefaultDataAvailabilityConfig,
-	SyncMonitor:         DefaultSyncMonitorConfig,
-	Dangerous:           DefaultDangerousConfig,
-	TransactionStreamer: DefaultTransactionStreamerConfig,
+	RPC:                  arbitrum.DefaultConfig,
+	Sequencer:            execution.DefaultSequencerConfig,
+	L1Reader:             headerreader.DefaultConfig,
+	InboxReader:          DefaultInboxReaderConfig,
+	DelayedSequencer:     DefaultDelayedSequencerConfig,
+	BatchPoster:          DefaultBatchPosterConfig,
+	MessagePruner:        DefaultMessagePrunerConfig,
+	ForwardingTargetImpl: "",
+	TxPreChecker:         execution.DefaultTxPreCheckerConfig,
+	BlockValidator:       staker.DefaultBlockValidatorConfig,
+	Feed:                 broadcastclient.FeedConfigDefault,
+	Staker:               staker.DefaultL1ValidatorConfig,
+	SeqCoordinator:       DefaultSeqCoordinatorConfig,
+	DataAvailability:     das.DefaultDataAvailabilityConfig,
+	SyncMonitor:          DefaultSyncMonitorConfig,
+	Dangerous:            DefaultDangerousConfig,
+	Archive:              false,
+	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
+	Caching:              execution.DefaultCachingConfig,
+	TransactionStreamer:  DefaultTransactionStreamerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -563,6 +577,15 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
+	txprecheckConfigFetcher := func() *execution.TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
+	exec, err := execution.CreateExecutionNode(stack, chainDb, l2BlockChain, l1Reader, syncMonitor,
+		config.ForwardingTarget(), &config.Forwarder, config.RPC,
+		sequencerConfigFetcher, txprecheckConfigFetcher)
+	if err != nil {
+		return nil, err
 	}
 
 	var broadcastServer *broadcaster.Broadcaster
@@ -745,6 +768,8 @@ func createNodeImpl(
 	}
 
 	var stakerObj *staker.Staker
+	var messagePruner *MessagePruner
+
 	if config.Staker.Enable {
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
@@ -771,7 +796,13 @@ func createNodeImpl(
 			}
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
+		notifiers := make([]staker.LatestStakedNotifier, 0)
+		if config.MessagePruner.Enable && !config.Caching.Archive {
+			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
+			notifiers = append(notifiers, messagePruner)
+		}
+
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, notifiers, deployInfo.ValidatorUtils, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
@@ -804,7 +835,7 @@ func createNodeImpl(
 		}
 	}
 	var messagePruner *MessagePruner
-	if config.MessagePruner.Enable && stakerObj != nil {
+	if config.MessagePruner.Enable && !config.Caching.Archive && stakerObj != nil {
 		messagePruner = NewMessagePruner(txStreamer, inboxTracker, stakerObj, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
@@ -942,6 +973,7 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
 	}
+	err = n.Execution.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}

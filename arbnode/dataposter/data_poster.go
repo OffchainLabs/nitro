@@ -222,6 +222,9 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	if err != nil {
 		return nil, nil, err
 	}
+	if latestHeader.BaseFee == nil {
+		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
+	}
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
 	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
 

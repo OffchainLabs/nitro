@@ -4,18 +4,19 @@
 package l1pricing
 
 import (
+	"math/big"
 	"testing"
 
-	am "github.com/offchainlabs/nitro/util/arbmath"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto, common.Address{})
+	initialPriceEstimate := big.NewInt(123 * params.GWei)
+	err := InitializeL1PricingState(sto, common.Address{}, initialPriceEstimate)
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 
@@ -25,7 +26,6 @@ func TestL1PriceUpdate(t *testing.T) {
 		Fail(t)
 	}
 
-	initialPriceEstimate := am.UintToBig(InitialPricePerUnitWei)
 	priceEstimate, err := ps.PricePerUnit()
 	Require(t, err)
 	if priceEstimate.Cmp(initialPriceEstimate) != 0 {

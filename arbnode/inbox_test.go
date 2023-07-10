@@ -6,7 +6,6 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -42,10 +41,6 @@ func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not support
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		Fail(t, err)
-	}
 
 	initData := statetransfer.ArbosInitializationInfo{
 		Accounts: []statetransfer.AccountInitializationInfo{
@@ -60,7 +55,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, serializedChainConfig, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
