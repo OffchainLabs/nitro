@@ -49,8 +49,8 @@ func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidato
 	}, nil
 }
 
-// ExecutionStateAtMessageNumber produces a validated execution state at a specified message number.
-func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
+// LatestExecutionState Produces the latest state to assert to L1 from the local state manager's perspective.
+func (s *StateManager) LatestExecutionState(ctx context.Context) (*protocol.ExecutionState, error) {
 	var validatedGlobalState validator.GoGlobalState
 	if s.blockValidator != nil {
 		valInfo, err := s.blockValidator.ReadLastValidatedInfo()
@@ -134,9 +134,32 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 		return 0, err
 	}
 	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
-		return 0, fmt.Errorf("%w: count %d hash %v expected %v, sendroot %v expected %v", l2stateprovider.ErrNoExecutionState, count, state.GlobalState.BlockHash, res.BlockHash, state.GlobalState.SendRoot, res.SendRoot)
+		return 0, l2stateprovider.ErrNoExecutionState
 	}
 	return uint64(count), nil
+}
+
+// ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
+func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return &protocol.ExecutionState{}, err
+	}
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
+	if err != nil {
+		return &protocol.ExecutionState{}, err
+	}
+	if batchMsgCount <= arbutil.MessageIndex(messageNumber) {
+		batch++
+	}
+	globalState, err := s.getInfoAtMessageCountAndBatch(arbutil.MessageIndex(messageNumber), batch)
+	if err != nil {
+		return &protocol.ExecutionState{}, err
+	}
+	return &protocol.ExecutionState{
+		GlobalState:   protocol.GoGlobalState(globalState),
+		MachineStatus: protocol.MachineStatusRunning,
+	}, nil
 }
 
 // HistoryCommitmentUpTo Produces a block history commitment up to and including messageCount.
