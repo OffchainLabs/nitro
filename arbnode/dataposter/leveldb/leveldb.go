@@ -21,11 +21,12 @@ type Storage[Item any] struct {
 }
 
 var (
+	// Value at this index holds the *index* of last item.
 	// Keys that we never want to be accidentally deleted by "Prune()" should be
 	// lexicographically less than minimum index (that is "0"), hence the prefix
 	// ".".
-	lastItemKey = []byte(".last_item_key")
-	countKey    = []byte(".count_key")
+	lastItemIdxKey = []byte(".last_item_idx_key")
+	countKey       = []byte(".count_key")
 )
 
 func New[Item any](db ethdb.Database) *Storage[Item] {
@@ -60,8 +61,16 @@ func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, max
 	return res, it.Error()
 }
 
-func (s *Storage[Item]) GetLast(context.Context) (*Item, error) {
-	val, err := s.db.Get(lastItemKey)
+func (s *Storage[Item]) lastItemIdx(context.Context) ([]byte, error) {
+	return s.db.Get(lastItemIdxKey)
+}
+
+func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
+	lastItemIdx, err := s.lastItemIdx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting last item index: %w", err)
+	}
+	val, err := s.db.Get(lastItemIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +138,17 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 	if err := b.Put(key, newEnc); err != nil {
 		return fmt.Errorf("updating value at: %v: %w", key, err)
 	}
-	if err := b.Put(lastItemKey, newEnc); err != nil {
-		return fmt.Errorf("updating last item: %w", err)
+	lastItemIdx, err := s.lastItemIdx(ctx)
+	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
+		return err
 	}
-	if err := b.Put(countKey, []byte(strconv.Itoa(cnt+1))); err != nil {
-		return fmt.Errorf("updating length counter: %w", err)
+	if bytes.Compare(key, lastItemIdx) > 0 {
+		if err := b.Put(lastItemIdxKey, key); err != nil {
+			return fmt.Errorf("updating last item: %w", err)
+		}
+		if err := b.Put(countKey, []byte(strconv.Itoa(cnt+1))); err != nil {
+			return fmt.Errorf("updating length counter: %w", err)
+		}
 	}
 	return b.Write()
 }

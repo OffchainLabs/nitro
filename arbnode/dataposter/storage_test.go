@@ -139,10 +139,11 @@ func TestGetContents(t *testing.T) {
 }
 
 func TestGetLast(t *testing.T) {
+	cnt := 100
 	for name, s := range storages(t) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			for i := 0; i < 100; i++ {
+			for i := 0; i < cnt; i++ {
 				val := strconv.Itoa(i)
 				if err := s.Put(ctx, uint64(i), nil, &val); err != nil {
 					t.Fatalf("Error putting a key/value: %v", err)
@@ -153,6 +154,32 @@ func TestGetLast(t *testing.T) {
 				}
 				if *got != val {
 					t.Errorf("GetLast() = %q want %q", *got, val)
+				}
+
+			}
+		})
+		last := strconv.Itoa(cnt - 1)
+		t.Run(name+"_update_entries", func(t *testing.T) {
+			ctx := context.Background()
+			for i := 0; i < cnt-1; i++ {
+				prev := strconv.Itoa(i)
+				newVal := strconv.Itoa(cnt + i)
+				if err := s.Put(ctx, uint64(i), &prev, &newVal); err != nil {
+					t.Fatalf("Error putting a key/value: %v, prev: %v, new: %v", err, prev, newVal)
+				}
+				got, err := s.GetLast(ctx)
+				if err != nil {
+					t.Fatalf("Error getting a last element: %v", err)
+				}
+				if *got != last {
+					t.Errorf("GetLast() = %q want %q", *got, last)
+				}
+				gotCnt, err := s.Length(ctx)
+				if err != nil {
+					t.Fatalf("Length() unexpected error: %v", err)
+				}
+				if gotCnt != cnt {
+					t.Errorf("Length() = %d want %d", i, gotCnt, cnt)
 				}
 			}
 		})

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 type Storage[Item any] struct {
@@ -69,8 +71,8 @@ func (s *Storage[Item]) Put(_ context.Context, index uint64, prevItem *Item, new
 		if queueIdx > len(s.queue) {
 			return fmt.Errorf("attempted to set out-of-bounds index %v in queue starting at %v of length %v", index, s.firstNonce, len(s.queue))
 		}
-		if prevItem != s.queue[queueIdx] {
-			return errors.New("prevItem isn't nil but item is just after end of queue")
+		if diff := cmp.Diff(prevItem, s.queue[queueIdx]); diff != "" {
+			return fmt.Errorf("replacing different item than expected at index: %v: %v %v", index, prevItem, s.queue[queueIdx])
 		}
 		s.queue[queueIdx] = newItem
 	} else {
@@ -82,6 +84,7 @@ func (s *Storage[Item]) Put(_ context.Context, index uint64, prevItem *Item, new
 func (s *Storage[Item]) Length(context.Context) (int, error) {
 	return len(s.queue), nil
 }
+
 func (s *Storage[Item]) IsPersistent() bool {
 	return false
 }
