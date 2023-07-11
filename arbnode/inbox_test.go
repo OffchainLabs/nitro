@@ -66,6 +66,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 
 	chainDb := rawdb.NewMemoryDatabase()
 	arbDb := rawdb.NewMemoryDatabase()
+	execDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	bc, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
@@ -75,7 +76,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc, nil)
+	execEngine, err := gethexec.NewExecutionEngine(bc, execDb, nil)
 	if err != nil {
 		Fail(t, err)
 	}

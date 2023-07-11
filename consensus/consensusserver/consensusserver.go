@@ -6,6 +6,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 )
 
 type ConsensusAPI struct {
@@ -40,8 +41,8 @@ func (a *ConsensusAPI) GetFinalizedMsgCount(ctx context.Context) (arbutil.Messag
 	return a.consensus.GetFinalizedMsgCount().Await(ctx)
 }
 
-func (a *ConsensusAPI) WriteMessageFromSequencer(ctx context.Context, pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
-	_, err := a.consensus.WriteMessageFromSequencer(pos, msgWithMeta).Await(ctx)
+func (a *ConsensusAPI) WriteMessageFromSequencer(ctx context.Context, pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, result execution.MessageResult) error {
+	_, err := a.consensus.WriteMessageFromSequencer(pos, msgWithMeta, result).Await(ctx)
 	return err
 }
 

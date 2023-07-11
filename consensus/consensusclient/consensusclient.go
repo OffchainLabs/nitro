@@ -9,6 +9,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -108,9 +109,9 @@ func (c *Client) GetFinalizedMsgCount() containers.PromiseInterface[arbutil.Mess
 	})
 }
 
-func (c *Client) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+func (c *Client) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, result execution.MessageResult) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, consensus.RPCNamespace+"_writeMessageFromSequencer", pos, msgWithMeta)
+		err := c.client.CallContext(ctx, nil, consensus.RPCNamespace+"_writeMessageFromSequencer", pos, msgWithMeta, result)
 		return struct{}{}, convertError(err)
 	})
 }
