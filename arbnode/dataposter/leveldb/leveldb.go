@@ -66,6 +66,13 @@ func (s *Storage[Item]) lastItemIdx(context.Context) ([]byte, error) {
 }
 
 func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
+	size, err := s.Length(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if size == 0 {
+		return nil, nil
+	}
 	lastItemIdx, err := s.lastItemIdx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting last item index: %w", err)
@@ -142,7 +149,10 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
 		return err
 	}
-	if bytes.Compare(key, lastItemIdx) > 0 {
+	if errors.Is(err, leveldb.ErrNotFound) {
+		lastItemIdx = []byte{}
+	}
+	if cnt == 0 || bytes.Compare(key, lastItemIdx) > 0 {
 		if err := b.Put(lastItemIdxKey, key); err != nil {
 			return fmt.Errorf("updating last item: %w", err)
 		}
