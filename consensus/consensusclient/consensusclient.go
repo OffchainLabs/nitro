@@ -64,10 +64,10 @@ func (c *Client) FindL1BatchForMessage(message arbutil.MessageIndex) containers.
 	})
 }
 
-func (c *Client) GetBatchL1Block(seqNum uint64) containers.PromiseInterface[uint64] {
+func (c *Client) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread[uint64](c, func(ctx context.Context) (uint64, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_getBatchL1Block", seqNum)
+		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_getBatchParentChainBlock", seqNum)
 		if err != nil {
 			return 0, convertError(err)
 		}
