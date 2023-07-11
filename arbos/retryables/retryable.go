@@ -36,7 +36,7 @@ type RetryableState struct {
 	TimeoutQueue     *storage.Queue
 	Expired          *merkleAccumulator.MerkleAccumulator
 	expiredSnapshots *storage.RingBuffer
-	revived          *storage.Uint64Set
+	Revived          *storage.Uint64Set
 }
 
 var (
@@ -394,7 +394,7 @@ func (rs *RetryableState) Revive(
 	if !merkleProof.IsCorrect() {
 		return 0, ErrWrongProof
 	}
-	inserted, err := rs.revived.Add(leafIndex)
+	inserted, err := rs.Revived.Add(leafIndex)
 	if err != nil {
 		return 0, err
 	}

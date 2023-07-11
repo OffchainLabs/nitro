@@ -73,8 +73,7 @@ func TestRetryableLifecycle(t *testing.T) {
 			Fail(t, currentTime, message, timeoutQueueSize)
 		}
 	}
-	// TODO(magic)
-	// stateBeforeEverything := statedb.IntermediateRoot(true)
+	stateBeforeEverything := statedb.Copy()
 	setTime(timestampAtCreation)
 
 	// TODO(magic) remove ids (already in retries data)
@@ -189,8 +188,18 @@ func TestRetryableLifecycle(t *testing.T) {
 
 	cleared, err := retryableState.TimeoutQueue.Shift()
 	Require(t, err)
-	if !cleared /*|| stateBeforeEverything != statedb.IntermediateRoot(true)*/ {
-		Fail(t, "reaping didn't reset the state", cleared)
+	if !cleared {
+		Fail(t, "reaping didn't clear TimeoutQueue")
+	}
+	expectedState := stateBeforeEverything.Copy()
+	expectedArbosState, err := arbosState.OpenSystemArbosState(expectedState, nil, false)
+	Require(t, err)
+	expectedRetryableState := expectedArbosState.RetryableState()
+	for _, retryData := range retriesData {
+		expectedRetryableState.Expired.Append(retryData.Hash())
+	}
+	if expectedState.IntermediateRoot(true) != statedb.IntermediateRoot(true) {
+		Fail(t, "unexpected state after reaping")
 	}
 
 	setTime(timestampAtRevival)
@@ -205,6 +214,11 @@ func TestRetryableLifecycle(t *testing.T) {
 		Require(t, err, "failed to revive the retryable")
 		if newTimeout != currentTime+lifetime {
 			Fail(t, "new timeout after revival is wrong", newTimeout, currentTime+lifetime)
+		}
+		shouldntBeNil, err := retryableState.OpenRetryable(retryData.Id, currentTime)
+		Require(t, err)
+		if shouldntBeNil == nil {
+			Fail(t, err, "failed to open retryable after revival", retryData)
 		}
 	}
 }
