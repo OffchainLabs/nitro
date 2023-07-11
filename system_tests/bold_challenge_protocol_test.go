@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func TestBoldProtocol(t *testing.T) {
@@ -92,6 +93,37 @@ func TestBoldProtocol(t *testing.T) {
 	edgeHeight, err := edgeManagerAddr.LevelZeroBlockEdgeHeight(ctx)
 	Require(t, err)
 	t.Logf("WE HAVE THE ASSERTION CHAIN: %d", edgeHeight)
+
+	// rollup, err := rollupgen.NewAbsRollupUserLogicCaller(r)
+	// tx, err := rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	// Require(t, err)
+	// _, err = EnsureTxSucceeded(ctx, l1client, tx)
+	// Require(t, err)
+
+	valConfig := staker.L1ValidatorConfig{}
+
+	valWalletA, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
+	Require(t, err)
+	valConfig.Strategy = "MakeNodes"
+
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	blockValidatorConfig := staker.TestBlockValidatorConfig
+
+	statelessA, err := staker.NewStatelessBlockValidator(
+		l2nodeA.InboxReader,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		execNodeA,
+		l2nodeA.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
+	)
+	Require(t, err)
+	err = statelessA.Start(ctx)
+	Require(t, err)
+	_ = valWalletA
+
 	Fail(t, "bad")
 }
 
