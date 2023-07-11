@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -157,7 +158,14 @@ func createSequencer(
 
 // tmpPath returns file path with specified filename from temporary directory of the test.
 func tmpPath(t *testing.T, filename string) string {
-	return filepath.Join(t.TempDir(), filename)
+	// create a unique, maximum 10 characters-long temporary directory {name} with path as $TMPDIR/{name}
+	tmpDir, _ := os.MkdirTemp("", "")
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("tmpPath RemoveAll cleanup: %v", err)
+		}
+	})
+	return filepath.Join(tmpDir, filename)
 }
 
 // testNodes creates specified number of paths for ipc from temporary directory of the test.
@@ -295,8 +303,7 @@ func TestRedisForwarder(t *testing.T) {
 	}
 }
 
-// TestRFFallbackNoRedis is shortened from "TestRedisForwarderFallbackNoRedis" name for ipc url path to be less than "max_socket_path_size"
-func TestRFFallbackNoRedis(t *testing.T) {
+func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	ctx := context.Background()
 
 	fallbackIpcPath := tmpPath(t, "fallback.ipc")
