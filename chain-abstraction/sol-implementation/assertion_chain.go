@@ -143,8 +143,6 @@ func (a *AssertionChain) CreateAssertion(
 		return nil, errors.New("prev assertion creation info inbox max count not a uint64")
 	}
 	newOpts := copyTxOpts(a.txOpts)
-	newOpts.Value = parentAssertionCreationInfo.RequiredStake
-
 	if postState.GlobalState.Batch == 0 {
 		return nil, errors.New("assertion post state cannot have a batch count of 0, as only genesis can")
 	}
@@ -185,6 +183,7 @@ func (a *AssertionChain) CreateAssertion(
 	receipt, err := transact(ctx, a.backend, func() (*types.Transaction, error) {
 		return a.userLogic.NewStakeOnNewAssertion(
 			newOpts,
+			parentAssertionCreationInfo.RequiredStake,
 			rollupgen.AssertionInputs{
 				BeforeStateData: rollupgen.BeforeStateData{
 					PrevPrevAssertionHash: parentAssertionCreationInfo.ParentAssertionHash,

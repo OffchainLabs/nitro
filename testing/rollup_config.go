@@ -39,6 +39,7 @@ func GenerateRollupConfig(
 	chainId *big.Int,
 	loserStakeEscrow common.Address,
 	miniStakeValue *big.Int,
+	stakeToken common.Address,
 	opts ...Opt,
 ) rollupgen.Config {
 	var confirmPeriod uint64
@@ -51,7 +52,7 @@ func GenerateRollupConfig(
 	cfg := rollupgen.Config{
 		MiniStakeValue:      miniStakeValue,
 		ConfirmPeriodBlocks: confirmPeriod,
-		StakeToken:          common.Address{},
+		StakeToken:          stakeToken,
 		BaseStake:           big.NewInt(100),
 		WasmModuleRoot:      wasmModuleRoot,
 		Owner:               rollupOwner,

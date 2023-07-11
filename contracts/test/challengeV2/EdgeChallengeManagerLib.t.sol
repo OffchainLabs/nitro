@@ -1321,6 +1321,7 @@ contract EdgeChallengeManagerLibTest is Test {
         ChallengeEdge e2;
         bytes revertArg;
     }
+
     function confirmByOneStep(uint256 flag) internal {
         uint256 startHeight = 5;
         (bytes32[] memory states1, bytes32[] memory states2) = rivalStates(startHeight, startHeight, startHeight + 1);
@@ -1702,7 +1703,8 @@ contract EdgeChallengeManagerLibTest is Test {
 
         vars.expectedEndHeight = 2 ** 5;
         vars.c = new EdgeChallengeManagerLibAccess();
-        (vars.claimId, vars.claimRoots) = createClaimEdge(vars.c, vars.claimStartHeight, vars.claimEndHeight, mode == 160 ? false : true);
+        (vars.claimId, vars.claimRoots) =
+            createClaimEdge(vars.c, vars.claimStartHeight, vars.claimEndHeight, mode == 160 ? false : true);
         if (mode == 160) {
             vars.revertArg = abi.encodeWithSelector(ClaimEdgeNotLengthOneRival.selector, vars.claimId);
         }
@@ -1711,7 +1713,10 @@ contract EdgeChallengeManagerLibTest is Test {
         }
 
         vars.roots = newRootsAndProofs(
-            0, vars.expectedEndHeight, vars.claimRoots.states[vars.claimStartHeight], vars.claimRoots.states[vars.claimEndHeight]
+            0,
+            vars.expectedEndHeight,
+            vars.claimRoots.states[vars.claimStartHeight],
+            vars.claimRoots.states[vars.claimEndHeight]
         );
         if (mode == 164) {
             bytes32[] memory b = new bytes32[](1);

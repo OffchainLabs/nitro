@@ -14,7 +14,7 @@ contract RollupProxy is AdminFallbackProxy {
             address(connectedContracts.rollupAdminLogic),
             abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
             address(connectedContracts.rollupUserLogic),
-            abi.encodeWithSelector(IRollupUserAbs.initialize.selector, config.stakeToken),
+            abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken),
             config.owner
         )
     {}

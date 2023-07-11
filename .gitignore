@@ -28,3 +28,5 @@ contracts/cache
 contracts/out
 contracts/formatter.sh
 contracts/build
+
+.DS_Store
