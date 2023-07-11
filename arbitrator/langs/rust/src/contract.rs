@@ -173,7 +173,7 @@ impl Deploy {
         self
     }
 
-    pub fn optional_salt(mut self, salt: Option<Bytes32>) -> Self {
+    pub fn salt_option(mut self, salt: Option<Bytes32>) -> Self {
         self.salt = salt;
         self
     }

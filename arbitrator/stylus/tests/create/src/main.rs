@@ -21,7 +21,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     let code = input;
-    let contract = Deploy::new().optional_salt(salt).deploy(code, endowment)?;
+    let contract = Deploy::new().salt_option(salt).deploy(code, endowment)?;
     evm::log(&[contract.into()], &[]).unwrap();
     Ok(contract.to_vec())
 }
