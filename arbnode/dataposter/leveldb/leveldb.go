@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -18,12 +17,7 @@ import (
 
 // Storage implements leveldb based storage for batch poster.
 type Storage[Item any] struct {
-	// Lock is used for using iterator and WriteBatch.
-	// https://fuchsia.googlesource.com/third_party/leveldb/+/HEAD/doc/index.md#concurrency
-	// Not necessary since there should be a single batchposter active at any
-	// point in time.
-	lock sync.Mutex
-	db   ethdb.Database
+	db ethdb.Database
 }
 
 var (
@@ -47,13 +41,10 @@ func (s *Storage[Item]) decodeItem(data []byte) (*Item, error) {
 }
 
 func idxToKey(idx uint64) []byte {
-	return []byte(fmt.Sprintf("%019d", idx))
+	return []byte(fmt.Sprintf("%020d", idx))
 }
 
 func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	var res []*Item
 	it := s.db.NewIterator([]byte(""), idxToKey(startingIndex))
 	for i := 0; i < int(maxResults); i++ {
@@ -66,10 +57,10 @@ func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, max
 		}
 		res = append(res, item)
 	}
-	return res, nil
+	return res, it.Error()
 }
 
-func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *Storage[Item]) GetLast(context.Context) (*Item, error) {
 	val, err := s.db.Get(lastItemKey)
 	if err != nil {
 		return nil, err
@@ -102,7 +93,7 @@ func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error 
 
 // valueAt gets returns the value at key. If it doesn't exist then it returns
 // encoded bytes of nil.
-func (s *Storage[Item]) valueAt(ctx context.Context, key []byte) ([]byte, error) {
+func (s *Storage[Item]) valueAt(_ context.Context, key []byte) ([]byte, error) {
 	val, err := s.db.Get(key)
 	if err != nil {
 		if errors.Is(err, leveldb.ErrNotFound) {
@@ -114,9 +105,6 @@ func (s *Storage[Item]) valueAt(ctx context.Context, key []byte) ([]byte, error)
 }
 
 func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *Item) error {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	key := idxToKey(index)
 	stored, err := s.valueAt(ctx, key)
 	if err != nil {
@@ -150,7 +138,7 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 	return b.Write()
 }
 
-func (s *Storage[Item]) Length(ctx context.Context) (int, error) {
+func (s *Storage[Item]) Length(context.Context) (int, error) {
 	val, err := s.db.Get(countKey)
 	if err != nil {
 		if errors.Is(err, leveldb.ErrNotFound) {
