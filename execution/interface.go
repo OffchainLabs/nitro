@@ -7,7 +7,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 const RPCNamespace = "nitroexec"
@@ -21,7 +20,6 @@ type RecordResult struct {
 	Pos       arbutil.MessageIndex
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
-	BatchInfo []validator.BatchInfo
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")

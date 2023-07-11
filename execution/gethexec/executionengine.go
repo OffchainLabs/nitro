@@ -237,7 +237,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(ctx context.Context, message
 			continue
 		}
 		// We don't need a batch fetcher as this is an L2 message
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, nil)
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
@@ -462,10 +462,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	batchFetcher := func(num uint64) ([]byte, error) {
-		return s.consensus.FetchBatch(num).Await(s.GetContext())
-	}
-
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -473,7 +469,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		batchFetcher,
 	)
 
 	return block, statedb, receipts, err

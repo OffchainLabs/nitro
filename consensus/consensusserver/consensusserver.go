@@ -16,10 +16,6 @@ func NewConsensusAPI(consensus consensus.FullConsensusClient) *ConsensusAPI {
 	return &ConsensusAPI{consensus}
 }
 
-func (a *ConsensusAPI) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
-	return a.consensus.FetchBatch(batchNum).Await(ctx)
-}
-
 func (a *ConsensusAPI) FindL1BatchForMessage(ctx context.Context, message arbutil.MessageIndex) (uint64, error) {
 	return a.consensus.FindL1BatchForMessage(message).Await(ctx)
 }
