@@ -319,7 +319,7 @@ func (v *L1Validator) generateNodeAction(
 					v.lastWasmModuleRoot, valInfo.WasmRoots,
 				)
 			}
-			log.Warn("wasmroot doesn't match rollup", v.lastWasmModuleRoot, valInfo.WasmRoots)
+			log.Warn("wasmroot doesn't match rollup", "rollup", v.lastWasmModuleRoot, "block_validator", valInfo.WasmRoots)
 		}
 	} else {
 		validatedCount, err = v.txStreamer.GetProcessedMessageCount()
