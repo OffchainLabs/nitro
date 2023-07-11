@@ -149,7 +149,8 @@ impl EvmApi for TestEvmApi {
             self.return_data.lock().as_slice(),
             offset as usize,
             offset.saturating_add(size) as usize,
-        ).to_vec()
+        )
+        .to_vec()
     }
 
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {
