@@ -196,7 +196,8 @@ func TestRetryableLifecycle(t *testing.T) {
 	Require(t, err)
 	expectedRetryableState := expectedArbosState.RetryableState()
 	for _, retryData := range retriesData {
-		expectedRetryableState.Expired.Append(retryData.Hash())
+		_, _, err := expectedRetryableState.Expired.Append(retryData.Hash())
+		Require(t, err)
 	}
 	if expectedState.IntermediateRoot(true) != statedb.IntermediateRoot(true) {
 		Fail(t, "unexpected state after reaping")
@@ -244,7 +245,8 @@ func TestRetryableCleanup(t *testing.T) {
 	expectedArbosState, err := arbosState.OpenSystemArbosState(expectedState, nil, false)
 	Require(t, err)
 	expectedRetryableState := expectedArbosState.RetryableState()
-	expectedRetryableState.Expired.Append(retryables.RetryableHash(id, 0, from, to, callValue, beneficiary, callData))
+	_, _, err = expectedRetryableState.Expired.Append(retryables.RetryableHash(id, 0, from, to, callValue, beneficiary, callData))
+	Require(t, err)
 	stateCheck(t, statedb, expectedState, false, "state has changed", func() {
 		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callValue, beneficiary, callData)
 		Require(t, err)
