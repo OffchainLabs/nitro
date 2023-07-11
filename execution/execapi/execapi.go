@@ -34,8 +34,12 @@ func (c *ExecAPI) ResultAtPos(ctx context.Context, pos arbutil.MessageIndex) (*e
 	return c.exec.ResultAtPos(pos).Await(ctx)
 }
 
-func (c *ExecAPI) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.RecordResult, error) {
-	return c.exec.RecordBlockCreation(pos, msg).Await(ctx)
+func (c *ExecAPI) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.JsonRecordResult, error) {
+	res, err := c.exec.RecordBlockCreation(pos, msg).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return execution.NewJsonRecordResult(res), nil
 }
 
 func (c *ExecAPI) MarkValid(ctx context.Context, pos arbutil.MessageIndex, resultHash common.Hash) {
