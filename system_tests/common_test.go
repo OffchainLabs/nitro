@@ -56,6 +56,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 )
 
 type info = *BlockchainTestInfo
@@ -458,8 +460,6 @@ func DeployOnTestL1(
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	Require(t, err)
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -467,7 +467,7 @@ func DeployOnTestL1(
 		l1info.GetAddress("Sequencer"),
 		0,
 		func() *headerreader.Config { return &headerreader.TestConfig },
-		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		challenge_testing.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig.ChainID, common.Address{}, big.NewInt(1)),
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)

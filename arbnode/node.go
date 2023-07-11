@@ -37,9 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -49,6 +46,9 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/ospgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 )
 
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
@@ -141,13 +141,13 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
+	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	return ospEntryAddr, challengeManagerAddr, nil
+	return ospEntryAddr, edgeChallengeManagerAddr, nil
 }
 
 func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
@@ -179,12 +179,6 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
-	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, l1Reader.Client())
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: %w", err)
-	}
-
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
@@ -198,7 +192,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		challengeManagerAddr,
 		rollupAdminLogic,
 		rollupUserLogic,
-		validatorUtils,
+		common.Address{},
 		validatorWalletCreator,
 	)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
@@ -206,7 +200,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
 	}
 
-	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
+	return rollupCreator, rollupCreatorAddress, common.Address{}, validatorWalletCreator, nil
 }
 
 func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
@@ -217,16 +211,16 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		confirmPeriod = 20
 	}
 	return rollupgen.Config{
-		ConfirmPeriodBlocks:      confirmPeriod,
-		ExtraChallengeTimeBlocks: 200,
-		StakeToken:               common.Address{},
-		BaseStake:                big.NewInt(params.Ether),
-		WasmModuleRoot:           wasmModuleRoot,
-		Owner:                    rollupOwner,
-		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainConfig.ChainID,
+		ConfirmPeriodBlocks: confirmPeriod,
+		//ExtraChallengeTimeBlocks: 200,
+		StakeToken:       common.Address{},
+		BaseStake:        big.NewInt(params.Ether),
+		WasmModuleRoot:   wasmModuleRoot,
+		Owner:            rollupOwner,
+		LoserStakeEscrow: loserStakeEscrow,
+		ChainId:          chainConfig.ChainID,
 		// TODO could the ChainConfig be just []byte?
-		ChainConfig: string(serializedChainConfig),
+		//ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),
@@ -505,7 +499,7 @@ type Node struct {
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
 	Staker                  *staker.Staker
-	manager                 *challengemanager.Manager
+	Manager                 *challengemanager.Manager
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -810,7 +804,7 @@ func createNodeImpl(
 			}
 		}
 
-		manager, err = staker.NewManager(ctx, wallet.RollupAddress(), txOptsValidator, bind.CallOpts{}, l1Reader.Client(), l1Reader, statelessBlockValidator, blockValidator)
+		manager, err = staker.NewManager(ctx, wallet.RollupAddress(), txOptsValidator, bind.CallOpts{}, l1Reader.Client(), statelessBlockValidator, blockValidator)
 		if err != nil {
 			return nil, err
 		}
@@ -1048,8 +1042,8 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.Staker != nil {
 		n.Staker.Start(ctx)
 	}
-	if n.manager != nil {
-		n.manager.Start(ctx)
+	if n.Manager != nil {
+		n.Manager.Start(ctx)
 	}
 	if n.L1Reader != nil {
 		n.L1Reader.Start(ctx)
