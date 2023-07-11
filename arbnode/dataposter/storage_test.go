@@ -179,7 +179,7 @@ func TestGetLast(t *testing.T) {
 					t.Fatalf("Length() unexpected error: %v", err)
 				}
 				if gotCnt != cnt {
-					t.Errorf("Length() = %d want %d", i, gotCnt, cnt)
+					t.Errorf("Length() = %d want %d", gotCnt, cnt)
 				}
 			}
 		})
