@@ -940,7 +940,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	s.execLastMsgCount = prevMessageCount
+	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
