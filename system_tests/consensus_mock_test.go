@@ -40,7 +40,7 @@ func (c *ConsensusMock) FindL1BatchForMessage(message arbutil.MessageIndex) cont
 	return containers.NewReadyPromise[uint64](uint64(message)/2+1, nil)
 }
 
-func (c *ConsensusMock) GetBatchL1Block(seqNum uint64) containers.PromiseInterface[uint64] {
+func (c *ConsensusMock) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	return containers.NewReadyPromise[uint64](1000+uint64(seqNum), nil)
 }
 
@@ -209,7 +209,7 @@ func TestConsensusRPC(t *testing.T) {
 	if num != 7 {
 		Fatal(t, "unexpected num:", num)
 	}
-	num, err = client.GetBatchL1Block(12).Await(ctx)
+	num, err = client.GetBatchParentChainBlock(12).Await(ctx)
 	Require(t, err)
 	if num != 1012 {
 		Fatal(t, "unexpected num:", num)
