@@ -50,11 +50,6 @@ extern "C" {
     /// determines the coinbase.
     pub(crate) fn block_coinbase(coinbase: *mut u8);
 
-    /// Gets the "difficulty" of the current block, which on Arbitrum chains is always the
-    /// constant `0x1`. This differs from Ethereum post-merge where this opcode has been
-    /// repurposed for secure random number generation.
-    pub(crate) fn block_difficulty(difficulty: *mut u8);
-
     /// Gets the gas limit of the current block. The semantics are equivalent to that of the EVM's
     /// [`GAS_LIMIT`] opcode. Note that as of the time of this writing, `evm.codes` incorrectly
     /// implies that the opcode returns the gas limit of the current transaction.  When in doubt,
@@ -187,14 +182,6 @@ extern "C" {
     /// [`LOG3`]: <https://www.evm.codes/#a3>
     /// [`LOG4`]: <https://www.evm.codes/#a4>
     pub(crate) fn emit_log(data: *const u8, len: usize, topics: usize);
-
-    /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's
-    /// history based on the L1 block number provided. If the number is that of the current block,
-    /// or more than 256 blocks ago, the value returned will be `0`. This reflects the behavior of
-    /// the [`BLOCKHASH`] opcode on L2.
-    ///
-    /// [`BLOCKHASH`]: <https://developer.arbitrum.io/solidity-support>
-    pub(crate) fn evm_blockhash(number: *const u8, dest: *mut u8);
 
     /// Gets the amount of gas left after paying for the cost of this hostio. The semantics are
     /// equivalent to that of the EVM's [`GAS`] opcode.

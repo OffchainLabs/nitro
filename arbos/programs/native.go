@@ -233,13 +233,6 @@ func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	return hashToBytes32(codehash)
 }
 
-//export evmBlockHashImpl
-func evmBlockHashImpl(api usize, block bytes32) bytes32 {
-	closures := getApi(api)
-	hash := closures.evmBlockHash(block.toHash())
-	return hashToBytes32(hash)
-}
-
 //export addPagesImpl
 func addPagesImpl(api usize, pages u16) u64 {
 	closures := getApi(api)
@@ -329,7 +322,6 @@ func (data *evmData) encode() C.EvmData {
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		block_chainid:    hashToBytes32(data.blockChainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
-		block_difficulty: hashToBytes32(data.blockDifficulty),
 		block_gas_limit:  u64(data.blockGasLimit),
 		block_number:     hashToBytes32(data.blockNumber),
 		block_timestamp:  u64(data.blockTimestamp),

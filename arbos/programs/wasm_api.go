@@ -28,7 +28,6 @@ type apiWrapper struct {
 	emitLog         js.Func
 	addressBalance  js.Func
 	addressCodeHash js.Func
-	evmBlockHash    js.Func
 	addPages        js.Func
 	funcs           []byte
 }
@@ -199,22 +198,17 @@ func newApi(
 		value, cost := closures.accountCodeHash(address)
 		return write(stylus, value, cost)
 	})
-	evmBlockHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		block := jsHash(args[0])
-		value := closures.evmBlockHash(block)
-		return write(stylus, value)
-	})
 	addPages := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		pages := jsU16(args[0])
 		cost := closures.addPages(pages)
 		return write(stylus, cost)
 	})
 
-	ids := make([]byte, 0, 13*4)
+	ids := make([]byte, 0, 12*4)
 	funcs := js.Global().Get("stylus").Call("setCallbacks",
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
-		addressBalance, addressCodeHash, evmBlockHash, addPages,
+		addressBalance, addressCodeHash, addPages,
 	)
 	for i := 0; i < funcs.Length(); i++ {
 		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
@@ -231,7 +225,6 @@ func newApi(
 		emitLog:         emitLog,
 		addressBalance:  addressBalance,
 		addressCodeHash: addressCodeHash,
-		evmBlockHash:    evmBlockHash,
 		addPages:        addPages,
 		funcs:           ids,
 	}
@@ -249,6 +242,5 @@ func (api *apiWrapper) drop() {
 	api.emitLog.Release()
 	api.addressBalance.Release()
 	api.addressCodeHash.Release()
-	api.evmBlockHash.Release()
 	api.addPages.Release()
 }

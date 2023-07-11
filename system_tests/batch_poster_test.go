@@ -118,7 +118,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 			if i == 0 {
 				continue
 			}
-			if batches[i-1].BlockNumber == batches[i].BlockNumber {
+			if batches[i-1].ParentChainBlockNumber == batches[i].ParentChainBlockNumber {
 				foundMultipleInBlock = true
 				break
 			}

@@ -303,11 +303,6 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         (value.assert_bytes32(), cost.assert_u64())
     }
 
-    fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32 {
-        let [value] = call!(self, 1, EvmBlockHash, num);
-        value.assert_bytes32()
-    }
-
     fn add_pages(&mut self, pages: u16) -> u64 {
         let [cost] = call!(self, 1, AddPages, pages);
         cost.assert_u64()

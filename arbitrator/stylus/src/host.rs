@@ -231,20 +231,6 @@ pub(crate) fn account_codehash<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn evm_blockhash<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
-    number: u32,
-    ptr: u32,
-) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env)?;
-    env.buy_gas(evm::BLOCKHASH_GAS)?;
-
-    let number = env.read_bytes32(number)?;
-    let hash = env.evm_api.evm_blockhash(number);
-    env.write_slice(ptr, &hash.0)?;
-    Ok(())
-}
-
 pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::GASLEFT_GAS)?;
@@ -275,13 +261,6 @@ pub(crate) fn block_coinbase<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> May
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::COINBASE_GAS)?;
     env.write_bytes20(ptr, env.evm_data.block_coinbase)?;
-    Ok(())
-}
-
-pub(crate) fn block_difficulty<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env)?;
-    env.buy_gas(evm::DIFFICULTY_GAS)?;
-    env.write_bytes32(ptr, env.evm_data.block_difficulty)?;
     Ok(())
 }
 
