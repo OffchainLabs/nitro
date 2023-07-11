@@ -171,8 +171,8 @@ pub unsafe extern "C" fn user_host__read_return_data(
 ) -> usize {
     let program = Program::start();
 
+    program.pay_for_evm_copy(size as u64).unwrap();
     let data = program.evm_api.get_return_data(offset as u32, size as u32);
-    program.pay_for_evm_copy(data.len() as u64).unwrap();
     assert!(data.len() <= size as usize);
     wavm::write_slice_usize(&data, ptr);
     data.len()

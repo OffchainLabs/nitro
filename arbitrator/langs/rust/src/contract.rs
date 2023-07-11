@@ -1,7 +1,12 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{address as addr, hostio, tx, Bytes20, Bytes32};
+use crate::{
+    address as addr,
+    hostio::{self, RETURN_DATA_SIZE},
+    tx,
+    Bytes20, Bytes32,
+};
 
 #[derive(Clone, Default)]
 #[must_use]
@@ -122,37 +127,15 @@ impl Call {
         };
 
         unsafe {
-            hostio::CACHED_RETURN_DATA_SIZE.set(outs_len as u32);
+            hostio::RETURN_DATA_SIZE.set(outs_len);
         }
 
-        let outs = partial_return_data_impl(self.offset, self.size, outs_len);
+        let outs = read_return_data(self.offset, self.size);
         match status {
             0 => Ok(outs),
             _ => Err(outs),
         }
     }
-}
-
-fn partial_return_data_impl(offset: usize, size: Option<usize>, full_size: usize) -> Vec<u8> {
-    let mut offset = offset;
-    if offset > full_size {
-        offset = full_size;
-    }
-    let remaining_size = full_size - offset;
-    let mut allocated_len = size.unwrap_or(remaining_size);
-    if allocated_len > remaining_size {
-        allocated_len = remaining_size;
-    }
-    let mut data = Vec::with_capacity(allocated_len);
-    if allocated_len > 0 {
-        unsafe {
-            let written_size = hostio::read_return_data(data.as_mut_ptr(), offset, allocated_len);
-            assert!(written_size <= allocated_len);
-            data.set_len(written_size);
-        }
-    };
-
-    data
 }
 
 #[derive(Clone, Default)]
@@ -189,16 +172,16 @@ impl Deploy {
     }
 
     pub fn deploy(self, code: &[u8], endowment: Bytes32) -> Result<Bytes20, Vec<u8>> {
-        let mut contract = [0; 20];
+        let mut contract = Bytes20::default();
         let mut revert_data_len = 0;
-        let contract = unsafe {
+        unsafe {
             if let Some(salt) = self.salt {
                 hostio::create2(
                     code.as_ptr(),
                     code.len(),
                     endowment.ptr(),
                     salt.ptr(),
-                    contract.as_mut_ptr(),
+                    contract.ptr_mut(),
                     &mut revert_data_len as *mut _,
                 );
             } else {
@@ -210,16 +193,10 @@ impl Deploy {
                     &mut revert_data_len as *mut _,
                 );
             }
-            Bytes20(contract)
-        };
+            RETURN_DATA_SIZE.set(revert_data_len);
+        }
         if contract.is_zero() {
-            let revert_data = if revert_data_len == 0 {
-                vec![]
-            } else {
-                partial_return_data_impl(self.offset, self.size, revert_data_len)
-            };
-
-            return Err(revert_data);
+            return Err(read_return_data(0, None));
         }
         Ok(contract)
     }
@@ -234,10 +211,17 @@ pub fn address() -> Bytes20 {
 pub fn balance() -> Bytes32 {
     addr::balance(address())
 }
-pub fn partial_return_data(offset: usize, size: usize) -> Vec<u8> {
-    partial_return_data_impl(offset, Some(size), return_data_len())
-}
 
-fn return_data_len() -> usize {
-    unsafe { hostio::CACHED_RETURN_DATA_SIZE.get() as usize }
+pub fn read_return_data(offset: usize, size: Option<usize>) -> Vec<u8> {
+    let size = unsafe { size.unwrap_or_else(|| RETURN_DATA_SIZE.get() - offset) };
+
+    let mut data = Vec::with_capacity(size);
+    if size > 0 {
+        unsafe {
+            let bytes_written = hostio::read_return_data(data.as_mut_ptr(), offset, size);
+            debug_assert!(bytes_written <= size);
+            data.set_len(bytes_written);
+        }
+    };
+    data
 }

@@ -129,7 +129,7 @@ extern "C" {
     /// the code of the newly deployed contract. The init code must be written in EVM bytecode, but
     /// the code it deploys can be that of a Stylus program. The code returned will be treated as
     /// WASM if it begins with the EOF-inspired header `0xEF000000`. Otherwise the code will be
-    /// interpreted as that of a traditional EVM-style contract. See [`Deploying Stylus Porgrams`]
+    /// interpreted as that of a traditional EVM-style contract. See [`Deploying Stylus Programs`]
     /// for more information on writing init code.
     ///
     /// On success, this hostio returns the address of the newly created account whose address is a
@@ -229,7 +229,7 @@ extern "C" {
     pub(crate) fn read_args(dest: *mut u8);
 
     /// Copies the bytes of the last EVM call or deployment return result. Reverts if out of
-    /// bounds. Te semantics are equivalent to that of the EVM's [`RETURN_DATA_COPY`] opcode.
+    /// bounds. The semantics are equivalent to that of the EVM's [`RETURN_DATA_COPY`] opcode.
     ///
     /// [`RETURN_DATA_COPY`]: <https://www.evm.codes/#3e>
     pub(crate) fn read_return_data(dest: *mut u8, offset: usize, size: usize) -> usize;
@@ -244,7 +244,7 @@ extern "C" {
     /// [`RETURN_DATA_SIZE`] opcode.
     ///
     /// [`RETURN_DATA_SIZE`]: <https://www.evm.codes/#3d>
-    pub(crate) fn return_data_size() -> u32;
+    pub(crate) fn return_data_size() -> usize;
 
     /// Static calls the contract at the given address, with the option to limit the amount of gas
     /// supplied. The return status indicates whether the call succeeded, and is nonzero on
@@ -310,33 +310,21 @@ extern "C" {
     pub(crate) fn log_txt(text: *const u8, len: usize);
 }
 
-pub(crate) static mut CACHED_RETURN_DATA_SIZE: CachedResult<u32, fn() -> u32> = CachedResult {
-    value: None,
-    callback: || unsafe { return_data_size() },
-};
+/// Caches the length of the most recent EVM return data
+pub(crate) static mut RETURN_DATA_SIZE: CachedOption<usize> = CachedOption::new(return_data_size);
 
-pub(crate) static mut CACHED_INK_PRICE: CachedResult<u64, fn() -> u64> = CachedResult {
-    value: None,
-    callback: || unsafe { tx_ink_price() },
-};
+pub(crate) static mut CACHED_INK_PRICE: CachedOption<u64> = CachedOption::new(tx_ink_price);
 
-pub(crate) struct CachedResult<T: Copy, CB: Fn() -> T> {
-    pub(crate) value: Option<T>,
-    pub(crate) callback: CB,
+/// Caches a value to avoid paying for hostio invocations.
+pub(crate) struct CachedOption<T: Copy> {
+    value: Option<T>,
+    loader: unsafe extern "C" fn() -> T,
 }
 
-impl<T: Copy, CB: Fn() -> T> CachedResult<T, CB> {
-    #[allow(dead_code)]
-    pub(crate) fn new(callback: CB) -> Self {
-        Self {
-            value: None,
-            callback,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn clear(&mut self) {
-        self.value = None;
+impl<T: Copy> CachedOption<T> {
+    const fn new(loader: unsafe extern "C" fn() -> T) -> Self {
+        let value = None;
+        Self { value, loader }
     }
 
     pub(crate) fn set(&mut self, value: T) {
@@ -348,27 +336,8 @@ impl<T: Copy, CB: Fn() -> T> CachedResult<T, CB> {
             return *value;
         }
 
-        let value = (self.callback)();
+        let value = unsafe { (self.loader)() };
         self.value = Some(value);
         value
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cached_result() {
-        let mut cache: CachedResult<u32, fn() -> u32> = CachedResult {
-            value: None,
-            callback: || 41,
-        };
-
-        assert_eq!(cache.get(), 41);
-        cache.set(42);
-        assert_eq!(cache.get(), 42);
-        cache.clear();
-        assert_eq!(cache.get(), 41);
     }
 }
