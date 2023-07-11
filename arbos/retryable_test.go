@@ -59,7 +59,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	}
 	proveReapingDoesNothing := func() {
 		t.Helper()
-		stateCheck(t, statedb, false, "reaping had an effect", func() {
+		stateCheck(t, statedb, statedb, false, "reaping had an effect", func() {
 			evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 			_, _, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 			Require(t, err)
@@ -240,8 +240,12 @@ func TestRetryableCleanup(t *testing.T) {
 	timeout := uint64(rand.Int63n(1 << 16))
 	timestamp := 2 * timeout
 
-	// TODO(magic) check if the only state change is update of Expired accumulator
-	stateCheck(t, statedb /*false*/, true, "state didn't change", func() {
+	expectedState := statedb.Copy()
+	expectedArbosState, err := arbosState.OpenSystemArbosState(expectedState, nil, false)
+	Require(t, err)
+	expectedRetryableState := expectedArbosState.RetryableState()
+	expectedRetryableState.Expired.Append(retryables.RetryableHash(id, 0, from, to, callValue, beneficiary, callData))
+	stateCheck(t, statedb, expectedState, false, "state has changed", func() {
 		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callValue, beneficiary, callData)
 		Require(t, err)
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
@@ -286,12 +290,12 @@ func TestRetryableCreate(t *testing.T) {
 	}
 }
 
-func stateCheck(t *testing.T, statedb *state.StateDB, change bool, message string, scope func()) {
+func stateCheck(t *testing.T, statedb *state.StateDB, expectedStateDb *state.StateDB, change bool, message string, scope func()) {
 	t.Helper()
-	stateBefore := statedb.IntermediateRoot(true)
-	dumpBefore := string(statedb.Dump(&state.DumpConfig{}))
+	expectedRoot := expectedStateDb.IntermediateRoot(true)
+	dumpBefore := string(expectedStateDb.Dump(&state.DumpConfig{}))
 	scope()
-	if (stateBefore != statedb.IntermediateRoot(true)) != change {
+	if (expectedRoot != statedb.IntermediateRoot(true)) != change {
 		dumpAfter := string(statedb.Dump(&state.DumpConfig{}))
 		colors.PrintRed(dumpBefore)
 		colors.PrintRed(dumpAfter)

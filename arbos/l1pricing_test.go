@@ -229,7 +229,7 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 	if !ok {
 		panic("not a statedb")
 	}
-	stateCheck(t, statedb, false, "uh oh, nothing should have happened", func() {
+	stateCheck(t, statedb, statedb, false, "uh oh, nothing should have happened", func() {
 		Require(t, l1p.UpdateForBatchPosterSpending(
 			evm.StateDB, evm, 1, 1, 1, poster, common.Big1, amount, util.TracingDuringEVM,
 		))
