@@ -172,14 +172,17 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type DangerousConfig struct {
-	WithoutBlockValidator bool `koanf:"without-block-validator"`
+	IgnoreRollupWasmModuleRoot bool `koanf:"ignore-rollup-wasm-module-root"`
+	WithoutBlockValidator      bool `koanf:"without-block-validator"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	WithoutBlockValidator: false,
+	IgnoreRollupWasmModuleRoot: false,
+	WithoutBlockValidator:      false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".ignore-rollup-wasm-module-root", DefaultL1ValidatorConfig.Dangerous.IgnoreRollupWasmModuleRoot, "DANGEROUS! make assertions even when the wasm module root is wrong")
 	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
 
@@ -693,7 +696,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 
 func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
 	active := effectiveStrategy >= StakeLatestStrategy
-	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, s.config.MakeAssertionInterval)
+	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, &s.config)
 	if err != nil {
 		return fmt.Errorf("error generating node action: %w", err)
 	}
