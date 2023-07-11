@@ -222,7 +222,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 		number := big.NewInt(idx)
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
-			return false, fmt.Errorf("getting block: %v by number: %w", number.Int64(), err)
+			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
 		}
 		for idx, tx := range block.Transactions() {
 			from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
@@ -235,7 +235,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
-					log.Error("Transaction: %v from batch poster was reverted", tx.Hash())
+					log.Error("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
 					return true, nil
 				}
 			}
