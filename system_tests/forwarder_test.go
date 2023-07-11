@@ -158,11 +158,15 @@ func createSequencer(
 
 // tmpPath returns file path with specified filename from temporary directory of the test.
 func tmpPath(t *testing.T, filename string) string {
+	t.Helper()
 	// create a unique, maximum 10 characters-long temporary directory {name} with path as $TMPDIR/{name}
-	tmpDir, _ := os.MkdirTemp("", "")
+	tmpDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Errorf("tmpPath RemoveAll cleanup: %v", err)
+		if err = os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("Failed to cleanup temp dir: %v", err)
 		}
 	})
 	return filepath.Join(tmpDir, filename)

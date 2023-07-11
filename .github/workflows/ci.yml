@@ -133,7 +133,7 @@ jobs:
       - name: Set environment variables
         run: |
           mkdir -p target/tmp
-          echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
+          echo "TMPDIR=$(pwd)/target/tmp/deadbeefdeadbeefdeadbeefdeadbeefdead" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
