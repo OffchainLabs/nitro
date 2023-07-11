@@ -8,12 +8,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -43,6 +46,7 @@ type RecordResult struct {
 	Pos       arbutil.MessageIndex
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
+	UserWasms state.UserWasms
 	BatchInfo []validator.BatchInfo
 }
 
@@ -162,6 +166,16 @@ func (r *BlockRecorder) RecordBlockCreation(
 		return nil, err
 	}
 
+	userWasms := recordingdb.UserWasms()
+	for _, wasm := range userWasms {
+		inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
+		if err != nil {
+			return nil, fmt.Errorf("error decompressing program: %w", err)
+		}
+		wasm.CompressedWasm = nil // release the memory
+		wasm.Wasm = inflated
+	}
+
 	// check we got the canonical hash
 	canonicalHash := r.execEngine.bc.GetCanonicalHash(uint64(blockNum))
 	if canonicalHash != blockHash {
@@ -172,7 +186,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 	r.updateLastHdr(prevHeader)
 	r.updateValidCandidateHdr(prevHeader)
 
-	return &RecordResult{pos, blockHash, preimages, readBatchInfo}, err
+	return &RecordResult{pos, blockHash, preimages, userWasms, readBatchInfo}, err
 }
 
 func (r *BlockRecorder) updateLastHdr(hdr *types.Header) {

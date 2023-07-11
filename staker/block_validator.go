@@ -491,7 +491,10 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed)
+	chainConfig := v.streamer.ChainConfig()
+	entry, err := newValidationEntry(
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, chainConfig,
+	)
 	if err != nil {
 		return false, err
 	}
