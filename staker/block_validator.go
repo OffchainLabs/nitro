@@ -808,7 +808,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 
 	v.legacyValidInfo = nil
 
-	err := v.writeLastValidated(v.lastValidGS, nil)
+	err := v.writeLastValidated(globalState, nil)
 	if err != nil {
 		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
 	}
@@ -868,7 +868,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	v.validatedA = countUint64
 	v.valLoopPos = count
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
-	err = v.writeLastValidated(v.lastValidGS, nil) // we don't know which wasm roots were validated
+	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
@@ -932,7 +932,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	if v.validatedA > countUint64 {
 		v.validatedA = countUint64
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
-		err := v.writeLastValidated(v.lastValidGS, nil) // we don't know which wasm roots were validated
+		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
