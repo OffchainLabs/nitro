@@ -199,10 +199,17 @@ func TestTransactionStreamer(t *testing.T) {
 		}
 
 		// Check that state balances are consistent with blockchain's balances
-		lastBlockNumber := bc.CurrentHeader().Number.Uint64()
 		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
-		if lastBlockNumber != expectedLastBlockNumber {
-			Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+		for i := 0; ; i++ {
+			lastBlockNumber := bc.CurrentHeader().Number.Uint64()
+			if lastBlockNumber == expectedLastBlockNumber {
+				break
+			} else if lastBlockNumber > expectedLastBlockNumber {
+				Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+			} else if i == 10 {
+				Fail(t, "timeout waiting for block number", expectedLastBlockNumber, "current", lastBlockNumber)
+			}
+			time.Sleep(time.Millisecond * 100)
 		}
 
 		for _, state := range blockStates {

@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -856,11 +857,11 @@ func validateBlockRange(
 
 	success := true
 	for _, block := range blocks {
-		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
-		Require(t, err)
+		// no classic data, so block numbers are message indecies
+		inboxPos := arbutil.MessageIndex(block)
 
 		now := time.Now()
-		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, false, common.Hash{})
+		correct, _, err := node.StatelessBlockValidator.ValidateResult(ctx, inboxPos, false, common.Hash{})
 		Require(t, err, "block", block)
 		passed := formatTime(time.Since(now))
 		if correct {
