@@ -252,19 +252,20 @@ func main() {
 
 		message := readMessage(false)
 
-		chainId, chainConfig, serializedChainConfig, err := message.Message.ParseInitMessage()
+		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
+		chainConfig := initMessage.ChainConfig
 		if chainConfig == nil {
 			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
-			chainConfig, err = chaininfo.GetChainConfig(chainId, "", 0, []string{}, "")
+			chainConfig, err = chaininfo.GetChainConfig(initMessage.ChainId, "", 0, []string{}, "")
 			if err != nil {
 				panic(err)
 			}
 		}
 
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, serializedChainConfig)
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, initMessage)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}

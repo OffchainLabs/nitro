@@ -91,12 +91,14 @@ func TestSequencerFeePaid(t *testing.T) {
 
 		txSize := compressedTxSize(t, tx)
 		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
-		l1GasActual := txSize * params.TxDataNonZeroGasEIP2028
+		l1ChargeExpected := arbmath.BigMulByUint(l1Estimate, txSize*params.TxDataNonZeroGasEIP2028)
+		// L1 gas can only be charged in terms of L2 gas, so subtract off any rounding error from the expected value
+		l1ChargeExpected.Sub(l1ChargeExpected, new(big.Int).Mod(l1ChargeExpected, l2info.GasPrice))
 
 		colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
 
-		if l1GasBought != l1GasActual {
-			Fatal(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
+		if !arbmath.BigEquals(l1Charge, l1ChargeExpected) {
+			Fatal(t, "the sequencer's future revenue does not match its costs", l1Charge, l1ChargeExpected)
 		}
 		return networkRevenue, tipPaidToNet
 	}

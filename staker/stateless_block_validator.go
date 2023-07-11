@@ -230,7 +230,7 @@ func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64
 	if err != nil {
 		return false, nil, 0, err
 	}
-	if batchCount < batchNum {
+	if batchCount <= batchNum {
 		return false, nil, 0, nil
 	}
 	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)

@@ -132,11 +132,17 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
+		initMessage := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
-			serializedChainConfig,
+			initMessage,
 			0,
 			0,
 		)
