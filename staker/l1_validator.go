@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -221,15 +222,28 @@ type OurStakerInfo struct {
 	*StakerInfo
 }
 
-func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, makeAssertionInterval time.Duration) (nodeAction, bool, error) {
-	startState, prevInboxMaxCount, startStateProposedL1, startStateProposedParentChain, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+func (v *L1Validator) generateNodeAction(
+	ctx context.Context,
+	stakerInfo *OurStakerInfo,
+	strategy StakerStrategy,
+	stakerConfig *L1ValidatorConfig,
+) (nodeAction, bool, error) {
+	startState, prevInboxMaxCount, startStateProposedL1, startStateProposedParentChain, err := lookupNodeStartState(
+		ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash,
+	)
 	if err != nil {
-		return nil, false, fmt.Errorf("error looking up node %v (hash %v) start state: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
+		return nil, false, fmt.Errorf(
+			"error looking up node %v (hash %v) start state: %w",
+			stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err,
+		)
 	}
 
-	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposedParentChain))
+	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, arbmath.UintToBig(startStateProposedParentChain))
 	if err != nil {
-		return nil, false, fmt.Errorf("error looking up L1 header of block %v of node start state: %w", startStateProposedParentChain, err)
+		return nil, false, fmt.Errorf(
+			"error looking up L1 header of block %v of node start state: %w",
+			startStateProposedParentChain, err,
+		)
 	}
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
@@ -241,7 +255,10 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting batch count from inbox tracker: %w", err)
 	}
 	if localBatchCount < startState.RequiredBatches() || localBatchCount == 0 {
-		log.Info("catching up to chain batches", "localBatches", localBatchCount, "target", startState.RequiredBatches())
+		log.Info(
+			"catching up to chain batches", "localBatches", localBatchCount,
+			"target", startState.RequiredBatches(),
+		)
 		return nil, false, nil
 	}
 
@@ -275,7 +292,9 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			return nil, false, err
 		}
 		validatedGlobalState = valInfo.GlobalState
-		caughtUp, validatedCount, err = GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, valInfo.GlobalState)
+		caughtUp, validatedCount, err = GlobalStateToMsgCount(
+			v.inboxTracker, v.txStreamer, valInfo.GlobalState,
+		)
 		if err != nil {
 			return nil, false, fmt.Errorf("%w: not found validated block in blockchain", err)
 		}
@@ -294,7 +313,13 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			}
 		}
 		if !wasmRootValid {
-			return nil, false, fmt.Errorf("wasmroot doesn't match rollup : %v, valid: %v", v.lastWasmModuleRoot, valInfo.WasmRoots)
+			if !stakerConfig.Dangerous.IgnoreRollupWasmModuleRoot {
+				return nil, false, fmt.Errorf(
+					"wasmroot doesn't match rollup : %v, valid: %v",
+					v.lastWasmModuleRoot, valInfo.WasmRoots,
+				)
+			}
+			log.Warn("wasmroot doesn't match rollup", v.lastWasmModuleRoot, valInfo.WasmRoots)
 		}
 	} else {
 		validatedCount, err = v.txStreamer.GetProcessedMessageCount()
@@ -417,6 +442,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return correctNode, wrongNodesExist, nil
 	}
 
+	makeAssertionInterval := stakerConfig.MakeAssertionInterval
 	if wrongNodesExist || (strategy >= MakeNodesStrategy && time.Since(startStateProposedTime) >= makeAssertionInterval) {
 		// There's no correct node; create one.
 		var lastNodeHashIfExists *common.Hash
