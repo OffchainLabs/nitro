@@ -127,7 +127,7 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 		return err
 	}
 	if err := b.Put(key, newEnc); err != nil {
-		return fmt.Errorf("updating value at: %v:  %w", key, err)
+		return fmt.Errorf("updating value at: %v: %w", key, err)
 	}
 	if err := b.Put(lastItemKey, newEnc); err != nil {
 		return fmt.Errorf("updating last item: %w", err)

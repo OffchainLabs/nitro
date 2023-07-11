@@ -330,7 +330,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		}
 
 		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
-		lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
+		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
 		}

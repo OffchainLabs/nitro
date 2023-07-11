@@ -79,10 +79,9 @@ func (s *Storage[Item]) Put(_ context.Context, index uint64, prevItem *Item, new
 	return nil
 }
 
-func (s *Storage[Item]) Length(ctx context.Context) (int, error) {
+func (s *Storage[Item]) Length(context.Context) (int, error) {
 	return len(s.queue), nil
 }
-
 func (s *Storage[Item]) IsPersistent() bool {
 	return false
 }
