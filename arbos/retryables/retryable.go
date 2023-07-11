@@ -548,7 +548,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	return nil, nil, windowsLeftStorage.Set(windowsLeft - 1)
 }
 
-func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) (*common.Hash, error) {
+func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) (*common.Hash, uint64, error) {
 	var rotatedRoot *common.Hash
 	err := rs.expiredSnapshots.RotateAndSetExtraConditionaly(func(timestamp uint64) (bool, common.Hash, uint64, error) {
 		var err error
@@ -563,9 +563,13 @@ func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) (*
 		return false, common.Hash{}, 0, err
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return rotatedRoot, nil
+	size, err := rs.Expired.Size()
+	if err != nil {
+		return nil, 0, err
+	}
+	return rotatedRoot, size, nil
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {

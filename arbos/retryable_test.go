@@ -442,11 +442,6 @@ func expiredRetryableReviveData(
 			step.Leaf |= 1 << (step.Level - 1)
 			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
 		}
-		// TODO(magic) check when proving against old roots is supported
-		// if known[step] != rootHash {
-		//	// a correct walk of the frontier should end with resolving the root
-		//	Fatal(t,"Walking up the tree didn't re-create the root", known[step], "vs", rootHash)
-		//}
 		for place, hash := range known {
 			t.Log("known", place, hash)
 		}

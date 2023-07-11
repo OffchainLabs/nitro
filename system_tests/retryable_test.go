@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
@@ -400,14 +401,26 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 func TestRetryableExpiryAndRevival(t *testing.T) {
 	t.Parallel()
-	testRetryableExpiryAndRevival(t, 1)
-	testRetryableExpiryAndRevival(t, 3)
-	testRetryableExpiryAndRevival(t, 4)
-	testRetryableExpiryAndRevival(t, 8)
-	testRetryableExpiryAndRevival(t, 9)
+	testRetryableExpiryAndRevival(t, 1, 0)
+	testRetryableExpiryAndRevival(t, 3, 0)
+	testRetryableExpiryAndRevival(t, 4, 0)
+	testRetryableExpiryAndRevival(t, 8, 0)
+	testRetryableExpiryAndRevival(t, 9, 0)
+
+	testRetryableExpiryAndRevival(t, 1, 1)
+	testRetryableExpiryAndRevival(t, 3, 1)
+	testRetryableExpiryAndRevival(t, 4, 1)
+	testRetryableExpiryAndRevival(t, 8, 1)
+	testRetryableExpiryAndRevival(t, 9, 1)
+
+	testRetryableExpiryAndRevival(t, 1, 2)
+	testRetryableExpiryAndRevival(t, 3, 2)
+	testRetryableExpiryAndRevival(t, 4, 2)
+	testRetryableExpiryAndRevival(t, 8, 2)
+	testRetryableExpiryAndRevival(t, 9, 2)
 }
 
-func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
+func testRetryableExpiryAndRevival(t *testing.T, numRetryables int, whichRootSnapshot int) {
 	l2node, l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t, true)
 	defer teardown()
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -440,7 +453,6 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 		}
 		retriesData = append(retriesData, retry)
 	}
-
 	// submit retryables
 	for _, retry := range retriesData {
 		autoRedeemReceipt := submitRetryable(t, ctx, submissionCtx, retry)
@@ -449,8 +461,14 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 		}
 	}
 	// trigger expiry, 2 retryables at a time
+	rootRotations := 0
 	for i := 0; i < (len(retriesData)+1)/2; i++ {
 		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.RetryableLifetimeSeconds+1)
+		rootRotations++
+	}
+	// make sure to make enough root rotations
+	for i := rootRotations; i <= whichRootSnapshot; i++ {
+		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.ExpiredSnapshotsRotationIntervalSeconds+1)
 	}
 	// check if expiry happened
 	for _, retry := range retriesData {
@@ -463,11 +481,13 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 	}
 	// revive retryables
 	for _, retry := range retriesData {
-		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
+		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, whichRootSnapshot, retry)
 	}
-	// repeated revival shouldn't be possible
-	for _, retry := range retriesData {
-		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	// repeated revival shouldn't be possible against any root
+	for rootSnapshot := 0; rootSnapshot <= whichRootSnapshot; rootSnapshot++ {
+		for _, retry := range retriesData {
+			reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, rootSnapshot, retry)
+		}
 	}
 	// check that they can be redeemed
 	for _, retry := range retriesData {
@@ -478,11 +498,12 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 	for _, retry := range retriesData {
 		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 	}
-	// repeated revival shouldn't be possible
-	for _, retry := range retriesData {
-		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	// repeated revival shouldn't be possible against any root
+	for rootSnapshot := 0; rootSnapshot <= whichRootSnapshot; rootSnapshot++ {
+		for _, retry := range retriesData {
+			reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, rootSnapshot, retry)
+		}
 	}
-
 	// submit again the retryables
 	for _, retry := range retriesData {
 		autoRedeemReceipt := submitRetryable(t, ctx, submissionCtx, retry)
@@ -491,24 +512,39 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 		}
 	}
 	// trigger expiry, 2 retryables at a time
+	rootRotations = 0
 	for i := 0; i < (len(retriesData)+1)/2; i++ {
 		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.RetryableLifetimeSeconds+1)
+		rootRotations++
 	}
+	// make sure to make enough root rotations
+	for i := rootRotations; i <= whichRootSnapshot; i++ {
+		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.ExpiredSnapshotsRotationIntervalSeconds+1)
+	}
+
 	// check if expiry happened
 	for _, retry := range retriesData {
 		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 	}
 	// revive retryables
 	for _, retry := range retriesData {
-		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
+		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, whichRootSnapshot, retry)
 	}
-	// repeated revival shouldn't be possible
-	for _, retry := range retriesData {
-		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	// repeated revival shouldn't be possible against any root
+	for rootSnapshot := 0; rootSnapshot <= whichRootSnapshot; rootSnapshot++ {
+		for _, retry := range retriesData {
+			reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, rootSnapshot, retry)
+		}
 	}
 	// trigger 2nd expiry, 2 retryables at a time
+	rootRotations = 0
 	for i := 0; i < (len(retriesData)+1)/2; i++ {
 		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.RetryableLifetimeSeconds+1)
+		rootRotations++
+	}
+	// make sure to make enough root rotations
+	for i := rootRotations; i <= whichRootSnapshot; i++ {
+		currentL1time = warpL1Time(t, ctx, l2node, l1client, l2info, currentL1time, retryables.ExpiredSnapshotsRotationIntervalSeconds+1)
 	}
 	// check if 2nd expiry happened
 	for _, retry := range retriesData {
@@ -516,11 +552,13 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 	}
 	// revive retryables for the 2nd time
 	for _, retry := range retriesData {
-		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, retry)
+		reviveRetryableShouldSucceed(t, ctx, l2client, &ownerTxOpts, whichRootSnapshot, retry)
 	}
-	// repeated revival shouldn't be possible
-	for _, retry := range retriesData {
-		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	// repeated revival shouldn't be possible against any root
+	for rootSnapshot := 0; rootSnapshot <= whichRootSnapshot; rootSnapshot++ {
+		for _, retry := range retriesData {
+			reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, rootSnapshot, retry)
+		}
 	}
 	// check that they can be redeemed
 	for _, retry := range retriesData {
@@ -531,9 +569,11 @@ func testRetryableExpiryAndRevival(t *testing.T, numRetryables int) {
 	for _, retry := range retriesData {
 		redeemRetryableShouldFailNoTicket(t, ctx, l2client, &ownerTxOpts, retry)
 	}
-	// repeated revival shouldn't be possible
-	for _, retry := range retriesData {
-		reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, retry)
+	// repeated revival shouldn't be possible against any root
+	for rootSnapshot := 0; rootSnapshot <= whichRootSnapshot; rootSnapshot++ {
+		for _, retry := range retriesData {
+			reviveRetryableShouldFail(t, ctx, l2client, &ownerTxOpts, rootSnapshot, retry)
+		}
 	}
 }
 
@@ -648,36 +688,68 @@ func expiredRetryableFromLogs(t *testing.T, ctx context.Context, l2client *ethcl
 	return leafIndex, leafHash
 }
 
-// TODO(magic) replace with getting 30min / 1hour old root event
-func accumulatorSizeFromLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client) uint64 {
+func accumulatorRootAndSizeFromLogs(t *testing.T, ctx context.Context, l2client *ethclient.Client, rootSnapshot int) (*common.Hash, uint64) {
 	t.Helper()
 	arbRetryableAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	Require(t, err)
-	retryableExpiredTopic := arbRetryableAbi.Events["RetryableExpired"].ID
-	logs, err := l2client.FilterLogs(ctx, ethereum.FilterQuery{
-		Addresses: []common.Address{
-			types.ArbRetryableTxAddress,
-		},
-		Topics: [][]common.Hash{
-			{retryableExpiredTopic},
-		},
-	})
-	Require(t, err)
-	if len(logs) == 0 {
-		Fatal(t, "found no logs for RetryableExpired events")
-	}
-	var maxLeaf uint64
-	for _, log := range logs {
-		event := &precompilesgen.ArbRetryableTxRetryableExpired{}
-		l := log
-		err := util.ParseRetryableExpiredLog(event, &l)
-		Require(t, err, "ParseRetryableExpiredLog failed for log:", log)
-		place := merkletree.NewLevelAndLeafFromPostion(event.Position)
-		if place.Leaf > maxLeaf {
-			maxLeaf = place.Leaf
+	if rootSnapshot == 0 {
+		retryableExpiredTopic := arbRetryableAbi.Events["RetryableExpired"].ID
+		logs, err := l2client.FilterLogs(ctx, ethereum.FilterQuery{
+			Addresses: []common.Address{
+				types.ArbRetryableTxAddress,
+			},
+			Topics: [][]common.Hash{
+				{retryableExpiredTopic},
+			},
+		})
+		Require(t, err, "FilterLogs failed")
+		if len(logs) == 0 {
+			Fatal(t, "found no logs for RetryableExpired event")
 		}
+		var maxLeaf uint64
+		for _, log := range logs {
+			event := &precompilesgen.ArbRetryableTxRetryableExpired{}
+			l := log
+			err := util.ParseRetryableExpiredLog(event, &l)
+			Require(t, err, "ParseRetryableExpiredLog failed for log:", log)
+			place := merkletree.NewLevelAndLeafFromPostion(event.Position)
+			if place.Leaf > maxLeaf {
+				maxLeaf = place.Leaf
+			}
+		}
+		return nil, maxLeaf + 1
+	} else {
+		rootSnapshotTopic := arbRetryableAbi.Events["ExpiredMerkleRootSnapshot"].ID
+		logs, err := l2client.FilterLogs(ctx, ethereum.FilterQuery{
+			Addresses: []common.Address{
+				types.ArbRetryableTxAddress,
+			},
+			Topics: [][]common.Hash{
+				{rootSnapshotTopic},
+			},
+		})
+		Require(t, err, "FilterLogs failed")
+		if len(logs) == 0 {
+			Fatal(t, "found no logs for ExpiredMerkleRootSnapshot event")
+		}
+		if len(logs) < rootSnapshot {
+			Fatal(t, "not enough logs for ExpiredMerkleRootSnapshot event, want at least:", rootSnapshot, "have:", len(logs))
+		}
+		for _, log := range logs {
+			l := log
+			event := &precompilesgen.ArbRetryableTxExpiredMerkleRootSnapshot{}
+			err = util.ParseExpiredMerkleRootSnapshotLog(event, &l)
+			Require(t, err, "ParseRetryableExpiredMerkleRootSnapshot failed")
+			t.Logf("event: %+v", event)
+		}
+		// ..., s2, s1, len(logs)
+		log := logs[len(logs)-rootSnapshot]
+		event := &precompilesgen.ArbRetryableTxExpiredMerkleRootSnapshot{}
+		err = util.ParseExpiredMerkleRootSnapshotLog(event, &log)
+		Require(t, err, "ParseRetryableExpiredMerkleRootSnapshot failed")
+		root := common.BytesToHash(event.Root[:])
+		return &root, event.NumLeaves
 	}
-	return maxLeaf + 1
 }
 
 func prepareQueryNeededNodesAndPartials(t *testing.T, ctx context.Context, l2client *ethclient.Client, treeSize, leafIndex uint64) ([]common.Hash, []merkletree.LevelAndLeaf, map[merkletree.LevelAndLeaf]common.Hash) {
@@ -785,6 +857,7 @@ func fetchMerkleNodesFromLogs(t *testing.T, ctx context.Context, l2client *ethcl
 }
 
 func proofFromMerkleNodes(t *testing.T, treeSize, leafIndex uint64, leafHash common.Hash, nodes []merkletree.LevelAndLeaf, partials map[merkletree.LevelAndLeaf]common.Hash, merkleNodes []merkleAccumulator.MerkleTreeNodeEvent) (merkletree.MerkleProof, [][32]byte) {
+	t.Helper()
 	known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
 	partialsByLevel := make(map[uint64]common.Hash)        // maps for each level the partial it may have
 	var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
@@ -896,16 +969,26 @@ func proofFromMerkleNodes(t *testing.T, treeSize, leafIndex uint64, leafHash com
 }
 
 func proofForLeaf(t *testing.T, ctx context.Context, l2client *ethclient.Client, treeSize, leafIndex uint64, leafHash common.Hash) (merkletree.MerkleProof, [][32]byte) {
+	t.Helper()
 	query, nodes, partials := prepareQueryNeededNodesAndPartials(t, ctx, l2client, treeSize, leafIndex)
 	merkleNodes := fetchMerkleNodesFromLogs(t, ctx, l2client, query)
 	return proofFromMerkleNodes(t, treeSize, leafIndex, leafHash, nodes, partials, merkleNodes)
 }
 
-func reviveRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
+func reviveRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, rootSnapshot int, retry *retryables.TestRetryableData) {
 	t.Helper()
 	leafIndex, leafHash := expiredRetryableFromLogs(t, ctx, l2client, retry)
-	treeSize := accumulatorSizeFromLogs(t, ctx, l2client)
+	rootHash, treeSize := accumulatorRootAndSizeFromLogs(t, ctx, l2client, rootSnapshot)
+	if leafIndex >= treeSize {
+		// leaf was added after the root snapshot, so we'll just test against current root
+		rootHash, treeSize = accumulatorRootAndSizeFromLogs(t, ctx, l2client, 0)
+	}
 	merkleProof, proofBytes := proofForLeaf(t, ctx, l2client, treeSize, leafIndex, leafHash)
+	if rootHash != nil {
+		if !bytes.Equal(merkleProof.RootHash.Bytes(), rootHash.Bytes()) {
+			Fatal(t, "Root hash mismatch, root hash from logs:", *rootHash, "root hash from proof:", merkleProof.RootHash, "root snapshot:", rootSnapshot)
+		}
+	}
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)
 	tx, err := arbRetryableTx.Revive(ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)
@@ -917,11 +1000,20 @@ func reviveRetryableShouldSucceed(t *testing.T, ctx context.Context, l2client *e
 	}
 }
 
-func reviveRetryableShouldFail(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, retry *retryables.TestRetryableData) {
+func reviveRetryableShouldFail(t *testing.T, ctx context.Context, l2client *ethclient.Client, ownerTxOpts *bind.TransactOpts, rootSnapshot int, retry *retryables.TestRetryableData) {
 	t.Helper()
 	leafIndex, leafHash := expiredRetryableFromLogs(t, ctx, l2client, retry)
-	treeSize := accumulatorSizeFromLogs(t, ctx, l2client)
+	rootHash, treeSize := accumulatorRootAndSizeFromLogs(t, ctx, l2client, rootSnapshot)
+	if leafIndex >= treeSize {
+		// leaf was added after the root snapshot, so we'll just test against current root
+		rootHash, treeSize = accumulatorRootAndSizeFromLogs(t, ctx, l2client, 0)
+	}
 	merkleProof, proofBytes := proofForLeaf(t, ctx, l2client, treeSize, leafIndex, leafHash)
+	if rootHash != nil {
+		if !bytes.Equal(merkleProof.RootHash.Bytes(), rootHash.Bytes()) {
+			Fatal(t, "Root hash mismatch, root hash from logs:", *rootHash, "root hash from proof:", merkleProof.RootHash, "root snapshot:", rootSnapshot)
+		}
+	}
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err, "NewArbRetryableTx failed")
 	_, err = arbRetryableTx.Revive(ownerTxOpts, retry.Id, retry.NumTries, retry.From, retry.To, retry.CallValue, retry.Beneficiary, retry.CallData, merkleProof.RootHash, merkleProof.LeafIndex, proofBytes)

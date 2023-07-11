@@ -44,7 +44,7 @@ var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 var EmitExpiredMerkleUpdateEvent func(*vm.EVM, [32]byte, *big.Int) error
-var EmitExpiredMerkleRootSnapshotEvent func(*vm.EVM, [32]byte, uint64) error
+var EmitExpiredMerkleRootSnapshotEvent func(*vm.EVM, [32]byte, uint64, uint64) error
 var EmitRetryableExpiredEvent func(*vm.EVM, [32]byte, *big.Int, [32]byte, uint64) error
 
 type L1Info struct {
