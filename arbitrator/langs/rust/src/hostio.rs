@@ -129,7 +129,7 @@ extern "C" {
     /// the code of the newly deployed contract. The init code must be written in EVM bytecode, but
     /// the code it deploys can be that of a Stylus program. The code returned will be treated as
     /// WASM if it begins with the EOF-inspired header `0xEF000000`. Otherwise the code will be
-    /// interpreted as that of a traditional EVM-style contract. See [`Deploying Stylus Porgrams`]
+    /// interpreted as that of a traditional EVM-style contract. See [`Deploying Stylus Programs`]
     /// for more information on writing init code.
     ///
     /// On success, this hostio returns the address of the newly created account whose address is a
