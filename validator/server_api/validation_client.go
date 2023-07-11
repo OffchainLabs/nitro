@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -21,6 +22,7 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client *rpcclient.RpcClient
 	name   string
+	room   int32
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
@@ -30,14 +32,15 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	valrun := server_common.NewValRun(moduleRoot)
-	c.LaunchThread(func(ctx context.Context) {
+	atomic.AddInt32(&c.room, -1)
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
-		valrun.ConsumeResult(res, err)
+		atomic.AddInt32(&c.room, 1)
+		return res, err
 	})
-	return valrun
+	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (c *ValidationClient) Start(ctx_in context.Context) error {
@@ -55,6 +58,18 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
+	var room int
+	err = c.client.CallContext(c.GetContext(), &room, Namespace+"_room")
+	if err != nil {
+		return err
+	}
+	if room < 2 {
+		log.Warn("validation server not enough room, overriding to 2", "name", name, "room", room)
+		room = 2
+	} else {
+		log.Info("connected to validation server", "name", name, "room", room)
+	}
+	atomic.StoreInt32(&c.room, int32(room))
 	c.name = name
 	return nil
 }
@@ -74,13 +89,11 @@ func (c *ValidationClient) Name() string {
 }
 
 func (c *ValidationClient) Room() int {
-	var res int
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_room")
-	if err != nil {
-		log.Error("error contacting validation server", "name", c.name, "err", err)
+	room32 := atomic.LoadInt32(&c.room)
+	if room32 < 0 {
 		return 0
 	}
-	return res
+	return int(room32)
 }
 
 type ExecutionClient struct {

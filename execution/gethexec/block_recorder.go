@@ -42,10 +42,10 @@ type BlockRecorder struct {
 	preparedLock  sync.Mutex
 }
 
-func NewBlockRecorder(execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
+func NewBlockRecorder(config *arbitrum.RecordingDatabaseConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
 	recorder := &BlockRecorder{
 		execEngine:        execEngine,
-		recordingDatabase: arbitrum.NewRecordingDatabase(ethDb, execEngine.bc),
+		recordingDatabase: arbitrum.NewRecordingDatabase(config, ethDb, execEngine.bc),
 	}
 	execEngine.SetRecorder(recorder)
 	return recorder

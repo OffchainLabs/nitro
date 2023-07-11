@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -443,9 +444,24 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	return l1info, l1Client, l1backend, stack
 }
 
+func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+	bridge, err := arbnode.NewDelayedBridge(l1client, addresses.Bridge, addresses.DeployedAt)
+	Require(t, err)
+	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
+	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
+	Require(t, err)
+	if len(messages) == 0 {
+		Fatal(t, "No delayed messages found at rollup creation block")
+	}
+	initMessage, err := messages[0].Message.ParseInitMessage()
+	Require(t, err, "Failed to parse rollup init message")
+
+	return initMessage
+}
+
 func DeployOnTestL1(
 	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig,
-) *chaininfo.RollupAddresses {
+) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -473,17 +489,18 @@ func DeployOnTestL1(
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
-	return addresses
+	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	return addresses, initMessage
 }
 
 func createL2BlockChain(
 	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil)
+	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil)
 }
 
 func createL2BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, stackConfig *node.Config,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -504,9 +521,17 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	Require(t, err)
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, serializedChainConfig, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	if initMessage == nil {
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		Require(t, err)
+		initMessage = &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
+	}
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -577,8 +602,8 @@ func createTestNodeOnL1WithConfigImpl(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, stackConfig)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -829,11 +854,8 @@ func Create2ndNodeWithConfig(
 	firstExec := getExecNode(t, first)
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		Fatal(t, err)
-	}
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, serializedChainConfig, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
