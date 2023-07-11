@@ -71,6 +71,8 @@ func (s *Storage[Item]) Put(_ context.Context, index uint64, prevItem *Item, new
 		if queueIdx > len(s.queue) {
 			return fmt.Errorf("attempted to set out-of-bounds index %v in queue starting at %v of length %v", index, s.firstNonce, len(s.queue))
 		}
+		// TODO: come up with a better way of comparing prev/new values,
+		// we shouldn't use cmp.Diff outside tests.
 		if diff := cmp.Diff(prevItem, s.queue[queueIdx]); diff != "" {
 			return fmt.Errorf("replacing different item than expected at index: %v: %v %v", index, prevItem, s.queue[queueIdx])
 		}
