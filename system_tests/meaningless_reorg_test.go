@@ -50,8 +50,8 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	metadata, err := arbNode.InboxTracker.GetBatchMetadata(1)
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
-	if metadata.L1Block != originalBatchBlock {
-		Fatal(t, "Posted batch in block", originalBatchBlock, "but metadata says L1 block was", metadata.L1Block)
+	if metadata.ParentChainBlock != originalBatchBlock {
+		Fatal(t, "Posted batch in block", originalBatchBlock, "but metadata says L1 block was", metadata.ParentChainBlock)
 	}
 
 	_, l2Receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2Info, l2Client, ctx)
@@ -89,10 +89,10 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		metadata, err = arbNode.InboxTracker.GetBatchMetadata(1)
 		Require(t, err)
-		if metadata.L1Block == newBatchBlock {
+		if metadata.ParentChainBlock == newBatchBlock {
 			break
-		} else if metadata.L1Block != originalBatchBlock {
-			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.L1Block, "instead of expected", metadata.L1Block)
+		} else if metadata.ParentChainBlock != originalBatchBlock {
+			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", metadata.ParentChainBlock)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

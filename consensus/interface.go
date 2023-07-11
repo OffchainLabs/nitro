@@ -16,7 +16,7 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
 	FindL1BatchForMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64]
-	GetBatchL1Block(seqNum uint64) containers.PromiseInterface[uint64]
+	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {

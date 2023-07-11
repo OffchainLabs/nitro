@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -137,7 +137,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
-	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
+	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
@@ -289,14 +289,14 @@ func TestFindBatch(t *testing.T) {
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	fatalErrChan := make(chan error, 10)
-	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
 
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
 	rollupAddresses.Bridge = bridgeAddr
 	rollupAddresses.SequencerInbox = seqInboxAddr
 	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	consensus, exec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, nil, nil, fatalErrChan)
+	consensus, exec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
 	Require(t, exec.Initialize(ctx))
 	err := consensus.Start(ctx)
 	Require(t, err)
@@ -321,7 +321,7 @@ func TestFindBatch(t *testing.T) {
 		if expBatchNum != gotBatchNum {
 			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
 		}
-		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum).Await(ctx)
+		batchL1Block, err := consensus.InboxTracker.GetBatchParentChainBlock(gotBatchNum).Await(ctx)
 		Require(t, err)
 		blockHeader, err := l2Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
 		Require(t, err)

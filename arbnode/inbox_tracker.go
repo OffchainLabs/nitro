@@ -159,7 +159,7 @@ type BatchMetadata struct {
 	Accumulator         common.Hash
 	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
-	L1Block             uint64
+	ParentChainBlock    uint64
 }
 
 func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
@@ -194,9 +194,9 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
-func (t *InboxTracker) GetBatchL1Block(seqNum uint64) containers.PromiseInterface[uint64] {
+func (t *InboxTracker) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	metadata, err := t.GetBatchMetadata(seqNum)
-	return containers.NewReadyPromise[uint64](metadata.L1Block, err)
+	return containers.NewReadyPromise[uint64](metadata.ParentChainBlock, err)
 }
 
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
@@ -662,7 +662,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			Accumulator:         batch.AfterInboxAcc,
 			DelayedMessageCount: batch.AfterDelayedCount,
 			MessageCount:        batchMessageCounts[batch.SequenceNumber],
-			L1Block:             batch.BlockNumber,
+			ParentChainBlock:    batch.ParentChainBlockNumber,
 		}
 		batchMetas[batch.SequenceNumber] = meta
 		metaBytes, err := rlp.EncodeToBytes(meta)
@@ -706,7 +706,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	newMessageCount := prevbatchmeta.MessageCount + arbutil.MessageIndex(len(messages))
 	var latestL1Block uint64
 	if len(batches) > 0 {
-		latestL1Block = batches[len(batches)-1].BlockNumber
+		latestL1Block = batches[len(batches)-1].ParentChainBlockNumber
 	}
 	var latestTimestamp uint64
 	if len(messages) > 0 {

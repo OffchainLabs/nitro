@@ -21,8 +21,8 @@ func (a *ConsensusAPI) FindL1BatchForMessage(ctx context.Context, message arbuti
 	return a.consensus.FindL1BatchForMessage(message).Await(ctx)
 }
 
-func (a *ConsensusAPI) GetBatchL1Block(ctx context.Context, seqNum uint64) (uint64, error) {
-	return a.consensus.GetBatchL1Block(seqNum).Await(ctx)
+func (a *ConsensusAPI) GetBatchParentChainBlock(ctx context.Context, seqNum uint64) (uint64, error) {
+	return a.consensus.GetBatchParentChainBlock(seqNum).Await(ctx)
 }
 
 func (a *ConsensusAPI) SyncProgressMap(ctx context.Context) (map[string]interface{}, error) {

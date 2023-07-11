@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
@@ -368,7 +369,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 }
 
 func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64) (*types.Transaction, error) {
-	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
+	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, extraGas, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +379,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 	} else {
 		return nil, errors.New("cannot compute batch gas cost")
 	}
+	batchDataGas = arbmath.SaturatingUAdd(batchDataGas, extraGas)
 
 	data, err := util.PackInternalTxDataBatchPostingReport(
 		batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,

@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -323,6 +324,8 @@ func mainImpl() int {
 		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
+	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -479,9 +482,8 @@ func mainImpl() int {
 		err = currentNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
-		} else {
-			defer currentNode.StopAndWait()
 		}
+		defer currentNode.StopAndWait()
 	}
 	if err == nil {
 		err = execNode.Start(ctx)

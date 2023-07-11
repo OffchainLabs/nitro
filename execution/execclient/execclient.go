@@ -86,12 +86,12 @@ func (c *Client) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterfa
 
 func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread[*execution.RecordResult](c, func(ctx context.Context) (*execution.RecordResult, error) {
-		var res execution.RecordResult
+		var res execution.JsonRecordResult
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", pos, msg)
 		if err != nil {
 			return nil, convertError(err)
 		}
-		return &res, nil
+		return res.ToResult(), nil
 	})
 }
 
