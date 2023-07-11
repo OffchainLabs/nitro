@@ -9,23 +9,17 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type BlockValidatorAPI struct {
 	val *staker.BlockValidator
 }
 
-func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
-	block := a.val.LastBlockValidated()
-	return hexutil.Uint64(block), nil
-}
-
-func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
-	_, hash, _ := a.val.LastBlockValidatedAndHash()
-	return hash, nil
+func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
+	return a.val.ReadLastValidatedInfo()
 }
 
 type BlockValidatorDebugAPI struct {
@@ -34,25 +28,16 @@ type BlockValidatorDebugAPI struct {
 }
 
 type ValidateBlockResult struct {
-	Valid   bool   `json:"valid"`
-	Latency string `json:"latency"`
+	Valid       bool                    `json:"valid"`
+	Latency     string                  `json:"latency"`
+	GlobalState validator.GoGlobalState `json:"globalstate"`
 }
 
-func (a *BlockValidatorDebugAPI) ValidateBlock(
-	ctx context.Context, blockNum rpc.BlockNumber, full bool, moduleRootOptional *common.Hash,
+func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
+	ctx context.Context, msgNum hexutil.Uint64, full bool, moduleRootOptional *common.Hash,
 ) (ValidateBlockResult, error) {
 	result := ValidateBlockResult{}
 
-	if blockNum < 0 {
-		return result, errors.New("this method only accepts absolute block numbers")
-	}
-	header := a.blockchain.GetHeaderByNumber(uint64(blockNum))
-	if header == nil {
-		return result, errors.New("block not found")
-	}
-	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
-		return result, types.ErrUseFallback
-	}
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
@@ -64,8 +49,11 @@ func (a *BlockValidatorDebugAPI) ValidateBlock(
 		moduleRoot = moduleRoots[0]
 	}
 	start_time := time.Now()
-	valid, err := a.val.ValidateBlock(ctx, header, full, moduleRoot)
-	result.Valid = valid
+	valid, gs, err := a.val.ValidateResult(ctx, arbutil.MessageIndex(msgNum), full, moduleRoot)
 	result.Latency = fmt.Sprintf("%vms", time.Since(start_time).Milliseconds())
+	if gs != nil {
+		result.GlobalState = *gs
+	}
+	result.Valid = valid
 	return result, err
 }
