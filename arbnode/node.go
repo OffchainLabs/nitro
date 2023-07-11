@@ -47,8 +47,6 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
-
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
 )
 
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
@@ -505,7 +503,6 @@ type Node struct {
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
 	Staker                  *staker.Staker
-	manager                 *challengemanager.Manager
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -681,7 +678,6 @@ func createNodeImpl(
 			nil,
 			nil,
 			nil,
-			nil,
 			broadcastServer,
 			broadcastClients,
 			coordinator,
@@ -782,9 +778,7 @@ func createNodeImpl(
 	}
 
 	var stakerObj *staker.Staker
-	var manager *challengemanager.Manager
 	if config.Staker.Enable {
-
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
 			var existingWalletAddress *common.Address
@@ -810,10 +804,6 @@ func createNodeImpl(
 			}
 		}
 
-		manager, err = staker.NewManager(ctx, wallet.RollupAddress(), txOptsValidator, bind.CallOpts{}, l1Reader.Client(), l1Reader, statelessBlockValidator, blockValidator)
-		if err != nil {
-			return nil, err
-		}
 		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
@@ -866,7 +856,6 @@ func createNodeImpl(
 		blockValidator,
 		statelessBlockValidator,
 		stakerObj,
-		manager,
 		broadcastServer,
 		broadcastClients,
 		coordinator,
@@ -1047,9 +1036,6 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.Staker != nil {
 		n.Staker.Start(ctx)
-	}
-	if n.manager != nil {
-		n.manager.Start(ctx)
 	}
 	if n.L1Reader != nil {
 		n.L1Reader.Start(ctx)
