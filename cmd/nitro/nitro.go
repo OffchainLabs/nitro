@@ -217,6 +217,9 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
+			if l1Wallet.OnlyCreateKey {
+				return 0
+			}
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
@@ -230,12 +233,18 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
 			}
+			if nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
+				return 0
+			}
 		}
 		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
 				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+			}
+			if nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
+				return 0
 			}
 		}
 	}
