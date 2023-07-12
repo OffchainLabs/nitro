@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -41,6 +42,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	if workload == upgradeArbOs {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	}
+
+	var delayEvery int
+	if workloadLoops > 1 {
+		l1NodeConfigA.BatchPoster.MaxBatchPostDelay = time.Millisecond * 500
+		delayEvery = workloadLoops / 3
 	}
 
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
@@ -104,6 +111,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
 			if workload != depleteGas {
 				Require(t, err)
+			}
+			if delayEvery > 0 && i%delayEvery == (delayEvery-1) {
+				<-time.After(time.Second)
 			}
 		}
 	} else {
@@ -176,10 +186,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	}
 	t.Log("waiting for block: ", lastBlock.NumberU64())
 	timeout := getDeadlineTimeout(t, time.Minute*10)
-	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {
+	// messageindex is same as block number here
+	if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	finalRefCount := nodeB.BlockValidator.RecordDBReferenceCount()
+	nodeB.Execution.Recorder.TrimAllPrepared(t)
+	finalRefCount := nodeB.Execution.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
