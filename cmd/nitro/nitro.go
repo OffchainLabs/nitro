@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"os/signal"
 	"reflect"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -120,6 +122,41 @@ func closeDb(db io.Closer, name string) {
 
 func main() {
 	os.Exit(mainImpl())
+}
+
+func stackTraceHandler(w http.ResponseWriter, _ *http.Request) {
+	buf := make([]byte, 64*1024*1024)
+	size := runtime.Stack(buf, true)
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(buf[0:size]); err != nil {
+		log.Warn("Error writing stack trace in a response", "error", err)
+	}
+}
+
+// mustRunMetrics starts up metrics server if the flag is enabled.
+func mustRunMetrics(cfg *NodeConfig) {
+	if !cfg.Metrics {
+		if cfg.MetricsServer.Pprof {
+			flag.Usage()
+			log.Crit("--metrics must be enabled in order to use pprof with the metrics server")
+		}
+		return
+	}
+	if cfg.MetricsServer.Addr == "" {
+		flag.Usage()
+		log.Crit("You must specify metrics server address when metrics are enabled.")
+	}
+	go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+	address := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	if cfg.MetricsServer.Pprof {
+		genericconf.StartPprof(address)
+		return
+	}
+	h := &exp.HandlerOpt{
+		Path:    "/debug/stackTrace",
+		Handler: http.HandlerFunc(stackTraceHandler),
+	}
+	exp.Setup(address, h)
 }
 
 // Returns the exit code
@@ -379,22 +416,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
-
-		if nodeConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				genericconf.StartPprof(address)
-			} else {
-				exp.Setup(address)
-			}
-		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
-		return 1
-	}
+	mustRunMetrics(nodeConfig)
 
 	fatalErrChan := make(chan error, 10)
 
