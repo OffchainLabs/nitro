@@ -100,8 +100,33 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 			s.createBlocksMutex.Unlock()
 		}
 	}()
+
 	blockNum := s.MessageIndexToBlockNumber(count - 1)
-	// We can safely cast blockNum to a uint64 as it comes from MessageCountToBlockNumber
+	err := s.reorgToBlockNumWithLock(blockNum)
+	if err != nil {
+		return err
+	}
+
+	for i := range newMessages {
+		err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i])
+		if err != nil {
+			return err
+		}
+	}
+	if len(oldMessages) > 0 {
+		s.resequenceChan <- oldMessages
+		resequencing = true
+	}
+	return nil
+}
+
+func (s *ExecutionEngine) reorgToBlockNumWithLock(blockNum uint64) error {
+	currentHeader := s.bc.CurrentBlock()
+
+	if currentHeader.Number.Uint64() < blockNum {
+		return nil
+	}
+
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		log.Warn("reorg target block not found", "block", blockNum)
@@ -112,20 +137,17 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	if err != nil {
 		return err
 	}
-	for i := range newMessages {
-		err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i])
-		if err != nil {
-			return err
-		}
-	}
 	if s.recorder != nil {
 		s.recorder.ReorgTo(targetBlock.Header())
 	}
-	if len(oldMessages) > 0 {
-		s.resequenceChan <- oldMessages
-		resequencing = true
-	}
 	return nil
+}
+
+func (s *ExecutionEngine) ReorgToBlockNum(blockNum uint64) error {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+
+	return s.reorgToBlockNumWithLock(blockNum)
 }
 
 func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
