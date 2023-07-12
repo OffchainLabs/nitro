@@ -273,7 +273,7 @@ func (v *L1Validator) generateNodeAction(
 		}
 		var current GlobalStatePosition
 		head, err := v.txStreamer.GetProcessedMessageCount()
-		if err != nil {
+		if err == nil {
 			_, current, err = v.blockValidator.GlobalStatePositionsAtCount(head)
 		}
 		if err != nil {
