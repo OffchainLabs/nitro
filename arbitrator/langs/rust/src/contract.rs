@@ -173,7 +173,7 @@ pub fn balance() -> Bytes32 {
 }
 
 pub fn read_return_data(offset: usize, size: Option<usize>) -> Vec<u8> {
-    let size = unsafe { size.unwrap_or_else(|| RETURN_DATA_SIZE.get() - offset) };
+    let size = unsafe { size.unwrap_or_else(|| RETURN_DATA_SIZE.get().saturating_sub(offset)) };
 
     let mut data = Vec::with_capacity(size);
     if size > 0 {
