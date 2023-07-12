@@ -39,6 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -216,6 +217,9 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
+			if l1Wallet.OnlyCreateKey {
+				return 0
+			}
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
@@ -229,12 +233,18 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
 			}
+			if nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
+				return 0
+			}
 		}
 		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
 				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+			}
+			if nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
+				return 0
 			}
 		}
 	}
@@ -359,7 +369,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.Init.ThenQuit {
+	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMsg < 0 {
 		return 0
 	}
 
@@ -462,12 +472,27 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
+		defer currentNode.StopAndWait()
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	exitCode := 0
+
+	if err == nil && nodeConfig.Init.ResetToMsg > 0 {
+		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMsg))
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
+			exitCode = 1
+		}
+		if nodeConfig.Init.ThenQuit {
+			close(sigint)
+
+			return exitCode
+		}
+	}
+
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
@@ -479,8 +504,6 @@ func mainImpl() int {
 
 	// cause future ctrl+c's to panic
 	close(sigint)
-
-	currentNode.StopAndWait()
 
 	return exitCode
 }

@@ -6,9 +6,11 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -393,5 +395,77 @@ func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
+	}
+}
+
+func TestL1FundedUnsignedTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	l2Info, node, l2Client, l1Info, _, l1Client, l1Stack := createTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1Stack)
+	defer node.StopAndWait()
+
+	faucetL2Addr := util.RemapL1Address(l1Info.GetAddress("Faucet"))
+	// Transfer balance to Faucet's corresponding L2 address, so that there is
+	// enough balance on its' account for executing L2 transaction.
+	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), l2Info, l2Client, ctx)
+
+	l2TxOpts := l2Info.GetDefaultTransactOpts("Faucet", ctx)
+	contractAddr, _ := deploySimple(t, ctx, l2TxOpts, l2Client)
+	contractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	if err != nil {
+		t.Fatalf("Error parsing contract ABI: %v", err)
+	}
+	data, err := contractABI.Pack("checkCalls", true, true, false, false, false, false)
+	if err != nil {
+		t.Fatalf("Error packing method's call data: %v", err)
+	}
+	nonce, err := l2Client.NonceAt(ctx, faucetL2Addr, nil)
+	if err != nil {
+		t.Fatalf("Error getting nonce at address: %v, error: %v", faucetL2Addr, err)
+	}
+	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
+		ChainId:   l2Info.Signer.ChainID(),
+		From:      faucetL2Addr,
+		Nonce:     nonce,
+		GasFeeCap: l2Info.GasPrice,
+		Gas:       1e6,
+		To:        &contractAddr,
+		Value:     common.Big0,
+		Data:      data,
+	})
+
+	delayedInbox, err := bridgegen.NewInbox(l1Info.GetAddress("Inbox"), l1Client)
+	if err != nil {
+		t.Fatalf("Error getting Go binding of L1 Inbox contract: %v", err)
+	}
+
+	txOpts := l1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1tx, err := delayedInbox.SendUnsignedTransaction(
+		&txOpts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		arbmath.UintToBig(unsignedTx.Nonce()),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	if err != nil {
+		t.Fatalf("Error sending unsigned transaction: %v", err)
+	}
+	receipt, err := EnsureTxSucceeded(ctx, l1Client, l1tx)
+	if err != nil {
+		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", l1tx.Hash(), err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
+	}
+	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
+	receipt, err = EnsureTxSucceeded(ctx, l2Client, unsignedTx)
+	if err != nil {
+		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
 }
