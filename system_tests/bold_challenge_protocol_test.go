@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
@@ -123,8 +124,26 @@ func TestBoldProtocol(t *testing.T) {
 	err = statelessA.Start(ctx)
 	Require(t, err)
 	_ = valWalletA
+	managerA, err := staker.NewManager(ctx, valWalletA.RollupAddress(), &l1authA, bind.CallOpts{}, l2nodeA.L1Reader.Client(), statelessA, nil)
+	Require(t, err)
+	managerA.Start(ctx)
 
-	Fail(t, "bad")
+	// Continually make L2 transactions in a background thread
+	// backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
+	// backgroundTxsShutdownChan := make(chan struct{})
+	// defer (func() {
+	// 	cancelBackgroundTxs()
+	// 	<-backgroundTxsShutdownChan
+	// })()
+	// go (func() {
+	// 	defer close(backgroundTxsShutdownChan)
+	// 	err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA, l2clientB, faultyStaker)
+	// 	if !errors.Is(err, context.Canceled) {
+	// 		log.Warn("error making background txs", "err", err)
+	// 	}
+	// })()
+	time.Sleep(time.Minute)
+
 }
 
 func createTestNodeOnL1ForBoldProtocol(
