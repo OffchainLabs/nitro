@@ -39,7 +39,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -369,7 +368,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMsg < 0 {
+	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToBatch < 0 && nodeConfig.Init.ResetToBlock < 0 {
 		return 0
 	}
 
@@ -480,17 +479,25 @@ func mainImpl() int {
 
 	exitCode := 0
 
-	if err == nil && nodeConfig.Init.ResetToMsg > 0 {
-		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMsg))
+	if err == nil {
+		err = initResetToBatch(nodeConfig.Init.ResetToBatch, currentNode)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
+			log.Error("reset-to-batch: error", "err", err)
+			fatalErrChan <- fmt.Errorf("error reseting to batch: %w", err)
 			exitCode = 1
 		}
-		if nodeConfig.Init.ThenQuit {
-			close(sigint)
-
-			return exitCode
+	}
+	if err == nil {
+		err = initResetToBlock(nodeConfig.Init.ResetToBlock, currentNode)
+		if err != nil {
+			log.Error("reset-to-block: error", "err", err)
+			fatalErrChan <- fmt.Errorf("error reseting to block: %w", err)
+			exitCode = 1
 		}
+	}
+	if nodeConfig.Init.ThenQuit {
+		close(sigint)
+		return exitCode
 	}
 
 	select {
@@ -506,6 +513,56 @@ func mainImpl() int {
 	close(sigint)
 
 	return exitCode
+}
+
+func initResetToBatch(target int64, arbnode *arbnode.Node) error {
+	if target < 0 {
+		return nil
+	}
+	batchNum := uint64(target)
+	batchCount, err := arbnode.InboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	if batchCount <= batchNum {
+		log.Info("reset-to-batch: batch in the future", "requested", target, "current", batchCount)
+		return nil
+	}
+	if batchNum > 0 {
+		prevMeta, err := arbnode.InboxTracker.GetBatchMetadata(batchNum - 1)
+		if err != nil {
+			return err
+		}
+		if prevMeta.DelayedMessageCount > 0 {
+			_, err := arbnode.InboxTracker.GetDelayedMessage(prevMeta.DelayedMessageCount - 1)
+			if err != nil {
+				log.Error("reset-to-batch: failed reading previous delayed, possibly pruned. Aborting.", "delayedNum", prevMeta.DelayedMessageCount-1, "err", err)
+				return nil
+			}
+		}
+	}
+	return arbnode.InboxTracker.ReorgBatchesTo(batchNum)
+}
+
+func initResetToBlock(target int64, arbnode *arbnode.Node) error {
+	if target < 0 {
+		return nil
+	}
+	blockNum := uint64(target)
+	header := arbnode.Execution.ArbInterface.BlockChain().GetHeaderByNumber(blockNum)
+	if header == nil {
+		log.Info("reset-to-block: not found", "requested", target)
+		return nil
+	}
+	nextDelayed := header.Nonce.Uint64()
+
+	if nextDelayed > 0 {
+		_, err := arbnode.InboxTracker.GetDelayedMessage(nextDelayed - 1)
+		if err != nil {
+			log.Error("reset-to-batch: failed reading previous delayed, possibly pruned. Aborting.", "delayedNum", nextDelayed-1, "err", err)
+		}
+	}
+	return arbnode.Execution.ExecEngine.ReorgToBlockNum(blockNum)
 }
 
 type NodeConfig struct {
