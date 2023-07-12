@@ -8,6 +8,9 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
+	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
+	modes "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
+	"github.com/OffchainLabs/challenge-protocol-v2/containers"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
@@ -82,7 +85,6 @@ func TestBoldProtocol(t *testing.T) {
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 	l1authA := l1info.GetDefaultTransactOpts("Asserter", ctx)
 
-	l1info.GenerateAccount("MaliciousAsserter")
 	TransferBalance(t, "Faucet", "MaliciousAsserter", balance, l1info, l1client, ctx)
 	l1authB := l1info.GetDefaultTransactOpts("MaliciousAsserter", ctx)
 
@@ -94,12 +96,6 @@ func TestBoldProtocol(t *testing.T) {
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
 	}
-
-	edgeManagerAddr, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
-	edgeHeight, err := edgeManagerAddr.LevelZeroBlockEdgeHeight(ctx)
-	Require(t, err)
-	t.Logf("WE HAVE THE ASSERTION CHAIN: %d", edgeHeight)
 
 	t.Log("Setting the minimum assertion period")
 	rollup, err := rollupgen.NewRollupAdminLogicTransactor(assertionChain.RollupAddress(), l1client)
@@ -166,7 +162,7 @@ func TestBoldProtocol(t *testing.T) {
 
 	assertionA, err := poster.PostLatestAssertion(ctx)
 	Require(t, err)
-	t.Logf("%+v", assertionA)
+	t.Logf("Honest %s", containers.Trunc(common.Hash(assertionA.Id()).Bytes()))
 
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
@@ -191,7 +187,34 @@ func TestBoldProtocol(t *testing.T) {
 
 	assertionB, err := posterB.PostLatestAssertion(ctx)
 	Require(t, err)
-	t.Logf("%+v", assertionB)
+	t.Logf("Evil %s", containers.Trunc(common.Hash(assertionB.Id()).Bytes()))
+
+	// time.Sleep(10 * time.Second)
+	// batch, err := l2nodeA.InboxTracker.GetBatchCount()
+	// Require(t, err)
+	// accum, err := l2nodeA.InboxTracker.GetBatchAcc(batch - 1)
+	// Require(t, err)
+	// t.Logf("L2 node A has batch %d, accum %#x", batch, accum)
+
+	// batch, err = l2nodeB.InboxTracker.GetBatchCount()
+	// Require(t, err)
+	// accum, err = l2nodeB.InboxTracker.GetBatchAcc(batch - 1)
+	// Require(t, err)
+	// t.Logf("L2 node B has batch %d, accum %#x", batch, accum)
+
+	manager, err := challengemanager.New(
+		ctx,
+		assertionChain,
+		l1client,
+		stateManager,
+		assertionChain.RollupAddress(),
+		challengemanager.WithName("honest"),
+		challengemanager.WithMode(modes.WatchTowerMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(time.Second),
+	)
+	Require(t, err)
+	manager.Start(ctx)
 	// Continually make L2 transactions in a background thread
 	// backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
 	// backgroundTxsShutdownChan := make(chan struct{})
@@ -299,12 +322,14 @@ func deployBoldProtocolContracts(
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 	l1info.GenerateAccount("Asserter")
+	l1info.GenerateAccount("MaliciousAsserter")
 
 	SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
 		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Asserter", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "MaliciousAsserter", 30000, big.NewInt(9223372036854775807), nil),
 	})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -357,6 +382,7 @@ func deployBoldProtocolContracts(
 	l1info.SetContract("Inbox", addresses.Inbox)
 
 	asserter := l1info.GetDefaultTransactOpts("Asserter", ctx)
+	maliciousAsserter := l1info.GetDefaultTransactOpts("MaliciousAsserter", ctx)
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
 		addresses.Rollup,
@@ -379,6 +405,16 @@ func deployBoldProtocolContracts(
 	Require(t, err)
 	EnsureTxSucceeded(ctx, backend, tx)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, chalManagerAddr, value)
+	Require(t, err)
+	EnsureTxSucceeded(ctx, backend, tx)
+
+	tx, err = tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, maliciousAsserter.From, seed)
+	Require(t, err)
+	EnsureTxSucceeded(ctx, backend, tx)
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(&maliciousAsserter, addresses.Rollup, value)
+	Require(t, err)
+	EnsureTxSucceeded(ctx, backend, tx)
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(&maliciousAsserter, chalManagerAddr, value)
 	Require(t, err)
 	EnsureTxSucceeded(ctx, backend, tx)
 

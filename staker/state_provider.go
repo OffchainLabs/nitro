@@ -49,14 +49,15 @@ func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidato
 // Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
 // validated / syncing.
 func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
-	if state.MachineStatus != protocol.MachineStatusRunning {
-		return 0, errors.New("state is not running")
-	}
+	// if state.MachineStatus != protocol.MachineStatusRunning {
+	// 	return 0, errors.New("state is not running")
+	// }
+	fmt.Printf("Checking batch message count for state: %+v\n", state)
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch)
 	if err != nil {
 		return 0, err
 	}
-	validatedExecutionState, err := s.ExecutionStateAtMessageNumber(ctx, uint64(messageCount))
+	validatedExecutionState, err := s.ExecutionStateAtMessageNumber(ctx, uint64(messageCount)-1)
 	if err != nil {
 		return 0, err
 	}
@@ -81,6 +82,7 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	if err != nil {
 		return 0, err
 	}
+	fmt.Printf("Checking validator streamer response %+v against state %+v\n", res, state)
 	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
 		return 0, l2stateprovider.ErrNoExecutionState
 	}
