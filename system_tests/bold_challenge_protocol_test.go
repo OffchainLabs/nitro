@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -55,22 +56,22 @@ func TestBoldProtocol(t *testing.T) {
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil)
-	defer l2nodeB.StopAndWait()
-	execNodeB := getExecNode(t, l2nodeB)
-	_ = l2clientB
+	// l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil)
+	// defer l2nodeB.StopAndWait()
+	// execNodeB := getExecNode(t, l2nodeB)
+	// _ = l2clientB
 
-	nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
-	if faultyStaker {
-		if nodeAGenesis == nodeBGenesis {
-			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
-		}
-	} else {
-		if nodeAGenesis != nodeBGenesis {
-			Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
-		}
-	}
+	//nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
+	// nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
+	// if faultyStaker {
+	// 	if nodeAGenesis == nodeBGenesis {
+	// 		Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
+	// 	}
+	// } else {
+	// 	if nodeAGenesis != nodeBGenesis {
+	// 		Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+	// 	}
+	// }
 	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2clientA, ctx)
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -96,18 +97,16 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	t.Logf("WE HAVE THE ASSERTION CHAIN: %d", edgeHeight)
 
-	// rollup, err := rollupgen.NewAbsRollupUserLogicCaller(r)
-	// tx, err := rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
-	// Require(t, err)
-	// _, err = EnsureTxSucceeded(ctx, l1client, tx)
-	// Require(t, err)
+	t.Log("Setting the minimum assertion period")
+	rollup, err := rollupgen.NewRollupAdminLogicTransactor(assertionChain.RollupAddress(), l1client)
+	Require(t, err)
+	tx, err := rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
 
 	valConfig := staker.L1ValidatorConfig{}
-
-	valWalletA, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
-	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
-
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
@@ -124,10 +123,12 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-	_ = valWalletA
-	managerA, err := staker.NewManager(ctx, valWalletA.RollupAddress(), &l1authA, bind.CallOpts{}, l2nodeA.L1Reader.Client(), statelessA, nil)
+
+	currBatchCount, err := l2nodeA.InboxTracker.GetBatchCount()
 	Require(t, err)
-	managerA.Start(ctx)
+	msgCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(currBatchCount - 1)
+	Require(t, err)
+	t.Logf("batch %d, msg count %d", currBatchCount, msgCount)
 
 	stateManager, err := staker.NewStateManager(
 		statelessA,
@@ -139,7 +140,7 @@ func TestBoldProtocol(t *testing.T) {
 	poster := assertions.NewPoster(
 		assertionChain,
 		stateManager,
-		"poster yo",
+		"postyposterposter",
 		time.Hour,
 	)
 

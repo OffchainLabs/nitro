@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -27,10 +27,6 @@ var (
 		{Type: b32Arr, Name: "prefixExpansion"},
 		{Type: b32Arr, Name: "prefixProof"},
 	}
-)
-
-var (
-	ErrAccumulatorNotFound = errors.New("accumulator not found")
 )
 
 type StateManager struct {
@@ -141,6 +137,7 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 
 // ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
 func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
+	fmt.Println("Searching for batch after message count", messageNumber)
 	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
 	if err != nil {
 		return &protocol.ExecutionState{}, err
@@ -158,7 +155,7 @@ func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messag
 	}
 	return &protocol.ExecutionState{
 		GlobalState:   protocol.GoGlobalState(globalState),
-		MachineStatus: protocol.MachineStatusRunning,
+		MachineStatus: protocol.MachineStatusFinished, // TODO: Why hardcode?
 	}, nil
 }
 
@@ -588,7 +585,11 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 		return 0, nil
 	}
 	low := uint64(0)
-	high := uint64(math.MaxUint64)
+	batchCount, err := s.validator.inboxTracker.GetBatchCount()
+	if err != nil {
+		return 0, err
+	}
+	high := batchCount
 	for {
 		// Binary search invariants:
 		//   - messageCount(high) >= msgCount
@@ -600,7 +601,9 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 		mid := (low + high) / 2
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(mid)
 		if err != nil {
-			if errors.Is(err, ErrAccumulatorNotFound) {
+			// TODO: There is a circular dep with the error in inbox_tracker.go, we
+			// should move it somewhere else and use errors.Is.
+			if strings.Contains(err.Error(), "accumulator not found") {
 				high = mid
 			} else {
 				return 0, fmt.Errorf("failed to get batch metadata while binary searching: %w", err)
