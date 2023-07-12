@@ -209,7 +209,7 @@ func TestBoldProtocol(t *testing.T) {
 		stateManager,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("honest"),
-		challengemanager.WithMode(modes.WatchTowerMode),
+		challengemanager.WithMode(modes.DefensiveMode),
 		challengemanager.WithAssertionPostingInterval(time.Hour),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 	)
