@@ -45,54 +45,6 @@ func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidato
 	}, nil
 }
 
-// LatestExecutionState Produces the latest state to assert to L1 from the local state manager's perspective.
-func (s *StateManager) LatestExecutionState(ctx context.Context) (*protocol.ExecutionState, error) {
-	var validatedGlobalState validator.GoGlobalState
-	if s.blockValidator != nil {
-		valInfo, err := s.blockValidator.ReadLastValidatedInfo()
-		if err != nil {
-			return nil, err
-		}
-		validatedGlobalState = valInfo.GlobalState
-	} else {
-		validatedCount, err := s.validator.streamer.GetProcessedMessageCount()
-		if err != nil || validatedCount == 0 {
-			return nil, err
-		}
-		var batchNum uint64
-		localBatchCount, err := s.validator.inboxTracker.GetBatchCount()
-		if err != nil {
-			return nil, fmt.Errorf("error getting batch count from inbox tracker: %w", err)
-		}
-		messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
-		if err != nil {
-			return nil, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
-		}
-		if validatedCount >= messageCount {
-			batchNum = localBatchCount - 1
-			validatedCount = messageCount
-		} else {
-			batchNum, err = s.validator.inboxTracker.FindL1BatchForMessage(validatedCount - 1)
-			if err != nil {
-				return nil, err
-			}
-		}
-		execResult, err := s.validator.streamer.ResultAtCount(validatedCount)
-		if err != nil {
-			return nil, err
-		}
-		_, gsPos, err := GlobalStatePositionsAtCount(s.validator.inboxTracker, validatedCount, batchNum)
-		if err != nil {
-			return nil, fmt.Errorf("%w: failed calculating GSposition for count %d", err, validatedCount)
-		}
-		validatedGlobalState = buildGlobalState(*execResult, gsPos)
-	}
-	return &protocol.ExecutionState{
-		GlobalState:   protocol.GoGlobalState(validatedGlobalState),
-		MachineStatus: protocol.MachineStatusRunning,
-	}, nil
-}
-
 // ExecutionStateMsgCount If the state manager locally has this validated execution state.
 // Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
 // validated / syncing.
