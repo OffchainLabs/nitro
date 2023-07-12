@@ -64,7 +64,7 @@ func (m *MessagePruner) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
 }
 
-func (m *MessagePruner) UpdateLatestStaked(count arbutil.MessageIndex, globalState validator.GoGlobalState) {
+func (m *MessagePruner) UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState) {
 	locked := m.pruningLock.TryLock()
 	if !locked {
 		return

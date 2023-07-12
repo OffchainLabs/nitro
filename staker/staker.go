@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -30,6 +31,7 @@ var (
 	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
 	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
+	stakerLatestConfirmedNodeGauge  = metrics.NewRegisteredGauge("arb/staker/confirmed_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
 	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
 	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
@@ -195,11 +197,16 @@ type LatestStakedNotifier interface {
 	UpdateLatestStaked(count arbutil.MessageIndex, globalState validator.GoGlobalState)
 }
 
+type LatestConfirmedNotifier interface {
+	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState)
+}
+
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
 	l1Reader                L1ReaderInterface
-	notifiers               []LatestStakedNotifier
+	stakedNotifiers         []LatestStakedNotifier
+	confirmedNotifiers      []LatestConfirmedNotifier
 	activeChallenge         *ChallengeManager
 	baseCallOpts            bind.CallOpts
 	config                  L1ValidatorConfig
@@ -219,7 +226,8 @@ func NewStaker(
 	config L1ValidatorConfig,
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
-	notifiers []LatestStakedNotifier,
+	stakedNotifiers []LatestStakedNotifier,
+	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
@@ -235,12 +243,13 @@ func NewStaker(
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 	if config.StartFromStaked {
-		notifiers = append(notifiers, blockValidator)
+		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
-		notifiers:               notifiers,
+		stakedNotifiers:         stakedNotifiers,
+		confirmedNotifiers:      confirmedNotifiers,
 		baseCallOpts:            callOpts,
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
@@ -280,8 +289,42 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	return nil
 }
 
+func (s *Staker) latestNodeDetailsForUpdate(ctx context.Context, description string, node uint64) (arbutil.MessageIndex, *validator.GoGlobalState, error) {
+	stakedInfo, err := s.rollup.LookupNode(ctx, node)
+	if err != nil {
+		return 0, nil, fmt.Errorf("couldn't look up latest %v assertion %v: %w", description, node, err)
+	}
+
+	globalState := stakedInfo.AfterState().GlobalState
+	caughtUp, count, err := GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, globalState)
+	if err != nil {
+		if errors.Is(err, ErrGlobalStateNotInChain) && s.fatalErr != nil {
+			fatal := fmt.Errorf("latest %v assertion %v not in chain: %w", description, node, err)
+			s.fatalErr <- fatal
+		}
+		return 0, nil, fmt.Errorf("latest %v assertion %v: %w", description, node, err)
+	}
+
+	if !caughtUp {
+		log.Info(fmt.Sprintf("latest %v assertion not yet in our node", description), "assertion", node, "state", globalState)
+		return 0, nil, nil
+	}
+
+	processedCount, err := s.txStreamer.GetProcessedMessageCount()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if processedCount < count {
+		log.Info("execution catching up to rollup", "lookingFor", description, "rollupCount", count, "processedCount", processedCount)
+		return 0, nil, nil
+	}
+
+	return count, &globalState, nil
+}
+
 func (s *Staker) checkLatestStaked(ctx context.Context) error {
-	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+	latestStaked, _, err := s.validatorUtils.LatestStaked(s.getCallOpts(ctx), s.rollupAddress, s.wallet.AddressOrZero())
 	if err != nil {
 		return fmt.Errorf("couldn't get LatestStaked: %w", err)
 	}
@@ -290,38 +333,44 @@ func (s *Staker) checkLatestStaked(ctx context.Context) error {
 		return nil
 	}
 
-	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
-	if err != nil {
-		return fmt.Errorf("couldn't look up latest node: %w", err)
-	}
-
-	stakedGlobalState := stakedInfo.AfterState().GlobalState
-	caughtUp, count, err := GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, stakedGlobalState)
-	if err != nil {
-		if errors.Is(err, ErrGlobalStateNotInChain) && s.fatalErr != nil {
-			fatal := fmt.Errorf("latest staked not in chain: %w", err)
-			s.fatalErr <- fatal
-		}
-		return fmt.Errorf("staker: latest staked %w", err)
-	}
-
-	if !caughtUp {
-		log.Info("latest valid not yet in our node", "staked", stakedGlobalState)
-		return nil
-	}
-
-	processedCount, err := s.txStreamer.GetProcessedMessageCount()
+	count, globalState, err := s.latestNodeDetailsForUpdate(ctx, "staked", latestStaked)
 	if err != nil {
 		return err
 	}
-
-	if processedCount < count {
-		log.Info("execution catching up to last validated", "validatedCount", count, "processedCount", processedCount)
+	if globalState == nil {
 		return nil
 	}
 
-	for _, notifier := range s.notifiers {
-		notifier.UpdateLatestStaked(count, stakedGlobalState)
+	for _, notifier := range s.stakedNotifiers {
+		notifier.UpdateLatestStaked(count, *globalState)
+	}
+	return nil
+}
+
+func (s *Staker) checkLatestConfirmed(ctx context.Context) error {
+	callOpts := s.getCallOpts(ctx)
+	if s.l1Reader.UseFinalityData() {
+		callOpts.BlockNumber = big.NewInt(int64(rpc.FinalizedBlockNumber))
+	}
+	latestConfirmed, err := s.rollup.LatestConfirmed(callOpts)
+	if err != nil {
+		return fmt.Errorf("couldn't get LatestConfirmed: %w", err)
+	}
+	stakerLatestConfirmedNodeGauge.Update(int64(latestConfirmed))
+	if latestConfirmed == 0 {
+		return nil
+	}
+
+	count, globalState, err := s.latestNodeDetailsForUpdate(ctx, "confirmed", latestConfirmed)
+	if err != nil {
+		return err
+	}
+	if globalState == nil {
+		return nil
+	}
+
+	for _, notifier := range s.confirmedNotifiers {
+		notifier.UpdateLatestConfirmed(count, *globalState)
 	}
 	return nil
 }
@@ -384,6 +433,13 @@ func (s *Staker) Start(ctxIn context.Context) {
 		err := s.checkLatestStaked(ctx)
 		if err != nil && ctx.Err() == nil {
 			log.Error("staker: error checking latest staked", "err", err)
+		}
+		return s.config.StakerInterval
+	})
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		err := s.checkLatestConfirmed(ctx)
+		if err != nil && ctx.Err() == nil {
+			log.Error("staker: error checking latest confirmed", "err", err)
 		}
 		return s.config.StakerInterval
 	})
