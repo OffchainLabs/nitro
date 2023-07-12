@@ -56,22 +56,22 @@ func TestBoldProtocol(t *testing.T) {
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	// l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil)
-	// defer l2nodeB.StopAndWait()
-	// execNodeB := getExecNode(t, l2nodeB)
-	// _ = l2clientB
+	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil)
+	defer l2nodeB.StopAndWait()
+	execNodeB := getExecNode(t, l2nodeB)
+	_ = l2clientB
 
-	//nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
-	// nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
-	// if faultyStaker {
-	// 	if nodeAGenesis == nodeBGenesis {
-	// 		Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
-	// 	}
-	// } else {
-	// 	if nodeAGenesis != nodeBGenesis {
-	// 		Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
-	// 	}
-	// }
+	nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
+	if faultyStaker {
+		if nodeAGenesis == nodeBGenesis {
+			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
+		}
+	} else {
+		if nodeAGenesis != nodeBGenesis {
+			Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+		}
+	}
 	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2clientA, ctx)
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -81,6 +81,10 @@ func TestBoldProtocol(t *testing.T) {
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 	l1authA := l1info.GetDefaultTransactOpts("Asserter", ctx)
+
+	l1info.GenerateAccount("MaliciousAsserter")
+	TransferBalance(t, "Faucet", "MaliciousAsserter", balance, l1info, l1client, ctx)
+	l1authB := l1info.GetDefaultTransactOpts("MaliciousAsserter", ctx)
 
 	valWalletAddrAPtr, err := staker.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
@@ -124,6 +128,22 @@ func TestBoldProtocol(t *testing.T) {
 	err = statelessA.Start(ctx)
 	Require(t, err)
 
+	// valWalletB, err := staker.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
+	// Require(t, err)
+	statelessB, err := staker.NewStatelessBlockValidator(
+		l2nodeB.InboxReader,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		execNodeB,
+		l2nodeB.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
+	)
+	Require(t, err)
+	err = statelessB.Start(ctx)
+	Require(t, err)
+
 	currBatchCount, err := l2nodeA.InboxTracker.GetBatchCount()
 	Require(t, err)
 	msgCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(currBatchCount - 1)
@@ -144,9 +164,34 @@ func TestBoldProtocol(t *testing.T) {
 		time.Hour,
 	)
 
-	assertion, err := poster.PostLatestAssertion(ctx)
+	assertionA, err := poster.PostLatestAssertion(ctx)
 	Require(t, err)
-	t.Logf("ASLKJDKLAJSKLDJKLAJSDLKJ %+v", assertion)
+	t.Logf("%+v", assertionA)
+
+	stateManagerB, err := staker.NewStateManager(
+		statelessB,
+		nil,
+		32,
+		32*32,
+	)
+	Require(t, err)
+	chainB, err := solimpl.NewAssertionChain(
+		ctx,
+		assertionChain.RollupAddress(),
+		&l1authB,
+		l1client,
+	)
+	Require(t, err)
+	posterB := assertions.NewPoster(
+		chainB,
+		stateManagerB,
+		"postyposterposter2",
+		time.Hour,
+	)
+
+	assertionB, err := posterB.PostLatestAssertion(ctx)
+	Require(t, err)
+	t.Logf("%+v", assertionB)
 	// Continually make L2 transactions in a background thread
 	// backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
 	// backgroundTxsShutdownChan := make(chan struct{})
