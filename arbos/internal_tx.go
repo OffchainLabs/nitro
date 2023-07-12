@@ -114,8 +114,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			if err != nil {
 				log.Error("Failed to try rotating expired root snapshots", "err", err)
 			} else if newRootSnapshot != nil {
-				// TODO(magic) do we want to emit current time? it could be sourced later on based on block number in log, but probably would require query for the block header
-				if err = EmitExpiredMerkleRootSnapshotEvent(evm, *newRootSnapshot, expiredSize, currentTime); err != nil {
+				if err = EmitExpiredMerkleRootSnapshotEvent(evm, *newRootSnapshot, expiredSize); err != nil {
 					log.Error("Failed to emit ExpiredMerkleRootSnapshot event", "err", err)
 				}
 			}
