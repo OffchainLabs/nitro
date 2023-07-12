@@ -175,10 +175,6 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	return nil
 }
 
-func (s *TransactionStreamer) ReorgTo(count arbutil.MessageIndex) error {
-	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
-}
-
 func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()

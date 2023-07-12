@@ -81,7 +81,7 @@ type blockTestState struct {
 func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 
-	exec, inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
+	exec, inbox, db, bc := NewTransactionStreamerForTest(t, ownerAddress)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -106,7 +106,7 @@ func TestTransactionStreamer(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
-			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
+			err := inbox.ReorgToAndEndBatch(db.NewBatch(), blockStates[reorgTo].numMessages)
 			if err != nil {
 				Fail(t, err)
 			}

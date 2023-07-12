@@ -48,7 +48,7 @@ func TestReorgResequencing(t *testing.T) {
 	}
 	verifyBalances("before reorg")
 
-	err = node.TxStreamer.ReorgTo(startMsgCount)
+	err = node.TxStreamer.ReorgToAndEndBatch(node.ArbDB.NewBatch(), startMsgCount)
 	Require(t, err)
 
 	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
@@ -82,7 +82,7 @@ func TestReorgResequencing(t *testing.T) {
 	accountsWithBalance = append(accountsWithBalance, "User4")
 	verifyBalances("after reorg with new deposit")
 
-	err = node.TxStreamer.ReorgTo(startMsgCount)
+	err = node.TxStreamer.ReorgToAndEndBatch(node.ArbDB.NewBatch(), startMsgCount)
 	Require(t, err)
 
 	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
