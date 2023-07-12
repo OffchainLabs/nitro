@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
@@ -128,6 +129,23 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	managerA.Start(ctx)
 
+	stateManager, err := staker.NewStateManager(
+		statelessA,
+		nil,
+		32,
+		32*32,
+	)
+	Require(t, err)
+	poster := assertions.NewPoster(
+		assertionChain,
+		stateManager,
+		"poster yo",
+		time.Hour,
+	)
+
+	assertion, err := poster.PostLatestAssertion(ctx)
+	Require(t, err)
+	t.Logf("ASLKJDKLAJSKLDJKLAJSDLKJ %+v", assertion)
 	// Continually make L2 transactions in a background thread
 	// backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
 	// backgroundTxsShutdownChan := make(chan struct{})
