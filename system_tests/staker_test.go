@@ -149,8 +149,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution.ArbInterface.BlockChain(),
-		l2nodeA.Execution.ChainDB,
+		l2nodeA.Execution.Recorder,
 		l2nodeA.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -166,7 +165,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
@@ -183,8 +184,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution.ArbInterface.BlockChain(),
-		l2nodeB.Execution.ChainDB,
+		l2nodeB.Execution.Recorder,
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -200,7 +200,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessB,
+		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
@@ -220,7 +222,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	if stakerC.Strategy() != staker.WatchtowerStrategy {
@@ -290,7 +294,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
-			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after block -1 expected global state") {
+			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after msg 0 expected global state") {
 				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
@@ -318,7 +322,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				}
 			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
 				// Expected error when trying to re-stake after losing initial stake.
-			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+			} else if strings.Contains(err.Error(), "start state not in chain") && sawStakerZombie {
 				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
 			} else if strings.Contains(err.Error(), "STAKER_IS_ZOMBIE") && sawStakerZombie {
 				// Expected error when the staker is a zombie and thus can't advance its stake.

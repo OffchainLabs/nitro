@@ -127,7 +127,7 @@ func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 			return common.Hash{}, err
 		}
 		if !hasKey {
-			return common.Hash{}, AccumulatorNotFoundErr
+			return common.Hash{}, fmt.Errorf("%w: not found delayed %d", AccumulatorNotFoundErr, seqNum)
 		}
 	}
 	data, err := t.db.Get(key)
@@ -175,7 +175,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 		return BatchMetadata{}, err
 	}
 	if !hasKey {
-		return BatchMetadata{}, AccumulatorNotFoundErr
+		return BatchMetadata{}, fmt.Errorf("%w: no metadata for batch %d", AccumulatorNotFoundErr, seqNum)
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -693,18 +693,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		t.batchMeta.Add(seqNum, meta)
 	}
 	t.batchMetaMutex.Unlock()
-
-	if t.validator != nil {
-		batchBytes := make([][]byte, 0, len(batches))
-		for _, batch := range batches {
-			msg, err := batch.Serialize(ctx, client)
-			if err != nil {
-				return err
-			}
-			batchBytes = append(batchBytes, msg)
-		}
-		t.validator.ProcessBatches(startPos, batchBytes)
-	}
 
 	if t.txStreamer.broadcastServer != nil && pos > 1 {
 		prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
