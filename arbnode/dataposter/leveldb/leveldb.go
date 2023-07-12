@@ -48,6 +48,7 @@ func idxToKey(idx uint64) []byte {
 func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	var res []*Item
 	it := s.db.NewIterator([]byte(""), idxToKey(startingIndex))
+	defer it.Release()
 	for i := 0; i < int(maxResults); i++ {
 		if !it.Next() {
 			break
@@ -91,6 +92,7 @@ func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error 
 	}
 	end := idxToKey(keepStartingAt)
 	it := s.db.NewIterator([]byte{}, idxToKey(0))
+	defer it.Release()
 	b := s.db.NewBatch()
 	for it.Next() {
 		if bytes.Compare(it.Key(), end) >= 0 {
