@@ -163,7 +163,7 @@ func TestGetLast(t *testing.T) {
 			ctx := context.Background()
 			for i := 0; i < cnt-1; i++ {
 				prev := strconv.Itoa(i)
-				newVal := strconv.Itoa(cnt + i)
+				newVal := strconv.Itoa(i * 2)
 				if err := s.Put(ctx, uint64(i), &prev, &newVal); err != nil {
 					t.Fatalf("Error putting a key/value: %v, prev: %v, new: %v", err, prev, newVal)
 				}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/go-redis/redis/v8"
@@ -20,6 +21,12 @@ type Storage[Item any] struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac
 	key    string
+	// Atomic index used for padding every value with unique constant sized
+	// string, so that we can have duplicate valueus.
+	// Redis doesn't natively allow this: https://redis.io/commands/zadd/, when
+	// specified member (of ZADD) is already a member of sorted set, it updates
+	// score and reinserts at the right position.
+	idx atomic.Int32
 }
 
 func NewStorage[Item any](client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*Storage[Item], error) {
@@ -27,7 +34,7 @@ func NewStorage[Item any](client redis.UniversalClient, key string, signerConf *
 	if err != nil {
 		return nil, err
 	}
-	return &Storage[Item]{client, signer, key}, nil
+	return &Storage[Item]{client, signer, key, atomic.Int32{}}, nil
 }
 
 func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
@@ -63,7 +70,7 @@ func (s *Storage[Item]) GetContents(ctx context.Context, startingIndex uint64, m
 	var items []*Item
 	for _, itemString := range itemStrings {
 		var item Item
-		data, err := s.peelVerifySignature([]byte(itemString))
+		data, err := s.peelVerifySignature([]byte(s.trimPadding(itemString)))
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +100,7 @@ func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	var ret *Item
 	if len(itemStrings) > 0 {
 		var item Item
-		data, err := s.peelVerifySignature([]byte(itemStrings[0]))
+		data, err := s.peelVerifySignature([]byte(s.trimPadding(itemStrings[0])))
 		if err != nil {
 			return nil, err
 		}
@@ -113,6 +120,14 @@ func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error 
 	return nil
 }
 
+func (s *Storage[Item]) withUniquePadding(val string) string {
+	return fmt.Sprintf("%s%20d", val, s.idx.Add(1))
+}
+
+func (s *Storage[Item]) trimPadding(val string) string {
+	return val[:len(val)-20]
+}
+
 func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
 	if newItem == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
@@ -124,20 +139,21 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, n
 			Start:   index,
 			Stop:    index,
 		}
-		haveItems, err := s.client.ZRangeArgs(ctx, query).Result()
+		values, err := s.client.ZRangeArgs(ctx, query).Result()
 		if err != nil {
 			return err
 		}
 		pipe := tx.TxPipeline()
-		if len(haveItems) == 0 {
-			if prevItem != nil {
-				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", storage.ErrStorageRace, index)
-			}
-		} else if len(haveItems) == 1 {
+		switch size := len(values); {
+		case size > 1:
+			return fmt.Errorf("expected only one return value for Put but got %v", len(values))
+		case size == 0 && prevItem != nil:
+			return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", storage.ErrStorageRace, index)
+		case size == 1:
 			if prevItem == nil {
 				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", storage.ErrStorageRace, index)
 			}
-			verifiedItem, err := s.peelVerifySignature([]byte(haveItems[0]))
+			verifiedItem, err := s.peelVerifySignature([]byte(s.trimPadding(values[0])))
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
 			}
@@ -148,12 +164,10 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, n
 			if !bytes.Equal(verifiedItem, prevItemEncoded) {
 				return fmt.Errorf("%w: replacing different item than expected at index %v", storage.ErrStorageRace, index)
 			}
-			err = pipe.ZRem(ctx, s.key, haveItems[0]).Err()
-			if err != nil {
+			i := fmt.Sprintf("%v", index)
+			if err := pipe.ZRemRangeByScore(ctx, s.key, i, i).Err(); err != nil {
 				return err
 			}
-		} else {
-			return fmt.Errorf("expected only one return value for Put but got %v", len(haveItems))
 		}
 		newItemEncoded, err := rlp.EncodeToBytes(*newItem)
 		if err != nil {
@@ -167,15 +181,12 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, n
 		if err != nil {
 			return err
 		}
-		err = pipe.ZAdd(ctx, s.key, &redis.Z{
-			Score:  float64(index),
-			Member: string(signedItem),
-		}).Err()
-		if err != nil {
+		if err := pipe.ZAdd(ctx, s.key,
+			&redis.Z{Score: float64(index),
+				Member: s.withUniquePadding(string(signedItem))}).Err(); err != nil {
 			return err
 		}
-		_, err = pipe.Exec(ctx)
-		if errors.Is(err, redis.TxFailedErr) {
+		if _, err = pipe.Exec(ctx); errors.Is(err, redis.TxFailedErr) {
 			// Unfortunately, we can't wrap two errors.
 			//nolint:errorlint
 			err = fmt.Errorf("%w: %v", storage.ErrStorageRace, err.Error())
