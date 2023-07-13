@@ -984,9 +984,12 @@ func (v *BlockValidator) checkLegacyValid() error {
 		log.Warn("legacy valid batch ahead of db", "current", batchCount, "required", requiredBatchCount)
 		return nil
 	}
-	msgCount, err := v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber)
-	if err != nil {
-		return err
+	var msgCount arbutil.MessageIndex
+	if v.legacyValidInfo.AfterPosition.BatchNumber > 0 {
+		msgCount, err = v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber - 1)
+		if err != nil {
+			return err
+		}
 	}
 	msgCount += arbutil.MessageIndex(v.legacyValidInfo.AfterPosition.PosInBatch)
 	processedCount, err := v.streamer.GetProcessedMessageCount()
