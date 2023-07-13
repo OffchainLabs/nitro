@@ -5,8 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/validator"
 	"math/big"
 	"reflect"
 	"testing"
@@ -302,4 +304,38 @@ func TestExecutionStateAtMessageNumber(t *testing.T) {
 		Fail(t, "Unexpected executionState", executionState, "(expected ", expectedState, ")")
 	}
 	Require(t, err)
+}
+
+func TestHistoryCommitmentUpTo(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tracker, streamer := setupInboxTracker(t, ctx)
+	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), 0, 0)
+	Require(t, err)
+	res0, err := streamer.ResultAtCount(0)
+	Require(t, err)
+	res1, err := streamer.ResultAtCount(1)
+	Require(t, err)
+	expectedHistoryCommitment, err := commitments.New(
+		[]common.Hash{
+			validator.GoGlobalState{
+				BlockHash:  res0.BlockHash,
+				SendRoot:   res0.SendRoot,
+				Batch:      0,
+				PosInBatch: 0,
+			}.Hash(),
+			validator.GoGlobalState{
+				BlockHash:  res1.BlockHash,
+				SendRoot:   res1.SendRoot,
+				Batch:      1,
+				PosInBatch: 0,
+			}.Hash(),
+		},
+	)
+	Require(t, err)
+	historyCommitment, err := manager.HistoryCommitmentUpTo(ctx, 1)
+	Require(t, err)
+	if !reflect.DeepEqual(historyCommitment, expectedHistoryCommitment) {
+		Fail(t, "Unexpected HistoryCommitment", historyCommitment, "(expected ", expectedHistoryCommitment, ")")
+	}
 }
