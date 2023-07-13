@@ -110,13 +110,9 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			snapshot = evm.StateDB.Snapshot()
 		}
 		if err == nil {
-			newRootSnapshot, expiredSize, err := state.RetryableState().TryRotatingExpiredRootSnapshots(currentTime)
+			err := state.RetryableState().TryRotatingExpiredRootSnapshots(currentTime)
 			if err != nil {
 				log.Error("Failed to try rotating expired root snapshots", "err", err)
-			} else if newRootSnapshot != nil {
-				if err = EmitExpiredMerkleRootSnapshotEvent(evm, *newRootSnapshot, expiredSize); err != nil {
-					log.Error("Failed to emit ExpiredMerkleRootSnapshot event", "err", err)
-				}
 			}
 		}
 

@@ -19,8 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
-// set by the precompile module, to avoid a package dependence cycle
-
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
 const ExpiredSnapshotsCapacity = 2
@@ -53,7 +51,8 @@ func InitializeRetryableState(sto *storage.Storage) error {
 	if err := storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey)); err != nil {
 		return err
 	}
-	return storage.InitializeRingBuffer(sto.OpenSubStorage(expiredSnapshotsKey), ExpiredSnapshotsCapacity)
+	// RingBuffer of size 2 * ExpiredSnapshotsCapacity, holds sequence of tree sizes and root hashes, tree size inserted before corresponding root hash
+	return storage.InitializeRingBuffer(sto.OpenSubStorage(expiredSnapshotsKey), 2*ExpiredSnapshotsCapacity)
 }
 
 func OpenRetryableState(sto *storage.Storage) *RetryableState {
@@ -366,12 +365,10 @@ func (rs *RetryableState) Revive(
 	timeToAdd uint64,
 ) (uint64, error) {
 	var found bool
-	err := rs.expiredSnapshots.ForEach(func(_ uint64, previousRoot common.Hash) (bool, error) {
-		if bytes.Equal(rootHash.Bytes(), previousRoot.Bytes()) {
-			found = true
-		}
-		return !found, nil
-	})
+	err := rs.expiredSnapshots.ForSome(func(_ uint64, previousRoot common.Hash) (bool, error) {
+		found = bytes.Equal(rootHash.Bytes(), previousRoot.Bytes())
+		return found, nil
+	}, 1, 2)
 	if err != nil {
 		return 0, err
 	}
@@ -548,28 +545,43 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	return nil, nil, windowsLeftStorage.Set(windowsLeft - 1)
 }
 
-func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) (*common.Hash, uint64, error) {
-	var rotatedRoot *common.Hash
-	err := rs.expiredSnapshots.RotateAndSetExtraConditionaly(func(timestamp uint64) (bool, common.Hash, uint64, error) {
-		var err error
-		if timestamp < currentTime && currentTime-timestamp > ExpiredSnapshotsRotationIntervalSeconds {
-			var root common.Hash
-			root, err = rs.Expired.Root()
-			if err == nil {
-				rotatedRoot = &root
-				return true, root, currentTime, nil
+func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) error {
+	lastRotation, err := rs.expiredSnapshots.Extra()
+	if err != nil {
+		return err
+	}
+	if lastRotation < currentTime && currentTime-lastRotation > ExpiredSnapshotsRotationIntervalSeconds {
+		currentRoot, err := rs.Expired.Root()
+		if err != nil {
+			return err
+		}
+		lastRoot, err := rs.expiredSnapshots.Peek()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(currentRoot.Bytes(), lastRoot.Bytes()) {
+			size, err := rs.Expired.Size()
+			if err != nil {
+				return err
+			}
+			if err = rs.expiredSnapshots.RotateN([]common.Hash{util.UintToHash(size), currentRoot}); err != nil {
+				return err
 			}
 		}
-		return false, common.Hash{}, 0, err
-	})
-	if err != nil {
-		return nil, 0, err
+		err = rs.expiredSnapshots.SetExtra(currentTime)
+		if err != nil {
+			return err
+		}
 	}
-	size, err := rs.Expired.Size()
+	return nil
+}
+
+func (rs *RetryableState) LastExpiredRootSnapshot() (common.Hash, uint64, error) {
+	values, err := rs.expiredSnapshots.PeekN(2)
 	if err != nil {
-		return nil, 0, err
+		return common.Hash{}, 0, err
 	}
-	return rotatedRoot, size, nil
+	return values[0], values[1].Big().Uint64(), nil
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {

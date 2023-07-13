@@ -128,11 +128,8 @@ func TestRetryableLifecycle(t *testing.T) {
 		// check that our reap pricing is reflective of the true cost
 		gasBefore := burner.Burned()
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
-		_, leaf, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		_, _, err := retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		Require(t, err)
-		if leaf != nil {
-			Fail(t, "Leaf! ", leaf)
-		}
 		gasBurnedToReap := burner.Burned() - gasBefore
 		if gasBurnedToReap != retryables.RetryableReapPrice {
 			Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPrice)

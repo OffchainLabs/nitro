@@ -198,7 +198,6 @@ func (con ArbRetryableTx) Revive(c ctx, evm mech,
 	leafIndex uint64,
 	proof []bytes32,
 ) (huge, error) {
-	// TODO(magic) verify gas accounting
 	proofHashes := make([]common.Hash, len(proof))
 	for i, proofBytes := range proof {
 		proofHashes[i] = proofBytes
@@ -210,6 +209,11 @@ func (con ArbRetryableTx) Revive(c ctx, evm mech,
 	}
 	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
 	return big.NewInt(int64(newTimeout)), err
+}
+
+func (con ArbRetryableTx) GetLastExpiredRootSnapshot(c ctx, evm mech) (hash, uint64, error) {
+	retryableState := c.State.RetryableState()
+	return retryableState.LastExpiredRootSnapshot()
 }
 
 // GetBeneficiary gets the beneficiary of the ticket

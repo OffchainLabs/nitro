@@ -1,9 +1,13 @@
 package storage
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+var ErrNotEnoughElements = errors.New("not enough elements")
 
 type RingBuffer struct {
 	storage *Storage
@@ -38,10 +42,15 @@ func (h *ringHeader) first() uint64 {
 }
 
 func (h *ringHeader) nextIndex(index uint64) uint64 {
-	if index == h.capacity {
-		return 1
+	return h.nextIndexN(index, 1)
+}
+
+func (h *ringHeader) nextIndexN(index uint64, n uint64) uint64 {
+	n = n % h.capacity
+	if n <= h.capacity-index {
+		return index + n
 	}
-	return index + 1
+	return n - (h.capacity - index)
 }
 
 func (h *ringHeader) prevIndex(index uint64) uint64 {
@@ -93,6 +102,15 @@ func (r *RingBuffer) Extra() (uint64, error) {
 	return header.extra, nil
 }
 
+func (r *RingBuffer) SetExtra(extra uint64) error {
+	header, err := r.header()
+	if err != nil {
+		return err
+	}
+	header.extra = extra
+	return r.setHeader(header)
+}
+
 func (r *RingBuffer) Capacity() (uint64, error) {
 	header, err := r.header()
 	if err != nil {
@@ -108,63 +126,35 @@ func (r *RingBuffer) Size() (uint64, error) {
 	}
 	return header.size, nil
 }
-
-func (r *RingBuffer) rotateInternal(header *ringHeader, value common.Hash) (*ringHeader, error) {
-	if header.capacity == 0 {
-		return header, nil
-	}
-	place := header.nextIndex(header.last)
-	err := r.storage.SetByUint64(place, value)
-	if err != nil {
-		return nil, err
-	}
-	header.last = place
-	if header.size < header.capacity {
-		header.size++
-	}
-	return header, nil
+func (r *RingBuffer) Rotate(value common.Hash) error {
+	return r.RotateN([]common.Hash{value})
 }
 
-func (r *RingBuffer) Rotate(value common.Hash) error {
+func (r *RingBuffer) RotateN(values []common.Hash) error {
 	header, err := r.header()
 	if err != nil {
 		return err
 	}
-	header, err = r.rotateInternal(header, value)
-	if err != nil {
-		return err
+	if header.capacity == 0 {
+		return nil
+	}
+	for _, value := range values {
+		place := header.nextIndex(header.last)
+		err := r.storage.SetByUint64(place, value)
+		if err != nil {
+			return err
+		}
+		header.last = place
+		if header.size < header.capacity {
+			header.size++
+		}
 	}
 	return r.setHeader(header)
 }
 
-// closure gets extra as argument, should return:
-// 1. bool - if true, ring should be rotated
-// 2. common.Hash - value, which should be added to the ring on rotation
-// 3. uint64 - new extra value, ignored if first returned value is false
-// 4. error
-func (r *RingBuffer) RotateAndSetExtraConditionaly(closure func(uint64) (bool, common.Hash, uint64, error)) error {
-	header, err := r.header()
-	if err != nil {
-		return err
-	}
-	rotate, value, extra, err := closure(header.extra)
-	if err != nil {
-		return err
-	}
-	if rotate {
-		header, err = r.rotateInternal(header, value)
-		if err != nil {
-			return err
-		}
-		header.extra = extra
-		return r.setHeader(header)
-	}
-	return nil
-}
-
-// ForEach apply a closure on the enumerated elements of the queue, index relative to the first (oldest) element
+// ForEach applies a closure on the enumerated elements of the queue, index relative to the first (oldest) element
 // If closure returns an error, ForEach stops iteration and returns the error
-// If closure returns false, iteration is stopped
+// If closure returns true, iteration is stopped
 func (r *RingBuffer) ForEach(closure func(uint64, common.Hash) (bool, error)) error {
 	header, err := r.header()
 	if err != nil {
@@ -176,11 +166,11 @@ func (r *RingBuffer) ForEach(closure func(uint64, common.Hash) (bool, error)) er
 		if err != nil {
 			return err
 		}
-		proceed, err := closure(i, value)
+		done, err := closure(i, value)
 		if err != nil {
 			return err
 		}
-		if !proceed {
+		if done {
 			return nil
 		}
 		place = header.nextIndex(place)
@@ -188,36 +178,94 @@ func (r *RingBuffer) ForEach(closure func(uint64, common.Hash) (bool, error)) er
 	return nil
 }
 
-func (r *RingBuffer) Peak() (common.Hash, error) {
+// ForSome applies a closure on the enumerated elements of the queue, starting from first + offeset, then skipping step - 1 elements
+func (r *RingBuffer) ForSome(closure func(uint64, common.Hash) (bool, error), offset, step uint64) error {
 	header, err := r.header()
 	if err != nil {
+		return err
+	}
+	place := header.nextIndexN(header.first(), offset)
+	for i := uint64(0); i < header.size; i += step {
+		value, err := r.storage.GetByUint64(place)
+		if err != nil {
+			return err
+		}
+		done, err := closure(i, value)
+		if err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+		place = header.nextIndexN(place, step)
+	}
+	return nil
+}
+
+func (r *RingBuffer) Peek() (common.Hash, error) {
+	values, err := r.PeekN(1)
+	if err != nil || len(values) == 0 {
 		return common.Hash{}, err
+	}
+	return values[0], nil
+}
+
+func (r *RingBuffer) PeekN(n uint64) ([]common.Hash, error) {
+	header, err := r.header()
+	if err != nil {
+		return nil, err
 	}
 	if header.size == 0 {
-		return common.Hash{}, nil
+		return nil, nil
 	}
-	value, err := r.storage.GetByUint64(header.last)
-	if err != nil {
-		return common.Hash{}, err
+	if header.size < n {
+		return nil, ErrNotEnoughElements
 	}
-	return value, nil
+	var values []common.Hash
+	place := header.last
+	for i := uint64(0); i < n; i++ {
+		value, err := r.storage.GetByUint64(place)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+		place = header.prevIndex(place)
+	}
+	return values, nil
 }
 
 func (r *RingBuffer) Pop() (common.Hash, error) {
+	values, err := r.PopN(1)
+	if err != nil || len(values) == 0 {
+		return common.Hash{}, err
+	}
+	return values[0], nil
+}
+
+func (r *RingBuffer) PopN(n uint64) ([]common.Hash, error) {
 	header, err := r.header()
 	if err != nil {
-		return common.Hash{}, err
+		return nil, err
 	}
 	if header.size == 0 {
-		return common.Hash{}, nil
+		return nil, nil
 	}
-	value, err := r.storage.GetByUint64(header.last)
-	if err != nil {
-		return common.Hash{}, err
+	if header.size < n {
+		return nil, ErrNotEnoughElements
 	}
-	header.pop()
+	var values []common.Hash
+	place := header.last
+	for i := uint64(0); i < n; i++ {
+		value, err := r.storage.GetByUint64(place)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+		header.pop()
+		place = header.last
+	}
 	if err := r.setHeader(header); err != nil {
-		return common.Hash{}, err
+		return nil, err
 	}
-	return value, nil
+	return values, nil
 }

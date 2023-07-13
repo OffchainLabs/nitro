@@ -20,7 +20,7 @@ func testRingHeaderFirst(t *testing.T, h ringHeader, expectedFirst uint64) {
 func testRingHeaderNextIndex(t *testing.T, h ringHeader, index, expectedNext uint64) {
 	t.Helper()
 	if have, want := h.nextIndex(index), expectedNext; have != want {
-		Fatal(t, "unexpected first, have:", have, "want:", want, "header:", fmt.Sprintf("%+v", h))
+		Fatal(t, "unexpected next, have:", have, "want:", want, "index:", index, "header:", fmt.Sprintf("%+v", h))
 	}
 }
 
@@ -145,7 +145,7 @@ func testRingBufferRotate(t *testing.T, capacity uint64) {
 				Fatal(t, "Unexpected value in ForEach closure, have:", value, "want:", expectedValue, "i:", i)
 			}
 			j++
-			return true, nil
+			return false, nil
 		})
 		Require(t, err, "ForEach failed, i: ", i, "capacity:", capacity)
 	}
@@ -165,7 +165,7 @@ func testRingBufferRotate(t *testing.T, capacity uint64) {
 				Fatal(t, "Unexpected value in ForEach closure, have:", value, "want:", expectedValue, "i:", i, "k:", k)
 			}
 			k++
-			return true, nil
+			return false, nil
 		})
 		Require(t, err, "ForEach failed, i: ", i, "capacity:", capacity)
 		if k != capacity {
