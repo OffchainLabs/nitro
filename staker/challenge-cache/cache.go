@@ -1,8 +1,8 @@
 /*
 * Package challengecache stores validator state roots for L2 states within
 challenges in text files using a directory hierarchy structure for efficient lookup. Each file
-contains a list of line-delimited state roots (32 byte hashes), where the ith line in the file represents
-the ith state root. Using this structure, we can namespace state roots by assertion hash,
+contains a list of state roots (32 byte hashes), concatenated together as bytes.
+Using this structure, we can namespace state roots by assertion hash,
 message number, big step challenge, and small step challenge ranges.
 
 Once a validator computes the set of machine state roots for a given challenge move the first time,
@@ -33,6 +33,7 @@ the state roots for any data within a challenge or associated subchallenge based
 package challengecache
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -78,7 +79,10 @@ type HeightRange struct {
 	to   protocol.Height
 }
 
-func (c *Cache) Get(lookup *Key) ([]common.Hash, error) {
+func (c *Cache) Get(
+	lookup *Key,
+	readUpTo option.Option[protocol.Height],
+) ([]common.Hash, error) {
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
@@ -91,7 +95,7 @@ func (c *Cache) Get(lookup *Key) ([]common.Hash, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return readStateRoots(f)
+	return readStateRoots(f, readUpTo)
 }
 
 func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
@@ -124,12 +128,51 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	return os.Rename(tmpFName /* old */, fName /* new */)
 }
 
-func readStateRoots(r io.Reader) ([]common.Hash, error) {
-	return []common.Hash{}, nil
+func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]common.Hash, error) {
+	br := bufio.NewReader(r)
+	stateRoots := make([]common.Hash, 0)
+	buf := make([]byte, 0, 32)
+	numRead := uint64(0)
+	for {
+		n, err := br.Read(buf[:cap(buf)])
+		buf = buf[:n]
+		if n == 0 {
+			if err == nil {
+				continue
+			}
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		stateRoots = append(stateRoots, common.BytesToHash(buf))
+		if !readUpTo.IsNone() {
+			if numRead >= uint64(readUpTo.Unwrap()) {
+				return stateRoots, nil
+			}
+		}
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+	}
+	return stateRoots, nil
 }
 
 func writeStateRoots(w io.Writer, stateRoots []common.Hash) error {
-	w.Write([]byte("hello world"))
+	for i, rt := range stateRoots {
+		n, err := w.Write(rt[:])
+		if err != nil {
+			return err
+		}
+		if n != len(rt) {
+			return fmt.Errorf(
+				"for state root %d, wrote %d bytes, expected to write %d bytes",
+				i,
+				n,
+				len(rt),
+			)
+		}
+	}
 	return nil
 }
 
