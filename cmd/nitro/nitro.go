@@ -122,6 +122,30 @@ func main() {
 	os.Exit(mainImpl())
 }
 
+// Runs metrics server at address:port specified by config if metrics flag is
+// enabled. Additionally if pprof at specified pprof port when it's enabled.
+func mustRunMetrics(cfg *NodeConfig) {
+	if !cfg.Metrics {
+		if cfg.MetricsServer.Pprof {
+			log.Warn("Metrics must be enabled in order to use pprof with the metrics server")
+		}
+		log.Debug("Metrics are disabled")
+		return
+	}
+	if cfg.MetricsServer.Addr == "" {
+		log.Crit("Metrics are enabled but server address is not specified")
+	}
+	go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+
+	if cfg.MetricsServer.Pprof {
+		if cfg.MetricsServer.Port == cfg.MetricsServer.PprofPort {
+			log.Crit("Cannot use same port for metrics and pprof servers", "port", cfg.MetricsServer.Port)
+		}
+		genericconf.StartPprof(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.PprofPort))
+	}
+	exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+}
+
 // Returns the exit code
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -379,22 +403,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
-
-		if nodeConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				genericconf.StartPprof(address)
-			} else {
-				exp.Setup(address)
-			}
-		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
-		return 1
-	}
+	mustRunMetrics(nodeConfig)
 
 	fatalErrChan := make(chan error, 10)
 
