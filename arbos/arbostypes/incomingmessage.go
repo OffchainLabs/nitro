@@ -164,7 +164,7 @@ func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetch
 	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport || msg.BatchGasCost != nil {
 		return nil
 	}
-	_, _, batchHash, batchNum, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
+	_, _, batchHash, batchNum, _, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
 	if err != nil {
 		return fmt.Errorf("failed to parse batch posting report: %w", err)
 	}
@@ -240,55 +240,95 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 
 type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
 
+type ParsedInitMessage struct {
+	ChainId          *big.Int
+	InitialL1BaseFee *big.Int
+
+	// These may be nil
+	ChainConfig           *params.ChainConfig
+	SerializedChainConfig []byte
+}
+
+// The initial L1 pricing basefee starts at 50 GWei unless set in the init message
+var DefaultInitialL1BaseFee = big.NewInt(50 * params.GWei)
+
+var TestInitMessage = &ParsedInitMessage{
+	ChainId:          params.ArbitrumDevTestChainConfig().ChainID,
+	InitialL1BaseFee: DefaultInitialL1BaseFee,
+}
+
 // ParseInitMessage returns the chain id on success
-func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig, []byte, error) {
+func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
-		return nil, nil, nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
+		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
+	basefee := new(big.Int).Set(DefaultInitialL1BaseFee)
 	var chainConfig params.ChainConfig
 	var chainId *big.Int
 	if len(msg.L2msg) == 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
-		return chainId, nil, nil, nil
-	} else if len(msg.L2msg) > 32 {
+		return &ParsedInitMessage{chainId, basefee, nil, nil}, nil
+	}
+	if len(msg.L2msg) > 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		version := msg.L2msg[32]
-		if version == 0 && len(msg.L2msg) > 33 {
-			serializedChainConfig := msg.L2msg[33:]
-			err := json.Unmarshal(serializedChainConfig, &chainConfig)
+		reader := bytes.NewReader(msg.L2msg[33:])
+		switch version {
+		case 1:
+			var err error
+			basefee, err = util.Uint256FromReader(reader)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
+				return nil, err
 			}
-			return chainId, &chainConfig, serializedChainConfig, nil
+			fallthrough
+		case 0:
+			serializedChainConfig, err := io.ReadAll(reader)
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(serializedChainConfig, &chainConfig)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
+			}
+			return &ParsedInitMessage{chainId, basefee, &chainConfig, serializedChainConfig}, nil
 		}
 	}
-	return nil, nil, nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
+	return nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
 }
 
-func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, error) {
+func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
 	batchTimestamp, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	batchPosterAddr, err := util.AddressFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	dataHash, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	batchNum, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	l1BaseFee, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, common.Address{}, common.Hash{}, 0, nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
+	}
+	extraGas, err := util.Uint64FromReader(rd)
+	if errors.Is(err, io.EOF) {
+		// This field isn't always present
+		extraGas = 0
+		err = nil
+	}
+	if err != nil {
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err
 	}
 	batchNumBig := batchNum.Big()
 	if !batchNumBig.IsUint64() {
-		return nil, common.Address{}, common.Hash{}, 0, nil, fmt.Errorf("batch number %v is not a uint64", batchNumBig)
+		return nil, common.Address{}, common.Hash{}, 0, nil, 0, fmt.Errorf("batch number %v is not a uint64", batchNumBig)
 	}
-	return batchTimestamp.Big(), batchPosterAddr, dataHash, batchNumBig.Uint64(), l1BaseFee.Big(), nil
+	return batchTimestamp.Big(), batchPosterAddr, dataHash, batchNumBig.Uint64(), l1BaseFee.Big(), extraGas, nil
 }

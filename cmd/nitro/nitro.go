@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -17,9 +18,7 @@ import (
 	"time"
 
 	"github.com/knadh/koanf"
-
 	"github.com/knadh/koanf/providers/confmap"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
@@ -38,6 +37,8 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -323,6 +324,8 @@ func mainImpl() int {
 		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
+	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -358,7 +361,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.Init.ThenQuit {
+	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMsg < 0 {
 		return 0
 	}
 
@@ -480,11 +483,14 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
+		defer currentNode.StopAndWait()
 	}
 	if err == nil {
 		err = execNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		} else {
+			defer execNode.StopAndWait()
 		}
 	}
 
@@ -492,6 +498,20 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	exitCode := 0
+
+	if err == nil && nodeConfig.Init.ResetToMsg > 0 {
+		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMsg))
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
+			exitCode = 1
+		}
+		if nodeConfig.Init.ThenQuit {
+			close(sigint)
+
+			return exitCode
+		}
+	}
+
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
@@ -504,8 +524,6 @@ func mainImpl() int {
 	// cause future ctrl+c's to panic
 	close(sigint)
 
-	currentNode.StopAndWait()
-	execNode.StopAndWait()
 	return exitCode
 }
 
@@ -680,9 +698,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			// If persistent-chain not defined, user not creating custom chain
 			if l2ChainId != 0 {
 				return nil, nil, nil, fmt.Errorf("Unknown chain id: %d, L2ChainInfoFiles: %v.  update chain id, modify --chain.info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
-			} else {
-				return nil, nil, nil, fmt.Errorf("Unknown chain name: %s, L2ChainInfoFiles: %v.  update chain name, modify --chain.info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
 			}
+			return nil, nil, nil, fmt.Errorf("Unknown chain name: %s, L2ChainInfoFiles: %v.  update chain name, modify --chain.info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
 		}
 		return nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
@@ -698,6 +715,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
+	if nodeConfig.Execution.Archive {
+		nodeConfig.Node.MessagePruner.Enable = false
+	}
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, nil, err

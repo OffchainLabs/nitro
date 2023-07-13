@@ -90,12 +90,11 @@ func (s *JitSpawner) Name() string {
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&v.count, 1)
-	run := server_common.NewValRun(moduleRoot)
-	go func() {
-		run.ConsumeResult(v.execute(v.GetContext(), entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
-	}()
-	return run
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
+		defer atomic.AddInt32(&v.count, -1)
+		return v.execute(ctx, entry, moduleRoot)
+	})
+	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (v *JitSpawner) Room() int {
@@ -103,7 +102,7 @@ func (v *JitSpawner) Room() int {
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
-	return avail - int(atomic.LoadInt32(&v.count))
+	return avail
 }
 
 func (v *JitSpawner) Stop() {

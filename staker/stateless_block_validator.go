@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -24,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/pkg/errors"
 )
 
 type StatelessBlockValidator struct {
@@ -83,6 +83,8 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
+// return the globalState position before and after processing message at the specified count
+// batch-number must be provided by caller
 func GlobalStatePositionsAtCount(
 	tracker InboxTrackerInterface,
 	count arbutil.MessageIndex,
@@ -133,7 +135,7 @@ type validationEntry struct {
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
-	// Valid since Recorded
+	// Valid since Ready
 	Preimages  map[common.Hash][]byte
 	DelayedMsg []byte
 }
@@ -228,7 +230,7 @@ func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64
 	if err != nil {
 		return false, nil, 0, err
 	}
-	if batchCount < batchNum {
+	if batchCount <= batchNum {
 		return false, nil, 0, nil
 	}
 	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
@@ -244,7 +246,7 @@ func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
 	if e.Stage != ReadyForRecord {
-		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
+		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
 		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg).Await(ctx)
@@ -327,8 +329,12 @@ func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) vali
 	}
 }
 
+// return the globalState position before and after processing message at the specified count
 func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.MessageIndex) (GlobalStatePosition, GlobalStatePosition, error) {
 	if count == 0 {
+		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("no initial state for count==0")
+	}
+	if count == 1 {
 		return GlobalStatePosition{}, GlobalStatePosition{1, 0}, nil
 	}
 	batch, err := v.inboxTracker.FindL1BatchForMessage(count - 1)

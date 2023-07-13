@@ -5,6 +5,7 @@ package headerreader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -20,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -312,7 +312,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	l1Timetamp := time.Unix(int64(storedHeader.Time), 0)
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
-		s.setError(errors.Errorf("latest header is at least %v old", headerTime))
+		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
 		log.Warn(
 			"latest L1 block is old", "l1Block", storedHeader.Number,
 			"l1Timestamp", l1Timetamp, "age", headerTime,
@@ -383,6 +383,19 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
+func headerIndicatesFinalitySupport(header *types.Header) bool {
+	if header.Difficulty.Sign() == 0 {
+		// This is an Ethereum PoS chain
+		return true
+	}
+	if types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion > 0 {
+		// This is an Arbitrum chain
+		return true
+	}
+	// This is probably an Ethereum PoW or Clique chain, which doesn't support finality
+	return false
+}
+
 func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uint64, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -393,7 +406,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uin
 	if currentHead == c.headWhenCached {
 		return c.blockNumber, nil
 	}
-	if !s.config().UseFinalityData || currentHead.Difficulty.Sign() != 0 {
+	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
 		return 0, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)

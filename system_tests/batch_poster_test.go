@@ -119,14 +119,14 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 			if i == 0 {
 				continue
 			}
-			if batches[i-1].BlockNumber == batches[i].BlockNumber {
+			if batches[i-1].ParentChainBlockNumber == batches[i].ParentChainBlockNumber {
 				foundMultipleInBlock = true
 				break
 			}
 		}
 
 		if !foundMultipleInBlock {
-			Fail(t, "only found one batch per block")
+			Fatal(t, "only found one batch per block")
 		}
 	}
 
@@ -134,7 +134,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	Require(t, err)
 
 	if l2balance.Sign() == 0 {
-		Fail(t, "Unexpected zero balance")
+		Fatal(t, "Unexpected zero balance")
 	}
 }
 
@@ -165,7 +165,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	receiptB, err := EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
 	Require(t, err)
 	if receiptA.BlockHash != receiptB.BlockHash {
-		Fail(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
+		Fatal(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
 	}
 }
 

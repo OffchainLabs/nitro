@@ -60,19 +60,20 @@ func ExecRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	L1Reader             headerreader.Config    `koanf:"l1-reader" reload:"hot"`
-	Sequencer            SequencerConfig        `koanf:"sequencer" reload:"hot"`
-	TxPreChecker         TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder            ForwarderConfig        `koanf:"forwarder"`
-	ForwardingTargetImpl string                 `koanf:"forwarding-target"`
-	Caching              CachingConfig          `koanf:"caching"`
-	SyncMonitor          SyncMonitorConfig      `koanf:"sync-monitor" reload:"hot"`
-	RPC                  arbitrum.Config        `koanf:"rpc"`
-	ExecRPC              ExecRPCConfig          `koanf:"exec-rpc"`
-	Archive              bool                   `koanf:"archive"`
-	TxLookupLimit        uint64                 `koanf:"tx-lookup-limit"`
-	ConsensesServer      rpcclient.ClientConfig `koanf:"consensus-server" reload:"hot"`
-	Dangerous            DangerousConfig        `koanf:"dangerous"`
+	L1Reader             headerreader.Config              `koanf:"l1-reader" reload:"hot"`
+	Sequencer            SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDB          arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker         TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder            ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTargetImpl string                           `koanf:"forwarding-target"`
+	Caching              CachingConfig                    `koanf:"caching"`
+	SyncMonitor          SyncMonitorConfig                `koanf:"sync-monitor" reload:"hot"`
+	RPC                  arbitrum.Config                  `koanf:"rpc"`
+	ExecRPC              ExecRPCConfig                    `koanf:"exec-rpc"`
+	Archive              bool                             `koanf:"archive"`
+	TxLookupLimit        uint64                           `koanf:"tx-lookup-limit"`
+	ConsensesServer      rpcclient.ClientConfig           `koanf:"consensus-server" reload:"hot"`
+	Dangerous            DangerousConfig                  `koanf:"dangerous"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -97,6 +98,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	headerreader.AddOptions(prefix+".l1-reader", f)
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
+	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
@@ -114,32 +116,14 @@ var ConfigDefault = Config{
 	L1Reader:             headerreader.DefaultConfig,
 	RPC:                  arbitrum.DefaultConfig,
 	Sequencer:            DefaultSequencerConfig,
+	RecordingDB:          arbitrum.DefaultRecordingDatabaseConfig,
 	ForwardingTargetImpl: "",
 	TxPreChecker:         DefaultTxPreCheckerConfig,
 	ExecRPC:              ExecRPCConfigDefault,
 	Archive:              false,
 	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
 	Caching:              DefaultCachingConfig,
-}
-
-func ConfigDefaultNonSequencerTest() *Config {
-	config := ConfigDefault
-	config.Sequencer.Enable = false
-	config.Forwarder = DefaultTestForwarderConfig
-	config.ExecRPC = ExecRPCConfigTest
-	config.ConsensesServer = rpcclient.TestClientConfig
-
-	return &config
-}
-
-func ConfigDefaultTest() *Config {
-	config := ConfigDefault
-	config.Sequencer = TestSequencerConfig
-	config.L1Reader = headerreader.TestConfig
-	config.ExecRPC = ExecRPCConfigTest
-	config.ConsensesServer = rpcclient.TestClientConfig
-
-	return &config
+	Dangerous:            DefaultDangerousConfig,
 }
 
 type ConfigFetcher func() *Config
@@ -206,7 +190,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(execEngine, chainDB)
+	recorder := NewBlockRecorder(&config.RecordingDB, execEngine, chainDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 

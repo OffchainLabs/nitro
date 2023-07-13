@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,14 +11,13 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/pkg/errors"
 )
 
 type BlockValidatorAPI struct {
 	val *staker.BlockValidator
 }
 
-func (a *BlockValidatorAPI) LatestValidatedMsgNum(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
+func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
 	return a.val.ReadLastValidatedInfo()
 }
 

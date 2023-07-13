@@ -58,6 +58,7 @@ type InitConfig struct {
 	ThenQuit        bool          `koanf:"then-quit"`
 	Prune           string        `koanf:"prune"`
 	PruneBloomSize  uint64        `koanf:"prune-bloom-size"`
+	ResetToMsg      int64         `koanf:"reset-to-message"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -73,6 +74,7 @@ var InitConfigDefault = InitConfig{
 	ThenQuit:        false,
 	Prune:           "",
 	PruneBloomSize:  2048,
+	ResetToMsg:      -1,
 }
 
 func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -89,6 +91,7 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
+	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMsg, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 }
 
 func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
@@ -202,7 +205,7 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 		if currentBlock == nil {
 			return errors.New("failed to get current block")
 		}
-		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.NumberU64(), currentBlock.Time()); err != nil {
+		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.Number.Uint64(), currentBlock.Time); err != nil {
 			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
 		}
 	}
@@ -245,12 +248,11 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
-		if overwrite {
-			r.roots = r.roots[:len(r.roots)-1]
-			r.heights = r.heights[:len(r.heights)-1]
-		} else {
+		if !overwrite {
 			return nil
 		}
+		r.roots = r.roots[:len(r.roots)-1]
+		r.heights = r.heights[:len(r.heights)-1]
 	}
 	if len(r.heights) > 0 && r.heights[len(r.heights)-1]+minRootDistance > height {
 		return nil
@@ -394,7 +396,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			if err != nil {
 				return nil, err
 			}
-			if meta.L1Block <= l1BlockNum {
+			if meta.ParentChainBlock <= l1BlockNum {
 				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
 				blockNum := uint64(signedBlockNum)
 				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
@@ -580,7 +582,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		var serializedChainConfig []byte
+		var parsedInitMessage *arbostypes.ParsedInitMessage
 		if config.Node.L1Reader.Enable {
 			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 			if err != nil {
@@ -601,30 +603,34 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			if initMessage == nil {
 				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
 			}
-			var initChainConfig *params.ChainConfig
-			var initChainId *big.Int
-			initChainId, initChainConfig, serializedChainConfig, err = initMessage.ParseInitMessage()
+			parsedInitMessage, err = initMessage.ParseInitMessage()
 			if err != nil {
 				return chainDb, nil, err
 			}
-			if initChainId.Cmp(chainId) != 0 {
-				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, initChainId)
+			if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
+				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
 			}
-			if initChainConfig != nil {
-				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+			if parsedInitMessage.ChainConfig != nil {
+				if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
-			log.Info("Read serialized chain config from init message", "json", string(serializedChainConfig))
+			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
-			serializedChainConfig, err = json.Marshal(chainConfig)
+			serializedChainConfig, err := json.Marshal(chainConfig)
 			if err != nil {
 				return chainDb, nil, err
 			}
-			log.Warn("Serialized chain config as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
+			parsedInitMessage = &arbostypes.ParsedInitMessage{
+				ChainId:               chainConfig.ChainID,
+				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+				ChainConfig:           chainConfig,
+				SerializedChainConfig: serializedChainConfig,
+			}
+			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, serializedChainConfig, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

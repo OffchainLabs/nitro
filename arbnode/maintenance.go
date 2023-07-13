@@ -21,15 +21,20 @@ import (
 type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
-	exec           execution.FullExecutionClient
-	config         MaintenanceConfigFetcher
-	seqCoordinator *SeqCoordinator
-	dbs            []ethdb.Database
-	lastCheck      time.Time
+	exec            execution.FullExecutionClient
+	config          MaintenanceConfigFetcher
+	seqCoordinator  *SeqCoordinator
+	dbs             []ethdb.Database
+	lastMaintenance time.Time
+
+	// lock is used to ensures that at any given time, only single node is on
+	// maintenance mode.
+	lock *SimpleRedisLock
 }
 
 type MaintenanceConfig struct {
-	TimeOfDay string `koanf:"time-of-day" reload:"hot"`
+	TimeOfDay string                `koanf:"time-of-day" reload:"hot"`
+	Lock      SimpleRedisLockConfig `koanf:"lock" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
@@ -67,6 +72,7 @@ func (c *MaintenanceConfig) Validate() error {
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".time-of-day", DefaultMaintenanceConfig.TimeOfDay, "UTC 24-hour time of day to run maintenance (currently only db compaction) at (e.g. 15:00)")
+	RedisLockConfigAddOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
@@ -78,22 +84,33 @@ var DefaultMaintenanceConfig = MaintenanceConfig{
 type MaintenanceConfigFetcher func() *MaintenanceConfig
 
 func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database, exec execution.FullExecutionClient) (*MaintenanceRunner, error) {
-	err := config().Validate()
-	if err != nil {
-		return nil, err
+	cfg := config()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validating config: %w", err)
 	}
-	return &MaintenanceRunner{
-		config:         config,
-		exec:           exec,
-		seqCoordinator: seqCoordinator,
-		dbs:            dbs,
-		lastCheck:      time.Now().UTC(),
-	}, nil
+	res := &MaintenanceRunner{
+		exec:            exec,
+		config:          config,
+		seqCoordinator:  seqCoordinator,
+		dbs:             dbs,
+		lastMaintenance: time.Now().UTC(),
+	}
+
+	if seqCoordinator != nil {
+		c := func() *SimpleRedisLockConfig { return &cfg.Lock }
+		r := func() bool { return true } // always ready to lock
+		rl, err := NewSimpleRedisLock(seqCoordinator.Client, c, r)
+		if err != nil {
+			return nil, fmt.Errorf("creating new simple redis lock: %w", err)
+		}
+		res.lock = rl
+	}
+	return res, nil
 }
 
-func (c *MaintenanceRunner) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn, c)
-	c.CallIteratively(c.maybeRunMaintenance)
+func (mr *MaintenanceRunner) Start(ctxIn context.Context) {
+	mr.StopWaiter.Start(ctxIn, mr)
+	mr.CallIteratively(mr.maybeRunMaintenance)
 }
 
 func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
@@ -115,38 +132,45 @@ func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
 	return prevMinutes < dbCompactionMinutes && newMinutes >= dbCompactionMinutes
 }
 
-func (c *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Duration {
-	config := c.config()
+func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Duration {
+	config := mr.config()
 	if !config.enabled {
 		return time.Minute
 	}
+
 	now := time.Now().UTC()
-	if wentPastTimeOfDay(c.lastCheck, now, config.minutesAfterMidnight) {
-		log.Info("attempting to release sequencer lockout to run database compaction", "targetTime", config.TimeOfDay)
-		if c.seqCoordinator == nil {
-			c.runMaintenance(ctx)
-		} else {
-			// We want to switch sequencers before running maintenance
-			success := c.seqCoordinator.AvoidLockout(ctx)
-			defer c.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
-			if success {
-				// We've unset the wants lockout key, now wait for the handoff
-				success = c.seqCoordinator.TryToHandoffChosenOne(ctx)
-				if success {
-					c.runMaintenance(ctx)
-				}
-			}
-		}
+
+	if !wentPastTimeOfDay(mr.lastMaintenance, now, config.minutesAfterMidnight) {
+		return time.Minute
 	}
-	c.lastCheck = now
+
+	if mr.seqCoordinator == nil {
+		mr.lastMaintenance = now
+		mr.runMaintenance(ctx)
+		return time.Minute
+	}
+
+	if !mr.lock.AttemptLock(ctx) {
+		return time.Minute
+	}
+	defer mr.lock.Release(ctx)
+
+	log.Info("Attempting avoiding lockout and handing off", "targetTime", config.TimeOfDay)
+	// Avoid lockout for the sequencer and try to handoff.
+	if mr.seqCoordinator.AvoidLockout(ctx) && mr.seqCoordinator.TryToHandoffChosenOne(ctx) {
+		mr.lastMaintenance = now
+		mr.runMaintenance(ctx)
+	}
+	defer mr.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
+
 	return time.Minute
 }
 
-func (c *MaintenanceRunner) runMaintenance(ctx context.Context) {
-	log.Info("compacting databases (this may take a while...)")
-	results := make(chan error, len(c.dbs))
+func (mr *MaintenanceRunner) runMaintenance(ctx context.Context) {
+	log.Info("Compacting databases (this may take a while...)")
+	results := make(chan error, len(mr.dbs))
 	expected := 0
-	for _, db := range c.dbs {
+	for _, db := range mr.dbs {
 		expected++
 		db := db
 		go func() {
@@ -155,7 +179,7 @@ func (c *MaintenanceRunner) runMaintenance(ctx context.Context) {
 	}
 	expected++
 	go func() {
-		_, err := c.exec.Maintenance().Await(ctx)
+		_, err := mr.exec.Maintenance().Await(ctx)
 		results <- err
 	}()
 	for i := 0; i < expected; i++ {
@@ -164,5 +188,5 @@ func (c *MaintenanceRunner) runMaintenance(ctx context.Context) {
 			log.Warn("maintenance error", "err", err)
 		}
 	}
-	log.Info("done compacting databases")
+	log.Info("Done compacting databases")
 }

@@ -92,11 +92,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
-			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
+			Fatal(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
 		}
 	} else {
 		if nodeAGenesis != nodeBGenesis {
-			Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+			Fatal(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
 		}
 	}
 
@@ -168,7 +168,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
@@ -201,7 +203,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessB,
+		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
@@ -221,7 +225,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	if stakerC.Strategy() != staker.WatchtowerStrategy {
@@ -305,7 +311,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 					Require(t, err)
 					proxyAdminAddr := common.BytesToAddress(proxyAdminBytes)
 					if proxyAdminAddr == (common.Address{}) {
-						Fail(t, "failed to get challenge manager proxy admin")
+						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
 					proxyAdmin, err := mocksgen.NewProxyAdminForBinding(proxyAdminAddr, l1client)
@@ -319,7 +325,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				}
 			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
 				// Expected error when trying to re-stake after losing initial stake.
-			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+			} else if strings.Contains(err.Error(), "start state not in chain") && sawStakerZombie {
 				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
 			} else if strings.Contains(err.Error(), "STAKER_IS_ZOMBIE") && sawStakerZombie {
 				// Expected error when the staker is a zombie and thus can't advance its stake.
@@ -349,14 +355,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
 		Require(t, err)
 		if isHonestZombie {
-			Fail(t, "staker A became a zombie")
+			Fatal(t, "staker A became a zombie")
 		}
 		watchTx, err := stakerC.Act(ctx)
 		if err != nil && !strings.Contains(err.Error(), "catch up") {
 			Require(t, err, "watchtower staker failed to act")
 		}
 		if watchTx != nil {
-			Fail(t, "watchtower staker made a transaction")
+			Fatal(t, "watchtower staker made a transaction")
 		}
 		if !stakerAWasStaked {
 			stakerAWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
@@ -372,7 +378,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	if stakerATxs == 0 || stakerBTxs == 0 {
-		Fail(t, "staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
+		Fatal(t, "staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
 	}
 
 	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
@@ -381,18 +387,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if latestConfirmedNode <= 1 && !honestStakerInactive {
 		latestCreatedNode, err := rollup.LatestNodeCreated(&bind.CallOpts{})
 		Require(t, err)
-		Fail(t, "latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
+		Fatal(t, "latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
 	}
 
 	if faultyStaker && !sawStakerZombie {
-		Fail(t, "staker B didn't become a zombie despite being faulty")
+		Fatal(t, "staker B didn't become a zombie despite being faulty")
 	}
 
 	if !stakerAWasStaked {
-		Fail(t, "staker A was never staked")
+		Fatal(t, "staker A was never staked")
 	}
 	if !stakerBWasStaked {
-		Fail(t, "staker B was never staked")
+		Fatal(t, "staker B was never staked")
 	}
 }
 

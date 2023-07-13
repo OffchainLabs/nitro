@@ -207,6 +207,45 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return iter.Error()
 }
 
+// deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
+// might have deleted some keys even if returning an error
+func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, error) {
+	batch := db.NewBatch()
+	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
+	defer startIter.Release()
+	var prunedKeysRange []uint64
+	for startIter.Next() {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		currentKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+		if currentKey >= endMinKey {
+			break
+		}
+		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
+			prunedKeysRange = append(prunedKeysRange, currentKey)
+		} else {
+			prunedKeysRange[1] = currentKey
+		}
+		err := batch.Delete(startIter.Key())
+		if err != nil {
+			return nil, err
+		}
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			if err := batch.Write(); err != nil {
+				return nil, err
+			}
+			batch.Reset()
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return nil, err
+		}
+	}
+	return prunedKeysRange, nil
+}
+
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
 func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata) error {
@@ -621,45 +660,43 @@ func (s *TransactionStreamer) countDuplicateMessages(
 		if !bytes.Equal(haveMessage, wantMessage) {
 			// Current message does not exactly match message in database
 			var dbMessageParsed arbostypes.MessageWithMetadata
-			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
-			if err != nil {
+
+			if err := rlp.DecodeBytes(haveMessage, &dbMessageParsed); err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)",
 					"pos", pos,
 					"err", err,
 				)
 				return curMsg, true, nil, nil
-			} else {
-				var duplicateMessage bool
-				if nextMessage.Message != nil {
-					if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
-						// Remove both of the batch gas costs and see if the messages still differ
-						nextMessageCopy := nextMessage
-						nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
-						*nextMessageCopy.Message = *nextMessage.Message
-						batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-						dbMessageParsed.Message.BatchGasCost = nil
-						nextMessageCopy.Message.BatchGasCost = nil
-						if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
-							// Actually this isn't a reorg; only the batch gas costs differed
-							duplicateMessage = true
-							// If possible - update the message in the database to add the gas cost cache.
-							if batch != nil && nextMessage.Message.BatchGasCost != nil {
-								if *batch == nil {
-									*batch = s.db.NewBatch()
-								}
-								err = s.writeMessage(pos, nextMessage, *batch)
-								if err != nil {
-									return 0, false, nil, err
-								}
+			}
+			var duplicateMessage bool
+			if nextMessage.Message != nil {
+				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+					// Remove both of the batch gas costs and see if the messages still differ
+					nextMessageCopy := nextMessage
+					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
+					*nextMessageCopy.Message = *nextMessage.Message
+					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
+					dbMessageParsed.Message.BatchGasCost = nil
+					nextMessageCopy.Message.BatchGasCost = nil
+					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
+						// Actually this isn't a reorg; only the batch gas costs differed
+						duplicateMessage = true
+						// If possible - update the message in the database to add the gas cost cache.
+						if batch != nil && nextMessage.Message.BatchGasCost != nil {
+							if *batch == nil {
+								*batch = s.db.NewBatch()
+							}
+							if err := s.writeMessage(pos, nextMessage, *batch); err != nil {
+								return 0, false, nil, err
 							}
 						}
-						dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 					}
+					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 				}
+			}
 
-				if !duplicateMessage {
-					return curMsg, true, &dbMessageParsed, nil
-				}
+			if !duplicateMessage {
+				return curMsg, true, &dbMessageParsed, nil
 			}
 		}
 
@@ -988,7 +1025,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 		resBytes, err = s.db.Get(key)
 		if err == nil {
 			var res execution.MessageResult
-			err = rlp.DecodeBytes(resBytes, res)
+			err = rlp.DecodeBytes(resBytes, &res)
 			if err == nil {
 				return &res, nil
 			}

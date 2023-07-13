@@ -30,18 +30,17 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
-	"github.com/pkg/errors"
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	enc, err := wavmio.ResolvePreImage(hash)
 	if err != nil {
-		panic(errors.Wrap(err, "Error resolving preimage"))
+		panic(fmt.Errorf("Error resolving preimage: %w", err))
 	}
 	header := &types.Header{}
 	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
-		panic(errors.Wrap(err, "Error parsing resolved block header"))
+		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
 	return header
 }
@@ -253,19 +252,20 @@ func main() {
 
 		message := readMessage(false)
 
-		chainId, chainConfig, serializedChainConfig, err := message.Message.ParseInitMessage()
+		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
+		chainConfig := initMessage.ChainConfig
 		if chainConfig == nil {
 			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
-			chainConfig, err = chaininfo.GetChainConfig(chainId, "", 0, []string{}, "")
+			chainConfig, err = chaininfo.GetChainConfig(initMessage.ChainId, "", 0, []string{}, "")
 			if err != nil {
 				panic(err)
 			}
 		}
 
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, serializedChainConfig)
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, initMessage)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}

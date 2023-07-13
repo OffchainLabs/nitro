@@ -52,7 +52,7 @@ func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx i
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err != nil {
-		Fail(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
+		Fatal(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
 	}
 }
 
@@ -64,18 +64,18 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
 		if options == nil {
-			Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", options)
+			Fatal(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", options)
 		} else {
-			Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", *options)
+			Fatal(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", *options)
 		}
 	} else {
 		var rErr rpc.Error
 		if errors.As(err, &rErr) {
 			if rErr.ErrorCode() != expectedErrorCode {
-				Fail(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
+				Fatal(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
 			}
 		} else {
-			Fail(t, "unexpected error type, err:", err)
+			Fatal(t, "unexpected error type, err:", err)
 		}
 	}
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
@@ -264,14 +264,14 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	previousStorageRootHash1 := currentRootHash1
 	currentRootHash1 = getStorageRootHash(t, execNode, contractAddress1)
 	if bytes.Equal(previousStorageRootHash1.Bytes(), currentRootHash1.Bytes()) {
-		Fail(t, "storage root hash didn't change as expected")
+		Fatal(t, "storage root hash didn't change as expected")
 	}
 	currentSlotValueMap1 = getStorageSlotValue(t, execNode, contractAddress1)
 
 	previousStorageRootHash2 := currentRootHash2
 	currentRootHash2 = getStorageRootHash(t, execNode, contractAddress2)
 	if bytes.Equal(previousStorageRootHash2.Bytes(), currentRootHash2.Bytes()) {
-		Fail(t, "storage root hash didn't change as expected")
+		Fatal(t, "storage root hash didn't change as expected")
 	}
 	currentSlotValueMap2 = getStorageSlotValue(t, execNode, contractAddress2)
 
@@ -362,7 +362,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		select {
 		case <-success:
 		case <-ctxWithTimeout.Done():
-			Fail(t, "test timeouted")
+			Fatal(t, "test timeouted")
 		}
 	}
 	cancelCtxWithTimeout()
@@ -376,7 +376,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	for i := genesis + 1; header != nil; i++ {
 		blockReceipts := bc.GetReceiptsByHash(header.Hash())
 		if blockReceipts == nil {
-			Fail(t, "Failed to get block receipts, block number:", header.Number)
+			Fatal(t, "Failed to get block receipts, block number:", header.Number)
 		}
 		receipts = append(receipts, blockReceipts...)
 		header = bc.GetHeaderByNumber(i)
@@ -388,14 +388,14 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 			parsed, err := simple.ParseLogAndIncrementCalled(*receipt.Logs[0])
 			Require(t, err)
 			if parsed.Expected.Int64() != parsed.Have.Int64() {
-				Fail(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
+				Fatal(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
 			} else {
 				succeeded++
 			}
 		}
 	}
 	if succeeded != expectedSuccesses {
-		Fail(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
+		Fatal(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
 	}
 }
 

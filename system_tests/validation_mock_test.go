@@ -26,6 +26,7 @@ import (
 
 type mockSpawner struct {
 	ExecSpawned []uint64
+	LaunchDelay time.Duration
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -56,6 +57,7 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 		Promise: containers.NewPromise[validator.GoGlobalState](nil),
 		root:    moduleRoot,
 	}
+	<-time.After(s.LaunchDelay)
 	run.Produce(globalstateFromTestPreimages(entry.Preimages))
 	return run
 }
@@ -244,6 +246,86 @@ func TestValidationServerAPI(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(proof, mockProof) {
 		t.Error("mock proof not expected")
+	}
+}
+
+func TestValidationClientRoom(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
+	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	err := client.Start(ctx)
+	Require(t, err)
+
+	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
+	Require(t, err)
+
+	if client.Room() != 4 {
+		Fatal(t, "wrong initial room ", client.Room())
+	}
+
+	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
+	hash2 := common.HexToHash("0x11111111122222223333333444444444")
+
+	startState := validator.GoGlobalState{
+		BlockHash:  hash1,
+		SendRoot:   hash2,
+		Batch:      300,
+		PosInBatch: 3000,
+	}
+	endState := validator.GoGlobalState{
+		BlockHash:  hash2,
+		SendRoot:   hash1,
+		Batch:      3000,
+		PosInBatch: 300,
+	}
+
+	valInput := validator.ValidationInput{
+		StartState: startState,
+		Preimages:  globalstateToTestPreimages(endState),
+	}
+
+	valRuns := make([]validator.ValidationRun, 0, 4)
+
+	for i := 0; i < 4; i++ {
+		valRun := client.Launch(&valInput, wasmRoot)
+		valRuns = append(valRuns, valRun)
+	}
+
+	for i := range valRuns {
+		_, err := valRuns[i].Await(ctx)
+		Require(t, err)
+	}
+
+	if client.Room() != 4 {
+		Fatal(t, "wrong room after launch", client.Room())
+	}
+
+	mockSpawner.LaunchDelay = time.Hour
+
+	valRuns = make([]validator.ValidationRun, 0, 3)
+
+	for i := 0; i < 4; i++ {
+		valRun := client.Launch(&valInput, wasmRoot)
+		valRuns = append(valRuns, valRun)
+		room := client.Room()
+		if room != 3-i {
+			Fatal(t, "wrong room after launch ", room, " expected: ", 4-i)
+		}
+	}
+
+	for i := range valRuns {
+		valRuns[i].Cancel()
+		_, err := valRuns[i].Await(ctx)
+		if err == nil {
+			Fatal(t, "no error returned after cancel i:", i)
+		}
+	}
+
+	room := client.Room()
+	if room != 4 {
+		Fatal(t, "wrong room after canceling runs: ", room)
 	}
 }
 

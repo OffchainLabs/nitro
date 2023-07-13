@@ -77,7 +77,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		copy(extra, prevHeader.Extra)
 		mixDigest = prevHeader.MixDigest
 	}
-	return &types.Header{
+	header := &types.Header{
 		ParentHash:  lastBlockHash,
 		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
@@ -95,6 +95,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Nonce:       [8]byte{}, // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
+	return header
 }
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
@@ -305,6 +306,18 @@ func ProduceBlockAdvanced(
 			return receipt, result, nil
 		})()
 
+		if tx.Type() == types.ArbitrumInternalTxType {
+			// ArbOS might have upgraded to a new version, so we need to refresh our state
+			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Update the ArbOS version in the header (if it changed)
+			extraInfo := types.DeserializeHeaderExtraInformation(header)
+			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
+			extraInfo.UpdateHeaderWithInfo(header)
+		}
+
 		// append the err, even if it is nil
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
@@ -425,10 +438,9 @@ func ProduceBlockAdvanced(
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
 			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
-		} else {
-			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
-			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 		}
+		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
+		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 	}
 
 	return block, receipts, nil

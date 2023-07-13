@@ -33,6 +33,10 @@ type ClientConfig struct {
 }
 
 func (c *ClientConfig) Validate() error {
+	if c.RetryErrors == "" {
+		c.retryErrors = nil
+		return nil
+	}
 	var err error
 	c.retryErrors, err = regexp.Compile(c.RetryErrors)
 	return err
@@ -81,27 +85,37 @@ func (c *RpcClient) Close() {
 	}
 }
 
-func limitedMarshal(limit int, arg interface{}) string {
-	marshalled, err := json.Marshal(arg)
+type limitedMarshal struct {
+	limit int
+	value any
+}
+
+func (m limitedMarshal) String() string {
+	marshalled, err := json.Marshal(m.value)
 	var str string
 	if err != nil {
-		str = "\"CANNOT MARSHALL:" + err.Error() + "\""
+		str = "\"CANNOT MARSHALL: " + err.Error() + "\""
 	} else {
 		str = string(marshalled)
 	}
-	if limit == 0 || len(str) <= limit {
+	if m.limit == 0 || len(str) <= m.limit {
 		return str
 	}
-	prefix := str[:limit/2-1]
-	postfix := str[len(str)-limit/2+1:]
+	prefix := str[:m.limit/2-1]
+	postfix := str[len(str)-m.limit/2+1:]
 	return fmt.Sprintf("%v..%v", prefix, postfix)
 }
 
-func logArgs(limit int, args ...interface{}) string {
+type limitedArgumentsMarshal struct {
+	limit int
+	args  []any
+}
+
+func (m limitedArgumentsMarshal) String() string {
 	res := "["
-	for i, arg := range args {
-		res += limitedMarshal(limit, arg)
-		if i < len(args)-1 {
+	for i, arg := range m.args {
+		res += limitedMarshal{m.limit, arg}.String()
+		if i < len(m.args)-1 {
 			res += ", "
 		}
 	}
@@ -114,7 +128,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		return errors.New("not connected")
 	}
 	logId := atomic.AddUint64(&c.logId, 1)
-	log.Trace("sending RPC request", "method", method, "logId", logId, "args", logArgs(int(c.config().ArgLogLimit), args...))
+	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{int(c.config().ArgLogLimit), args})
 	var err error
 	for i := 0; i < int(c.config().Retries)+1; i++ {
 		if ctx_in.Err() != nil {
@@ -134,16 +148,16 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		limit := int(c.config().ArgLogLimit)
 		if err != nil && err.Error() != "already known" {
 			logger = log.Info
-			limit = 0
 		}
-		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal(limit, result), "attempt", i, "args", logArgs(limit, args...))
+		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal{limit, result}, "attempt", i, "args", limitedArgumentsMarshal{limit, args})
 		if err == nil {
 			return nil
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			continue
 		}
-		if c.config().retryErrors.MatchString(err.Error()) {
+		retryErrs := c.config().retryErrors
+		if retryErrs != nil && retryErrs.MatchString(err.Error()) {
 			continue
 		}
 		return err

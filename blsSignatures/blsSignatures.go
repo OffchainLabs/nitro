@@ -194,14 +194,13 @@ func PublicKeyToBytes(pub PublicKey) []byte {
 	g2 := bls12381.NewG2()
 	if pub.validityProof == nil {
 		return append([]byte{0}, g2.ToBytes(pub.key)...)
-	} else {
-		keyBytes := g2.ToBytes(pub.key)
-		sigBytes := SignatureToBytes(pub.validityProof)
-		if len(sigBytes) > 255 {
-			panic("validity proof too large to serialize")
-		}
-		return append(append([]byte{byte(len(sigBytes))}, sigBytes...), keyBytes...)
 	}
+	keyBytes := g2.ToBytes(pub.key)
+	sigBytes := SignatureToBytes(pub.validityProof)
+	if len(sigBytes) > 255 {
+		panic("validity proof too large to serialize")
+	}
+	return append(append([]byte{byte(len(sigBytes))}, sigBytes...), keyBytes...)
 }
 
 func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {

@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -14,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -35,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -53,35 +54,18 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                      bool                     `koanf:"enable"`
-	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
-	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist             string                   `koanf:"sender-whitelist"`
-	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
-	QueueSize                   int                      `koanf:"queue-size"`
-	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize               int                      `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize       int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry     time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
-}
-
-type DangerousSequencerConfig struct {
-	NoCoordinator bool `koanf:"no-coordinator"`
-}
-
-var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
-	NoCoordinator: false,
-}
-
-var TestDangerousSequencerConfig = DangerousSequencerConfig{
-	NoCoordinator: true,
-}
-
-func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
+	Enable                      bool            `koanf:"enable"`
+	MaxBlockSpeed               time.Duration   `koanf:"max-block-speed" reload:"hot"`
+	MaxRevertGasReject          uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist             string          `koanf:"sender-whitelist"`
+	Forwarder                   ForwarderConfig `koanf:"forwarder"`
+	QueueSize                   int             `koanf:"queue-size"`
+	QueueTimeout                time.Duration   `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize              int             `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -108,7 +92,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
-	Dangerous:                   DefaultDangerousSequencerConfig,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
@@ -125,7 +108,6 @@ var TestSequencerConfig = SequencerConfig{
 	QueueSize:                   128,
 	QueueTimeout:                time.Second * 5,
 	NonceCacheSize:              4,
-	Dangerous:                   TestDangerousSequencerConfig,
 	MaxTxDataSize:               95000,
 	NonceFailureCacheSize:       1024,
 	NonceFailureCacheExpiry:     time.Second,
@@ -144,7 +126,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
-	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
 type txQueueItem struct {
@@ -185,9 +166,8 @@ func (c *nonceCache) matches(header *types.Header) bool {
 		// The header is updated as the block is built,
 		// so instead of checking its hash, we do a pointer comparison.
 		return c.dirty == header
-	} else {
-		return c.block == header.ParentHash
 	}
+	return c.block == header.ParentHash
 }
 
 func (c *nonceCache) Reset(block common.Hash) {
@@ -635,7 +615,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 // There's no guarantee that returned tx nonces will be correct
 func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	bc := s.execEngine.bc
-	latestHeader := bc.CurrentBlock().Header()
+	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
 		log.Error("failed to get current state to pre-check nonces", "err", err)
@@ -929,12 +909,14 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	return madeBlock
 }
 
-func (s *Sequencer) updateLatestL1Block(header *types.Header) {
+func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
 	s.L1BlockAndTimeMutex.Lock()
 	defer s.L1BlockAndTimeMutex.Unlock()
-	if s.l1BlockNumber < header.Number.Uint64() {
-		s.l1BlockNumber = header.Number.Uint64()
+
+	l1BlockNumber := arbutil.ParentHeaderToL1BlockNumber(header)
+	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber) {
 		s.l1Timestamp = header.Time
+		s.l1BlockNumber = l1BlockNumber
 	}
 }
 
@@ -947,7 +929,7 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.updateLatestL1Block(header)
+	s.updateLatestParentChainBlock(header)
 	return nil
 }
 
@@ -969,7 +951,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 					if !ok {
 						return
 					}
-					s.updateLatestL1Block(header)
+					s.updateLatestParentChainBlock(header)
 				case <-ctx.Done():
 					return
 				}
@@ -984,10 +966,9 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
-		} else {
-			// If we didn't make a block, try again immediately.
-			return 0
 		}
+		// If we didn't make a block, try again immediately.
+		return 0
 	})
 
 	return nil
