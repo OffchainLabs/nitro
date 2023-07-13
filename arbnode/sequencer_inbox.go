@@ -103,16 +103,16 @@ type SequencerInboxBatch struct {
 	AfterDelayedAcc        common.Hash
 	AfterDelayedCount      uint64
 	TimeBounds             bridgegen.ISequencerInboxTimeBounds
-	rawLog                 types.Log
-	dataLocation           batchDataLocation
-	bridgeAddress          common.Address
-	serialized             []byte // nil if serialization isn't cached yet
+	RawLog                 types.Log
+	DataLocation           batchDataLocation
+	BridgeAddress          common.Address
+	Serialized             []byte // nil if serialization isn't cached yet
 }
 
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
-	switch m.dataLocation {
+	switch m.DataLocation {
 	case batchDataTxInput:
-		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
+		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.RawLog)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
 		query := ethereum.FilterQuery{
 			BlockHash: &m.BlockHash,
-			Addresses: []common.Address{m.bridgeAddress},
+			Addresses: []common.Address{m.BridgeAddress},
 			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {numberAsHash}},
 		}
 		logs, err := client.FilterLogs(ctx, query)
@@ -150,13 +150,13 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		// No data when in a force inclusion batch
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("batch has invalid data location %v", m.dataLocation)
+		return nil, fmt.Errorf("batch has invalid data location %v", m.DataLocation)
 	}
 }
 
 func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
-	if m.serialized != nil {
-		return m.serialized, nil
+	if m.Serialized != nil {
+		return m.Serialized, nil
 	}
 
 	var fullData []byte
@@ -182,7 +182,7 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1In
 	}
 	fullData = append(fullData, data...)
 
-	m.serialized = fullData
+	m.Serialized = fullData
 	return fullData, nil
 }
 
@@ -229,10 +229,10 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			AfterInboxAcc:          parsedLog.AfterAcc,
 			AfterDelayedAcc:        parsedLog.DelayedAcc,
 			AfterDelayedCount:      parsedLog.AfterDelayedMessagesRead.Uint64(),
-			rawLog:                 log,
+			RawLog:                 log,
 			TimeBounds:             parsedLog.TimeBounds,
-			dataLocation:           batchDataLocation(parsedLog.DataLocation),
-			bridgeAddress:          log.Address,
+			DataLocation:           batchDataLocation(parsedLog.DataLocation),
+			BridgeAddress:          log.Address,
 		}
 		messages = append(messages, batch)
 	}

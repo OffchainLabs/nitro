@@ -2,7 +2,11 @@ package arbtest
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"math/big"
 	"testing"
 
@@ -174,4 +178,104 @@ func managerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool)
 		}
 	})()
 	<-ctx.Done()
+}
+
+func TestExecutionStateMsgCount(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tracker, streamer := setupInboxTracker(t, ctx)
+	res, err := streamer.ResultAtCount(1)
+	Require(t, err)
+	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), 0, 0)
+	Require(t, err)
+	msgCount, err := manager.ExecutionStateMsgCount(ctx, &protocol.ExecutionState{GlobalState: protocol.GoGlobalState{Batch: 1, BlockHash: res.BlockHash}})
+	Require(t, err)
+	if msgCount != 1 {
+		Fail(t, "Unexpected msg batch", msgCount, "(expected 1)")
+	}
+}
+
+func setupInboxTracker(t *testing.T, ctx context.Context) (*arbnode.InboxTracker, *arbnode.TransactionStreamer) {
+	exec, streamer, db, _ := arbnode.NewTransactionStreamerForTest(t, common.Address{})
+	tracker, err := arbnode.NewInboxTracker(db, streamer, nil)
+	Require(t, err)
+
+	err = streamer.Start(ctx)
+	Require(t, err)
+	exec.Start(ctx)
+	init, err := streamer.GetMessage(0)
+	Require(t, err)
+
+	initMsgDelayed := &arbnode.DelayedInboxMessage{
+		BlockHash:      [32]byte{},
+		BeforeInboxAcc: [32]byte{},
+		Message:        init.Message,
+	}
+	delayedRequestId := common.BigToHash(common.Big1)
+	userDelayed := &arbnode.DelayedInboxMessage{
+		BlockHash:      [32]byte{},
+		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
+		Message: &arbostypes.L1IncomingMessage{
+			Header: &arbostypes.L1IncomingMessageHeader{
+				Kind:        arbostypes.L1MessageType_EndOfBlock,
+				Poster:      [20]byte{},
+				BlockNumber: 0,
+				Timestamp:   0,
+				RequestId:   &delayedRequestId,
+				L1BaseFee:   common.Big0,
+			},
+		},
+	}
+	err = tracker.AddDelayedMessages([]*arbnode.DelayedInboxMessage{initMsgDelayed, userDelayed}, false)
+	Require(t, err)
+
+	serializedInitMsgBatch := make([]byte, 40)
+	binary.BigEndian.PutUint64(serializedInitMsgBatch[32:], 1)
+	initMsgBatch := &arbnode.SequencerInboxBatch{
+		BlockHash:              [32]byte{},
+		ParentChainBlockNumber: 0,
+		SequenceNumber:         0,
+		BeforeInboxAcc:         [32]byte{},
+		AfterInboxAcc:          [32]byte{1},
+		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
+		AfterDelayedCount:      1,
+		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedInitMsgBatch,
+	}
+	serializedUserMsgBatch := make([]byte, 40)
+	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
+	userMsgBatch := &arbnode.SequencerInboxBatch{
+		BlockHash:              [32]byte{},
+		ParentChainBlockNumber: 0,
+		SequenceNumber:         1,
+		BeforeInboxAcc:         [32]byte{1},
+		AfterInboxAcc:          [32]byte{2},
+		AfterDelayedAcc:        userDelayed.AfterInboxAcc(),
+		AfterDelayedCount:      2,
+		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedUserMsgBatch,
+	}
+	emptyBatch := &arbnode.SequencerInboxBatch{
+		BlockHash:              [32]byte{},
+		ParentChainBlockNumber: 0,
+		SequenceNumber:         2,
+		BeforeInboxAcc:         [32]byte{2},
+		AfterInboxAcc:          [32]byte{3},
+		AfterDelayedAcc:        userDelayed.AfterInboxAcc(),
+		AfterDelayedCount:      2,
+		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedUserMsgBatch,
+	}
+	err = tracker.AddSequencerBatches(ctx, nil, []*arbnode.SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
+	Require(t, err)
+	return tracker, streamer
 }

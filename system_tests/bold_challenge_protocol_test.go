@@ -263,7 +263,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, stackConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, stackConfig)
 	addresses, assertionChainBindings := deployBoldProtocolContracts(t, ctx, l1info, l1client, chainConfig.ChainID)
 	assertionChain = assertionChainBindings
 	var sequencerTxOptsPtr *bind.TransactOpts

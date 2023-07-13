@@ -1035,3 +1035,8 @@ func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 	endpoint := node.Stack.WSEndpoint() // this assumes both use the same address
 	return getExecNodeFromEndpoint(t, endpoint)
 }
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
+}
