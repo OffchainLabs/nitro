@@ -1,8 +1,8 @@
 
 (module
-    (import "vm_hooks" "add" (func $add (param i32 i32) (result i32)))
-    (import "vm_hooks" "sub" (func $sub (param i32 i32) (result i32)))
-    (import "vm_hooks" "mul" (func $mul (param i32 i32) (result i32)))
+    (import "forward" "add" (func $add (param i32 i32) (result i32)))
+    (import "forward" "sub" (func $sub (param i32 i32) (result i32)))
+    (import "forward" "mul" (func $mul (param i32 i32) (result i32)))
     (func $start
         ;; this address will update each time a forwarded call is made
         i32.const 0xa4b
