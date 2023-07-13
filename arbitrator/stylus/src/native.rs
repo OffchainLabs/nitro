@@ -117,7 +117,7 @@ impl<E: EvmApi> NativeInstance<E> {
             };
         }
         let mut imports = imports! {
-            "forward" => {
+            "vm_hooks" => {
                 "read_args" => func!(host::read_args),
                 "return_data" => func!(host::return_data),
                 "account_load_bytes32" => func!(host::account_load_bytes32),
@@ -147,6 +147,7 @@ impl<E: EvmApi> NativeInstance<E> {
                 "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
                 "memory_grow" => func!(host::memory_grow),
+                "native_keccak256" => func!(host::native_keccak256),
             },
         };
         if debug_funcs {
@@ -308,7 +309,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         };
     }
     let mut imports = imports! {
-        "forward" => {
+        "vm_hooks" => {
             "read_args" => stub!(|_: u32|),
             "return_data" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
@@ -338,6 +339,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "tx_ink_price" => stub!(u64 <- ||),
             "tx_origin" => stub!(|_: u32|),
             "memory_grow" => stub!(|_: u16|),
+            "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
         },
     };
     if compile.debug.debug_funcs {
