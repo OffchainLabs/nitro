@@ -5,7 +5,7 @@
 
 use sha3::{Digest, Keccak256};
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut data = keccak(&input[1..]);
