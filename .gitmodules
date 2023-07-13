@@ -20,6 +20,9 @@
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
+[submodule "nitro-testnode"]
+	path = nitro-testnode
+	url = https://github.com/OffchainLabs/nitro-testnode.git
 [submodule "challenge-protocol-v2"]
 	path = challenge-protocol-v2
 	url = https://github.com/OffchainLabs/challenge-protocol-v2.git

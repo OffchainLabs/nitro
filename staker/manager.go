@@ -23,7 +23,6 @@ func NewManager(
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
-	blockValidator *BlockValidator,
 ) (*challengemanager.Manager, error) {
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
@@ -60,7 +59,6 @@ func NewManager(
 	}
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
-		blockValidator,
 		smallStepEdgeHeight.Uint64(),
 		bigStepEdgeHeight.Uint64()*smallStepEdgeHeight.Uint64(),
 	)

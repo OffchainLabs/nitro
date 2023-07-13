@@ -70,7 +70,6 @@ func TestAssertionPostingV2(t *testing.T) {
 
 	stateManager, err := NewStateManager(
 		nil,
-		nil,
 		32,
 		32*32,
 	)

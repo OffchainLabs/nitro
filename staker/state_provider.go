@@ -31,15 +31,13 @@ var (
 
 type StateManager struct {
 	validator            *StatelessBlockValidator
-	blockValidator       *BlockValidator
 	numOpcodesPerBigStep uint64
 	maxWavmOpcodes       uint64
 }
 
-func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
 	return &StateManager{
 		validator:            val,
-		blockValidator:       blockValidator,
 		numOpcodesPerBigStep: numOpcodesPerBigStep,
 		maxWavmOpcodes:       maxWavmOpcodes,
 	}, nil
@@ -553,6 +551,7 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	return stateRoots, nil
 }
 
+// STOP
 func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil

@@ -148,7 +148,6 @@ func TestBoldProtocol(t *testing.T) {
 
 	stateManager, err := staker.NewStateManager(
 		statelessA,
-		nil,
 		32,
 		32*32,
 	)
@@ -166,7 +165,6 @@ func TestBoldProtocol(t *testing.T) {
 
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
-		nil,
 		32,
 		32*32,
 	)
