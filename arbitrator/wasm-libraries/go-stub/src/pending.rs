@@ -63,7 +63,7 @@ pub unsafe extern "C" fn go_stub__run_stylus_closure(
     };
     set_event(func, this, args);
 
-    #[allow(clippy::drop_ref)]
+    #[allow(dropping_references)]
     mem::drop(pool);
     wavm_guest_call__resume();
 

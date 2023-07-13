@@ -640,7 +640,7 @@ pub unsafe extern "C" fn wavm__go_after_run() {
         while state.pending_ids.contains(&info.id) {
             TIME = std::cmp::max(TIME, info.time);
 
-            #[allow(clippy::drop_ref)]
+            #[allow(dropping_references)]
             drop(state); // wavm_guest_call__resume is re-entrant, so cut the ref's lifetime
 
             wavm_guest_call__resume();

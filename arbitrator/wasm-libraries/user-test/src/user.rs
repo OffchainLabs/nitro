@@ -4,7 +4,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::{Program, ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
-use arbutil::{evm, wavm, Bytes32, crypto};
+use arbutil::{crypto, evm, wavm, Bytes32};
 use prover::programs::{memory::MemoryModel, prelude::GasMeteredMachine};
 
 #[no_mangle]

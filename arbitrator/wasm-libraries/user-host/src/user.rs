@@ -3,8 +3,9 @@
 
 use crate::{evm_api::ApiCaller, Program};
 use arbutil::{
+    crypto,
     evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
-    wavm, Bytes20, Bytes32, crypto,
+    wavm, Bytes20, Bytes32,
 };
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 
