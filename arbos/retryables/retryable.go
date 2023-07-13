@@ -29,11 +29,59 @@ var ErrInvalidRoot = errors.New("invalid root hash")
 var ErrWrongProof = errors.New("wrong proof")
 var ErrAlreadyRevived = errors.New("already revived")
 
+type MerkleRootSnapshots struct {
+	ring *storage.RingBuffer
+}
+
+func InitializeMerkleRootSnapshots(sto *storage.Storage, capacity uint64) error {
+	// RingBuffer of size 2 * capacity, holds sequence of tree sizes and root hashes, tree size inserted before corresponding root hash
+	return storage.InitializeRingBuffer(sto, 2*capacity)
+}
+
+func OpenMerkleRoootSnapshots(sto *storage.Storage) *MerkleRootSnapshots {
+	return &MerkleRootSnapshots{
+		ring: storage.OpenRingBuffer(sto),
+	}
+}
+
+func (s *MerkleRootSnapshots) Rotate(root common.Hash, treeSize uint64) error {
+	return s.ring.RotateN([]common.Hash{util.UintToHash(treeSize), root})
+}
+
+func (s *MerkleRootSnapshots) LastRoot() (common.Hash, error) {
+	return s.ring.Peek()
+}
+
+func (s *MerkleRootSnapshots) LastSnapshot() (common.Hash, uint64, error) {
+	values, err := s.ring.PeekN(2)
+	if err != nil {
+		return common.Hash{}, 0, err
+	}
+	return values[0], values[1].Big().Uint64(), nil
+}
+
+func (s *MerkleRootSnapshots) HasRoot(root common.Hash) (bool, error) {
+	var found bool
+	err := s.ring.ForSome(func(_ uint64, previousRoot common.Hash) (bool, error) {
+		found = bytes.Equal(root.Bytes(), previousRoot.Bytes())
+		return found, nil
+	}, 1, 2)
+	return found, err
+}
+
+func (s *MerkleRootSnapshots) LastRotation() (uint64, error) {
+	return s.ring.Extra()
+}
+
+func (s *MerkleRootSnapshots) SetLastRotation(timestamp uint64) error {
+	return s.ring.SetExtra(timestamp)
+}
+
 type RetryableState struct {
 	retryables       *storage.Storage
 	TimeoutQueue     *storage.Queue
 	Expired          *merkleAccumulator.MerkleAccumulator
-	expiredSnapshots *storage.RingBuffer
+	expiredSnapshots *MerkleRootSnapshots
 	Revived          *storage.Uint64Set
 }
 
@@ -51,8 +99,7 @@ func InitializeRetryableState(sto *storage.Storage) error {
 	if err := storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey)); err != nil {
 		return err
 	}
-	// RingBuffer of size 2 * ExpiredSnapshotsCapacity, holds sequence of tree sizes and root hashes, tree size inserted before corresponding root hash
-	return storage.InitializeRingBuffer(sto.OpenSubStorage(expiredSnapshotsKey), 2*ExpiredSnapshotsCapacity)
+	return InitializeMerkleRootSnapshots(sto.OpenSubStorage(expiredSnapshotsKey), ExpiredSnapshotsCapacity)
 }
 
 func OpenRetryableState(sto *storage.Storage) *RetryableState {
@@ -60,7 +107,7 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
 		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
-		storage.OpenRingBuffer(sto.OpenSubStorage(expiredSnapshotsKey)),
+		OpenMerkleRoootSnapshots(sto.OpenSubStorage(expiredSnapshotsKey)),
 		storage.OpenUint64Set(sto.OpenSubStorage(revivedKey)),
 	}
 }
@@ -364,11 +411,7 @@ func (rs *RetryableState) Revive(
 	currentTimestamp,
 	timeToAdd uint64,
 ) (uint64, error) {
-	var found bool
-	err := rs.expiredSnapshots.ForSome(func(_ uint64, previousRoot common.Hash) (bool, error) {
-		found = bytes.Equal(rootHash.Bytes(), previousRoot.Bytes())
-		return found, nil
-	}, 1, 2)
+	found, err := rs.expiredSnapshots.HasRoot(rootHash)
 	if err != nil {
 		return 0, err
 	}
@@ -546,7 +589,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 }
 
 func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) error {
-	lastRotation, err := rs.expiredSnapshots.Extra()
+	lastRotation, err := rs.expiredSnapshots.LastRotation()
 	if err != nil {
 		return err
 	}
@@ -555,20 +598,20 @@ func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) er
 		if err != nil {
 			return err
 		}
-		lastRoot, err := rs.expiredSnapshots.Peek()
+		lastRoot, err := rs.expiredSnapshots.LastRoot()
 		if err != nil {
 			return err
 		}
 		if !bytes.Equal(currentRoot.Bytes(), lastRoot.Bytes()) {
-			size, err := rs.Expired.Size()
+			treeSize, err := rs.Expired.Size()
 			if err != nil {
 				return err
 			}
-			if err = rs.expiredSnapshots.RotateN([]common.Hash{util.UintToHash(size), currentRoot}); err != nil {
+			if err = rs.expiredSnapshots.Rotate(currentRoot, treeSize); err != nil {
 				return err
 			}
 		}
-		err = rs.expiredSnapshots.SetExtra(currentTime)
+		err = rs.expiredSnapshots.SetLastRotation(currentTime)
 		if err != nil {
 			return err
 		}
@@ -577,11 +620,7 @@ func (rs *RetryableState) TryRotatingExpiredRootSnapshots(currentTime uint64) er
 }
 
 func (rs *RetryableState) LastExpiredRootSnapshot() (common.Hash, uint64, error) {
-	values, err := rs.expiredSnapshots.PeekN(2)
-	if err != nil {
-		return common.Hash{}, 0, err
-	}
-	return values[0], values[1].Big().Uint64(), nil
+	return rs.expiredSnapshots.LastSnapshot()
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {
