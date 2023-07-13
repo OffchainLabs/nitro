@@ -15,7 +15,10 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// Storage requires that Item is RLP encodable/decodable
+// Storage implements redis sorted set backed storage. It does not support
+// duplicate keys or values. That is, putting the same element on different
+// indexes will not yield expected behavior.
+// More  at: https://redis.io/commands/zadd/.
 type Storage[Item any] struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac
