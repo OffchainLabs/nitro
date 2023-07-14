@@ -56,21 +56,26 @@ var (
 	smallStepPrefix      = "small-step"
 )
 
+// HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
 type HistoryCommitmentCacher interface {
 	Get(lookup *Key, readUpTo option.Option[protocol.Height]) ([]common.Hash, error)
 	Put(lookup *Key, stateRoots []common.Hash) error
 }
 
+// Cache for history commitments on disk.
 type Cache struct {
 	baseDir string
 }
 
+// New cache from a base directory path.
 func New(baseDir string) (*Cache, error) {
 	return &Cache{
 		baseDir: baseDir,
 	}, nil
 }
 
+// Key for cache lookups includes the wavm module root and assertion of a challenge, as well
+// as the height ranges for messages, big steps, and small steps as needed.
 type Key struct {
 	WavmModuleRoot common.Hash
 	AssertionHash  common.Hash
@@ -79,11 +84,14 @@ type Key struct {
 	ToSmallStep    option.Option[protocol.Height]
 }
 
+// HeightRange within a challenge.
 type HeightRange struct {
 	from protocol.Height
 	to   protocol.Height
 }
 
+// Get a list of state roots from the cache up to a certain index if specified. If none, then all
+// state roots for the lookup key will be retrieved.
 func (c *Cache) Get(
 	lookup *Key,
 	readUpTo option.Option[protocol.Height],
@@ -103,6 +111,7 @@ func (c *Cache) Get(
 	return readStateRoots(f, readUpTo)
 }
 
+// Put a list of state roots into the cache. If the file already exists, ErrFileAlreadyExists will be returned.
 func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
@@ -133,6 +142,7 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	return os.Rename(tmpFName /* old */, fName /* new */)
 }
 
+// Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
 func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
