@@ -367,11 +367,11 @@ func testReturnData(t *testing.T, jit bool) {
 		testReadReturnData(1, 0, uint32(len(dataToSend)), uint32(len(dataToSend)), 1)
 	}
 
-	testReadReturnData(1, 0, 5, 4, 1)
-	testReadReturnData(1, 0, 1, 1, 1)
-	testReadReturnData(1, 5, 1, 0, 1)
-	testReadReturnData(1, 0, 0, 0, 1)
-	testReadReturnData(1, 0, 4, 4, 1)
+	testReadReturnData(1, 0, 5, 4, 2)
+	testReadReturnData(1, 0, 1, 1, 2)
+	testReadReturnData(1, 5, 1, 0, 2)
+	testReadReturnData(1, 0, 0, 0, 2)
+	testReadReturnData(1, 0, 4, 4, 2)
 
 	testReadReturnData(2, 0, 5, 4, 1)
 	testReadReturnData(2, 0, 1, 1, 1)
