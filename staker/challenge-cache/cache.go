@@ -56,6 +56,11 @@ var (
 	smallStepPrefix      = "small-step"
 )
 
+type HistoryCommitmentCacher interface {
+	Get(lookup *Key, readUpTo option.Option[protocol.Height]) ([]common.Hash, error)
+	Put(lookup *Key, stateRoots []common.Hash) error
+}
+
 type Cache struct {
 	baseDir string
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var _ HistoryCommitmentCacher = (*Cache)(nil)
+
 func TestCache(t *testing.T) {
 	basePath := os.TempDir()
 	t.Cleanup(func() {
