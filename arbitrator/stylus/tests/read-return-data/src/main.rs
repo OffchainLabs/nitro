@@ -38,7 +38,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         Call::new().limit_return_data(offset, size).call(precompile, &call_data)?;
     }
 
-    for _ in 1..count {
+    for _ in 0..count {
         let data = match call_type {
             0 => Call::new().call(precompile, &call_data)?,
             1 => Call::new().limit_return_data(offset, size).call(precompile, &call_data)?,

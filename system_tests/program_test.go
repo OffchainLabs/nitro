@@ -363,7 +363,7 @@ func testReturnData(t *testing.T, jit bool) {
 	}
 
 	for i := 0; i < 40; i++ {
-		testReadReturnData(0, 0, 0, uint32(len(dataToSend)), 1)
+		testReadReturnData(1, 0, uint32(len(dataToSend)), uint32(len(dataToSend)), 1)
 	}
 
 	/*
