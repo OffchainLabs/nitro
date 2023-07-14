@@ -132,7 +132,7 @@ func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]com
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
-	numRead := uint64(0)
+	idx := uint64(0)
 	for {
 		n, err := br.Read(buf[:cap(buf)])
 		buf = buf[:n]
@@ -147,12 +147,22 @@ func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]com
 		}
 		stateRoots = append(stateRoots, common.BytesToHash(buf))
 		if !readUpTo.IsNone() {
-			if numRead >= uint64(readUpTo.Unwrap()) {
+			if idx >= uint64(readUpTo.Unwrap()) {
 				return stateRoots, nil
 			}
 		}
 		if err != nil && err != io.EOF {
 			return nil, err
+		}
+		idx++
+	}
+	if !readUpTo.IsNone() {
+		if readUpTo.Unwrap() > protocol.Height(len(stateRoots)) {
+			return nil, fmt.Errorf(
+				"wanted to read up to %d, but only read %d state roots",
+				readUpTo.Unwrap(),
+				len(stateRoots),
+			)
 		}
 	}
 	return stateRoots, nil
