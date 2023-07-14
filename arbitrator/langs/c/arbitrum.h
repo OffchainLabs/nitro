@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#define USER_HOST import_module("forward")
+#define USER_HOST import_module("vm_hooks")
 
 extern __attribute__((USER_HOST, import_name("read_args"))) void read_args(const uint8_t * data);
 extern __attribute__((USER_HOST, import_name("return_data"))) void return_data(const uint8_t * data, size_t len);
