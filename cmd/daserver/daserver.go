@@ -145,11 +145,11 @@ func (c *L1ReaderCloser) String() string {
 // Checks metrics and PProf flag, runs them if enabled.
 // Note: they are separate so one can enable/disable them as they wish, the only
 // requirement is that they can't run on the same address and port.
-func mustRunMetrics(cfg *DAServerConfig) {
+func startMetrics(cfg *DAServerConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		log.Crit("Metrics and pprof cannot be enabled on the same address:port", "addr", mAddr)
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
 	if cfg.Metrics {
 		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
@@ -158,6 +158,7 @@ func mustRunMetrics(cfg *DAServerConfig) {
 	if cfg.PProf {
 		genericconf.StartPprof(pAddr)
 	}
+	return nil
 }
 
 func startup() error {
@@ -176,16 +177,8 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	if serverConfig.Metrics {
-		if len(serverConfig.MetricsServer.Addr) == 0 {
-			fmt.Printf("Metrics is enabled, but missing --metrics-server.addr")
-			return nil
-		}
-
-		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
-
-		address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
-		exp.Setup(address)
+	if err := startMetrics(serverConfig); err != nil {
+		return err
 	}
 
 	sigint := make(chan os.Signal, 1)

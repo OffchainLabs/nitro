@@ -125,11 +125,11 @@ func main() {
 // Checks metrics and PProf flag, runs them if enabled.
 // Note: they are separate so one can enable/disable them as they wish, the only
 // requirement is that they can't run on the same address and port.
-func mustRunMetrics(cfg *NodeConfig) {
+func startMetrics(cfg *NodeConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		log.Crit("Metrics and pprof cannot be enabled on the same address:port", "addr", mAddr)
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
 	if cfg.Metrics {
 		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
@@ -138,6 +138,7 @@ func mustRunMetrics(cfg *NodeConfig) {
 	if cfg.PProf {
 		genericconf.StartPprof(pAddr)
 	}
+	return nil
 }
 
 // Returns the exit code
@@ -368,7 +369,10 @@ func mainImpl() int {
 		}
 	}
 
-	mustRunMetrics(nodeConfig)
+	if err := startMetrics(nodeConfig); err != nil {
+		log.Error("Starting metrics: %v", err)
+		return 1
+	}
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
 	defer closeDb(chainDb, "chainDb")

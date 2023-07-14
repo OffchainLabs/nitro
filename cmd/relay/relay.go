@@ -40,11 +40,11 @@ func printSampleUsage(progname string) {
 // Checks metrics and PProf flag, runs them if enabled.
 // Note: they are separate so one can enable/disable them as they wish, the only
 // requirement is that they can't run on the same address and port.
-func mustRunMetrics(cfg *relay.Config) {
+func startMetrics(cfg *relay.Config) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		log.Crit("Metrics and pprof cannot be enabled on the same address:port", "addr", mAddr)
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
 	if cfg.Metrics {
 		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
@@ -53,6 +53,7 @@ func mustRunMetrics(cfg *relay.Config) {
 	if cfg.PProf {
 		genericconf.StartPprof(pAddr)
 	}
+	return nil
 }
 
 func startup() error {
@@ -87,10 +88,11 @@ func startup() error {
 		return err
 	}
 
-	mustRunMetrics(relayConfig)
+	if err := startMetrics(relayConfig); err != nil {
+		return err
+	}
 
-	err = newRelay.Start(ctx)
-	if err != nil {
+	if err := newRelay.Start(ctx); err != nil {
 		return err
 	}
 
