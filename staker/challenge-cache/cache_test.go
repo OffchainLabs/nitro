@@ -3,6 +3,7 @@ package challengecache
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -15,7 +16,13 @@ import (
 var _ HistoryCommitmentCacher = (*Cache)(nil)
 
 func TestCache(t *testing.T) {
-	basePath := os.TempDir()
+	basePath, err := ioutil.TempDir("", "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		if err := os.RemoveAll(basePath); err != nil {
 			t.Fatal(err)
@@ -245,7 +252,13 @@ func Test_determineFilePath(t *testing.T) {
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
 	b.StopTimer()
-	basePath := os.TempDir()
+	basePath, err := ioutil.TempDir("", "*")
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	b.Cleanup(func() {
 		if err := os.RemoveAll(basePath); err != nil {
 			b.Fatal(err)
