@@ -42,6 +42,8 @@ type queuedTransaction[Meta any] struct {
 	NextReplacement time.Time
 }
 
+// Note: one of the implementation of this interface (Redis storage) does not
+// support duplicate values.
 type QueueStorage[Item any] interface {
 	GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
 	GetLast(ctx context.Context) (*Item, error)
