@@ -31,11 +31,10 @@ func TestCache(t *testing.T) {
 	cache := New(basePath)
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
-		AssertionHash:  common.BytesToHash([]byte("bar")),
 		MessageRange:   HeightRange{From: 0, To: 1},
-		BigStepRange: option.Some(HeightRange{
+		BigStepRange: HeightRange{
 			From: 0, To: 1,
-		}),
+		},
 		ToSmallStep: option.Some(protocol.Height(100)),
 	}
 	want := []common.Hash{
@@ -167,9 +166,9 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 102,
 					},
-					BigStepRange: option.Some(HeightRange{
+					BigStepRange: HeightRange{
 						From: 0, To: 1,
-					}),
+					},
 				},
 			},
 			wantErr:     true,
@@ -183,9 +182,9 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 101,
 					},
-					BigStepRange: option.Some(HeightRange{
+					BigStepRange: HeightRange{
 						From: 1, To: 0,
-					}),
+					},
 				},
 			},
 			wantErr:     true,
@@ -199,9 +198,9 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 101,
 					},
-					BigStepRange: option.Some(HeightRange{
+					BigStepRange: HeightRange{
 						From: 100, To: 102,
-					}),
+					},
 					ToSmallStep: option.Some(protocol.Height(100)),
 				},
 			},
@@ -216,13 +215,13 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 101,
 					},
-					BigStepRange: option.Some(HeightRange{
+					BigStepRange: HeightRange{
 						From: 50, To: 51,
-					}),
+					},
 					ToSmallStep: option.Some(protocol.Height(100)),
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/assertion-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-101/big-step-50-51/small-step-0-100/roots.txt",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-101/big-step-50-51/small-step-0-100/roots.txt",
 			wantErr: false,
 		},
 	}
@@ -264,11 +263,10 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	cache := New(basePath)
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
-		AssertionHash:  common.BytesToHash([]byte("bar")),
 		MessageRange:   HeightRange{From: 0, To: 1},
-		BigStepRange: option.Some(HeightRange{
+		BigStepRange: HeightRange{
 			From: 0, To: 1,
-		}),
+		},
 		ToSmallStep: option.Some(protocol.Height(100)),
 	}
 	numRoots := 1 << 20

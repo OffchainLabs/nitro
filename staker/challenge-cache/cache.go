@@ -10,22 +10,18 @@ it will write the roots to this filesystem hierarchy for fast access next time t
 Each file can be written to ONCE, and then accessed at unpredictable times as a challenge is ongoing.
 
 Use cases:
-- State roots for a block challenge from message 0 to N
 - State roots for a big step challenge from message N to N+1
 - State roots 0 to M for a big step challenge from message N to N+1
 - State roots for a small step challenge from message N to N+1, and big step M to M+1
 - State roots 0 to P for a small step challenge from message N to N+1, and big step M to M+1
 
 	  wavm-module-root-0xab/
-		assertion-0x123/
-			message-num-0-100/
+		message-num-70-71/
+			big-step-0-2048/
 				roots.txt
-			message-num-70-71/
-				big-step-0-2048/
+			big-step-100-101/
+				small-step-0-256/
 					roots.txt
-				big-step-100-101/
-					small-step-0-256/
-						roots.txt
 
 We namespace top-level block challenges by wavm module root and assertion hash. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -50,7 +46,6 @@ var (
 	ErrFileAlreadyExists = errors.New("file already exists")
 	stateRootsFileName   = "roots.txt"
 	wavmModuleRootPrefix = "wavm-module-root"
-	assertionPrefix      = "assertion"
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
 	smallStepPrefix      = "small-step"
@@ -78,9 +73,8 @@ func New(baseDir string) *Cache {
 // as the height ranges for messages, big steps, and small steps as needed.
 type Key struct {
 	WavmModuleRoot common.Hash
-	AssertionHash  common.Hash
 	MessageRange   HeightRange
-	BigStepRange   option.Option[HeightRange]
+	BigStepRange   HeightRange
 	ToSmallStep    option.Option[protocol.Height]
 }
 
@@ -208,15 +202,12 @@ for the data requested within the cache directory hierarchy. The folder structur
 for a given filesystem challenge cache will look as follows:
 
 	  wavm-module-root-0xab/
-		assertion-0x123/
-			message-num-0-100/
+		message-num-70-71/
+			big-step-0-2048/
 				roots.txt
-			message-num-70-71/
-				big-step-0-2048/
+			big-step-100-101/
+				small-step-0-256/
 					roots.txt
-				big-step-100-101/
-					small-step-0-256/
-						roots.txt
 
 Invariants:
 - Message number height from < to
@@ -227,26 +218,19 @@ Invariants:
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
-	key = append(key, fmt.Sprintf("%s-%s", assertionPrefix, lookup.AssertionHash.Hex()))
-	if err := lookup.MessageRange.ValidateIncreasing(); err != nil {
+	if err := lookup.MessageRange.ValidateOneStepFork(); err != nil {
 		return "", fmt.Errorf("message number range invalid")
 	}
 	key = append(key, fmt.Sprintf("%s-%d-%d", messageNumberPrefix, lookup.MessageRange.From, lookup.MessageRange.To))
-	if !lookup.BigStepRange.IsNone() {
-		if err := lookup.MessageRange.ValidateOneStepFork(); err != nil {
-			return "", fmt.Errorf("message number range invalid")
-		}
-		bigRange := lookup.BigStepRange.Unwrap()
-		if err := bigRange.ValidateIncreasing(); err != nil {
+	if err := lookup.BigStepRange.ValidateIncreasing(); err != nil {
+		return "", fmt.Errorf("big step range invalid")
+	}
+	key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, lookup.BigStepRange.From, lookup.BigStepRange.To))
+	if !lookup.ToSmallStep.IsNone() {
+		if err := lookup.BigStepRange.ValidateOneStepFork(); err != nil {
 			return "", fmt.Errorf("big step range invalid")
 		}
-		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, bigRange.From, bigRange.To))
-		if !lookup.ToSmallStep.IsNone() {
-			if err := bigRange.ValidateOneStepFork(); err != nil {
-				return "", fmt.Errorf("big step range invalid")
-			}
-			key = append(key, fmt.Sprintf("%s-0-%d", smallStepPrefix, lookup.ToSmallStep.Unwrap()))
-		}
+		key = append(key, fmt.Sprintf("%s-0-%d", smallStepPrefix, lookup.ToSmallStep.Unwrap()))
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
