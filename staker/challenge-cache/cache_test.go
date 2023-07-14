@@ -28,16 +28,13 @@ func TestCache(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	cache, err := New(basePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache := New(basePath)
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		AssertionHash:  common.BytesToHash([]byte("bar")),
-		MessageRange:   HeightRange{from: 0, to: 1},
+		MessageRange:   HeightRange{From: 0, To: 1},
 		BigStepRange: option.Some(HeightRange{
-			from: 0, to: 1,
+			From: 0, To: 1,
 		}),
 		ToSmallStep: option.Some(protocol.Height(100)),
 	}
@@ -142,7 +139,7 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageRange: HeightRange{
-						from: 1, to: 0,
+						From: 1, To: 0,
 					},
 				},
 			},
@@ -155,7 +152,7 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageRange: HeightRange{
-						from: 100, to: 100,
+						From: 100, To: 100,
 					},
 				},
 			},
@@ -168,10 +165,10 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageRange: HeightRange{
-						from: 100, to: 102,
+						From: 100, To: 102,
 					},
 					BigStepRange: option.Some(HeightRange{
-						from: 0, to: 1,
+						From: 0, To: 1,
 					}),
 				},
 			},
@@ -184,10 +181,10 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageRange: HeightRange{
-						from: 100, to: 101,
+						From: 100, To: 101,
 					},
 					BigStepRange: option.Some(HeightRange{
-						from: 1, to: 0,
+						From: 1, To: 0,
 					}),
 				},
 			},
@@ -200,10 +197,10 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageRange: HeightRange{
-						from: 100, to: 101,
+						From: 100, To: 101,
 					},
 					BigStepRange: option.Some(HeightRange{
-						from: 100, to: 102,
+						From: 100, To: 102,
 					}),
 					ToSmallStep: option.Some(protocol.Height(100)),
 				},
@@ -217,10 +214,10 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageRange: HeightRange{
-						from: 100, to: 101,
+						From: 100, To: 101,
 					},
 					BigStepRange: option.Some(HeightRange{
-						from: 50, to: 51,
+						From: 50, To: 51,
 					}),
 					ToSmallStep: option.Some(protocol.Height(100)),
 				},
@@ -264,16 +261,13 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 			b.Fatal(err)
 		}
 	})
-	cache, err := New(basePath)
-	if err != nil {
-		b.Fatal(err)
-	}
+	cache := New(basePath)
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		AssertionHash:  common.BytesToHash([]byte("bar")),
-		MessageRange:   HeightRange{from: 0, to: 1},
+		MessageRange:   HeightRange{From: 0, To: 1},
 		BigStepRange: option.Some(HeightRange{
-			from: 0, to: 1,
+			From: 0, To: 1,
 		}),
 		ToSmallStep: option.Some(protocol.Height(100)),
 	}

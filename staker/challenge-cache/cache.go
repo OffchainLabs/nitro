@@ -68,10 +68,10 @@ type Cache struct {
 }
 
 // New cache from a base directory path.
-func New(baseDir string) (*Cache, error) {
+func New(baseDir string) *Cache {
 	return &Cache{
 		baseDir: baseDir,
-	}, nil
+	}
 }
 
 // Key for cache lookups includes the wavm module root and assertion of a challenge, as well
@@ -86,8 +86,8 @@ type Key struct {
 
 // HeightRange within a challenge.
 type HeightRange struct {
-	from protocol.Height
-	to   protocol.Height
+	From protocol.Height
+	To   protocol.Height
 }
 
 // Get a list of state roots from the cache up to a certain index if specified. If none, then all
@@ -231,7 +231,7 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	if err := lookup.MessageRange.ValidateIncreasing(); err != nil {
 		return "", fmt.Errorf("message number range invalid")
 	}
-	key = append(key, fmt.Sprintf("%s-%d-%d", messageNumberPrefix, lookup.MessageRange.from, lookup.MessageRange.to))
+	key = append(key, fmt.Sprintf("%s-%d-%d", messageNumberPrefix, lookup.MessageRange.From, lookup.MessageRange.To))
 	if !lookup.BigStepRange.IsNone() {
 		if err := lookup.MessageRange.ValidateOneStepFork(); err != nil {
 			return "", fmt.Errorf("message number range invalid")
@@ -240,7 +240,7 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 		if err := bigRange.ValidateIncreasing(); err != nil {
 			return "", fmt.Errorf("big step range invalid")
 		}
-		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, bigRange.from, bigRange.to))
+		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, bigRange.From, bigRange.To))
 		if !lookup.ToSmallStep.IsNone() {
 			if err := bigRange.ValidateOneStepFork(); err != nil {
 				return "", fmt.Errorf("big step range invalid")
@@ -254,19 +254,19 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 
 // ValidateIncreasing checks if a height range has from < to.
 func (h HeightRange) ValidateIncreasing() error {
-	if h.from >= h.to {
-		return fmt.Errorf("from %d was >= to %d", h.from, h.to)
+	if h.From > h.To {
+		return fmt.Errorf("from %d was >= to %d", h.From, h.To)
 	}
 	return nil
 }
 
 // ValidateOneStepFork checks if a height range has a difference of 1.
 func (h HeightRange) ValidateOneStepFork() error {
-	if h.to != h.from+1 {
+	if h.To != h.From+1 {
 		return fmt.Errorf(
 			"expected range difference of 1, got range from %d to %d",
-			h.from,
-			h.to,
+			h.From,
+			h.To,
 		)
 	}
 	return nil
