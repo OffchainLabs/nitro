@@ -65,7 +65,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "stable"
+          toolchain: "1.70.0"
           override: true
           components: 'llvm-tools-preview, rustfmt'
 
