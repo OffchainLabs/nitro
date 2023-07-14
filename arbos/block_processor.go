@@ -345,11 +345,7 @@ func ProduceBlockAdvanced(
 			log.Debug("error applying transaction", "tx", tx, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
-				if blockGasLeft > params.TxGas {
-					blockGasLeft -= params.TxGas
-				} else {
-					blockGasLeft = 0
-				}
+				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
 				}
@@ -418,13 +414,9 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		if blockGasLeft > computeUsed {
-			blockGasLeft -= computeUsed
-		} else {
-			blockGasLeft = 0
-		}
+		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
 
-		// add gas used since startup to prometheus metric
+		// Add gas used since startup to prometheus metric.
 		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
 		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
 
