@@ -31,13 +31,15 @@ var (
 
 type StateManager struct {
 	validator            *StatelessBlockValidator
+	blockValidator       *BlockValidator
 	numOpcodesPerBigStep uint64
 	maxWavmOpcodes       uint64
 }
 
-func NewStateManager(val *StatelessBlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
 	return &StateManager{
 		validator:            val,
+		blockValidator:       blockValidator,
 		numOpcodesPerBigStep: numOpcodesPerBigStep,
 		maxWavmOpcodes:       maxWavmOpcodes,
 	}, nil
@@ -50,7 +52,6 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	// if state.MachineStatus != protocol.MachineStatusRunning {
 	// 	return 0, errors.New("state is not running")
 	// }
-	fmt.Printf("Checking batch message count for state: %+v\n", state)
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch)
 	if err != nil {
 		return 0, err
@@ -80,7 +81,6 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	if err != nil {
 		return 0, err
 	}
-	fmt.Printf("Checking validator streamer response %+v against state %+v\n", res, state)
 	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
 		return 0, l2stateprovider.ErrNoExecutionState
 	}
@@ -89,7 +89,6 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 
 // ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
 func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
-	fmt.Println("Searching for batch after message count", messageNumber)
 	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
 	if err != nil {
 		return &protocol.ExecutionState{}, err
@@ -117,14 +116,12 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageNumber 
 	if err != nil {
 		return commitments.History{}, err
 	}
-	fmt.Printf("Called hist commit up to %d, and going up to %d\n", batch, messageNumber)
 	var stateRoots []common.Hash
 	for i := arbutil.MessageIndex(0); i <= arbutil.MessageIndex(messageNumber); i++ {
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
 			return commitments.History{}, err
 		}
-		fmt.Printf("Batch count for message %d was %d\n", batchMsgCount, i)
 		if batchMsgCount <= i {
 			batch++
 		}
@@ -134,11 +131,6 @@ func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageNumber 
 		}
 		stateRoots = append(stateRoots, root)
 	}
-	fmt.Println("===============Got state roots for hist commitment up to 0")
-	for _, st := range stateRoots {
-		fmt.Printf("%#x\n", st)
-	}
-	fmt.Println("===============")
 	return commitments.New(stateRoots)
 }
 
@@ -149,6 +141,7 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 	if err != nil {
 		return commitments.History{}, err
 	}
+	fmt.Printf("Big step leaves, message %d, to big step %d, total %d\n", messageNumber, toBigStep, len(result))
 	return commitments.New(result)
 }
 
@@ -169,12 +162,6 @@ func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, messageNu
 	if err != nil {
 		return commitments.History{}, err
 	}
-	fmt.Printf("===============Got state roots for hist commitment up to next batch count %d, message start %d, end %d\n", nextBatchCount, messageNumberStart, messageNumberEnd)
-	for _, st := range stateRoots {
-		fmt.Printf("%#x\n", st)
-	}
-	fmt.Println("===============")
-
 	return commitments.New(stateRoots)
 }
 
@@ -513,11 +500,9 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("batch after message count: %d was %d\n", blockStart, batch)
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
 	desiredStatesLen := int(blockEnd - blockStart + 1)
-	fmt.Printf("Desired states len %d\n", desiredStatesLen)
 	var stateRoots []common.Hash
 	var lastStateRoot common.Hash
 	for i := blockStart; i <= blockEnd; i++ {
@@ -525,7 +510,6 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("message count %d for batch %d\n", batchMsgCount, batch)
 		if batchMsgCount <= arbutil.MessageIndex(i) {
 			batch++
 		}
@@ -533,7 +517,6 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("State at message count %d and batch %d was %+v\n", i, batch, gs)
 		stateRoot := gs.Hash()
 		stateRoots = append(stateRoots, stateRoot)
 		lastStateRoot = stateRoot
@@ -544,7 +527,6 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 			break
 		}
 	}
-	fmt.Printf("Total roots %d, padding up to length %d\n", len(stateRoots), desiredStatesLen)
 	for len(stateRoots) < desiredStatesLen {
 		stateRoots = append(stateRoots, lastStateRoot)
 	}
@@ -597,7 +579,6 @@ func (s *StateManager) getHashAtMessageCountAndBatch(_ context.Context, messageC
 	if err != nil {
 		return common.Hash{}, err
 	}
-	fmt.Printf("Computing hash of global state at batch %d, message %d: %+v\n", messageCount, batch, gs)
 	return gs.Hash(), nil
 }
 

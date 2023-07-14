@@ -59,13 +59,19 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		var stateRoots []common.Hash
+		machine, err := e.cache.GetMachineAt(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		if !machine.IsRunning() {
+			return stateRoots, nil
+		}
 		for i := uint64(0); i <= toBigStep; i++ {
 			position := i * numOpcodesPerBigStep
-			machineStep, err := e.intermediateGetStepAt(ctx, position)
-			if err != nil {
+			if err = machine.Step(ctx, position); err != nil {
 				return nil, err
 			}
-			stateRoots = append(stateRoots, machineStep.Hash)
+			stateRoots = append(stateRoots, machine.Hash())
 		}
 		return stateRoots, nil
 	})
@@ -93,7 +99,7 @@ func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint6
 	if position == ^uint64(0) {
 		machine, err = e.cache.GetFinalMachine(ctx)
 	} else {
-		// todo cache last machine
+		// todo cache last machina
 		machine, err = e.cache.GetMachineAt(ctx, position)
 	}
 	if err != nil {

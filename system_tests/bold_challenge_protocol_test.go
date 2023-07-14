@@ -11,6 +11,7 @@ import (
 	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
 	modes "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
@@ -35,6 +36,16 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
+)
+
+// One Arbitrum block had 1,849,212,947 total opcodes. The closest, higher power of two
+// is 2^31. So we if we make our small step heights 2^20, we need 2048 big steps
+// to cover the block. With 2^20, our small step history commitments will be approx
+// 32 Mb of state roots in memory at once.
+var (
+	blockChallengeLeafHeight     = uint64(1 << 5)  // 32
+	bigStepChallengeLeafHeight   = uint64(1 << 11) // 2048
+	smallStepChallengeLeafHeight = uint64(1 << 20) // 1048576
 )
 
 func TestBoldProtocol(t *testing.T) {
@@ -140,16 +151,10 @@ func TestBoldProtocol(t *testing.T) {
 	err = statelessB.Start(ctx)
 	Require(t, err)
 
-	currBatchCount, err := l2nodeA.InboxTracker.GetBatchCount()
-	Require(t, err)
-	msgCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(currBatchCount - 1)
-	Require(t, err)
-	t.Logf("batch %d, msg count %d", currBatchCount, msgCount)
-
 	stateManager, err := staker.NewStateManager(
 		statelessA,
-		32,
-		32*32,
+		smallStepChallengeLeafHeight,
+		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
 	)
 	Require(t, err)
 	poster := assertions.NewPoster(
@@ -165,8 +170,8 @@ func TestBoldProtocol(t *testing.T) {
 
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
-		32,
-		32*32,
+		smallStepChallengeLeafHeight,
+		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
 	)
 	Require(t, err)
 	chainB, err := solimpl.NewAssertionChain(
@@ -187,18 +192,15 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	t.Logf("Evil %s", containers.Trunc(common.Hash(assertionB.Id()).Bytes()))
 
-	// time.Sleep(10 * time.Second)
-	// batch, err := l2nodeA.InboxTracker.GetBatchCount()
-	// Require(t, err)
-	// accum, err := l2nodeA.InboxTracker.GetBatchAcc(batch - 1)
-	// Require(t, err)
-	// t.Logf("L2 node A has batch %d, accum %#x", batch, accum)
-
-	// batch, err = l2nodeB.InboxTracker.GetBatchCount()
-	// Require(t, err)
-	// accum, err = l2nodeB.InboxTracker.GetBatchAcc(batch - 1)
-	// Require(t, err)
-	// t.Logf("L2 node B has batch %d, accum %#x", batch, accum)
+	chalManager, err := assertionChain.SpecChallengeManager(ctx)
+	Require(t, err)
+	managerCaller, err := challengeV2gen.NewEdgeChallengeManagerCaller(chalManager.Address(), l1client)
+	Require(t, err)
+	bigStep, err := managerCaller.LAYERZEROBIGSTEPEDGEHEIGHT(&bind.CallOpts{})
+	Require(t, err)
+	smallStep, err := managerCaller.LAYERZEROSMALLSTEPEDGEHEIGHT(&bind.CallOpts{})
+	Require(t, err)
+	t.Logf("**********big %d and small %d", bigStep.Uint64(), smallStep.Uint64())
 
 	manager, err := challengemanager.New(
 		ctx,
@@ -209,10 +211,24 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithName("honest"),
 		challengemanager.WithMode(modes.DefensiveMode),
 		challengemanager.WithAssertionPostingInterval(time.Hour),
-		challengemanager.WithAssertionScanningInterval(time.Second),
+		challengemanager.WithAssertionScanningInterval(5*time.Second),
 	)
 	Require(t, err)
 	manager.Start(ctx)
+
+	managerB, err := challengemanager.New(
+		ctx,
+		chainB,
+		l1client,
+		stateManagerB,
+		chainB.RollupAddress(),
+		challengemanager.WithName("malicious"),
+		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(5*time.Second),
+	)
+	Require(t, err)
+	managerB.Start(ctx)
 	// Continually make L2 transactions in a background thread
 	// backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
 	// backgroundTxsShutdownChan := make(chan struct{})
@@ -227,7 +243,7 @@ func TestBoldProtocol(t *testing.T) {
 	// 		log.Warn("error making background txs", "err", err)
 	// 	}
 	// })()
-	time.Sleep(time.Minute)
+	time.Sleep(time.Hour)
 
 }
 
@@ -365,6 +381,11 @@ func deployBoldProtocolContracts(
 		loserStakeEscrow,
 		miniStake,
 		stakeToken,
+		challenge_testing.WithLevelZeroHeights(&challenge_testing.LevelZeroHeights{
+			BlockChallengeHeight:     blockChallengeLeafHeight,
+			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
+			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
+		}),
 	)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
