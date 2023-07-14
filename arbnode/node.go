@@ -255,6 +255,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
+		common.Address{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)

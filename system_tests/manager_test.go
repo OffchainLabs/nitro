@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math/big"
+	"reflect"
+	"testing"
+
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/validator"
-	"math/big"
-	"reflect"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -189,7 +190,7 @@ func TestExecutionStateMsgCount(t *testing.T) {
 	tracker, streamer := setupInboxTracker(t, ctx)
 	res, err := streamer.ResultAtCount(1)
 	Require(t, err)
-	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), 0, 0)
+	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), nil, 0, 0)
 	Require(t, err)
 	msgCount, err := manager.ExecutionStateMsgCount(ctx, &protocol.ExecutionState{GlobalState: protocol.GoGlobalState{Batch: 1, BlockHash: res.BlockHash}})
 	Require(t, err)
@@ -287,7 +288,7 @@ func TestExecutionStateAtMessageNumber(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	tracker, streamer := setupInboxTracker(t, ctx)
-	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), 0, 0)
+	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), nil, 0, 0)
 	Require(t, err)
 	res, err := streamer.ResultAtCount(1)
 	Require(t, err)
@@ -310,7 +311,7 @@ func TestHistoryCommitmentUpTo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	tracker, streamer := setupInboxTracker(t, ctx)
-	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), 0, 0)
+	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), nil, 0, 0)
 	Require(t, err)
 	res0, err := streamer.ResultAtCount(0)
 	Require(t, err)

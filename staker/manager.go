@@ -59,6 +59,7 @@ func NewManager(
 	}
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
+		nil,
 		smallStepEdgeHeight.Uint64(),
 		bigStepEdgeHeight.Uint64()*smallStepEdgeHeight.Uint64(),
 	)

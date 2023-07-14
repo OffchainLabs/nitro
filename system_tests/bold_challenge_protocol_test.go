@@ -153,6 +153,7 @@ func TestBoldProtocol(t *testing.T) {
 
 	stateManager, err := staker.NewStateManager(
 		statelessA,
+		nil,
 		smallStepChallengeLeafHeight,
 		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
 	)
@@ -170,6 +171,7 @@ func TestBoldProtocol(t *testing.T) {
 
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
+		nil,
 		smallStepChallengeLeafHeight,
 		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
 	)
