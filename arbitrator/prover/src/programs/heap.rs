@@ -54,7 +54,7 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
             return Ok(());
         }
 
-        let ImportIndex::Function(import) = module.get_import("forward", "memory_grow")? else {
+        let ImportIndex::Function(import) = module.get_import("vm_hooks", "memory_grow")? else {
             bail!("wrong import kind for {}", "memory_grow".red());
         };
 

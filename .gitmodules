@@ -23,3 +23,6 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
+[submodule "arbitrator/langs/rust"]
+	path = arbitrator/langs/rust
+	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
