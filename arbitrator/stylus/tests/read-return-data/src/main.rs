@@ -25,10 +25,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let count = usize::from_be_bytes(input[16..20].try_into().unwrap());
     let call_data = input[20..].to_vec();
 
-    debug::println(
-        format!("call_type: {call_type}, checking subset: {offset} {size} {expected_size}, count: {count}"),
-    );
-
     // Call identity precompile to test return data
     let precompile = Bytes20::from(0x4_u32);
 

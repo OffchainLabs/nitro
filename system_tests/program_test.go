@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -366,19 +367,17 @@ func testReturnData(t *testing.T, jit bool) {
 		testReadReturnData(1, 0, uint32(len(dataToSend)), uint32(len(dataToSend)), 1)
 	}
 
-	/*
-		testReadReturnData(1, 0, 5, 4, 1)
-		testReadReturnData(1, 0, 1, 1, 1)
-		testReadReturnData(1, 5, 1, 0, 1)
-		testReadReturnData(1, 0, 0, 0, 1)
-		testReadReturnData(1, 0, 4, 4, 1)
+	testReadReturnData(1, 0, 5, 4, 1)
+	testReadReturnData(1, 0, 1, 1, 1)
+	testReadReturnData(1, 5, 1, 0, 1)
+	testReadReturnData(1, 0, 0, 0, 1)
+	testReadReturnData(1, 0, 4, 4, 1)
 
-		testReadReturnData(2, 0, 5, 4, 1)
-		testReadReturnData(2, 0, 1, 1, 1)
-		testReadReturnData(2, 5, 1, 0, 1)
-		testReadReturnData(2, 0, 0, 0, 1)
-		testReadReturnData(2, 0, 4, 4, 1)
-	*/
+	testReadReturnData(2, 0, 5, 4, 1)
+	testReadReturnData(2, 0, 1, 1, 1)
+	testReadReturnData(2, 5, 1, 0, 1)
+	testReadReturnData(2, 0, 0, 0, 1)
+	testReadReturnData(2, 0, 4, 4, 1)
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
