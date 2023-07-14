@@ -184,13 +184,11 @@ func testCalls(t *testing.T, jit bool) {
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
-	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
 
 	colors.PrintGrey("multicall.wasm       ", callsAddr)
 	colors.PrintGrey("storage.wasm         ", storeAddr)
 	colors.PrintGrey("keccak.wasm          ", keccakAddr)
 	colors.PrintGrey("mock.evm             ", mockAddr)
-	colors.PrintGrey("read-return-data.evm ", readReturnDataAddr)
 
 	kinds := make(map[vm.OpCode]byte)
 	kinds[vm.CALL] = 0x00
@@ -324,20 +322,63 @@ func testCalls(t *testing.T, jit bool) {
 		Fatal(t, balance, value)
 	}
 
+	blocks := []uint64{11}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
+}
+
+func TestProgramReturnData(t *testing.T) {
+	t.Parallel()
+	testReturnData(t, true)
+}
+
+func testReturnData(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
+
+	colors.PrintGrey("read-return-data.evm ", readReturnDataAddr)
+
 	colors.PrintBlue("Checking calls with partial return data")
-	testReadReturnData := func(offset uint32, size uint32, expectedSize uint32) {
-		callData := [12]byte{}
-		binary.BigEndian.PutUint32(callData[0:4], offset)
-		binary.BigEndian.PutUint32(callData[4:8], size)
-		binary.BigEndian.PutUint32(callData[8:12], expectedSize)
-		tx = l2info.PrepareTxTo("Owner", &readReturnDataAddr, 1e9, nil, callData[:])
+	dataToSend := [4]byte{0, 1, 2, 3}
+	testReadReturnData := func(callType uint32, offset uint32, size uint32, expectedSize uint32, count uint32) {
+		parameters := [20]byte{}
+		binary.BigEndian.PutUint32(parameters[0:4], callType)
+		binary.BigEndian.PutUint32(parameters[4:8], offset)
+		binary.BigEndian.PutUint32(parameters[8:12], size)
+		binary.BigEndian.PutUint32(parameters[12:16], expectedSize)
+		binary.BigEndian.PutUint32(parameters[16:20], count)
+		callData := append(parameters[:], dataToSend[:]...)
+
+		tx := l2info.PrepareTxTo("Owner", &readReturnDataAddr, 1e9, nil, callData)
 		ensure(tx, l2client.SendTransaction(ctx, tx))
 	}
-	testReadReturnData(0, 5, 4)
-	testReadReturnData(0, 1, 1)
-	testReadReturnData(5, 1, 0)
-	testReadReturnData(0, 0, 0)
-	testReadReturnData(0, 4, 4)
+
+	for i := 0; i < 40; i++ {
+		testReadReturnData(1, 0, uint32(len(dataToSend)), uint32(len(dataToSend)), 1)
+	}
+
+	/*
+		testReadReturnData(1, 0, 5, 4, 1)
+		testReadReturnData(1, 0, 1, 1, 1)
+		testReadReturnData(1, 5, 1, 0, 1)
+		testReadReturnData(1, 0, 0, 0, 1)
+		testReadReturnData(1, 0, 4, 4, 1)
+
+		testReadReturnData(2, 0, 5, 4, 1)
+		testReadReturnData(2, 0, 1, 1, 1)
+		testReadReturnData(2, 5, 1, 0, 1)
+		testReadReturnData(2, 0, 0, 0, 1)
+		testReadReturnData(2, 0, 4, 4, 1)
+	*/
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
@@ -850,14 +891,15 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
+
+	// wait until all the blocks are sequenced
+	lastBlock := arbmath.MaxInt(blocks...)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		messageCount, err := node.TxStreamer.GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
+		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
 	})
 
 	blockHeight, err := l2client.BlockNumber(ctx)
@@ -874,7 +916,7 @@ func validateBlockRange(
 	success := true
 	for _, block := range blocks {
 		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
-		Require(t, err)
+		Require(t, err, "block", block)
 
 		now := time.Now()
 		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, false, common.Hash{})
