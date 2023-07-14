@@ -3,19 +3,20 @@
 
 #![no_main]
 
-use arbitrum::{
+use stylus_sdk::{
+    alloy_primitives::{b256, Address},
     contract::{self, Call},
-    debug, Bytes20,
+    debug,
 };
 
 macro_rules! error {
     ($($msg:tt)*) => {{
-        debug::println($($msg)*);
+        println($($msg)*);
         panic!("invalid data")
     }};
 }
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let call_type = usize::from_be_bytes(input[..4].try_into().unwrap());
@@ -25,12 +26,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let count = usize::from_be_bytes(input[16..20].try_into().unwrap());
     let call_data = input[20..].to_vec();
 
-    debug::println(
-        format!("call_type: {call_type}, checking subset: {offset} {size} {expected_size}, count: {count}"),
-    );
-
     // Call identity precompile to test return data
-    let precompile = Bytes20::from(0x4_u32);
+    let precompile: Address = Address::from_word(b256!("0000000000000000000000000000000000000000000000000000000000000004"));
 
     let safe_offset = offset.min(call_data.len());
 
@@ -55,4 +52,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     Ok(vec![])
+}
+
+fn println(text: impl AsRef<str>) {
+    debug::println(text)
 }

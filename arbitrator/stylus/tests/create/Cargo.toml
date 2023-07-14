@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-arbitrum = { path = "../../../langs/rust/" }
+stylus-sdk = { path = "../../../langs/rust/" }
 hex = "0.4.3"
 
 [profile.release]

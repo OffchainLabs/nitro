@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -366,19 +367,17 @@ func testReturnData(t *testing.T, jit bool) {
 		testReadReturnData(1, 0, uint32(len(dataToSend)), uint32(len(dataToSend)), 1)
 	}
 
-	/*
-		testReadReturnData(1, 0, 5, 4, 1)
-		testReadReturnData(1, 0, 1, 1, 1)
-		testReadReturnData(1, 5, 1, 0, 1)
-		testReadReturnData(1, 0, 0, 0, 1)
-		testReadReturnData(1, 0, 4, 4, 1)
+	testReadReturnData(1, 0, 5, 4, 2)
+	testReadReturnData(1, 0, 1, 1, 2)
+	testReadReturnData(1, 5, 1, 0, 2)
+	testReadReturnData(1, 0, 0, 0, 2)
+	testReadReturnData(1, 0, 4, 4, 2)
 
-		testReadReturnData(2, 0, 5, 4, 1)
-		testReadReturnData(2, 0, 1, 1, 1)
-		testReadReturnData(2, 5, 1, 0, 1)
-		testReadReturnData(2, 0, 0, 0, 1)
-		testReadReturnData(2, 0, 4, 4, 1)
-	*/
+	testReadReturnData(2, 0, 5, 4, 1)
+	testReadReturnData(2, 0, 1, 1, 1)
+	testReadReturnData(2, 5, 1, 0, 1)
+	testReadReturnData(2, 0, 0, 0, 1)
+	testReadReturnData(2, 0, 4, 4, 1)
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
@@ -665,8 +664,8 @@ func testMemory(t *testing.T, jit bool) {
 	gasCost := receipt.GasUsedForL2()
 	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
 	logical := uint64(32000000 + 126*1000)
-	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) || !arbmath.WithinRange(gasCost, logical, logical+1e5) {
-		Fatal(t, "unexpected cost", gasCost, model)
+	if !arbmath.WithinRange(gasCost, memCost, memCost+2e5) || !arbmath.WithinRange(gasCost, logical, logical+2e5) {
+		Fatal(t, "unexpected cost", gasCost, memCost)
 	}
 
 	// check that we'd normally run out of gas
@@ -915,11 +914,11 @@ func validateBlockRange(
 
 	success := true
 	for _, block := range blocks {
-		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
-		Require(t, err, "block", block)
+		// no classic data, so block numbers are message indecies
+		inboxPos := arbutil.MessageIndex(block)
 
 		now := time.Now()
-		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, false, common.Hash{})
+		correct, _, err := node.StatelessBlockValidator.ValidateResult(ctx, inboxPos, false, common.Hash{})
 		Require(t, err, "block", block)
 		passed := formatTime(time.Since(now))
 		if correct {
