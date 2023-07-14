@@ -891,14 +891,15 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
+
+	// wait until all the blocks are sequenced
+	lastBlock := arbmath.MaxInt(blocks...)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		messageCount, err := node.TxStreamer.GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
+		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
 	})
 
 	blockHeight, err := l2client.BlockNumber(ctx)
