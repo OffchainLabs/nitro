@@ -3,13 +3,13 @@
 
 #![no_main]
 
-use arbitrum::{debug, load_bytes32, store_bytes32, Bytes32};
+use stylus_sdk::{debug, load_bytes32, store_bytes32, alloy_primitives::B256};
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let read = input[0] == 0;
-    let slot = Bytes32::from_slice(&input[1..33]).unwrap();
+    let slot = B256::try_from(&input[1..33]).unwrap();
 
     Ok(if read {
         debug::println(format!("read  {slot}"));
@@ -18,7 +18,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         data.0.into()
     } else {
         debug::println(format!("write {slot}"));
-        let data = Bytes32::from_slice(&input[33..]).unwrap();
+        let data = B256::try_from(&input[33..]).unwrap();
         store_bytes32(slot, data);
         debug::println(format!("value {data}"));
         vec![]

@@ -65,7 +65,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "stable"
+          toolchain: "1.70.0"
           override: true
           components: 'llvm-tools-preview, rustfmt'
 
@@ -178,7 +178,7 @@ jobs:
           args: --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 
       - name: Make proofs from test cases
-        run: make -j test-gen-proofs
+        run: make -j8 test-gen-proofs
 
       - name: Create code-coverage files
         run: |

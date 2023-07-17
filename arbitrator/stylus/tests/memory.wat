@@ -2,9 +2,9 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (import "forward" "memory_grow" (func (param i32)))
-    (import "forward" "read_args"   (func $read_args   (param i32)))
-    (import "forward" "return_data" (func $return_data (param i32 i32)))
+    (import "vm_hooks" "memory_grow" (func (param i32)))
+    (import "vm_hooks" "read_args"   (func $read_args   (param i32)))
+    (import "vm_hooks" "return_data" (func $return_data (param i32 i32)))
     (func (export "arbitrum_main") (param $args_len i32) (result i32)
         (local $size i32) (local $step i32)
 

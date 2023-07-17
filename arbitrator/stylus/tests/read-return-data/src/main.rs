@@ -3,54 +3,57 @@
 
 #![no_main]
 
-use arbitrum::{
+use stylus_sdk::{
+    alloy_primitives::{b256, Address},
     contract::{self, Call},
-    debug, Bytes20,
+    debug,
 };
 
 macro_rules! error {
     ($($msg:tt)*) => {{
-        debug::println($($msg)*);
+        println($($msg)*);
         panic!("invalid data")
     }};
 }
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let offset = usize::from_be_bytes(input[..4].try_into().unwrap());
-    let size = usize::from_be_bytes(input[4..8].try_into().unwrap());
-    let expected_size = usize::from_be_bytes(input[8..12].try_into().unwrap());
-
-    debug::println(format!("checking subset: {offset} {size} {expected_size}"));
+    let call_type = usize::from_be_bytes(input[..4].try_into().unwrap());
+    let offset = usize::from_be_bytes(input[4..8].try_into().unwrap());
+    let size = usize::from_be_bytes(input[8..12].try_into().unwrap());
+    let expected_size = usize::from_be_bytes(input[12..16].try_into().unwrap());
+    let count = usize::from_be_bytes(input[16..20].try_into().unwrap());
+    let call_data = input[20..].to_vec();
 
     // Call identity precompile to test return data
-    let calldata: [u8; 4] = [0, 1, 2, 3];
-    let precompile = Bytes20::from(0x4_u32);
+    let precompile: Address = Address::from_word(b256!("0000000000000000000000000000000000000000000000000000000000000004"));
 
-    let safe_offset = offset.min(calldata.len());
-    let safe_size = size.min(calldata.len() - safe_offset);
+    let safe_offset = offset.min(call_data.len());
 
-    let full = Call::new().call(precompile, &calldata)?;
-    if full != calldata {
-        error!("data: {calldata:?}, offset: {offset}, size: {size} → {full:?}");
+    if call_type == 2 {
+        Call::new().limit_return_data(offset, size).call(precompile, &call_data)?;
     }
 
-    let limited = Call::new()
-        .limit_return_data(offset, size)
-        .call(precompile, &calldata)?;
-    if limited.len() != expected_size || limited != calldata[safe_offset..][..safe_size] {
-        error!(
-            "data: {calldata:?}, offset: {offset}, size: {size}, expected size: {expected_size} → {limited:?}"
-        );
+    for _ in 0..count {
+        let data = match call_type {
+            0 => Call::new().call(precompile, &call_data)?,
+            1 => Call::new().limit_return_data(offset, size).call(precompile, &call_data)?,
+            2 => {
+                contract::read_return_data(offset, Some(size))
+            },
+            _ => error!{format!{"unknown call_type {call_type}"}},
+        };
+
+        let expected_data = call_data[safe_offset..][..expected_size].to_vec();
+        if data != expected_data {
+            error!(format!("call_type: {call_type}, calldata: {call_data:?}, offset: {offset}, size: {size} → {data:?} {expected_data:?}"));
+        }
     }
 
-    let direct = contract::read_return_data(offset, Some(size));
-    if direct != limited {
-        error!(
-            "data: {calldata:?}, offset: {offset}, size: {size}, expected size: {expected_size} → {direct:?}"
-        );
-    }
+    Ok(vec![])
+}
 
-    Ok(limited)
+fn println(text: impl AsRef<str>) {
+    debug::println(text)
 }
