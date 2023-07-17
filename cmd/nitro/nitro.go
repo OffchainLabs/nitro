@@ -122,6 +122,25 @@ func main() {
 	os.Exit(mainImpl())
 }
 
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *NodeConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 // Returns the exit code
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -355,6 +374,11 @@ func mainImpl() int {
 		}
 	}
 
+	if err := startMetrics(nodeConfig); err != nil {
+		log.Error("Starting metrics: %v", err)
+		return 1
+	}
+
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
 	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
@@ -381,23 +405,6 @@ func mainImpl() int {
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
 		log.Error("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
-		return 1
-	}
-
-	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
-
-		if nodeConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				genericconf.StartPprof(address)
-			} else {
-				exp.Setup(address)
-			}
-		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
 		return 1
 	}
 
@@ -530,6 +537,8 @@ type NodeConfig struct {
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 	Init          InitConfig                      `koanf:"init"`
 	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
@@ -547,6 +556,8 @@ var NodeConfigDefault = NodeConfig{
 	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -566,6 +577,9 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.Bool("pprof", NodeConfigDefault.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
+
 	InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 }

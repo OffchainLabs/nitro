@@ -166,6 +166,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		statelessA,
 		nil,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		nil,
 	)
@@ -201,6 +202,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		statelessB,
 		nil,
+		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
 		nil,
 	)
@@ -222,6 +224,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		nil,
