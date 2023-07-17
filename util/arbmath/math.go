@@ -60,12 +60,16 @@ func MinInt[T Ordered](value, ceiling T) T {
 	return value
 }
 
-// MaxInt the maximum of two ints
-func MaxInt[T Ordered](value, floor T) T {
-	if value < floor {
-		return floor
+// MaxInt the maximum of one or more ints
+func MaxInt[T Ordered](values ...T) T {
+	max := values[0]
+	for i := 1; i < len(values); i++ {
+		value := values[i]
+		if value > max {
+			max = value
+		}
 	}
-	return value
+	return max
 }
 
 // AbsValue the absolute value of a number

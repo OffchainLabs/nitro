@@ -3,9 +3,9 @@
 
 #![no_main]
 
-use arbitrum::{contract::Call, Bytes20, Bytes32};
+use stylus_sdk::{contract::Call, alloy_primitives::{Address, B256}};
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();
@@ -28,14 +28,14 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
         let mut value = None;
         if kind == 0 {
-            value = Some(Bytes32::from_slice(&curr[..32]).unwrap());
+            value = Some(B256::try_from(&curr[..32]).unwrap());
             curr = &curr[32..];
         }
 
-        let addr = Bytes20::from_slice(&curr[..20]).unwrap();
+        let addr = Address::try_from(&curr[..20]).unwrap();
         let data = &curr[20..];
         println(match value {
-            Some(value) if value != Bytes32::default() => format!(
+            Some(value) if !value.is_zero() => format!(
                 "Calling {addr} with {} bytes and value {} {kind}",
                 data.len(),
                 hex::encode(value)

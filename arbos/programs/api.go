@@ -229,7 +229,7 @@ func newApiClosures(
 		return create(code, endowment, salt, gas)
 	}
 	getReturnData := func(offset uint32, size uint32) []byte {
-		data := interpreter.GetReturnData(offset, size)
+		data := interpreter.GetReturnData(int(offset), int(size))
 		if data == nil {
 			return []byte{}
 		}

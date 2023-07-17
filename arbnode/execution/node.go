@@ -17,6 +17,7 @@ type ExecutionNode struct {
 	FilterSystem *filters.FilterSystem
 	ArbInterface *ArbInterface
 	ExecEngine   *ExecutionEngine
+	Recorder     *BlockRecorder
 	Sequencer    *Sequencer // either nil or same as TxPublisher
 	TxPublisher  TransactionPublisher
 }
@@ -30,6 +31,7 @@ func CreateExecutionNode(
 	fwTarget string,
 	fwConfig *ForwarderConfig,
 	rpcConfig arbitrum.Config,
+	recordingDbConfig *arbitrum.RecordingDatabaseConfig,
 	seqConfigFetcher SequencerConfigFetcher,
 	precheckConfigFetcher TxPreCheckerConfigFetcher,
 ) (*ExecutionNode, error) {
@@ -37,6 +39,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
+	recorder := NewBlockRecorder(recordingDbConfig, execEngine, chainDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 	seqConfig := seqConfigFetcher()
@@ -79,6 +82,7 @@ func CreateExecutionNode(
 		filterSystem,
 		arbInterface,
 		execEngine,
+		recorder,
 		sequencer,
 		txPublisher,
 	}, nil

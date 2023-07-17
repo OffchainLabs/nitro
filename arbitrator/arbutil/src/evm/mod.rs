@@ -17,6 +17,10 @@ pub const LOG_DATA_GAS: u64 = 8;
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
 
+// params.Keccak256Gas
+pub const KECCAK_256_GAS: u64 = 30;
+pub const KECCAK_WORD_GAS: u64 = 6;
+
 // vm.GasQuickStep (see gas.go)
 pub const GAS_QUICK_STEP: u64 = 2;
 
@@ -71,4 +75,12 @@ pub struct EvmData {
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
     pub return_data_len: u32,
+}
+
+/// Returns the minimum number of EVM words needed to store `bytes` bytes.
+pub fn evm_words(bytes: u64) -> u64 {
+    match bytes % 32 {
+        0 => bytes / 32,
+        _ => bytes / 32 + 1,
+    }
 }

@@ -5,6 +5,7 @@
 
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
+    crypto,
     evm::{self, api::EvmApi, user::UserOutcomeKind},
     Bytes20, Bytes32,
 };
@@ -178,8 +179,8 @@ pub(crate) fn read_return_data<E: EvmApi>(
 ) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
 
+    env.pay_for_evm_copy(size as u64)?;
     let data = env.evm_api.get_return_data(offset, size);
-    env.pay_for_evm_copy(data.len() as u64)?;
     assert!(data.len() <= size as usize);
     env.write_slice(dest, &data)?;
     Ok(data.len() as u32)
@@ -304,6 +305,21 @@ pub(crate) fn msg_value<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CALLVALUE_GAS)?;
     env.write_bytes32(ptr, env.evm_data.msg_value)?;
+    Ok(())
+}
+
+pub(crate) fn native_keccak256<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    input: u32,
+    len: u32,
+    output: u32,
+) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_keccak(len.into())?;
+
+    let preimage = env.read_slice(input, len)?;
+    let digest = crypto::keccak(preimage);
+    env.write_bytes32(output, digest.into())?;
     Ok(())
 }
 

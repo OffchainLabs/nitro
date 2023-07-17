@@ -3,25 +3,25 @@
 
 #![no_main]
 
-use arbitrum::{contract::Deploy, evm, Bytes32};
+use stylus_sdk::{alloy_primitives::B256, contract::Deploy, evm};
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let kind = input[0];
     let mut input = &input[1..];
 
-    let endowment = Bytes32::from_slice(&input[..32]).unwrap();
+    let endowment = B256::try_from(&input[..32]).unwrap();
     input = &input[32..];
 
     let mut salt = None;
     if kind == 2 {
-        salt = Some(Bytes32::from_slice(&input[..32]).unwrap());
+        salt = Some(B256::try_from(&input[..32]).unwrap());
         input = &input[32..];
     }
 
     let code = input;
-    let contract = Deploy::new().optional_salt(salt).deploy(code, endowment)?;
-    evm::log(&[contract.into()], &[]).unwrap();
+    let contract = Deploy::new().salt_option(salt).deploy(code, endowment)?;
+    evm::log(&[contract.into_word()], &[]).unwrap();
     Ok(contract.to_vec())
 }

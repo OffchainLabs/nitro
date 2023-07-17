@@ -3,6 +3,7 @@
 
 use crate::{evm_api::ApiCaller, Program};
 use arbutil::{
+    crypto,
     evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
     wavm, Bytes20, Bytes32,
 };
@@ -171,8 +172,8 @@ pub unsafe extern "C" fn user_host__read_return_data(
 ) -> usize {
     let program = Program::start();
 
+    program.pay_for_evm_copy(size as u64).unwrap();
     let data = program.evm_api.get_return_data(offset as u32, size as u32);
-    program.pay_for_evm_copy(data.len() as u64).unwrap();
     assert!(data.len() <= size as usize);
     wavm::write_slice_usize(&data, ptr);
     data.len()
@@ -298,6 +299,16 @@ pub unsafe extern "C" fn user_host__msg_value(ptr: usize) {
     program.buy_gas(evm::CALLVALUE_GAS).unwrap();
     let msg_value = program.evm_data.msg_value.as_ref();
     wavm::write_slice_usize(msg_value, ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__native_keccak256(bytes: usize, len: usize, output: usize) {
+    let program = Program::start();
+    program.pay_for_evm_keccak(len as u64).unwrap();
+
+    let preimage = wavm::read_slice_usize(bytes, len);
+    let digest = crypto::keccak(preimage);
+    wavm::write_slice_usize(&digest, output)
 }
 
 #[no_mangle]
