@@ -76,6 +76,7 @@ func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
 	for _, module := range stackConf.AuthModules {
 		if module == server_api.Namespace {
 			found = true
+			break
 		}
 	}
 	if !found {
