@@ -825,13 +825,13 @@ func createNodeImpl(
 			}
 		}
 
-		notifiers := make([]staker.LatestStakedNotifier, 0)
+		var confirmedNotifiers []staker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable && !config.Caching.Archive {
 			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
-			notifiers = append(notifiers, messagePruner)
+			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, notifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
