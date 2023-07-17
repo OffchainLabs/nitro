@@ -2,8 +2,7 @@
 * Package challengecache stores validator state roots for L2 states within
 challenges in text files using a directory hierarchy structure for efficient lookup. Each file
 contains a list of state roots (32 byte hashes), concatenated together as bytes.
-Using this structure, we can namespace state roots by assertion hash,
-message number, big step challenge, and small step challenge ranges.
+Using this structure, we can namespace state roots by message number and big step challenge.
 
 Once a validator computes the set of machine state roots for a given challenge move the first time,
 it will write the roots to this filesystem hierarchy for fast access next time these roots are needed.
@@ -37,12 +36,13 @@ import (
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var (
 	ErrNotFoundInCache   = errors.New("no found in challenge cache")
 	ErrFileAlreadyExists = errors.New("file already exists")
-	stateRootsFileName   = "roots.txt"
+	stateRootsFileName   = "state-roots"
 	wavmModuleRootPrefix = "wavm-module-root"
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
@@ -82,7 +82,9 @@ type HeightRange struct {
 }
 
 // Get a list of state roots from the cache up to a certain index if specified. If none, then all
-// state roots for the lookup key will be retrieved.
+// state roots for the lookup key will be retrieved. State roots are saved as files in the directory
+// hierarchy for the cache, and can only be written to once. If a file is not present, ErrNotFoundInCache
+// is returned.
 func (c *Cache) Get(
 	lookup *Key,
 	readUpTo option.Option[protocol.Height],
@@ -92,19 +94,24 @@ func (c *Cache) Get(
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
-		fmt.Printf("Cache miss: %+v\n", lookup)
 		return nil, ErrNotFoundInCache
 	}
-	fmt.Printf("Cache hit: %+v\n", lookup)
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Error("Could not close file after reading", "err", err, "file", fName)
+		}
+	}()
 	return readStateRoots(f, readUpTo)
 }
 
 // Put a list of state roots into the cache. If the file already exists, ErrFileAlreadyExists will be returned.
+// State roots are saved as files in a directory hierarchy for the cache, and can only be written to once.
+// This function first creates a temporary file, writes the state roots to it, and then renames the file
+// to the final directory to ensure atomic writes.
 func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	if len(stateRoots) == 1 {
 		return nil
@@ -116,6 +123,10 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	if _, err := os.Stat(fName); err == nil {
 		return ErrFileAlreadyExists
 	}
+	// We create a tmp file to write our state roots to first. If writing fails,
+	// we don't want to leave a half-written file in our cache directory.
+	// Once writing succeeds, we rename in an atomic operation to the correct file name
+	// in the cache directory hierarchy.
 	tmp := os.TempDir()
 	tmpFName := filepath.Join(tmp, fName)
 	dir := filepath.Dir(tmpFName)
@@ -126,15 +137,21 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Error("Could not close file after writing", "err", err, "file", fName)
+		}
+	}()
 	if err := writeStateRoots(f, stateRoots); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(fName), os.ModePerm); err != nil {
 		return fmt.Errorf("could not make file directory %s: %w", fName, err)
 	}
-	// if the file writing was successful, we rename the file from the tmp directory
-	// into our cache directory.
+	// If the file writing was successful, we rename the file from the tmp directory
+	// into our cache directory. This is an atomic operation.
+	// For more information on this atomic write pattern, see:
+	// https://stackoverflow.com/questions/2333872/how-to-make-file-creation-an-atomic-operation
 	return os.Rename(tmpFName /* old */, fName /* new */)
 }
 
