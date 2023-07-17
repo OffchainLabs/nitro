@@ -32,6 +32,25 @@ func main() {
 	os.Exit(mainImpl())
 }
 
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *ValidationNodeConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 // Returns the exit code
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -96,20 +115,8 @@ func mainImpl() int {
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 
-	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
-
-		if nodeConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				genericconf.StartPprof(address)
-			} else {
-				exp.Setup(address)
-			}
-		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
+	if err := startMetrics(nodeConfig); err != nil {
+		log.Error("Starting metrics: %v", err)
 		return 1
 	}
 
