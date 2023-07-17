@@ -37,6 +37,25 @@ func printSampleUsage(progname string) {
 	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --chain.id=<L2 chain id> \n", progname)
 }
 
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *relay.Config) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 func startup() error {
 	ctx := context.Background()
 
@@ -68,16 +87,13 @@ func startup() error {
 	if err != nil {
 		return err
 	}
-	err = newRelay.Start(ctx)
-	if err != nil {
+
+	if err := startMetrics(relayConfig); err != nil {
 		return err
 	}
 
-	if relayConfig.Metrics && relayConfig.MetricsServer.Addr != "" {
-		go metrics.CollectProcessMetrics(relayConfig.MetricsServer.UpdateInterval)
-
-		address := fmt.Sprintf("%v:%v", relayConfig.MetricsServer.Addr, relayConfig.MetricsServer.Port)
-		exp.Setup(address)
+	if err := newRelay.Start(ctx); err != nil {
+		return err
 	}
 
 	select {
