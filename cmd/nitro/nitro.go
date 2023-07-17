@@ -334,6 +334,11 @@ func mainImpl() int {
 
 	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
 
+	var sameProcessValidationNodeEnabled bool
+	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
+		sameProcessValidationNodeEnabled = true
+		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+	}
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -399,7 +404,7 @@ func mainImpl() int {
 	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
-	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
+	if sameProcessValidationNodeEnabled {
 		valNode, err = valnode.CreateValidationNode(
 			func() *valnode.Config { return &liveNodeConfig.Get().Validation },
 			stack,
