@@ -2,7 +2,9 @@ package challengecache
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -29,14 +31,36 @@ func TestCache(t *testing.T) {
 		}
 	})
 	cache := New(basePath)
+	t.Run("Bad key", func(t *testing.T) {
+		key := &Key{
+			WavmModuleRoot: common.BytesToHash([]byte("foo")),
+			MessageRange:   HeightRange{From: 0, To: 100},
+			BigStepRange: option.Some(HeightRange{
+				From: 1, To: 0,
+			}),
+		}
+		if _, err = cache.Get(key, option.None[protocol.Height]()); err == nil {
+			t.Fatal("Expected error for bad key")
+		}
+	})
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageRange:   HeightRange{From: 0, To: 1},
-		BigStepRange: HeightRange{
+		BigStepRange: option.Some(HeightRange{
 			From: 0, To: 1,
-		},
-		ToSmallStep: option.Some(protocol.Height(100)),
+		}),
 	}
+	t.Run("Not found", func(t *testing.T) {
+		_, err = cache.Get(key, option.None[protocol.Height]())
+		if !errors.Is(err, ErrNotFoundInCache) {
+			t.Fatal(err)
+		}
+	})
+	t.Run("Putting empty root fails", func(t *testing.T) {
+		if err = cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoStateRoots) {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+	})
 	want := []common.Hash{
 		common.BytesToHash([]byte("foo")),
 		common.BytesToHash([]byte("bar")),
@@ -46,6 +70,11 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("Can only write once to cache under same key", func(t *testing.T) {
+		if err = cache.Put(key, want); !errors.Is(err, ErrFileAlreadyExists) {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+	})
 	got, err := cache.Get(key, option.None[protocol.Height]())
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +147,121 @@ func TestReadWriteStateRoots(t *testing.T) {
 			t.Fatalf("Wrong root. Expected %#x, got %#x", bar, roots[1])
 		}
 	})
+	t.Run("Fails to write enough data to writer", func(t *testing.T) {
+		m := &mockWriter{wantErr: true}
+		err := writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
+		if err == nil {
+			t.Fatal("Wanted error")
+		}
+		m = &mockWriter{wantErr: false, numWritten: 16}
+		err = writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
+		if err == nil {
+			t.Fatal("Wanted error")
+		}
+		if !strings.Contains(err.Error(), "expected to write 32 bytes") {
+			t.Fatalf("Got wrong error kind: %v", err)
+		}
+	})
+}
+
+type mockWriter struct {
+	wantErr    bool
+	numWritten int
+}
+
+func (m *mockWriter) Write(_ []byte) (n int, err error) {
+	if m.wantErr {
+		return 0, errors.New("something went wrong")
+	}
+	return m.numWritten, nil
+}
+
+type mockReader struct {
+	wantErr   bool
+	err       error
+	roots     []common.Hash
+	readIdx   int
+	bytesRead int
+}
+
+func (m *mockReader) Read(out []byte) (n int, err error) {
+	if m.wantErr {
+		return 0, m.err
+	}
+	if m.readIdx == len(m.roots) {
+		return 0, io.EOF
+	}
+	copy(out, m.roots[m.readIdx].Bytes())
+	m.readIdx++
+	return m.bytesRead, nil
+}
+
+func Test_readStateRoots(t *testing.T) {
+	t.Run("Unexpected error", func(t *testing.T) {
+		want := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		m := &mockReader{wantErr: true, roots: want, err: errors.New("foo")}
+		_, err := readStateRoots(m, option.None[protocol.Height]())
+		if err == nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(err.Error(), "foo") {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+	})
+	t.Run("EOF, but did not read as much as was expected", func(t *testing.T) {
+		want := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		m := &mockReader{wantErr: true, roots: want, err: io.EOF}
+		_, err := readStateRoots(m, option.Some(protocol.Height(100)))
+		if err == nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(err.Error(), "wanted to read up to 100, but only read 0 state roots") {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+	})
+	t.Run("Reads wrong number of bytes", func(t *testing.T) {
+		want := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		m := &mockReader{wantErr: false, roots: want, bytesRead: 16}
+		_, err := readStateRoots(m, option.None[protocol.Height]())
+		if err == nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(err.Error(), "expected to read 32 bytes, got 16") {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+	})
+	t.Run("Reads all until EOF", func(t *testing.T) {
+		want := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		m := &mockReader{wantErr: false, roots: want, bytesRead: 32}
+		got, err := readStateRoots(m, option.None[protocol.Height]())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(want) != len(got) {
+			t.Fatal("Wrong number of roots")
+		}
+		for i, rt := range got {
+			if rt != want[i] {
+				t.Fatal("Wrong root")
+			}
+		}
+	})
 }
 
 func Test_determineFilePath(t *testing.T) {
@@ -166,9 +310,9 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 102,
 					},
-					BigStepRange: HeightRange{
+					BigStepRange: option.Some(HeightRange{
 						From: 0, To: 1,
-					},
+					}),
 				},
 			},
 			wantErr:     true,
@@ -182,9 +326,9 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 101,
 					},
-					BigStepRange: HeightRange{
+					BigStepRange: option.Some(HeightRange{
 						From: 1, To: 0,
-					},
+					}),
 				},
 			},
 			wantErr:     true,
@@ -198,10 +342,9 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 101,
 					},
-					BigStepRange: HeightRange{
+					BigStepRange: option.Some(HeightRange{
 						From: 100, To: 102,
-					},
-					ToSmallStep: option.Some(protocol.Height(100)),
+					}),
 				},
 			},
 			wantErr:     true,
@@ -215,13 +358,12 @@ func Test_determineFilePath(t *testing.T) {
 					MessageRange: HeightRange{
 						From: 100, To: 101,
 					},
-					BigStepRange: HeightRange{
+					BigStepRange: option.Some(HeightRange{
 						From: 50, To: 51,
-					},
-					ToSmallStep: option.Some(protocol.Height(100)),
+					}),
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-101/big-step-50-51/small-step-0-100/roots.txt",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-101/big-step-50-51/state-roots",
 			wantErr: false,
 		},
 	}
@@ -229,6 +371,7 @@ func Test_determineFilePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := determineFilePath(tt.args.baseDir, tt.args.key)
 			if (err != nil) != tt.wantErr {
+				t.Logf("got: %v, and key %+v, got %s", err, tt.args.key, got)
 				if !strings.Contains(err.Error(), tt.errContains) {
 					t.Fatalf("Expected %s, got %s", tt.errContains, err.Error())
 				}
@@ -264,10 +407,9 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageRange:   HeightRange{From: 0, To: 1},
-		BigStepRange: HeightRange{
+		BigStepRange: option.Some(HeightRange{
 			From: 0, To: 1,
-		},
-		ToSmallStep: option.Some(protocol.Height(100)),
+		}),
 	}
 	numRoots := 1 << 20
 	roots := make([]common.Hash, numRoots)

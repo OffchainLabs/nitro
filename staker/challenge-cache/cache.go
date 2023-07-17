@@ -42,6 +42,7 @@ import (
 var (
 	ErrNotFoundInCache   = errors.New("no found in challenge cache")
 	ErrFileAlreadyExists = errors.New("file already exists")
+	ErrNoStateRoots      = errors.New("no state roots being written")
 	stateRootsFileName   = "state-roots"
 	wavmModuleRootPrefix = "wavm-module-root"
 	messageNumberPrefix  = "message-num"
@@ -71,8 +72,7 @@ func New(baseDir string) *Cache {
 type Key struct {
 	WavmModuleRoot common.Hash
 	MessageRange   HeightRange
-	BigStepRange   HeightRange
-	ToSmallStep    option.Option[protocol.Height]
+	BigStepRange   option.Option[HeightRange]
 }
 
 // HeightRange within a challenge.
@@ -113,8 +113,9 @@ func (c *Cache) Get(
 // This function first creates a temporary file, writes the state roots to it, and then renames the file
 // to the final directory to ensure atomic writes.
 func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
-	if len(stateRoots) == 1 {
-		return nil
+	// We should error if trying to put 0 state roots to disk.
+	if len(stateRoots) == 0 {
+		return ErrNoStateRoots
 	}
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
@@ -160,29 +161,27 @@ func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]com
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
-	idx := uint64(0)
+	totalRead := uint64(0)
 	for {
 		n, err := br.Read(buf[:cap(buf)])
-		buf = buf[:n]
-		if n == 0 {
-			if err == nil {
-				continue
-			}
+		if err != nil {
+			// If we try to read but reach EOF, we break out of the loop.
 			if err == io.EOF {
 				break
 			}
 			return nil, err
 		}
+		buf = buf[:n]
+		if n != 32 {
+			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
+		}
 		stateRoots = append(stateRoots, common.BytesToHash(buf))
 		if !readUpTo.IsNone() {
-			if idx >= uint64(readUpTo.Unwrap()) {
+			if totalRead >= uint64(readUpTo.Unwrap()) {
 				return stateRoots, nil
 			}
 		}
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-		idx++
+		totalRead++
 	}
 	if !readUpTo.IsNone() {
 		if readUpTo.Unwrap() > protocol.Height(len(stateRoots)) {
@@ -239,11 +238,12 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 		return "", fmt.Errorf("message number range invalid")
 	}
 	key = append(key, fmt.Sprintf("%s-%d-%d", messageNumberPrefix, lookup.MessageRange.From, lookup.MessageRange.To))
-	if !lookup.ToSmallStep.IsNone() {
-		if err := lookup.BigStepRange.ValidateOneStepFork(); err != nil {
+	if !lookup.BigStepRange.IsNone() {
+		bigStepRange := lookup.BigStepRange.Unwrap()
+		if err := bigStepRange.ValidateOneStepFork(); err != nil {
 			return "", fmt.Errorf("big step range invalid")
 		}
-		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, lookup.BigStepRange.From, lookup.BigStepRange.To))
+		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, bigStepRange.From, bigStepRange.To))
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
