@@ -17,11 +17,9 @@ Use cases:
 
 	  wavm-module-root-0xab/
 		message-num-70-71/
-			big-step-0-2048/
-				roots.txt
+			roots.txt
 			big-step-100-101/
-				small-step-0-256/
-					roots.txt
+				roots.txt
 
 We namespace top-level block challenges by wavm module root and assertion hash. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -48,7 +46,6 @@ var (
 	wavmModuleRootPrefix = "wavm-module-root"
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
-	smallStepPrefix      = "small-step"
 )
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
@@ -95,8 +92,10 @@ func (c *Cache) Get(
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
+		fmt.Printf("Cache miss: %+v\n", lookup)
 		return nil, ErrNotFoundInCache
 	}
+	fmt.Printf("Cache hit: %+v\n", lookup)
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err
@@ -107,6 +106,9 @@ func (c *Cache) Get(
 
 // Put a list of state roots into the cache. If the file already exists, ErrFileAlreadyExists will be returned.
 func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
+	if len(stateRoots) == 1 {
+		return nil
+	}
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return err
@@ -203,11 +205,9 @@ for a given filesystem challenge cache will look as follows:
 
 	  wavm-module-root-0xab/
 		message-num-70-71/
-			big-step-0-2048/
-				roots.txt
+			roots.txt
 			big-step-100-101/
-				small-step-0-256/
-					roots.txt
+				roots.txt
 
 Invariants:
 - Message number height from < to
@@ -222,26 +222,14 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 		return "", fmt.Errorf("message number range invalid")
 	}
 	key = append(key, fmt.Sprintf("%s-%d-%d", messageNumberPrefix, lookup.MessageRange.From, lookup.MessageRange.To))
-	if err := lookup.BigStepRange.ValidateIncreasing(); err != nil {
-		return "", fmt.Errorf("big step range invalid")
-	}
-	key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, lookup.BigStepRange.From, lookup.BigStepRange.To))
 	if !lookup.ToSmallStep.IsNone() {
 		if err := lookup.BigStepRange.ValidateOneStepFork(); err != nil {
 			return "", fmt.Errorf("big step range invalid")
 		}
-		key = append(key, fmt.Sprintf("%s-0-%d", smallStepPrefix, lookup.ToSmallStep.Unwrap()))
+		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, lookup.BigStepRange.From, lookup.BigStepRange.To))
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
-}
-
-// ValidateIncreasing checks if a height range has from < to.
-func (h HeightRange) ValidateIncreasing() error {
-	if h.From > h.To {
-		return fmt.Errorf("from %d was >= to %d", h.From, h.To)
-	}
-	return nil
 }
 
 // ValidateOneStepFork checks if a height range has a difference of 1.
