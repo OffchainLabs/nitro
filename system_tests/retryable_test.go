@@ -52,22 +52,31 @@ func retryableSetup(t *testing.T) (
 	delayedBridge, err := arbnode.NewDelayedBridge(l1client, l1info.GetAddress("Bridge"), 0)
 	Require(t, err)
 
-	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
+	lookupL2Hash := func(l1Receipt *types.Receipt) common.Hash {
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
 			Fatal(t, "didn't find message for retryable submission")
 		}
 		var submissionTxs []*types.Transaction
+		msgTypes := map[uint8]bool{
+			arbostypes.L1MessageType_SubmitRetryable: true,
+			arbostypes.L1MessageType_EthDeposit:      true,
+			arbostypes.L1MessageType_L2Message:       true,
+		}
+		txTypes := map[uint8]bool{
+			types.ArbitrumSubmitRetryableTxType: true,
+			types.ArbitrumDepositTxType:         true,
+			types.ArbitrumContractTxType:        true,
+		}
 		for _, message := range messages {
-			k := message.Message.Header.Kind
-			if k != arbostypes.L1MessageType_SubmitRetryable && k != arbostypes.L1MessageType_EthDeposit {
+			if !msgTypes[message.Message.Header.Kind] {
 				continue
 			}
 			txs, err := arbos.ParseL2Transactions(message.Message, params.ArbitrumDevTestChainConfig().ChainID, nil)
 			Require(t, err)
 			for _, tx := range txs {
-				if tx.Type() == types.ArbitrumSubmitRetryableTxType || tx.Type() == types.ArbitrumDepositTxType {
+				if txTypes[tx.Type()] {
 					submissionTxs = append(submissionTxs, tx)
 				}
 			}
@@ -75,7 +84,6 @@ func retryableSetup(t *testing.T) (
 		if len(submissionTxs) != 1 {
 			Fatal(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
 		}
-
 		return submissionTxs[0].Hash()
 	}
 
@@ -101,7 +109,7 @@ func retryableSetup(t *testing.T) (
 		l2node.StopAndWait()
 		requireClose(t, l1stack)
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
+	return l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown
 }
 
 func TestRetryableNoExist(t *testing.T) {
@@ -446,11 +454,8 @@ func TestDepositETH(t *testing.T) {
 }
 
 func TestArbitrumContractTx(t *testing.T) {
-	ctx := context.Background()
-	l2Info, node, l2Client, l1Info, _, l1Client, l1Stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1Stack)
-	defer node.StopAndWait()
-
+	l2Info, l1Info, l2Client, l1Client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
+	defer teardown()
 	faucetL2Addr := util.RemapL1Address(l1Info.GetAddress("Faucet"))
 	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), l2Info, l2Client, ctx)
 
@@ -466,20 +471,13 @@ func TestArbitrumContractTx(t *testing.T) {
 	}
 	unsignedTx := types.NewTx(&types.ArbitrumContractTx{
 		ChainId:   l2Info.Signer.ChainID(),
-		GasFeeCap: l2Info.GasPrice.Mul(l2Info.GasPrice, big.NewInt(2)),
-		RequestId: common.BigToHash(common.Big1),
-		Gas:       1e6,
 		From:      faucetL2Addr,
+		GasFeeCap: l2Info.GasPrice.Mul(l2Info.GasPrice, big.NewInt(2)),
+		Gas:       1e6,
 		To:        &l2ContractAddr,
 		Value:     common.Big0,
 		Data:      data,
 	})
-
-	delayedInbox, err := bridgegen.NewInbox(l1Info.GetAddress("Inbox"), l1Client)
-	if err != nil {
-		t.Fatalf("Error getting Go binding of L1 Inbox contract: %v", err)
-	}
-
 	txOpts := l1Info.GetDefaultTransactOpts("Faucet", ctx)
 	l1tx, err := delayedInbox.SendContractTransaction(
 		&txOpts,
@@ -500,7 +498,8 @@ func TestArbitrumContractTx(t *testing.T) {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
 	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
-	receipt, err = EnsureTxSucceeded(ctx, l2Client, unsignedTx)
+	txHash := lookupL2Hash(receipt)
+	receipt, err = WaitForTx(ctx, l2Client, txHash, time.Second*5)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
