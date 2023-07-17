@@ -20,7 +20,7 @@ Use cases:
 			big-step-100-101/
 				roots.txt
 
-We namespace top-level block challenges by wavm module root and assertion hash. Then, we can retrieve
+We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
 */
 package challengecache
@@ -67,7 +67,7 @@ func New(baseDir string) *Cache {
 	}
 }
 
-// Key for cache lookups includes the wavm module root and assertion of a challenge, as well
+// Key for cache lookups includes the wavm module root of a challenge, as well
 // as the height ranges for messages, big steps, and small steps as needed.
 type Key struct {
 	WavmModuleRoot common.Hash
