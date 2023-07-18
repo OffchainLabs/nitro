@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -54,8 +55,8 @@ const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
 const storageKeyCacheSize = 1024
 
-// TODO(magic) rename?
 var storageHashCache = containers.NewSafeLruCache[string, []byte](storageKeyCacheSize)
+var cacheFullLogged atomic.Bool
 
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
@@ -300,12 +301,11 @@ func (store *Storage) cachedKeccak(data ...[]byte) []byte {
 	if isCached {
 		return hash
 	}
-	// TODO(magic) we might miss the warning if concurrent Add will be before
-	if store.hashCache.Size()-store.hashCache.Len() == 1 {
-		log.Warn("Hash cache almost full, but we didn't expect that. We may be caching some non-static keys.")
-	}
 	hash = crypto.Keccak256(data...)
-	store.hashCache.Add(keyString, hash)
+	evicted := store.hashCache.Add(keyString, hash)
+	if evicted && cacheFullLogged.CompareAndSwap(false, true) {
+		log.Warn("Hash cache full, we didn't expect that. Some non-static storage keys may fill up the cache.")
+	}
 	return hash
 }
 
