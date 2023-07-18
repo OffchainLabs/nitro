@@ -91,11 +91,11 @@ func NewMemoryBackedStateDB() vm.StateDB {
 // a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
 // representations that reward contiguity.
 // Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
-func (store *Storage) mapAddress(storageKey []byte, key common.Hash) common.Hash {
+func (store *Storage) mapAddress(key common.Hash) common.Hash {
 	keyBytes := key.Bytes()
 	boundary := common.HashLength - 1
 	mapped := make([]byte, 0, common.HashLength)
-	mapped = append(mapped, store.cachedKeccak(storageKey, keyBytes[:boundary])[:boundary]...)
+	mapped = append(mapped, store.cachedKeccak(store.storageKey, keyBytes[:boundary])[:boundary]...)
 	mapped = append(mapped, keyBytes[boundary])
 	return common.BytesToHash(mapped)
 }
@@ -119,11 +119,11 @@ func (store *Storage) Get(key common.Hash) (common.Hash, error) {
 	if info := store.burner.TracingInfo(); info != nil {
 		info.RecordStorageGet(key)
 	}
-	return store.db.GetState(store.account, store.mapAddress(store.storageKey, key)), nil
+	return store.db.GetState(store.account, store.mapAddress(key)), nil
 }
 
 func (store *Storage) GetStorageSlot(key common.Hash) common.Hash {
-	return store.mapAddress(store.storageKey, key)
+	return store.mapAddress(key)
 }
 
 func (store *Storage) GetUint64(key common.Hash) (uint64, error) {
@@ -151,7 +151,7 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	if info := store.burner.TracingInfo(); info != nil {
 		info.RecordStorageSet(key, value)
 	}
-	store.db.SetState(store.account, store.mapAddress(store.storageKey, key), value)
+	store.db.SetState(store.account, store.mapAddress(key), value)
 	return nil
 }
 
@@ -320,7 +320,7 @@ type StorageSlot struct {
 }
 
 func (store *Storage) NewSlot(offset uint64) StorageSlot {
-	return StorageSlot{store.account, store.db, store.mapAddress(store.storageKey, util.UintToHash(offset)), store.burner}
+	return StorageSlot{store.account, store.db, store.mapAddress(util.UintToHash(offset)), store.burner}
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
