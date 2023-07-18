@@ -94,13 +94,10 @@ func NewMemoryBackedStateDB() vm.StateDB {
 func (store *Storage) mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	keyBytes := key.Bytes()
 	boundary := common.HashLength - 1
-	mapped := common.BytesToHash(
-		append(
-			store.cachedKeccak(storageKey, keyBytes[:boundary])[:boundary],
-			keyBytes[boundary],
-		),
-	)
-	return mapped
+	mapped := make([]byte, 0, common.HashLength)
+	mapped = append(mapped, store.cachedKeccak(storageKey, keyBytes[:boundary])[:boundary]...)
+	mapped = append(mapped, keyBytes[boundary])
+	return common.BytesToHash(mapped)
 }
 
 func writeCost(value common.Hash) uint64 {
@@ -292,13 +289,14 @@ func (store *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	return crypto.Keccak256(data...), nil
 }
 
+// note: returned slice is not thread-safe
 func (store *Storage) cachedKeccak(data ...[]byte) []byte {
 	if store.hashCache == nil {
 		return crypto.Keccak256(data...)
 	}
 	keyString := string(bytes.Join(data, []byte{}))
-	hash, isCached := store.hashCache.Get(keyString)
-	if isCached {
+	hash, wasCached := store.hashCache.Get(keyString)
+	if wasCached {
 		return hash
 	}
 	hash = crypto.Keccak256(data...)
