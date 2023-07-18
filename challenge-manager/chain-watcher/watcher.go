@@ -107,7 +107,7 @@ func New(
 	}
 }
 
-// Checks if a confirmed, level zero edge exists that claims a particular
+// ConfirmedEdgeWithClaimExists checks if a confirmed, level zero edge exists that claims a particular
 // edge id for a tracked challenge. This is used during the confirmation process of edges
 // within edge tracker goroutines. Returns the claiming edge id.
 func (w *Watcher) ConfirmedEdgeWithClaimExists(
@@ -121,7 +121,7 @@ func (w *Watcher) ConfirmedEdgeWithClaimExists(
 	return challenge.confirmedLevelZeroEdgeClaimIds.TryGet(claimId)
 }
 
-// Computes the honest path timer for an edge id within an assertion hash challenge
+// ComputeHonestPathTimer computes the honest path timer for an edge id within an assertion hash challenge
 // namespace. This is used during the confirmation process for edges in
 // edge tracker goroutine logic.
 func (w *Watcher) ComputeHonestPathTimer(
@@ -151,7 +151,7 @@ func (w *Watcher) IsSynced() bool {
 	return w.initialSyncCompleted.Load()
 }
 
-// Starts watching the chain via a polling mechanism for all edge added and confirmation events
+// Start watching the chain via a polling mechanism for all edge added and confirmation events
 // in order to process some of this data into internal representations for confirmation purposes.
 func (w *Watcher) Start(ctx context.Context) {
 	scanRange, err := retry.UntilSucceeds(ctx, func() (filterRange, error) {

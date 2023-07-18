@@ -147,7 +147,7 @@ func MostSignificantBit(x uint64) (uint64, error) {
 	return uint64(63 - bits.LeadingZeros64(x)), nil
 }
 
-// The root of the subtree. A collision free commitment to the contents of the tree.
+// Root of the subtree. A collision free commitment to the contents of the tree.
 // The root of a tree is defined as the cumulative hashing of the roots of
 // all its subtrees. Returns error for empty tree.
 func Root(me []common.Hash) (common.Hash, error) {
@@ -185,7 +185,7 @@ func Root(me []common.Hash) (common.Hash, error) {
 	return accum, nil
 }
 
-// Calculate the full tree size represented by a merkle expansion
+// TreeSize calculates the full tree size represented by a merkle expansion
 func TreeSize(me []common.Hash) uint64 {
 	sum := uint64(0)
 	for i := 0; i < len(me); i++ {
@@ -196,7 +196,7 @@ func TreeSize(me []common.Hash) uint64 {
 	return sum
 }
 
-// Append a complete subtree to an existing tree
+// AppendCompleteSubTree appends a complete subtree to an existing tree
 // See above description of trees for rules on how appending can occur.
 // Briefly, appending works like binary addition only that the value being added be an
 // exact power of two (complete), and must equal to or less than the least significant bit
@@ -280,7 +280,7 @@ func AppendCompleteSubTree(
 	return next, nil
 }
 
-// Append a leaf to a subtree
+// AppendLeaf appends a leaf to a subtree
 // Leaves are just complete subtrees at level 0, however we hash the leaf before putting it
 // into the tree to avoid root collisions.
 func AppendLeaf(
@@ -291,7 +291,7 @@ func AppendLeaf(
 	return AppendCompleteSubTree(me, 0, crypto.Keccak256Hash(leaf[:]))
 }
 
-// Find the highest level which can be appended to tree of size startSize without
+// MaximumAppendBetween finds the highest level which can be appended to tree of size startSize without
 // creating a tree with size greater than end size (inclusive)
 // Subtrees can only be appended according to certain rules, see tree description at top of file
 // for details. A subtree can only be appended if it is at the same level, or below, the current lowest
@@ -414,7 +414,7 @@ type VerifyPrefixProofConfig struct {
 	PrefixProof  []common.Hash
 }
 
-// Verify that a pre-root commits to a prefix of the leaves committed by a post-root
+// VerifyPrefixProof verifies that a pre-root commits to a prefix of the leaves committed by a post-root
 // Verifies by appending sub trees to the pre tree until we get to the size of the post tree
 // and then checking that the root of the calculated post tree is equal to the supplied one
 func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {

@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	ErrChainCatchingUp  = errors.New("chain catching up")
 	ErrNoExecutionState = errors.New("chain does not have execution state")
 )
 

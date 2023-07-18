@@ -46,7 +46,7 @@ type L2StateBackend struct {
 	maliciousMachineIndex        uint64
 }
 
-// Initialize with a list of predefined state roots, useful for tests and simulations.
+// NewWithMockedStateRoots initialize with a list of predefined state roots, useful for tests and simulations.
 func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBackend, error) {
 	if len(stateRoots) == 0 {
 		return nil, errors.New("no state roots provided")
@@ -101,7 +101,7 @@ func WithMachineAtBlockProvider(machineAtBlock func(ctx context.Context, blockNu
 	}
 }
 
-// If enabled, forces the machine hash at block boundaries to be the block hash
+// WithForceMachineBlockCompat if enabled, forces the machine hash at block boundaries to be the block hash
 func WithForceMachineBlockCompat() Opt {
 	return func(s *L2StateBackend) {
 		s.forceMachineBlockCompat = true
@@ -185,7 +185,7 @@ func NewForSimpleMachine(
 	return s, nil
 }
 
-// Produces the l2 state to assert at the message number specified.
+// ExecutionStateAtMessageNumber produces the l2 state to assert at the message number specified.
 func (s *L2StateBackend) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	if len(s.executionStates) == 0 {
 		return nil, errors.New("no execution states")
@@ -201,7 +201,7 @@ func (s *L2StateBackend) ExecutionStateAtMessageNumber(ctx context.Context, mess
 	return nil, fmt.Errorf("no execution state at message number %d found", messageNumber)
 }
 
-// Checks if the execution manager locally has recorded this state
+// ExecutionStateMsgCount returns the execution state message count.
 func (s *L2StateBackend) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
 	for i, r := range s.executionStates {
 		if r.Equals(state) {
@@ -280,7 +280,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	var err error
 	switch edgeType {
 	case protocol.BlockChallengeEdge:
-		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(commit.Height), prevAssertionInboxMaxCount)
+		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, commit.Height, prevAssertionInboxMaxCount)
 		if err != nil {
 			return false, err
 		}
@@ -289,7 +289,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 			ctx,
 			wasmModuleRoot,
 			uint64(heights.BlockChallengeOriginHeight),
-			uint64(commit.Height),
+			commit.Height,
 		)
 		if err != nil {
 			return false, err

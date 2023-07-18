@@ -69,9 +69,9 @@ func main() {
 	}
 
 	aliceStateManager, err := statemanager.NewForSimpleMachine(statemanager.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
-		BlockChallengeHeight:     uint64(levelZeroBlockHeight),
-		BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
-		SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
+		BlockChallengeHeight:     levelZeroBlockHeight,
+		BigStepChallengeHeight:   levelZeroBigStepHeight,
+		SmallStepChallengeHeight: levelZeroSmallStepHeight,
 	}))
 	if err != nil {
 		panic(err)
@@ -88,9 +88,9 @@ func main() {
 		statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
 		statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
 		statemanager.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
-			BlockChallengeHeight:     uint64(levelZeroBlockHeight),
-			BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
-			SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
+			BlockChallengeHeight:     levelZeroBlockHeight,
+			BigStepChallengeHeight:   levelZeroBigStepHeight,
+			SmallStepChallengeHeight: levelZeroSmallStepHeight,
 		}),
 	)
 	if err != nil {
@@ -101,9 +101,9 @@ func main() {
 		statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight+2),
 		statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
 		statemanager.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
-			BlockChallengeHeight:     uint64(levelZeroBlockHeight),
-			BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
-			SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
+			BlockChallengeHeight:     levelZeroBlockHeight,
+			BigStepChallengeHeight:   levelZeroBigStepHeight,
+			SmallStepChallengeHeight: levelZeroSmallStepHeight,
 		}),
 		statemanager.WithMaliciousMachineIndex(1),
 	)

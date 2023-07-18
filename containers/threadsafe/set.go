@@ -19,16 +19,6 @@ func NewSet[T comparable]() *Set[T] {
 	}
 }
 
-func NewSetFromItems[T comparable](items []T) *Set[T] {
-	s := &Set[T]{
-		items: make(map[T]bool),
-	}
-	for _, item := range items {
-		s.items[item] = true
-	}
-	return s
-}
-
 func (s *Set[T]) Insert(t T) {
 	s.Lock()
 	defer s.Unlock()

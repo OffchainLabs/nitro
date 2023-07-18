@@ -4,15 +4,10 @@ package toys
 
 import (
 	"encoding/binary"
-	"errors"
 	"math/big"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/ethereum/go-ethereum/common"
-)
-
-var (
-	ErrOutOfBounds = errors.New("instruction number out of bounds")
 )
 
 type Machine interface {

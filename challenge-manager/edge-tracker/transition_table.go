@@ -8,15 +8,15 @@ import (
 )
 
 func newEdgeTrackerFsm(
-	startState EdgeTrackerState,
-	fsmOpts ...fsm.Opt[edgeTrackerAction, EdgeTrackerState],
-) (*fsm.Fsm[edgeTrackerAction, EdgeTrackerState], error) {
-	transitions := []*fsm.Event[edgeTrackerAction, EdgeTrackerState]{
+	startState State,
+	fsmOpts ...fsm.Opt[edgeTrackerAction, State],
+) (*fsm.Fsm[edgeTrackerAction, State], error) {
+	transitions := []*fsm.Event[edgeTrackerAction, State]{
 		{
 			// Returns the tracker to the very beginning. Several states can cause
 			// this, including challenge moves.
 			Typ: edgeBackToStart{},
-			From: []EdgeTrackerState{
+			From: []State{
 				edgeBisecting,
 				edgeStarted,
 				edgeAtOneStepProof,
@@ -28,31 +28,31 @@ func newEdgeTrackerFsm(
 			// The tracker will take some action if it has reached a one-step-proof
 			// in a small step challenge.
 			Typ:  edgeHandleOneStepProof{},
-			From: []EdgeTrackerState{edgeStarted},
+			From: []State{edgeStarted},
 			To:   edgeAtOneStepProof,
 		},
 		{
 			// The tracker will add a subchallenge leaf to its edge's subchallenge.
 			Typ:  edgeOpenSubchallengeLeaf{},
-			From: []EdgeTrackerState{edgeStarted, edgeAddingSubchallengeLeaf},
+			From: []State{edgeStarted, edgeAddingSubchallengeLeaf},
 			To:   edgeAddingSubchallengeLeaf,
 		},
 		// Challenge moves.
 		{
 			Typ:  edgeBisect{},
-			From: []EdgeTrackerState{edgeStarted},
+			From: []State{edgeStarted},
 			To:   edgeBisecting,
 		},
 		// Awaiting confirmation.
 		{
 			Typ:  edgeAwaitConfirmation{},
-			From: []EdgeTrackerState{edgeStarted, edgeBisecting, edgeAddingSubchallengeLeaf, edgeConfirming},
+			From: []State{edgeStarted, edgeBisecting, edgeAddingSubchallengeLeaf, edgeConfirming},
 			To:   edgeConfirming,
 		},
 		// Terminal state.
 		{
 			Typ:  edgeConfirm{},
-			From: []EdgeTrackerState{edgeStarted, edgeConfirming, edgeConfirmed, edgeAtOneStepProof},
+			From: []State{edgeStarted, edgeConfirming, edgeConfirmed, edgeAtOneStepProof},
 			To:   edgeConfirmed,
 		},
 	}

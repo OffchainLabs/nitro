@@ -26,7 +26,6 @@ var (
 )
 
 //nolint:unused
-var genesisOspData = make([]byte, 16)
 
 func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	ctx := context.Background()

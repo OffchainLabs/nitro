@@ -56,7 +56,7 @@ func (p *Poster) Start(ctx context.Context) {
 	}
 }
 
-// Posts the latest claim of the Node's L2 state as an assertion to the L1 protocol smart contracts.
+// PostLatestAssertion posts the latest claim of the Node's L2 state as an assertion to the L1 protocol smart contracts.
 // TODO: Include leaf creation validity conditions which are more complex than this.
 // For example, a validator must include messages from the inbox that were not included
 // by the last validator in the last leaf's creation.

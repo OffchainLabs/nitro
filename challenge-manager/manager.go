@@ -94,25 +94,10 @@ func WithMode(m types.Mode) Opt {
 
 // WithAssertionPostingInterval specifies how often to post new assertions, if in MakeMode.
 // act on its responsibilities.
-func WithAssertionPostingInterval(d time.Duration) Opt {
-	return func(val *Manager) {
-		val.assertionPostingInterval = d
-	}
-}
 
 // WithAssertionScanningInterval specifies how often to scan for new assertions.
-func WithAssertionScanningInterval(d time.Duration) Opt {
-	return func(val *Manager) {
-		val.assertionScanningInterval = d
-	}
-}
 
 // WithMaxDelaySeconds specifies the maximum number of seconds that the challenge manager will open a challenge.
-func WithMaxDelaySeconds(maxDelaySeconds int) Opt {
-	return func(val *Manager) {
-		val.maxDelaySeconds = maxDelaySeconds
-	}
-}
 
 // New sets up a challenge manager instance provided a protocol, state manager, and additional options.
 func New(

@@ -68,7 +68,7 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 	return protocol.EdgeStatus(edge.Status), nil
 }
 
-// The block number the edge was created at.
+// CreatedAtBlock the  block number the edge was created at.
 func (e *SpecEdge) CreatedAtBlock() (uint64, error) {
 	if !e.inner.CreatedAtBlock.IsUint64() {
 		return 0, errors.New("edge created at block was not a uint64")
@@ -76,7 +76,7 @@ func (e *SpecEdge) CreatedAtBlock() (uint64, error) {
 	return e.inner.CreatedAtBlock.Uint64(), nil
 }
 
-// Checks if the edge has children.
+// HasChildren checks if the edge has children.
 func (e *SpecEdge) HasChildren(ctx context.Context) (bool, error) {
 	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
@@ -85,7 +85,7 @@ func (e *SpecEdge) HasChildren(ctx context.Context) (bool, error) {
 	return edge.LowerChildId != ([32]byte{}) && edge.UpperChildId != ([32]byte{}), nil
 }
 
-// The lower child of the edge, if any.
+// LowerChild of the edge, if any.
 func (e *SpecEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
 	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
@@ -97,7 +97,7 @@ func (e *SpecEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeI
 	return option.Some(protocol.EdgeId(edge.LowerChildId)), nil
 }
 
-// The upper child of the edge, if any.
+// UpperChild of the edge, if any.
 func (e *SpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
 	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
@@ -109,7 +109,7 @@ func (e *SpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeI
 	return option.Some(protocol.EdgeId(edge.UpperChildId)), nil
 }
 
-// The mutual id of the edge.
+// MutualId of the edge.
 func (e *SpecEdge) MutualId() protocol.MutualId {
 	return e.mutualId
 }
@@ -118,7 +118,7 @@ func (e *SpecEdge) OriginId() protocol.OriginId {
 	return e.inner.OriginId
 }
 
-// The claim id of the edge, if any.
+// ClaimId of the edge, if any.
 func (e *SpecEdge) ClaimId() option.Option[protocol.ClaimId] {
 	if e.inner.ClaimId == [32]byte{} {
 		return option.None[protocol.ClaimId]()
@@ -126,6 +126,7 @@ func (e *SpecEdge) ClaimId() option.Option[protocol.ClaimId] {
 	return option.Some(protocol.ClaimId(e.inner.ClaimId))
 }
 
+// HasLengthOneRival returns true if there's a length one rival.
 func (e *SpecEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
 	ok, err := e.manager.caller.HasLengthOneRival(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {

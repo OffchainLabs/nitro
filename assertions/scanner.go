@@ -74,7 +74,7 @@ func NewScanner(
 	}
 }
 
-// Scan the blockchain for assertion creation events in a polling manner
+// Start scanning the blockchain for assertion creation events in a polling manner
 // from the latest confirmed assertion.
 func (s *Scanner) Start(ctx context.Context) {
 	latestConfirmed, err := s.chain.LatestConfirmed(ctx)

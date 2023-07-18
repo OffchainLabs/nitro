@@ -26,7 +26,7 @@ type MetadataReader interface {
 
 type creationTime uint64
 
-// An honestChallengeTree keeps track of edges the honest node agrees with in a particular challenge.
+// HonestChallengeTree keeps track of edges the honest node agrees with in a particular challenge.
 // All edges tracked in this data structure are part of the same, top-level assertion challenge.
 type HonestChallengeTree struct {
 	edges                         *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]

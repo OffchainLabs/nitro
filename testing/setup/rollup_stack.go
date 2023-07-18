@@ -26,7 +26,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type SetupBackend interface {
+type Backend interface {
 	bind.DeployBackend
 	bind.ContractBackend
 }
@@ -320,7 +320,7 @@ type RollupAddresses struct {
 
 func DeployFullRollupStack(
 	ctx context.Context,
-	backend SetupBackend,
+	backend Backend,
 	deployAuth *bind.TransactOpts,
 	sequencer common.Address,
 	config rollupgen.Config,
@@ -424,7 +424,7 @@ func DeployFullRollupStack(
 func deployBridgeCreator(
 	ctx context.Context,
 	auth *bind.TransactOpts,
-	backend SetupBackend,
+	backend Backend,
 ) (common.Address, error) {
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, backend)
 	if err != nil {
@@ -500,7 +500,7 @@ func deployBridgeCreator(
 func deployChallengeFactory(
 	ctx context.Context,
 	auth *bind.TransactOpts,
-	backend SetupBackend,
+	backend Backend,
 ) (common.Address, common.Address, error) {
 	ospEntryAddr, tx, _, err := mocksgen.DeploySimpleOneStepProofEntry(auth, backend)
 	err = challenge_testing.TxSucceeded(ctx, tx, ospEntryAddr, backend, err)
@@ -524,7 +524,7 @@ func deployChallengeFactory(
 
 func deployRollupCreator(
 	ctx context.Context,
-	backend SetupBackend,
+	backend Backend,
 	auth *bind.TransactOpts,
 ) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, auth, backend)
@@ -591,7 +591,7 @@ func deployRollupCreator(
 	return rollupCreator, rollupUserLogic, rollupCreatorAddress, common.Address{}, validatorWalletCreator, nil
 }
 
-// Represents a test EOA account in the simulated backend,
+// TestAccount represents a test EOA account in the simulated backend,
 type TestAccount struct {
 	AccountAddr common.Address
 	TxOpts      *bind.TransactOpts

@@ -23,15 +23,10 @@ import (
 )
 
 var (
-	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
-	ErrNoUnresolved      = errors.New("no assertion to resolve")
-
 	ErrNotFound         = errors.New("item not found on-chain")
 	ErrAlreadyExists    = errors.New("item already exists on-chain")
 	ErrPrevDoesNotExist = errors.New("assertion predecessor does not exist")
 	ErrTooLate          = errors.New("too late to create assertion sibling")
-	ErrTooSoon          = errors.New("too soon to confirm assertion")
-	ErrInvalidHeight    = errors.New("invalid assertion height")
 )
 
 var assertionCreatedId common.Hash
