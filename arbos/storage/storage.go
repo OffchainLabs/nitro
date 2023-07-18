@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -43,11 +45,17 @@ type Storage struct {
 	db         vm.StateDB
 	storageKey []byte
 	burner     burn.Burner
+	hashCache  *containers.SafeLruCache[string, []byte]
 }
 
 const StorageReadCost = params.SloadGasEIP2200
 const StorageWriteCost = params.SstoreSetGasEIP2200
 const StorageWriteZeroCost = params.SstoreResetGasEIP2200
+
+const storageKeyCacheSize = 1024
+
+// TODO(magic) rename?
+var storageHashCache = containers.NewSafeLruCache[string, []byte](storageKeyCacheSize)
 
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
@@ -58,6 +66,7 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 		db:         statedb,
 		storageKey: []byte{},
 		burner:     burner,
+		hashCache:  storageHashCache,
 	}
 }
 
@@ -81,15 +90,16 @@ func NewMemoryBackedStateDB() vm.StateDB {
 // a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
 // representations that reward contiguity.
 // Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
-func mapAddress(storageKey []byte, key common.Hash) common.Hash {
+func (store *Storage) mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	keyBytes := key.Bytes()
 	boundary := common.HashLength - 1
-	return common.BytesToHash(
+	mapped := common.BytesToHash(
 		append(
-			crypto.Keccak256(storageKey, keyBytes[:boundary])[:boundary],
+			store.cachedKeccak(storageKey, keyBytes[:boundary])[:boundary],
 			keyBytes[boundary],
 		),
 	)
+	return mapped
 }
 
 func writeCost(value common.Hash) uint64 {
@@ -111,11 +121,11 @@ func (store *Storage) Get(key common.Hash) (common.Hash, error) {
 	if info := store.burner.TracingInfo(); info != nil {
 		info.RecordStorageGet(key)
 	}
-	return store.db.GetState(store.account, mapAddress(store.storageKey, key)), nil
+	return store.db.GetState(store.account, store.mapAddress(store.storageKey, key)), nil
 }
 
 func (store *Storage) GetStorageSlot(key common.Hash) common.Hash {
-	return mapAddress(store.storageKey, key)
+	return store.mapAddress(store.storageKey, key)
 }
 
 func (store *Storage) GetUint64(key common.Hash) (uint64, error) {
@@ -143,7 +153,7 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	if info := store.burner.TracingInfo(); info != nil {
 		info.RecordStorageSet(key, value)
 	}
-	store.db.SetState(store.account, mapAddress(store.storageKey, key), value)
+	store.db.SetState(store.account, store.mapAddress(store.storageKey, key), value)
 	return nil
 }
 
@@ -171,12 +181,27 @@ func (store *Storage) Swap(key common.Hash, newValue common.Hash) (common.Hash, 
 	return oldValue, store.Set(key, newValue)
 }
 
-func (store *Storage) OpenSubStorage(id []byte) *Storage {
+func (store *Storage) OpenSubStorage(id []byte, cacheKeys bool) *Storage {
+	var hashCache *containers.SafeLruCache[string, []byte]
+	if cacheKeys {
+		hashCache = storageHashCache
+	}
 	return &Storage{
 		store.account,
 		store.db,
-		crypto.Keccak256(store.storageKey, id),
+		store.cachedKeccak(store.storageKey, id),
 		store.burner,
+		hashCache,
+	}
+}
+
+func (store *Storage) NoCacheCopy() *Storage {
+	return &Storage{
+		store.account,
+		store.db,
+		store.storageKey,
+		store.burner,
+		nil,
 	}
 }
 
@@ -266,6 +291,24 @@ func (store *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	return crypto.Keccak256(data...), nil
 }
 
+func (store *Storage) cachedKeccak(data ...[]byte) []byte {
+	if store.hashCache == nil {
+		return crypto.Keccak256(data...)
+	}
+	keyString := string(bytes.Join(data, []byte{}))
+	hash, isCached := store.hashCache.Get(keyString)
+	if isCached {
+		return hash
+	}
+	// TODO(magic) we might miss the warning if concurrent Add will be before
+	if store.hashCache.Size()-store.hashCache.Len() == 1 {
+		log.Warn("Hash cache almost full, but we didn't expect that. We may be caching some non-static keys.")
+	}
+	hash = crypto.Keccak256(data...)
+	store.hashCache.Add(keyString, hash)
+	return hash
+}
+
 func (store *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
 	bytes, err := store.Keccak(data...)
 	return common.BytesToHash(bytes), err
@@ -279,7 +322,7 @@ type StorageSlot struct {
 }
 
 func (store *Storage) NewSlot(offset uint64) StorageSlot {
-	return StorageSlot{store.account, store.db, mapAddress(store.storageKey, util.UintToHash(offset)), store.burner}
+	return StorageSlot{store.account, store.db, store.mapAddress(store.storageKey, util.UintToHash(offset)), store.burner}
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
@@ -590,7 +633,7 @@ type StorageBackedBytes struct {
 
 func (store *Storage) OpenStorageBackedBytes(id []byte) StorageBackedBytes {
 	return StorageBackedBytes{
-		*store.OpenSubStorage(id),
+		*store.OpenSubStorage(id, false),
 	}
 }
 

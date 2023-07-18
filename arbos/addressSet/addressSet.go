@@ -24,9 +24,9 @@ func Initialize(sto *storage.Storage) error {
 
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
-		sto,
+		sto.NoCacheCopy(),
 		sto.OpenStorageBackedUint64(0),
-		sto.OpenSubStorage([]byte{0}),
+		sto.OpenSubStorage([]byte{0}, false),
 	}
 }
 

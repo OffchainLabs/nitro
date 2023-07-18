@@ -21,7 +21,7 @@ func InitializeBlockhashes(backingStorage *storage.Storage) {
 }
 
 func OpenBlockhashes(backingStorage *storage.Storage) *Blockhashes {
-	return &Blockhashes{backingStorage, backingStorage.OpenStorageBackedUint64(0)}
+	return &Blockhashes{backingStorage.NoCacheCopy(), backingStorage.OpenStorageBackedUint64(0)}
 }
 
 func (bh *Blockhashes) L1BlockNumber() (uint64, error) {

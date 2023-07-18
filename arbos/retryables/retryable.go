@@ -31,13 +31,13 @@ var (
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
-	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
+	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey, true))
 }
 
 func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
 	return &RetryableState{
 		sto,
-		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
+		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey, true)),
 	}
 }
 
@@ -73,7 +73,7 @@ func (rs *RetryableState) CreateRetryable(
 	beneficiary common.Address,
 	calldata []byte,
 ) (*Retryable, error) {
-	sto := rs.retryables.OpenSubStorage(id.Bytes())
+	sto := rs.retryables.OpenSubStorage(id.Bytes(), false)
 	ret := &Retryable{
 		id,
 		sto,
@@ -100,7 +100,7 @@ func (rs *RetryableState) CreateRetryable(
 }
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) (*Retryable, error) {
-	sto := rs.retryables.OpenSubStorage(id.Bytes())
+	sto := rs.retryables.OpenSubStorage(id.Bytes(), false)
 	timeoutStorage := sto.OpenStorageBackedUint64(timeoutOffset)
 	timeout, err := timeoutStorage.Get()
 	if timeout == 0 || timeout < currentTimestamp || err != nil {
@@ -134,7 +134,7 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 }
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
-	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
+	retStorage := rs.retryables.OpenSubStorage(id.Bytes(), false)
 	timeout, err := retStorage.GetByUint64(timeoutOffset)
 	if timeout == (common.Hash{}) || err != nil {
 		return false, err
@@ -157,7 +157,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 	_ = retStorage.ClearByUint64(beneficiaryOffset)
 	_ = retStorage.ClearByUint64(timeoutOffset)
 	_ = retStorage.ClearByUint64(timeoutWindowsLeftOffset)
-	err = retStorage.OpenSubStorage(calldataKey).ClearBytes()
+	err = retStorage.OpenSubStorage(calldataKey, false).ClearBytes()
 	return true, err
 }
 
@@ -291,7 +291,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	if err != nil || id == nil {
 		return err
 	}
-	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes())
+	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes(), false)
 	timeoutStorage := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
 	timeout, err := timeoutStorage.Get()
 	if err != nil {
