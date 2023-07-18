@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -170,6 +171,65 @@ func TestAddressSetAllMembers(t *testing.T) {
 			Require(t, aset.Add(addr))
 		}
 		checkAllMembers(t, aset, possibleAddresses)
+	}
+}
+
+func TestRectifyMapping(t *testing.T) {
+	db := storage.NewMemoryBackedStateDB()
+	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
+	Require(t, Initialize(sto))
+	aset := OpenAddressSet(sto)
+
+	addr1 := testhelpers.RandomAddress()
+	addr2 := testhelpers.RandomAddress()
+	addr3 := testhelpers.RandomAddress()
+	possibleAddresses := []common.Address{addr1, addr2, addr3}
+
+	Require(t, aset.Add(addr1))
+	Require(t, aset.Add(addr2))
+	Require(t, aset.Add(addr3))
+
+	// RectifyMapping should not do anything if the mapping is correct
+	addr := possibleAddresses[rand.Intn(len(possibleAddresses))]
+	Require(t, aset.RectifyMapping(addr))
+
+	// Non owner's should not be able to call RectifyMapping
+	err := aset.RectifyMapping(testhelpers.RandomAddress())
+	if err == nil {
+		Fail(t, "RectifyMapping was succesfully called by non owner")
+	}
+
+	// Corrupt the list and verify if RectifyMapping fixes it
+	addrHash := common.BytesToHash(addr2.Bytes())
+	Require(t, aset.backingStorage.SetByUint64(uint64(1), addrHash))
+
+	Require(t, aset.RectifyMapping(addr1))
+	addrHash = common.BytesToHash(addr1.Bytes())
+	addrHashInList, index, _, _ := aset.getMapping(addrHash)
+	if addrHashInList != addrHash || index != uint64(1) {
+		Fail(t, "RectifyMapping did not rectify the corrupt list")
+	}
+
+	// Corrupt the map and verify if RectifyMapping fixes it
+	addrHash = common.BytesToHash(addr2.Bytes())
+	Require(t, aset.byAddress.Set(addrHash, util.UintToHash(uint64(6))))
+
+	Require(t, aset.RectifyMapping(addr2))
+	addrHashInList, index, _, _ = aset.getMapping(addrHash)
+	if addrHashInList != addrHash || index != uint64(2) {
+		Fail(t, "RectifyMapping did not rectify the corrupt map")
+	}
+
+	// Add a new owner to the map and verify if RectifyMapping syncs list with the map
+	// to check for the case where list has fewer owners than expected
+	addr4 := testhelpers.RandomAddress()
+	addrHash = common.BytesToHash(addr4.Bytes())
+	Require(t, aset.byAddress.Set(addrHash, util.UintToHash(uint64(1))))
+
+	Require(t, aset.RectifyMapping(addr4))
+	addrHashInList, _, _, _ = aset.getMapping(addrHash)
+	if addrHashInList != addrHash || size(t, aset) != 4 {
+		Fail(t, "RectifyMapping did not add the missing owner to the list")
 	}
 }
 

@@ -4,6 +4,8 @@
 package addressSet
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -82,6 +84,76 @@ func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, err
 		}
 	}
 	return ret, nil
+}
+
+func (aset *AddressSet) getMapping(addrHash common.Hash) (common.Hash, uint64, bool, error) {
+	index, err := aset.byAddress.GetUint64(addrHash)
+	if err != nil || index == 0 {
+		return common.Hash{}, index, false, errors.New("RectifyMapping: Address is not an owner")
+	}
+	atIndex, err := aset.backingStorage.GetByUint64(index)
+	if (err != nil || atIndex == common.Hash{}) {
+		return atIndex, index, true, errors.New("RectifyMapping: Invalid mapping")
+	}
+	return atIndex, index, true, nil
+}
+
+func (aset *AddressSet) syncListAndMap(addr common.Address) error {
+	// Iterate through the list and replace the value at first index with incorrect mapping occurance.
+	addrHash := common.BytesToHash(addr.Bytes())
+	size, err := aset.size.Get()
+	if err != nil || size == 0 {
+		return err
+	}
+	for i := uint64(1); i <= size; i++ {
+		tmpAddrHash, err := aset.backingStorage.GetByUint64(i)
+		if err != nil {
+			return err
+		}
+		tmpAddrHashInList, tmpIndex, _, err := aset.getMapping(tmpAddrHash)
+		if err != nil || tmpAddrHash != tmpAddrHashInList || tmpIndex != i {
+			err = aset.backingStorage.SetByUint64(i, addrHash)
+			if err != nil {
+				return err
+			}
+			err = aset.byAddress.Set(addrHash, util.UintToHash(i))
+			return err
+		}
+	}
+	// List is correctly aligned with map, only way to sync owner is to add a new entry to list.
+	err = aset.byAddress.Clear(addrHash)
+	if err != nil {
+		return err
+	}
+	err = aset.Add(addr)
+	return err
+}
+
+func (aset *AddressSet) RectifyMapping(addr common.Address) error {
+	addrHash := common.BytesToHash(addr.Bytes())
+	addrHashInList, index, inMap, err := aset.getMapping(addrHash)
+	// Key is not found in the Map.
+	if !inMap {
+		return err
+	}
+	// Map has incorrect list index for the address.
+	if err != nil {
+		err = aset.syncListAndMap(addr)
+		return err
+	}
+	// Map and list are correctly synced for this address.
+	if addrHash == addrHashInList {
+		return nil
+	}
+	// Not a correct mapping Or is a correct mapping and no collision, list value at 'index' can be edited.
+	tmpAddrHashInList, tmpIndex, _, err := aset.getMapping(addrHashInList)
+	if err != nil || addrHashInList != tmpAddrHashInList || index != tmpIndex {
+		err = aset.backingStorage.SetByUint64(index, addrHash)
+		return err
+	}
+	// Both keys addrHash and addrHashInList point to the same index and addrHashInList is correctly synced.
+	err = aset.syncListAndMap(addr)
+	return err
 }
 
 func (aset *AddressSet) Add(addr common.Address) error {
