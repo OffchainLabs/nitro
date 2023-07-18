@@ -63,11 +63,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	if err != nil {
 		return 0, err
 	}
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
-	return findBatchContainingBlock(node, genesis, blockNum)
+	return findBatchContainingBlock(node, node.TxStreamer.GenesisBlockNumber(), blockNum)
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
@@ -84,10 +80,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 		return 0, errors.New("unknown block hash")
 	}
 	blockNum := header.Number.Uint64()
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
+	genesis := node.TxStreamer.GenesisBlockNumber()
 	batch, err := findBatchContainingBlock(node, genesis, blockNum)
 	if err != nil {
 		if errors.Is(err, blockInGenesis) {

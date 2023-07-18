@@ -858,8 +858,8 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	return nil
 }
 
-func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
+func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
+	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
