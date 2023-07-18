@@ -226,10 +226,8 @@ for a given filesystem challenge cache will look as follows:
 				roots.txt
 
 Invariants:
-- Message number height from < to
+- Message number height to == from + 1
 - If big step range exists, message number height to == from + 1
-- If small step exists, big step height to == from + 1
-- Small step roots are always from 0 to N
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
