@@ -82,7 +82,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := conf.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, &batchPosterConfig, nodeA.DeployInfo, &seqTxOpts, nil)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()

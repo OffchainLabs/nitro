@@ -40,7 +40,7 @@ type DataPoster[Meta any] struct {
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
 	redisLock         AttemptLocker
-	config            DataPosterConfigFetcher
+	config            *DataPosterConfig
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
 
@@ -57,10 +57,10 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
-	for _, s := range strings.Split(config().ReplacementTimes, ",") {
+	for _, s := range strings.Split(config.ReplacementTimes, ",") {
 		t, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, err
@@ -78,13 +78,13 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
 	var queue QueueStorage[queuedTransaction[Meta]]
 	switch {
-	case config().EnableLevelDB:
+	case config.EnableLevelDB:
 		queue = leveldb.New[queuedTransaction[Meta]](db)
 	case redisClient == nil:
 		queue = slice.NewStorage[queuedTransaction[Meta]]()
 	default:
 		var err error
-		queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &(config.RedisSigner))
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +107,6 @@ func (p *DataPoster[Meta]) From() common.Address {
 }
 
 func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
-	config := p.config()
 	var emptyMeta Meta
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -121,29 +120,29 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.Data.Nonce + 1
-		if config.MaxQueuedTransactions > 0 {
+		if p.config.MaxQueuedTransactions > 0 {
 			queueLen, err := p.queue.Length(ctx)
 			if err != nil {
 				return 0, emptyMeta, err
 			}
-			if queueLen >= config.MaxQueuedTransactions {
-				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while current nonce is %v would exceed max data poster queue length of %v", nextNonce, p.nonce, config.MaxQueuedTransactions)
+			if queueLen >= p.config.MaxQueuedTransactions {
+				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while current nonce is %v would exceed max data poster queue length of %v", nextNonce, p.nonce, p.config.MaxQueuedTransactions)
 			}
 		}
-		if config.MaxMempoolTransactions > 0 {
+		if p.config.MaxMempoolTransactions > 0 {
 			unconfirmedNonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
 			if err != nil {
 				return 0, emptyMeta, fmt.Errorf("failed to get unconfirmed nonce: %w", err)
 			}
-			if nextNonce >= unconfirmedNonce+config.MaxMempoolTransactions {
-				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while unconfirmed nonce is %v would exceed max mempool transactions of %v", nextNonce, unconfirmedNonce, config.MaxMempoolTransactions)
+			if nextNonce >= unconfirmedNonce+p.config.MaxMempoolTransactions {
+				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while unconfirmed nonce is %v would exceed max mempool transactions of %v", nextNonce, unconfirmedNonce, p.config.MaxMempoolTransactions)
 			}
 		}
 		return nextNonce, lastQueueItem.Meta, nil
 	}
 	err = p.updateNonce(ctx)
 	if err != nil {
-		if !p.queue.IsPersistent() && config.WaitForL1Finality {
+		if !p.queue.IsPersistent() && p.config.WaitForL1Finality {
 			return 0, emptyMeta, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
@@ -163,7 +162,6 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
 func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
-	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -172,13 +170,13 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
-	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
+	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(p.config.MinFeeCapGwei*params.GWei))
 
 	newTipCap, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(config.MinTipCapGwei*params.GWei))
+	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(p.config.MinTipCapGwei*params.GWei))
 
 	hugeTipIncrease := false
 	if lastTipCap != nil {
@@ -199,8 +197,8 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	maxFeeCap :=
 		arbmath.FloatToBig(
 			(float64(arbmath.SquareUint(backlogOfBatches))*
-				arbmath.SquareFloat(config.UrgencyGwei) +
-				config.TargetPriceGwei) *
+				arbmath.SquareFloat(p.config.UrgencyGwei) +
+				p.config.TargetPriceGwei) *
 				params.GWei)
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
 		log.Warn(
@@ -347,7 +345,7 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	var blockNumQuery *big.Int
-	if p.config().WaitForL1Finality {
+	if p.config.WaitForL1Finality {
 		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
 	}
 	header, err := p.client.HeaderByNumber(ctx, blockNumQuery)
@@ -439,7 +437,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		}
 		now := time.Now()
 		nextCheck := now.Add(p.replacementTimes[0])
-		maxTxsToRbf := p.config().MaxMempoolTransactions
+		maxTxsToRbf := p.config.MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
 		}
