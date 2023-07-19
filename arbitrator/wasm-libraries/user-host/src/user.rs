@@ -17,14 +17,14 @@ pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__return_data(ptr: usize, len: usize) {
+pub unsafe extern "C" fn user_host__write_result(ptr: usize, len: usize) {
     let program = Program::start();
     program.pay_for_evm_copy(len as u64).unwrap();
     program.outs = wavm::read_slice_usize(ptr, len);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize) {
+pub unsafe extern "C" fn user_host__storage_load_bytes32(key: usize, ptr: usize) {
     let program = Program::start();
     let key = wavm::read_bytes32(key);
 
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_store_bytes32(key: usize, value: usize) {
+pub unsafe extern "C" fn user_host__storage_store_bytes32(key: usize, value: usize) {
     let program = Program::start();
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
 
@@ -240,11 +240,11 @@ pub unsafe extern "C" fn user_host__block_basefee(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_chainid(ptr: usize) {
+pub unsafe extern "C" fn user_host__chainid(ptr: usize) {
     let program = Program::start();
     program.buy_gas(evm::CHAINID_GAS).unwrap();
-    let block_chainid = program.evm_data.block_chainid.as_ref();
-    wavm::write_slice_usize(block_chainid, ptr)
+    let chainid = program.evm_data.chainid.as_ref();
+    wavm::write_slice_usize(chainid, ptr)
 }
 
 #[no_mangle]

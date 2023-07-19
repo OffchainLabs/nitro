@@ -18,14 +18,14 @@ pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     Ok(())
 }
 
-pub(crate) fn return_data<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
+pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(len.into())?;
     env.outs = env.read_slice(ptr, len)?;
     Ok(())
 }
 
-pub(crate) fn account_load_bytes32<E: EvmApi>(
+pub(crate) fn storage_load_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     dest: u32,
@@ -38,7 +38,7 @@ pub(crate) fn account_load_bytes32<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn account_store_bytes32<E: EvmApi>(
+pub(crate) fn storage_store_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     value: u32,
@@ -254,10 +254,10 @@ pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> Mayb
     Ok(())
 }
 
-pub(crate) fn block_chainid<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CHAINID_GAS)?;
-    env.write_bytes32(ptr, env.evm_data.block_chainid)?;
+    env.write_bytes32(ptr, env.evm_data.chainid)?;
     Ok(())
 }
 
