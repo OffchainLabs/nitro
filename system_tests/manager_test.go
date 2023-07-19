@@ -28,6 +28,9 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 )
 
+const numOpcodesPerBigStepTest = uint64(4)
+const maxWavmOpcodesTest = uint64(20)
+
 func TestManager(t *testing.T) {
 	managerTestImpl(t, true, false)
 }
@@ -280,6 +283,73 @@ func TestSmallStepCommitmentUpTo(t *testing.T) {
 	}
 }
 
+func TestHistoryCommitmentUpToBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	res0, err := l2node.TxStreamer.ResultAtCount(0)
+	Require(t, err)
+	res1, err := l2node.TxStreamer.ResultAtCount(1)
+	Require(t, err)
+	expectedHistoryCommitment, err := commitments.New(
+		[]common.Hash{
+			validator.GoGlobalState{
+				BlockHash:  res0.BlockHash,
+				SendRoot:   res0.SendRoot,
+				Batch:      0,
+				PosInBatch: 0,
+			}.Hash(),
+			validator.GoGlobalState{
+				BlockHash:  res1.BlockHash,
+				SendRoot:   res1.SendRoot,
+				Batch:      1,
+				PosInBatch: 0,
+			}.Hash(),
+			validator.GoGlobalState{
+				BlockHash:  res1.BlockHash,
+				SendRoot:   res1.SendRoot,
+				Batch:      1,
+				PosInBatch: 0,
+			}.Hash(),
+		},
+	)
+	Require(t, err)
+	historyCommitment, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 2, 1)
+	Require(t, err)
+	if !reflect.DeepEqual(historyCommitment, expectedHistoryCommitment) {
+		Fail(t, "Unexpected HistoryCommitment", historyCommitment, "(expected ", expectedHistoryCommitment, ")")
+	}
+}
+
+func TestBigStepLeafCommitment(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	commitment, err := manager.BigStepLeafCommitment(ctx, common.Hash{}, 1)
+	Require(t, err)
+	numBigSteps := maxWavmOpcodesTest / numOpcodesPerBigStepTest
+	if commitment.Height != numBigSteps {
+		Fail(t, "Unexpected commitment height", commitment.Height, "(expected ", numBigSteps, ")")
+	}
+}
+
+func TestSmallStepLeafCommitment(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	commitment, err := manager.SmallStepLeafCommitment(ctx, common.Hash{}, 1, 3)
+	Require(t, err)
+	if commitment.Height != numOpcodesPerBigStepTest {
+		Fail(t, "Unexpected commitment height", commitment.Height, "(expected ", numOpcodesPerBigStepTest, ")")
+	}
+}
+
 func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, *staker.StateManager) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := params.ArbitrumDevTestChainConfig()
@@ -324,7 +394,7 @@ func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, 
 	Require(t, err)
 	err = stateless.Start(ctx)
 	Require(t, err)
-	manager, err := staker.NewStateManager(stateless, nil, 4, 16)
+	manager, err := staker.NewStateManager(stateless, nil, numOpcodesPerBigStepTest, maxWavmOpcodesTest)
 	Require(t, err)
 	return l2node, l1stack, manager
 }
