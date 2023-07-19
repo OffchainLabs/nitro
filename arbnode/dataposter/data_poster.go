@@ -33,75 +33,6 @@ import (
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
-type queuedTransaction[Meta any] struct {
-	FullTx          *types.Transaction
-	Data            types.DynamicFeeTx
-	Meta            Meta
-	Sent            bool
-	Created         time.Time // may be earlier than the tx was given to the tx poster
-	NextReplacement time.Time
-}
-
-// Note: one of the implementation of this interface (Redis storage) does not
-// support duplicate values.
-type QueueStorage[Item any] interface {
-	GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
-	GetLast(ctx context.Context) (*Item, error)
-	Prune(ctx context.Context, keepStartingAt uint64) error
-	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
-	Length(ctx context.Context) (int, error)
-	IsPersistent() bool
-}
-
-type DataPosterConfig struct {
-	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes       string                     `koanf:"replacement-times"`
-	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int                        `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
-	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
-}
-
-type DataPosterConfigFetcher func() *DataPosterConfig
-
-func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
-	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
-	f.Int(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
-	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
-	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
-	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
-	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
-	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
-}
-
-var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	WaitForL1Finality:      true,
-	TargetPriceGwei:        60.,
-	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 64,
-	MinTipCapGwei:          0.05,
-	EnableLevelDB:          false,
-}
-
-var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
-	RedisSigner:            signature.TestSimpleHmacConfig,
-	WaitForL1Finality:      false,
-	TargetPriceGwei:        60.,
-	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 64,
-	MinTipCapGwei:          0.05,
-	EnableLevelDB:          false,
-}
-
 // DataPoster must be RLP serializable and deserializable
 type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
@@ -184,7 +115,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 	if err != nil {
 		return 0, emptyMeta, err
 	}
-	lastQueueItem, err := p.queue.GetLast(ctx)
+	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
 		return 0, emptyMeta, err
 	}
@@ -520,7 +451,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
-		queueContents, err := p.queue.GetContents(ctx, unconfirmedNonce, maxTxsToRbf)
+		queueContents, err := p.queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
 			log.Warn("failed to get tx queue contents", "err", err)
 			return minWait
@@ -553,4 +484,79 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		}
 		return wait
 	})
+}
+
+type queuedTransaction[Meta any] struct {
+	FullTx          *types.Transaction
+	Data            types.DynamicFeeTx
+	Meta            Meta
+	Sent            bool
+	Created         time.Time // may be earlier than the tx was given to the tx poster
+	NextReplacement time.Time
+}
+
+// Note: one of the implementation of this interface (Redis storage) does not
+// support duplicate values.
+type QueueStorage[Item any] interface {
+	// Returns at most maxResults items starting from specified index.
+	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
+	// Returns item with the biggest index.
+	FetchLast(ctx context.Context) (*Item, error)
+	// Prunes items up to (excluding) specified index.
+	Prune(ctx context.Context, until uint64) error
+	// Inserts new item at specified index if previous value matches specified value.
+	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
+	// Returns the size of a queue.
+	Length(ctx context.Context) (int, error)
+	// Indicates whether queue stored at disk.
+	IsPersistent() bool
+}
+
+type DataPosterConfig struct {
+	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes       string                     `koanf:"replacement-times"`
+	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int                        `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
+}
+
+type DataPosterConfigFetcher func() *DataPosterConfig
+
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
+	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Int(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
+	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
+	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
+	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
+	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
+	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
+}
+
+var DefaultDataPosterConfig = DataPosterConfig{
+	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	WaitForL1Finality:      true,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
+	MaxMempoolTransactions: 64,
+	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
+}
+
+var TestDataPosterConfig = DataPosterConfig{
+	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
+	RedisSigner:            signature.TestSimpleHmacConfig,
+	WaitForL1Finality:      false,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
+	MaxMempoolTransactions: 64,
+	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
 }
