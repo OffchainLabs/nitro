@@ -18,7 +18,7 @@ pub(crate) struct TestEvmApi {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
     storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
     program: Bytes20,
-    return_data: Arc<Mutex<Vec<u8>>>,
+    write_result: Arc<Mutex<Vec<u8>>>,
     compile: CompileConfig,
     configs: Arc<Mutex<HashMap<Bytes20, StylusConfig>>>,
     evm_data: EvmData,
@@ -37,7 +37,7 @@ impl TestEvmApi {
             contracts: Arc::new(Mutex::new(HashMap::new())),
             storage: Arc::new(Mutex::new(storage)),
             program,
-            return_data: Arc::new(Mutex::new(vec![])),
+            write_result: Arc::new(Mutex::new(vec![])),
             compile,
             configs: Arc::new(Mutex::new(HashMap::new())),
             evm_data,
@@ -103,7 +103,7 @@ impl EvmApi for TestEvmApi {
 
         let ink_left: u64 = native.ink_left().into();
         let gas_left = config.pricing.ink_to_gas(ink_left);
-        *self.return_data.lock() = outs;
+        *self.write_result.lock() = outs;
         (outs_len, gas - gas_left, status)
     }
 
@@ -146,7 +146,7 @@ impl EvmApi for TestEvmApi {
 
     fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
         arbutil::slice_with_runoff(
-            self.return_data.lock().as_slice(),
+            self.write_result.lock().as_slice(),
             offset as usize,
             offset.saturating_add(size) as usize,
         )
