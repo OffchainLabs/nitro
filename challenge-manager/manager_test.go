@@ -104,7 +104,6 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 			TopLevelClaimEndBatchCount: 1,
 		},
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
-		edgetracker.WithValidatorAddress(honestValidator.address),
 		edgetracker.WithValidatorName(honestValidator.name),
 	)
 	require.NoError(t, err)
@@ -131,7 +130,6 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 			TopLevelClaimEndBatchCount: 1,
 		},
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
-		edgetracker.WithValidatorAddress(evilValidator.address),
 		edgetracker.WithValidatorName(evilValidator.name),
 	)
 	require.NoError(t, err)

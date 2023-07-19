@@ -1,6 +1,8 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
 
+// package edgetracker contains the logic for tracking an edge in the challenge manager. It keeps
+// track of edges created and their own state transitions until an eventual confirmation.
 package edgetracker
 
 import (
@@ -60,30 +62,32 @@ type ChallengeTracker interface {
 
 type Opt func(et *Tracker)
 
+// WithActInterval sets the duration between actions. The default is one second.
 func WithActInterval(d time.Duration) Opt {
 	return func(et *Tracker) {
 		et.actInterval = d
 	}
 }
 
+// WithTimeReference allows setting the timer used by the tracker to determine that time
+// passed in accordance with the act interval set with [WithActInterval]. The default is
+// to use [github.com/offchainlabs/challenge-protocol-v2/time.NewRealTimeReference].
+// This is useful for testing with a fake time reference to avoid waiting for real time.
 func WithTimeReference(ref utilTime.Reference) Opt {
 	return func(et *Tracker) {
 		et.timeRef = ref
 	}
 }
 
+// WithValidatorName associates a name to the running validator. This name is used only for logging
+// and is not exposed externally. This is particularly useful for debugging purposes.
 func WithValidatorName(name string) Opt {
 	return func(et *Tracker) {
 		et.validatorName = name
 	}
 }
 
-func WithValidatorAddress(addr common.Address) Opt {
-	return func(et *Tracker) {
-		et.validatorAddress = addr
-	}
-}
-
+// WithFSMOpts sets any FSM options to be used when creating the tracker's FSM.
 func WithFSMOpts(opts ...fsm.Opt[edgeTrackerAction, State]) Opt {
 	return func(et *Tracker) {
 		et.fsmOpts = opts
@@ -102,7 +106,6 @@ type Tracker struct {
 	actInterval      time.Duration
 	timeRef          utilTime.Reference
 	validatorName    string
-	validatorAddress common.Address
 	chain            protocol.Protocol
 	stateProvider    l2stateprovider.Provider
 	chainWatcher     ConfirmationMetadataChecker
@@ -271,7 +274,6 @@ func (et *Tracker) Act(ctx context.Context) error {
 			et.heightConfig,
 			WithActInterval(et.actInterval),
 			WithTimeReference(et.timeRef),
-			WithValidatorAddress(et.validatorAddress),
 			WithValidatorName(et.validatorName),
 			WithFSMOpts(et.fsmOpts...),
 		)
@@ -289,7 +291,6 @@ func (et *Tracker) Act(ctx context.Context) error {
 			et.heightConfig,
 			WithActInterval(et.actInterval),
 			WithTimeReference(et.timeRef),
-			WithValidatorAddress(et.validatorAddress),
 			WithValidatorName(et.validatorName),
 			WithFSMOpts(et.fsmOpts...),
 		)
@@ -627,7 +628,6 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 		et.heightConfig,
 		WithActInterval(et.actInterval),
 		WithTimeReference(et.timeRef),
-		WithValidatorAddress(et.validatorAddress),
 		WithValidatorName(et.validatorName),
 		WithFSMOpts(et.fsmOpts...),
 	)

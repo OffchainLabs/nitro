@@ -46,7 +46,6 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		edgetracker.WithActInterval(m.edgeTrackerWakeInterval),
 		edgetracker.WithTimeReference(m.timeRef),
 		edgetracker.WithValidatorName(m.name),
-		edgetracker.WithValidatorAddress(m.address),
 	)
 	if err != nil {
 		return err

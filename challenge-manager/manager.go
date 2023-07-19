@@ -251,7 +251,6 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 			},
 			edgetracker.WithActInterval(m.edgeTrackerWakeInterval),
 			edgetracker.WithTimeReference(m.timeRef),
-			edgetracker.WithValidatorAddress(m.address),
 			edgetracker.WithValidatorName(m.name),
 		)
 	})

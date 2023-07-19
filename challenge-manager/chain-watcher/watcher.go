@@ -1,6 +1,11 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
 
+// Package watcher implements the main monitoring logic for protocol validators.
+// The challenge watcher is a singleton service available to all spawned edge trackers
+// and it tracks common information such as the edges' ancestors and an edge's time unrivaled.
+//
+// See: [github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker]
 package watcher
 
 import (
