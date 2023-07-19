@@ -52,7 +52,7 @@ func (s *Storage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	return data[32:], nil
 }
 
-func (s *Storage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage[Item]) FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:     s.key,
 		ByScore: true,
@@ -79,7 +79,7 @@ func (s *Storage[Item]) GetContents(ctx context.Context, startingIndex uint64, m
 	return items, nil
 }
 
-func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *Storage[Item]) FetchLast(ctx context.Context) (*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,
 		Start: 0,
@@ -109,9 +109,9 @@ func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	return ret, nil
 }
 
-func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
-	if keepStartingAt > 0 {
-		return s.client.ZRemRangeByScore(ctx, s.key, "-inf", fmt.Sprintf("%v", keepStartingAt-1)).Err()
+func (s *Storage[Item]) Prune(ctx context.Context, until uint64) error {
+	if until > 0 {
+		return s.client.ZRemRangeByScore(ctx, s.key, "-inf", fmt.Sprintf("%v", until-1)).Err()
 	}
 	return nil
 }
