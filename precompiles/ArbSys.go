@@ -22,13 +22,12 @@ type ArbSys struct {
 	L2ToL1TxGasCost         func(addr, addr, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 	SendMerkleUpdate        func(ctx, mech, huge, bytes32, huge) error
 	SendMerkleUpdateGasCost func(huge, bytes32, huge) (uint64, error)
+	InvalidBlockNumberError func(huge, huge) error
 
 	// deprecated event
 	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 }
-
-var InvalidBlockNum = errors.New("invalid block number")
 
 // ArbBlockNumber gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -38,12 +37,18 @@ func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 // ArbBlockHash gets the L2 block hash, if sufficiently recent
 func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
 	if !arbBlockNumber.IsUint64() {
-		return bytes32{}, InvalidBlockNum
+		if c.State.ArbOSVersion() >= 11 {
+			return bytes32{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
+		}
+		return bytes32{}, errors.New("invalid block number")
 	}
 	requestedBlockNum := arbBlockNumber.Uint64()
 
 	currentNumber := evm.Context.BlockNumber.Uint64()
 	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
+		if c.State.ArbOSVersion() >= 11 {
+			return common.Hash{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
+		}
 		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
 	}
 
@@ -111,12 +116,14 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	bigL1BlockNum := arbmath.UintToBig(l1BlockNum)
 
 	arbosState := c.State
+	var t big.Int
+	t.SetUint64(evm.Context.Time)
 	sendHash, err := arbosState.KeccakHash(
 		c.caller.Bytes(),
 		destination.Bytes(),
 		math.U256Bytes(evm.Context.BlockNumber),
 		math.U256Bytes(bigL1BlockNum),
-		math.U256Bytes(evm.Context.Time),
+		math.U256Bytes(&t),
 		common.BigToHash(value).Bytes(),
 		calldataForL1,
 	)
@@ -158,6 +165,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	leafNum := big.NewInt(int64(size - 1))
 
+	var blockTime big.Int
+	blockTime.SetUint64(evm.Context.Time)
 	err = con.L2ToL1Tx(
 		c,
 		evm,
@@ -167,7 +176,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		evm.Context.BlockNumber,
 		bigL1BlockNum,
-		evm.Context.Time,
+		&blockTime,
 		value,
 		calldataForL1,
 	)

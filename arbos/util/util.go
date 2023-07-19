@@ -108,6 +108,14 @@ func HashFromReader(rd io.Reader) (common.Hash, error) {
 	return common.BytesToHash(buf), nil
 }
 
+func Uint256FromReader(rd io.Reader) (*big.Int, error) {
+	asHash, err := HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	return asHash.Big(), nil
+}
+
 func HashToWriter(val common.Hash, wr io.Writer) error {
 	_, err := wr.Write(val.Bytes())
 	return err

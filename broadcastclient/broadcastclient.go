@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -16,8 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gobwas/httphead"
 	"github.com/gobwas/ws"
-	"github.com/pkg/errors"
+	"github.com/gobwas/ws/wsflate"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -38,7 +41,11 @@ var (
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
-	Input  Config                              `koanf:"input"`
+	Input  Config                              `koanf:"input" reload:"hot"`
+}
+
+func (fc *FeedConfig) Validate() error {
+	return fc.Output.Validate()
 }
 
 func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
@@ -56,18 +63,21 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff"`
-	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff"`
-	RequireChainId          bool                     `koanf:"require-chain-id"`
-	RequireFeedVersion      bool                     `koanf:"require-feed-version"`
-	Timeout                 time.Duration            `koanf:"timeout"`
+	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff" reload:"hot"`
+	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff" reload:"hot"`
+	RequireChainId          bool                     `koanf:"require-chain-id" reload:"hot"`
+	RequireFeedVersion      bool                     `koanf:"require-feed-version" reload:"hot"`
+	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
 	URLs                    []string                 `koanf:"url"`
 	Verifier                signature.VerifierConfig `koanf:"verify"`
+	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
 }
 
 func (c *Config) Enable() bool {
 	return len(c.URLs) > 0 && c.URLs[0] != ""
 }
+
+type ConfigFetcher func() *Config
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".reconnect-initial-backoff", DefaultConfig.ReconnectInitialBackoff, "initial duration to wait before reconnect")
@@ -77,6 +87,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
+	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
 
 var DefaultConfig = Config{
@@ -87,6 +98,7 @@ var DefaultConfig = Config{
 	Verifier:                signature.DefultFeedVerifierConfig,
 	URLs:                    []string{""},
 	Timeout:                 20 * time.Second,
+	EnableCompression:       true,
 }
 
 var DefaultTestConfig = Config{
@@ -97,6 +109,7 @@ var DefaultTestConfig = Config{
 	Verifier:                signature.DefultFeedVerifierConfig,
 	URLs:                    []string{""},
 	Timeout:                 200 * time.Millisecond,
+	EnableCompression:       true,
 }
 
 type TransactionStreamerInterface interface {
@@ -106,7 +119,7 @@ type TransactionStreamerInterface interface {
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
-	config       Config
+	config       ConfigFetcher
 	websocketUrl string
 	nextSeqNum   arbutil.MessageIndex
 	sigVerifier  *signature.Verifier
@@ -133,7 +146,7 @@ var ErrMissingChainId = errors.New("missing chain id")
 var ErrMissingFeedServerVersion = errors.New("missing feed server version")
 
 func NewBroadcastClient(
-	config Config,
+	config ConfigFetcher,
 	websocketUrl string,
 	chainId uint64,
 	currentMessageCount arbutil.MessageIndex,
@@ -143,7 +156,7 @@ func NewBroadcastClient(
 	bpVerifier contracts.BatchPosterVerifierInterface,
 	adjustCount func(int32),
 ) (*BroadcastClient, error) {
-	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
+	sigVerifier, err := signature.NewVerifier(&config().Verifier, bpVerifier)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +180,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 		return
 	}
 	bc.LaunchThread(func(ctx context.Context) {
-		backoffDuration := bc.config.ReconnectInitialBackoff
+		backoffDuration := bc.config().ReconnectInitialBackoff
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
@@ -183,7 +196,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
 			timer := time.NewTimer(backoffDuration)
-			if backoffDuration < bc.config.ReconnectMaximumBackoff {
+			if backoffDuration < bc.config().ReconnectMaximumBackoff {
 				backoffDuration *= 2
 			}
 			select {
@@ -212,6 +225,13 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	var foundFeedServerVersion bool
 	var chainId uint64
 	var feedServerVersion uint64
+
+	config := bc.config()
+	var extensions []httphead.Option
+	deflateExt := wsflate.DefaultParameters.Option()
+	if config.EnableCompression {
+		extensions = []httphead.Option{deflateExt}
+	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
 		OnHeader: func(key, value []byte) (err error) {
@@ -256,6 +276,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
+		Extensions: extensions,
 	}
 
 	if bc.isShuttingDown() {
@@ -267,19 +288,19 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, err
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "broadcast client unable to connect")
+		return nil, fmt.Errorf("broadcast client unable to connect: %w", err)
 	}
-	if bc.config.RequireChainId && !foundChainId {
+	if config.RequireChainId && !foundChainId {
 		err := conn.Close()
 		if err != nil {
-			return nil, errors.Wrap(err, "error closing connection when missing chain id")
+			return nil, fmt.Errorf("error closing connection when missing chain id: %w", err)
 		}
 		return nil, ErrMissingChainId
 	}
-	if bc.config.RequireFeedVersion && !foundFeedServerVersion {
+	if config.RequireFeedVersion && !foundFeedServerVersion {
 		err := conn.Close()
 		if err != nil {
-			return nil, errors.Wrap(err, "error closing connection when missing feed server version")
+			return nil, fmt.Errorf("error closing connection when missing feed server version: %w", err)
 		}
 		return nil, ErrMissingFeedServerVersion
 	}
@@ -299,7 +320,6 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.connMutex.Lock()
 	bc.conn = conn
 	bc.connMutex.Unlock()
-
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
 	return earlyFrameData, nil
@@ -309,7 +329,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
-		backoffDuration := bc.config.ReconnectInitialBackoff
+		backoffDuration := bc.config().ReconnectInitialBackoff
+		flateReader := wsbroadcastserver.NewFlateReader()
 		for {
 			select {
 			case <-ctx.Done():
@@ -317,7 +338,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			default:
 			}
 
-			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config.Timeout, ws.StateClientSide)
+			var msg []byte
+			var op ws.OpCode
+			var err error
+			config := bc.config()
+			msg, op, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, config.Timeout, ws.StateClientSide, config.EnableCompression, flateReader)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -337,7 +362,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				_ = bc.conn.Close()
 				timer := time.NewTimer(backoffDuration)
-				if backoffDuration < bc.config.ReconnectMaximumBackoff {
+				if backoffDuration < bc.config().ReconnectMaximumBackoff {
 					backoffDuration *= 2
 				}
 				select {
@@ -349,7 +374,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
-			backoffDuration = bc.config.ReconnectInitialBackoff
+			backoffDuration = bc.config().ReconnectInitialBackoff
 
 			if msg != nil {
 				res := broadcaster.BroadcastMessage{}
@@ -372,7 +397,6 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				} else {
 					log.Debug("received broadcast with no messages populated", "length", len(msg))
 				}
-
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
 						for _, message := range res.Messages {
@@ -384,7 +408,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
+								bc.fatalErrChan <- fmt.Errorf("error validating feed signature %v: %w", message.SequenceNumber, err)
 								continue
 							}
 
@@ -456,13 +480,13 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
-	if bc.config.Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
+	if bc.config().Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
 		return nil
 	}
 	hash, err := message.Hash(bc.chainId)
 	if err != nil {
-		return errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
+		return fmt.Errorf("error getting message hash for sequence number %v: %w", message.SequenceNumber, err)
 	}
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }

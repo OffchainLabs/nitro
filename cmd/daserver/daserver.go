@@ -16,14 +16,15 @@ import (
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 type DAServerConfig struct {
@@ -44,6 +45,8 @@ type DAServerConfig struct {
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 }
 
 var DefaultDAServerConfig = DAServerConfig{
@@ -59,6 +62,8 @@ var DefaultDAServerConfig = DAServerConfig{
 	ConfConfig:         genericconf.ConfConfigDefault,
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	PProf:              false,
+	PprofCfg:           genericconf.PProfDefault,
 	LogLevel:           3,
 }
 
@@ -88,8 +93,11 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("metrics", DefaultDAServerConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 
+	f.Bool("pprof", DefaultDAServerConfig.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
+
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
-	das.DataAvailabilityConfigAddOptions("data-availability", f)
+	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -121,6 +129,38 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	return &serverConfig, nil
 }
 
+type L1ReaderCloser struct {
+	l1Reader *headerreader.HeaderReader
+}
+
+func (c *L1ReaderCloser) Close(_ context.Context) error {
+	c.l1Reader.StopOnly()
+	return nil
+}
+
+func (c *L1ReaderCloser) String() string {
+	return "l1 reader closer"
+}
+
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *DAServerConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 func startup() error {
 	// Some different defaults to DAS config in a node.
 	das.DefaultDataAvailabilityConfig.Enable = true
@@ -137,16 +177,8 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	if serverConfig.Metrics {
-		if len(serverConfig.MetricsServer.Addr) == 0 {
-			fmt.Printf("Metrics is enabled, but missing --metrics-server.addr")
-			return nil
-		}
-
-		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
-
-		address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
-		exp.Setup(address)
+	if err := startMetrics(serverConfig); err != nil {
+		return err
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -155,9 +187,41 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dasImpl, dasLifecycleManager, err := arbnode.SetUpDataAvailabilityWithoutNode(ctx, &serverConfig.DAConf)
+	var l1Reader *headerreader.HeaderReader
+	if serverConfig.DAConf.L1NodeURL != "" && serverConfig.DAConf.L1NodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, serverConfig.DAConf.L1ConnectionAttempts, serverConfig.DAConf.L1NodeURL)
+		if err != nil {
+			return err
+		}
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+		if err != nil {
+			return err
+		}
+	}
+
+	var seqInboxAddress *common.Address
+	if serverConfig.DAConf.SequencerInboxAddress == "none" {
+		seqInboxAddress = nil
+	} else if len(serverConfig.DAConf.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DAConf.SequencerInboxAddress)
+		if err != nil {
+			return err
+		}
+		if seqInboxAddress == nil {
+			return errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+		}
+	} else {
+		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
+	}
+
+	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
+	}
+
+	if l1Reader != nil {
+		l1Reader.Start(ctx)
+		dasLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
 	vcsRevision, vcsTime := confighelpers.GetVersion()
@@ -165,7 +229,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, dasImpl)
+		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, daReader, daWriter, daHealthChecker)
 		if err != nil {
 			return err
 		}
@@ -175,7 +239,7 @@ func startup() error {
 	if serverConfig.EnableREST {
 		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, dasImpl)
+		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
 		if err != nil {
 			return err
 		}

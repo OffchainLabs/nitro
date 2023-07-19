@@ -18,7 +18,7 @@ func TestRetryableRedeem(t *testing.T) {
 	precompileCtx := testContext(common.Address{}, evm)
 
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := evm.Context.Time.Uint64() + 10000000
+	timeout := evm.Context.Time + 10000000
 	from := common.HexToAddress("0x030405")
 	to := common.HexToAddress("0x06070809")
 	callvalue := big.NewInt(0)

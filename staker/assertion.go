@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion {
+func NewAssertionFromSolidity(assertion rollupgen.Assertion) *Assertion {
 	return &Assertion{
 		BeforeState: validator.NewExecutionStateFromSolidity(assertion.BeforeState),
 		AfterState:  validator.NewExecutionStateFromSolidity(assertion.AfterState),
@@ -21,8 +21,8 @@ func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion
 	}
 }
 
-func (a *Assertion) AsSolidityStruct() rollupgen.RollupLibAssertion {
-	return rollupgen.RollupLibAssertion{
+func (a *Assertion) AsSolidityStruct() rollupgen.Assertion {
+	return rollupgen.Assertion{
 		BeforeState: a.BeforeState.AsSolidityStruct(),
 		AfterState:  a.AfterState.AsSolidityStruct(),
 		NumBlocks:   a.NumBlocks,
@@ -63,13 +63,14 @@ type Assertion struct {
 }
 
 type NodeInfo struct {
-	NodeNum            uint64
-	BlockProposed      uint64
-	Assertion          *Assertion
-	InboxMaxCount      *big.Int
-	AfterInboxBatchAcc common.Hash
-	NodeHash           common.Hash
-	WasmModuleRoot     common.Hash
+	NodeNum                  uint64
+	L1BlockProposed          uint64
+	ParentChainBlockProposed uint64
+	Assertion                *Assertion
+	InboxMaxCount            *big.Int
+	AfterInboxBatchAcc       common.Hash
+	NodeHash                 common.Hash
+	WasmModuleRoot           common.Hash
 }
 
 func (n *NodeInfo) AfterState() *validator.ExecutionState {

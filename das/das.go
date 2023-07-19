@@ -31,10 +31,8 @@ type DataAvailabilityServiceReader interface {
 	fmt.Stringer
 }
 
-type DataAvailabilityService interface {
-	arbstate.DataAvailabilityReader
-	DataAvailabilityServiceWriter
-	fmt.Stringer
+type DataAvailabilityServiceHealthChecker interface {
+	HealthCheck(ctx context.Context) error
 }
 
 type DataAvailabilityConfig struct {
@@ -56,8 +54,8 @@ type DataAvailabilityConfig struct {
 	AggregatorConfig              AggregatorConfig              `koanf:"rpc-aggregator"`
 	RestfulClientAggregatorConfig RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
 
-	L1NodeURL                       string `koanf:"l1-node-url"`
-	L1ConnectionAttempts            int    `koanf:"l1-connection-attempts"`
+	L1NodeURL                       string `koanf:"parent-chain-node-url"`
+	L1ConnectionAttempts            int    `koanf:"parent-chain-connection-attempts"`
 	SequencerInboxAddress           string `koanf:"sequencer-inbox-address"`
 	ExtraSignatureCheckingPublicKey string `koanf:"extra-signature-checking-public-key"`
 
@@ -87,35 +85,56 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 	return &addr, nil
 }
 
-func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DataAvailabilityConfigAddNodeOptions(prefix string, f *flag.FlagSet) {
+	dataAvailabilityConfigAddOptions(prefix, f, roleNode)
+}
+
+func DataAvailabilityConfigAddDaserverOptions(prefix string, f *flag.FlagSet) {
+	dataAvailabilityConfigAddOptions(prefix, f, roleDaserver)
+}
+
+type role int
+
+const (
+	roleNode role = iota
+	roleDaserver
+)
+
+func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
 	f.Bool(prefix+".panic-on-error", DefaultDataAvailabilityConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
-	f.Bool(prefix+".disable-signature-checking", DefaultDataAvailabilityConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
-	f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service request timeout duration")
+	if r == roleDaserver {
+		f.Bool(prefix+".disable-signature-checking", DefaultDataAvailabilityConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
-	// Cache options
-	BigCacheConfigAddOptions(prefix+".local-cache", f)
-	RedisConfigAddOptions(prefix+".redis-cache", f)
+		// Cache options
+		BigCacheConfigAddOptions(prefix+".local-cache", f)
+		RedisConfigAddOptions(prefix+".redis-cache", f)
 
-	// Storage options
-	LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
-	LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
-	S3ConfigAddOptions(prefix+".s3-storage", f)
+		// Storage options
+		LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
+		LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
+		S3ConfigAddOptions(prefix+".s3-storage", f)
+		RegularSyncStorageConfigAddOptions(prefix+".regular-sync-storage", f)
+
+		// Key config for storage
+		KeyConfigAddOptions(prefix+".key", f)
+
+		f.String(prefix+".extra-signature-checking-public-key", DefaultDataAvailabilityConfig.ExtraSignatureCheckingPublicKey, "public key to use to validate Data Availability Store requests in addition to the Sequencer's public key determined using sequencer-inbox-address, can be a file or the hex-encoded public key beginning with 0x; useful for testing")
+	}
+	if r == roleNode {
+		// These are only for batch poster
+		AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
+		f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service timeout duration for Store requests")
+	}
+
+	// Both the Nitro node and daserver can use these options.
 	IpfsStorageServiceConfigAddOptions(prefix+".ipfs-storage", f)
-	RegularSyncStorageConfigAddOptions(prefix+".regular-sync-storage", f)
-
-	// Key config for storage
-	KeyConfigAddOptions(prefix+".key", f)
-
-	// Aggregator options
-	AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
-	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
-	f.Int(prefix+".l1-connection-attempts", DefaultDataAvailabilityConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
-	f.String(prefix+".extra-signature-checking-public-key", DefaultDataAvailabilityConfig.ExtraSignatureCheckingPublicKey, "public key to use to validate Data Availability Store requests in addition to the Sequencer's public key determined using sequencer-inbox-address, can be a file or the hex-encoded public key beginning with 0x; useful for testing")
 }
 
 func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {

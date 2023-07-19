@@ -7,13 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"math/big"
 	"os"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -42,21 +44,22 @@ func main() {
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
-	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
+	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
+	l2ChainName := flag.String("l2chainname", "", "L2 chain name (will be included in chain info output json file)")
+	l2ChainInfo := flag.String("l2chaininfo", "l2_chain_info.json", "L2 chain info output json file")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
-	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	if *prod {
-		if *l2ChainIdUint == params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
-			panic("must specify l2 chain id when launching a prod chain")
-		}
 		if *wasmmoduleroot == "" {
 			panic("must specify wasm module root when launching prod chain")
 		}
+	}
+	if *l2ChainName == "" {
+		panic("must specify l2 chain name")
 	}
 
 	wallet := genericconf.WalletConfig{
@@ -95,32 +98,68 @@ func main() {
 		panic("cannot specify sequencer address if owner is not deployer")
 	}
 
-	machineConfig := validator.DefaultNitroMachineConfig
-	machineConfig.RootPath = *wasmrootpath
+	var moduleRoot common.Hash
+	if *wasmmoduleroot == "" {
+		locator, err := server_common.NewMachineLocator(*wasmrootpath)
+		if err != nil {
+			panic(err)
+		}
+		moduleRoot = locator.LatestWasmModuleRoot()
+	} else {
+		moduleRoot = common.HexToHash(*wasmmoduleroot)
+	}
+	if moduleRoot == (common.Hash{}) {
+		panic("wasmModuleRoot not found")
+	}
 
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
 
-	deployPtr, err := arbnode.DeployOnL1(
+	chainConfigJson, err := os.ReadFile(*l2ChainConfig)
+	if err != nil {
+		panic(fmt.Errorf("failed to read l2 chain config file: %w", err))
+	}
+	var chainConfig params.ChainConfig
+	err = json.Unmarshal(chainConfigJson, &chainConfig)
+	if err != nil {
+		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
+	}
+
+	deployedAddresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		l1TransactionOpts,
 		sequencerAddress,
 		*authorizevalidators,
 		func() *headerreader.Config { return &headerReaderConfig },
-		machineConfig,
-		arbnode.GenerateRollupConfig(*prod, common.HexToHash(*wasmmoduleroot), ownerAddress, l2ChainId, loserEscrowAddress),
+		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 	)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")
 		panic(err)
 	}
-	deployData, err := json.Marshal(deployPtr)
+	deployData, err := json.Marshal(deployedAddresses)
 	if err != nil {
 		panic(err)
 	}
 	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
+		panic(err)
+	}
+	chainsInfo := []chaininfo.ChainInfo{
+		{
+			ChainId:         chainConfig.ChainID.Uint64(),
+			ChainName:       *l2ChainName,
+			ParentChainId:   l1ChainId.Uint64(),
+			ChainConfig:     &chainConfig,
+			RollupAddresses: deployedAddresses,
+		},
+	}
+	chainsInfoJson, err := json.Marshal(chainsInfo)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(*l2ChainInfo, chainsInfoJson, 0600); err != nil {
 		panic(err)
 	}
 }

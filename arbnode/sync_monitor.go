@@ -64,15 +64,16 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
 
-	lastBlockNum := s.txStreamer.bc.CurrentHeader().Number.Uint64()
-	res["blockNum"] = lastBlockNum
-	lastBuiltMessage, err := s.txStreamer.BlockNumberToMessageCount(lastBlockNum)
+	builtMessageCount, err := s.txStreamer.exec.HeadMessageNumber()
 	if err != nil {
 		res["blockMessageToMessageCountError"] = err.Error()
 		syncing = true
-		lastBuiltMessage = 0
+		builtMessageCount = 0
 	} else {
-		res["messageOfLastBlock"] = lastBuiltMessage
+		blockNum := s.txStreamer.exec.MessageIndexToBlockNumber(builtMessageCount)
+		res["blockNum"] = blockNum
+		builtMessageCount++
+		res["messageOfLastBlock"] = builtMessageCount
 	}
 
 	msgCount, err := s.txStreamer.GetMessageCount()
@@ -81,7 +82,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		syncing = true
 	} else {
 		res["msgCount"] = msgCount
-		if lastBuiltMessage+arbutil.MessageIndex(s.config.BlockBuildLag) < msgCount {
+		if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildLag) < msgCount {
 			syncing = true
 		}
 	}
@@ -103,7 +104,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 			syncing = true
 		} else {
 			res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-			if lastBuiltMessage+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
+			if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
 				syncing = true
 			}
 		}
@@ -116,7 +117,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 			}
 			if header != nil {
 				res["lastL1BlockNum"] = header.Number
-				res["lastl1BlockHash"] = header.Hash
+				res["lastl1BlockHash"] = header.Hash()
 			}
 		}
 	}
@@ -149,8 +150,8 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
-	return uint64(block), err
+	block := s.txStreamer.exec.MessageIndexToBlockNumber(msg - 1)
+	return block, nil
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
@@ -161,8 +162,8 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
-	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
-	return uint64(block), err
+	block := s.txStreamer.exec.MessageIndexToBlockNumber(msg - 1)
+	return block, nil
 }
 
 func (s *SyncMonitor) Synced() bool {

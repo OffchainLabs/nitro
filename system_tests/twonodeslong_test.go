@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -75,7 +76,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, l2pricing.InitialBaseFeeWei)
 
 	if avgTotalL1MessagesPerLoop < avgDelayedMessagesPerLoop {
-		Fail(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
+		Fatal(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
 	}
 	for i := 0; i < largeLoops; i++ {
 		l1TxsThisTime := rand.Int() % (avgTotalL1MessagesPerLoop * 2)
@@ -97,7 +98,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		errs := l1backend.TxPool().AddLocals(l1Txs)
 		for _, err := range errs {
 			if err != nil {
-				Fail(t, err)
+				Fatal(t, err)
 			}
 		}
 		l2TxsThisTime := rand.Int() % (avgL2MsgsPerLoop * 2)
@@ -110,7 +111,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		if len(l1Txs) > 0 {
 			_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 			if err != nil {
-				Fail(t, err)
+				Fatal(t, err)
 			}
 		}
 		// create bad tx on delayed inbox
@@ -129,7 +130,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	t.Log("Done sending", delayedTransfers, "delayed transfers", directTransfers, "direct transfers")
 	if (delayedTransfers + directTransfers) == 0 {
-		Fail(t, "No transfers sent!")
+		Fatal(t, "No transfers sent!")
 	}
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
@@ -139,12 +140,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			err := l1client.SendTransaction(ctx, tx)
 			if err != nil {
-				Fail(t, err)
+				Fatal(t, err)
 			}
-		}
-		_, err := EnsureTxSucceeded(ctx, l1client, tx)
-		if err != nil {
-			Fail(t, err)
+			_, err = EnsureTxSucceeded(ctx, l1client, tx)
+			if err != nil {
+				Fatal(t, err)
+			}
 		}
 	}
 
@@ -164,7 +165,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		ownerBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)
 		delayedFaucetBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
-		Fail(t, "Unexpected balance")
+		Fatal(t, "Unexpected balance")
 	}
 
 	nodeA.StopAndWait()
@@ -173,8 +174,9 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
 		timeout := getDeadlineTimeout(t, time.Minute*30)
-		if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlockHeader.Number.Uint64(), timeout) {
-			Fail(t, "did not validate all blocks")
+		// messageindex is same as block number here
+		if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlockHeader.Number.Uint64()), timeout) {
+			Fatal(t, "did not validate all blocks")
 		}
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -47,9 +47,9 @@ type BroadcastMessage struct {
 }
 
 type BroadcastFeedMessage struct {
-	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
-	Message        arbstate.MessageWithMetadata `json:"message"`
-	Signature      []byte                       `json:"signature"`
+	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
+	Message        arbostypes.MessageWithMetadata `json:"message"`
+	Signature      []byte                         `json:"signature"`
 }
 
 func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
@@ -61,7 +61,7 @@ type ConfirmedSequenceNumberMessage struct {
 }
 
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
-	catchupBuffer := NewSequenceNumberCatchupBuffer()
+	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup })
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
@@ -70,7 +70,7 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 	}
 }
 
-func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
+func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
@@ -90,13 +90,13 @@ func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetada
 	}, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
+func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) error {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error("recovered error in BroadcastSingle", "recover", r)
 		}
 	}()
-	bfm, err := b.newBroadcastFeedMessage(msg, seq)
+	bfm, err := b.NewBroadcastFeedMessage(msg, seq)
 	if err != nil {
 		return err
 	}
@@ -110,9 +110,14 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
 
 	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
+	b.BroadcastFeedMessages(broadcastFeedMessages)
+}
+
+func (b *Broadcaster) BroadcastFeedMessages(messages []*BroadcastFeedMessage) {
+
 	bm := BroadcastMessage{
 		Version:  1,
-		Messages: broadcastFeedMessages,
+		Messages: messages,
 	}
 
 	b.server.Broadcast(bm)

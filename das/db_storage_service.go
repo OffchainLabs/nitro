@@ -58,7 +58,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 	if err := ret.stopWaiter.Start(ctx, ret); err != nil {
 		return nil, err
 	}
-	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
+	err = ret.stopWaiter.LaunchThreadSafe(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		defer func() {
@@ -138,9 +138,8 @@ func (dbs *DBStorageService) Close(ctx context.Context) error {
 func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	if dbs.discardAfterTimeout {
 		return arbstate.DiscardAfterDataTimeout, nil
-	} else {
-		return arbstate.KeepForever, nil
 	}
+	return arbstate.KeepForever, nil
 }
 
 func (dbs *DBStorageService) String() string {
