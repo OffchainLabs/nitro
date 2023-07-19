@@ -51,3 +51,5 @@ require (
 )
 
 // Fix for nogo. See https://github.com/bazelbuild/rules_go/issues/3230
+// DO NOT REMOVE
+replace golang.org/x/tools => golang.org/x/tools v0.1.12
