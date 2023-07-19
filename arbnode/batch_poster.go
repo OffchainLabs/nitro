@@ -57,7 +57,7 @@ type BatchPoster struct {
 	l1Reader     *headerreader.HeaderReader
 	inbox        *InboxTracker
 	streamer     *TransactionStreamer
-	config       BatchPosterConfigFetcher
+	config       *BatchPosterConfig
 	seqInbox     *bridgegen.SequencerInbox
 	bridge       *bridgegen.Bridge
 	syncMonitor  *SyncMonitor
@@ -103,8 +103,6 @@ func (c *BatchPosterConfig) Validate() error {
 	}
 	return nil
 }
-
-type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
@@ -163,7 +161,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
 }
 
-func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config *BatchPosterConfig, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -172,19 +170,19 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 	if err != nil {
 		return nil, err
 	}
-	if err = config().Validate(); err != nil {
+	if err = config.Validate(); err != nil {
 		return nil, err
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	redisClient, err := redisutil.RedisClientFromURL(config().RedisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
 	redisLockConfigFetcher := func() *SimpleRedisLockConfig {
-		return &config().RedisLock
+		return &config.RedisLock
 	}
 	redisLock, err := NewSimpleRedisLock(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
@@ -203,10 +201,7 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 		daWriter:     daWriter,
 		redisLock:    redisLock,
 	}
-	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
-		return &config().DataPoster
-	}
-	b.dataPoster, err = dataposter.NewDataPoster(dataPosterDB, l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(dataPosterDB, l1Reader, transactOpts, redisClient, redisLock, &(config.DataPoster), b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +286,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	}
 }
 
-func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (k, error) {
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
 	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
 	if err != nil {
 		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
@@ -567,7 +562,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 		seqNum,
 		message,
 		new(big.Int).SetUint64(delayedMsg),
-		b.config().gasRefunder,
+		b.config.gasRefunder,
 		new(big.Int).SetUint64(uint64(prevMsgNum)),
 		new(big.Int).SetUint64(uint64(newMsgNum)),
 	)
@@ -580,7 +575,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
-	config := b.config()
+	config := b.config
 	callOpts := &bind.CallOpts{
 		Context: ctx,
 	}
@@ -655,7 +650,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.backlog),
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config, b.backlog),
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 		}
@@ -674,7 +669,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
-	config := b.config()
+	config := b.config
 	forcePostBatch := time.Since(firstMsgTime) >= config.MaxBatchPostDelay
 
 	for b.building.msgCount < msgCount {
@@ -786,8 +781,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.LaunchThread(b.pollForReverts)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
-		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
-			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
+		if common.HexToAddress(b.config.GasRefunderAddress) != (common.Address{}) {
+			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config.GasRefunderAddress), nil)
 			if err != nil {
 				log.Warn("error fetching batch poster gas refunder balance", "err", err)
 			} else {
@@ -804,7 +799,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		if !b.redisLock.AttemptLock(ctx) {
 			b.building = nil
-			return b.config().BatchPollDelay
+			return b.config.BatchPollDelay
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
@@ -823,11 +818,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				b.firstAccErr = time.Time{}
 			}
 			logLevel("error posting batch", "err", err)
-			return b.config().PostingErrorDelay
+			return b.config.PostingErrorDelay
 		} else if posted {
 			return 0
 		} else {
-			return b.config().BatchPollDelay
+			return b.config.BatchPollDelay
 		}
 	})
 }
