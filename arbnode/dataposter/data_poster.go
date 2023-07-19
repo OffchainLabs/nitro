@@ -40,11 +40,11 @@ type DataPoster[Meta any] struct {
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
 	redisLock         AttemptLocker
-	config            DataPosterConfigFetcher
+	config            ConfigFetcher
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
 
-	// these fields are protected by the mutex
+	// These fields are protected by the mutex.
 	mutex      sync.Mutex
 	lastBlock  *big.Int
 	balance    *big.Int
@@ -57,7 +57,7 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config().ReplacementTimes, ",") {
@@ -386,6 +386,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	return nil
 }
 
+// Updates dataposter balance to balance at pending block.
 func (p *DataPoster[Meta]) updateBalance(ctx context.Context) error {
 	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
@@ -525,7 +526,9 @@ type DataPosterConfig struct {
 	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
 }
 
-type DataPosterConfigFetcher func() *DataPosterConfig
+// ConfigFetcher function type is used instead of directly passing config so
+// that flags can be reloaded dynamically.
+type ConfigFetcher func() *DataPosterConfig
 
 func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
