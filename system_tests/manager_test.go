@@ -2,16 +2,14 @@ package arbtest
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
+	"github.com/ethereum/go-ethereum/node"
 	"math/big"
 	"reflect"
 	"testing"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -187,10 +185,10 @@ func managerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool)
 func TestExecutionStateMsgCount(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tracker, streamer := setupInboxTracker(t, ctx)
-	res, err := streamer.ResultAtCount(1)
-	Require(t, err)
-	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), nil, 0, 0)
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	res, err := l2node.TxStreamer.ResultAtCount(1)
 	Require(t, err)
 	msgCount, err := manager.ExecutionStateMsgCount(ctx, &protocol.ExecutionState{GlobalState: protocol.GoGlobalState{Batch: 1, BlockHash: res.BlockHash}})
 	Require(t, err)
@@ -199,98 +197,13 @@ func TestExecutionStateMsgCount(t *testing.T) {
 	}
 }
 
-func setupInboxTracker(t *testing.T, ctx context.Context) (*arbnode.InboxTracker, *arbnode.TransactionStreamer) {
-	exec, streamer, db, _ := arbnode.NewTransactionStreamerForTest(t, common.Address{})
-	tracker, err := arbnode.NewInboxTracker(db, streamer, nil)
-	Require(t, err)
-
-	err = streamer.Start(ctx)
-	Require(t, err)
-	exec.Start(ctx)
-	init, err := streamer.GetMessage(0)
-	Require(t, err)
-
-	initMsgDelayed := &arbnode.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: [32]byte{},
-		Message:        init.Message,
-	}
-	delayedRequestId := common.BigToHash(common.Big1)
-	userDelayed := &arbnode.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
-		Message: &arbostypes.L1IncomingMessage{
-			Header: &arbostypes.L1IncomingMessageHeader{
-				Kind:        arbostypes.L1MessageType_EndOfBlock,
-				Poster:      [20]byte{},
-				BlockNumber: 0,
-				Timestamp:   0,
-				RequestId:   &delayedRequestId,
-				L1BaseFee:   common.Big0,
-			},
-		},
-	}
-	err = tracker.AddDelayedMessages([]*arbnode.DelayedInboxMessage{initMsgDelayed, userDelayed}, false)
-	Require(t, err)
-
-	serializedInitMsgBatch := make([]byte, 40)
-	binary.BigEndian.PutUint64(serializedInitMsgBatch[32:], 1)
-	initMsgBatch := &arbnode.SequencerInboxBatch{
-		BlockHash:              [32]byte{},
-		ParentChainBlockNumber: 0,
-		SequenceNumber:         0,
-		BeforeInboxAcc:         [32]byte{},
-		AfterInboxAcc:          [32]byte{1},
-		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
-		AfterDelayedCount:      1,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
-		RawLog:                 types.Log{},
-		DataLocation:           0,
-		BridgeAddress:          [20]byte{},
-		Serialized:             serializedInitMsgBatch,
-	}
-	serializedUserMsgBatch := make([]byte, 40)
-	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
-	userMsgBatch := &arbnode.SequencerInboxBatch{
-		BlockHash:              [32]byte{},
-		ParentChainBlockNumber: 0,
-		SequenceNumber:         1,
-		BeforeInboxAcc:         [32]byte{1},
-		AfterInboxAcc:          [32]byte{2},
-		AfterDelayedAcc:        userDelayed.AfterInboxAcc(),
-		AfterDelayedCount:      2,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
-		RawLog:                 types.Log{},
-		DataLocation:           0,
-		BridgeAddress:          [20]byte{},
-		Serialized:             serializedUserMsgBatch,
-	}
-	emptyBatch := &arbnode.SequencerInboxBatch{
-		BlockHash:              [32]byte{},
-		ParentChainBlockNumber: 0,
-		SequenceNumber:         2,
-		BeforeInboxAcc:         [32]byte{2},
-		AfterInboxAcc:          [32]byte{3},
-		AfterDelayedAcc:        userDelayed.AfterInboxAcc(),
-		AfterDelayedCount:      2,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
-		RawLog:                 types.Log{},
-		DataLocation:           0,
-		BridgeAddress:          [20]byte{},
-		Serialized:             serializedUserMsgBatch,
-	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*arbnode.SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
-	Require(t, err)
-	return tracker, streamer
-}
-
 func TestExecutionStateAtMessageNumber(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tracker, streamer := setupInboxTracker(t, ctx)
-	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), nil, 0, 0)
-	Require(t, err)
-	res, err := streamer.ResultAtCount(1)
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	res, err := l2node.TxStreamer.ResultAtCount(1)
 	Require(t, err)
 	expectedState := &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState{
@@ -310,12 +223,12 @@ func TestExecutionStateAtMessageNumber(t *testing.T) {
 func TestHistoryCommitmentUpTo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tracker, streamer := setupInboxTracker(t, ctx)
-	manager, err := staker.NewStateManager(staker.NewStatelessBlockValidatorStruct(tracker, streamer), nil, 0, 0)
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	res0, err := l2node.TxStreamer.ResultAtCount(0)
 	Require(t, err)
-	res0, err := streamer.ResultAtCount(0)
-	Require(t, err)
-	res1, err := streamer.ResultAtCount(1)
+	res1, err := l2node.TxStreamer.ResultAtCount(1)
 	Require(t, err)
 	expectedHistoryCommitment, err := commitments.New(
 		[]common.Hash{
@@ -339,4 +252,79 @@ func TestHistoryCommitmentUpTo(t *testing.T) {
 	if !reflect.DeepEqual(historyCommitment, expectedHistoryCommitment) {
 		Fail(t, "Unexpected HistoryCommitment", historyCommitment, "(expected ", expectedHistoryCommitment, ")")
 	}
+}
+
+func TestBigStepCommitmentUpTo(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	commitment, err := manager.BigStepCommitmentUpTo(ctx, common.Hash{}, 1, 3)
+	Require(t, err)
+	if commitment.Height != 3 {
+		Fail(t, "Unexpected commitment height", commitment.Height, "(expected ", 3, ")")
+	}
+}
+
+func TestSmallStepCommitmentUpTo(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	commitment, err := manager.SmallStepCommitmentUpTo(ctx, common.Hash{}, 1, 3, 2)
+	Require(t, err)
+	if commitment.Height != 2 {
+		Fail(t, "Unexpected commitment height", commitment.Height, "(expected ", 2, ")")
+	}
+}
+
+func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, *staker.StateManager) {
+	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2info := NewBlockChainTestInfo(
+		t,
+		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		transferGas,
+	)
+	_, l2node, l2client, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, l2chainConfig, nil, l2info)
+	execNode := getExecNode(t, l2node)
+	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2client, ctx)
+	l2info.GenerateAccount("BackgroundUser")
+	balance := big.NewInt(params.Ether)
+	balance.Mul(balance, big.NewInt(100))
+	tx := l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
+	err := l2client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	for i := uint64(0); i < 10; i++ {
+		l2info.Accounts["BackgroundUser"].Nonce = i
+		tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
+		err = l2client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+	}
+
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	blockValidatorConfig := staker.TestBlockValidatorConfig
+	stateless, err := staker.NewStatelessBlockValidator(
+		l2node.InboxReader,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		execNode,
+		l2node.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
+	)
+	Require(t, err)
+	err = stateless.Start(ctx)
+	Require(t, err)
+	manager, err := staker.NewStateManager(stateless, nil, 4, 16)
+	Require(t, err)
+	return l2node, l1stack, manager
 }
