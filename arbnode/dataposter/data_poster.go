@@ -496,6 +496,11 @@ type queuedTransaction[Meta any] struct {
 	NextReplacement time.Time
 }
 
+// Implements queue-alike storage that can
+// - Insert item at specified index
+// - Update item with the condition that existing value equals assumed value
+// - Delete all the items up to specified index (prune)
+// - Calculate length
 // Note: one of the implementation of this interface (Redis storage) does not
 // support duplicate values.
 type QueueStorage[Item any] interface {
