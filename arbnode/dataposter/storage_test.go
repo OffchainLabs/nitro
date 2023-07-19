@@ -84,7 +84,7 @@ func strPtrs(values []string) []*string {
 	return res
 }
 
-func TestGetContents(t *testing.T) {
+func TestFetchContents(t *testing.T) {
 	ctx := context.Background()
 	for name, s := range initStorages(ctx, t) {
 		for _, tc := range []struct {
@@ -126,19 +126,19 @@ func TestGetContents(t *testing.T) {
 			},
 		} {
 			t.Run(name+"_"+tc.desc, func(t *testing.T) {
-				values, err := s.GetContents(ctx, tc.startIdx, tc.maxResults)
+				values, err := s.FetchContents(ctx, tc.startIdx, tc.maxResults)
 				if err != nil {
-					t.Fatalf("GetContents(%d, %d) unexpected error: %v", tc.startIdx, tc.maxResults, err)
+					t.Fatalf("FetchContents(%d, %d) unexpected error: %v", tc.startIdx, tc.maxResults, err)
 				}
 				if diff := cmp.Diff(tc.want, values); diff != "" {
-					t.Errorf("GetContext(%d, %d) unexpected diff:\n%s", tc.startIdx, tc.maxResults, diff)
+					t.Errorf("FetchContents(%d, %d) unexpected diff:\n%s", tc.startIdx, tc.maxResults, diff)
 				}
 			})
 		}
 	}
 }
 
-func TestGetLast(t *testing.T) {
+func TestLast(t *testing.T) {
 	cnt := 100
 	for name, s := range storages(t) {
 		t.Run(name, func(t *testing.T) {
@@ -148,12 +148,12 @@ func TestGetLast(t *testing.T) {
 				if err := s.Put(ctx, uint64(i), nil, &val); err != nil {
 					t.Fatalf("Error putting a key/value: %v", err)
 				}
-				got, err := s.GetLast(ctx)
+				got, err := s.FetchLast(ctx)
 				if err != nil {
 					t.Fatalf("Error getting a last element: %v", err)
 				}
 				if *got != val {
-					t.Errorf("GetLast() = %q want %q", *got, val)
+					t.Errorf("FetchLast() = %q want %q", *got, val)
 				}
 
 			}
@@ -167,12 +167,12 @@ func TestGetLast(t *testing.T) {
 				if err := s.Put(ctx, uint64(i), &prev, &newVal); err != nil {
 					t.Fatalf("Error putting a key/value: %v, prev: %v, new: %v", err, prev, newVal)
 				}
-				got, err := s.GetLast(ctx)
+				got, err := s.FetchLast(ctx)
 				if err != nil {
 					t.Fatalf("Error getting a last element: %v", err)
 				}
 				if *got != last {
-					t.Errorf("GetLast() = %q want %q", *got, last)
+					t.Errorf("FetchLast() = %q want %q", *got, last)
 				}
 				gotCnt, err := s.Length(ctx)
 				if err != nil {
@@ -225,9 +225,9 @@ func TestPrune(t *testing.T) {
 				if err := s.Prune(ctx, tc.pruneFrom); err != nil {
 					t.Fatalf("Prune(%d) unexpected error: %v", tc.pruneFrom, err)
 				}
-				got, err := s.GetContents(ctx, 0, 20)
+				got, err := s.FetchContents(ctx, 0, 20)
 				if err != nil {
-					t.Fatalf("GetContents() unexpected error: %v", err)
+					t.Fatalf("FetchContents() unexpected error: %v", err)
 				}
 				if diff := cmp.Diff(tc.want, got); diff != "" {
 					t.Errorf("Prune(%d) unexpected diff:\n%s", tc.pruneFrom, diff)

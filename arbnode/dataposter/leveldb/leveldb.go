@@ -45,7 +45,7 @@ func idxToKey(idx uint64) []byte {
 	return []byte(fmt.Sprintf("%020d", idx))
 }
 
-func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage[Item]) FetchContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	var res []*Item
 	it := s.db.NewIterator([]byte(""), idxToKey(startingIndex))
 	defer it.Release()
@@ -66,7 +66,7 @@ func (s *Storage[Item]) lastItemIdx(context.Context) ([]byte, error) {
 	return s.db.Get(lastItemIdxKey)
 }
 
-func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *Storage[Item]) FetchLast(ctx context.Context) (*Item, error) {
 	size, err := s.Length(ctx)
 	if err != nil {
 		return nil, err
@@ -85,12 +85,12 @@ func (s *Storage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	return s.decodeItem(val)
 }
 
-func (s *Storage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
+func (s *Storage[Item]) Prune(ctx context.Context, until uint64) error {
 	cnt, err := s.Length(ctx)
 	if err != nil {
 		return err
 	}
-	end := idxToKey(keepStartingAt)
+	end := idxToKey(until)
 	it := s.db.NewIterator([]byte{}, idxToKey(0))
 	defer it.Release()
 	b := s.db.NewBatch()

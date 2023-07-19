@@ -291,7 +291,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	}
 }
 
-func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (k, error) {
 	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
 	if err != nil {
 		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
