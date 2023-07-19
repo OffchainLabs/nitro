@@ -165,14 +165,13 @@ func (aset *AddressSet) Add(addr common.Address) error {
 	if err != nil {
 		return err
 	}
-	sba := aset.backingStorage.OpenStorageBackedAddress(1 + size)
 	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	err = aset.byAddress.Set(addrAsHash, slot)
 	if err != nil {
 		return err
 	}
-	sba = aset.backingStorage.OpenStorageBackedAddress(1 + size)
+	sba := aset.backingStorage.OpenStorageBackedAddress(1 + size)
 	err = sba.Set(addr)
 	if err != nil {
 		return err
