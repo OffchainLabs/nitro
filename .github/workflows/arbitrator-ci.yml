@@ -47,12 +47,12 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Install rust stable
+      - name: Install rust 1.68.2
         uses: actions-rs/toolchain@v1
         id: install-rust
         with:
           profile: minimal
-          toolchain: "stable"
+          toolchain: "1.68.2"
           override: true
           components: 'llvm-tools-preview, rustfmt, clippy'
 
