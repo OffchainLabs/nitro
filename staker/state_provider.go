@@ -56,7 +56,7 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	if err != nil {
 		return 0, err
 	}
-	validatedExecutionState, err := s.ExecutionStateAtMessageNumber(ctx, uint64(messageCount)-1)
+	validatedExecutionState, err := s.executionStateAtMessageNumberImpl(ctx, uint64(messageCount)-1)
 	if err != nil {
 		return 0, err
 	}
@@ -88,7 +88,20 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 }
 
 // ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
+// Makes sure that PosInBatch is always 0
 func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
+	executionState, err := s.executionStateAtMessageNumberImpl(ctx, messageNumber)
+	if err != nil {
+		return nil, err
+	}
+	if executionState.GlobalState.PosInBatch != 0 {
+		executionState.GlobalState.Batch++
+		executionState.GlobalState.PosInBatch = 0
+	}
+	return executionState, nil
+}
+
+func (s *StateManager) executionStateAtMessageNumberImpl(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
 	if err != nil {
 		return &protocol.ExecutionState{}, err
