@@ -12,11 +12,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // Storage implements leveldb based storage for batch poster.
-type Storage[Item any] struct {
+type Storage struct {
 	db ethdb.Database
 }
 
@@ -29,12 +30,12 @@ var (
 	countKey       = []byte(".count_key")
 )
 
-func New[Item any](db ethdb.Database) *Storage[Item] {
-	return &Storage[Item]{db: db}
+func New(db ethdb.Database) *Storage {
+	return &Storage{db: db}
 }
 
-func (s *Storage[Item]) decodeItem(data []byte) (*Item, error) {
-	var item Item
+func (s *Storage) decodeItem(data []byte) (*storage.QueuedTransaction, error) {
+	var item storage.QueuedTransaction
 	if err := rlp.DecodeBytes(data, &item); err != nil {
 		return nil, fmt.Errorf("decoding item: %w", err)
 	}
@@ -45,8 +46,8 @@ func idxToKey(idx uint64) []byte {
 	return []byte(fmt.Sprintf("%020d", idx))
 }
 
-func (s *Storage[Item]) FetchContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
-	var res []*Item
+func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error) {
+	var res []*storage.QueuedTransaction
 	it := s.db.NewIterator([]byte(""), idxToKey(startingIndex))
 	defer it.Release()
 	for i := 0; i < int(maxResults); i++ {
@@ -62,11 +63,11 @@ func (s *Storage[Item]) FetchContents(_ context.Context, startingIndex uint64, m
 	return res, it.Error()
 }
 
-func (s *Storage[Item]) lastItemIdx(context.Context) ([]byte, error) {
+func (s *Storage) lastItemIdx(context.Context) ([]byte, error) {
 	return s.db.Get(lastItemIdxKey)
 }
 
-func (s *Storage[Item]) FetchLast(ctx context.Context) (*Item, error) {
+func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, error) {
 	size, err := s.Length(ctx)
 	if err != nil {
 		return nil, err
@@ -85,7 +86,7 @@ func (s *Storage[Item]) FetchLast(ctx context.Context) (*Item, error) {
 	return s.decodeItem(val)
 }
 
-func (s *Storage[Item]) Prune(ctx context.Context, until uint64) error {
+func (s *Storage) Prune(ctx context.Context, until uint64) error {
 	cnt, err := s.Length(ctx)
 	if err != nil {
 		return err
@@ -111,18 +112,18 @@ func (s *Storage[Item]) Prune(ctx context.Context, until uint64) error {
 
 // valueAt gets returns the value at key. If it doesn't exist then it returns
 // encoded bytes of nil.
-func (s *Storage[Item]) valueAt(_ context.Context, key []byte) ([]byte, error) {
+func (s *Storage) valueAt(_ context.Context, key []byte) ([]byte, error) {
 	val, err := s.db.Get(key)
 	if err != nil {
 		if errors.Is(err, leveldb.ErrNotFound) {
-			return rlp.EncodeToBytes((*Item)(nil))
+			return rlp.EncodeToBytes((*storage.QueuedTransaction)(nil))
 		}
 		return nil, err
 	}
 	return val, nil
 }
 
-func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *Item) error {
+func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.QueuedTransaction) error {
 	key := idxToKey(index)
 	stored, err := s.valueAt(ctx, key)
 	if err != nil {
@@ -133,7 +134,7 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 		return fmt.Errorf("encoding previous item: %w", err)
 	}
 	if !bytes.Equal(stored, prevEnc) {
-		return fmt.Errorf("replacing different item than expected at index %v %v %v", index, stored, prevEnc)
+		return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, stored, prevEnc)
 	}
 	newEnc, err := rlp.EncodeToBytes(new)
 	if err != nil {
@@ -165,7 +166,7 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prev *Item, new *
 	return b.Write()
 }
 
-func (s *Storage[Item]) Length(context.Context) (int, error) {
+func (s *Storage) Length(context.Context) (int, error) {
 	val, err := s.db.Get(countKey)
 	if err != nil {
 		if errors.Is(err, leveldb.ErrNotFound) {
@@ -176,6 +177,6 @@ func (s *Storage[Item]) Length(context.Context) (int, error) {
 	return strconv.Atoi(string(val))
 }
 
-func (s *Storage[Item]) IsPersistent() bool {
+func (s *Storage) IsPersistent() bool {
 	return true
 }

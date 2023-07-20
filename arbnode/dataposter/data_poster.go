@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -29,12 +28,10 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
-
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 // DataPoster must be RLP serializable and deserializable
-type DataPoster[Meta any] struct {
+type DataPoster struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
@@ -43,14 +40,14 @@ type DataPoster[Meta any] struct {
 	redisLock         AttemptLocker
 	config            ConfigFetcher
 	replacementTimes  []time.Duration
-	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
+	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 
 	// These fields are protected by the mutex.
 	mutex      sync.Mutex
 	lastBlock  *big.Int
 	balance    *big.Int
 	nonce      uint64
-	queue      QueueStorage[queuedTransaction[Meta]]
+	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 }
 
@@ -77,28 +74,28 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	}
 	// To avoid special casing "don't replace again", replace in 10 years.
 	return append(res, time.Hour*24*365*10), nil
-
 }
 
-func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
 	replacementTimes, err := parseReplacementTimes(config().ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
-	var queue QueueStorage[queuedTransaction[Meta]]
-	switch {
-	case config().EnableLevelDB:
-		queue = leveldb.New[queuedTransaction[Meta]](db)
-	case redisClient == nil:
-		queue = slice.NewStorage[queuedTransaction[Meta]]()
-	default:
-		var err error
-		queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &DataPoster[Meta]{
+	queue := leveldb.New(db)
+	// var queue QueueStorage[queuedTransaction]
+	// switch {
+	// case config().EnableLevelDB:
+	// 	queue = leveldb.New(db)
+	// case redisClient == nil:
+	// 	queue = slice.NewStorage()
+	// default:
+	// 	var err error
+	// 	queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+	return &DataPoster{
 		headerReader:      headerReader,
 		client:            headerReader.Client(),
 		sender:            auth.From,
@@ -112,13 +109,13 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 	}, nil
 }
 
-func (p *DataPoster[Meta]) Sender() common.Address {
+func (p *DataPoster) Sender() common.Address {
 	return p.sender
 }
 
-func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
+func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
 	config := p.config()
-	var emptyMeta Meta
+	var emptyMeta []byte
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	blockNum, err := p.client.BlockNumber(ctx)
@@ -172,7 +169,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster[Meta]) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
@@ -246,7 +243,7 @@ func (p *DataPoster[Meta]) feeAndTipCaps(ctx context.Context, gasLimit uint64, l
 	return newFeeCap, newTipCap, nil
 }
 
-func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
+func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	err := p.updateBalance(ctx)
@@ -270,7 +267,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return err
 	}
-	queuedTx := queuedTransaction[Meta]{
+	queuedTx := storage.QueuedTransaction{
 		Data:            inner,
 		FullTx:          fullTx,
 		Meta:            meta,
@@ -282,14 +279,14 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 }
 
 // the mutex must be held by the caller
-func (p *DataPoster[Meta]) saveTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
+func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
 	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
 		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
 	}
 	return p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx)
 }
 
-func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
+func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
 	if prevTx != newTx {
 		err := p.saveTx(ctx, prevTx, newTx)
 		if err != nil {
@@ -314,7 +311,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 }
 
 // The mutex must be held by the caller.
-func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
+func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogOfBatches uint64) error {
 	newFeeCap, newTipCap, err := p.feeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
@@ -357,7 +354,7 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 // Gets latest known or finalized block header (depending on config flag),
 // gets the nonce of the dataposter sender and stores it if it has increased.
 // The mutex must be held by the caller.
-func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
+func (p *DataPoster) updateNonce(ctx context.Context) error {
 	var blockNumQuery *big.Int
 	if p.config().WaitForL1Finality {
 		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
@@ -400,7 +397,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 }
 
 // Updates dataposter balance to balance at pending block.
-func (p *DataPoster[Meta]) updateBalance(ctx context.Context) error {
+func (p *DataPoster) updateBalance(ctx context.Context) error {
 	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
 	balance, err := p.client.BalanceAt(ctx, p.sender, big.NewInt(-1))
@@ -413,7 +410,7 @@ func (p *DataPoster[Meta]) updateBalance(ctx context.Context) error {
 
 const maxConsecutiveIntermittentErrors = 10
 
-func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta], msg string) {
+func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.Data.Nonce
 	if err == nil {
 		delete(p.errorCount, nonce)
@@ -434,7 +431,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 const minWait = time.Second * 10
 
 // Tries tu acquire redis lock, updates balance and nonce,
-func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
+func (p *DataPoster) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		p.mutex.Lock()
@@ -501,14 +498,14 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 	})
 }
 
-type queuedTransaction[Meta any] struct {
-	FullTx          *types.Transaction
-	Data            types.DynamicFeeTx
-	Meta            Meta
-	Sent            bool
-	Created         time.Time // may be earlier than the tx was given to the tx poster
-	NextReplacement time.Time
-}
+// type queuedTransaction struct {
+// 	FullTx          *types.Transaction
+// 	Data            types.DynamicFeeTx
+// 	Meta            []byte
+// 	Sent            bool
+// 	Created         time.Time // may be earlier than the tx was given to the tx poster
+// 	NextReplacement time.Time
+// }
 
 // Implements queue-alike storage that can
 // - Insert item at specified index
@@ -517,15 +514,15 @@ type queuedTransaction[Meta any] struct {
 // - Calculate length
 // Note: one of the implementation of this interface (Redis storage) does not
 // support duplicate values.
-type QueueStorage[Item any] interface {
+type QueueStorage interface {
 	// Returns at most maxResults items starting from specified index.
-	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
+	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error)
 	// Returns item with the biggest index.
-	FetchLast(ctx context.Context) (*Item, error)
+	FetchLast(ctx context.Context) (*storage.QueuedTransaction, error)
 	// Prunes items up to (excluding) specified index.
 	Prune(ctx context.Context, until uint64) error
 	// Inserts new item at specified index if previous value matches specified value.
-	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
+	Put(ctx context.Context, index uint64, prevItem, newItem *storage.QueuedTransaction) error
 	// Returns the size of a queue.
 	Length(ctx context.Context) (int, error)
 	// Indicates whether queue stored at disk.
