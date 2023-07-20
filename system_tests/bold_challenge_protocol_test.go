@@ -29,7 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -64,12 +63,6 @@ func TestBoldProtocol(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 	execNodeA := getExecNode(t, l2nodeA)
-	_ = l2clientA
-	_ = l1client
-
-	if faultyStaker {
-		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
-	}
 	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil)
 	defer l2nodeB.StopAndWait()
 	execNodeB := getExecNode(t, l2nodeB)
@@ -281,8 +274,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, stackConfig)
 	addresses, assertionChainBindings := deployBoldProtocolContracts(t, ctx, l1info, l1client, chainConfig.ChainID)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig)
 	assertionChain = assertionChainBindings
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
