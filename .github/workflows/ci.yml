@@ -63,15 +63,15 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "stable"
+          toolchain: "1.70"
           target: wasm32-wasi
 
-      - name: Install rust stable
+      - name: Install rust 1.70
         uses: actions-rs/toolchain@v1
         id: install-rust
         with:
           profile: minimal
-          toolchain: "stable"
+          toolchain: "1.70"
           override: true
 
       - name: Cache Build Products
