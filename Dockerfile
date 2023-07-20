@@ -41,8 +41,8 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
-    # pinned rust 1.65.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.68.2 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+    # pinned rust 1.70.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.70.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
@@ -79,7 +79,7 @@ COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompile
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.68-slim-bullseye as prover-header-builder
+FROM rust:1.70-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -95,7 +95,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.68-slim-bullseye as prover-builder
+FROM rust:1.70-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \

@@ -56,7 +56,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "stable"
+          toolchain: "1.70"
           target: wasm32-unknown-unknown
 
       - name: Install rust wasm32-wasi
