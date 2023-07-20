@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -504,6 +505,18 @@ func TestAllPrefixProofs(t *testing.T) {
 	Require(t, err)
 }
 
+func TestPrefixProofUpToBatchInvalidBatchCount(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+
+	_, err := manager.PrefixProofUpToBatch(ctx, 0, 0, 2, 1)
+	if err == nil || !strings.Contains(err.Error(), "toMessageNumber should not be greater than batchCount") {
+		Fail(t, "batch count", 1, "less than toMessageNumber", 2, "should not be allowed")
+	}
+}
 func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, *staker.StateManager) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := params.ArbitrumDevTestChainConfig()
