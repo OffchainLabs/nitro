@@ -3,19 +3,15 @@ package arbtest
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/node"
 	"math/big"
 	"reflect"
 	"testing"
-
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
-	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -23,9 +19,13 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
+	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 )
 
 const numOpcodesPerBigStepTest = uint64(4)
@@ -348,6 +348,160 @@ func TestSmallStepLeafCommitment(t *testing.T) {
 	if commitment.Height != numOpcodesPerBigStepTest {
 		Fail(t, "Unexpected commitment height", commitment.Height, "(expected ", numOpcodesPerBigStepTest, ")")
 	}
+}
+
+func TestAllPrefixProofs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2node, l1stack, manager := setupManger(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+
+	from := uint64(0)
+	to := uint64(2)
+
+	loCommit, err := manager.HistoryCommitmentUpTo(ctx, from)
+	Require(t, err)
+	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, to)
+	Require(t, err)
+	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, from, to, 10)
+	Require(t, err)
+
+	data, err := staker.ProofArgs.Unpack(packedProof)
+	Require(t, err)
+	preExpansion, ok := data[0].([][32]byte)
+	if !ok {
+		Fatal(t, "bad output from packedProof")
+	}
+	proof, ok := data[1].([][32]byte)
+	if !ok {
+		Fatal(t, "bad output from packedProof")
+	}
+
+	preExpansionHashes := make([]common.Hash, len(preExpansion))
+	for i := 0; i < len(preExpansion); i++ {
+		preExpansionHashes[i] = preExpansion[i]
+	}
+	prefixProof := make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		prefixProof[i] = proof[i]
+	}
+
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      loCommit.Merkle,
+		PreSize:      from + 1,
+		PostRoot:     hiCommit.Merkle,
+		PostSize:     to + 1,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	Require(t, err)
+
+	bigFrom := uint64(1)
+
+	bigCommit, err := manager.BigStepLeafCommitment(ctx, common.Hash{}, from)
+	Require(t, err)
+
+	bigBisectCommit, err := manager.BigStepCommitmentUpTo(ctx, common.Hash{}, from, bigFrom)
+	Require(t, err)
+	if bigFrom != bigBisectCommit.Height {
+		Fail(t, "Unexpected bigBisectCommit Height", bigBisectCommit.Height, "(expected ", bigFrom, ")")
+	}
+	if bigCommit.FirstLeaf != bigBisectCommit.FirstLeaf {
+		Fail(t, "Unexpected  bigBisectCommit FirstLeaf", bigBisectCommit.FirstLeaf, "(expected ", bigCommit.FirstLeaf, ")")
+	}
+
+	bigProof, err := manager.BigStepPrefixProof(ctx, common.Hash{}, from, bigFrom, bigCommit.Height)
+	Require(t, err)
+
+	data, err = staker.ProofArgs.Unpack(bigProof)
+	Require(t, err)
+	preExpansion, ok = data[0].([][32]byte)
+	if !ok {
+		Fatal(t, "bad output from packedProof")
+	}
+	proof, ok = data[1].([][32]byte)
+	if !ok {
+		Fatal(t, "bad output from packedProof")
+	}
+
+	preExpansionHashes = make([]common.Hash, len(preExpansion))
+	for i := 0; i < len(preExpansion); i++ {
+		preExpansionHashes[i] = preExpansion[i]
+	}
+	prefixProof = make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		prefixProof[i] = proof[i]
+	}
+
+	computed, err := prefixproofs.Root(preExpansionHashes)
+	Require(t, err)
+	if bigBisectCommit.Merkle != computed {
+		Fail(t, "Unexpected  bigBisectCommit Merkle", bigBisectCommit.Merkle, "(expected ", computed, ")")
+	}
+
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      bigBisectCommit.Merkle,
+		PreSize:      bigFrom + 1,
+		PostRoot:     bigCommit.Merkle,
+		PostSize:     bigCommit.Height + 1,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	Require(t, err)
+
+	smallCommit, err := manager.SmallStepLeafCommitment(ctx, common.Hash{}, from, bigFrom)
+	Require(t, err)
+
+	smallFrom := uint64(2)
+
+	smallBisectCommit, err := manager.SmallStepCommitmentUpTo(ctx, common.Hash{}, from, bigFrom, smallFrom)
+	Require(t, err)
+	if smallBisectCommit.Height != smallFrom {
+		Fail(t, "Unexpected  smallBisectCommit Height", smallBisectCommit.Height, "(expected ", smallFrom, ")")
+	}
+	if smallBisectCommit.FirstLeaf != smallCommit.FirstLeaf {
+		Fail(t, "Unexpected  smallBisectCommit FirstLeaf", smallBisectCommit.FirstLeaf, "(expected ", smallCommit.FirstLeaf, ")")
+	}
+
+	smallProof, err := manager.SmallStepPrefixProof(ctx, common.Hash{}, from, bigFrom, smallFrom, smallCommit.Height)
+	Require(t, err)
+
+	data, err = staker.ProofArgs.Unpack(smallProof)
+	Require(t, err)
+	preExpansion, ok = data[0].([][32]byte)
+	if !ok {
+		Fatal(t, "bad output from packedProof")
+	}
+	proof, ok = data[1].([][32]byte)
+	if !ok {
+		Fatal(t, "bad output from packedProof")
+	}
+
+	preExpansionHashes = make([]common.Hash, len(preExpansion))
+	for i := 0; i < len(preExpansion); i++ {
+		preExpansionHashes[i] = preExpansion[i]
+	}
+	prefixProof = make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		prefixProof[i] = proof[i]
+	}
+
+	computed, err = prefixproofs.Root(preExpansionHashes)
+	Require(t, err)
+	if smallBisectCommit.Merkle != computed {
+		Fail(t, "Unexpected  smallBisectCommit Merkle", smallBisectCommit.Merkle, "(expected ", computed, ")")
+	}
+
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      smallBisectCommit.Merkle,
+		PreSize:      smallFrom + 1,
+		PostRoot:     smallCommit.Merkle,
+		PostSize:     smallCommit.Height + 1,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	Require(t, err)
 }
 
 func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, *staker.StateManager) {
