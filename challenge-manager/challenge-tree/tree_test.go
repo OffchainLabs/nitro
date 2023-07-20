@@ -6,14 +6,13 @@ package challengetree
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
 	"testing"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree/mock"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
@@ -345,160 +344,15 @@ func (m *mockMetadataReader) ReadAssertionCreationInfo(
 	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
 }
 
-var _ = protocol.ReadOnlyEdge(&edge{})
-
-type edgeId string
-type commit string
-type originId string
-
-// Mock edge for challenge tree specific tests, making it easier for test ergonomics.
-type edge struct {
-	id            edgeId
-	edgeType      protocol.EdgeType
-	startHeight   uint64
-	startCommit   commit
-	endHeight     uint64
-	endCommit     commit
-	originId      originId
-	claimId       string
-	lowerChildId  edgeId
-	upperChildId  edgeId
-	creationBlock uint64
-}
-
-func (e *edge) Id() protocol.EdgeId {
-	return protocol.EdgeId(common.BytesToHash([]byte(e.id)))
-}
-
-func (e *edge) GetType() protocol.EdgeType {
-	return e.edgeType
-}
-
-func (e *edge) StartCommitment() (protocol.Height, common.Hash) {
-	return protocol.Height(e.startHeight), common.BytesToHash([]byte(e.startCommit))
-}
-
-func (e *edge) EndCommitment() (protocol.Height, common.Hash) {
-	return protocol.Height(e.endHeight), common.BytesToHash([]byte(e.endCommit))
-}
-
-func (e *edge) CreatedAtBlock() (uint64, error) {
-	return e.creationBlock, nil
-}
-
-func (e *edge) OriginId() protocol.OriginId {
-	return protocol.OriginId(common.BytesToHash([]byte(e.originId)))
-}
-
-func (e *edge) MutualId() protocol.MutualId {
-	return protocol.MutualId(common.BytesToHash([]byte(e.computeMutualId())))
-}
-
-func (e *edge) computeMutualId() string {
-	return fmt.Sprintf(
-		"%d-%s-%d-%s-%d",
-		e.edgeType,
-		e.originId,
-		e.startHeight,
-		e.startCommit,
-		e.endHeight,
-	)
-}
-
-// The claim id of the edge, if any
-func (e *edge) ClaimId() option.Option[protocol.ClaimId] {
-	if e.claimId == "" {
-		return option.None[protocol.ClaimId]()
-	}
-	return option.Some(protocol.ClaimId(common.BytesToHash([]byte(e.claimId))))
-}
-
-// The lower child of the edge, if any.
-func (e *edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
-	if e.lowerChildId == "" {
-		return option.None[protocol.EdgeId](), nil
-	}
-	return option.Some(protocol.EdgeId(common.BytesToHash([]byte(e.lowerChildId)))), nil
-}
-
-// The upper child of the edge, if any.
-func (e *edge) UpperChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
-	if e.upperChildId == "" {
-		return option.None[protocol.EdgeId](), nil
-	}
-	return option.Some(protocol.EdgeId(common.BytesToHash([]byte(e.upperChildId)))), nil
-}
-
-func (e *edge) HasChildren(ctx context.Context) (bool, error) {
-	return e.lowerChildId != "" && e.upperChildId != "", nil
-}
-
-// The ministaker of an edge. Only existing for level zero edges.
-func (*edge) MiniStaker() option.Option[common.Address] {
-	return option.None[common.Address]()
-}
-
-// The assertion hash of the parent assertion that originated the challenge
-// at the top-level.
-func (*edge) AssertionHash(_ context.Context) (protocol.AssertionHash, error) {
-	return protocol.AssertionHash{}, errors.New("unimplemented")
-}
-
-// The time in seconds an edge has been unrivaled.
-func (*edge) TimeUnrivaled(_ context.Context) (uint64, error) {
-	return 0, errors.New("unimplemented")
-}
-
-// The status of an edge.
-func (*edge) Status(_ context.Context) (protocol.EdgeStatus, error) {
-	return 0, errors.New("unimplemented")
-}
-
-// Whether or not an edge has rivals.
-func (*edge) HasRival(_ context.Context) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
-// Checks if an edge has a length one rival.
-func (*edge) HasLengthOneRival(_ context.Context) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
-// The history commitment for the top-level edge the current edge's challenge is made upon.
-// This is used at subchallenge creation boundaries.
-func (*edge) TopLevelClaimHeight(_ context.Context) (protocol.OriginHeights, error) {
-	return protocol.OriginHeights{}, errors.New("unimplemented")
-}
-
-func (*edge) Bisect(
-	_ context.Context,
-	_ common.Hash,
-	_ []byte,
-) (protocol.SpecEdge, protocol.SpecEdge, error) {
-	return nil, nil, errors.New("unimplemented")
-}
-
-func (*edge) ConfirmByTimer(_ context.Context, _ []protocol.EdgeId) error {
-	return errors.New("unimplemented")
-}
-
-func (*edge) ConfirmByClaim(_ context.Context, _ protocol.ClaimId) error {
-	return errors.New("unimplemented")
-}
-
-func (*edge) ConfirmByChildren(_ context.Context) error {
-	return errors.New("unimplemented")
-}
-
 type newCfg struct {
 	t         *testing.T
-	originId  originId
-	edgeId    edgeId
+	originId  mock.OriginId
+	edgeId    mock.EdgeId
 	claimId   string
 	createdAt uint64
 }
 
-func newEdge(cfg *newCfg) *edge {
+func newEdge(cfg *newCfg) *mock.Edge {
 	cfg.t.Helper()
 	items := strings.Split(string(cfg.edgeId), "-")
 	var typ protocol.EdgeType
@@ -520,17 +374,17 @@ func newEdge(cfg *newCfg) *edge {
 	require.NoError(cfg.t, err)
 	endCommit := endData[1]
 
-	return &edge{
-		edgeType:      typ,
-		originId:      cfg.originId,
-		id:            cfg.edgeId,
-		startHeight:   startHeight,
-		claimId:       cfg.claimId,
-		startCommit:   commit(startCommit),
-		endHeight:     endHeight,
-		endCommit:     commit(endCommit),
-		lowerChildId:  "",
-		upperChildId:  "",
-		creationBlock: cfg.createdAt,
+	return &mock.Edge{
+		EdgeType:      typ,
+		OriginID:      cfg.originId,
+		ID:            cfg.edgeId,
+		StartHeight:   startHeight,
+		ClaimID:       cfg.claimId,
+		StartCommit:   mock.Commit(startCommit),
+		EndHeight:     endHeight,
+		EndCommit:     mock.Commit(endCommit),
+		LowerChildID:  "",
+		UpperChildID:  "",
+		CreationBlock: cfg.createdAt,
 	}
 }

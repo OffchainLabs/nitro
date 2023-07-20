@@ -30,6 +30,7 @@ go_test(
     embed = [":challenge-tree"],
     deps = [
         "//chain-abstraction:protocol",
+        "//challenge-manager/challenge-tree/mock",
         "//containers/option",
         "//containers/threadsafe",
         "//layer2-state-provider",

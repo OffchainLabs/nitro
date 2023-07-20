@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree/mock"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
 	"github.com/ethereum/go-ethereum/common"
@@ -200,10 +201,10 @@ func Test_findOriginEdge(t *testing.T) {
 	require.Equal(t, got.Id(), protocol.EdgeId(common.BytesToHash([]byte("blk-0.b-4.b"))))
 }
 
-func buildEdges(allEdges ...*edge) map[edgeId]*edge {
-	m := make(map[edgeId]*edge)
+func buildEdges(allEdges ...*mock.Edge) map[mock.EdgeId]*mock.Edge {
+	m := make(map[mock.EdgeId]*mock.Edge)
 	for _, e := range allEdges {
-		m[e.id] = e
+		m[e.ID] = e
 	}
 	return m
 }
@@ -242,23 +243,23 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree) {
 	)
 	// Child-relationship linking.
 	// Alice.
-	aliceEdges["blk-0.a-16.a"].lowerChildId = "blk-0.a-8.a"
-	aliceEdges["blk-0.a-16.a"].upperChildId = "blk-8.a-16.a"
-	aliceEdges["blk-0.a-8.a"].lowerChildId = "blk-0.a-4.a"
-	aliceEdges["blk-0.a-8.a"].upperChildId = "blk-4.a-8.a"
-	aliceEdges["blk-4.a-8.a"].lowerChildId = "blk-4.a-6.a"
-	aliceEdges["blk-4.a-8.a"].upperChildId = "blk-6.a-8.a"
-	aliceEdges["blk-4.a-6.a"].lowerChildId = "blk-4.a-5.a"
-	aliceEdges["blk-4.a-6.a"].upperChildId = "blk-5.a-6.a"
+	aliceEdges["blk-0.a-16.a"].LowerChildID = "blk-0.a-8.a"
+	aliceEdges["blk-0.a-16.a"].UpperChildID = "blk-8.a-16.a"
+	aliceEdges["blk-0.a-8.a"].LowerChildID = "blk-0.a-4.a"
+	aliceEdges["blk-0.a-8.a"].UpperChildID = "blk-4.a-8.a"
+	aliceEdges["blk-4.a-8.a"].LowerChildID = "blk-4.a-6.a"
+	aliceEdges["blk-4.a-8.a"].UpperChildID = "blk-6.a-8.a"
+	aliceEdges["blk-4.a-6.a"].LowerChildID = "blk-4.a-5.a"
+	aliceEdges["blk-4.a-6.a"].UpperChildID = "blk-5.a-6.a"
 	// Bob.
-	bobEdges["blk-0.a-16.b"].lowerChildId = "blk-0.a-8.b"
-	bobEdges["blk-0.a-16.b"].upperChildId = "blk-8.b-16.b"
-	bobEdges["blk-0.a-8.b"].lowerChildId = "blk-0.a-4.a"
-	bobEdges["blk-0.a-8.b"].upperChildId = "blk-4.a-8.b"
-	bobEdges["blk-4.a-8.b"].lowerChildId = "blk-4.a-6.b"
-	bobEdges["blk-4.a-8.b"].upperChildId = "blk-6.b-6.8"
-	bobEdges["blk-4.a-6.b"].lowerChildId = "blk-4.a-5.b"
-	bobEdges["blk-4.a-6.b"].upperChildId = "blk-5.b-6.b"
+	bobEdges["blk-0.a-16.b"].LowerChildID = "blk-0.a-8.b"
+	bobEdges["blk-0.a-16.b"].UpperChildID = "blk-8.b-16.b"
+	bobEdges["blk-0.a-8.b"].LowerChildID = "blk-0.a-4.a"
+	bobEdges["blk-0.a-8.b"].UpperChildID = "blk-4.a-8.b"
+	bobEdges["blk-4.a-8.b"].LowerChildID = "blk-4.a-6.b"
+	bobEdges["blk-4.a-8.b"].UpperChildID = "blk-6.b-6.8"
+	bobEdges["blk-4.a-6.b"].LowerChildID = "blk-4.a-5.b"
+	bobEdges["blk-4.a-6.b"].UpperChildID = "blk-5.b-6.b"
 
 	transformedEdges := make(map[protocol.EdgeId]protocol.SpecEdge)
 	for _, v := range aliceEdges {
@@ -327,7 +328,7 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree) {
 	mutuals.Put(b.Id(), creationTime(bCreation))
 }
 
-func id(eId edgeId) protocol.EdgeId {
+func id(eId mock.EdgeId) protocol.EdgeId {
 	return protocol.EdgeId(common.BytesToHash([]byte(eId)))
 }
 
@@ -340,8 +341,8 @@ func id(eId edgeId) protocol.EdgeId {
 // and then inserts the respective edges into a challenge tree.
 func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
 	t.Helper()
-	originEdge := tree.edges.Get(id(edgeId(claimId))).(*edge)
-	origin := originId(originEdge.computeMutualId())
+	originEdge := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
+	origin := mock.OriginId(originEdge.ComputeMutualId())
 	aliceEdges := buildEdges(
 		// Alice.
 		newEdge(&newCfg{t: t, edgeId: "big-0.a-16.a", originId: origin, claimId: claimId, createdAt: 11}),
@@ -367,23 +368,23 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 	)
 	// Child-relationship linking.
 	// Alice.
-	aliceEdges["big-0.a-16.a"].lowerChildId = "big-0.a-8.a"
-	aliceEdges["big-0.a-16.a"].upperChildId = "big-8.a-16.a"
-	aliceEdges["big-0.a-8.a"].lowerChildId = "big-0.a-4.a"
-	aliceEdges["big-0.a-8.a"].upperChildId = "big-4.a-8.a"
-	aliceEdges["big-4.a-8.a"].lowerChildId = "big-4.a-6.a"
-	aliceEdges["big-4.a-8.a"].upperChildId = "big-6.a-8.a"
-	aliceEdges["big-4.a-6.a"].lowerChildId = "big-4.a-5.a"
-	aliceEdges["big-4.a-6.a"].upperChildId = "big-5.a-6.a"
+	aliceEdges["big-0.a-16.a"].LowerChildID = "big-0.a-8.a"
+	aliceEdges["big-0.a-16.a"].UpperChildID = "big-8.a-16.a"
+	aliceEdges["big-0.a-8.a"].LowerChildID = "big-0.a-4.a"
+	aliceEdges["big-0.a-8.a"].UpperChildID = "big-4.a-8.a"
+	aliceEdges["big-4.a-8.a"].LowerChildID = "big-4.a-6.a"
+	aliceEdges["big-4.a-8.a"].UpperChildID = "big-6.a-8.a"
+	aliceEdges["big-4.a-6.a"].LowerChildID = "big-4.a-5.a"
+	aliceEdges["big-4.a-6.a"].UpperChildID = "big-5.a-6.a"
 	// Bob.
-	bobEdges["big-0.a-16.b"].lowerChildId = "big-0.a-8.b"
-	bobEdges["big-0.a-16.b"].upperChildId = "big-8.b-16.b"
-	bobEdges["big-0.a-8.b"].lowerChildId = "big-0.a-4.a"
-	bobEdges["big-0.a-8.b"].upperChildId = "big-4.a-8.b"
-	bobEdges["big-4.a-8.b"].lowerChildId = "big-4.a-6.b"
-	bobEdges["big-4.a-8.b"].upperChildId = "big-6.b-6.8"
-	bobEdges["big-4.a-6.b"].lowerChildId = "big-4.a-5.b"
-	bobEdges["big-4.a-6.b"].upperChildId = "big-5.b-6.b"
+	bobEdges["big-0.a-16.b"].LowerChildID = "big-0.a-8.b"
+	bobEdges["big-0.a-16.b"].UpperChildID = "big-8.b-16.b"
+	bobEdges["big-0.a-8.b"].LowerChildID = "big-0.a-4.a"
+	bobEdges["big-0.a-8.b"].UpperChildID = "big-4.a-8.b"
+	bobEdges["big-4.a-8.b"].LowerChildID = "big-4.a-6.b"
+	bobEdges["big-4.a-8.b"].UpperChildID = "big-6.b-6.8"
+	bobEdges["big-4.a-6.b"].LowerChildID = "big-4.a-5.b"
+	bobEdges["big-4.a-6.b"].UpperChildID = "big-5.b-6.b"
 
 	for _, v := range aliceEdges {
 		tree.edges.Put(v.Id(), v)
@@ -462,8 +463,8 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 // and then inserts the respective edges into a challenge tree.
 func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
 	t.Helper()
-	originEdge := tree.edges.Get(id(edgeId(claimId))).(*edge)
-	origin := originId(originEdge.computeMutualId())
+	originEdge := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
+	origin := mock.OriginId(originEdge.ComputeMutualId())
 	aliceEdges := buildEdges(
 		// Alice.
 		newEdge(&newCfg{t: t, edgeId: "smol-0.a-16.a", originId: origin, claimId: claimId, createdAt: 21}),
@@ -489,23 +490,23 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	)
 	// Child-relationship linking.
 	// Alice.
-	aliceEdges["smol-0.a-16.a"].lowerChildId = "smol-0.a-8.a"
-	aliceEdges["smol-0.a-16.a"].upperChildId = "smol-8.a-16.a"
-	aliceEdges["smol-0.a-8.a"].lowerChildId = "smol-0.a-4.a"
-	aliceEdges["smol-0.a-8.a"].upperChildId = "smol-4.a-8.a"
-	aliceEdges["smol-4.a-8.a"].lowerChildId = "smol-4.a-6.a"
-	aliceEdges["smol-4.a-8.a"].upperChildId = "smol-6.a-8.a"
-	aliceEdges["smol-4.a-6.a"].lowerChildId = "smol-4.a-5.a"
-	aliceEdges["smol-4.a-6.a"].upperChildId = "smol-5.a-6.a"
+	aliceEdges["smol-0.a-16.a"].LowerChildID = "smol-0.a-8.a"
+	aliceEdges["smol-0.a-16.a"].UpperChildID = "smol-8.a-16.a"
+	aliceEdges["smol-0.a-8.a"].LowerChildID = "smol-0.a-4.a"
+	aliceEdges["smol-0.a-8.a"].UpperChildID = "smol-4.a-8.a"
+	aliceEdges["smol-4.a-8.a"].LowerChildID = "smol-4.a-6.a"
+	aliceEdges["smol-4.a-8.a"].UpperChildID = "smol-6.a-8.a"
+	aliceEdges["smol-4.a-6.a"].LowerChildID = "smol-4.a-5.a"
+	aliceEdges["smol-4.a-6.a"].UpperChildID = "smol-5.a-6.a"
 	// Bob.
-	bobEdges["smol-0.a-16.b"].lowerChildId = "smol-0.a-8.b"
-	bobEdges["smol-0.a-16.b"].upperChildId = "smol-8.b-16.b"
-	bobEdges["smol-0.a-8.b"].lowerChildId = "smol-0.a-4.a"
-	bobEdges["smol-0.a-8.b"].upperChildId = "smol-4.a-8.b"
-	bobEdges["smol-4.a-8.b"].lowerChildId = "smol-4.a-6.b"
-	bobEdges["smol-4.a-8.b"].upperChildId = "smol-6.b-6.8"
-	bobEdges["smol-4.a-6.b"].lowerChildId = "smol-4.a-5.b"
-	bobEdges["smol-4.a-6.b"].upperChildId = "smol-5.b-6.b"
+	bobEdges["smol-0.a-16.b"].LowerChildID = "smol-0.a-8.b"
+	bobEdges["smol-0.a-16.b"].UpperChildID = "smol-8.b-16.b"
+	bobEdges["smol-0.a-8.b"].LowerChildID = "smol-0.a-4.a"
+	bobEdges["smol-0.a-8.b"].UpperChildID = "smol-4.a-8.b"
+	bobEdges["smol-4.a-8.b"].LowerChildID = "smol-4.a-6.b"
+	bobEdges["smol-4.a-8.b"].UpperChildID = "smol-6.b-6.8"
+	bobEdges["smol-4.a-6.b"].LowerChildID = "smol-4.a-5.b"
+	bobEdges["smol-4.a-6.b"].UpperChildID = "smol-5.b-6.b"
 
 	for _, v := range aliceEdges {
 		tree.edges.Put(v.Id(), v)

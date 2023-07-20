@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree/mock"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
 	"github.com/stretchr/testify/require"
@@ -53,15 +54,15 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 	)
 	// Child-relationship linking.
 	// Alice.
-	edges["blk-0.a-16.a"].lowerChildId = "blk-0.a-8.a"
-	edges["blk-0.a-16.a"].upperChildId = "blk-8.a-16.a"
-	edges["blk-0.a-8.a"].lowerChildId = "blk-0.a-4.a"
-	edges["blk-0.a-8.a"].upperChildId = "blk-4.a-8.a"
+	edges["blk-0.a-16.a"].LowerChildID = "blk-0.a-8.a"
+	edges["blk-0.a-16.a"].UpperChildID = "blk-8.a-16.a"
+	edges["blk-0.a-8.a"].LowerChildID = "blk-0.a-4.a"
+	edges["blk-0.a-8.a"].UpperChildID = "blk-4.a-8.a"
 	// Bob.
-	edges["blk-0.a-16.b"].lowerChildId = "blk-0.a-8.b"
-	edges["blk-0.a-16.b"].upperChildId = "blk-8.b-16.b"
-	edges["blk-0.a-8.b"].lowerChildId = "blk-0.a-4.a"
-	edges["blk-0.a-8.b"].upperChildId = "blk-4.a-8.b"
+	edges["blk-0.a-16.b"].LowerChildID = "blk-0.a-8.b"
+	edges["blk-0.a-16.b"].UpperChildID = "blk-8.b-16.b"
+	edges["blk-0.a-8.b"].LowerChildID = "blk-0.a-4.a"
+	edges["blk-0.a-8.b"].UpperChildID = "blk-4.a-8.b"
 
 	transformedEdges := make(map[protocol.EdgeId]protocol.SpecEdge)
 	timers := make(map[protocol.EdgeId]uint64)
@@ -200,10 +201,10 @@ func TestPathTimer_FlipFlop(t *testing.T) {
 			newEdge(&newCfg{t: t, edgeId: "blk-4.c-8.c", createdAt: 9}),
 		)
 		// Child-relationship linking.
-		edges["blk-0.a-16.c"].lowerChildId = "blk-0.a-8.c"
-		edges["blk-0.a-16.c"].upperChildId = "blk-8.c-16.c"
-		edges["blk-0.a-8.c"].lowerChildId = "blk-0.a-4.c"
-		edges["blk-0.a-8.c"].upperChildId = "blk-4.c-8.c"
+		edges["blk-0.a-16.c"].LowerChildID = "blk-0.a-8.c"
+		edges["blk-0.a-16.c"].UpperChildID = "blk-8.c-16.c"
+		edges["blk-0.a-8.c"].LowerChildID = "blk-0.a-4.c"
+		edges["blk-0.a-8.c"].UpperChildID = "blk-4.c-8.c"
 
 		// Add the new edges into the mapping.
 		for k, v := range edges {
@@ -333,18 +334,18 @@ func Test_localTimer(t *testing.T) {
 	ct.edges.Put(edgeA.Id(), edgeA)
 
 	t.Run("zero if earlier than creation time", func(t *testing.T) {
-		timer, err := ct.localTimer(edgeA, edgeA.creationBlock-1)
+		timer, err := ct.localTimer(edgeA, edgeA.CreationBlock-1)
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), timer)
 	})
 	t.Run("no rival is simply difference between T and creation time", func(t *testing.T) {
-		timer, err := ct.localTimer(edgeA, edgeA.creationBlock)
+		timer, err := ct.localTimer(edgeA, edgeA.CreationBlock)
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), timer)
-		timer, err = ct.localTimer(edgeA, edgeA.creationBlock+3)
+		timer, err = ct.localTimer(edgeA, edgeA.CreationBlock+3)
 		require.NoError(t, err)
 		require.Equal(t, uint64(3), timer)
-		timer, err = ct.localTimer(edgeA, edgeA.creationBlock+1000)
+		timer, err = ct.localTimer(edgeA, edgeA.CreationBlock+1000)
 		require.NoError(t, err)
 		require.Equal(t, uint64(1000), timer)
 	})
@@ -357,20 +358,20 @@ func Test_localTimer(t *testing.T) {
 
 		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 		mutuals := ct.mutualIds.Get(mutual)
-		mutuals.Put(edgeA.Id(), creationTime(edgeA.creationBlock))
-		mutuals.Put(edgeB.Id(), creationTime(edgeB.creationBlock))
-		mutuals.Put(edgeC.Id(), creationTime(edgeC.creationBlock))
+		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
+		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
+		mutuals.Put(edgeC.Id(), creationTime(edgeC.CreationBlock))
 
 		// Should get same result regardless of specified time.
 		timer, err := ct.localTimer(edgeA, 100)
 		require.NoError(t, err)
-		require.Equal(t, edgeB.creationBlock-edgeA.creationBlock, timer)
+		require.Equal(t, edgeB.CreationBlock-edgeA.CreationBlock, timer)
 		timer, err = ct.localTimer(edgeA, 10000)
 		require.NoError(t, err)
-		require.Equal(t, edgeB.creationBlock-edgeA.creationBlock, timer)
+		require.Equal(t, edgeB.CreationBlock-edgeA.CreationBlock, timer)
 		timer, err = ct.localTimer(edgeA, 1000000)
 		require.NoError(t, err)
-		require.Equal(t, edgeB.creationBlock-edgeA.creationBlock, timer)
+		require.Equal(t, edgeB.CreationBlock-edgeA.CreationBlock, timer)
 
 		// EdgeB and EdgeC were already rivaled at creation, so they should have
 		// a local timer of 0 regardless of specified time.
@@ -407,8 +408,8 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 		mutual := edgeA.MutualId()
 		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 		mutuals := ct.mutualIds.Get(mutual)
-		mutuals.Put(edgeA.Id(), creationTime(edgeA.creationBlock))
-		mutuals.Put(edgeB.Id(), creationTime(edgeB.creationBlock))
+		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
+		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
 		ct.edges.Put(edgeB.Id(), edgeB)
 
 		res := ct.earliestCreatedRivalBlockNumber(edgeA)
@@ -420,7 +421,7 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 		mutual := edgeC.MutualId()
 
 		mutuals := ct.mutualIds.Get(mutual)
-		mutuals.Put(edgeC.Id(), creationTime(edgeC.creationBlock))
+		mutuals.Put(edgeC.Id(), creationTime(edgeC.CreationBlock))
 
 		res := ct.earliestCreatedRivalBlockNumber(edgeA)
 
@@ -452,8 +453,8 @@ func Test_unrivaledAtBlockNum(t *testing.T) {
 		mutual := edgeA.MutualId()
 		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 		mutuals := ct.mutualIds.Get(mutual)
-		mutuals.Put(edgeA.Id(), creationTime(edgeA.creationBlock))
-		mutuals.Put(edgeB.Id(), creationTime(edgeB.creationBlock))
+		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
+		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
 		ct.edges.Put(edgeB.Id(), edgeB)
 
 		unrivaled, err := ct.unrivaledAtBlockNum(edgeA, 3)
@@ -488,19 +489,19 @@ func Test_rivalsWithCreationTimes(t *testing.T) {
 		mutual := edgeA.MutualId()
 		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 		mutuals := ct.mutualIds.Get(mutual)
-		mutuals.Put(edgeB.Id(), creationTime(edgeB.creationBlock))
-		mutuals.Put(edgeA.Id(), creationTime(edgeA.creationBlock))
+		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
+		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
 		ct.edges.Put(edgeB.Id(), edgeB)
 		rivals := ct.rivalsWithCreationTimes(edgeA)
 
 		want := []*rival{
-			{id: edgeB.Id(), createdAtBlock: creationTime(edgeB.creationBlock)},
+			{id: edgeB.Id(), createdAtBlock: creationTime(edgeB.CreationBlock)},
 		}
 		require.Equal(t, want, rivals)
 		rivals = ct.rivalsWithCreationTimes(edgeB)
 
 		want = []*rival{
-			{id: edgeA.Id(), createdAtBlock: creationTime(edgeA.creationBlock)},
+			{id: edgeA.Id(), createdAtBlock: creationTime(edgeA.CreationBlock)},
 		}
 		require.Equal(t, want, rivals)
 	})
@@ -508,8 +509,8 @@ func Test_rivalsWithCreationTimes(t *testing.T) {
 		ct.edges.Put(edgeC.Id(), edgeC)
 		mutual := edgeC.MutualId()
 		mutuals := ct.mutualIds.Get(mutual)
-		mutuals.Put(edgeC.Id(), creationTime(edgeC.creationBlock))
-		want := []edgeId{edgeA.id, edgeB.id}
+		mutuals.Put(edgeC.Id(), creationTime(edgeC.CreationBlock))
+		want := []mock.EdgeId{edgeA.ID, edgeB.ID}
 		rivals := ct.rivalsWithCreationTimes(edgeC)
 
 		require.Equal(t, true, len(rivals) > 0)
