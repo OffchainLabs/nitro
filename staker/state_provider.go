@@ -202,7 +202,7 @@ func (s *StateManager) PrefixProofUpToBatch(
 	}
 	loSize := fromMessageNumber + 1 - startHeight
 	hiSize := toMessageNumber + 1 - startHeight
-	return s.GetPrefixProof(loSize, hiSize, states)
+	return s.getPrefixProof(loSize, hiSize, states)
 }
 
 // BigStepPrefixProof Produces a big step prefix proof from height A to B for heights fromBlockChallengeHeight to H+1
@@ -220,7 +220,7 @@ func (s *StateManager) BigStepPrefixProof(
 	}
 	loSize := fromBigStep + 1
 	hiSize := toBigStep + 1
-	return s.GetPrefixProof(loSize, hiSize, prefixLeaves)
+	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
 }
 
 // SmallStepPrefixProof Produces a small step prefix proof from height A to B for big step S to S+1 and
@@ -232,7 +232,7 @@ func (s *StateManager) SmallStepPrefixProof(ctx context.Context, wasmModuleRoot 
 	}
 	loSize := fromSmallStep + 1
 	hiSize := toSmallStep + 1
-	return s.GetPrefixProof(loSize, hiSize, prefixLeaves)
+	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
 }
 
 // Like abi.NewType but panics if it fails for use in constants
@@ -430,7 +430,7 @@ func (s *StateManager) AgreesWithHistoryCommitment(
 	return localCommit.Height == history.Height && localCommit.Merkle == history.MerkleRoot, nil
 }
 
-func (s *StateManager) GetPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
+func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
 	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(leaves[:loSize])
 	if err != nil {
 		return nil, err
