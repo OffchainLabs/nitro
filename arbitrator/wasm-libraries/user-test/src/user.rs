@@ -15,14 +15,14 @@ pub unsafe extern "C" fn vm_hooks__read_args(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__return_data(ptr: usize, len: usize) {
+pub unsafe extern "C" fn vm_hooks__write_result(ptr: usize, len: usize) {
     let mut program = Program::start();
     program.pay_for_evm_copy(len as u64).unwrap();
     OUTS = wavm::read_slice_usize(ptr, len);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__account_load_bytes32(key: usize, dest: usize) {
+pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: usize, dest: usize) {
     let mut program = Program::start();
     let key = Bytes32(wavm::read_bytes32(key));
 
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn vm_hooks__account_load_bytes32(key: usize, dest: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__account_store_bytes32(key: usize, value: usize) {
+pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: usize, value: usize) {
     let mut program = Program::start();
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
     program.buy_gas(22100).unwrap(); // pretend the worst case

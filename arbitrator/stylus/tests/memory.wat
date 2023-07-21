@@ -4,7 +4,7 @@
 (module
     (import "vm_hooks" "memory_grow" (func (param i32)))
     (import "vm_hooks" "read_args"   (func $read_args   (param i32)))
-    (import "vm_hooks" "return_data" (func $return_data (param i32 i32)))
+    (import "vm_hooks" "write_result" (func $write_result (param i32 i32)))
     (func (export "arbitrum_main") (param $args_len i32) (result i32)
         (local $size i32) (local $step i32)
 
@@ -50,7 +50,7 @@
         ;; make that single byte the return data
         i32.const 0
         i32.const 1
-        call $return_data
+        call $write_result
 
         ;; return success
         i32.const 0
