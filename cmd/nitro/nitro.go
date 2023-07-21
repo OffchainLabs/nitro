@@ -485,7 +485,7 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
-		// remove previous deferFuncs, StopAndWait closes dtabase and blockchain.
+		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
