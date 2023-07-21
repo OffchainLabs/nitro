@@ -119,7 +119,7 @@ jobs:
 
       - name: Setup emsdk
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        uses: mymindstorm/setup-emsdk@v11
+        uses: mymindstorm/setup-emsdk@v12
         with:
           # Make sure to set a version number!
           version: 3.1.6
