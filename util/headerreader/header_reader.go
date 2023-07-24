@@ -312,7 +312,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
 		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
-		// Upgrade the log level from warn to error when lossing connection to L1 for too long
+		// Upgrade the log level from warn to error when losing connection to L1 for too long
 		if headerTime >= DefaultConfig.OldHeaderTimeout {
 			log.Error(
 				"latest L1 block is old", "l1Block", storedHeader.Number,
