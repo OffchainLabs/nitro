@@ -41,7 +41,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
 		p.On("ReadAssertionCreationInfo", ctx, mockId(2)).Return(&protocol.AssertionCreatedInfo{
-			ParentAssertionHash: common.Hash(mockId(1)),
+			ParentAssertionHash: mockId(1).Hash,
 			AfterState:          rollupgen.ExecutionState{},
 		}, nil)
 		p.On("GetAssertion", ctx, mockId(2)).Return(ev, nil)
@@ -157,5 +157,5 @@ func setupChallengeManager(t *testing.T) (*challengemanager.Manager, *mocks.Mock
 }
 
 func mockId(x uint64) protocol.AssertionHash {
-	return protocol.AssertionHash(common.BytesToHash([]byte(fmt.Sprintf("%d", x))))
+	return protocol.AssertionHash{Hash: common.BytesToHash([]byte(fmt.Sprintf("%d", x)))}
 }

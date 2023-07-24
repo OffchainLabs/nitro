@@ -27,7 +27,7 @@ func TestAddEdge(t *testing.T) {
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 	}
-	ht.topLevelAssertionHash = protocol.AssertionHash(common.BytesToHash([]byte("foo")))
+	ht.topLevelAssertionHash = protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
 	ctx := context.Background()
 	edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1})
 
@@ -41,7 +41,7 @@ func TestAddEdge(t *testing.T) {
 	t.Run("ignores if disagrees with top level assertion hash of edge", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
 			assertionErr:  nil,
-			assertionHash: protocol.AssertionHash(common.BytesToHash([]byte("bar"))),
+			assertionHash: protocol.AssertionHash{Hash: common.BytesToHash([]byte("bar"))},
 		}
 		_, err := ht.AddEdge(ctx, edge)
 		require.NoError(t, err)

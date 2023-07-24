@@ -156,7 +156,7 @@ func (s *Scanner) checkForAssertionAdded(
 			)
 		}
 		_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-			return true, s.ProcessAssertionCreation(ctx, it.Event.AssertionHash)
+			return true, s.ProcessAssertionCreation(ctx, protocol.AssertionHash{Hash: it.Event.AssertionHash})
 		})
 		if processErr != nil {
 			return processErr
@@ -175,7 +175,7 @@ func (s *Scanner) ProcessAssertionCreation(
 	if err != nil {
 		return err
 	}
-	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash(creationInfo.ParentAssertionHash))
+	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	if err != nil {
 		return err
 	}

@@ -52,7 +52,7 @@ func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) 
 	if err != nil {
 		return protocol.AssertionHash{}, err
 	}
-	return creationEvent.ParentAssertionHash, nil
+	return protocol.AssertionHash{Hash: creationEvent.ParentAssertionHash}, nil
 }
 
 func (a *Assertion) HasSecondChild() (bool, error) {
@@ -64,7 +64,9 @@ func (a *Assertion) HasSecondChild() (bool, error) {
 }
 
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
-	assertionNode, err := a.chain.userLogic.GetAssertion(&bind.CallOpts{}, a.id)
+	var b [32]byte
+	copy(b[:], a.id.Bytes())
+	assertionNode, err := a.chain.userLogic.GetAssertion(&bind.CallOpts{}, b)
 	if err != nil {
 		return nil, err
 	}

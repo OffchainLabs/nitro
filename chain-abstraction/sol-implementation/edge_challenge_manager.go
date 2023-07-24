@@ -42,7 +42,11 @@ func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 }
 
 func (e *SpecEdge) AssertionHash(ctx context.Context) (protocol.AssertionHash, error) {
-	return e.manager.caller.GetPrevAssertionHash(&bind.CallOpts{Context: ctx}, e.id)
+	h, err := e.manager.caller.GetPrevAssertionHash(&bind.CallOpts{Context: ctx}, e.id)
+	if err != nil {
+		return protocol.AssertionHash{}, err
+	}
+	return protocol.AssertionHash{Hash: common.Hash(h)}, nil
 }
 
 func (e *SpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
@@ -235,9 +239,13 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 		if topEdge.GetType() != protocol.BlockChallengeEdge {
 			return errors.New("top level ancestor must be a block challenge edge")
 		}
-		assertionHash = protocol.AssertionHash(topEdge.ClaimId().Unwrap())
+		assertionHash = protocol.AssertionHash{
+			Hash: common.Hash(topEdge.ClaimId().Unwrap()),
+		}
 	} else {
-		assertionHash = e.inner.ClaimId
+		assertionHash = protocol.AssertionHash{
+			Hash: e.inner.ClaimId,
+		}
 	}
 	assertionCreation, err := e.manager.assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {

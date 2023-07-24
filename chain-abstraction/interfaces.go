@@ -16,7 +16,9 @@ import (
 
 // AssertionHash represents a unique identifier for an assertion
 // constructed as a keccak256 hash of some of its internals.
-type AssertionHash common.Hash
+type AssertionHash struct {
+	common.Hash
+}
 
 // Protocol --
 type Protocol interface {

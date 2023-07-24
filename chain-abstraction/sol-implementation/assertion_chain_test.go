@@ -25,7 +25,7 @@ func TestCreateAssertion(t *testing.T) {
 
 	genesisHash, err := chain.GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisInfo, err := chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash(genesisHash))
+	genesisInfo, err := chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
 	t.Run("OK", func(t *testing.T) {
@@ -84,7 +84,7 @@ func TestAssertionUnrivaledBlocks(t *testing.T) {
 	}
 	genesisHash, err := chain.GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisInfo, err := chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash(genesisHash))
+	genesisInfo, err := chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
 	postState := &protocol.ExecutionState{
@@ -256,7 +256,7 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	_, err = chain.GetAssertion(ctx, latestConfirmed.Id())
 	require.NoError(t, err)
 
-	_, err = chain.GetAssertion(ctx, protocol.AssertionHash(common.BytesToHash([]byte("foo"))))
+	_, err = chain.GetAssertion(ctx, protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))})
 	require.ErrorIs(t, err, solimpl.ErrNotFound)
 }
 

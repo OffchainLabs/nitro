@@ -23,6 +23,7 @@ import (
 	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
@@ -370,7 +371,7 @@ func (w *Watcher) processEdgeAddedEvent(
 	chal, ok := w.challenges.TryGet(assertionHash)
 	if !ok {
 		tree := challengetree.New(
-			event.OriginId,
+			protocol.AssertionHash{Hash: event.OriginId},
 			w.chain,
 			w.histChecker,
 			w.validatorName,
@@ -574,11 +575,11 @@ func (w *Watcher) processEdgeConfirmation(
 
 	// Check if we should confirm the assertion by challenge winner.
 	if edge.GetType() == protocol.BlockChallengeEdge {
-		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash(claimId), edgeId); confirmAssertionErr != nil {
+		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash{Hash: common.Hash(claimId)}, edgeId); confirmAssertionErr != nil {
 			return confirmAssertionErr
 		}
 		srvlog.Info("Assertion confirmed by challenge win", log.Ctx{
-			"assertionHash": containers.Trunc(assertionHash[:]),
+			"assertionHash": containers.Trunc(assertionHash.Bytes()),
 		})
 	}
 

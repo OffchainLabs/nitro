@@ -102,7 +102,9 @@ func NewAssertionChain(
 }
 
 func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
-	res, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash)
+	var b [32]byte
+	copy(b[:], assertionHash.Bytes())
+	res, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, b)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +126,7 @@ func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertio
 	if err != nil {
 		return nil, err
 	}
-	return a.GetAssertion(ctx, res)
+	return a.GetAssertion(ctx, protocol.AssertionHash{Hash: res})
 }
 
 // CreateAssertion makes an on-chain claim given a previous assertion hash, execution state,
@@ -166,7 +168,7 @@ func (a *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not compute assertion hash")
 	}
-	existingAssertion, err := a.GetAssertion(ctx, computedHash)
+	existingAssertion, err := a.GetAssertion(ctx, protocol.AssertionHash{Hash: computedHash})
 	switch {
 	case err == nil:
 		return existingAssertion, nil
@@ -216,7 +218,7 @@ func (a *AssertionChain) CreateAssertion(
 	if !found {
 		return nil, errors.New("could not find assertion created event in logs")
 	}
-	return a.GetAssertion(ctx, assertionCreated.AssertionHash)
+	return a.GetAssertion(ctx, protocol.AssertionHash{Hash: assertionCreated.AssertionHash})
 }
 
 func (a *AssertionChain) GenesisAssertionHash(ctx context.Context) (common.Hash, error) {
@@ -230,7 +232,9 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	assertionHash protocol.AssertionHash,
 	winningEdgeId protocol.EdgeId,
 ) error {
-	node, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash)
+	var b [32]byte
+	copy(b[:], assertionHash.Bytes())
+	node, err := a.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, b)
 	if err != nil {
 		return err
 	}
@@ -245,7 +249,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if creationInfo.ParentAssertionHash == [32]byte{} {
 		return nil
 	}
-	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionHash(creationInfo.ParentAssertionHash))
+	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	if err != nil {
 		return err
 	}
@@ -253,7 +257,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if err != nil {
 		return err
 	}
-	if creationInfo.ParentAssertionHash != common.Hash(latestConfirmed.Id()) {
+	if creationInfo.ParentAssertionHash != latestConfirmed.Id().Hash {
 		return fmt.Errorf(
 			"parent id %#x is not the latest confirmed assertion %#x",
 			creationInfo.ParentAssertionHash,
@@ -266,7 +270,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	receipt, err := transact(ctx, a.backend, func() (*types.Transaction, error) {
 		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
 			copyTxOpts(a.txOpts),
-			assertionHash,
+			b,
 			creationInfo.ParentAssertionHash,
 			creationInfo.AfterState,
 			winningEdgeId,
@@ -310,7 +314,9 @@ func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Spe
 // assertion's parent, and from that parent, computes second_child_creation_block - first_child_creation_block.
 // If an assertion is a second child, this function will return 0.
 func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error) {
-	wantNode, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash)
+	var b [32]byte
+	copy(b[:], assertionHash.Bytes())
+	wantNode, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
 	if err != nil {
 		return 0, err
 	}
@@ -333,7 +339,8 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	if err != nil {
 		return 0, err
 	}
-	prevNode, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, prevId)
+	copy(b[:], prevId.Bytes())
+	prevNode, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
 	if err != nil {
 		return 0, err
 	}
@@ -436,7 +443,7 @@ func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.A
 	if err != nil {
 		return nil, err
 	}
-	return a.GetAssertion(ctx, creationEvent.AssertionHash)
+	return a.GetAssertion(ctx, protocol.AssertionHash{Hash: creationEvent.AssertionHash})
 }
 
 // ReadAssertionCreationInfo for an assertion sequence number by looking up its creation
@@ -457,12 +464,14 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		creationBlock = rollupDeploymentBlock.Uint64()
 		topics = [][]common.Hash{{assertionCreatedId}}
 	} else {
-		node, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, id)
+		var b [32]byte
+		copy(b[:], id.Bytes())
+		node, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
 		if err != nil {
 			return nil, err
 		}
 		creationBlock = node.CreatedAtBlock
-		topics = [][]common.Hash{{assertionCreatedId}, {common.Hash(id)}}
+		topics = [][]common.Hash{{assertionCreatedId}, {id.Hash}}
 	}
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(creationBlock),

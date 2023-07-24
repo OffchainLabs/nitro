@@ -54,7 +54,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 
 	srvlog.Info("Successfully created level zero edge for block challenge", log.Ctx{
 		"name":          m.name,
-		"assertionHash": containers.Trunc(id[:]),
+		"assertionHash": containers.Trunc(id.Bytes()),
 	})
 	return nil
 }

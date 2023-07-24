@@ -67,7 +67,7 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash(genesisHash))
+	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	if err != nil {
 		return nil, err
 	}
