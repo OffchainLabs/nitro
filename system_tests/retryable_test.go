@@ -52,30 +52,38 @@ func retryableSetup(t *testing.T) (
 	delayedBridge, err := arbnode.NewDelayedBridge(l1client, l1info.GetAddress("Bridge"), 0)
 	Require(t, err)
 
-	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
+	lookupL2Hash := func(l1Receipt *types.Receipt) common.Hash {
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
-			Fatal(t, "didn't find message for retryable submission")
+			Fatal(t, "didn't find message for submission")
 		}
 		var submissionTxs []*types.Transaction
+		msgTypes := map[uint8]bool{
+			arbostypes.L1MessageType_SubmitRetryable: true,
+			arbostypes.L1MessageType_EthDeposit:      true,
+			arbostypes.L1MessageType_L2Message:       true,
+		}
+		txTypes := map[uint8]bool{
+			types.ArbitrumSubmitRetryableTxType: true,
+			types.ArbitrumDepositTxType:         true,
+			types.ArbitrumContractTxType:        true,
+		}
 		for _, message := range messages {
-			k := message.Message.Header.Kind
-			if k != arbostypes.L1MessageType_SubmitRetryable && k != arbostypes.L1MessageType_EthDeposit {
+			if !msgTypes[message.Message.Header.Kind] {
 				continue
 			}
 			txs, err := arbos.ParseL2Transactions(message.Message, params.ArbitrumDevTestChainConfig().ChainID, nil)
 			Require(t, err)
 			for _, tx := range txs {
-				if tx.Type() == types.ArbitrumSubmitRetryableTxType || tx.Type() == types.ArbitrumDepositTxType {
+				if txTypes[tx.Type()] {
 					submissionTxs = append(submissionTxs, tx)
 				}
 			}
 		}
 		if len(submissionTxs) != 1 {
-			Fatal(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
+			Fatal(t, "expected 1 tx from submission, found", len(submissionTxs))
 		}
-
 		return submissionTxs[0].Hash()
 	}
 
@@ -101,7 +109,7 @@ func retryableSetup(t *testing.T) (
 		l2node.StopAndWait()
 		requireClose(t, l1stack)
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
+	return l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown
 }
 
 func TestRetryableNoExist(t *testing.T) {
@@ -442,6 +450,61 @@ func TestDepositETH(t *testing.T) {
 	}
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
 		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	}
+}
+
+func TestArbitrumContractTx(t *testing.T) {
+	l2Info, l1Info, l2Client, l1Client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
+	defer teardown()
+	faucetL2Addr := util.RemapL1Address(l1Info.GetAddress("Faucet"))
+	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), l2Info, l2Client, ctx)
+
+	l2TxOpts := l2Info.GetDefaultTransactOpts("Faucet", ctx)
+	l2ContractAddr, _ := deploySimple(t, ctx, l2TxOpts, l2Client)
+	l2ContractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	if err != nil {
+		t.Fatalf("Error parsing contract ABI: %v", err)
+	}
+	data, err := l2ContractABI.Pack("checkCalls", true, true, false, false, false, false)
+	if err != nil {
+		t.Fatalf("Error packing method's call data: %v", err)
+	}
+	unsignedTx := types.NewTx(&types.ArbitrumContractTx{
+		ChainId:   l2Info.Signer.ChainID(),
+		From:      faucetL2Addr,
+		GasFeeCap: l2Info.GasPrice.Mul(l2Info.GasPrice, big.NewInt(2)),
+		Gas:       1e6,
+		To:        &l2ContractAddr,
+		Value:     common.Big0,
+		Data:      data,
+	})
+	txOpts := l1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1tx, err := delayedInbox.SendContractTransaction(
+		&txOpts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	if err != nil {
+		t.Fatalf("Error sending unsigned transaction: %v", err)
+	}
+	receipt, err := EnsureTxSucceeded(ctx, l1Client, l1tx)
+	if err != nil {
+		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", l1tx.Hash(), err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
+	}
+	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
+	txHash := lookupL2Hash(receipt)
+	receipt, err = WaitForTx(ctx, l2Client, txHash, time.Second*5)
+	if err != nil {
+		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
 }
 
