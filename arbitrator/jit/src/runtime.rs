@@ -49,7 +49,7 @@ pub fn nanotime1(mut env: WasmEnvMut, sp: u32) {
 
 /// go side: λ() (seconds int64, nanos int32)
 pub fn walltime(mut env: WasmEnvMut, sp: u32) {
-let (mut sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(env.go_state.time / 1_000_000_000);
     sp.write_u32((env.go_state.time % 1_000_000_000) as u32);
