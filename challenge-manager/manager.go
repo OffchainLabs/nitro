@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/api"
 	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
@@ -61,6 +62,10 @@ type Manager struct {
 	assertionScanningInterval time.Duration
 	mode                      types.Mode
 	maxDelaySeconds           int
+
+	// API
+	apiAddr string
+	api     *api.Server
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -89,6 +94,13 @@ func WithEdgeTrackerWakeInterval(d time.Duration) Opt {
 func WithMode(m types.Mode) Opt {
 	return func(val *Manager) {
 		val.mode = m
+	}
+}
+
+// WithAPIEnabled specifies whether or not to enable the API and the address to listen on.
+func WithAPIEnabled(addr string) Opt {
+	return func(val *Manager) {
+		val.apiAddr = addr
 	}
 }
 
@@ -164,6 +176,18 @@ func New(
 		m.name,
 		m.assertionScanningInterval,
 	)
+
+	if m.apiAddr != "" {
+		a, err := api.NewServer(&api.Config{
+			Address:      m.apiAddr,
+			DataAccessor: m.watcher,
+		})
+		if err != nil {
+			return nil, err
+		}
+		m.api = a
+	}
+
 	return m, nil
 }
 
@@ -276,6 +300,17 @@ func (m *Manager) Start(ctx context.Context) {
 
 	// Start watching for ongoing chain events in the background.
 	go m.watcher.Start(ctx)
+
+	if m.api != nil {
+		go func() {
+			if err := m.api.Start(); err != nil {
+				srvlog.Error("Failed to start API server", log.Ctx{
+					"address": m.apiAddr,
+					"err":     err,
+				})
+			}
+		}()
+	}
 }
 
 // Gets the execution height for a rollup state from our state manager.

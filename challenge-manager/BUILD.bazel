@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager",
     visibility = ["//visibility:public"],
     deps = [
+        "//api",
         "//assertions",
         "//chain-abstraction:protocol",
         "//challenge-manager/chain-watcher",

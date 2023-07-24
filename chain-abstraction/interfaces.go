@@ -5,6 +5,7 @@ package protocol
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
@@ -122,6 +123,19 @@ func (et EdgeType) String() string {
 	}
 }
 
+func EdgeTypeFromString(s string) (EdgeType, error) {
+	switch s {
+	case "block_challenge_edge":
+		return BlockChallengeEdge, nil
+	case "big_step_challenge_edge":
+		return BigStepChallengeEdge, nil
+	case "small_step_challenge_edge":
+		return SmallStepChallengeEdge, nil
+	default:
+		return 0, fmt.Errorf("unknown edge type string: %s", s)
+	}
+}
+
 type Agreement struct {
 	AgreesWithStartCommit bool
 	IsHonestEdge          bool
@@ -221,9 +235,20 @@ const (
 	EdgeConfirmed
 )
 
+func (e EdgeStatus) String() string {
+	switch e {
+	case EdgePending:
+		return "pending"
+	case EdgeConfirmed:
+		return "confirmed"
+	default:
+		return "unknown"
+	}
+}
+
 type OriginHeights struct {
-	BlockChallengeOriginHeight   Height
-	BigStepChallengeOriginHeight Height
+	BlockChallengeOriginHeight   Height `json:"blockChallengeOriginHeight"`
+	BigStepChallengeOriginHeight Height `json:"bigStepChallengeOriginHeight"`
 }
 
 // ReadOnlyEdge defines methods that only retrieve data from the chain
