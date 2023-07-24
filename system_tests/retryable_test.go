@@ -56,7 +56,7 @@ func retryableSetup(t *testing.T) (
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
-			Fatal(t, "didn't find message for retryable submission")
+			Fatal(t, "didn't find message for submission")
 		}
 		var submissionTxs []*types.Transaction
 		msgTypes := map[uint8]bool{
@@ -82,7 +82,7 @@ func retryableSetup(t *testing.T) (
 			}
 		}
 		if len(submissionTxs) != 1 {
-			Fatal(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
+			Fatal(t, "expected 1 tx from submission, found", len(submissionTxs))
 		}
 		return submissionTxs[0].Hash()
 	}
