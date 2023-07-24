@@ -28,6 +28,7 @@ import (
 var (
 	srvlog               = log.New("service", "edge-tracker")
 	errBadOneStepProof   = errors.New("bad one step proof data")
+	errNotYetConfirmable = errors.New("edge is not yet confirmable")
 	spawnedCounter       = metrics.NewRegisteredCounter("arb/validator/tracker/spawned", nil)
 	bisectedCounter      = metrics.NewRegisteredCounter("arb/validator/tracker/bisected", nil)
 	confirmedCounter     = metrics.NewRegisteredCounter("arb/validator/tracker/confirmed", nil)
@@ -215,8 +216,12 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		wasConfirmed, err := et.tryToConfirm(ctx)
 		if err != nil {
-			srvlog.Debug("Could not confirm edge yet", err, fields)
-			return et.fsm.Do(edgeBackToStart{})
+			fields["err"] = err
+			if errors.Is(err, errNotYetConfirmable) {
+				srvlog.Debug("Edge not yet confirmable", fields)
+			} else {
+				srvlog.Error("Could not check if edge can be confirmed", fields)
+			}
 		}
 		if wasConfirmed {
 			return et.fsm.Do(edgeConfirm{})
@@ -437,7 +442,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 		confirmedCounter.Inc(1)
 		return true, nil
 	}
-	return false, nil
+	return false, errNotYetConfirmable
 }
 
 // Determines the bisection point from parentHeight to toHeight and returns a history
