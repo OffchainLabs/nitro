@@ -503,11 +503,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "stylus-proc"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "stylus-sdk"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "fnv",
  "hex",
+ "lazy_static",
+ "stylus-proc",
 ]
 
 [[package]]
