@@ -29,6 +29,8 @@ var (
 	}
 )
 
+var ErrChainCatchingUp = errors.New("chain catching up")
+
 type StateManager struct {
 	validator            *StatelessBlockValidator
 	blockValidator       *BlockValidator
@@ -63,7 +65,7 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	if validatedExecutionState.GlobalState.Batch < state.GlobalState.Batch ||
 		(validatedExecutionState.GlobalState.Batch == state.GlobalState.Batch &&
 			validatedExecutionState.GlobalState.PosInBatch < state.GlobalState.PosInBatch) {
-		return 0, l2stateprovider.ErrChainCatchingUp
+		return 0, ErrChainCatchingUp
 	}
 	var prevBatchMsgCount arbutil.MessageIndex
 	if state.GlobalState.Batch > 0 {
@@ -123,28 +125,24 @@ func (s *StateManager) executionStateAtMessageNumberImpl(ctx context.Context, me
 	}, nil
 }
 
-// HistoryCommitmentUpTo Produces a block history commitment up to and including messageCount.
-func (s *StateManager) HistoryCommitmentUpTo(ctx context.Context, messageNumber uint64) (commitments.History, error) {
-	batch, err := s.findBatchAfterMessageCount(0)
+// HistoryCommitmentAtMessage Produces a block history commitment of messageCount.
+func (s *StateManager) HistoryCommitmentAtMessage(ctx context.Context, messageNumber uint64) (commitments.History, error) {
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
 	if err != nil {
 		return commitments.History{}, err
 	}
-	var stateRoots []common.Hash
-	for i := arbutil.MessageIndex(0); i <= arbutil.MessageIndex(messageNumber); i++ {
-		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
-		if err != nil {
-			return commitments.History{}, err
-		}
-		if batchMsgCount <= i {
-			batch++
-		}
-		root, err := s.getHashAtMessageCountAndBatch(ctx, i, batch)
-		if err != nil {
-			return commitments.History{}, err
-		}
-		stateRoots = append(stateRoots, root)
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(messageNumber)
+	if err != nil {
+		return commitments.History{}, err
 	}
-	return commitments.New(stateRoots)
+	if batchMsgCount <= arbutil.MessageIndex(messageNumber) {
+		batch++
+	}
+	stateRoot, err := s.getHashAtMessageCountAndBatch(ctx, arbutil.MessageIndex(messageNumber), batch)
+	if err != nil {
+		return commitments.History{}, err
+	}
+	return commitments.New([]common.Hash{stateRoot})
 }
 
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
