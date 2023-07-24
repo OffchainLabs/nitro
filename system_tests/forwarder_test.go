@@ -32,7 +32,7 @@ const nodesCount = 5 // number of testnodes to create in tests
 func TestStaticForwarder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ipcPath := filepath.Join(t.TempDir(), "test.ipc")
+	ipcPath := tmpPath(t, "test.ipc")
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
 	stackConfig := stackConfigForTest(t)
