@@ -327,9 +327,6 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 		}
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
-		// TODO: comparing error strings to distinguish errors is a bad practice
-		// in Go. We should instead use Error structure.
-		// https://google.github.io/styleguide/go/best-practices#error-structure
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap())
 			return err
