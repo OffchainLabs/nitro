@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -306,7 +305,7 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 			return nil, fmt.Errorf("error getting latest batch metadata: %w", err)
 		}
 	}
-	return json.Marshal(batchPosterPosition{
+	return rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        prevBatchMeta.MessageCount,
 		DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
 		NextSeqNum:          inboxBatchCount,
@@ -646,7 +645,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	var batchPosition batchPosterPosition
-	if err := json.Unmarshal(batchPositionBytes, &batchPosition); err != nil {
+	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
 		return false, err
 	}
 
@@ -745,7 +744,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	newMeta, err := json.Marshal(batchPosterPosition{
+	newMeta, err := rlp.EncodeBytes(batchPosterPosition{
 		MessageCount:        b.building.msgCount,
 		DelayedMessageCount: b.building.segments.delayedMsg,
 		NextSeqNum:          batchPosition.NextSeqNum + 1,
