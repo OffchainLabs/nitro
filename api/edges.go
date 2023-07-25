@@ -125,7 +125,7 @@ func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge,
 		if err != nil {
 			return fmt.Errorf("failed to get edge assertion hash: %w", err)
 		}
-		edge.AssertionHash = common.Hash(ah)
+		edge.AssertionHash = ah.Hash
 		return nil
 	})
 
