@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -28,6 +29,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
+
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 // DataPoster must be RLP serializable and deserializable
@@ -81,20 +84,19 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 	if err != nil {
 		return nil, err
 	}
-	queue := leveldb.New(db)
-	// var queue QueueStorage[queuedTransaction]
-	// switch {
-	// case config().EnableLevelDB:
-	// 	queue = leveldb.New(db)
-	// case redisClient == nil:
-	// 	queue = slice.NewStorage()
-	// default:
-	// 	var err error
-	// 	queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
+	var queue QueueStorage
+	switch {
+	case config().EnableLevelDB:
+		queue = leveldb.New(db)
+	case redisClient == nil:
+		queue = slice.NewStorage()
+	default:
+		var err error
+		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &config().RedisSigner)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &DataPoster{
 		headerReader:      headerReader,
 		client:            headerReader.Client(),
