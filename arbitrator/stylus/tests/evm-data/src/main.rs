@@ -4,7 +4,7 @@
 #![no_main]
 
 use stylus_sdk::{
-    alloy_primitives::{Address, B256, U256},
+    alloy_primitives::{Address, U256},
     block,
     contract::{self, Call},
     evm, msg, tx,
@@ -51,9 +51,9 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(chainid);
     output.extend(basefee);
     output.extend(gas_price);
-    output.extend(B256::from(U256::from(gas_limit)));
+    output.extend(U256::try_from(gas_limit).unwrap().to_be_bytes::<32>());
     output.extend(value);
-    output.extend(B256::from(U256::from(timestamp)));
+    output.extend(U256::try_from(timestamp).unwrap().to_be_bytes::<32>());
     output.extend(address_balance);
 
     output.extend(address.into_word());
@@ -65,10 +65,10 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(arb_precompile_codehash.unwrap_or_default());
     output.extend(eth_precompile_codehash.unwrap_or_default());
 
-    output.extend(ink_price.to_be_bytes::<8>());
-    output.extend(gas_left_before.to_be_bytes::<8>());
-    output.extend(ink_left_before.to_be_bytes::<8>());
-    output.extend(gas_left_after.to_be_bytes::<8>());
-    output.extend(ink_left_after.to_be_bytes::<8>());
+    output.extend(ink_price.to_be_bytes());
+    output.extend(gas_left_before.to_be_bytes());
+    output.extend(ink_left_before.to_be_bytes());
+    output.extend(gas_left_after.to_be_bytes());
+    output.extend(ink_left_after.to_be_bytes());
     Ok(output)
 }
