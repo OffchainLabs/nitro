@@ -500,15 +500,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 	})
 }
 
-// type queuedTransaction struct {
-// 	FullTx          *types.Transaction
-// 	Data            types.DynamicFeeTx
-// 	Meta            []byte
-// 	Sent            bool
-// 	Created         time.Time // may be earlier than the tx was given to the tx poster
-// 	NextReplacement time.Time
-// }
-
 // Implements queue-alike storage that can
 // - Insert item at specified index
 // - Update item with the condition that existing value equals assumed value
