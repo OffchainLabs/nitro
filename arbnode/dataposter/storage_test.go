@@ -9,13 +9,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/redis"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 var ignoreData = cmpopts.IgnoreFields(storage.QueuedTransaction{}, "Data")
 
-func newLevelDBStorage[Item any](t *testing.T) *leveldb.Storage {
+func newLevelDBStorage(t *testing.T) *leveldb.Storage {
 	t.Helper()
 	db, err := rawdb.NewLevelDBDatabase(path.Join(t.TempDir(), "level.db"), 0, 0, "default", false)
 	if err != nil {
@@ -24,23 +28,23 @@ func newLevelDBStorage[Item any](t *testing.T) *leveldb.Storage {
 	return leveldb.New(db)
 }
 
-// func newSliceStorage[Item any]() *slice.Storage[Item] {
-// 	return slice.NewStorage[Item]()
-// }
+func newSliceStorage() *slice.Storage {
+	return slice.NewStorage()
+}
 
-// func newRedisStorage[Item any](ctx context.Context, t *testing.T) *redis.Storage[Item] {
-// 	t.Helper()
-// 	redisUrl := redisutil.CreateTestRedis(ctx, t)
-// 	client, err := redisutil.RedisClientFromURL(redisUrl)
-// 	if err != nil {
-// 		t.Fatalf("RedisClientFromURL(%q) unexpected error: %v", redisUrl, err)
-// 	}
-// 	s, err := redis.NewStorage[Item](client, "", &signature.TestSimpleHmacConfig)
-// 	if err != nil {
-// 		t.Fatalf("redis.NewStorage() unexpected error: %v", err)
-// 	}
-// 	return s
-// }
+func newRedisStorage(ctx context.Context, t *testing.T) *redis.Storage {
+	t.Helper()
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	client, err := redisutil.RedisClientFromURL(redisUrl)
+	if err != nil {
+		t.Fatalf("RedisClientFromURL(%q) unexpected error: %v", redisUrl, err)
+	}
+	s, err := redis.NewStorage(client, "", &signature.TestSimpleHmacConfig)
+	if err != nil {
+		t.Fatalf("redis.NewStorage() unexpected error: %v", err)
+	}
+	return s
+}
 
 func valueOf(i int) *storage.QueuedTransaction {
 	return &storage.QueuedTransaction{
@@ -71,9 +75,9 @@ func initStorage(ctx context.Context, t *testing.T, s QueueStorage) QueueStorage
 func storages(t *testing.T) map[string]QueueStorage {
 	t.Helper()
 	return map[string]QueueStorage{
-		"levelDB": newLevelDBStorage[string](t),
-		// "slice":   newSliceStorage[string](),
-		// "redis":   newRedisStorage[string](context.Background(), t),
+		"levelDB": newLevelDBStorage(t),
+		"slice":   newSliceStorage(),
+		"redis":   newRedisStorage(context.Background(), t),
 	}
 }
 
