@@ -171,10 +171,10 @@ pub unsafe extern "C" fn user_host__read_return_data(
     size: usize,
 ) -> usize {
     let program = Program::start();
-
     program.pay_for_evm_copy(size as u64).unwrap();
+
     let data = program.evm_api.get_return_data(offset as u32, size as u32);
-    assert!(data.len() <= size as usize);
+    assert!(data.len() <= size);
     wavm::write_slice_usize(&data, ptr);
     data.len()
 }

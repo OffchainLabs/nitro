@@ -186,10 +186,10 @@ func testCalls(t *testing.T, jit bool) {
 	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
-	colors.PrintGrey("multicall.wasm       ", callsAddr)
-	colors.PrintGrey("storage.wasm         ", storeAddr)
-	colors.PrintGrey("keccak.wasm          ", keccakAddr)
-	colors.PrintGrey("mock.evm             ", mockAddr)
+	colors.PrintGrey("multicall.wasm ", callsAddr)
+	colors.PrintGrey("storage.wasm   ", storeAddr)
+	colors.PrintGrey("keccak.wasm    ", keccakAddr)
+	colors.PrintGrey("mock.evm       ", mockAddr)
 
 	kinds := make(map[vm.OpCode]byte)
 	kinds[vm.CALL] = 0x00
@@ -336,19 +336,18 @@ func testReturnData(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
 	defer cleanup()
 
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+	ensure := func(tx *types.Transaction, err error) {
 		t.Helper()
 		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
-		return receipt
 	}
 
 	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
 
 	colors.PrintGrey("read-return-data.evm ", readReturnDataAddr)
+	colors.PrintBlue("checking calls with partial return data")
 
-	colors.PrintBlue("Checking calls with partial return data")
 	dataToSend := [4]byte{0, 1, 2, 3}
 	testReadReturnData := func(callType uint32, offset uint32, size uint32, expectedSize uint32, count uint32) {
 		parameters := [20]byte{}
@@ -363,10 +362,6 @@ func testReturnData(t *testing.T, jit bool) {
 		ensure(tx, l2client.SendTransaction(ctx, tx))
 	}
 
-	for i := 0; i < 40; i++ {
-		testReadReturnData(1, 0, uint32(len(dataToSend)), uint32(len(dataToSend)), 1)
-	}
-
 	testReadReturnData(1, 0, 5, 4, 2)
 	testReadReturnData(1, 0, 1, 1, 2)
 	testReadReturnData(1, 5, 1, 0, 2)
@@ -379,8 +374,7 @@ func testReturnData(t *testing.T, jit bool) {
 	testReadReturnData(2, 0, 0, 0, 1)
 	testReadReturnData(2, 0, 4, 4, 1)
 
-	blocks := []uint64{11}
-	validateBlockRange(t, blocks, jit, ctx, node, l2client)
+	validateBlocks(t, 12, jit, ctx, node, l2client)
 }
 
 func TestProgramLogs(t *testing.T) {

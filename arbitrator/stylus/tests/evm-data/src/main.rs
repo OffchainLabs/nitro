@@ -4,7 +4,7 @@
 #![no_main]
 
 use stylus_sdk::{
-    alloy_primitives::{Address, U256},
+    alloy_primitives::{Address, B256, U256},
     block,
     contract::{self, Call},
     evm, msg, tx,
@@ -51,9 +51,9 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(chainid);
     output.extend(basefee);
     output.extend(gas_price);
-    output.extend(U256::try_from(gas_limit).unwrap().to_be_bytes::<32>());
+    output.extend(B256::from(U256::from(gas_limit)));
     output.extend(value);
-    output.extend(U256::try_from(timestamp).unwrap().to_be_bytes::<32>());
+    output.extend(B256::from(U256::from(timestamp)));
     output.extend(address_balance);
 
     output.extend(address.into_word());

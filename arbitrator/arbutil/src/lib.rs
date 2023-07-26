@@ -22,11 +22,12 @@ pub fn heapify<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
-pub fn slice_with_runoff<T>(data: &[T], start: usize, end: usize) -> &[T] {
+/// Equivalent to &[start..offset], but truncates when out of bounds rather than panicking.
+pub fn slice_with_runoff<T>(data: &impl AsRef<[T]>, start: usize, end: usize) -> &[T] {
+    let data = data.as_ref();
     if start >= data.len() || end < start {
         return &[];
     }
-
     &data[start..end.min(data.len())]
 }
 
