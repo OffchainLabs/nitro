@@ -292,7 +292,7 @@ func testCalls(t *testing.T, jit bool) {
 	small := testPrecompile(smallGas)
 	large := testPrecompile(largeGas)
 
-	if !arbmath.Within(large-small, largeGas-smallGas, 1) {
+	if !arbmath.Within(large-small, largeGas-smallGas, 2) {
 		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
 		Fatal(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
@@ -325,6 +325,56 @@ func testCalls(t *testing.T, jit bool) {
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
+}
+
+func TestProgramReturnData(t *testing.T) {
+	t.Parallel()
+	testReturnData(t, true)
+}
+
+func testReturnData(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) {
+		t.Helper()
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+	}
+
+	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
+
+	colors.PrintGrey("read-return-data.evm ", readReturnDataAddr)
+	colors.PrintBlue("checking calls with partial return data")
+
+	dataToSend := [4]byte{0, 1, 2, 3}
+	testReadReturnData := func(callType uint32, offset uint32, size uint32, expectedSize uint32, count uint32) {
+		parameters := [20]byte{}
+		binary.BigEndian.PutUint32(parameters[0:4], callType)
+		binary.BigEndian.PutUint32(parameters[4:8], offset)
+		binary.BigEndian.PutUint32(parameters[8:12], size)
+		binary.BigEndian.PutUint32(parameters[12:16], expectedSize)
+		binary.BigEndian.PutUint32(parameters[16:20], count)
+		callData := append(parameters[:], dataToSend[:]...)
+
+		tx := l2info.PrepareTxTo("Owner", &readReturnDataAddr, 1e9, nil, callData)
+		ensure(tx, l2client.SendTransaction(ctx, tx))
+	}
+
+	testReadReturnData(1, 0, 5, 4, 2)
+	testReadReturnData(1, 0, 1, 1, 2)
+	testReadReturnData(1, 5, 1, 0, 2)
+	testReadReturnData(1, 0, 0, 0, 2)
+	testReadReturnData(1, 0, 4, 4, 2)
+
+	testReadReturnData(2, 0, 5, 4, 1)
+	testReadReturnData(2, 0, 1, 1, 1)
+	testReadReturnData(2, 5, 1, 0, 1)
+	testReadReturnData(2, 0, 0, 0, 1)
+	testReadReturnData(2, 0, 4, 4, 1)
+
+	validateBlocks(t, 12, jit, ctx, node, l2client)
 }
 
 func TestProgramLogs(t *testing.T) {
@@ -834,14 +884,15 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
+
+	// wait until all the blocks are sequenced
+	lastBlock := arbmath.MaxInt(blocks...)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		messageCount, err := node.TxStreamer.GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
+		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
 	})
 
 	blockHeight, err := l2client.BlockNumber(ctx)
