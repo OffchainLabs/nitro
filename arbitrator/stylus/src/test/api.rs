@@ -146,7 +146,7 @@ impl EvmApi for TestEvmApi {
 
     fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
         arbutil::slice_with_runoff(
-            self.write_result.lock().as_slice(),
+            &self.write_result.lock().as_slice(),
             offset as usize,
             offset.saturating_add(size) as usize,
         )
