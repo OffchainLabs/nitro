@@ -44,11 +44,6 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	return c.State.ChainOwners().Remove(addr, c.State.ArbOSVersion())
 }
 
-// RectifyChainOwner checks if the account is a chain owner
-func (con ArbOwner) RectifyChainOwner(c ctx, evm mech, addr addr) error {
-	return c.State.ChainOwners().RectifyMapping(addr)
-}
-
 // IsChainOwner checks if the account is a chain owner
 func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 	return c.State.ChainOwners().IsMember(addr)
