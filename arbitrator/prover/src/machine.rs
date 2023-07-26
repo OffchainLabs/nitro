@@ -24,6 +24,7 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use itertools::izip;
+use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -263,7 +264,7 @@ impl AvailableImport {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-struct Module {
+pub struct Module {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
@@ -286,8 +287,32 @@ struct Module {
     all_exports: Arc<ExportMap>,
 }
 
+lazy_static! {
+    static ref USER_IMPORTS: Result<HashMap<String, AvailableImport>> = Module::calc_user_imports();
+}
+
 impl Module {
     const FORWARDING_PREFIX: &str = "arbitrator_forward__";
+
+    fn calc_user_imports() -> Result<HashMap<String, AvailableImport>> {
+        let forward_bytes = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward_bin = binary::parse(forward_bytes, Path::new("forward")).unwrap();
+
+        let mut available_imports = HashMap::default();
+
+        for (name, &(export, kind)) in &forward_bin.exports {
+            if kind == ExportKind::Func {
+                let ty = match forward_bin.get_function(FunctionIndex::from_u32(export)) {
+                    Ok(ty) => ty,
+                    Err(error) => bail!("failed to read export {}: {}", name, error),
+                };
+                let import = AvailableImport::new(ty, 1, export);
+                available_imports.insert(name.to_owned(), import);
+            }
+        }
+
+        Ok(available_imports)
+    }
 
     fn from_binary(
         bin: &WasmBinary,
@@ -542,6 +567,26 @@ impl Module {
         })
     }
 
+    pub fn from_user_binary(
+        bin: &WasmBinary,
+        debug_funcs: bool,
+        stylus_data: Option<StylusData>,
+    ) -> Result<Module> {
+        Self::from_binary(
+            bin,
+            USER_IMPORTS.as_ref().unwrap(),
+            &HashMap::default(),
+            false,
+            debug_funcs,
+            stylus_data,
+        )
+    }
+
+    pub fn program_info(&self) -> (u32, u32) {
+        let main = self.find_func(STYLUS_ENTRY_POINT).unwrap();
+        (main, self.internals_offset)
+    }
+
     fn name(&self) -> &str {
         &self.names.module
     }
@@ -553,7 +598,7 @@ impl Module {
         Ok(*func.1)
     }
 
-    fn hash(&self) -> Bytes32 {
+    pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Module:");
         h.update(
@@ -1091,24 +1136,8 @@ impl Machine {
         let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
-        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
-        let forward = binary::parse(forward, Path::new("forward")).unwrap();
+        let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
 
-        let mut machine = Self::from_binaries(
-            &[forward],
-            bin,
-            false,
-            false,
-            false,
-            debug_funcs,
-            self.debug_info,
-            GlobalState::default(),
-            HashMap::default(),
-            Arc::new(|_, _| panic!("tried to read preimage")),
-            Some(stylus_data),
-        )?;
-
-        let module = machine.modules.pop().unwrap();
         let hash = hash.unwrap_or_else(|| module.hash());
         self.stylus_modules.insert(hash, module);
         Ok(hash)
@@ -1553,12 +1582,6 @@ impl Machine {
         for module in &mut self.modules {
             module.memory.merkle = None;
         }
-    }
-
-    pub fn program_info(&self) -> (u32, u32) {
-        let module = self.modules.last().unwrap();
-        let main = module.find_func(STYLUS_ENTRY_POINT).unwrap();
-        (main, module.internals_offset)
     }
 
     pub fn main_module_name(&self) -> String {

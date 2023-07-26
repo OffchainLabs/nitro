@@ -11,7 +11,7 @@ use go_abi::GoStack;
 use prover::{
     binary::WasmBinary,
     programs::config::{CompileConfig, PricingParams, StylusConfig},
-    Machine,
+    machine::Module,
 };
 use std::{mem, path::Path, sync::Arc};
 
@@ -69,37 +69,26 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let forward = include_bytes!("../../../../target/machines/latest/forward_stub.wasm");
     let forward = prover::binary::parse(forward, Path::new("forward")).unwrap();
 
-    let machine = Machine::from_binaries(
-        &[forward],
-        bin,
-        false,
-        false,
-        false,
-        compile.debug.debug_funcs,
-        debug,
-        prover::machine::GlobalState::default(),
-        HashMap::default(),
-        Arc::new(|_, _| panic!("user program tried to read preimage")),
-        Some(stylus_data),
-    );
-    let machine = match machine {
-        Ok(machine) => machine,
+    let module = prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data));
+
+    let module = match module {
+        Ok(module) => module,
         Err(err) => error!("failed to instrument program", err),
     };
-    sp.write_ptr(heapify(machine));
+    sp.write_ptr(heapify(module));
     sp.write_u16(footprint).skip_space();
     sp.write_nullptr();
 }
 
 /// Links and executes a user wasm.
-/// λ(mach *Machine, calldata []byte, params *Config, evmApi []byte, evmData *EvmData, gas *u64, root *[32]byte)
+/// λ(module *Module, calldata []byte, params *Config, evmApi []byte, evmData *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let machine: Machine = sp.unbox();
+    let module: Module = sp.unbox();
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
@@ -113,8 +102,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();
     let root = (root != 0).then(|| wavm::read_bytes32(root));
-    let module = root.unwrap_or_else(|| machine.main_module_hash().0);
-    let (main, internals) = machine.program_info();
+    let (main, internals) = module.program_info();
+    let module = root.unwrap_or_else(|| module.hash().0);
 
     // link the program and ready its instrumentation
     let module = wavm_link_module(&MemoryLeaf(module));
