@@ -374,12 +374,18 @@ func mainImpl() int {
 		return 1
 	}
 
+	var deferFuncs []func()
+	defer func() {
+		for i := range deferFuncs {
+			deferFuncs[i]()
+		}
+	}()
+
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
-	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
-		// Calling Stop on the blockchain multiple times does nothing
-		defer l2BlockChain.Stop()
+		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
+	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
 	if err != nil {
 		flag.Usage()
 		log.Error("error initializing database", "err", err)
@@ -387,7 +393,7 @@ func mainImpl() int {
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
-	defer closeDb(arbDb, "arbDb")
+	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		return 1
@@ -479,7 +485,8 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
-		defer currentNode.StopAndWait()
+		// remove previous deferFuncs, StopAndWait closes database and blockchain.
+		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -731,7 +738,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
-		"chain.id":         chainInfo.ChainId,
+		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
 	if chainInfo.SequencerUrl != "" {
