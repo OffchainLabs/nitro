@@ -404,7 +404,8 @@ func (s *StateManager) OneStepProofData(
 func (s *StateManager) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	prevAssertionInboxMaxCount uint64,
+	parentAssertionAfterStateBatch uint64,
+	assertionInboxMaxCount uint64,
 	edgeType protocol.EdgeType,
 	heights protocol.OriginHeights,
 	history l2stateprovider.History,
@@ -413,7 +414,7 @@ func (s *StateManager) AgreesWithHistoryCommitment(
 	var err error
 	switch edgeType {
 	case protocol.BlockChallengeEdge:
-		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, uint64(history.Height), prevAssertionInboxMaxCount)
+		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, parentAssertionAfterStateBatch, parentAssertionAfterStateBatch+history.Height, assertionInboxMaxCount)
 		if err != nil {
 			return false, err
 		}
