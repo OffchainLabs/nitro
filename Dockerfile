@@ -187,6 +187,12 @@ RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
+# Build geth for the "geth db freezer-migrate" tool for migrating legacy RLP receipts
+FROM golang:1.20-bullseye as geth-builder
+WORKDIR /workspace
+COPY go-ethereum ./
+RUN make
+
 FROM node-builder as fuzz-builder
 RUN mkdir fuzzers/
 RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
@@ -228,6 +234,7 @@ USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=geth-builder  /workspace/build/bin/geth       /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
