@@ -333,17 +333,17 @@ func (s *StateManager) OneStepProofData(
 		return nil, nil, nil, err
 	}
 
-	startCommit, err := s.SmallStepCommitmentUpTo(
+	endCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
 		cfgSnapshot.WasmModuleRoot,
 		messageNumber,
 		bigStep,
-		smallStep,
+		smallStep+1,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	endCommit, err := s.SmallStepCommitmentUpTo(
+	startCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
 		cfgSnapshot.WasmModuleRoot,
 		messageNumber,
