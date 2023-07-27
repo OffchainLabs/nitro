@@ -417,6 +417,9 @@ func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protoc
 	return edge.TopLevelClaimHeight(ctx)
 }
 
+// LatestCreatedAssertion retrieves the latest assertion from the rollup contract by reading the
+// latest confirmed assertion and then querying the contract log events for all assertions created
+// since that block and returning the most recent one.
 func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.Assertion, error) {
 	latestConfirmed, err := a.LatestConfirmed(ctx)
 	if err != nil {
@@ -436,10 +439,30 @@ func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.A
 	if err != nil {
 		return nil, err
 	}
-	if len(logs) == 0 {
+
+	// The logs are likely sorted by blockNumber, index, but we find the latest one, just in case,
+	// while ignoring any removed logs from a reorged event.
+	var latestBlockNumber uint64
+	var latestLogIndex uint
+	var latestLog *types.Log
+	for _, log := range logs {
+		l := log
+		if l.Removed {
+			continue
+		}
+		if l.BlockNumber > latestBlockNumber ||
+			(l.BlockNumber == latestBlockNumber && l.Index >= latestLogIndex) {
+			latestBlockNumber = l.BlockNumber
+			latestLogIndex = l.Index
+			latestLog = &l
+		}
+	}
+
+	if latestLog == nil {
 		return nil, errors.New("no assertion creation events found")
 	}
-	creationEvent, err := a.rollup.ParseAssertionCreated(logs[len(logs)-1])
+
+	creationEvent, err := a.rollup.ParseAssertionCreated(*latestLog)
 	if err != nil {
 		return nil, err
 	}
