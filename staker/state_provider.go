@@ -343,7 +343,7 @@ func (s *StateManager) OneStepProofData(
 		cfgSnapshot.WasmModuleRoot,
 		messageNumber,
 		bigStep,
-		smallStep,
+		smallStep+1,
 	)
 	if err != nil {
 		return nil, nil, nil, err
