@@ -203,7 +203,7 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	}
 	// Run RectifyMapping to fix the issue
 	checkIfRectifyMappingWorks(t, addr4, aset, 1, 1)
-	aset.Clear()
+	Require(t, aset.Clear())
 
 	// Test Arb1 history
 	addr1 = common.HexToAddress("0xd345e41ae2cb00311956aa7109fc801ae8c81a52")
@@ -224,7 +224,7 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	}
 	// Run RectifyMapping to fix the issue
 	checkIfRectifyMappingWorks(t, addr3, aset, 1, 1)
-	aset.Clear()
+	Require(t, aset.Clear())
 
 	// Test Goerli history
 	addr1 = common.HexToAddress("0x186B56023d42B2B4E7616589a5C62EEf5FCa21DD")
