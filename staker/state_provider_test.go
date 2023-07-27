@@ -70,8 +70,10 @@ func TestAssertionPostingV2(t *testing.T) {
 
 	stateManager, err := NewStateManager(
 		nil,
+		nil,
 		32,
 		32*32,
+		t.TempDir()+"/test",
 	)
 	if err != nil {
 		t.Fatal(err)

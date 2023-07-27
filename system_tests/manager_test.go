@@ -394,7 +394,7 @@ func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, 
 	Require(t, err)
 	err = stateless.Start(ctx)
 	Require(t, err)
-	manager, err := staker.NewStateManager(stateless, nil, numOpcodesPerBigStepTest, maxWavmOpcodesTest)
+	manager, err := staker.NewStateManager(stateless, nil, numOpcodesPerBigStepTest, maxWavmOpcodesTest, t.TempDir())
 	Require(t, err)
 	return l2node, l1stack, manager
 }

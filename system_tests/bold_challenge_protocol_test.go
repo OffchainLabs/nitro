@@ -149,6 +149,7 @@ func TestBoldProtocol(t *testing.T) {
 		nil,
 		smallStepChallengeLeafHeight,
 		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
+		t.TempDir()+"/good",
 	)
 	Require(t, err)
 	poster := assertions.NewPoster(
@@ -167,6 +168,7 @@ func TestBoldProtocol(t *testing.T) {
 		nil,
 		smallStepChallengeLeafHeight,
 		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
+		t.TempDir()+"/evil",
 	)
 	Require(t, err)
 	chainB, err := solimpl.NewAssertionChain(

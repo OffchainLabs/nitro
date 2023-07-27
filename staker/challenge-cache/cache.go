@@ -15,14 +15,15 @@ Use cases:
 - State roots 0 to P for a small step challenge from message N to N+1, and big step M to M+1
 
 	  wavm-module-root-0xab/
-		message-num-70-71/
+		message-num-70/
 			roots.txt
-			big-step-100-101/
+			big-step-100/
 				roots.txt
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
 */
+
 package challengecache
 
 import (
@@ -51,7 +52,7 @@ var (
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
 type HistoryCommitmentCacher interface {
-	Get(lookup *Key, readUpTo option.Option[protocol.Height]) ([]common.Hash, error)
+	Get(lookup *Key, readUpTo protocol.Height) ([]common.Hash, error)
 	Put(lookup *Key, stateRoots []common.Hash) error
 }
 
@@ -68,26 +69,19 @@ func New(baseDir string) *Cache {
 }
 
 // Key for cache lookups includes the wavm module root of a challenge, as well
-// as the height ranges for messages, big steps, and small steps as needed.
+// as the heights for messages and big steps as needed.
 type Key struct {
 	WavmModuleRoot common.Hash
-	MessageRange   HeightRange
-	BigStepRange   option.Option[HeightRange]
+	MessageHeight  protocol.Height
+	BigStepHeight  option.Option[protocol.Height]
 }
 
-// HeightRange within a challenge.
-type HeightRange struct {
-	From protocol.Height
-	To   protocol.Height
-}
-
-// Get a list of state roots from the cache up to a certain index if specified. If none, then all
-// state roots for the lookup key will be retrieved. State roots are saved as files in the directory
+// Get a list of state roots from the cache up to a certain index. State roots are saved as files in the directory
 // hierarchy for the cache, and can only be written to once. If a file is not present, ErrNotFoundInCache
 // is returned.
 func (c *Cache) Get(
 	lookup *Key,
-	readUpTo option.Option[protocol.Height],
+	readUpTo protocol.Height,
 ) ([]common.Hash, error) {
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
@@ -157,7 +151,7 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]common.Hash, error) {
+func readStateRoots(r io.Reader, readUpTo protocol.Height) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
@@ -176,21 +170,17 @@ func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]com
 			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
 		}
 		stateRoots = append(stateRoots, common.BytesToHash(buf))
-		if !readUpTo.IsNone() {
-			if totalRead >= uint64(readUpTo.Unwrap()) {
-				return stateRoots, nil
-			}
+		if totalRead >= uint64(readUpTo) {
+			return stateRoots, nil
 		}
 		totalRead++
 	}
-	if !readUpTo.IsNone() {
-		if readUpTo.Unwrap() > protocol.Height(len(stateRoots)) {
-			return nil, fmt.Errorf(
-				"wanted to read up to %d, but only read %d state roots",
-				readUpTo.Unwrap(),
-				len(stateRoots),
-			)
-		}
+	if readUpTo >= protocol.Height(len(stateRoots)) {
+		return nil, fmt.Errorf(
+			"wanted to read up to %d, but only read %d state roots",
+			readUpTo,
+			len(stateRoots),
+		)
 	}
 	return stateRoots, nil
 }
@@ -220,41 +210,19 @@ for the data requested within the cache directory hierarchy. The folder structur
 for a given filesystem challenge cache will look as follows:
 
 	  wavm-module-root-0xab/
-		message-num-70-71/
+		message-num-70/
 			roots.txt
-			big-step-100-101/
+			big-step-100/
 				roots.txt
-
-Invariants:
-- Message number height to == from + 1
-- If big step range exists, message number height to == from + 1
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
-	if err := lookup.MessageRange.ValidateOneStepFork(); err != nil {
-		return "", fmt.Errorf("message number range invalid")
-	}
-	key = append(key, fmt.Sprintf("%s-%d-%d", messageNumberPrefix, lookup.MessageRange.From, lookup.MessageRange.To))
-	if !lookup.BigStepRange.IsNone() {
-		bigStepRange := lookup.BigStepRange.Unwrap()
-		if err := bigStepRange.ValidateOneStepFork(); err != nil {
-			return "", fmt.Errorf("big step range invalid")
-		}
-		key = append(key, fmt.Sprintf("%s-%d-%d", bigStepPrefix, bigStepRange.From, bigStepRange.To))
+	key = append(key, fmt.Sprintf("%s-%d", messageNumberPrefix, lookup.MessageHeight))
+	if !lookup.BigStepHeight.IsNone() {
+		bigStepHeight := lookup.BigStepHeight.Unwrap()
+		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, bigStepHeight))
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
-}
-
-// ValidateOneStepFork checks if a height range has a difference of 1.
-func (h HeightRange) ValidateOneStepFork() error {
-	if h.To != h.From+1 {
-		return fmt.Errorf(
-			"expected range difference of 1, got range from %d to %d",
-			h.From,
-			h.To,
-		)
-	}
-	return nil
 }

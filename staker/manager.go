@@ -23,6 +23,7 @@ func NewManager(
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
+	historyCacheBaseDir string,
 ) (*challengemanager.Manager, error) {
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
@@ -62,6 +63,7 @@ func NewManager(
 		nil,
 		smallStepEdgeHeight.Uint64(),
 		bigStepEdgeHeight.Uint64()*smallStepEdgeHeight.Uint64(),
+		historyCacheBaseDir,
 	)
 	if err != nil {
 		return nil, err
