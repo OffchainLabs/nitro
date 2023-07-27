@@ -219,18 +219,14 @@ for a given filesystem challenge cache will look as follows:
 			roots.txt
 			big-step-100/
 				roots.txt
-
-Invariants:
-- Message number height to == from + 1
-- If big step range exists, message number height to == from + 1
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
 	key = append(key, fmt.Sprintf("%s-%d", messageNumberPrefix, lookup.MessageHeight))
 	if !lookup.BigStepHeight.IsNone() {
-		bigStepRange := lookup.BigStepHeight.Unwrap()
-		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, bigStepRange))
+		bigStepHeight := lookup.BigStepHeight.Unwrap()
+		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, bigStepHeight))
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
