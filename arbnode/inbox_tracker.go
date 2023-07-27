@@ -467,6 +467,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	if err != nil {
 		return err
 	}
+	log.Error("Inboxtracker.setDelayedCountReorgAndWriteBatch anodar ")
 	if err := batch.Put(sequencerBatchCountKey, countData); err != nil {
 		return err
 	}
@@ -655,6 +656,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if err != nil {
 		return err
 	}
+	log.Error("InboxTracker.AddSequencerBatches anodar")
 	err = dbBatch.Put(sequencerBatchCountKey, countData)
 	if err != nil {
 		return err
@@ -763,6 +765,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	if err != nil {
 		return err
 	}
+	log.Error("InboxTracker.ReorgBatchesTo anodar")
 	err = dbBatch.Put(sequencerBatchCountKey, countData)
 	if err != nil {
 		return err

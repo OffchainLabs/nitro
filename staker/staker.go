@@ -485,6 +485,7 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
+	log.Error("anodar debug")
 	if s.config.strategy != WatchtowerStrategy {
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
@@ -494,6 +495,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			log.Warn("validator address isn't whitelisted", "address", s.wallet.Address(), "txSender", s.wallet.TxSenderAddress())
 		}
 	}
+	fmt.Println("anodar debug0")
 	if !s.shouldAct(ctx) {
 		// The fact that we're delaying acting is already logged in `shouldAct`
 		return nil, nil
@@ -502,6 +504,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	s.builder.ClearTransactions()
 	var rawInfo *StakerInfo
 	walletAddressOrZero := s.wallet.AddressOrZero()
+	log.Error("anodar debug1")
 	if walletAddressOrZero != (common.Address{}) {
 		var err error
 		rawInfo, err = s.rollup.StakerInfo(ctx, walletAddressOrZero)
@@ -509,8 +512,10 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			return nil, fmt.Errorf("error getting own staker (%v) info: %w", walletAddressOrZero, err)
 		}
 		if rawInfo != nil {
+			log.Error("anodar staked amount", "amount", rawInfo.AmountStaked.Int64())
 			stakerAmountStakedGauge.Update(rawInfo.AmountStaked.Int64())
 		} else {
+			log.Error("anodar staked amount 0")
 			stakerAmountStakedGauge.Update(0)
 		}
 		s.updateStakerBalanceMetric(ctx)
@@ -523,6 +528,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	log.Error("anodar debug2")
 	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
@@ -535,6 +541,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		StakeExists:          rawInfo != nil,
 	}
 
+	log.Error("anodar debug3")
 	effectiveStrategy := s.config.strategy
 	nodesLinear, err := s.validatorUtils.AreUnresolvedNodesLinear(callOpts, s.rollupAddress)
 	if err != nil {
@@ -547,6 +554,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 		s.inactiveLastCheckedNode = nil
 	}
+	log.Error("anodar debug4")
 	if s.bringActiveUntilNode != 0 {
 		if info.LatestStakedNode < s.bringActiveUntilNode {
 			if effectiveStrategy == DefensiveStrategy {
@@ -558,6 +566,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 		s.inactiveLastCheckedNode = nil
 	}
+	log.Error("anodar debug5")
 	if effectiveStrategy <= DefensiveStrategy && s.inactiveLastCheckedNode != nil {
 		info.LatestStakedNode = s.inactiveLastCheckedNode.id
 		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
@@ -578,6 +587,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	shouldResolveNodes := effectiveStrategy >= ResolveNodesStrategy ||
 		(effectiveStrategy >= StakeLatestStrategy && rawInfo == nil && requiredStakeElevated)
 	resolvingNode := false
+	log.Error("anodar debug6")
 	if shouldResolveNodes {
 		arbTx, err := s.resolveTimedOutChallenges(ctx)
 		if err != nil {
@@ -603,6 +613,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			info.LatestStakedNodeHash = nodeInfo.NodeHash
 		}
 	}
+	log.Error("anodar debug7")
 
 	canActFurther := func() bool {
 		return s.wallet.CanBatchTxs() || s.builder.BuildingTransactionCount() == 0
@@ -617,7 +628,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			// Note: we must have an address if rawInfo != nil
 			auth, err := s.builder.Auth(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("getting authenticator: %w", err)
 			}
 			_, err = s.rollup.ReturnOldDeposit(auth, walletAddressOrZero)
 			if err != nil {
@@ -625,7 +636,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			}
 			auth, err = s.builder.Auth(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("getting authenticator: %w", err)
 			}
 			_, err = s.rollup.WithdrawStakerFunds(auth)
 			if err != nil {
@@ -635,6 +646,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
 		}
 	}
+	log.Error("anodar debug8")
 
 	if walletAddressOrZero != (common.Address{}) && canActFurther() {
 		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, walletAddressOrZero)
@@ -644,7 +656,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if withdrawable.Sign() > 0 {
 			auth, err := s.builder.Auth(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("getting authenticator: %w", err)
 			}
 			_, err = s.rollup.WithdrawStakerFunds(auth)
 			if err != nil {
@@ -652,6 +664,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			}
 		}
 	}
+	log.Error("anodar debug9")
 
 	if rawInfo != nil && canActFurther() {
 		if err = s.handleConflict(ctx, rawInfo); err != nil {
@@ -659,6 +672,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
+	log.Error("anodar debug10")
 	// Don't attempt to create a new stake if we're resolving a node and the stake is elevated,
 	// as that might affect the current required stake.
 	if (rawInfo != nil || !resolvingNode || !requiredStakeElevated) && canActFurther() {
@@ -672,20 +686,24 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			}
 		}
 	}
+	log.Error("anodar debug11")
 
 	if rawInfo != nil && s.builder.BuildingTransactionCount() == 0 && canActFurther() {
 		if err := s.createConflict(ctx, rawInfo); err != nil {
 			return nil, fmt.Errorf("error creating conflict: %w", err)
 		}
 	}
+	log.Error("anodar debug12")
 
 	if s.builder.BuildingTransactionCount() == 0 {
 		return nil, nil
 	}
+	log.Error("anodar debug13")
 
 	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
+	log.Error("anodar gasrefunder", "refunder", s.config.gasRefunder)
 	return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
 }
 

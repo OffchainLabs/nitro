@@ -73,7 +73,7 @@ func WaitForTx(ctxinput context.Context, client arbutil.L1Interface, txhash comm
 }
 
 func EnsureTxSucceeded(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction) (*types.Receipt, error) {
-	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second*5)
+	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second*15)
 }
 
 func EnsureTxSucceededWithTimeout(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {

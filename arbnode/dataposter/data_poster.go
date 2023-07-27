@@ -52,6 +52,8 @@ type DataPoster struct {
 	nonce      uint64
 	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
+
+	Name string
 }
 
 type AttemptLocker interface {
@@ -64,7 +66,7 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	for _, s := range strings.Split(val, ",") {
 		t, err := time.ParseDuration(s)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parsing durations: %w", err)
 		}
 		if t <= lastReplacementTime {
 			return nil, errors.New("replacement times must be increasing")
@@ -97,6 +99,7 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 			return nil, err
 		}
 	}
+	log.Error("anodar NewDataposter", "sender", auth.From)
 	return &DataPoster{
 		headerReader:      headerReader,
 		client:            headerReader.Client(),
@@ -245,16 +248,16 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFee
 	return newFeeCap, newTipCap, nil
 }
 
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64) error {
+func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	err := p.updateBalance(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to update data poster balance: %w", err)
+		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 	feeCap, tipCap, err := p.feeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	inner := types.DynamicFeeTx{
 		Nonce:     nonce,
@@ -265,9 +268,16 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Value:     new(big.Int),
 		Data:      calldata,
 	}
-	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
+	newTx := types.NewTx(&inner)
+
+	fullTx, err := p.signer(p.sender, newTx)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("anodar signer: %w", err)
+	}
+
+	signer := types.NewArbitrumSigner(types.NewLondonSigner(big.NewInt(1337)))
+	if _, err := types.Sender(signer, fullTx); err != nil {
+		log.Error("anodar wtf", "err", err)
 	}
 	queuedTx := storage.QueuedTransaction{
 		Data:            inner,
@@ -277,7 +287,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Created:         dataCreatedAt,
 		NextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
-	return p.sendTx(ctx, nil, &queuedTx)
+	return fullTx, p.sendTx(ctx, nil, &queuedTx)
 }
 
 // the mutex must be held by the caller
@@ -298,14 +308,14 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	err := p.client.SendTransaction(ctx, newTx.FullTx)
 	if err != nil {
 		if strings.Contains(err.Error(), "already known") || strings.Contains(err.Error(), "nonce too low") {
-			log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
+			log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "name", p.Name)
 			err = nil
 		} else {
-			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap())
+			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "name", p.Name)
 			return err
 		}
 	} else {
-		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
+		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap(), "name", p.Name)
 	}
 	newerTx := *newTx
 	newerTx.Sent = true

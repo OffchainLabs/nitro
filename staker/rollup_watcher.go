@@ -271,6 +271,7 @@ func (r *RollupWatcher) StakerInfo(ctx context.Context, staker common.Address) (
 		return nil, err
 	}
 	if !info.IsStaked {
+		log.Error("anodar is not staked")
 		return nil, nil
 	}
 	stakerInfo := &StakerInfo{

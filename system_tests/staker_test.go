@@ -18,12 +18,16 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -32,6 +36,8 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -62,6 +68,29 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		}
 	}
 	return nil
+}
+
+func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts, cfgFetcher arbnode.ConfigFetcher, syncMonitor *arbnode.SyncMonitor) (*dataposter.DataPoster, error) {
+	cfg := cfgFetcher.Get()
+	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+		return nil, nil
+	}
+	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
+	if err != nil {
+		return nil, fmt.Errorf("creating redis client from url: %w", err)
+	}
+	lockCfgFetcher := func() *redislock.SimpleCfg {
+		return &cfg.BlockValidator.RedisLock
+	}
+	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
+	if err != nil {
+		return nil, fmt.Errorf("creating redis lock: %w", err)
+	}
+	dpCfg := func() *dataposter.DataPosterConfig {
+		return &cfg.BlockValidator.DataPoster
+	}
+	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
 }
 
 func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {
@@ -178,7 +207,32 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	Require(t, err)
 
-	valWalletB, err := staker.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
+	// var testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	// testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
+
+	// TransferBalanceTo(t, "Faucet", testAddr, big.NewInt(1e10), l2info, l2clientA, ctx)
+
+	// log.Error("anodar chainid", "id", l2chainConfig.ChainID)
+	// txOpts := &bind.TransactOpts{
+	// 	From: testAddr,
+	// 	Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+	// 		log.Error("anodar signer()")
+	// 		if address != testAddr {
+	// 			return nil, bind.ErrNotAuthorized
+	// 		}
+	// 		return types.SignTx(tx, l1info.Signer, testKey)
+	// 	},
+	// 	// Context: context.Background(),
+	// }
+
+	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
+	cfg.Staker.Enable = true
+	dp, err := validatorDataposter(rawdb.NewTable(l2nodeB.ArbDB, arbnode.BlockValidatorPrefix), l2nodeB.L1Reader, &l1authB, NewFetcherFromConfig(cfg), nil)
+	if err != nil {
+		t.Fatalf("Error creating validator dataposter: %v", err)
+	}
+	dp.Name = "validator"
+	valWalletB, err := staker.NewEoaValidatorWallet(dp, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
@@ -275,6 +329,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		var stakerName string
 		if i%2 == 0 {
 			stakerName = "A"
+			t.Log("staker A acting")
 			fmt.Printf("staker A acting:\n")
 			tx, err = stakerA.Act(ctx)
 			if tx != nil {
@@ -282,8 +337,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			}
 		} else {
 			stakerName = "B"
+			t.Log("staker B acting")
 			fmt.Printf("staker B acting:\n")
 			tx, err = stakerB.Act(ctx)
+			if err != nil {
+				t.Logf("anodar stakerB.act: %v", err)
+			}
 			if tx != nil {
 				stakerBTxs++
 			}
@@ -337,6 +396,23 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			tx = nil
 		}
 		Require(t, err, "Staker", stakerName, "failed to act")
+		// bn, err := l1client.BlockNumber(ctx)
+		// Require(t, err)
+		// t.Errorf("anodar want tx: %v, to: %v", tx.Hash(), tx.To())
+		// t.Errorf("anodar blocks: %v", bn)
+		// for i := 0; i <= int(bn); i++ {
+		// 	bl, err := l1client.BlockByNumber(ctx, big.NewInt(int64(i)))
+		// 	Require(t, err)
+		// 	for _, tx := range bl.Transactions() {
+		// 		t.Errorf("anodar blockNr: %v, tx: %v, to: %v", bl.Number(), tx.Hash(), tx.To())
+		// 	}
+		// }
+		// receipt, err := l1client.TransactionReceipt(ctx, tx.Hash())
+		// Require(t, err)
+		// t.Errorf("anodar tx: %v receipt: %+v", tx.Hash(), receipt)
+		// blockNumber, err := GetPendingBlockNumber(ctx, l1client)
+		// Require(t, err)
+		// t.Errorf("anodar blockNumber: %v, receiptBlocknumber: %v", blockNumber, receipt.BlockNumber)
 		if tx != nil {
 			_, err = EnsureTxSucceeded(ctx, l1client, tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")

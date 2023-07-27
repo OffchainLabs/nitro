@@ -19,6 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -86,6 +88,9 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"` // DO NOT SUBMIT: add default values before sending for a review.
+	RedisUrl                 string                        `koanf:"redis-url"`
+	RedisLock                redislock.SimpleCfg           `koanf:"redis-lock" reload:"hot"`
 }
 
 func (c *BlockValidatorConfig) Validate() error {
@@ -124,6 +129,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	DataPoster:               dataposter.DefaultDataPosterConfig,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -136,6 +142,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	DataPoster:               dataposter.TestDataPosterConfig,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{

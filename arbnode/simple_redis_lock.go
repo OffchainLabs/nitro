@@ -1,3 +1,4 @@
+// DO NOT SUBMIT: burn this file in flames and use redislock instead.
 package arbnode
 
 import (
@@ -16,6 +17,7 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+// TODO: factor this out in its' own package as it doesn't belong here.
 type SimpleRedisLock struct {
 	stopwaiter.StopWaiter
 	client      redis.UniversalClient

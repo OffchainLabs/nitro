@@ -531,6 +531,7 @@ func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*Seque
 	if err != nil {
 		return false, err
 	}
+	log.Error("InboxReader.addMessages anodar")
 	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
