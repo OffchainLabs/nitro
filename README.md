@@ -1,8 +1,11 @@
-# Challenge Protocol V2
+# BOLD
+
+[![Go Report Card](https://goreportcard.com/badge/github.com/OffchainLabs/bold)](https://goreportcard.com/report/github.com/OffchainLabs/bold)
+[![codecov](https://codecov.io/gh/OffchainLabs/bold/branch/master/graph/badge.svg)](https://codecov.io/gh/OffchainLabs/bold)
 
 [![Go](https://github.com/OffchainLabs/bold/actions/workflows/go.yml/badge.svg)](https://github.com/OffchainLabs/bold/actions/workflows/go.yml)
 
-This repository implements V2 of the Arbitrum challenge protocol. V2 is an efficient, all-vs-all dispute protocol that enables anyone on Ethereum L1 to challenge incorrect Arbitrum state transitions in a permissionless manner. Given Arbitrum’s state transition is deterministic, this guarantees only one correct result at any given assertion. A **single, honest participant** will always win against malicious entities when challenging assertions posted to Ethereum. 
+This repository implements BOLD (BOunded liquidity delay) protocol. It is an efficient, all-vs-all dispute protocol that enables anyone on Ethereum L1 to challenge incorrect optimistic rollup state transitions in a permissionless manner. Given state transition is deterministic, this guarantees only one correct result at any given assertion. A **single, honest participant** will always win against malicious entities when challenging assertions posted to the settlement chain. 
 
 The code in this repository will eventually be migrated to [github.com/offchainlabs/nitro](https://github.com/offchainlabs/nitro), which includes the necessary execution machines required for interacting with the protocol.
 
