@@ -1,7 +1,7 @@
 # BOLD
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/OffchainLabs/bold)](https://goreportcard.com/report/github.com/OffchainLabs/bold)
-[![codecov](https://codecov.io/gh/OffchainLabs/bold/branch/master/graph/badge.svg)](https://codecov.io/gh/OffchainLabs/bold)
+[![codecov](https://codecov.io/gh/OffchainLabs/bold/branch/main/graph/badge.svg)](https://codecov.io/gh/OffchainLabs/bold)
 
 [![Go](https://github.com/OffchainLabs/bold/actions/workflows/go.yml/badge.svg)](https://github.com/OffchainLabs/bold/actions/workflows/go.yml)
 
