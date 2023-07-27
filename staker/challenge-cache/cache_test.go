@@ -18,10 +18,7 @@ import (
 var _ HistoryCommitmentCacher = (*Cache)(nil)
 
 func TestCache(t *testing.T) {
-	basePath, err := ioutil.TempDir("", "*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	basePath := t.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		t.Fatal(err)
 	}
@@ -37,13 +34,13 @@ func TestCache(t *testing.T) {
 		BigStepHeight:  option.Some(protocol.Height(0)),
 	}
 	t.Run("Not found", func(t *testing.T) {
-		_, err = cache.Get(key, protocol.Height(0))
+		_, err := cache.Get(key, protocol.Height(0))
 		if !errors.Is(err, ErrNotFoundInCache) {
 			t.Fatal(err)
 		}
 	})
 	t.Run("Putting empty root fails", func(t *testing.T) {
-		if err = cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoStateRoots) {
+		if err := cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoStateRoots) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
@@ -52,7 +49,7 @@ func TestCache(t *testing.T) {
 		common.BytesToHash([]byte("bar")),
 		common.BytesToHash([]byte("baz")),
 	}
-	err = cache.Put(key, want)
+	err := cache.Put(key, want)
 	if err != nil {
 		t.Fatal(err)
 	}
