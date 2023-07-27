@@ -163,7 +163,7 @@ func TestMostSignificantBit_GoSolidityEquivalence(t *testing.T) {
 	runBitEquivalenceTest(t, merkleTreeContract.MostSignificantBit, prefixproofs.MostSignificantBit)
 }
 
-func FuzzVerifyPrefixProof_Go(f *testing.F) {
+func FuzzPrefixProof_Verify(f *testing.F) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
 	for i := 0; i < len(hashes); i++ {
@@ -303,7 +303,7 @@ func FuzzVerifyPrefixProof_Go(f *testing.F) {
 	})
 }
 
-func FuzzMaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
+func FuzzPrefixProof_MaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
 	type prePost struct {
 		pre  uint64
 		post uint64
@@ -340,7 +340,7 @@ func FuzzMaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
 	})
 }
 
-func FuzzBitUtils_GoSolidityEquivalence(f *testing.F) {
+func FuzzPrefixProof_BitUtils_GoSolidityEquivalence(f *testing.F) {
 	testcases := []uint64{
 		0,
 		2,
