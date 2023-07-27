@@ -1,5 +1,3 @@
-package challengecache
-
 /*
 * Package challengecache stores validator state roots for L2 states within
 challenges in text files using a directory hierarchy structure for efficient lookup. Each file
@@ -25,6 +23,8 @@ Use cases:
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
 */
+
+package challengecache
 
 import (
 	"bufio"
