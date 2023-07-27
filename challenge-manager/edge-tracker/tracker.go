@@ -481,13 +481,12 @@ func (et *Tracker) determineBisectionHistoryWithProof(
 
 	switch et.edge.GetType() {
 	case protocol.BigStepChallengeEdge:
-		historyCommit, commitErr = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo)
 		proof, proofErr = et.stateProvider.BigStepPrefixProof(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo, uint64(endHeight))
+		historyCommit, commitErr = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo)
 	case protocol.SmallStepChallengeEdge:
 		fromBigStep := uint64(originHeights.BigStepChallengeOriginHeight)
-
-		historyCommit, commitErr = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo)
 		proof, proofErr = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo, uint64(endHeight))
+		historyCommit, commitErr = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo)
 	default:
 		return commitments.History{}, nil, fmt.Errorf("unsupported challenge type: %s", et.edge.GetType())
 	}
@@ -558,19 +557,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	case protocol.BlockChallengeEdge:
 		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
 		toBlock := toAssertionHeight + et.heightConfig.StartBlockHeight
-		startHistory, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, 0)
-		if err != nil {
-			return err
-		}
 		endHistory, err = et.stateProvider.BigStepLeafCommitment(ctx, et.wasmModuleRoot, fromBlock)
-		if err != nil {
-			return err
-		}
-		startParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, fromBlock, et.heightConfig.TopLevelClaimEndBatchCount)
-		if err != nil {
-			return err
-		}
-		endParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, toBlock, et.heightConfig.TopLevelClaimEndBatchCount)
 		if err != nil {
 			return err
 		}
@@ -578,17 +565,29 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-	case protocol.BigStepChallengeEdge:
-		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
-		startHistory, err = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0)
+		startHistory, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, 0)
 		if err != nil {
 			return err
 		}
+		endParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, toBlock, et.heightConfig.TopLevelClaimEndBatchCount)
+		if err != nil {
+			return err
+		}
+		startParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, fromBlock, et.heightConfig.TopLevelClaimEndBatchCount)
+		if err != nil {
+			return err
+		}
+	case protocol.BigStepChallengeEdge:
+		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
 		endHistory, err = et.stateProvider.SmallStepLeafCommitment(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
 		if err != nil {
 			return err
 		}
-		startParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
+		startEndPrefixProof, err = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0, endHistory.Height)
+		if err != nil {
+			return err
+		}
+		startHistory, err = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0)
 		if err != nil {
 			return err
 		}
@@ -596,7 +595,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		startEndPrefixProof, err = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0, endHistory.Height)
+		startParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
 		if err != nil {
 			return err
 		}

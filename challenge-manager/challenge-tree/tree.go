@@ -85,20 +85,6 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	if err != nil {
 		return protocol.Agreement{}, errors.Wrapf(err, "could not get claim heights for edge %#x", eg.Id())
 	}
-	agreesWithStart, err := ht.histChecker.AgreesWithHistoryCommitment(
-		ctx,
-		prevCreationInfo.WasmModuleRoot,
-		prevCreationInfo.InboxMaxCount.Uint64(),
-		eg.GetType(),
-		heights,
-		l2stateprovider.History{
-			Height:     uint64(startHeight),
-			MerkleRoot: startCommit,
-		},
-	)
-	if err != nil {
-		return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
-	}
 	isHonestEdge, err := ht.histChecker.AgreesWithHistoryCommitment(
 		ctx,
 		prevCreationInfo.WasmModuleRoot,
@@ -108,6 +94,20 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		l2stateprovider.History{
 			Height:     uint64(endHeight),
 			MerkleRoot: endCommit,
+		},
+	)
+	if err != nil {
+		return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
+	}
+	agreesWithStart, err := ht.histChecker.AgreesWithHistoryCommitment(
+		ctx,
+		prevCreationInfo.WasmModuleRoot,
+		prevCreationInfo.InboxMaxCount.Uint64(),
+		eg.GetType(),
+		heights,
+		l2stateprovider.History{
+			Height:     uint64(startHeight),
+			MerkleRoot: startCommit,
 		},
 	)
 	if err != nil {

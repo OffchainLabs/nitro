@@ -80,6 +80,7 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
+			common.Hash{},
 			uint64(1),
 			protocol.BlockChallengeEdge,
 			protocol.OriginHeights{
