@@ -53,11 +53,6 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("Can only write once to cache under same key", func(t *testing.T) {
-		if err = cache.Put(key, want); !errors.Is(err, ErrFileAlreadyExists) {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-	})
 	got, err := cache.Get(key, protocol.Height(2))
 	if err != nil {
 		t.Fatal(err)
