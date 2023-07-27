@@ -46,7 +46,7 @@ type ExecutionProvider interface {
 
 type HistoryCommitter interface {
 	// Produces a block challenge history commitment up to and including a certain message number.
-	HistoryCommitmentUpTo(ctx context.Context, messageNumber uint64) (commitments.History, error)
+	HistoryCommitmentAtMessage(ctx context.Context, messageNumber uint64) (commitments.History, error)
 	// Produces a big step history commitment from big step 0 to N within block
 	// challenge heights A and B where B = A + 1.
 	BigStepCommitmentUpTo(
@@ -144,7 +144,8 @@ type HistoryChecker interface {
 	AgreesWithHistoryCommitment(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		prevAssertionInboxMaxCount uint64,
+		assertionInboxMaxCount uint64,
+		parentAssertionAfterStateBatch uint64,
 		edgeType protocol.EdgeType,
 		heights protocol.OriginHeights,
 		history History,

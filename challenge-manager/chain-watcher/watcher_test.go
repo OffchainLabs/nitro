@@ -71,6 +71,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	).Return(mockChallengeManager, nil)
 
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
+	parentAssertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("parent foo"))}
 	edgeId := protocol.EdgeId(common.BytesToHash([]byte("bar")))
 	edge := &mocks.MockSpecEdge{}
 
@@ -81,13 +82,22 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	).Return(assertionHash, nil)
 
 	info := &protocol.AssertionCreatedInfo{
-		InboxMaxCount: big.NewInt(1),
+		InboxMaxCount:       big.NewInt(1),
+		ParentAssertionHash: parentAssertionHash.Hash,
 	}
 	mockChain.On(
 		"ReadAssertionCreationInfo",
 		ctx,
 		assertionHash,
 	).Return(info, nil)
+	parentInfo := &protocol.AssertionCreatedInfo{
+		InboxMaxCount: big.NewInt(1),
+	}
+	mockChain.On(
+		"ReadAssertionCreationInfo",
+		ctx,
+		parentAssertionHash,
+	).Return(parentInfo, nil)
 	heights := protocol.OriginHeights{}
 	mockChain.On(
 		"TopLevelClaimHeights",
@@ -126,6 +136,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		common.Hash{},
 		uint64(1),
+		uint64(0),
 		protocol.BlockChallengeEdge,
 		protocol.OriginHeights{
 			BlockChallengeOriginHeight: 0,
@@ -140,6 +151,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		common.Hash{},
 		uint64(1),
+		uint64(0),
 		protocol.BlockChallengeEdge,
 		protocol.OriginHeights{
 			BlockChallengeOriginHeight: 0,

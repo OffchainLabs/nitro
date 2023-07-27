@@ -211,12 +211,9 @@ func (s *L2StateBackend) ExecutionStateMsgCount(ctx context.Context, state *prot
 	return 0, l2stateprovider.ErrNoExecutionState
 }
 
-func (s *L2StateBackend) HistoryCommitmentUpTo(_ context.Context, messageNumber uint64) (commitments.History, error) {
-	// The size is the number of elements being committed to. For example, if the height is 7, there will
-	// be 8 elements being committed to from [0, 7] inclusive.
-	size := messageNumber + 1
+func (s *L2StateBackend) HistoryCommitmentAtMessage(_ context.Context, messageNumber uint64) (commitments.History, error) {
 	return commitments.New(
-		s.stateRoots[:size],
+		[]common.Hash{s.stateRoots[messageNumber]},
 	)
 }
 
@@ -271,7 +268,8 @@ func (s *L2StateBackend) HistoryCommitmentUpToBatch(_ context.Context, messageNu
 func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	prevAssertionInboxMaxCount uint64,
+	assertionInboxMaxCount uint64,
+	parentAssertionAfterStateBatch uint64,
 	edgeType protocol.EdgeType,
 	heights protocol.OriginHeights,
 	commit l2stateprovider.History,
@@ -280,7 +278,7 @@ func (s *L2StateBackend) AgreesWithHistoryCommitment(
 	var err error
 	switch edgeType {
 	case protocol.BlockChallengeEdge:
-		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, 0, commit.Height, prevAssertionInboxMaxCount)
+		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, parentAssertionAfterStateBatch, parentAssertionAfterStateBatch+commit.Height, assertionInboxMaxCount)
 		if err != nil {
 			return false, err
 		}

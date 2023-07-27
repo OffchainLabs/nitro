@@ -70,12 +70,12 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		// Do nothing - this edge should not be part of this challenge tree.
 		return protocol.Agreement{}, nil
 	}
-	prevCreationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, assertionHash)
+	creationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return protocol.Agreement{}, err
 	}
-	if !prevCreationInfo.InboxMaxCount.IsUint64() {
-		return protocol.Agreement{}, errors.New("prev inbox max count was not a uint64")
+	if !creationInfo.InboxMaxCount.IsUint64() {
+		return protocol.Agreement{}, errors.New("inbox max count was not a uint64")
 	}
 
 	// We only track edges we fully agree with (honest edges).
@@ -85,10 +85,17 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	if err != nil {
 		return protocol.Agreement{}, errors.Wrapf(err, "could not get claim heights for edge %#x", eg.Id())
 	}
+	parentAssertionInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	if err != nil {
+		return protocol.Agreement{}, err
+	}
+	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
+
 	isHonestEdge, err := ht.histChecker.AgreesWithHistoryCommitment(
 		ctx,
-		prevCreationInfo.WasmModuleRoot,
-		prevCreationInfo.InboxMaxCount.Uint64(),
+		creationInfo.WasmModuleRoot,
+		creationInfo.InboxMaxCount.Uint64(),
+		parentAssertionAfterState.GlobalState.Batch,
 		eg.GetType(),
 		heights,
 		l2stateprovider.History{
@@ -101,8 +108,9 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	}
 	agreesWithStart, err := ht.histChecker.AgreesWithHistoryCommitment(
 		ctx,
-		prevCreationInfo.WasmModuleRoot,
-		prevCreationInfo.InboxMaxCount.Uint64(),
+		creationInfo.WasmModuleRoot,
+		creationInfo.InboxMaxCount.Uint64(),
+		parentAssertionAfterState.GlobalState.Batch,
 		eg.GetType(),
 		heights,
 		l2stateprovider.History{

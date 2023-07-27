@@ -49,7 +49,7 @@ func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing
 		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
-	blockChalCommit, err := manager.HistoryCommitmentUpTo(ctx, 4)
+	blockChalCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 4, 10)
 	require.NoError(t, err)
 	require.Equal(t, hashes[0], blockChalCommit.FirstLeaf)
 
@@ -95,9 +95,9 @@ func TestGranularCommitments_SameStartHistory(t *testing.T) {
 	// Generating top-level, block challenge commitments.
 	fromBlockChallengeHeight := uint64(4)
 	toBlockChallengeHeight := uint64(7)
-	start, err := manager.HistoryCommitmentUpTo(ctx, fromBlockChallengeHeight)
+	start, err := manager.HistoryCommitmentUpToBatch(ctx, 0, fromBlockChallengeHeight, 10)
 	require.NoError(t, err)
-	end, err := manager.HistoryCommitmentUpTo(ctx, toBlockChallengeHeight)
+	end, err := manager.HistoryCommitmentUpToBatch(ctx, 0, toBlockChallengeHeight, 10)
 	require.NoError(t, err)
 	require.Equal(t, start.FirstLeaf, end.FirstLeaf)
 	require.NotEqual(t, start.LastLeaf, end.LastLeaf)
@@ -165,9 +165,9 @@ func TestGranularCommitments_DifferentStartPoints(t *testing.T) {
 	// Generating top-level, block challenge commitments.
 	fromBlockChallengeHeight := uint64(4)
 	toBlockChallengeHeight := uint64(7)
-	start, err := manager.HistoryCommitmentUpTo(ctx, fromBlockChallengeHeight)
+	start, err := manager.HistoryCommitmentUpToBatch(ctx, 0, fromBlockChallengeHeight, 10)
 	require.NoError(t, err)
-	end, err := manager.HistoryCommitmentUpTo(ctx, toBlockChallengeHeight)
+	end, err := manager.HistoryCommitmentUpToBatch(ctx, 0, toBlockChallengeHeight, 10)
 	require.NoError(t, err)
 	require.Equal(t, start.FirstLeaf, end.FirstLeaf)
 	require.NotEqual(t, start.LastLeaf, end.LastLeaf)
@@ -234,9 +234,9 @@ func TestAllPrefixProofs(t *testing.T) {
 	from := uint64(2)
 	to := uint64(3)
 
-	loCommit, err := manager.HistoryCommitmentUpTo(ctx, from)
+	loCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, from, 10)
 	require.NoError(t, err)
-	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, to)
+	hiCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, to, 10)
 	require.NoError(t, err)
 	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, from, to, 1)
 	require.NoError(t, err)
@@ -560,7 +560,7 @@ func TestPrefixProofs(t *testing.T) {
 			prefixProof[i] = proof[i]
 		}
 
-		postExpansion, err := manager.HistoryCommitmentUpTo(ctx, c.hi)
+		postExpansion, err := manager.HistoryCommitmentUpToBatch(ctx, 0, c.hi, 1000)
 		require.NoError(t, err)
 
 		root, err := prefixproofs.Root(preExpansionHashes)
