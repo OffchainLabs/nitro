@@ -10,12 +10,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
 	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -36,14 +38,17 @@ type StateManager struct {
 	blockValidator       *BlockValidator
 	numOpcodesPerBigStep uint64
 	maxWavmOpcodes       uint64
+	historyCache         challengecache.HistoryCommitmentCacher
 }
 
-func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64, cacheBaseDir string) (*StateManager, error) {
+	historyCache := challengecache.New(cacheBaseDir)
 	return &StateManager{
 		validator:            val,
 		blockValidator:       blockValidator,
 		numOpcodesPerBigStep: numOpcodesPerBigStep,
 		maxWavmOpcodes:       maxWavmOpcodes,
+		historyCache:         historyCache,
 	}, nil
 }
 
@@ -465,6 +470,18 @@ func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []com
 }
 
 func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) ([]common.Hash, error) {
+	cacheKey := &challengecache.Key{
+		WavmModuleRoot: wasmModuleRoot,
+		MessageHeight:  protocol.Height(blockHeight),
+		BigStepHeight:  option.None[protocol.Height](),
+	}
+	cachedRoots, err := s.historyCache.Get(cacheKey, option.Some(protocol.Height(toBigStep)))
+	if err == nil {
+		return cachedRoots, nil
+	}
+	if !errors.Is(err, challengecache.ErrNotFoundInCache) {
+		return nil, err
+	}
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
 		return nil, err
@@ -482,10 +499,30 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
+	if len(result) > 1 {
+		if err := s.historyCache.Put(cacheKey, result); err != nil {
+			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
+				return nil, err
+			}
+		}
+	}
 	return result, nil
 }
 
 func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) ([]common.Hash, error) {
+	cacheKey := &challengecache.Key{
+		WavmModuleRoot: wasmModuleRoot,
+		MessageHeight:  protocol.Height(blockHeight),
+		BigStepHeight:  option.Some[protocol.Height](protocol.Height(bigStep)),
+	}
+	cachedRoots, err := s.historyCache.Get(cacheKey, option.Some(protocol.Height(toSmallStep)))
+	if err == nil {
+		return cachedRoots, nil
+	}
+	if !errors.Is(err, challengecache.ErrNotFoundInCache) {
+		return nil, err
+	}
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
 		return nil, err
@@ -502,6 +539,14 @@ func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModu
 	result, err := smallStepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
+	if len(result) > 1 {
+		if err := s.historyCache.Put(cacheKey, result); err != nil {
+			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
+				return nil, err
+			}
+		}
 	}
 	return result, nil
 }
