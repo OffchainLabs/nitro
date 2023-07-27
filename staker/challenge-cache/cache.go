@@ -6,7 +6,6 @@ Using this structure, we can namespace state roots by message number and big ste
 
 Once a validator computes the set of machine state roots for a given challenge move the first time,
 it will write the roots to this filesystem hierarchy for fast access next time these roots are needed.
-Each file can be written to ONCE, and then accessed at unpredictable times as a challenge is ongoing.
 
 Use cases:
 - State roots for a big step challenge from message N to N+1
@@ -77,7 +76,7 @@ type Key struct {
 }
 
 // Get a list of state roots from the cache up to a certain index. State roots are saved as files in the directory
-// hierarchy for the cache, and can only be written to once. If a file is not present, ErrNotFoundInCache
+// hierarchy for the cache. If a file is not present, ErrNotFoundInCache
 // is returned.
 func (c *Cache) Get(
 	lookup *Key,
@@ -102,8 +101,8 @@ func (c *Cache) Get(
 	return readStateRoots(f, readUpTo)
 }
 
-// Put a list of state roots into the cache. If the file already exists, ErrFileAlreadyExists will be returned.
-// State roots are saved as files in a directory hierarchy for the cache, and can only be written to once.
+// Put a list of state roots into the cache.
+// State roots are saved as files in a directory hierarchy for the cache.
 // This function first creates a temporary file, writes the state roots to it, and then renames the file
 // to the final directory to ensure atomic writes.
 func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
