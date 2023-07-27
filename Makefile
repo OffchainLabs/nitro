@@ -5,6 +5,7 @@
 # have to update an existing file. So - for docker, convert all dependencies
 # to order-only dependencies (timestamps ignored).
 # WARNING: when using this trick, you cannot use the $< automatic variable
+
 ifeq ($(origin NITRO_BUILD_IGNORE_TIMESTAMPS),undefined)
  DEP_PREDICATE:=
  ORDER_ONLY_PREDICATE:=|
