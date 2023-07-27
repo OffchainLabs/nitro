@@ -115,9 +115,6 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(fName); err == nil {
-		return ErrFileAlreadyExists
-	}
 	// We create a tmp file to write our state roots to first. If writing fails,
 	// we don't want to leave a half-written file in our cache directory.
 	// Once writing succeeds, we rename in an atomic operation to the correct file name

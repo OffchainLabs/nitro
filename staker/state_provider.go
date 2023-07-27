@@ -479,9 +479,6 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 	if err == nil {
 		return cachedRoots, nil
 	}
-	if !errors.Is(err, challengecache.ErrNotFoundInCache) {
-		return nil, err
-	}
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
 		return nil, err
@@ -519,9 +516,6 @@ func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModu
 	cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toSmallStep))
 	if err == nil {
 		return cachedRoots, nil
-	}
-	if !errors.Is(err, challengecache.ErrNotFoundInCache) {
-		return nil, err
 	}
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
