@@ -31,24 +31,10 @@ func TestCache(t *testing.T) {
 		}
 	})
 	cache := New(basePath)
-	t.Run("Bad key", func(t *testing.T) {
-		key := &Key{
-			WavmModuleRoot: common.BytesToHash([]byte("foo")),
-			MessageRange:   HeightRange{From: 0, To: 100},
-			BigStepRange: option.Some(HeightRange{
-				From: 1, To: 0,
-			}),
-		}
-		if _, err = cache.Get(key, option.None[protocol.Height]()); err == nil {
-			t.Fatal("Expected error for bad key")
-		}
-	})
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
-		MessageRange:   HeightRange{From: 0, To: 1},
-		BigStepRange: option.Some(HeightRange{
-			From: 0, To: 1,
-		}),
+		MessageHeight:  0,
+		BigStepHeight:  option.Some(protocol.Height(0)),
 	}
 	t.Run("Not found", func(t *testing.T) {
 		_, err = cache.Get(key, option.None[protocol.Height]())
@@ -277,93 +263,15 @@ func Test_determineFilePath(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "bad message range",
-			args: args{
-				baseDir: "",
-				key: &Key{
-					MessageRange: HeightRange{
-						From: 1, To: 0,
-					},
-				},
-			},
-			wantErr:     true,
-			errContains: "message number range invalid",
-		},
-		{
-			name: "bad message range equal",
-			args: args{
-				baseDir: "",
-				key: &Key{
-					MessageRange: HeightRange{
-						From: 100, To: 100,
-					},
-				},
-			},
-			wantErr:     true,
-			errContains: "message number range invalid",
-		},
-		{
-			name: "message range not at one step fork",
-			args: args{
-				baseDir: "",
-				key: &Key{
-					MessageRange: HeightRange{
-						From: 100, To: 102,
-					},
-					BigStepRange: option.Some(HeightRange{
-						From: 0, To: 1,
-					}),
-				},
-			},
-			wantErr:     true,
-			errContains: "message number range invalid",
-		},
-		{
-			name: "big step range invalid",
-			args: args{
-				baseDir: "",
-				key: &Key{
-					MessageRange: HeightRange{
-						From: 100, To: 101,
-					},
-					BigStepRange: option.Some(HeightRange{
-						From: 1, To: 0,
-					}),
-				},
-			},
-			wantErr:     true,
-			errContains: "big step range invalid",
-		},
-		{
-			name: "big step range not at one step fork",
-			args: args{
-				baseDir: "",
-				key: &Key{
-					MessageRange: HeightRange{
-						From: 100, To: 101,
-					},
-					BigStepRange: option.Some(HeightRange{
-						From: 100, To: 102,
-					}),
-				},
-			},
-			wantErr:     true,
-			errContains: "big step range invalid",
-		},
-		{
 			name: "OK",
 			args: args{
 				baseDir: "",
 				key: &Key{
-					MessageRange: HeightRange{
-						From: 100, To: 101,
-					},
-					BigStepRange: option.Some(HeightRange{
-						From: 50, To: 51,
-					}),
+					MessageHeight: 100,
+					BigStepHeight: option.Some(protocol.Height(50)),
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-101/big-step-50-51/state-roots",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/big-step-50/state-roots",
 			wantErr: false,
 		},
 	}
@@ -406,10 +314,8 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	cache := New(basePath)
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
-		MessageRange:   HeightRange{From: 0, To: 1},
-		BigStepRange: option.Some(HeightRange{
-			From: 0, To: 1,
-		}),
+		MessageHeight:  0,
+		BigStepHeight:  option.Some(protocol.Height(0)),
 	}
 	numRoots := 1 << 20
 	roots := make([]common.Hash, numRoots)
