@@ -34,7 +34,7 @@ type rustMachine byte
 type rustEvmData byte
 
 func compileUserWasmRustImpl(
-	wasm []byte, version, debugMode u32, pageLimit u16,
+	wasm []byte, version, debugMode u32, pageLimit u16, outMachineHash []byte,
 ) (machine *rustMachine, footprint u16, err *rustVec)
 
 func callUserWasmRustImpl(
@@ -59,13 +59,14 @@ func rustEvmDataImpl(
 	txOrigin *addr,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, error) {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, common.Hash, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, footprint, err := compileMachine(db, program, wasm, pageLimit, version, debugMode)
-	return footprint, err
+	_, footprint, hash, err := compileUserWasmRustWrapper(db, program, wasm, pageLimit, version, debugMode)
+	return footprint, hash, err
 }
 
 func callUserWasm(
+	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
@@ -79,11 +80,11 @@ func callUserWasm(
 	// since the program has previously passed compilation, don't limit memory
 	pageLimit := uint16(math.MaxUint16)
 
-	wasm, err := getWasm(db, program.address)
+	wasm, err := getWasm(db, address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, _, err := compileMachine(db, program.address, wasm, pageLimit, params.version, params.debugMode)
+	machine, _, _, err := compileUserWasmRustWrapper(db, address, wasm, pageLimit, params.version, params.debugMode)
 	if err != nil {
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
@@ -105,15 +106,16 @@ func callUserWasm(
 	return status.output(result)
 }
 
-func compileMachine(
+func compileUserWasmRustWrapper(
 	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
-) (*rustMachine, u16, error) {
-	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
+) (*rustMachine, u16, common.Hash, error) {
+	outHash := common.Hash{}
+	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit, outHash[:])
 	if err != nil {
 		_, err := userFailure.output(err.intoSlice())
-		return nil, footprint, err
+		return nil, footprint, common.Hash{}, err
 	}
-	return machine, footprint, nil
+	return machine, footprint, outHash, nil
 }
 
 func (vec *rustVec) intoSlice() []byte {

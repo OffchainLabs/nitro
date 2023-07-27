@@ -84,7 +84,7 @@ impl RustVec {
 ///
 /// # Safety
 ///
-/// Output must not be null
+/// Output, footprint, output_canonical_hash must not be null
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
@@ -92,17 +92,38 @@ pub unsafe extern "C" fn stylus_compile(
     page_limit: u16,
     footprint: *mut u16,
     output: *mut RustVec,
+    canonical_hash: *mut RustVec,
     debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-    let output = &mut *output;
     let compile = CompileConfig::version(version, debug_mode != 0);
 
-    // ensure the wasm compiles during proving
-    *footprint = match WasmBinary::parse_user(wasm, page_limit, &compile) {
-        Ok((.., pages)) => pages,
-        Err(err) => return output.write_err(err.wrap_err("failed to parse program")),
-    };
+    if output.is_null() {
+        return UserOutcomeKind::Failure;
+    }
+    let output = &mut *output;
+
+    if canonical_hash.is_null() {
+        return output.write_err(eyre::eyre!("canonical_hash is null"));
+    }
+    if footprint.is_null() {
+        return output.write_err(eyre::eyre!("footprint is null"));
+    }
+
+    let parse_user_result = WasmBinary::parse_user(wasm, page_limit, &compile);
+    if let Err(err) = parse_user_result {
+        return output.write_err(err.wrap_err("failed to parse program"));
+    }
+    let (bin, _, pages) = parse_user_result.unwrap();
+
+    let module = prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, None);
+    if let Err(err) = module {
+        return output.write_err(err.wrap_err("failed to build module from program"));
+    }
+    let canonical_hash = &mut *canonical_hash;
+    canonical_hash.write(module.unwrap().hash().to_vec());
+
+    *footprint = pages;
 
     // TODO: compilation pricing, including memory charges
     let module = match native::module(wasm, compile) {

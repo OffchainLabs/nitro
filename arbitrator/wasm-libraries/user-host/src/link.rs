@@ -37,7 +37,7 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u16, err *Vec<u8>)
+/// Safety: λ(wasm []byte, version, debug u32, pageLimit u16, machineHash []byte) (module *Module, footprint u16, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
@@ -48,6 +48,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let debug = sp.read_u32() != 0;
     let page_limit = sp.read_u16();
     sp.skip_space();
+    let (out_hash_ptr, mut out_hash_len) = sp.read_go_slice();
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -66,15 +67,16 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         Err(error) => error!("failed to parse program", error),
     };
 
-    let forward = include_bytes!("../../../../target/machines/latest/forward_stub.wasm");
-    let forward = prover::binary::parse(forward, Path::new("forward")).unwrap();
-
-    let module = prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data));
-
-    let module = match module {
+    let module = match prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data)) {
         Ok(module) => module,
-        Err(err) => error!("failed to instrument program", err),
+        Err(error) => error!("failed to instrument program", error),
     };
+
+    if out_hash_len != 32 {
+        error!("Go attempting to read compiled machine hash into bad buffer",eyre::eyre!("buffer length: {out_hash_ptr}"));
+    }
+    wavm::write_slice(module.hash().as_slice(), out_hash_ptr);
+
     sp.write_ptr(heapify(module));
     sp.write_u16(footprint).skip_space();
     sp.write_nullptr();

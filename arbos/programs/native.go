@@ -41,29 +41,32 @@ type rustVec = C.RustVec
 
 func compileUserWasm(
 	db vm.StateDB, program common.Address, wasm []byte, pageLimit uint16, version uint32, debug bool,
-) (uint16, error) {
+) (uint16, common.Hash, error) {
 	footprint := uint16(0)
 	output := &rustVec{}
+	canonicalHashRust := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u32(version),
 		u16(pageLimit),
 		(*u16)(&footprint),
 		output,
+		canonicalHashRust,
 		usize(arbmath.BoolToUint32(debug)),
 	))
 	data := output.intoBytes()
 	result, err := status.output(data)
-	if err == nil {
-		db.SetCompiledWasmCode(program, result, version)
-	} else {
+	if err != nil {
 		data := arbutil.ToStringOrHex(data)
 		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
+		return 0, common.Hash{}, err
 	}
-	return footprint, err
+	db.SetCompiledWasmCode(program, result, version)
+	return footprint, common.BytesToHash(canonicalHashRust.intoBytes()), err
 }
 
 func callUserWasm(
+	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
@@ -75,9 +78,9 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program.address, scope.Contract.CodeHash, stylusParams.version)
+		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version)
 	}
-	module := db.GetCompiledWasmCode(program.address, stylusParams.version)
+	module := db.GetCompiledWasmCode(address, stylusParams.version)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
@@ -98,7 +101,7 @@ func callUserWasm(
 
 	if status == userFailure {
 		str := arbutil.ToStringOrHex(returnData)
-		log.Debug("program failure", "err", string(data), "program", program.address, "returnData", str)
+		log.Debug("program failure", "err", string(data), "program", address, "returnData", str)
 	}
 	return data, err
 }

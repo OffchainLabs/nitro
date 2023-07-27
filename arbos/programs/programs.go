@@ -21,6 +21,7 @@ import (
 type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
+	compiledHashes *storage.Storage
 	inkPrice       storage.StorageBackedUBips
 	wasmMaxDepth   storage.StorageBackedUint32
 	wasmHostioInk  storage.StorageBackedUint64
@@ -32,12 +33,13 @@ type Programs struct {
 }
 
 type Program struct {
-	footprint uint16
-	version   uint32
-	address   common.Address // not saved in state
+	footprint    uint16
+	version      uint32
+	compiledHash common.Hash
 }
 
 var machineVersionsKey = []byte{0}
+var machineHashesKey = []byte{1}
 
 const (
 	versionOffset uint64 = iota
@@ -83,6 +85,7 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(machineVersionsKey),
+		compiledHashes: sto.OpenSubStorage(machineHashesKey),
 		inkPrice:       sto.OpenStorageBackedUBips(inkPriceOffset),
 		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
 		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
@@ -189,7 +192,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
+	footprint, compiledHash, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
 	if err != nil {
 		return 0, true, err
 	}
@@ -199,11 +202,11 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	statedb.AddStylusPagesEver(footprint)
 
 	programData := Program{
-		footprint: footprint,
-		version:   version,
-		address:   program,
+		footprint:    footprint,
+		version:      version,
+		compiledHash: compiledHash,
 	}
-	return version, false, p.programs.Set(codeHash, programData.serialize())
+	return version, false, p.setProgram(codeHash, programData)
 }
 
 func (p Programs) CallProgram(
@@ -220,7 +223,7 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	contract := scope.Contract
-	program, err := p.getProgram(contract)
+	program, err := p.getProgram(contract.CodeHash)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +273,7 @@ func (p Programs) CallProgram(
 		txOrigin:        evm.TxContext.Origin,
 	}
 
-	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	return callUserWasm(contract.Address(), program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -285,24 +288,31 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
-func (p Program) serialize() common.Hash {
+func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(p.footprint))
-	copy(data[28:], arbmath.Uint32ToBytes(p.version))
-	return data
+	copy(data[26:], arbmath.Uint16ToBytes(program.footprint))
+	copy(data[28:], arbmath.Uint32ToBytes(program.version))
+	err := p.programs.Set(codehash, data)
+	if err != nil {
+		return err
+	}
+	return p.compiledHashes.Set(codehash, program.compiledHash)
 }
 
-func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
-	address := contract.Address()
-	if contract.CodeAddr != nil {
-		address = *contract.CodeAddr
+func (p Programs) getProgram(codehash common.Hash) (Program, error) {
+	data, err := p.programs.Get(codehash)
+	if err != nil {
+		return Program{}, err
 	}
-	data, err := p.programs.Get(contract.CodeHash)
+	compiledHash, err := p.compiledHashes.Get(codehash)
+	if err != nil {
+		return Program{}, err
+	}
 	return Program{
-		footprint: arbmath.BytesToUint16(data[26:28]),
-		version:   arbmath.BytesToUint32(data[28:]),
-		address:   address,
-	}, err
+		footprint:    arbmath.BytesToUint16(data[26:28]),
+		version:      arbmath.BytesToUint32(data[28:]),
+		compiledHash: compiledHash,
+	}, nil
 }
 
 type goParams struct {
