@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package assertions
 
@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"testing"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/testing/mocks"
+	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

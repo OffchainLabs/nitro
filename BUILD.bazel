@@ -1,7 +1,7 @@
 # gazelle:ignore
 load("@bazel_gazelle//:def.bzl", "gazelle")
 
-# gazelle:prefix github.com/OffchainLabs/challenge-protocol-v2
+# gazelle:prefix github.com/OffchainLabs/bold
 gazelle(name = "gazelle")
 
 gazelle(

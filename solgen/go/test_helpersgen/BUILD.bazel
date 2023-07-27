@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "test_helpersgen",
     srcs = ["test_helpersgen.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/solgen/go/test_helpersgen",
+    importpath = "github.com/OffchainLabs/bold/solgen/go/test_helpersgen",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//:go-ethereum",

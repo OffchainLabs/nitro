@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 // Package assertions contains testing utilities for posting and scanning for
 // assertions on chain, which are useful for simulating the responsibilities
@@ -13,11 +13,11 @@ import (
 	"os"
 	"time"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	retry "github.com/OffchainLabs/bold/runtime"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"

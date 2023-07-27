@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "simulated-backend",
     srcs = ["simulated_backend_wrapper.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/setup/simulated-backend",
+    importpath = "github.com/OffchainLabs/bold/testing/setup/simulated-backend",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",

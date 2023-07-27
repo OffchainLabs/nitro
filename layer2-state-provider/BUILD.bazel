@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "layer2-state-provider",
     srcs = ["provider.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider",
+    importpath = "github.com/OffchainLabs/bold/layer2-state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

@@ -4,7 +4,7 @@ go_library(
     name = "setup_lib",
     testonly = 1,
     srcs = ["rollup_stack.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/setup",
+    importpath = "github.com/OffchainLabs/bold/testing/setup",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

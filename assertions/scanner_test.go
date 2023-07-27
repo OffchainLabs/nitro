@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package assertions_test
 
@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
+	"github.com/OffchainLabs/bold/assertions"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/testing/mocks"
+	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

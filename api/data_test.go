@@ -1,8 +1,8 @@
 package api_test
 
 import (
-	"github.com/OffchainLabs/challenge-protocol-v2/api"
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	"github.com/OffchainLabs/bold/api"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 )
 
 var _ = api.DataAccessor(&FakeDataAccessor{})

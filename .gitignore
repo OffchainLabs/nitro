@@ -14,7 +14,7 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 .idea/vcs.xml
-.idea/challenge-protocol-v2.iml
+.idea/bold.iml
 .idea/modules.xml
 .idea/workspace.xml
 

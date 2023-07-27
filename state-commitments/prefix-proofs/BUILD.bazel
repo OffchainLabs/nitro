@@ -6,7 +6,7 @@ go_library(
         "merkle_expansions.go",
         "prefix_proofs.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs",
+    importpath = "github.com/OffchainLabs/bold/state-commitments/prefix-proofs",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//common",

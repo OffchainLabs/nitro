@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 // package edgetracker contains the logic for tracking an edge in the challenge manager. It keeps
 // track of edges created and their own state transitions until an eventual confirmation.
@@ -11,14 +11,14 @@ import (
 	"os"
 	"time"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	challengetree "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/fsm"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	"github.com/OffchainLabs/challenge-protocol-v2/math"
-	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
-	utilTime "github.com/OffchainLabs/challenge-protocol-v2/time"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
+	"github.com/OffchainLabs/bold/containers"
+	"github.com/OffchainLabs/bold/containers/fsm"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/math"
+	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	utilTime "github.com/OffchainLabs/bold/time"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -72,7 +72,7 @@ func WithActInterval(d time.Duration) Opt {
 
 // WithTimeReference allows setting the timer used by the tracker to determine that time
 // passed in accordance with the act interval set with [WithActInterval]. The default is
-// to use [github.com/offchainlabs/challenge-protocol-v2/time.NewRealTimeReference].
+// to use [github.com/offchainlabs/bold/time.NewRealTimeReference].
 // This is useful for testing with a fake time reference to avoid waiting for real time.
 func WithTimeReference(ref utilTime.Reference) Opt {
 	return func(et *Tracker) {

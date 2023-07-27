@@ -7,7 +7,7 @@ go_library(
         "edge_challenge_manager.go",
         "types.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation",
+    importpath = "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

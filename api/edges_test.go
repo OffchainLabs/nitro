@@ -1,9 +1,9 @@
 package api_test
 
 import (
-	"github.com/OffchainLabs/challenge-protocol-v2/api"
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree/mock"
+	"github.com/OffchainLabs/bold/api"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/challenge-manager/challenge-tree/mock"
 )
 
 func edgesToMockEdges(e []*api.Edge) []*mock.Edge {

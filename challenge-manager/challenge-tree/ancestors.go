@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package challengetree
 
@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
-	bisection "github.com/OffchainLabs/challenge-protocol-v2/math"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
+	bisection "github.com/OffchainLabs/bold/math"
 	"github.com/pkg/errors"
 )
 

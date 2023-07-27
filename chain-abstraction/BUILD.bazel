@@ -6,7 +6,7 @@ go_library(
         "execution_state.go",
         "interfaces.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction",
+    importpath = "github.com/OffchainLabs/bold/chain-abstraction",
     visibility = ["//visibility:public"],
     deps = [
         "//containers/option",

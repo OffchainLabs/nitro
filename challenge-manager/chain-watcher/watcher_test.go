@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package watcher
 
@@ -8,13 +8,13 @@ import (
 	"math/big"
 	"testing"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	challengetree "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
+	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

@@ -6,8 +6,8 @@ import (
 	"encoding/binary"
 	"math"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengegen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/solgen/go/challengegen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )

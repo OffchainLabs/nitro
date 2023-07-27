@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package challengemanager
 
@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
-	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	customTime "github.com/OffchainLabs/challenge-protocol-v2/time"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
+	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/testing/mocks"
+	"github.com/OffchainLabs/bold/testing/setup"
+	customTime "github.com/OffchainLabs/bold/time"
 	"github.com/stretchr/testify/require"
 )
 

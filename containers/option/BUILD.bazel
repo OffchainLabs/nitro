@@ -3,6 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "option",
     srcs = ["option_type.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/containers/option",
+    importpath = "github.com/OffchainLabs/bold/containers/option",
     visibility = ["//visibility:public"],
 )

@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package endtoend
 
@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/endtoend/internal/backend"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	retry "github.com/OffchainLabs/bold/runtime"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/testing/endtoend/internal/backend"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/require"
 )

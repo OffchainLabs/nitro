@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "inclusion-proofs",
     srcs = ["inclusion_proofs.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/inclusion-proofs",
+    importpath = "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs",
     visibility = ["//visibility:public"],
     deps = [
         "//state-commitments/prefix-proofs",

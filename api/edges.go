@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/sync/errgroup"
 )

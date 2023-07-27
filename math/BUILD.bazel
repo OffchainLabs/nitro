@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "math",
     srcs = ["math.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/math",
+    importpath = "github.com/OffchainLabs/bold/math",
     visibility = ["//visibility:public"],
 )
 

@@ -6,7 +6,7 @@ go_library(
         "poster.go",
         "scanner.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/assertions",
+    importpath = "github.com/OffchainLabs/bold/assertions",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

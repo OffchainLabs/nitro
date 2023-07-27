@@ -3,7 +3,7 @@ package api_test
 import (
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/api"
+	"github.com/OffchainLabs/bold/api"
 )
 
 func NewTestServer(t *testing.T) (*api.Server, *FakeDataAccessor) {

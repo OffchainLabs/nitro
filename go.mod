@@ -1,4 +1,4 @@
-module github.com/OffchainLabs/challenge-protocol-v2
+module github.com/OffchainLabs/bold
 
 go 1.19
 

@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package challengemanager
 
@@ -10,18 +10,18 @@ import (
 	"os"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/api"
-	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	watcher "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/chain-watcher"
-	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	utilTime "github.com/OffchainLabs/challenge-protocol-v2/time"
+	"github.com/OffchainLabs/bold/api"
+	"github.com/OffchainLabs/bold/assertions"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
+	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	retry "github.com/OffchainLabs/bold/runtime"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	utilTime "github.com/OffchainLabs/bold/time"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"

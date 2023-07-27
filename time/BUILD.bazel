@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "time",
     srcs = ["time_reference.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/time",
+    importpath = "github.com/OffchainLabs/bold/time",
     visibility = ["//visibility:public"],
 )
 

@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/api"
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree/mock"
+	"github.com/OffchainLabs/bold/api"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/challenge-manager/challenge-tree/mock"
 	"github.com/ethereum/go-ethereum/common"
 	"gopkg.in/d4l3k/messagediff.v1"
 )

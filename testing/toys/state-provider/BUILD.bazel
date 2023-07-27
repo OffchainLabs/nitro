@@ -7,7 +7,7 @@ go_library(
         "execution_engine.go",
         "layer2_state_provider.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider",
+    importpath = "github.com/OffchainLabs/bold/testing/toys/state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

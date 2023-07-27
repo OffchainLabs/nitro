@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package challengemanager
 
@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	edgetracker "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
+	"github.com/OffchainLabs/bold/containers"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 )

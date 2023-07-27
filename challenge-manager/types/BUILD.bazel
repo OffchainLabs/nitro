@@ -6,7 +6,7 @@ go_library(
         "interfaces.go",
         "mode.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types",
+    importpath = "github.com/OffchainLabs/bold/challenge-manager/types",
     visibility = ["//visibility:public"],
     deps = ["//chain-abstraction:protocol"],
 )

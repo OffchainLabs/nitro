@@ -7,7 +7,7 @@ go_library(
         "set.go",
         "slice.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe",
+    importpath = "github.com/OffchainLabs/bold/containers/threadsafe",
     visibility = ["//visibility:public"],
 )
 

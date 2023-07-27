@@ -4,7 +4,7 @@ go_library(
     name = "mocks",
     testonly = 1,
     srcs = ["mocks.go"],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/mocks",
+    importpath = "github.com/OffchainLabs/bold/testing/mocks",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

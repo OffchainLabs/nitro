@@ -7,7 +7,7 @@ go_library(
         "tracker.go",
         "transition_table.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker",
+    importpath = "github.com/OffchainLabs/bold/challenge-manager/edge-tracker",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

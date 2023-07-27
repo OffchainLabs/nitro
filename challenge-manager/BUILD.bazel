@@ -6,7 +6,7 @@ go_library(
         "challenges.go",
         "manager.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager",
+    importpath = "github.com/OffchainLabs/bold/challenge-manager",
     visibility = ["//visibility:public"],
     deps = [
         "//api",

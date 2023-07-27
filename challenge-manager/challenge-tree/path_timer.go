@@ -1,14 +1,14 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package challengetree
 
 import (
 	"fmt"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
 )
 
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,

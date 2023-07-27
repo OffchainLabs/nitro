@@ -1,11 +1,11 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 // Package watcher implements the main monitoring logic for protocol validators.
 // The challenge watcher is a singleton service available to all spawned edge trackers
 // and it tracks common information such as the edges' ancestors and an edge's time unrivaled.
 //
-// See: [github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/edge-tracker]
+// See: [github.com/OffchainLabs/bold/challenge-manager/edge-tracker]
 package watcher
 
 import (
@@ -15,13 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	challengetree "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/challenge-tree"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/threadsafe"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	retry "github.com/OffchainLabs/challenge-protocol-v2/runtime"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
+	"github.com/OffchainLabs/bold/containers"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	retry "github.com/OffchainLabs/bold/runtime"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"

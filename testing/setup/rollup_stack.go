@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package setup
 
@@ -8,15 +8,15 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/bridgegen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	challenge_testing "github.com/OffchainLabs/bold/testing"
+	statemanager "github.com/OffchainLabs/bold/testing/toys/state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"

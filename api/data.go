@@ -1,7 +1,7 @@
 package api
 
 import (
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 )
 
 type DataAccessor interface {

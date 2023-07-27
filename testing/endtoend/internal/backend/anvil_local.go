@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package backend
 
@@ -12,10 +12,10 @@ import (
 	"path"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	challenge_testing "github.com/OffchainLabs/bold/testing"
+	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"

@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/challenge-protocol-v2/blob/main/LICENSE
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 package prefixproofs_test
 
@@ -10,9 +10,9 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
-	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	statemanager "github.com/OffchainLabs/bold/testing/toys/state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
