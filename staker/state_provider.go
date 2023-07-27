@@ -475,7 +475,7 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 		MessageHeight:  protocol.Height(blockHeight),
 		BigStepHeight:  option.None[protocol.Height](),
 	}
-	cachedRoots, err := s.historyCache.Get(cacheKey, option.Some(protocol.Height(toBigStep)))
+	cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toBigStep))
 	if err == nil {
 		return cachedRoots, nil
 	}
@@ -516,7 +516,7 @@ func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModu
 		MessageHeight:  protocol.Height(blockHeight),
 		BigStepHeight:  option.Some[protocol.Height](protocol.Height(bigStep)),
 	}
-	cachedRoots, err := s.historyCache.Get(cacheKey, option.Some(protocol.Height(toSmallStep)))
+	cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toSmallStep))
 	if err == nil {
 		return cachedRoots, nil
 	}

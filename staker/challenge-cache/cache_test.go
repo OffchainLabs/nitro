@@ -37,7 +37,7 @@ func TestCache(t *testing.T) {
 		BigStepHeight:  option.Some(protocol.Height(0)),
 	}
 	t.Run("Not found", func(t *testing.T) {
-		_, err = cache.Get(key, option.None[protocol.Height]())
+		_, err = cache.Get(key, protocol.Height(0))
 		if !errors.Is(err, ErrNotFoundInCache) {
 			t.Fatal(err)
 		}
@@ -61,7 +61,7 @@ func TestCache(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
-	got, err := cache.Get(key, option.None[protocol.Height]())
+	got, err := cache.Get(key, protocol.Height(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,19 +76,9 @@ func TestCache(t *testing.T) {
 }
 
 func TestReadWriteStateRoots(t *testing.T) {
-	t.Run("read empty", func(t *testing.T) {
-		b := bytes.NewBuffer([]byte{})
-		roots, err := readStateRoots(b, option.None[protocol.Height]())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(roots) != 0 {
-			t.Fatal("Expected no roots")
-		}
-	})
 	t.Run("read up to, but had empty reader", func(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
-		_, err := readStateRoots(b, option.Some(protocol.Height(100)))
+		_, err := readStateRoots(b, protocol.Height(100))
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
@@ -100,7 +90,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		want := common.BytesToHash([]byte("foo"))
 		b.Write(want.Bytes())
-		roots, err := readStateRoots(b, option.Some(protocol.Height(0)))
+		roots, err := readStateRoots(b, protocol.Height(0))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,7 +109,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b.Write(foo.Bytes())
 		b.Write(bar.Bytes())
 		b.Write(baz.Bytes())
-		roots, err := readStateRoots(b, option.Some(protocol.Height(1)))
+		roots, err := readStateRoots(b, protocol.Height(1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,7 +180,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: true, roots: want, err: errors.New("foo")}
-		_, err := readStateRoots(m, option.None[protocol.Height]())
+		_, err := readStateRoots(m, protocol.Height(1))
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -205,7 +195,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: true, roots: want, err: io.EOF}
-		_, err := readStateRoots(m, option.Some(protocol.Height(100)))
+		_, err := readStateRoots(m, protocol.Height(100))
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -220,7 +210,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: false, roots: want, bytesRead: 16}
-		_, err := readStateRoots(m, option.None[protocol.Height]())
+		_, err := readStateRoots(m, protocol.Height(2))
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -235,7 +225,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: false, roots: want, bytesRead: 32}
-		got, err := readStateRoots(m, option.None[protocol.Height]())
+		got, err := readStateRoots(m, protocol.Height(2))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -327,7 +317,7 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		readUpTo := option.None[protocol.Height]()
+		readUpTo := protocol.Height(1 << 20)
 		roots, err := cache.Get(key, readUpTo)
 		if err != nil {
 			b.Fatal(err)

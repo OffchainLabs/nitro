@@ -52,7 +52,7 @@ var (
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
 type HistoryCommitmentCacher interface {
-	Get(lookup *Key, readUpTo option.Option[protocol.Height]) ([]common.Hash, error)
+	Get(lookup *Key, readUpTo protocol.Height) ([]common.Hash, error)
 	Put(lookup *Key, stateRoots []common.Hash) error
 }
 
@@ -76,13 +76,12 @@ type Key struct {
 	BigStepHeight  option.Option[protocol.Height]
 }
 
-// Get a list of state roots from the cache up to a certain index if specified. If none, then all
-// state roots for the lookup key will be retrieved. State roots are saved as files in the directory
+// Get a list of state roots from the cache up to a certain index. State roots are saved as files in the directory
 // hierarchy for the cache, and can only be written to once. If a file is not present, ErrNotFoundInCache
 // is returned.
 func (c *Cache) Get(
 	lookup *Key,
-	readUpTo option.Option[protocol.Height],
+	readUpTo protocol.Height,
 ) ([]common.Hash, error) {
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
@@ -152,7 +151,7 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]common.Hash, error) {
+func readStateRoots(r io.Reader, readUpTo protocol.Height) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
@@ -171,21 +170,17 @@ func readStateRoots(r io.Reader, readUpTo option.Option[protocol.Height]) ([]com
 			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
 		}
 		stateRoots = append(stateRoots, common.BytesToHash(buf))
-		if !readUpTo.IsNone() {
-			if totalRead >= uint64(readUpTo.Unwrap()) {
-				return stateRoots, nil
-			}
+		if totalRead >= uint64(readUpTo) {
+			return stateRoots, nil
 		}
 		totalRead++
 	}
-	if !readUpTo.IsNone() {
-		if readUpTo.Unwrap() > protocol.Height(len(stateRoots)) {
-			return nil, fmt.Errorf(
-				"wanted to read up to %d, but only read %d state roots",
-				readUpTo.Unwrap(),
-				len(stateRoots),
-			)
-		}
+	if readUpTo >= protocol.Height(len(stateRoots)) {
+		return nil, fmt.Errorf(
+			"wanted to read up to %d, but only read %d state roots",
+			readUpTo,
+			len(stateRoots),
+		)
 	}
 	return stateRoots, nil
 }
