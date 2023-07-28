@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var validatorABI abi.ABI
@@ -52,9 +53,12 @@ type ValidatorWalletInterface interface {
 	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
+	Start(context.Context)
+	StopAndWait()
 }
 
 type ContractValidatorWallet struct {
+	stopwaiter.StopWaiter
 	con                     *rollupgen.ValidatorWallet
 	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
@@ -332,6 +336,14 @@ func (v *ContractValidatorWallet) CanBatchTxs() bool {
 
 func (v *ContractValidatorWallet) AuthIfEoa() *bind.TransactOpts {
 	return nil
+}
+
+func (w *ContractValidatorWallet) Start(ctx context.Context) {
+	w.StopWaiter.Start(ctx, w)
+}
+
+func (b *ContractValidatorWallet) StopAndWait() {
+	b.StopWaiter.StopAndWait()
 }
 
 func GetValidatorWalletContract(

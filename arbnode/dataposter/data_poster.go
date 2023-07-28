@@ -64,7 +64,7 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	for _, s := range strings.Split(val, ",") {
 		t, err := time.ParseDuration(s)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parsing durations: %w", err)
 		}
 		if t <= lastReplacementTime {
 			return nil, errors.New("replacement times must be increasing")
@@ -245,16 +245,16 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFee
 	return newFeeCap, newTipCap, nil
 }
 
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64) error {
+func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	err := p.updateBalance(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to update data poster balance: %w", err)
+		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 	feeCap, tipCap, err := p.feeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	inner := types.DynamicFeeTx{
 		Nonce:     nonce,
@@ -262,12 +262,12 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		GasFeeCap: feeCap,
 		Gas:       gasLimit,
 		To:        &to,
-		Value:     new(big.Int),
+		Value:     value,
 		Data:      calldata,
 	}
 	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	queuedTx := storage.QueuedTransaction{
 		Data:            inner,
@@ -277,7 +277,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Created:         dataCreatedAt,
 		NextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
-	return p.sendTx(ctx, nil, &queuedTx)
+	return fullTx, p.sendTx(ctx, nil, &queuedTx)
 }
 
 // the mutex must be held by the caller

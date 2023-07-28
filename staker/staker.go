@@ -335,7 +335,13 @@ func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address
 	return latestStaked, count, &globalState, nil
 }
 
+func (s *Staker) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+	s.wallet.StopAndWait()
+}
+
 func (s *Staker) Start(ctxIn context.Context) {
+	s.wallet.Start(ctxIn)
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
