@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,7 +35,7 @@ import (
 func main() {
 	args := os.Args
 	if len(args) < 2 {
-		panic("Usage: datool [client|keygen|generatehash] ...")
+		panic("Usage: datool [client|keygen|generatehash|dumpkeyset] ...")
 	}
 
 	var err error
@@ -45,6 +46,8 @@ func main() {
 		err = startKeyGen(args[2:])
 	case "generatehash":
 		err = generateHash(args[2])
+	case "dumpkeyset":
+		err = dumpKeyset(args[2:])
 	default:
 		panic(fmt.Sprintf("Unknown tool '%s' specified, valid tools are 'client', 'keygen', 'generatehash'", args[1]))
 	}
@@ -312,4 +315,69 @@ func startKeyGen(args []string) error {
 func generateHash(message string) error {
 	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.HashBytes([]byte(message))))
 	return nil
+}
+
+func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
+	f := flag.NewFlagSet("dump keyset", flag.ContinueOnError)
+
+	das.AggregatorConfigAddOptions("keyset", f)
+	genericconf.ConfConfigAddOptions("conf", f)
+
+	k, err := confighelpers.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var config DumpKeysetConfig
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+
+	if config.ConfConfig.Dump {
+		c, err := k.Marshal(koanfjson.Parser())
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
+	if config.KeysetConfig.AssumedHonest == 0 {
+		return nil, errors.New("--keyset.assumed-honest must be set")
+	}
+	if config.KeysetConfig.Backends == "" {
+		return nil, errors.New("--keyset.backends must be set")
+	}
+
+	return &config, nil
+}
+
+// das keygen
+
+type DumpKeysetConfig struct {
+	KeysetConfig das.AggregatorConfig   `koanf:"keyset"`
+	ConfConfig   genericconf.ConfConfig `koanf:"conf"`
+}
+
+func dumpKeyset(args []string) error {
+	config, err := parseDumpKeyset(args)
+	if err != nil {
+		return err
+	}
+
+	services, err := das.ParseServices(config.KeysetConfig)
+	if err != nil {
+		return err
+	}
+
+	keysetHash, keysetBytes, err := das.KeysetHashFromServices(services, uint64(config.KeysetConfig.AssumedHonest))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Keyset: %s\n", hexutil.Encode(keysetBytes))
+	fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
+
+	return err
 }
