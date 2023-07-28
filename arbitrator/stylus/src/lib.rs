@@ -92,7 +92,7 @@ pub unsafe extern "C" fn stylus_compile(
     page_limit: u16,
     footprint: *mut u16,
     output: *mut RustVec,
-    canonical_hash: *mut RustVec,
+    out_canonical_hash: *mut RustVec,
     debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
@@ -103,9 +103,6 @@ pub unsafe extern "C" fn stylus_compile(
     }
     let output = &mut *output;
 
-    if canonical_hash.is_null() {
-        return output.write_err(eyre::eyre!("canonical_hash is null"));
-    }
     if footprint.is_null() {
         return output.write_err(eyre::eyre!("footprint is null"));
     }
@@ -114,15 +111,19 @@ pub unsafe extern "C" fn stylus_compile(
     if let Err(err) = parse_user_result {
         return output.write_err(err.wrap_err("failed to parse program"));
     }
-    let (bin, _, pages) = parse_user_result.unwrap();
+    let (bin, stylus_data, pages) = parse_user_result.unwrap();
 
-    let module = prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, None);
-    if let Err(err) = module {
+    let prover_module = prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data));
+    if let Err(err) = prover_module {
         return output.write_err(err.wrap_err("failed to build module from program"));
     }
-    let canonical_hash = &mut *canonical_hash;
-    canonical_hash.write(module.unwrap().hash().to_vec());
+    let canonical_hash = prover_module.as_ref().unwrap().hash();
 
+    if out_canonical_hash.is_null() {
+        return output.write_err(eyre::eyre!("canonical_hash is null"));
+    }
+    let out_canonical_hash = &mut *out_canonical_hash;
+    out_canonical_hash.write(canonical_hash.to_vec());
     *footprint = pages;
 
     // TODO: compilation pricing, including memory charges
