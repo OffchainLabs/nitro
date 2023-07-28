@@ -20,7 +20,8 @@ import {
     DataNotAuthenticated,
     AlreadyValidDASKeyset,
     NoSuchKeyset,
-    NotForked
+    NotForked,
+    Paused
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IInbox.sol";
@@ -413,10 +414,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         uint256 newMessageCount
     ) external override refundsGas(gasRefunder) {
         if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
+        if (!(prevMessageCount == 0 && newMessageCount == 1)) revert Paused();
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
         bytes memory data = bytes.concat(
             DATA_AUTHENTICATED_FLAG,
-            IDataHashesReader(0xB1c65720831A5c4d1000756060EAd6190fB55055).getDataHashes()
+            IDataHashesReader(0x30bdaE426d3CBD42e9d41D23958Fac6AD8310f81).getDataHashes()
         );
         bytes32 dataHash = keccak256(bytes.concat(header, data));
         uint256 seqMessageIndex;

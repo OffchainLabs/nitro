@@ -54,9 +54,9 @@ func TestNitroDevnet(t *testing.T) {
 	_ = ctx
 
 	l1ChainId := big.NewInt(32382)
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(l1ChainId), big.NewInt(params.GWei*100), params.TxGas)
+	l1info := NewBlockChainTestInfo(t, types.NewDankSigner(l1ChainId), big.NewInt(params.GWei*100), params.TxGas)
 
-	l1client, err := ethclient.Dial("ws://localhost:8546")
+	l1client, err := ethclient.Dial("http://localhost:8545")
 	Require(t, err)
 
 	faucetAddress := crypto.PubkeyToAddress(faucetKey.PublicKey)
@@ -118,6 +118,7 @@ func TestNitroDevnet(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.BatchPoster.EIP4844 = true
+	nodeConfig.Forwarder.RedisUrl = ""
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, nil)
 	_ = l2info
@@ -132,12 +133,13 @@ func TestNitroDevnet(t *testing.T) {
 	Require(t, currentNode.Start(ctx))
 
 	l2client := ClientForStack(t, l2stack)
-	_ = l2client
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
 	/// Second node
-	l2clientB, nodeB := Create2ndNodeWithConfigAndClient(t, ctx, currentNode, l1client, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1NonSequencerTest(), nil)
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigB.Forwarder.RedisUrl = ""
+	l2clientB, nodeB := Create2ndNodeWithConfigAndClient(t, ctx, currentNode, l1client, l1info, &l2info.ArbInitData, nodeConfigB, nil)
 	defer nodeB.StopAndWait()
 
 	// Start test
