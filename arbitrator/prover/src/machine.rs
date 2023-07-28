@@ -44,7 +44,7 @@ use std::{
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
 
-#[cfg(feature = "native")]
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
@@ -134,10 +134,10 @@ impl Function {
             "Function instruction count doesn't fit in a u32",
         );
 
-        #[cfg(feature = "native")]
+        #[cfg(feature = "rayon")]
         let code_hashes = code.par_iter().map(|i| i.hash()).collect();
 
-        #[cfg(not(feature = "native"))]
+        #[cfg(not(feature = "rayon"))]
         let code_hashes = code.iter().map(|i| i.hash()).collect();
 
         Function {
@@ -1456,10 +1456,10 @@ impl Machine {
             let funcs =
                 Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
             for func in funcs.iter_mut() {
-                #[cfg(feature = "native")]
+                #[cfg(feature = "rayon")]
                 let code_hashes = func.code.par_iter().map(|i| i.hash()).collect();
 
-                #[cfg(not(feature = "native"))]
+                #[cfg(not(feature = "rayon"))]
                 let code_hashes = func.code.iter().map(|i| i.hash()).collect();
 
                 func.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
