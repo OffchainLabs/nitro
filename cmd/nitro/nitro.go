@@ -38,6 +38,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -118,6 +120,25 @@ func closeDb(db io.Closer, name string) {
 
 func main() {
 	os.Exit(mainImpl())
+}
+
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *NodeConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
 }
 
 // Returns the exit code
@@ -215,6 +236,9 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
+			if l1Wallet.OnlyCreateKey {
+				return 0
+			}
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
@@ -228,12 +252,18 @@ func mainImpl() int {
 				flag.Usage()
 				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
 			}
+			if nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
+				return 0
+			}
 		}
 		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
 				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+			}
+			if nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
+				return 0
 			}
 		}
 	}
@@ -321,6 +351,8 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
+	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -337,12 +369,23 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
-	defer closeDb(chainDb, "chainDb")
-	if l2BlockChain != nil {
-		// Calling Stop on the blockchain multiple times does nothing
-		defer l2BlockChain.Stop()
+	if err := startMetrics(nodeConfig); err != nil {
+		log.Error("Starting metrics: %v", err)
+		return 1
 	}
+
+	var deferFuncs []func()
+	defer func() {
+		for i := range deferFuncs {
+			deferFuncs[i]()
+		}
+	}()
+
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
+	if l2BlockChain != nil {
+		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
+	}
+	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
 	if err != nil {
 		flag.Usage()
 		log.Error("error initializing database", "err", err)
@@ -350,36 +393,19 @@ func mainImpl() int {
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
-	defer closeDb(arbDb, "arbDb")
+	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		return 1
 	}
 
-	if nodeConfig.Init.ThenQuit {
+	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMsg < 0 {
 		return 0
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
 		log.Error("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
-		return 1
-	}
-
-	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
-
-		if nodeConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				genericconf.StartPprof(address)
-			} else {
-				exp.Setup(address)
-			}
-		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
 		return 1
 	}
 
@@ -459,12 +485,28 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
+		// remove previous deferFuncs, StopAndWait closes database and blockchain.
+		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	exitCode := 0
+
+	if err == nil && nodeConfig.Init.ResetToMsg > 0 {
+		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMsg))
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
+			exitCode = 1
+		}
+		if nodeConfig.Init.ThenQuit {
+			close(sigint)
+
+			return exitCode
+		}
+	}
+
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
@@ -476,8 +518,6 @@ func mainImpl() int {
 
 	// cause future ctrl+c's to panic
 	close(sigint)
-
-	currentNode.StopAndWait()
 
 	return exitCode
 }
@@ -499,6 +539,8 @@ type NodeConfig struct {
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 	Init          InitConfig                      `koanf:"init"`
 	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
@@ -516,6 +558,8 @@ var NodeConfigDefault = NodeConfig{
 	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -535,6 +579,9 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.Bool("pprof", NodeConfigDefault.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
+
 	InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 }
@@ -691,7 +738,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
-		"chain.id":         chainInfo.ChainId,
+		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
 	if chainInfo.SequencerUrl != "" {

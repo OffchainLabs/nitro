@@ -15,16 +15,22 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
+
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 type queuedTransaction[Meta any] struct {
@@ -36,6 +42,8 @@ type queuedTransaction[Meta any] struct {
 	NextReplacement time.Time
 }
 
+// Note: one of the implementation of this interface (Redis storage) does not
+// support duplicate values.
 type QueueStorage[Item any] interface {
 	GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
 	GetLast(ctx context.Context) (*Item, error)
@@ -55,11 +63,12 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
@@ -68,6 +77,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -78,6 +88,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
@@ -88,6 +99,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
 }
 
 // DataPoster must be RLP serializable and deserializable
@@ -114,7 +126,7 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config().ReplacementTimes, ",") {
@@ -134,11 +146,14 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	// To avoid special casing "don't replace again", replace in 10 years
 	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
 	var queue QueueStorage[queuedTransaction[Meta]]
-	if redisClient == nil {
-		queue = NewSliceStorage[queuedTransaction[Meta]]()
-	} else {
+	switch {
+	case config().EnableLevelDB:
+		queue = leveldb.New[queuedTransaction[Meta]](db)
+	case redisClient == nil:
+		queue = slice.NewStorage[queuedTransaction[Meta]]()
+	default:
 		var err error
-		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -221,6 +236,9 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+	if latestHeader.BaseFee == nil {
+		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
 	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
@@ -457,7 +475,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, ErrStorageRace) {
+	if errors.Is(err, storage.ErrStorageRace) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			logLevel = log.Debug
