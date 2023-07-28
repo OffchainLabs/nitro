@@ -109,7 +109,7 @@ describe('Validator Wallet', () => {
 
   it('should reject batch if single tx is not allowed by executor', async function () {
     const data = [
-      rollupMock1.interface.encodeFunctionData('removeOldZombies', [0]),
+      rollupMock1.interface.encodeFunctionData('withdrawStakerFunds'),
       rollupMock2.interface.encodeFunctionData('withdrawStakerFunds'),
     ]
 

@@ -18,6 +18,8 @@ import "../src/osp/OneStepProofEntry.sol";
 import "../src/challengeV2/EdgeChallengeManager.sol";
 import "./challengeV2/Utils.sol";
 
+import "../src/libraries/Error.sol";
+
 import "../src/mocks/TestWETH9.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
@@ -611,13 +613,13 @@ contract RollupTest is Test {
         return (assertionHash, state, inboxcount);
     }
 
-    function testSuccessRemoveWhitelistAfterValidatorAfk(uint256 afkBlocks) public {
+    function testSuccessRemoveWhitelistAfterValidatorAfk() public {
         (bytes32 assertionHash,,) = testSuccessConfirmUnchallengedAssertions();
         vm.roll(userRollup.getAssertion(assertionHash).createdAtBlock + userRollup.VALIDATOR_AFK_BLOCKS() + 1);
         userRollup.removeWhitelistAfterValidatorAfk();
     }
 
-    function testRevertRemoveWhitelistAfterValidatorAfk(uint256 afkBlocks) public {
+    function testRevertRemoveWhitelistAfterValidatorAfk() public {
         vm.expectRevert("VALIDATOR_NOT_AFK");
         userRollup.removeWhitelistAfterValidatorAfk();
     }
@@ -1022,5 +1024,117 @@ contract RollupTest is Test {
         vm.expectRevert("NOT_PENDING");
         vm.prank(anyTrustFastConfirmer);
         userRollup.fastConfirmNewAssertion({assertion: assertion, expectedAssertionHash: expectedAssertionHash});
+    }
+
+    bytes32 constant _IMPLEMENTATION_PRIMARY_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 constant _IMPLEMENTATION_SECONDARY_SLOT = 0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d;
+
+    // should only allow admin to upgrade primary logic
+    function testRevertUpgradeNotAdmin() public {
+        RollupAdminLogic newAdminLogicImpl = new RollupAdminLogic();
+        vm.expectRevert();
+        adminRollup.upgradeTo(address(newAdminLogicImpl));
+    }
+
+    function testRevertUpgradeNotUUPS() public {
+        vm.prank(owner);
+        vm.expectRevert();
+        adminRollup.upgradeTo(address(rollup));
+    }
+
+    function testRevertUpgradePrimaryAsSecondary() public {
+        RollupAdminLogic newAdminLogicImpl = new RollupAdminLogic();
+        vm.prank(owner);
+        vm.expectRevert("ERC1967Upgrade: unsupported secondary proxiableUUID");
+        adminRollup.upgradeSecondaryTo(address(newAdminLogicImpl));
+    }
+
+    function testRevertUpgradeSecondaryAsPrimary() public {
+        RollupUserLogic newUserLogicImpl = new RollupUserLogic();
+        vm.prank(owner);
+        vm.expectRevert("ERC1967Upgrade: unsupported proxiableUUID");
+        adminRollup.upgradeTo(address(newUserLogicImpl));
+    }
+
+    function testSuccessUpgradePrimary() public {
+        address ori_secondary_impl =
+            address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_SECONDARY_SLOT))));
+
+        RollupAdminLogic newAdminLogicImpl = new RollupAdminLogic();
+        vm.prank(owner);
+        adminRollup.upgradeTo(address(newAdminLogicImpl));
+
+        address new_primary_impl = address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_PRIMARY_SLOT))));
+        address new_secondary_impl =
+            address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_SECONDARY_SLOT))));
+
+        assertEq(address(newAdminLogicImpl), new_primary_impl);
+        assertEq(ori_secondary_impl, new_secondary_impl);
+    }
+
+    function testSuccessUpgradePrimaryAndCall() public {
+        address ori_secondary_impl =
+            address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_SECONDARY_SLOT))));
+
+        RollupAdminLogic newAdminLogicImpl = new RollupAdminLogic();
+        vm.prank(owner);
+        adminRollup.upgradeToAndCall(address(newAdminLogicImpl), abi.encodeCall(adminRollup.pause, ()));
+        assertEq(adminRollup.paused(), true);
+
+        address new_primary_impl = address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_PRIMARY_SLOT))));
+        address new_secondary_impl =
+            address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_SECONDARY_SLOT))));
+
+        assertEq(address(newAdminLogicImpl), new_primary_impl);
+        assertEq(ori_secondary_impl, new_secondary_impl);
+    }
+
+    function testSuccessUpgradeSecondary() public {
+        address ori_primary_impl = address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_PRIMARY_SLOT))));
+
+        RollupUserLogic newUserLogicImpl = new RollupUserLogic();
+        vm.prank(owner);
+        adminRollup.upgradeSecondaryTo(address(newUserLogicImpl));
+
+        address new_primary_impl = address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_PRIMARY_SLOT))));
+        address new_secondary_impl =
+            address(uint160(uint256(vm.load(address(userRollup), _IMPLEMENTATION_SECONDARY_SLOT))));
+
+        assertEq(ori_primary_impl, new_primary_impl);
+        assertEq(address(newUserLogicImpl), new_secondary_impl);
+    }
+
+    function testRevertInitAdminLogicDirectly() public {
+        RollupAdminLogic newAdminLogicImpl = new RollupAdminLogic();
+        Config memory c;
+        ContractDependencies memory cd;
+        vm.expectRevert("Function must be called through delegatecall");
+        newAdminLogicImpl.initialize(c, cd);
+    }
+
+    function testRevertInitUserLogicDirectly() public {
+        RollupUserLogic newUserLogicImpl = new RollupUserLogic();
+        vm.expectRevert("Function must be called through delegatecall");
+        newUserLogicImpl.initialize(address(token));
+    }
+
+    function testRevertInitTwice() public {
+        Config memory c;
+        ContractDependencies memory cd;
+        vm.prank(owner);
+        vm.expectRevert("Initializable: contract is already initialized");
+        adminRollup.initialize(c, cd);
+    }
+
+    function testRevertChainIDFork() public {
+        ISequencerInbox sequencerInbox = userRollup.sequencerInbox();
+        vm.expectRevert(NotForked.selector);
+        sequencerInbox.removeDelayAfterFork();
+    }
+
+    function testRevertNotBatchPoster() public {
+        ISequencerInbox sequencerInbox = userRollup.sequencerInbox();
+        vm.expectRevert(NotBatchPoster.selector);
+        sequencerInbox.addSequencerL2Batch(0, "0x", 0, IGasRefunder(address(0)), 0, 0);
     }
 }

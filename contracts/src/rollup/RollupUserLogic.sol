@@ -140,11 +140,11 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
      * @param prevAssertionHash The hash of the assertion's parent
      * @param inboxAcc The inbox batch accumulator
      */
-    function computeAssertionHash(
-        bytes32 prevAssertionHash,
-        ExecutionState calldata state,
-        bytes32 inboxAcc
-    ) public pure returns (bytes32) {
+    function computeAssertionHash(bytes32 prevAssertionHash, ExecutionState calldata state, bytes32 inboxAcc)
+        public
+        pure
+        returns (bytes32)
+    {
         return RollupLib.assertionHash(prevAssertionHash, state, inboxAcc);
     }
 
