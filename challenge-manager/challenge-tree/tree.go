@@ -1,6 +1,9 @@
+// Package challengetree includes logic for keeping track of honest edges within a challenge
+// with utilities for computing cumulative path timers for said edges. This is helpful during
+// the confirmation process needed by edge trackers.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package challengetree
 
 import (

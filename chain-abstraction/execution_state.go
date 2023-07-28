@@ -1,5 +1,5 @@
-// Package protocol
-// From: Nitro validator/execution_state.go
+// Package protocol a series of interfaces for interacting with Arbitrum chains' rollup
+// and challenge contracts via a developer-friendly, high-level API.
 package protocol
 
 import (

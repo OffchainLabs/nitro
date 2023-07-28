@@ -1,6 +1,9 @@
+// Package fsm defines a generic, finite state machine in Go that is extremely simple
+// and type-safe. It is used by edge tracker goroutines to keep track of the edge states
+// and transition to confirmation.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package fsm
 
 import (

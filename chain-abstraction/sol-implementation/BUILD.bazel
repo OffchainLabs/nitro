@@ -36,6 +36,7 @@ go_test(
     deps = [
         "//chain-abstraction:protocol",
         "//layer2-state-provider",
+        "//solgen/go/rollupgen",
         "//state-commitments/history",
         "//testing",
         "//testing/setup:setup_lib",

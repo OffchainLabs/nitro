@@ -1,3 +1,6 @@
+// Package api defines an API server for BOLD, allowig retrieval of information
+// from both the assertion chain and the challenge manager contracts in order to
+// understand ongoing challenges.
 package api
 
 import (

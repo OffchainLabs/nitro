@@ -37,6 +37,7 @@ go_test(
     deps = [
         "//chain-abstraction:protocol",
         "//challenge-manager/challenge-tree/mock",
+        "@com_github_ethereum_go_ethereum//common",
         "@com_github_gorilla_mux//:mux",
         "@in_gopkg_d4l3k_messagediff_v1//:messagediff_v1",
     ],

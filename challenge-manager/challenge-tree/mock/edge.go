@@ -1,3 +1,4 @@
+// Package mock includes specific mock setups for edge types used in internal tests.
 package mock
 
 import (

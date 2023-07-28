@@ -1,6 +1,7 @@
+// Package challenge_testing includes all non-production code used in BOLD.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package challenge_testing
 
 import (

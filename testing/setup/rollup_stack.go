@@ -1,6 +1,7 @@
+// Package setup prepares a simulated backend for testing.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package setup
 
 import (
@@ -16,7 +17,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
-	statemanager "github.com/OffchainLabs/bold/testing/toys/state-provider"
+	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"

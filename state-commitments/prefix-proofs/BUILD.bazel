@@ -25,7 +25,7 @@ go_test(
     embed = [":prefix-proofs"],
     deps = [
         "//solgen/go/mocksgen",
-        "//testing/toys/state-provider",
+        "//testing/mocks/state-provider",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",

@@ -1,3 +1,4 @@
+// Package types includes types and interfaces specific to the challenge manager instance.
 package types
 
 import (

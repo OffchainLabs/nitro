@@ -1,6 +1,9 @@
+// Package l2stateprovider defines a dependency which provides L2 states and proofs
+// needed for the challenge manager to interact with Arbitrum chains' rollup and challenge
+// contracts.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package l2stateprovider
 
 import (

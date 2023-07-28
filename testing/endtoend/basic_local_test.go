@@ -14,7 +14,7 @@ import (
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/endtoend/internal/backend"
-	statemanager "github.com/OffchainLabs/bold/testing/toys/state-provider"
+	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"

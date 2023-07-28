@@ -1,6 +1,9 @@
+// Package stateprovider defines smarter mocks for testing purposes that can simulate a layer 2
+// state provider and and layer 2 state execution.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-package toys
+package stateprovider
 
 import (
 	"context"

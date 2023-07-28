@@ -1,6 +1,7 @@
+// Package endtoend includes e2e tests for BOLD challenges and assertion posting.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package endtoend
 
 import (

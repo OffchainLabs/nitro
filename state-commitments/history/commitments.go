@@ -1,7 +1,9 @@
+// Package history defines the primitive HistoryCommitment type in the BOLD
+// protocol.
+//
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
-package commitments
+package history
 
 import (
 	"errors"
