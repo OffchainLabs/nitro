@@ -12,6 +12,7 @@ use arbutil::{
 };
 use prover::{
     binary::WasmBinary,
+    machine as prover_machine,
     programs::{config::PricingParams, prelude::*},
 };
 use std::mem;
@@ -28,7 +29,7 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
     let page_limit = sp.read_u16();
     sp.skip_space();
-    let (out_hash_ptr, mut out_hash_len) = sp.read_go_slice();
+    let (out_hash_ptr, out_hash_len) = sp.read_go_slice();
 
     macro_rules! error {
         ($error:expr) => {{
@@ -46,21 +47,26 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
         Ok(result) => result,
         Err(error) => error!(error),
     };
+
+    let prover_module =
+        match prover_machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data)) {
+            Ok(prover_module) => prover_module,
+            Err(error) => error!(error),
+        };
+
     let module = match native::module(&wasm, compile) {
         Ok(module) => module,
         Err(error) => error!(error),
     };
-    let prover_module =
-        match prover::machine::Module::from_user_binary(&bin, false, Some(stylus_data)) {
-            Ok(prover_module) => prover_module,
-            Err(error) => error!(error),
-        };
+
     if out_hash_len != 32 {
         error!(eyre::eyre!(
-            "Go attempting to read compiled machine hash into bad buffer length: {out_len}"
+            "Go attempting to read compiled machine hash into bad buffer length: {out_hash_len}"
         ));
     }
-    sp.write_slice(out_hash_ptr, prover_module.hash().as_slice());
+
+    let canonical_hash = prover_module.hash();
+    sp.write_slice(out_hash_ptr, canonical_hash.as_slice());
     sp.write_ptr(heapify(module));
     sp.write_u16(footprint).skip_space();
     sp.write_nullptr();
