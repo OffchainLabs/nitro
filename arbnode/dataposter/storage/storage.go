@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"time"
 
@@ -22,4 +23,17 @@ type QueuedTransaction struct {
 	Sent            bool
 	Created         time.Time // may be earlier than the tx was given to the tx poster
 	NextReplacement time.Time
+}
+
+func (qt *QueuedTransaction) Equals(v *QueuedTransaction) bool {
+	if (qt.FullTx != nil) != (v.FullTx != nil) {
+		return false
+	}
+	if qt.FullTx != nil && qt.FullTx.Hash() != v.FullTx.Hash() {
+		return false
+	}
+	return bytes.Equal(qt.Meta, v.Meta) &&
+		qt.Sent == v.Sent &&
+		qt.Created.Equal(v.Created) &&
+		qt.NextReplacement.Equal(v.NextReplacement)
 }
