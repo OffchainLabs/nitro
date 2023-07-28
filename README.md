@@ -5,19 +5,66 @@
 
 [![Go](https://github.com/OffchainLabs/bold/actions/workflows/go.yml/badge.svg)](https://github.com/OffchainLabs/bold/actions/workflows/go.yml)
 
-This repository implements BOLD (BOunded liquidity delay) protocol. It is an efficient, all-vs-all dispute protocol that enables anyone on Ethereum L1 to challenge incorrect optimistic rollup state transitions in a permissionless manner. Given state transition is deterministic, this guarantees only one correct result at any given assertion. A **single, honest participant** will always win against malicious entities when challenging assertions posted to the settlement chain. 
+This repository implements Offchain Labs' BOLD (Bounded Liquidity Delay) Protocol: a dispute system to enable permissionless validation of Arbitrum chains. It is an efficient, all-vs-all challenge protocol that enables anyone on Ethereum to challenge invalid rollup state transitions. Given state transitions are deterministic, this guarantees only one correct result for any given assertion. A **single, honest participant** will always win against malicious entities when challenging assertions posted to the settlement chain. 
 
-The code in this repository will eventually be migrated to [github.com/offchainlabs/nitro](https://github.com/offchainlabs/nitro), which includes the necessary execution machines required for interacting with the protocol.
+## Repository Structure
 
-A complete list of reference documentation for the repository can be found on Notion [here](https://www.notion.so/arbitrum/Challenge-Protocol-V2-Trail-of-Bits-Kickoff-cf3b54ba0b234b0195bfdd08c6cbcc88)
+For detailed information on how our code is architected and how it meets the BOLD specification, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Dependencies
+```
+api/ 
+    API for monitoring and visualizing challenges
+assertions/
+    Logic for scanning and posting assertions
+chain-abstraction/
+    High-level wrappers around Solidity bindings for the Rollup contracts
+challenge-manager/
+    All logic related to challenging, managing challenges
+containers/
+    Data structures used in the repository, including FSMs
+contracts/
+    All Rollup / challenge smart contracts
+docs/
+    Diagrams and architecture
+layer2-state-provider/
+    Interface to request state and proofs from an L2 backend
+math/
+    Utilities for challenge calculations
+runtime/
+    Tools for managing function lifecycles
+state-commitments/
+    Proofs, history commitments, and Merkleizatins
+testing/
+    All non-production code
+third_party/
+    Build artifacts for dependencies
+time/
+    Abstract time utilities
+```
 
-- [Go v1.19](https://go.dev/doc/install)
-- Bazelisk tool to install the Bazel build system
-- Node.js v14, we recommend using [node version manager](https://github.com/nvm-sh/nvm)
+## Building
 
-Bazelisk can be installed globally using the Go tool:
+### Go Code
+
+Install [Go v1.19](https://go.dev/doc/install). Then:
+
+```
+git clone https://github.com/OffchainLabs/bold.git && cd bold
+```
+
+The project can be built with either the Go tool or the Bazel build system. We use [Bazel](https://bazel.build) internally because it provides a hermetic, deterministic environment for building our project and gives us access to many tools including a suite of **static analysis checks**, and a great dependency management approach.
+
+##### With Go
+
+To build, simply do:
+
+``` 
+go build ./...
+```
+
+##### With Bazel
+
+We recommend getting the [Bazelisk](https://github.com/bazelbuild/bazelisk) tool to install the Bazel build system. Bazelisk can be installed globally using the Go tool:
 
 ```
 go install github.com/bazelbuild/bazelisk@latest
@@ -29,17 +76,7 @@ Then, we recommend aliasing the `bazel` command to `bazelisk`
 alias bazel=bazelisk
 ```
 
-
-## Building the Go Code
-
-```
-git clone git@github.com:offchainlabs/bold && cd bold
-```
-
-The project can be built with either the Go tool or the Bazel build system. We use [Bazel](https://bazel.build) because it provides a hermetic, deterministic environment for building our project and gives us access to many tools including a suite of **static analysis checks**, and a great dependency management approach.
-
-To build, simply do:
-
+To build with Bazel, 
 ```
 bazel build //...
 ```
@@ -54,13 +91,17 @@ More documentation on common Bazel commands can be found [here](https://bazel.bu
 
 The project can also be ordinarily built with the Go tool
 
-``` 
-go build ./...
+## Testing
+
+### Running Go Tests
+
+Install [Foundry](https://book.getfoundry.sh/getting-started/installation) to get the `anvil` command locally, which allows setting up a local Ethereum chain for testing purposes. Next:
+
+```
+go test ./...
 ```
 
-## Running Go Tests
-
-Running tests with Bazel can be done as follows:
+Alternatively, tests can be ran with Bazel as follows:
 
 ```
 bazel test //...
@@ -78,21 +119,23 @@ To see outputs, run the test multiple times, or pass in specific arguments to th
 bazel test //util/prefix-proofs:go_default_test --runs_per_test=10 --test_filter=<TEST_NAME_HERE> --test_output=streamed
 ```
 
-Tests can also be run ordinarily with the Go tool
+### Running Solidity Tests
+
+Solidity tests can be run using hardhat, but we recommend using [Foundry](https://book.getfoundry.sh/getting-started/installation) as the tool of choice
+
+In the contracts folder, run:
 
 ```
-go test ./...
+forge test
 ```
 
-### Fuzz Tests
-
-The repo contains a few fuzz tests using Go's fuzzer, within the `util/` package. To run an example one, do:
+Output:
 
 ```
-go test -fuzz=FuzzVerify -fuzztime=10m -run=FuzzVerify ./util/prefix-proofs
+Test result: ok. 42 passed; 0 failed; finished in 1.60s
 ```
 
-## Regenerating Solidity Bindings
+## Generating Solidity Bindings
 
 With node version 14 and npm, install `yarn`
 
@@ -120,23 +163,6 @@ go run ./solgen/main.go
 
 You should now have Go bindings inside of `solgen/go`
 
-## Running Solidity Tests
+## License
 
-Solidity tests can be run using hardhat, but we recommend using Foundry as the tool of choice
-
-```
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-```
-
-In the contracts folder, run
-
-```
-forge test
-```
-
-Output:
-
-```
-Test result: ok. 42 passed; 0 failed; finished in 1.60s
-```
+BOLD uses [Business Source License 1.1](./LICENSE)
