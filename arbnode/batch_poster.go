@@ -11,22 +11,24 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -68,6 +70,8 @@ type BatchPoster struct {
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 	backlog      uint64    // An estimate of the number of unposted batches
+
+	batchReverted atomic.Bool // indicates whether data poster batch was reverted
 }
 
 type BatchPosterConfig struct {
@@ -115,7 +119,7 @@ func (c *BatchPosterConfig) Validate() error {
 
 type BatchPosterConfigFetcher func() *BatchPosterConfig
 
-func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
@@ -178,7 +182,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass:       time.Hour,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -221,11 +225,89 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(dataPosterDB, l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
+}
+
+// checkRevert checks blocks with number in range [from, to] whether they
+// contain reverted batch_poster transaction.
+func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, error) {
+	if from > to {
+		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
+	}
+	for idx := from; idx <= to; idx++ {
+		number := big.NewInt(idx)
+		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
+		if err != nil {
+			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
+		}
+		for idx, tx := range block.Transactions() {
+			from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
+			if err != nil {
+				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
+			}
+			if bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
+				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+				if err != nil {
+					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+				}
+				if r.Status == types.ReceiptStatusFailed {
+					log.Error("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+// pollForReverts runs a gouroutine that listens to l1 block headers, checks
+// if any transaction made by batch poster was reverted.
+func (b *BatchPoster) pollForReverts(ctx context.Context) {
+	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
+	defer unsubscribe()
+
+	last := int64(0) // number of last seen block
+	for {
+		// Poll until:
+		// - L1 headers reader channel is closed, or
+		// - polling is through context, or
+		// - we see a transaction in the block from dataposter that was reverted.
+		select {
+		case h, closed := <-headerCh:
+			if closed {
+				log.Info("L1 headers channel has been closed")
+				return
+			}
+			// If this is the first block header, set last seen as number-1.
+			// We may see same block number again if there is L1 reorg, in that
+			// case we check the block again.
+			if last == 0 || last == h.Number.Int64() {
+				last = h.Number.Int64() - 1
+			}
+			if h.Number.Int64()-last > 100 {
+				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", last, "current", h.Number)
+				last = h.Number.Int64()
+				continue
+			}
+
+			reverted, err := b.checkReverts(ctx, last+1, h.Number.Int64())
+			if err != nil {
+				log.Error("Checking batch reverts", "error", err)
+				continue
+			}
+			if reverted {
+				b.batchReverted.Store(true)
+				return
+			}
+			last = h.Number.Int64()
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
@@ -268,9 +350,10 @@ type batchSegments struct {
 }
 
 type buildingBatch struct {
-	segments      *batchSegments
-	startMsgCount arbutil.MessageIndex
-	msgCount      arbutil.MessageIndex
+	segments          *batchSegments
+	startMsgCount     arbutil.MessageIndex
+	msgCount          arbutil.MessageIndex
+	haveUsefulMessage bool
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64) *batchSegments {
@@ -575,6 +658,9 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 const ethPosBlockTime = 12 * time.Second
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
+	if b.batchReverted.Load() {
+		return false, fmt.Errorf("batch was reverted, not posting any more batches")
+	}
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
@@ -607,11 +693,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
+	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	config := b.config()
-	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostDelay
-	haveUsefulMessage := false
+	forcePostBatch := time.Since(firstMsgTime) >= config.MaxBatchPostDelay
 
 	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
@@ -703,16 +788,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if !config.WaitForMaxBatchPostDelay {
 				forcePostBatch = true
 			}
-			haveUsefulMessage = true
+			b.building.haveUsefulMessage = true
 			break
 		}
 		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
-			haveUsefulMessage = true
+			b.building.haveUsefulMessage = true
 		}
 		b.building.msgCount++
 	}
 
-	if !forcePostBatch || !haveUsefulMessage {
+	if !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return false, nil
@@ -731,7 +816,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
-				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+				return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
 			}
 			log.Warn("Falling back to storing data on chain", "err", err)
 		} else if err != nil {
@@ -754,7 +839,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		DelayedMessageCount: b.building.segments.delayedMsg,
 		NextSeqNum:          batchPosition.NextSeqNum + 1,
 	}
-	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
+	err = b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
 		return false, err
 	}
@@ -792,6 +877,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.dataPoster.Start(ctxIn)
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
+	b.LaunchThread(b.pollForReverts)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -818,7 +904,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.ErrStorageRace) {
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace) {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {

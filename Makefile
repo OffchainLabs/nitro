@@ -5,6 +5,7 @@
 # have to update an existing file. So - for docker, convert all dependencies
 # to order-only dependencies (timestamps ignored).
 # WARNING: when using this trick, you cannot use the $< automatic variable
+
 ifeq ($(origin NITRO_BUILD_IGNORE_TIMESTAMPS),undefined)
  DEP_PREDICATE:=
  ORDER_ONLY_PREDICATE:=|
@@ -332,23 +333,23 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/include/brotli/encode.h || ./build-brotli.sh -l
-	test -f target/include/brotli/decode.h || ./build-brotli.sh -l
-	test -f target/lib/libbrotlicommon-static.a || ./build-brotli.sh -l
-	test -f target/lib/libbrotlienc-static.a || ./build-brotli.sh -l
-	test -f target/lib/libbrotlidec-static.a || ./build-brotli.sh -l
+	test -f target/include/brotli/encode.h || ./scripts/build-brotli.sh -l
+	test -f target/include/brotli/decode.h || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlicommon-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlienc-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlidec-static.a || ./scripts/build-brotli.sh -l
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/lib-wasm/libbrotlicommon-static.a || ./build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlienc-static.a || ./build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w -d
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./build-brotli.sh -f -d -t .
-	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./build-brotli.sh -f -d -t .
-	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./scripts/build-brotli.sh -f -d -t .
 	@touch $@
 
 .make:

@@ -63,11 +63,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	if err != nil {
 		return 0, err
 	}
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
-	return findBatchContainingBlock(node, genesis, blockNum)
+	return findBatchContainingBlock(node, node.TxStreamer.GenesisBlockNumber(), blockNum)
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
@@ -84,10 +80,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 		return 0, errors.New("unknown block hash")
 	}
 	blockNum := header.Number.Uint64()
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
+	genesis := node.TxStreamer.GenesisBlockNumber()
 	batch, err := findBatchContainingBlock(node, genesis, blockNum)
 	if err != nil {
 		if errors.Is(err, blockInGenesis) {
@@ -106,14 +99,14 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if err != nil {
 		return 0, err
 	}
-	if latestL1Block < meta.L1Block || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
+	if latestL1Block < meta.ParentChainBlock || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
 		return 0, nil
 	}
 	canonicalHash := bc.GetCanonicalHash(header.Number.Uint64())
 	if canonicalHash != header.Hash() {
 		return 0, errors.New("block hash is non-canonical")
 	}
-	confs := (latestL1Block - meta.L1Block) + 1 + node.InboxReader.GetDelayBlocks()
+	confs := (latestL1Block - meta.ParentChainBlock) + 1 + node.InboxReader.GetDelayBlocks()
 	return confs, nil
 }
 
