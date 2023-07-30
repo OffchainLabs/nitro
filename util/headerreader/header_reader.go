@@ -418,7 +418,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 func (s *HeaderReader) LatestSafeBlockHeader(ctx context.Context) (*types.Header, error) {
 	header, err := s.getCached(ctx, &s.safe)
 	if errors.Is(err, ErrBlockNumberNotSupported) {
-		return nil, errors.New("safe block not found")
+		return nil, fmt.Errorf("%w: safe block not found", ErrBlockNumberNotSupported)
 	}
 	return header, err
 }
@@ -434,7 +434,7 @@ func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
 func (s *HeaderReader) LatestFinalizedBlockHeader(ctx context.Context) (*types.Header, error) {
 	header, err := s.getCached(ctx, &s.finalized)
 	if errors.Is(err, ErrBlockNumberNotSupported) {
-		return nil, errors.New("finalized block not found")
+		return nil, fmt.Errorf("%w: finalized block not found", ErrBlockNumberNotSupported)
 	}
 	return header, err
 }

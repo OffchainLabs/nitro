@@ -76,8 +76,11 @@ type BatchPoster struct {
 
 type l1BlockBound int
 
+// This enum starts at 1 to avoid the empty initialization of 0 being valid
 const (
-	l1BlockBoundSafe l1BlockBound = iota + 1
+	// Default is Safe if the L1 reader has finality data enabled, otherwise Latest
+	l1BlockBoundDefault l1BlockBound = iota + 1
+	l1BlockBoundSafe
 	l1BlockBoundFinalized
 	l1BlockBoundLatest
 	l1BlockBoundIgnore
@@ -114,7 +117,9 @@ func (c *BatchPosterConfig) Validate() error {
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
-	if c.L1BlockBound == "safe" {
+	if c.L1BlockBound == "" {
+		c.l1BlockBound = l1BlockBoundDefault
+	} else if c.L1BlockBound == "safe" {
 		c.l1BlockBound = l1BlockBoundSafe
 	} else if c.L1BlockBound == "finalized" {
 		c.l1BlockBound = l1BlockBoundFinalized
@@ -164,7 +169,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:                       "safe",
+	L1BlockBound:                       "",
 	L1BlockBoundBypass:                 time.Hour,
 }
 
@@ -189,7 +194,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:            10_000,
 	DataPoster:               dataposter.TestDataPosterConfig,
 	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:             "latest",
+	L1BlockBound:             "",
 	L1BlockBoundBypass:       time.Hour,
 }
 
@@ -719,8 +724,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		var err error
 		if config.l1BlockBound == l1BlockBoundLatest {
 			l1Bound, err = b.l1Reader.LastHeader(ctx)
-		} else if config.l1BlockBound == l1BlockBoundSafe {
+		} else if config.l1BlockBound == l1BlockBoundSafe || config.l1BlockBound == l1BlockBoundDefault {
 			l1Bound, err = b.l1Reader.LatestSafeBlockHeader(ctx)
+			if errors.Is(err, headerreader.ErrBlockNumberNotSupported) && config.l1BlockBound == l1BlockBoundDefault {
+				// If getting the latest safe block is unsupported, and the L1BlockBound configuration is the default,
+				// fall back to using the latest block instead of the safe block.
+				l1Bound, err = b.l1Reader.LastHeader(ctx)
+			}
 		} else {
 			if config.l1BlockBound != l1BlockBoundFinalized {
 				log.Error(
