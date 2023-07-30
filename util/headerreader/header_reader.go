@@ -40,11 +40,11 @@ type HeaderReader struct {
 	lastPendingCallBlockNr     uint64
 	requiresPendingCallUpdates int
 
-	safe      cachedBlockNumber
-	finalized cachedBlockNumber
+	safe      cachedHeader
+	finalized cachedHeader
 }
 
-type cachedBlockNumber struct {
+type cachedHeader struct {
 	mutex          sync.Mutex
 	rpcBlockNum    *big.Int
 	headWhenCached *types.Header
@@ -112,8 +112,8 @@ func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) 
 		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
-		safe:                  cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
-		finalized:             cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
+		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:             cachedHeader{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}, nil
 }
 
@@ -393,7 +393,7 @@ func headerIndicatesFinalitySupport(header *types.Header) bool {
 	return false
 }
 
-func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (*types.Header, error) {
+func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.Header, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	currentHead, err := s.LastHeader(ctx)

@@ -74,6 +74,15 @@ type BatchPoster struct {
 	batchReverted atomic.Bool // indicates whether data poster batch was reverted
 }
 
+type l1BlockBound int
+
+const (
+	l1BlockBoundSafe l1BlockBound = iota + 1
+	l1BlockBoundFinalized
+	l1BlockBoundLatest
+	l1BlockBoundIgnore
+)
+
 type BatchPosterConfig struct {
 	Enable                             bool                        `koanf:"enable"`
 	DisableDasFallbackStoreDataOnChain bool                        `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
@@ -93,15 +102,9 @@ type BatchPosterConfig struct {
 	L1BlockBound                       string                      `koanf:"l1-block-bound" reload:"hot"`
 	L1BlockBoundBypass                 time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
 
-	gasRefunder common.Address
+	gasRefunder  common.Address
+	l1BlockBound l1BlockBound
 }
-
-const (
-	l1BlockBoundSafe      = "safe"
-	l1BlockBoundFinalized = "finalized"
-	l1BlockBoundLatest    = "latest"
-	l1BlockBoundIgnore    = "ignore"
-)
 
 func (c *BatchPosterConfig) Validate() error {
 	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
@@ -111,7 +114,15 @@ func (c *BatchPosterConfig) Validate() error {
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
-	if c.L1BlockBound != l1BlockBoundSafe && c.L1BlockBound != l1BlockBoundFinalized && c.L1BlockBound != l1BlockBoundLatest && c.L1BlockBound != l1BlockBoundIgnore {
+	if c.L1BlockBound == "safe" {
+		c.l1BlockBound = l1BlockBoundSafe
+	} else if c.L1BlockBound == "finalized" {
+		c.l1BlockBound = l1BlockBoundFinalized
+	} else if c.L1BlockBound == "latest" {
+		c.l1BlockBound = l1BlockBoundLatest
+	} else if c.L1BlockBound == "ignore" {
+		c.l1BlockBound = l1BlockBoundIgnore
+	} else {
 		return fmt.Errorf("invalid L1 block bound tag \"%v\" (see --help for options)", c.L1BlockBound)
 	}
 	return nil
@@ -153,7 +164,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:                       l1BlockBoundSafe,
+	L1BlockBound:                       "safe",
 	L1BlockBoundBypass:                 time.Hour,
 }
 
@@ -178,7 +189,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:            10_000,
 	DataPoster:               dataposter.TestDataPosterConfig,
 	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:             l1BlockBoundLatest,
+	L1BlockBound:             "latest",
 	L1BlockBoundBypass:       time.Hour,
 }
 
@@ -702,17 +713,21 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
 	var l1BoundMinBlockNumber uint64
 	var l1BoundMinTimestamp uint64
-	hasL1Bound := config.L1BlockBound != l1BlockBoundIgnore
+	hasL1Bound := config.l1BlockBound != l1BlockBoundIgnore
 	if hasL1Bound {
 		var l1Bound *types.Header
 		var err error
-		if config.L1BlockBound == l1BlockBoundLatest {
+		if config.l1BlockBound == l1BlockBoundLatest {
 			l1Bound, err = b.l1Reader.LastHeader(ctx)
-		} else if config.L1BlockBound == l1BlockBoundSafe {
+		} else if config.l1BlockBound == l1BlockBoundSafe {
 			l1Bound, err = b.l1Reader.LatestSafeBlockHeader(ctx)
 		} else {
-			if config.L1BlockBound != l1BlockBoundFinalized {
-				log.Error("unknown L1 block bound config value; falling back on using finalized", "l1BlockBound", config.L1BlockBound)
+			if config.l1BlockBound != l1BlockBoundFinalized {
+				log.Error(
+					"unknown L1 block bound config value; falling back on using finalized",
+					"l1BlockBoundString", config.L1BlockBound,
+					"l1BlockBoundEnum", config.l1BlockBound,
+				)
 			}
 			l1Bound, err = b.l1Reader.LatestFinalizedBlockHeader(ctx)
 		}
