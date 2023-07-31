@@ -273,7 +273,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 			b,
 			creationInfo.ParentAssertionHash,
 			creationInfo.AfterState,
-			winningEdgeId,
+			winningEdgeId.Hash,
 			rollupgen.ConfigData{
 				WasmModuleRoot:      prevCreationInfo.WasmModuleRoot,
 				ConfirmPeriodBlocks: prevCreationInfo.ConfirmPeriodBlocks,

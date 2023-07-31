@@ -157,7 +157,9 @@ type MutualId common.Hash
 
 // EdgeId is a unique identifier for an edge. Edge IDs encompass the edge type
 // along with the start and end height + commitment for an edge.
-type EdgeId common.Hash
+type EdgeId struct {
+	common.Hash
+}
 
 // ClaimId is the unique identifier of the commitment of a level zero edge corresponds to.
 // For example, if assertion A has two children, B and C, and a block challenge is initiated

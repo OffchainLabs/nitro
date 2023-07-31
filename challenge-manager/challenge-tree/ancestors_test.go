@@ -185,7 +185,7 @@ func Test_findOriginEdge(t *testing.T) {
 	origin = protocol.OriginId(common.BytesToHash([]byte("bar")))
 	got, ok := findOriginEdge(origin, edges)
 	require.Equal(t, true, ok)
-	require.Equal(t, got.Id(), protocol.EdgeId(common.BytesToHash([]byte("blk-0.a-4.a"))))
+	require.Equal(t, got.Id(), protocol.EdgeId{Hash: common.BytesToHash([]byte("blk-0.a-4.a"))})
 
 	edges.Push(newEdge(&newCfg{
 		t:         t,
@@ -198,7 +198,7 @@ func Test_findOriginEdge(t *testing.T) {
 	origin = protocol.OriginId(common.BytesToHash([]byte("baz")))
 	got, ok = findOriginEdge(origin, edges)
 	require.Equal(t, true, ok)
-	require.Equal(t, got.Id(), protocol.EdgeId(common.BytesToHash([]byte("blk-0.b-4.b"))))
+	require.Equal(t, got.Id(), protocol.EdgeId{Hash: common.BytesToHash([]byte("blk-0.b-4.b"))})
 }
 
 func buildEdges(allEdges ...*mock.Edge) map[mock.EdgeId]*mock.Edge {
@@ -329,7 +329,7 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree) {
 }
 
 func id(eId mock.EdgeId) protocol.EdgeId {
-	return protocol.EdgeId(common.BytesToHash([]byte(eId)))
+	return protocol.EdgeId{Hash: common.BytesToHash([]byte(eId))}
 }
 
 // Sets up the following big step challenge snapshot:

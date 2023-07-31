@@ -277,7 +277,8 @@ func (ht *HonestChallengeTree) getClaimedEdge(edge protocol.ReadOnlyEdge) (proto
 		return nil, errors.New("does not claim any edge")
 	}
 	claimId := edge.ClaimId().Unwrap()
-	claimedBlockEdge, ok := ht.edges.TryGet(protocol.EdgeId(claimId))
+	claimIdHash := [32]byte(claimId)
+	claimedBlockEdge, ok := ht.edges.TryGet(protocol.EdgeId{Hash: claimIdHash})
 	if !ok {
 		return nil, errors.New("claimed edge not found")
 	}

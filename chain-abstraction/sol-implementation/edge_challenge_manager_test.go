@@ -255,7 +255,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		require.NoError(t, err)
 		err = challengeManager.ConfirmEdgeByOneStepProof(
 			ctx,
-			protocol.EdgeId(common.BytesToHash([]byte("foo"))),
+			protocol.EdgeId{Hash: common.BytesToHash([]byte("foo"))},
 			&protocol.OneStepData{
 				BeforeHash:        common.Hash{},
 				Proof:             make([]byte, 0),
@@ -670,7 +670,7 @@ func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 	}
 
 	t.Run("edge not found", func(t *testing.T) {
-		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{protocol.EdgeId(common.Hash{1})}), "execution reverted")
+		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{{Hash: common.Hash{1}}}), "execution reverted")
 	})
 	t.Run("confirmed by timer", func(t *testing.T) {
 		require.NoError(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}))

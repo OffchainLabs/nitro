@@ -58,7 +58,7 @@ func convertSpecEdgeEdgesToEdges(ctx context.Context, e []protocol.SpecEdge) ([]
 
 func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge, error) {
 	edge := &Edge{
-		ID:              common.Hash(e.Id()),
+		ID:              e.Id().Hash,
 		Type:            e.GetType().String(),
 		StartCommitment: toCommitment(e.StartCommitment),
 		EndCommitment:   toCommitment(e.EndCommitment),
@@ -104,7 +104,7 @@ func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge,
 			return fmt.Errorf("failed to get edge lower child: %w", err)
 		}
 		if !lowerChild.IsNone() {
-			edge.LowerChildID = common.Hash(lowerChild.Unwrap())
+			edge.LowerChildID = lowerChild.Unwrap().Hash
 		}
 		return nil
 	})
@@ -115,7 +115,7 @@ func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge,
 			return fmt.Errorf("failed to get edge upper child: %w", err)
 		}
 		if !upperChild.IsNone() {
-			edge.UpperChildID = common.Hash(upperChild.Unwrap())
+			edge.UpperChildID = upperChild.Unwrap().Hash
 		}
 		return nil
 	})

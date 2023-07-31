@@ -355,7 +355,7 @@ func (w *Watcher) processEdgeAddedEvent(
 	if err != nil {
 		return err
 	}
-	edgeOpt, err := challengeManager.GetEdge(ctx, event.EdgeId)
+	edgeOpt, err := challengeManager.GetEdge(ctx, protocol.EdgeId{Hash: event.EdgeId})
 	if err != nil {
 		return err
 	}
@@ -419,7 +419,9 @@ func (w *Watcher) checkForEdgeConfirmedByOneStepProof(
 			)
 		}
 		_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-			return true, w.processEdgeConfirmation(ctx, it.Event.EdgeId)
+			return true, w.processEdgeConfirmation(ctx, protocol.EdgeId{
+				Hash: it.Event.EdgeId,
+			})
 		})
 		if processErr != nil {
 			return processErr
@@ -455,7 +457,9 @@ func (w *Watcher) checkForEdgeConfirmedByTime(
 			)
 		}
 		_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-			return true, w.processEdgeConfirmation(ctx, it.Event.EdgeId)
+			return true, w.processEdgeConfirmation(ctx, protocol.EdgeId{
+				Hash: it.Event.EdgeId,
+			})
 		})
 		if processErr != nil {
 			return processErr
@@ -491,7 +495,9 @@ func (w *Watcher) checkForEdgeConfirmedByChildren(
 			)
 		}
 		_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-			return true, w.processEdgeConfirmation(ctx, it.Event.EdgeId)
+			return true, w.processEdgeConfirmation(ctx, protocol.EdgeId{
+				Hash: it.Event.EdgeId,
+			})
 		})
 		if processErr != nil {
 			return processErr
@@ -527,7 +533,9 @@ func (w *Watcher) checkForEdgeConfirmedByClaim(
 			)
 		}
 		_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-			return true, w.processEdgeConfirmation(ctx, it.Event.EdgeId)
+			return true, w.processEdgeConfirmation(ctx, protocol.EdgeId{
+				Hash: it.Event.EdgeId,
+			})
 		})
 		if processErr != nil {
 			return processErr

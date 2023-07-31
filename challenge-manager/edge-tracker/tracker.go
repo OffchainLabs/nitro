@@ -333,7 +333,7 @@ func (et *Tracker) uniqueTrackerLogFields() log.Ctx {
 	endHeight, endCommit := et.edge.EndCommitment()
 	id := et.edge.Id()
 	return log.Ctx{
-		"id":            containers.Trunc(id[:]),
+		"id":            id.Hash,
 		"startHeight":   startHeight,
 		"startCommit":   containers.Trunc(startCommit.Bytes()),
 		"endHeight":     endHeight,
@@ -414,10 +414,10 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	// Check if we can confirm by claim.
 	claimingEdge, ok := et.chainWatcher.ConfirmedEdgeWithClaimExists(
 		assertionHash,
-		protocol.ClaimId(et.edge.Id()),
+		protocol.ClaimId(et.edge.Id().Hash),
 	)
 	if ok {
-		if confirmClaimErr := et.edge.ConfirmByClaim(ctx, protocol.ClaimId(claimingEdge)); confirmClaimErr != nil {
+		if confirmClaimErr := et.edge.ConfirmByClaim(ctx, protocol.ClaimId(claimingEdge.Hash)); confirmClaimErr != nil {
 			return false, errors.Wrap(confirmClaimErr, "could not confirm by claim")
 		}
 		srvlog.Info("Confirmed by claim", et.uniqueTrackerLogFields())

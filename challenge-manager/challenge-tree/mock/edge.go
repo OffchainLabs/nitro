@@ -33,7 +33,7 @@ type Edge struct {
 }
 
 func (e *Edge) Id() protocol.EdgeId {
-	return protocol.EdgeId(common.BytesToHash([]byte(e.ID)))
+	return protocol.EdgeId{Hash: common.BytesToHash([]byte(e.ID))}
 }
 
 func (e *Edge) GetType() protocol.EdgeType {
@@ -84,7 +84,7 @@ func (e *Edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], er
 	if e.LowerChildID == "" {
 		return option.None[protocol.EdgeId](), nil
 	}
-	return option.Some(protocol.EdgeId(common.BytesToHash([]byte(e.LowerChildID)))), nil
+	return option.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.LowerChildID))}), nil
 }
 
 // The upper child of the edge, if any.
@@ -92,7 +92,7 @@ func (e *Edge) UpperChild(_ context.Context) (option.Option[protocol.EdgeId], er
 	if e.UpperChildID == "" {
 		return option.None[protocol.EdgeId](), nil
 	}
-	return option.Some(protocol.EdgeId(common.BytesToHash([]byte(e.UpperChildID)))), nil
+	return option.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.UpperChildID))}), nil
 }
 
 func (e *Edge) HasChildren(ctx context.Context) (bool, error) {
