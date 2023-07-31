@@ -6,9 +6,11 @@ package staker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -16,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -69,11 +72,13 @@ type ContractValidatorWallet struct {
 	rollup                  *rollupgen.RollupUserLogic
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
+	contractABI             abi.ABI
+	dataPoster              *dataposter.DataPoster
 }
 
 var _ ValidatorWalletInterface = (*ContractValidatorWallet)(nil)
 
-func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ContractValidatorWallet, error) {
+func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ContractValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -81,6 +86,10 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 		if err != nil {
 			return nil, err
 		}
+	}
+	abi, err := abi.JSON(strings.NewReader(rollupgen.ValidatorWalletABI))
+	if err != nil {
+		return nil, fmt.Errorf("parsing ValidatorWalletABI: %w", err)
 	}
 	rollup, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Reader.Client())
 	if err != nil {
@@ -95,6 +104,8 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 		rollupAddress:     rollupAddress,
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
+		contractABI:       abi,
+		dataPoster:        dp,
 	}
 	// Go complains if we make an address variable before wallet and copy it in
 	wallet.address.Store(address)
@@ -180,7 +191,11 @@ func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *ty
 	if err != nil {
 		return nil, err
 	}
-	return v.con.ExecuteTransactionWithGasRefunder(auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
+	data, err := v.contractABI.Pack("executeTransactionWithGasRefunder", gasRefunder, tx.Data(), *tx.To(), tx.Value())
+	if err != nil {
+		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
+	}
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, tx.Gas(), auth.Value)
 }
 
 func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {

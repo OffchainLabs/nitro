@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -252,6 +253,23 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
+
+	if gasLimit == 0 {
+		g, err := p.client.EstimateGas(
+			ctx,
+			ethereum.CallMsg{
+				From:  p.sender,
+				To:    &to,
+				Value: value,
+				Data:  calldata,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("estimating gas: %w", err)
+		}
+		gasLimit = g
+	}
+
 	feeCap, tipCap, err := p.feeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
 		return nil, err
