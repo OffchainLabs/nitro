@@ -19,9 +19,9 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
-	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 )
 
 const numOpcodesPerBigStepTest = uint64(4)

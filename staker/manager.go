@@ -2,13 +2,11 @@ package staker
 
 import (
 	"context"
-	"time"
-
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction/sol-implementation"
-	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -75,8 +73,6 @@ func NewManager(
 		stateManager,
 		rollupAddress,
 		challengemanager.WithMode(types.MakeMode),
-		challengemanager.WithAssertionPostingInterval(time.Second*5),
-		challengemanager.WithAssertionScanningInterval(time.Second),
 	)
 	if err != nil {
 		return nil, err

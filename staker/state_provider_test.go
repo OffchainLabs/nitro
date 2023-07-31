@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/assertions"
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	challengemanager "github.com/OffchainLabs/challenge-protocol-v2/challenge-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/challenge-manager/types"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	toyprovider "github.com/OffchainLabs/challenge-protocol-v2/testing/toys/state-provider"
+	"github.com/OffchainLabs/bold/assertions"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	challenge_testing "github.com/OffchainLabs/bold/testing"
+	stateprovider "github.com/OffchainLabs/bold/testing/mocks/state-provider"
+	"github.com/OffchainLabs/bold/testing/setup"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -106,7 +107,7 @@ func TestChallengeProtocolV2(t *testing.T) {
 		backend.Commit()
 	}
 
-	aliceStateManager, err := toyprovider.NewForSimpleMachine(toyprovider.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
+	aliceStateManager, err := stateprovider.NewForSimpleMachine(stateprovider.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
 		BlockChallengeHeight:     uint64(levelZeroBlockHeight),
 		BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
 		SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
@@ -121,11 +122,11 @@ func TestChallengeProtocolV2(t *testing.T) {
 		bigStepDivergenceHeight:   divergeHeightAtL2,
 		smallStepDivergenceHeight: divergeHeightAtL2,
 	}
-	bobStateManager, err := toyprovider.NewForSimpleMachine(
-		toyprovider.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*levelZeroSmallStepHeight+cfg.smallStepDivergenceHeight),
-		toyprovider.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
-		toyprovider.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
-		toyprovider.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
+	bobStateManager, err := stateprovider.NewForSimpleMachine(
+		stateprovider.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*levelZeroSmallStepHeight+cfg.smallStepDivergenceHeight),
+		stateprovider.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
+		stateprovider.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
+		stateprovider.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
 			BlockChallengeHeight:     uint64(levelZeroBlockHeight),
 			BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
 			SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
@@ -134,16 +135,16 @@ func TestChallengeProtocolV2(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	charlieStateManager, err := toyprovider.NewForSimpleMachine(
-		toyprovider.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*levelZeroSmallStepHeight+(cfg.smallStepDivergenceHeight+2)),
-		toyprovider.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight+2),
-		toyprovider.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
-		toyprovider.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
+	charlieStateManager, err := stateprovider.NewForSimpleMachine(
+		stateprovider.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*levelZeroSmallStepHeight+(cfg.smallStepDivergenceHeight+2)),
+		stateprovider.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight+2),
+		stateprovider.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
+		stateprovider.WithLevelZeroEdgeHeights(&challenge_testing.LevelZeroHeights{
 			BlockChallengeHeight:     uint64(levelZeroBlockHeight),
 			BigStepChallengeHeight:   uint64(levelZeroBigStepHeight),
 			SmallStepChallengeHeight: uint64(levelZeroSmallStepHeight),
 		}),
-		toyprovider.WithMaliciousMachineIndex(1),
+		stateprovider.WithMaliciousMachineIndex(1),
 	)
 	if err != nil {
 		panic(err)

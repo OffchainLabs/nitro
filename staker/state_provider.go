@@ -10,12 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
-	l2stateprovider "github.com/OffchainLabs/challenge-protocol-v2/layer2-state-provider"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	commitments "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/history"
-	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/state-commitments/prefix-proofs"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"

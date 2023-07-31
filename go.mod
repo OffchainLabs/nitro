@@ -6,10 +6,10 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
-replace github.com/OffchainLabs/challenge-protocol-v2 => ./challenge-protocol-v2
+replace github.com/OffchainLabs/bold => ./bold
 
 require (
-	github.com/OffchainLabs/challenge-protocol-v2 v0.0.0-00010101000000-000000000000
+	github.com/OffchainLabs/bold v0.0.0-00010101000000-000000000000
 	github.com/alicebob/miniredis/v2 v2.21.0
 	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
 	github.com/andybalholm/brotli v1.0.4

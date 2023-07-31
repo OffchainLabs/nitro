@@ -34,8 +34,8 @@ import (
 	"os"
 	"path/filepath"
 
-	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
-	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
