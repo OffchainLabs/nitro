@@ -39,20 +39,20 @@ pub fn wasm_write(mut env: WasmEnvMut, sp: u32) {
 }
 
 pub fn nanotime1(mut env: WasmEnvMut, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, &mut env);
+    let (sp, env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(0, env.go_state.time);
 }
 
 pub fn walltime(mut env: WasmEnvMut, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, &mut env);
+    let (sp, env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(0, env.go_state.time / 1_000_000_000);
     sp.write_u32(1, (env.go_state.time % 1_000_000_000) as u32);
 }
 
 pub fn walltime1(mut env: WasmEnvMut, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, &mut env);
+    let (sp, env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(0, env.go_state.time / 1_000_000_000);
     sp.write_u64(1, env.go_state.time % 1_000_000_000);
