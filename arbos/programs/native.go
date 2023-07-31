@@ -78,7 +78,7 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version)
+		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version, program.compiledHash)
 	}
 	module := db.GetCompiledWasmCode(address, stylusParams.version)
 

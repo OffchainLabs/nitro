@@ -16,6 +16,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -210,10 +212,14 @@ func (machine *JitMachine) prove(
 		if err := writeExact(call.CodeHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(wasm.Wasm); err != nil {
+		inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
+		if err != nil {
+			return state, fmt.Errorf("error decompressing program: %w", err)
+		}
+		if err := writeBytes(inflated); err != nil {
 			return state, err
 		}
-		if err := writeExact(wasm.NoncanonicalHash[:]); err != nil {
+		if err := writeExact(wasm.CompiledHash[:]); err != nil {
 			return state, err
 		}
 		if err := writeUint32(call.Version); err != nil {
