@@ -14,6 +14,7 @@ use std::{
     net::TcpStream,
     time::Instant,
 };
+use stylus::native;
 
 pub type Bytes20 = [u8; 20];
 pub type Bytes32 = [u8; 32];
@@ -316,9 +317,19 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     for _ in 0..programs_count {
         let codehash = socket::read_bytes32(stream)?;
         let wasm = socket::read_bytes(stream)?;
-        let hash = socket::read_bytes32(stream)?;
+        let compiled_hash = socket::read_bytes32(stream)?;
         let version = socket::read_u32(stream)?;
-        env.user_wasms.insert((codehash, version), (wasm, hash));
+        // todo: test wasm against codehash?
+        // no need to test page_limit, we're just retracing previous compilation
+        let (module, computed_hash, _) =
+            match native::compile_user_wasm(wasm.as_slice(), version, u16::MAX, false) {
+                Err(err) => return Escape::hostio(err.to_string()),
+                Ok(res) => res,
+            };
+        if compiled_hash != *computed_hash {
+            return Escape::hostio(format!("error! compiled wasm different from expected codehash {:?}, version {}, expected {:?} computed {}", codehash, version, compiled_hash, computed_hash));
+        }
+        env.compiled_modules.insert(compiled_hash, module);
     }
 
     if socket::read_u8(stream)? != socket::READY {

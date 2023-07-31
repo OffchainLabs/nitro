@@ -193,10 +193,6 @@ pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
 
-/// Represents a mapping of a WASM program codehash and version to the compiled wasm
-/// code itself and its noncanonical program hash.
-pub type UserWasms = HashMap<(Bytes32, u32), (Vec<u8>, Bytes32)>;
-
 #[derive(Default)]
 pub struct WasmEnv {
     /// Mechanism for reading and writing the module's memory
@@ -212,7 +208,7 @@ pub struct WasmEnv {
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
     /// A collection of user wasms called during the course of execution
-    pub user_wasms: UserWasms,
+    pub compiled_modules: HashMap<Bytes32, Vec<u8>>,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages

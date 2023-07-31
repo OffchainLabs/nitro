@@ -7,11 +7,8 @@
 package programs
 
 import (
-	"math"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -38,8 +35,8 @@ func compileUserWasmRustImpl(
 ) (machine *rustMachine, footprint u16, err *rustVec)
 
 func callUserWasmRustImpl(
-	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
-	evmData *rustEvmData, gas *u64, root *hash,
+	compiledHash *hash, calldata []byte, params *rustConfig, evmApi []byte,
+	evmData *rustEvmData, gas *u64,
 ) (status userStatus, out *rustVec)
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
@@ -77,30 +74,16 @@ func callUserWasm(
 	params *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
-	// since the program has previously passed compilation, don't limit memory
-	pageLimit := uint16(math.MaxUint16)
-
-	wasm, err := getWasm(db, address)
-	if err != nil {
-		log.Crit("failed to get wasm", "program", program, "err", err)
-	}
-	machine, _, _, err := compileUserWasmRustWrapper(db, address, wasm, pageLimit, params.version, params.debugMode)
-	if err != nil {
-		log.Crit("failed to create machine", "program", program, "err", err)
-	}
-
-	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, params.version)
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 
 	status, output := callUserWasmRustImpl(
-		machine,
+		&program.compiledHash,
 		calldata,
 		params.encode(),
 		evmApi.funcs,
 		evmData.encode(),
 		&scope.Contract.Gas,
-		&root,
 	)
 	result := output.intoSlice()
 	return status.output(result)
