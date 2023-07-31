@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion {
+func NewAssertionFromSolidity(assertion rollupgen.Assertion) *Assertion {
 	return &Assertion{
 		BeforeState: validator.NewExecutionStateFromSolidity(assertion.BeforeState),
 		AfterState:  validator.NewExecutionStateFromSolidity(assertion.AfterState),
@@ -21,8 +21,8 @@ func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion
 	}
 }
 
-func (a *Assertion) AsSolidityStruct() rollupgen.RollupLibAssertion {
-	return rollupgen.RollupLibAssertion{
+func (a *Assertion) AsSolidityStruct() rollupgen.Assertion {
+	return rollupgen.Assertion{
 		BeforeState: a.BeforeState.AsSolidityStruct(),
 		AfterState:  a.AfterState.AsSolidityStruct(),
 		NumBlocks:   a.NumBlocks,

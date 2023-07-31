@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	protocol "github.com/OffchainLabs/challenge-protocol-v2/chain-abstraction"
 	"github.com/OffchainLabs/challenge-protocol-v2/containers/option"
@@ -56,10 +57,15 @@ func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidato
 // Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
 // validated / syncing.
 func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
-	// if state.MachineStatus != protocol.MachineStatusRunning {
-	// 	return 0, errors.New("state is not running")
-	// }
-	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch)
+	if state.GlobalState.PosInBatch != 0 {
+		return 0, fmt.Errorf("position in batch must be zero, but got %d", state.GlobalState.PosInBatch)
+	}
+	if state.GlobalState.Batch == 1 && state.GlobalState.PosInBatch == 0 {
+		// TODO: 1 is correct?
+		return 1, nil
+	}
+	batch := state.GlobalState.Batch - 1
+	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 	if err != nil {
 		return 0, err
 	}
@@ -67,31 +73,17 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 	if err != nil {
 		return 0, err
 	}
-	if validatedExecutionState.GlobalState.Batch < state.GlobalState.Batch ||
-		(validatedExecutionState.GlobalState.Batch == state.GlobalState.Batch &&
-			validatedExecutionState.GlobalState.PosInBatch < state.GlobalState.PosInBatch) {
+	if validatedExecutionState.GlobalState.Batch < batch {
 		return 0, ErrChainCatchingUp
 	}
-	var prevBatchMsgCount arbutil.MessageIndex
-	if state.GlobalState.Batch > 0 {
-		var err error
-		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(state.GlobalState.Batch - 1)
-		if err != nil {
-			return 0, err
-		}
-	}
-	count := prevBatchMsgCount
-	if state.GlobalState.PosInBatch > 0 {
-		count += arbutil.MessageIndex(state.GlobalState.PosInBatch)
-	}
-	res, err := s.validator.streamer.ResultAtCount(count)
+	res, err := s.validator.streamer.ResultAtCount(messageCount)
 	if err != nil {
 		return 0, err
 	}
 	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
 		return 0, l2stateprovider.ErrNoExecutionState
 	}
-	return uint64(count), nil
+	return uint64(messageCount), nil
 }
 
 // ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
@@ -348,7 +340,7 @@ func (s *StateManager) OneStepProofData(
 		cfgSnapshot.WasmModuleRoot,
 		messageNumber,
 		bigStep,
-		smallStep+1,
+		smallStep,
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -409,8 +401,8 @@ func (s *StateManager) OneStepProofData(
 func (s *StateManager) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	parentAssertionAfterStateBatch uint64,
 	assertionInboxMaxCount uint64,
+	parentAssertionAfterStateBatch uint64,
 	edgeType protocol.EdgeType,
 	heights protocol.OriginHeights,
 	history l2stateprovider.History,
@@ -560,11 +552,20 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Document why we cannot validate genesis.
+	if batch == 0 {
+		batch += 1
+	}
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
 	desiredStatesLen := int(blockEnd - blockStart + 1)
 	var stateRoots []common.Hash
 	var lastStateRoot common.Hash
+
+	// TODO: Document why we cannot validate genesis.
+	if blockStart == 0 {
+		blockStart += 1
+	}
 	for i := blockStart; i <= blockEnd; i++ {
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
@@ -577,7 +578,7 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 		if err != nil {
 			return nil, err
 		}
-		stateRoot := gs.Hash()
+		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 		stateRoots = append(stateRoots, stateRoot)
 		lastStateRoot = stateRoot
 		if gs.Batch >= nextBatchCount {
@@ -639,7 +640,7 @@ func (s *StateManager) getHashAtMessageCountAndBatch(_ context.Context, messageC
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return gs.Hash(), nil
+	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()), nil
 }
 
 func (s *StateManager) getInfoAtMessageCountAndBatch(messageCount arbutil.MessageIndex, batch uint64) (validator.GoGlobalState, error) {
