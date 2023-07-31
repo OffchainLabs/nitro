@@ -26,3 +26,6 @@
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
+[submodule "arbitrator/langs/c"]
+	path = arbitrator/langs/c
+	url = https://github.com/OffchainLabs/stylus-sdk-c.git
