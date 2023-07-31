@@ -159,25 +159,6 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	challengeManager, err := chain1.SpecChallengeManager(ctx)
 	require.NoError(t, err)
 
-	t.Run("claim predecessor does not exist", func(t *testing.T) {
-		t.Skip("Needs Solidity code")
-	})
-	t.Run("invalid height", func(t *testing.T) {
-		t.Skip("Needs Solidity code")
-	})
-	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
-		t.Skip("Needs Solidity code")
-	})
-	t.Run("winner already declared", func(t *testing.T) {
-		t.Skip("Needs Solidity code")
-	})
-	t.Run("last state not in history", func(t *testing.T) {
-		t.Skip("Needs Solidity code")
-	})
-	t.Run("first state not in history", func(t *testing.T) {
-		t.Skip("Needs Solidity code")
-	})
-
 	leaves := make([]common.Hash, 4)
 	for i := range leaves {
 		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
@@ -205,15 +186,6 @@ func TestEdgeChallengeManager_Bisect(t *testing.T) {
 	honestStateManager := bisectionScenario.honestStateManager
 	honestEdge := bisectionScenario.honestLevelZeroEdge
 
-	t.Run("cannot bisect unrivaled", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
-	t.Run("invalid prefix proof", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
-	t.Run("edge has children", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
 	t.Run("OK", func(t *testing.T) {
 		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight/2, 1)
 		require.NoError(t, err)
@@ -226,24 +198,6 @@ func TestEdgeChallengeManager_Bisect(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, lower.Id(), gotLower.Id())
 		require.Equal(t, upper.Id(), gotUpper.Id())
-	})
-}
-
-func TestEdgeChallengeManager_SubChallenges(t *testing.T) {
-	t.Run("leaf cannot be a fork candidate", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
-	t.Run("lowest height not one step fork", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
-	t.Run("has presumptive successor", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
-	t.Run("empty history root", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
-	})
-	t.Run("OK", func(t *testing.T) {
-		t.Skip("TODO(RJ): Implement")
 	})
 }
 
