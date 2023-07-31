@@ -244,7 +244,7 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	t.Logf("Honest %s, and %+v", containers.Trunc(assertionA.Id().Hash.Bytes()), assertionA)
 
-	//Todo: assertionA, err = poster.PostAssertionAndMoveStake(ctx)
+	assertionA, err = poster.PostAssertionAndMoveStake(ctx)
 	Require(t, err)
 	t.Logf("Honest %s, and %+v", containers.Trunc(assertionA.Id().Hash.Bytes()), assertionA)
 
