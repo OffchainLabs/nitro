@@ -10,10 +10,6 @@ import (
 	"testing"
 )
 
-func TestProgramArbitratorKeccak(t *testing.T) {
-	keccakTest(t, false)
-}
-
 func TestProgramArbitratorErrors(t *testing.T) {
 	errorTest(t, false)
 }

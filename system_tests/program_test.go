@@ -43,7 +43,7 @@ func TestProgramKeccak(t *testing.T) {
 	keccakTest(t, true)
 }
 
-func TestProgramKeccakArb(t *testing.T) {
+func TestProgramArbitratorKeccak(t *testing.T) {
 	keccakTest(t, false)
 }
 
