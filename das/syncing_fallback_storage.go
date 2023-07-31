@@ -370,20 +370,25 @@ func (s *l1SyncService) readMore(ctx context.Context) error {
 func (s *l1SyncService) mainThread(ctx context.Context) {
 	headerChan, unsubscribe := s.l1Reader.Subscribe(false)
 	defer unsubscribe()
+	errCount := 0
 	for {
 		err := s.readMore(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Error("error trying to sync from L1", "err", err)
+			errCount++
+			if errCount > 5 {
+				log.Error("error trying to sync from L1", "err", err)
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(s.config.DelayOnError):
+			case <-time.After(s.config.DelayOnError * time.Duration(errCount)):
 			}
 			continue
 		}
+		errCount = 0
 		if s.catchingUp {
 			// we're behind. Don't wait.
 			continue

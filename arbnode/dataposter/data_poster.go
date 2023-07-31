@@ -15,80 +15,23 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
+
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
-
-type queuedTransaction[Meta any] struct {
-	FullTx          *types.Transaction
-	Data            types.DynamicFeeTx
-	Meta            Meta
-	Sent            bool
-	Created         time.Time // may be earlier than the tx was given to the tx poster
-	NextReplacement time.Time
-}
-
-type QueueStorage[Item any] interface {
-	GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
-	GetLast(ctx context.Context) (*Item, error)
-	Prune(ctx context.Context, keepStartingAt uint64) error
-	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
-	Length(ctx context.Context) (int, error)
-	IsPersistent() bool
-}
-
-type DataPosterConfig struct {
-	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes       string                     `koanf:"replacement-times"`
-	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int                        `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
-}
-
-type DataPosterConfigFetcher func() *DataPosterConfig
-
-func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
-	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
-	f.Int(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
-	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
-	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
-	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
-	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
-}
-
-var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	WaitForL1Finality:      true,
-	TargetPriceGwei:        60.,
-	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 64,
-	MinTipCapGwei:          0.05,
-}
-
-var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
-	RedisSigner:            signature.TestSimpleHmacConfig,
-	WaitForL1Finality:      false,
-	TargetPriceGwei:        60.,
-	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 64,
-	MinTipCapGwei:          0.05,
-}
 
 // DataPoster must be RLP serializable and deserializable
 type DataPoster[Meta any] struct {
@@ -97,11 +40,11 @@ type DataPoster[Meta any] struct {
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
 	redisLock         AttemptLocker
-	config            DataPosterConfigFetcher
+	config            ConfigFetcher
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
 
-	// these fields are protected by the mutex
+	// These fields are protected by the mutex.
 	mutex      sync.Mutex
 	lastBlock  *big.Int
 	balance    *big.Int
@@ -114,7 +57,7 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config().ReplacementTimes, ",") {
@@ -134,11 +77,14 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	// To avoid special casing "don't replace again", replace in 10 years
 	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
 	var queue QueueStorage[queuedTransaction[Meta]]
-	if redisClient == nil {
-		queue = NewSliceStorage[queuedTransaction[Meta]]()
-	} else {
+	switch {
+	case config().EnableLevelDB:
+		queue = leveldb.New[queuedTransaction[Meta]](db)
+	case redisClient == nil:
+		queue = slice.NewStorage[queuedTransaction[Meta]]()
+	default:
 		var err error
-		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +115,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 	if err != nil {
 		return 0, emptyMeta, err
 	}
-	lastQueueItem, err := p.queue.GetLast(ctx)
+	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
 		return 0, emptyMeta, err
 	}
@@ -216,11 +162,14 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+func (p *DataPoster[Meta]) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+	if latestHeader.BaseFee == nil {
+		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
 	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
@@ -294,7 +243,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return fmt.Errorf("failed to update data poster balance: %w", err)
 	}
-	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
+	feeCap, tipCap, err := p.feeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
 		return err
 	}
@@ -356,7 +305,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, err := p.feeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
@@ -437,6 +386,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	return nil
 }
 
+// Updates dataposter balance to balance at pending block.
 func (p *DataPoster[Meta]) updateBalance(ctx context.Context) error {
 	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
@@ -457,7 +407,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, ErrStorageRace) {
+	if errors.Is(err, storage.ErrStorageRace) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			logLevel = log.Debug
@@ -502,7 +452,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
-		queueContents, err := p.queue.GetContents(ctx, unconfirmedNonce, maxTxsToRbf)
+		queueContents, err := p.queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
 			log.Warn("failed to get tx queue contents", "err", err)
 			return minWait
@@ -535,4 +485,86 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		}
 		return wait
 	})
+}
+
+type queuedTransaction[Meta any] struct {
+	FullTx          *types.Transaction
+	Data            types.DynamicFeeTx
+	Meta            Meta
+	Sent            bool
+	Created         time.Time // may be earlier than the tx was given to the tx poster
+	NextReplacement time.Time
+}
+
+// Implements queue-alike storage that can
+// - Insert item at specified index
+// - Update item with the condition that existing value equals assumed value
+// - Delete all the items up to specified index (prune)
+// - Calculate length
+// Note: one of the implementation of this interface (Redis storage) does not
+// support duplicate values.
+type QueueStorage[Item any] interface {
+	// Returns at most maxResults items starting from specified index.
+	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
+	// Returns item with the biggest index.
+	FetchLast(ctx context.Context) (*Item, error)
+	// Prunes items up to (excluding) specified index.
+	Prune(ctx context.Context, until uint64) error
+	// Inserts new item at specified index if previous value matches specified value.
+	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
+	// Returns the size of a queue.
+	Length(ctx context.Context) (int, error)
+	// Indicates whether queue stored at disk.
+	IsPersistent() bool
+}
+
+type DataPosterConfig struct {
+	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes       string                     `koanf:"replacement-times"`
+	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int                        `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
+}
+
+// ConfigFetcher function type is used instead of directly passing config so
+// that flags can be reloaded dynamically.
+type ConfigFetcher func() *DataPosterConfig
+
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
+	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Int(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
+	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
+	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
+	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
+	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
+	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
+}
+
+var DefaultDataPosterConfig = DataPosterConfig{
+	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	WaitForL1Finality:      true,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
+	MaxMempoolTransactions: 64,
+	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
+}
+
+var TestDataPosterConfig = DataPosterConfig{
+	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
+	RedisSigner:            signature.TestSimpleHmacConfig,
+	WaitForL1Finality:      false,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
+	MaxMempoolTransactions: 64,
+	MinTipCapGwei:          0.05,
+	EnableLevelDB:          false,
 }

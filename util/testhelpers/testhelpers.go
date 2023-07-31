@@ -4,7 +4,7 @@
 package testhelpers
 
 import (
-	"math/rand"
+	"crypto/rand"
 	"os"
 	"regexp"
 	"sync"

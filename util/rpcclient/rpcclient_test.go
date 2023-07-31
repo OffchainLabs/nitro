@@ -15,17 +15,18 @@ import (
 func TestLogArgs(t *testing.T) {
 	t.Parallel()
 
-	str := logArgs(0, 1, 2, 3, "hello, world")
+	args := []any{1, 2, 3, "hello, world"}
+	str := limitedArgumentsMarshal{0, args}.String()
 	if str != "[1, 2, 3, \"hello, world\"]" {
 		Fail(t, "unexpected logs limit 0 got:", str)
 	}
 
-	str = logArgs(100, 1, 2, 3, "hello, world")
+	str = limitedArgumentsMarshal{100, args}.String()
 	if str != "[1, 2, 3, \"hello, world\"]" {
 		Fail(t, "unexpected logs limit 100 got:", str)
 	}
 
-	str = logArgs(6, 1, 2, 3, "hello, world")
+	str = limitedArgumentsMarshal{6, args}.String()
 	if str != "[1, 2, 3, \"h..d\"]" {
 		Fail(t, "unexpected logs limit 6 got:", str)
 	}

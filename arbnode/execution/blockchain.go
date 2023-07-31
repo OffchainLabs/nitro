@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
@@ -39,7 +40,7 @@ type CachingConfig struct {
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
-	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
+	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
 	f.Int(prefix+".trie-clean-cache", DefaultCachingConfig.TrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with")
@@ -82,7 +83,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 	}
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, serializedChainConfig []byte, accountsPerSync uint) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	prevDifficulty := big.NewInt(0)
@@ -103,7 +104,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig, serializedChainConfig, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig, initMessage, timestamp, accountsPerSync)
 	if err != nil {
 		return err
 	}
@@ -170,8 +171,8 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, serializedChainConfig []byte, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, chainConfig, serializedChainConfig, accountsPerSync)
+func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
+	err := WriteOrTestGenblock(chainDb, initData, chainConfig, initMessage, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}
@@ -185,22 +186,6 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(_ *types.Header) bool {
 	return false
-}
-
-func ReorgToBlock(chain *core.BlockChain, blockNum uint64) (*types.Block, error) {
-	genesisNum := chain.Config().ArbitrumChainParams.GenesisBlockNum
-	if blockNum < genesisNum {
-		return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesisNum)
-	}
-	reorgingToBlock := chain.GetBlockByNumber(blockNum)
-	if reorgingToBlock == nil {
-		return nil, fmt.Errorf("didn't find reorg target block number %v", blockNum)
-	}
-	err := chain.ReorgToOldBlock(reorgingToBlock)
-	if err != nil {
-		return nil, err
-	}
-	return reorgingToBlock, nil
 }
 
 func init() {
