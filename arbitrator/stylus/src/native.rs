@@ -8,9 +8,10 @@ use crate::{
 use arbutil::{
     evm::{api::EvmApi, EvmData},
     operator::OperatorCode,
-    Color,
+    Bytes32, Color,
 };
 use eyre::{bail, eyre, ErrReport, Result};
+use prover::binary::WasmBinary;
 use prover::programs::{
     config::PricingParams,
     counter::{Counter, CountingMachine, OP_OFFSETS},
@@ -355,4 +356,33 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
 
     let module = module.serialize()?;
     Ok(module.to_vec())
+}
+
+pub fn compile_user_wasm(
+    wasm: &[u8],
+    version: u32,
+    page_limit: u16,
+    debug_mode: bool,
+) -> Result<(Vec<u8>, Bytes32, u16)> {
+    let compile = CompileConfig::version(version, debug_mode);
+    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(wasm, page_limit, &compile) {
+        Err(err) => return Err(err.wrap_err("failed to parse program")),
+        Ok(res) => res,
+    };
+
+    let canonical_hash = match prover::machine::Module::from_user_binary(
+        &bin,
+        compile.debug.debug_funcs,
+        Some(stylus_data),
+    ) {
+        Err(err) => return Err(err.wrap_err("failed to build module from program")),
+        Ok(res) => res.hash(),
+    };
+
+    let module = match module(wasm, compile) {
+        Err(err) => return Err(err.wrap_err("failed generating stylus module")),
+        Ok(module) => module,
+    };
+
+    Ok((module, canonical_hash, footprint))
 }

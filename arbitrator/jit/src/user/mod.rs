@@ -26,7 +26,8 @@ mod evm_api;
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
-    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
+    let version = sp.read_u32();
+    let debug = sp.read_u32() != 0;
     let page_limit = sp.read_u16();
     sp.skip_space();
     let (out_hash_ptr, out_hash_len) = sp.read_go_slice();
@@ -42,30 +43,19 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
         }};
     }
 
-    // ensure the wasm compiles during proving
-    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
-        Ok(result) => result,
-        Err(error) => error!(error),
-    };
-
-    let prover_module =
-        match prover_machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data)) {
-            Ok(prover_module) => prover_module,
-            Err(error) => error!(error),
-        };
-
-    let module = match native::module(&wasm, compile) {
-        Ok(module) => module,
-        Err(error) => error!(error),
-    };
-
     if out_hash_len != 32 {
         error!(eyre::eyre!(
             "Go attempting to read compiled machine hash into bad buffer length: {out_hash_len}"
         ));
     }
 
-    let canonical_hash = prover_module.hash();
+    // ensure the wasm compiles during proving
+    let (module, canonical_hash, footprint) =
+        match native::compile_user_wasm(&wasm, version, page_limit, debug) {
+            Ok(result) => result,
+            Err(error) => error!(error),
+        };
+
     sp.write_slice(out_hash_ptr, canonical_hash.as_slice());
     sp.write_ptr(heapify(module));
     sp.write_u16(footprint).skip_space();

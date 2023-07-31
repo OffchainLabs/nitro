@@ -90,48 +90,37 @@ pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u32,
     page_limit: u16,
-    footprint: *mut u16,
+    out_footprint: *mut u16,
     output: *mut RustVec,
     out_canonical_hash: *mut RustVec,
     debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-    let compile = CompileConfig::version(version, debug_mode != 0);
 
     if output.is_null() {
         return UserOutcomeKind::Failure;
     }
     let output = &mut *output;
 
-    if footprint.is_null() {
+    if out_footprint.is_null() {
         return output.write_err(eyre::eyre!("footprint is null"));
     }
-
-    let parse_user_result = WasmBinary::parse_user(wasm, page_limit, &compile);
-    if let Err(err) = parse_user_result {
-        return output.write_err(err.wrap_err("failed to parse program"));
-    }
-    let (bin, stylus_data, pages) = parse_user_result.unwrap();
-
-    let prover_module = prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data));
-    if let Err(err) = prover_module {
-        return output.write_err(err.wrap_err("failed to build module from program"));
-    }
-    let canonical_hash = prover_module.as_ref().unwrap().hash();
-
     if out_canonical_hash.is_null() {
         return output.write_err(eyre::eyre!("canonical_hash is null"));
     }
     let out_canonical_hash = &mut *out_canonical_hash;
+
+    let (module, canonical_hash, footprint) =
+        match native::compile_user_wasm(wasm, version, page_limit, debug_mode != 0) {
+            Err(err) => return output.write_err(err),
+            Ok(val) => val,
+        };
+
     out_canonical_hash.write(canonical_hash.to_vec());
-    *footprint = pages;
+    *out_footprint = footprint;
+    output.write(module);
 
     // TODO: compilation pricing, including memory charges
-    let module = match native::module(wasm, compile) {
-        Ok(module) => module,
-        Err(err) => return output.write_err(err),
-    };
-    output.write(module);
     UserOutcomeKind::Success
 }
 
