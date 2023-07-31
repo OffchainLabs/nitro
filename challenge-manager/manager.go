@@ -7,8 +7,10 @@ package challengemanager
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"time"
 
@@ -122,6 +124,7 @@ func New(
 	rollupAddr common.Address,
 	opts ...Opt,
 ) (*Manager, error) {
+
 	m := &Manager{
 		backend:                   backend,
 		chain:                     chain,
@@ -129,7 +132,6 @@ func New(
 		address:                   common.Address{},
 		timeRef:                   utilTime.NewRealTimeReference(),
 		rollupAddr:                rollupAddr,
-		edgeTrackerWakeInterval:   time.Millisecond * 100,
 		chainWatcherInterval:      time.Millisecond * 500,
 		trackedEdgeIds:            threadsafe.NewSet[protocol.EdgeId](),
 		assertionHashCache:        threadsafe.NewMap[protocol.AssertionHash, [2]uint64](),
@@ -139,6 +141,17 @@ func New(
 	for _, o := range opts {
 		o(m)
 	}
+
+	if m.edgeTrackerWakeInterval == 0 {
+		// Generating a random integer between 0 and 60 second to wake up the edge tracker.
+		// This is to avoid all edge trackers waking up at the same time across participants.
+		n, err := rand.Int(rand.Reader, new(big.Int).SetUint64(60))
+		if err != nil {
+			return nil, err
+		}
+		m.edgeTrackerWakeInterval = time.Second * time.Duration(n.Uint64())
+	}
+
 	chalManager, err := m.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, err
