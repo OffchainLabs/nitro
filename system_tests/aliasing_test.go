@@ -44,10 +44,10 @@ func TestAliasing(t *testing.T) {
 	alias, err := arbsys.MyCallersAddressWithoutAliasing(nil)
 	Require(t, err)
 	if !top {
-		Fail(t, "direct call is not top level")
+		Fatal(t, "direct call is not top level")
 	}
 	if was || alias != (common.Address{}) {
-		Fail(t, "direct call has an alias", was, alias)
+		Fatal(t, "direct call has an alias", was, alias)
 	}
 
 	testL2Signed := func(top, direct, static, delegate, callcode, call bool) {

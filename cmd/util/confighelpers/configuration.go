@@ -4,6 +4,7 @@
 package confighelpers
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/providers/s3"
 	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -39,7 +39,7 @@ func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	// Load configuration file from S3 if setup
 	if len(k.String("conf.s3.secret-key")) != 0 {
 		if err := loadS3Variables(k); err != nil {
-			return errors.Wrap(err, "error loading S3 settings")
+			return fmt.Errorf("error loading S3 settings: %w", err)
 		}
 
 		if err := applyOverrideOverrides(f, k); err != nil {
@@ -52,7 +52,7 @@ func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	for _, configFile := range configFiles {
 		if len(configFile) > 0 {
 			if err := k.Load(file.Provider(configFile), json.Parser()); err != nil {
-				return errors.Wrap(err, "error loading local config file")
+				return fmt.Errorf("error loading local config file: %w", err)
 			}
 
 			if err := applyOverrideOverrides(f, k); err != nil {
@@ -68,25 +68,25 @@ func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 func applyOverrideOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	// Command line overrides config file or config string
 	if err := k.Load(posflag.Provider(f, ".", k), nil); err != nil {
-		return errors.Wrap(err, "error loading command line config")
+		return fmt.Errorf("error loading command line config: %w", err)
 	}
 
 	// Config string overrides any config file
 	configString := k.String("conf.string")
 	if len(configString) > 0 {
 		if err := k.Load(rawbytes.Provider([]byte(configString)), json.Parser()); err != nil {
-			return errors.Wrap(err, "error loading config string config")
+			return fmt.Errorf("error loading config string config: %w", err)
 		}
 
 		// Command line overrides config file or config string
 		if err := k.Load(posflag.Provider(f, ".", k), nil); err != nil {
-			return errors.Wrap(err, "error loading command line config")
+			return fmt.Errorf("error loading command line config: %w", err)
 		}
 	}
 
 	// Environment variables overrides config files or command line options
 	if err := loadEnvironmentVariables(k); err != nil {
-		return errors.Wrap(err, "error loading environment variables")
+		return fmt.Errorf("error loading environment variables: %w", err)
 	}
 
 	return nil
@@ -192,15 +192,15 @@ func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) erro
 
 	err := k.Load(confmap.Provider(overrideFields, "."), nil)
 	if err != nil {
-		return errors.Wrap(err, "error removing extra parameters before dump")
+		return fmt.Errorf("error removing extra parameters before dump: %w", err)
 	}
 
 	c, err := k.Marshal(koanfjson.Parser())
 	if err != nil {
-		return errors.Wrap(err, "unable to marshal config file to JSON")
+		return fmt.Errorf("unable to marshal config file to JSON: %w", err)
 	}
 
 	fmt.Println(string(c))
 	os.Exit(0)
-	return errors.New("Unreachable")
+	return fmt.Errorf("Unreachable")
 }

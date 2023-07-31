@@ -141,11 +141,13 @@ func (r *Relay) StopAndWait() {
 
 type Config struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	L2            L2Config                        `koanf:"l2"`
+	L2            L2Config                        `koanf:"chain"`
 	LogLevel      int                             `koanf:"log-level"`
 	LogType       string                          `koanf:"log-type"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 	Node          NodeConfig                      `koanf:"node"`
 	Queue         int                             `koanf:"queue"`
 }
@@ -157,17 +159,21 @@ var ConfigDefault = Config{
 	LogType:       "plaintext",
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 	Node:          NodeConfigDefault,
 	Queue:         1024,
 }
 
 func ConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
-	L2ConfigAddOptions("l2", f)
+	L2ConfigAddOptions("chain", f)
 	f.Int("log-level", ConfigDefault.LogLevel, "log level")
 	f.String("log-type", ConfigDefault.LogType, "log type")
 	f.Bool("metrics", ConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.Bool("pprof", ConfigDefault.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
 	NodeConfigAddOptions("node", f)
 	f.Int("queue", ConfigDefault.Queue, "size of relay queue")
 }
@@ -185,7 +191,7 @@ func NodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L2Config struct {
-	ChainId uint64 `koanf:"chain-id"`
+	ChainId uint64 `koanf:"id"`
 }
 
 var L2ConfigDefault = L2Config{
@@ -193,7 +199,7 @@ var L2ConfigDefault = L2Config{
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainId, "L2 chain ID")
+	f.Uint64(prefix+".id", L2ConfigDefault.ChainId, "L2 chain ID")
 }
 
 func ParseRelay(_ context.Context, args []string) (*Config, error) {

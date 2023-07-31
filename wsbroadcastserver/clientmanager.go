@@ -20,7 +20,6 @@ import (
 	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
-	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -126,7 +125,7 @@ func (cm *ClientManager) Register(
 	compression bool,
 ) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression),
+		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression, cm.config().ClientDelay),
 		true,
 	}
 	cm.clientAction <- createClient
@@ -208,48 +207,10 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	//                                        /-> wsutil.Writer -> not compressed msg buffer
 	// bm -> json.Encoder -> io.MultiWriter -|
 	//                                        \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
-	writers := []io.Writer{}
-	var notCompressed bytes.Buffer
-	var notCompressedWriter *wsutil.Writer
-	var compressed bytes.Buffer
-	var compressedWriter *wsutil.Writer
-	if !config.RequireCompression {
-		notCompressedWriter = wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
-		writers = append(writers, notCompressedWriter)
-	}
-	if config.EnableCompression {
-		if cm.flateWriter == nil {
-			var err error
-			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
-			if err != nil {
-				return nil, errors.Wrap(err, "unable to create flate writer")
-			}
-		}
-		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
-		var msg wsflate.MessageState
-		msg.SetCompressed(true)
-		compressedWriter.SetExtensions(&msg)
-		cm.flateWriter.Reset(compressedWriter)
-		writers = append(writers, cm.flateWriter)
-	}
 
-	multiWriter := io.MultiWriter(writers...)
-	encoder := json.NewEncoder(multiWriter)
-	if err := encoder.Encode(bm); err != nil {
-		return nil, errors.Wrap(err, "unable to encode message")
-	}
-	if notCompressedWriter != nil {
-		if err := notCompressedWriter.Flush(); err != nil {
-			return nil, errors.Wrap(err, "unable to flush message")
-		}
-	}
-	if compressedWriter != nil {
-		if err := cm.flateWriter.Close(); err != nil {
-			return nil, errors.Wrap(err, "unable to close flate writer")
-		}
-		if err := compressedWriter.Flush(); err != nil {
-			return nil, errors.Wrap(err, "unable to flush message")
-		}
+	notCompressed, compressed, err := serializeMessage(cm, bm, !config.RequireCompression, config.EnableCompression)
+	if err != nil {
+		return nil, err
 	}
 
 	sendQueueTooLargeCount := 0
@@ -291,6 +252,53 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	}
 
 	return clientDeleteList, nil
+}
+
+func serializeMessage(cm *ClientManager, bm interface{}, enableNonCompressedOutput, enableCompressedOutput bool) (bytes.Buffer, bytes.Buffer, error) {
+	var notCompressed bytes.Buffer
+	var compressed bytes.Buffer
+	writers := []io.Writer{}
+	var notCompressedWriter *wsutil.Writer
+	var compressedWriter *wsutil.Writer
+	if enableNonCompressedOutput {
+		notCompressedWriter = wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
+		writers = append(writers, notCompressedWriter)
+	}
+	if enableCompressedOutput {
+		if cm.flateWriter == nil {
+			var err error
+			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
+			if err != nil {
+				return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to create flate writer: %w", err)
+			}
+		}
+		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
+		var msg wsflate.MessageState
+		msg.SetCompressed(true)
+		compressedWriter.SetExtensions(&msg)
+		cm.flateWriter.Reset(compressedWriter)
+		writers = append(writers, cm.flateWriter)
+	}
+
+	multiWriter := io.MultiWriter(writers...)
+	encoder := json.NewEncoder(multiWriter)
+	if err := encoder.Encode(bm); err != nil {
+		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to encode message: %w", err)
+	}
+	if notCompressedWriter != nil {
+		if err := notCompressedWriter.Flush(); err != nil {
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to flush message: %w", err)
+		}
+	}
+	if compressedWriter != nil {
+		if err := cm.flateWriter.Close(); err != nil {
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to close flate writer: %w", err)
+		}
+		if err := compressedWriter.Flush(); err != nil {
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to flush message: %w", err)
+		}
+	}
+	return notCompressed, compressed, nil
 }
 
 // verifyClients should be called every cm.config.ClientPingInterval

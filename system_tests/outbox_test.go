@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -25,7 +25,7 @@ import (
 
 func TestOutboxProofs(t *testing.T) {
 	t.Parallel()
-	arbstate.RequireHookedGeth()
+	gethhook.RequireHookedGeth()
 	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -90,10 +90,10 @@ func TestOutboxProofs(t *testing.T) {
 		Require(t, err, "No receipt for txn")
 
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			Fail(t, "Tx failed with status code:", receipt)
+			Fatal(t, "Tx failed with status code:", receipt)
 		}
 		if len(receipt.Logs) == 0 {
-			Fail(t, "Tx didn't emit any logs")
+			Fatal(t, "Tx didn't emit any logs")
 		}
 
 		for _, log := range receipt.Logs {
@@ -230,7 +230,7 @@ func TestOutboxProofs(t *testing.T) {
 
 				if zero, ok := partials[place]; ok {
 					if zero != (common.Hash{}) {
-						Fail(t, "Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
+						Fatal(t, "Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
 					}
 					partials[place] = hash
 					partialsByLevel[level] = hash
@@ -264,7 +264,7 @@ func TestOutboxProofs(t *testing.T) {
 
 					curr, ok := known[step]
 					if !ok {
-						Fail(t, "We should know the current node's value")
+						Fatal(t, "We should know the current node's value")
 					}
 
 					left := curr
@@ -276,7 +276,7 @@ func TestOutboxProofs(t *testing.T) {
 						step.Leaf -= 1 << step.Level
 						partial, ok := known[step]
 						if !ok {
-							Fail(t, "There should be a partial here")
+							Fatal(t, "There should be a partial here")
 						}
 						left = partial
 					} else {
@@ -309,7 +309,7 @@ func TestOutboxProofs(t *testing.T) {
 			for i, place := range nodes {
 				hash, ok := known[place]
 				if !ok {
-					Fail(t, "We're missing data for the node at position", place)
+					Fatal(t, "We're missing data for the node at position", place)
 				}
 				hashes[i] = hash
 				t.Log("node", place, hash)
@@ -323,7 +323,7 @@ func TestOutboxProofs(t *testing.T) {
 			}
 
 			if !proof.IsCorrect() {
-				Fail(t, "Proof is wrong")
+				Fatal(t, "Proof is wrong")
 			}
 
 			// Check NodeInterface.sol produces equivalent proofs
@@ -336,10 +336,10 @@ func TestOutboxProofs(t *testing.T) {
 			nodeSend := outboxProof.Send
 
 			if nodeRoot != rootHash {
-				Fail(t, "NodeInterface root differs\n", nodeRoot, "\n", rootHash)
+				Fatal(t, "NodeInterface root differs\n", nodeRoot, "\n", rootHash)
 			}
 			if len(hashes) != len(nodeProof) {
-				Fail(t, "NodeInterface proof is the wrong size", len(nodeProof), len(hashes))
+				Fatal(t, "NodeInterface proof is the wrong size", len(nodeProof), len(hashes))
 			}
 			for i, correct := range hashes {
 				if nodeProof[i] != correct {
@@ -347,7 +347,7 @@ func TestOutboxProofs(t *testing.T) {
 				}
 			}
 			if nodeSend != provable.hash {
-				Fail(t, "NodeInterface send differs\n", nodeSend, "\n", provable.hash)
+				Fatal(t, "NodeInterface send differs\n", nodeSend, "\n", provable.hash)
 			}
 		}
 	}

@@ -5,6 +5,7 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,7 +20,6 @@ import (
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -61,6 +61,7 @@ type BroadcasterConfig struct {
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
+	ClientDelay        time.Duration           `koanf:"client-delay" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -93,6 +94,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
+	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay the first messages sent to each client by this amount")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -116,6 +118,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	ClientDelay:        0,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -139,6 +142,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	ClientDelay:        0,
 }
 
 type WSBroadcastServer struct {
@@ -274,6 +278,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 					requestedSeqNum = arbutil.MessageIndex(num)
 				} else if headerName == HTTPHeaderCloudflareConnectingIP {
 					connectingIP = net.ParseIP(string(value))
+					log.Trace("Client IP parsed from header", "ip", connectingIP, "header", headerName, "value", string(value))
 				}
 
 				return nil
@@ -288,6 +293,9 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				if connectingIP == nil {
 					if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 						connectingIP = addr.IP
+						log.Trace("Client IP taken from socket", "ip", connectingIP, "remoteAddr", conn.RemoteAddr())
+					} else {
+						log.Warn("No client IP could be determined from socket", "remoteAddr", conn.RemoteAddr())
 					}
 				}
 
@@ -460,7 +468,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		s.acceptDescMutex.Unlock()
 		if err != nil {
 			log.Warn("error in poller.Resume", "err", err)
-			s.fatalErrChan <- errors.Wrap(err, "error in poller.Resume")
+			s.fatalErrChan <- fmt.Errorf("error in poller.Resume: %w", err)
 			return
 		}
 	})

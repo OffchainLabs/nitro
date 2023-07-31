@@ -131,7 +131,7 @@ func main() {
 
 	fmt.Println("successfully generated go abi files")
 
-	blockscout := filepath.Join(parent, "blockscout", "init", "data")
+	blockscout := filepath.Join(parent, "nitro-testnode", "blockscout", "init", "data")
 	if _, err := os.Stat(blockscout); err != nil {
 		fmt.Println("skipping abi export since blockscout is not present")
 	} else {

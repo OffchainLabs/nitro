@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -17,25 +18,29 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
-	"github.com/pkg/errors"
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	enc, err := wavmio.ResolvePreImage(hash)
 	if err != nil {
-		panic(errors.Wrap(err, "Error resolving preimage"))
+		panic(fmt.Errorf("Error resolving preimage: %w", err))
 	}
 	header := &types.Header{}
 	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
-		panic(errors.Wrap(err, "Error parsing resolved block header"))
+		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
 	return header
 }
@@ -85,10 +90,10 @@ func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
 	wavmio.SetPositionWithinMessage(pos)
 }
 
-func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	log.Info("ReadDelayedMsg", "seqNum", seqNum)
 	data := wavmio.ReadDelayedInboxMessage(seqNum)
-	return arbos.ParseIncomingL1Message(bytes.NewReader(data), func(batchNum uint64) ([]byte, error) {
+	return arbostypes.ParseIncomingL1Message(bytes.NewReader(data), func(batchNum uint64) ([]byte, error) {
 		return wavmio.ReadInboxMessage(batchNum), nil
 	})
 }
@@ -131,6 +136,7 @@ func populateEcdsaCaches() {
 
 func main() {
 	wavmio.StubInit()
+	gethhook.RequireHookedGeth()
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlError)
@@ -156,7 +162,7 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	readMessage := func(dasEnabled bool) *arbstate.MessageWithMetadata {
+	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
@@ -195,11 +201,31 @@ func main() {
 		}
 		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
 		if err != nil {
-			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+			panic(fmt.Sprintf("Error getting genesis block number from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
+		chainConfigJson, err := initialArbosState.ChainConfig()
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("Error getting chain config from initial ArbOS state: %v", err.Error()))
+		}
+		var chainConfig *params.ChainConfig
+		if len(chainConfigJson) > 0 {
+			chainConfig = &params.ChainConfig{}
+			err = json.Unmarshal(chainConfigJson, chainConfig)
+			if err != nil {
+				panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
+			}
+			if chainConfig.ChainID.Cmp(chainId) != 0 {
+				panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
+			}
+			if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
+				panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
+			}
+		} else {
+			log.Info("Falling back to hardcoded chain config.")
+			chainConfig, err = chaininfo.GetChainConfig(chainId, "", genesisBlockNum, []string{}, "")
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
@@ -218,15 +244,20 @@ func main() {
 
 		message := readMessage(false)
 
-		chainId, err := message.Message.ParseInitMessage()
+		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, 0)
-		if err != nil {
-			panic(err)
+		chainConfig := initMessage.ChainConfig
+		if chainConfig == nil {
+			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
+			chainConfig, err = chaininfo.GetChainConfig(initMessage.ChainId, "", 0, []string{}, "")
+			if err != nil {
+				panic(err)
+			}
 		}
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig)
+
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, initMessage)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}
@@ -239,9 +270,9 @@ func main() {
 
 	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
 
-	extraInfo, err := types.DeserializeHeaderExtraInformation(newBlock.Header())
-	if err != nil {
-		panic(fmt.Sprintf("Error deserializing header extra info: %v", err))
+	extraInfo := types.DeserializeHeaderExtraInformation(newBlock.Header())
+	if extraInfo.ArbOSFormatVersion == 0 {
+		panic(fmt.Sprintf("Error deserializing header extra info: %+v", newBlock.Header()))
 	}
 	wavmio.SetLastBlockHash(newBlockHash)
 	wavmio.SetSendRoot(extraInfo.SendRoot)

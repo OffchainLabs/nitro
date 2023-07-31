@@ -152,23 +152,69 @@ func GraphQLConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".vhosts", GraphQLConfigDefault.VHosts, "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard")
 }
 
+type AuthRPCConfig struct {
+	Addr      string   `koanf:"addr"`
+	Port      int      `koanf:"port"`
+	API       []string `koanf:"api"`
+	Origins   []string `koanf:"origins"`
+	JwtSecret string   `koanf:"jwtsecret"`
+}
+
+func (a AuthRPCConfig) Apply(stackConf *node.Config) {
+	stackConf.AuthAddr = a.Addr
+	stackConf.AuthPort = a.Port
+	stackConf.AuthVirtualHosts = []string{} // dont allow http access
+	stackConf.JWTSecret = a.JwtSecret
+	// a few settings are not available as stanard config, but we can change the default. sigh..
+	node.DefaultAuthOrigins = a.Origins
+	node.DefaultAuthModules = a.API
+}
+
+var AuthRPCConfigDefault = AuthRPCConfig{
+	Addr:      "127.0.0.1",
+	Port:      8549,
+	API:       []string{"validation"},
+	Origins:   []string{"localhost"},
+	JwtSecret: "",
+}
+
+func AuthRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".addr", AuthRPCConfigDefault.Addr, "AUTH-RPC server listening interface")
+	f.String(prefix+".jwtsecret", AuthRPCConfigDefault.JwtSecret, "Path to file holding JWT secret (32B hex)")
+	f.Int(prefix+".port", AuthRPCConfigDefault.Port, "AUTH-RPC server listening port")
+	f.StringSlice(prefix+".origins", AuthRPCConfigDefault.Origins, "Origins from which to accept AUTH requests")
+	f.StringSlice(prefix+".api", AuthRPCConfigDefault.API, "APIs offered over the AUTH-RPC interface")
+}
+
 type MetricsServerConfig struct {
 	Addr           string        `koanf:"addr"`
 	Port           int           `koanf:"port"`
-	Pprof          bool          `koanf:"pprof"`
 	UpdateInterval time.Duration `koanf:"update-interval"`
 }
 
 var MetricsServerConfigDefault = MetricsServerConfig{
 	Addr:           "127.0.0.1",
 	Port:           6070,
-	Pprof:          false,
 	UpdateInterval: 3 * time.Second,
+}
+
+type PProf struct {
+	Addr string `koanf:"addr"`
+	Port int    `koanf:"port"`
+}
+
+var PProfDefault = PProf{
+	Addr: "127.0.0.1",
+	Port: 6071,
 }
 
 func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
 	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
-	f.Bool(prefix+".pprof", MetricsServerConfigDefault.Pprof, "enable profiling for Go")
 	f.Duration(prefix+".update-interval", MetricsServerConfigDefault.UpdateInterval, "metrics server update interval")
+}
+
+func PProfAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".addr", PProfDefault.Addr, "pprof server address")
+	f.Int(prefix+".port", PProfDefault.Port, "pprof server port")
 }

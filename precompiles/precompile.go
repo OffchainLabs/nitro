@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -358,6 +358,11 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			state := evm.StateDB
 			args = args[2:]
 
+			version := arbosState.ArbOSVersion(state)
+			if callerCtx.readOnly && version >= 11 {
+				return []reflect.Value{reflect.ValueOf(vm.ErrWriteProtection)}
+			}
+
 			emitCost := gascost(args)
 			cost := emitCost[0].Interface().(uint64) //nolint:errcheck
 			if !emitCost[1].IsNil() {
@@ -551,11 +556,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
-	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr, maxRefund *big.Int, submissionFeeRefund *big.Int) error {
-		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0))
-		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor, maxRefund, submissionFeeRefund)
+	arbos.EmitReedeemScheduledEvent = func(
+		evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32,
+		donor addr, maxRefund *big.Int, submissionFeeRefund *big.Int,
+	) error {
+		zero := common.Big0
+		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, zero, zero))
+		return ArbRetryableImpl.RedeemScheduled(
+			context, evm, ticketId, retryTxHash, nonce, gas, donor, maxRefund, submissionFeeRefund,
+		)
 	}
-	arbos.EmitReedeemScheduledEvent = emitReedeemScheduled
 	arbos.EmitTicketCreatedEvent = func(evm mech, ticketId bytes32) error {
 		context := eventCtx(ArbRetryableImpl.TicketCreatedGasCost(hash{}))
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
@@ -575,6 +585,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
+	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
@@ -725,7 +736,15 @@ func (p *Precompile) Call(
 			}
 			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
-		return nil, callerCtx.gasLeft, errRet
+		if !errors.Is(errRet, vm.ErrOutOfGas) {
+			log.Debug("precompile reverted with non-solidity error", "precompile", precompileAddress, "input", input, "err", errRet)
+		}
+		// nolint:errorlint
+		if arbosVersion >= 11 || errRet == vm.ErrExecutionReverted {
+			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+		}
+		// Preserve behavior with old versions which would zero out gas on this type of error
+		return nil, 0, errRet
 	}
 	result := make([]interface{}, resultCount)
 	for i := 0; i < resultCount; i++ {

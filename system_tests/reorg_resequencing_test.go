@@ -11,8 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
 func TestReorgResequencing(t *testing.T) {
@@ -43,7 +42,7 @@ func TestReorgResequencing(t *testing.T) {
 			balance, err := client.BalanceAt(ctx, l2info.GetAddress(account), nil)
 			Require(t, err)
 			if balance.Int64() != params.Ether {
-				Fail(t, "expected account", account, "to have a balance of 1 ether but instead it has", balance, "wei "+scenario)
+				Fatal(t, "expected account", account, "to have a balance of 1 ether but instead it has", balance, "wei "+scenario)
 			}
 		}
 	}
@@ -52,14 +51,17 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
+	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	Require(t, err)
+
 	verifyBalances("after empty reorg")
 
 	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
-	newMessage := &arbos.L1IncomingMessage{
-		Header: &arbos.L1IncomingMessageHeader{
-			Kind:        arbos.L1MessageType_EthDeposit,
+	newMessage := &arbostypes.L1IncomingMessage{
+		Header: &arbostypes.L1IncomingMessageHeader{
+			Kind:        arbostypes.L1MessageType_EthDeposit,
 			Poster:      [20]byte{},
 			BlockNumber: 0,
 			Timestamp:   0,
@@ -68,16 +70,22 @@ func TestReorgResequencing(t *testing.T) {
 		},
 		L2msg: append(l2info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
 	}
-	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbstate.MessageWithMetadata{{
+	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
 	}})
+	Require(t, err)
+
+	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
 	verifyBalances("after reorg with new deposit")
 
 	err = node.TxStreamer.ReorgTo(startMsgCount)
+	Require(t, err)
+
+	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")

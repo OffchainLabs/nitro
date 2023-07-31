@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -58,7 +59,8 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	raw := rawdb.NewMemoryDatabase()
 
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
-	stateroot, err := InitializeArbosInDatabase(raw, initReader, params.ArbitrumDevTestChainConfig(), 0, 0)
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	stateroot, err := InitializeArbosInDatabase(raw, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 
 	stateDb, err := state.New(stateroot, state.NewDatabase(raw), nil)

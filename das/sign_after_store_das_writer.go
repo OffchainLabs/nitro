@@ -7,11 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -49,7 +49,7 @@ func (c *KeyConfig) BLSPrivKey() (blsSignatures.PrivateKey, error) {
 	}
 	privKey, err := DecodeBase64BLSPrivateKey(privKeyBytes)
 	if err != nil {
-		return nil, errors.Wrap(err, "'priv-key' was invalid")
+		return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
 	}
 	return privKey, nil
 }
@@ -162,9 +162,8 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		extraBpVerifier = func(message []byte, timeout uint64, sig []byte) bool {
 			if len(sig) >= 64 {
 				return crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
-			} else {
-				return false
 			}
+			return false
 		}
 	}
 
