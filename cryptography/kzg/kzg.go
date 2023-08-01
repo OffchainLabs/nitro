@@ -109,14 +109,17 @@ func (batch *BlobsBatch) Verify() error {
 // single multi-scalar multiplication.
 //
 // The MSM would look like this (for three blobs with two field elements each):
-//  r_0(b0_0*L_0 + b0_1*L_1) + r_1(b1_0*L_0 + b1_1*L_1) + r_2(b2_0*L_0 + b2_1*L_1)
+//
+//	r_0(b0_0*L_0 + b0_1*L_1) + r_1(b1_0*L_0 + b1_1*L_1) + r_2(b2_0*L_0 + b2_1*L_1)
+//
 // which we would need to check against the linear combination of commitments: r_0*C_0 + r_1*C_1 + r_2*C_2
 // In the above, `r` are the random scalars of the linear combination, `b0` is the zero blob, `L` are the elements
 // of the KZG_SETUP_LAGRANGE and `C` are the commitments provided.
 //
 // By regrouping the above equation around the `L` points we can reduce the length of the MSM further
 // (down to just `n` scalar multiplications) by making it look like this:
-//  (r_0*b0_0 + r_1*b1_0 + r_2*b2_0) * L_0 + (r_0*b0_1 + r_1*b1_1 + r_2*b2_1) * L_1
+//
+//	(r_0*b0_0 + r_1*b1_0 + r_2*b2_0) * L_0 + (r_0*b0_1 + r_1*b1_1 + r_2*b2_1) * L_1
 func VerifyBlobsLegacy(commitments []*bls.G1Point, blobs [][]bls.Fr) error {
 	// Prepare objects to hold our two MSMs
 	lPoints := make([]bls.G1Point, params.FieldElementsPerBlob)
