@@ -140,7 +140,7 @@ func (*Edge) Bisect(
 	_ context.Context,
 	_ common.Hash,
 	_ []byte,
-) (protocol.SpecEdge, protocol.SpecEdge, error) {
+) (protocol.VerifiedHonestEdge, protocol.VerifiedHonestEdge, error) {
 	return nil, nil, errors.New("unimplemented")
 }
 

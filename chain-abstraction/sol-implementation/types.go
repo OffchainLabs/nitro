@@ -88,10 +88,16 @@ func (a *Assertion) CreatedAtBlock() (uint64, error) {
 	return inner.CreatedAtBlock, nil
 }
 
-type SpecEdge struct {
+type honestEdge struct {
+	protocol.SpecEdge
+}
+
+func (h *honestEdge) Honest() {}
+
+type specEdge struct {
 	id          [32]byte
 	mutualId    [32]byte
-	manager     *SpecChallengeManager
+	manager     *specChallengeManager
 	miniStaker  option.Option[common.Address]
 	inner       challengeV2gen.ChallengeEdge
 	startHeight uint64
