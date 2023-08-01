@@ -29,6 +29,11 @@
             "external/.*": "Third party code"
         }
     },
+    "composites": {
+        "exclude_files": {
+            "external/.*": "Third party code"
+        }
+    },
     "ctrlflow": {
         "exclude_files": {
             "external/.*": "Third party code"
@@ -92,6 +97,7 @@
     "shadow": {
         "exclude_files": {
             "external/.*": "Third party code",
+            "cgo/.*": "Third party code",
             "validator/.*test\\.go": "disabling for tests",
             "protocol/.*test\\.go": "disabling for tests"
         }
