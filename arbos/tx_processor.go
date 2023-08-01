@@ -191,6 +191,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// collect the submission fee
+		log.Warn("PAYMENT - submission fee to network", "fee", submissionFee)
 		if err := transfer(&tx.From, &networkFeeAccount, submissionFee); err != nil {
 			// should be impossible as we just checked that they have enough balance for the max submission fee,
 			// and we also checked that the max submission fee is at least the actual submission fee
@@ -269,10 +270,31 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// pay for the retryable's gas and update the pools
 		gascost := arbmath.BigMulByUint(basefee, usergas)
-		if err := transfer(&tx.From, &networkFeeAccount, gascost); err != nil {
-			// should be impossible because we just checked the tx.From balance
-			glog.Error("failed to transfer gas cost to network fee account", "err", err)
-			return true, 0, nil, ticketId.Bytes()
+		networkCost := gascost
+		if p.state.ArbOSVersion() >= 11 {
+			infraFeeAccount, _ := p.state.InfraFeeAccount()
+			if infraFeeAccount != (common.Address{}) {
+				infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+				p.state.Restrict(err)
+				if arbmath.BigLessThan(basefee, infraFee) {
+					infraFee = basefee
+				}
+				infraCost := arbmath.BigMulByUint(infraFee, usergas)
+				log.Warn("PAYMENT - payment to infra", "amount", infraCost, "whole gascost", gascost)
+				if err := transfer(&tx.From, &infraFeeAccount, infraCost); err != nil {
+					glog.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
+					return true, 0, nil, ticketId.Bytes()
+				}
+				networkCost = arbmath.BigSub(networkCost, infraCost)
+			}
+		}
+		if arbmath.BigGreaterThan(networkCost, common.Big0) {
+			log.Warn("PAYMENT - payment to network", "amount", networkCost)
+			if err := transfer(&tx.From, &networkFeeAccount, networkCost); err != nil {
+				// should be impossible because we just checked the tx.From balance
+				glog.Error("failed to transfer gas cost to network fee account", "err", err)
+				return true, 0, nil, ticketId.Bytes()
+			}
 		}
 
 		withheldGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
@@ -440,6 +462,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	gasUsed := p.msg.GasLimit - gasLeft
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
+		log.Warn("RETRY", "gasused", gasUsed)
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 
 		// undo Geth's refund to the From address
@@ -450,29 +473,30 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
-		refundNetworkFee := func(amount *big.Int) {
-			const errLog = "network fee address doesn't have enough funds to give user refund"
+		refund := func(refundFrom *common.Address, amount *big.Int) {
+			const errLog = "fee address doesn't have enough funds to give user refund"
 
 			// Refund funds to the fee refund address without overdrafting the L1 deposit.
 			toRefundAddr := takeFunds(maxRefund, amount)
-			err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
+			err = util.TransferBalance(refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
 			if err != nil {
 				// Normally the network fee address should be holding any collected fees.
 				// However, in theory, they could've been transfered out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error(errLog, "err", err)
+				log.Error(errLog, "err", err, "feeAddress", *refundFrom)
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
-			err = util.TransferBalance(&networkFeeAccount, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
+			err = util.TransferBalance(refundFrom, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
 			if err != nil {
-				log.Error(errLog, "err", err)
+				log.Error(errLog, "err", err, "feeAddress", *refundFrom)
 			}
 		}
 
 		if success {
 			// If successful, refund the submission fee.
-			refundNetworkFee(inner.SubmissionFeeRefund)
+			log.Warn("REFUND submission fee from network", "fee", inner.SubmissionFeeRefund)
+			refund(&networkFeeAccount, inner.SubmissionFeeRefund)
 		} else {
 			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
@@ -480,7 +504,24 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
 		takeFunds(maxRefund, arbmath.BigMulByUint(basefee, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
-		refundNetworkFee(gasRefund)
+		networkRefund := gasRefund
+		if p.state.ArbOSVersion() >= 11 {
+			infraFeeAccount, err := p.state.InfraFeeAccount()
+			p.state.Restrict(err)
+			if infraFeeAccount != (common.Address{}) {
+				infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+				p.state.Restrict(err)
+				if arbmath.BigLessThan(basefee, infraFee) { // XXX HERE BE DRAGONS
+					infraFee = basefee
+				}
+				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
+				infraRefund = takeFunds(networkRefund, infraRefund)
+				log.Warn("REFUND from infra", "amount", infraRefund)
+				refund(&infraFeeAccount, infraRefund)
+			}
+		}
+		log.Warn("REFUND from network", "amount", networkRefund)
+		refund(&networkFeeAccount, networkRefund)
 
 		if success {
 			// we don't want to charge for this
