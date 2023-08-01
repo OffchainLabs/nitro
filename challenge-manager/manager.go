@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 var (
@@ -51,6 +52,7 @@ type Manager struct {
 	rollupFilterer            *rollupgen.RollupCoreFilterer
 	chalManager               *challengeV2gen.EdgeChallengeManagerFilterer
 	backend                   bind.ContractBackend
+	client                    *rpc.Client
 	stateManager              l2stateprovider.Provider
 	address                   common.Address
 	name                      string
@@ -105,6 +107,12 @@ func WithMode(m types.Mode) Opt {
 func WithAPIEnabled(addr string) Opt {
 	return func(val *Manager) {
 		val.apiAddr = addr
+	}
+}
+
+func WithRPCClient(client *rpc.Client) Opt {
+	return func(val *Manager) {
+		val.client = client
 	}
 }
 
@@ -191,6 +199,10 @@ func New(
 		m.name,
 		m.assertionScanningInterval,
 	)
+
+	if m.apiAddr != "" && m.client == nil {
+		return nil, errors.New("go-ethereum RPC client required to enable API service")
+	}
 
 	if m.apiAddr != "" {
 		a, err := api.NewServer(&api.Config{
