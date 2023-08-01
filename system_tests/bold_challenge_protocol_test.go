@@ -16,7 +16,6 @@ import (
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -27,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -171,7 +169,7 @@ func TestBoldProtocol(t *testing.T) {
 		nil,
 		smallStepChallengeLeafHeight,
 		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
-		t.TempDir()+"/good",
+		"/tmp/good",
 	)
 	Require(t, err)
 	poster := assertions.NewPoster(
@@ -186,7 +184,7 @@ func TestBoldProtocol(t *testing.T) {
 		nil,
 		smallStepChallengeLeafHeight,
 		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
-		t.TempDir()+"/evil",
+		"/tmp/evil",
 	)
 	Require(t, err)
 	chainB, err := solimpl.NewAssertionChain(
@@ -246,11 +244,11 @@ func TestBoldProtocol(t *testing.T) {
 
 	assertionA, err = poster.PostAssertionAndMoveStake(ctx)
 	Require(t, err)
-	t.Logf("Honest %s, and %+v", containers.Trunc(assertionA.Id().Hash.Bytes()), assertionA)
+	t.Logf("Honest %s, and %+v", containers.Trunc(assertionA.Id().Bytes()), assertionA)
 
 	assertionB, err := posterB.PostLatestAssertion(ctx)
 	Require(t, err)
-	t.Logf("evil %s, and %+v", containers.Trunc(assertionA.Id().Hash.Bytes()), assertionB)
+	t.Logf("evil %s, and %+v", containers.Trunc(assertionB.Id().Bytes()), assertionB)
 
 	manager, err := challengemanager.New(
 		ctx,
@@ -260,6 +258,8 @@ func TestBoldProtocol(t *testing.T) {
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("honest"),
 		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(5*time.Second),
 	)
 	Require(t, err)
 	manager.Start(ctx)
@@ -272,6 +272,8 @@ func TestBoldProtocol(t *testing.T) {
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("evil"),
 		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(5*time.Second),
 	)
 	Require(t, err)
 	managerB.Start(ctx)
@@ -421,6 +423,11 @@ func deployContractsOnly(
 		loserStakeEscrow,
 		miniStake,
 		stakeToken,
+		challenge_testing.WithLevelZeroHeights(&challenge_testing.LevelZeroHeights{
+			BlockChallengeHeight:     blockChallengeLeafHeight,
+			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
+			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
+		}),
 	)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
