@@ -2793,7 +2793,7 @@ impl Machine {
                 out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
                 out!(mod_merkle
                     .prove(module_idx)
-                    .expect("Failed to prove module"));
+                    .expect("Failed to prove module for CrossModuleInternalCall"));
             }
             GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
                 out!(self.global_state.serialize());

@@ -10,11 +10,7 @@ use arbutil::{
     evm::{user::UserOutcome, EvmData},
     heapify,
 };
-use prover::{
-    binary::WasmBinary,
-    machine as prover_machine,
-    programs::{config::PricingParams, prelude::*},
-};
+use prover::programs::{config::PricingParams, prelude::*};
 use std::mem;
 use stylus::native;
 
