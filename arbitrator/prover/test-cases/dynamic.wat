@@ -1,32 +1,26 @@
 
 (module
-    (import "hostio" "wavm_link_module"   (func $link       (param i32)         (result i32)))
-    (import "hostio" "wavm_unlink_module" (func $unlink                                     ))
-    (import "hostio" "program_set_ink"    (func $set_ink    (param i32 i32 i64)             ))
-    (import "hostio" "program_ink_left"   (func $ink_left   (param i32 i32)     (result i64)))
-    (import "hostio" "program_ink_status" (func $ink_status (param i32 i32)     (result i32)))
-    (import "hostio" "program_call_main"  (func $user_func  (param i32 i32 i32) (result i32)))
+    (import "hostio" "wavm_link_module"   (func $link       (param i32)     (result i32)))
+    (import "hostio" "wavm_unlink_module" (func $unlink                                 ))
+    (import "hostio" "program_set_ink"    (func $set_ink    (param i32 i64)             ))
+    (import "hostio" "program_ink_left"   (func $ink_left   (param i32)     (result i64)))
+    (import "hostio" "program_ink_status" (func $ink_status (param i32)     (result i32)))
+    (import "hostio" "program_call_main"  (func $user_func  (param i32 i32) (result i32)))
     (data (i32.const 0x0)
-        "\dd\13\30\ba\64\c6\e1\e9\e9\c3\b0\f9\63\c8\d9\69\c9\f0\13\70\42\17\f3\9e\60\c3\0d\13\5b\48\a5\88") ;; user
-    (func $start (local $user i32) (local $internals i32)
+        "\c5\27\90\19\f2\b6\5e\7b\5e\c7\2d\11\8f\71\37\a5\a2\47\61\4e\c3\bb\8d\49\88\0a\d9\52\c9\f5\aa\4c") ;; user
+    (func $start (local $user i32)
         ;; link in user.wat
         i32.const 0
         call $link
         local.set $user
 
-        ;; set internals offset
-        i32.const 3
-        local.set $internals
-
         ;; set gas globals
         local.get $user
-        local.get $internals
         i64.const 1024
         call $set_ink
 
         ;; get gas
         local.get $user
-        local.get $internals
         call $ink_left
         i64.const 1024
         i64.ne
@@ -35,7 +29,6 @@
 
         ;; get gas status
         local.get $user
-        local.get $internals
         call $ink_status
         i32.const 0
         i32.ne
@@ -44,18 +37,16 @@
 
         ;; call a successful func in user.wat ($safe)
         local.get $user
-        i32.const 0 ;; $safe
-        i32.const 64
+        i32.const 1 ;; $safe
         call $user_func
-        i32.const 64
+        i32.const 5
         i32.ne
         (if
             (then (unreachable)))
 
         ;; recover from an unreachable
         local.get $user
-        i32.const 1 ;; $unreachable
-        i32.const 0
+        i32.const 2 ;; $unreachable
         call $user_func
         i32.const 1 ;; indicates failure
         i32.ne
@@ -69,8 +60,7 @@
 
         ;; recover from an out-of-bounds memory access
         local.get $user
-        i32.const 2 ;; $out_of_bounds
-        i32.const 0
+        i32.const 3 ;; $out_of_bounds
         call $user_func
         i32.const 1 ;; indicates failure
         i32.ne
