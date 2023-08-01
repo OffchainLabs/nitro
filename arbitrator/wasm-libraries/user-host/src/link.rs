@@ -25,12 +25,12 @@ extern "C" {
 // these dynamic hostio methods allow introspection into user modules
 #[link(wasm_import_module = "hostio")]
 extern "C" {
-    fn program_set_ink(module: u32, internals: u32, ink: u64);
-    fn program_set_stack(module: u32, internals: u32, stack: u32);
-    fn program_ink_left(module: u32, internals: u32) -> u64;
-    fn program_ink_status(module: u32, internals: u32) -> u32;
-    fn program_stack_left(module: u32, internals: u32) -> u32;
-    fn program_call_main(module: u32, main: u32, args_len: usize) -> u32;
+    fn program_set_ink(module: u32, ink: u64);
+    fn program_set_stack(module: u32, stack: u32);
+    fn program_ink_left(module: u32) -> u64;
+    fn program_ink_status(module: u32) -> u32;
+    fn program_stack_left(module: u32) -> u32;
+    fn program_call_main(module: u32, args_len: usize) -> u32;
 }
 
 #[repr(C, align(256))]
@@ -90,27 +90,21 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let module: Module = sp.unbox();
+    let compiled_hash = wavm::read_bytes32(sp.read_go_ptr());
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
     let evm_data: EvmData = sp.unbox();
+    let gas = sp.read_go_ptr();
 
     // buy ink
     let pricing = config.pricing;
-    let gas = sp.read_go_ptr();
     let ink = pricing.gas_to_ink(wavm::caller_load64(gas));
 
-    // compute the module root, or accept one from the caller
-    let root = sp.read_go_ptr();
-    let root = (root != 0).then(|| wavm::read_bytes32(root));
-    let (main, internals) = module.program_info();
-    let module = root.unwrap_or_else(|| module.hash().0);
-
     // link the program and ready its instrumentation
-    let module = wavm_link_module(&MemoryLeaf(module));
-    program_set_ink(module, internals, ink);
-    program_set_stack(module, internals, config.max_depth);
+    let module = wavm_link_module(&MemoryLeaf(compiled_hash));
+    program_set_ink(module, ink);
+    program_set_stack(module, config.max_depth);
 
     // provide arguments
     let args_len = calldata.len();
@@ -118,7 +112,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // call the program
     let go_stack = sp.save_stack();
-    let status = program_call_main(module, main, args_len);
+    let status = program_call_main(module, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
     sp.restore_stack(go_stack);
 
@@ -138,15 +132,15 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // check if instrumentation stopped the program
     use UserOutcomeKind::*;
-    if program_ink_status(module, internals) != 0 {
+    if program_ink_status(module) != 0 {
         finish!(OutOfInk, 0);
     }
-    if program_stack_left(module, internals) == 0 {
+    if program_stack_left(module) == 0 {
         finish!(OutOfStack, 0);
     }
 
     // the program computed a final result
-    let ink_left = program_ink_left(module, internals);
+    let ink_left = program_ink_left(module);
     finish!(status, heapify(outs), ink_left)
 }
 

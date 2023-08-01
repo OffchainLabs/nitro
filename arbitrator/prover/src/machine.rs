@@ -589,11 +589,6 @@ impl Module {
         )
     }
 
-    pub fn program_info(&self) -> (u32, u32) {
-        let main = self.find_func(STYLUS_ENTRY_POINT).unwrap();
-        (main, self.internals_offset)
-    }
-
     fn name(&self) -> &str {
         &self.names.module
     }
@@ -1144,10 +1139,20 @@ impl Machine {
         let stylus_data = bin.instrument(&config)?;
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
+        let computed_hash = module.hash();
 
-        let hash = hash.unwrap_or_else(|| module.hash());
-        self.stylus_modules.insert(hash, module);
-        Ok(hash)
+        if let Some(expected_hash) = hash {
+            if computed_hash != expected_hash {
+                return Err(eyre::eyre!(
+                    "compulted hash {} doesn't match expected {}",
+                    computed_hash,
+                    expected_hash
+                ));
+            }
+        }
+        eprintln!("adding module {}", computed_hash);
+        self.stylus_modules.insert(computed_hash, module);
+        Ok(computed_hash)
     }
 
     pub fn from_binaries(
@@ -1930,15 +1935,16 @@ impl Machine {
                     self.pc.inst = 0;
                     reset_refs!();
                 }
-                Opcode::CrossModuleDynamicCall => {
+                Opcode::CrossModuleInternalCall => {
                     flush_module!();
-                    let call_func = self.value_stack.pop().unwrap().assume_u32();
+                    let call_internal = inst.argument_data as u32;
                     let call_module = self.value_stack.pop().unwrap().assume_u32();
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(self.pc.module.into());
                     self.value_stack.push(module.internals_offset.into());
+                    module = &mut self.modules[call_module as usize];
                     self.pc.module = call_module;
-                    self.pc.func = call_func;
+                    self.pc.func = module.internals_offset + call_internal;
                     self.pc.inst = 0;
                     reset_refs!();
                 }
@@ -2780,6 +2786,14 @@ impl Machine {
                         .prove(idx_usize)
                         .expect("Failed to prove elements merkle"));
                 }
+            }
+            CrossModuleInternalCall => {
+                let module_idx = self.value_stack.last().unwrap().assume_u32() as usize;
+                let called_module = &self.modules[module_idx];
+                out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
+                out!(mod_merkle
+                    .prove(module_idx)
+                    .expect("Failed to prove module"));
             }
             GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
                 out!(self.global_state.serialize());
