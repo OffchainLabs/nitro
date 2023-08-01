@@ -22,6 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
@@ -402,24 +404,28 @@ func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWas
 		return errors.New("machine frozen")
 	}
 	hashBytes := [32]u8{}
-	for index, byte := range wasm.NoncanonicalHash.Bytes() {
+	for index, byte := range wasm.CompiledHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
 	debugInt := 0
 	if debug {
 		debugInt = 1
 	}
-	err := C.arbitrator_add_user_wasm(
+	decompressed, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
+	if err != nil {
+		return err
+	}
+	cErr := C.arbitrator_add_user_wasm(
 		m.ptr,
-		(*u8)(arbutil.SliceToPointer(wasm.Wasm)),
-		u32(len(wasm.Wasm)),
+		(*u8)(arbutil.SliceToPointer(decompressed)),
+		u32(len(decompressed)),
 		u32(call.Version),
 		u32(debugInt),
 		&C.struct_Bytes32{hashBytes},
 	)
-	defer C.free(unsafe.Pointer(err))
-	if err != nil {
-		return errors.New(C.GoString(err))
+	defer C.free(unsafe.Pointer(cErr))
+	if cErr != nil {
+		return errors.New(C.GoString(cErr))
 	}
 	return nil
 }

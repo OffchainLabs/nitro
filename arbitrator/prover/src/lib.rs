@@ -206,11 +206,15 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
 ) -> *mut libc::c_char {
     let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
 
+    if root.is_null() {
+        return err_to_c_string(eyre::eyre!(
+            "arbitrator_add_user_wasm got null ptr for module hash"
+        ));
+    }
     // provide the opportunity to skip calculating the module root
-    let root = (!root.is_null()).then(|| *root);
     let debug = debug != 0;
 
-    match (*mach).add_program(wasm, version, debug, root) {
+    match (*mach).add_program(wasm, version, debug, Some(*root)) {
         Ok(_) => std::ptr::null_mut(),
         Err(err) => err_to_c_string(err),
     }
