@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -579,3 +580,146 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
 }
+
+func TestRetryableSubmissionAndAutoRedeemFees(t *testing.T) {
+	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
+	defer teardown()
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	ownerCallOpts := l2info.GetDefaultCallOpts("Owner", ctx)
+	// make "Owner" a chain owner
+	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
+	Require(t, err, "failed to deploy ArbDebug")
+	tx, err := arbdebug.BecomeChainOwner(&ownerTxOpts)
+	Require(t, err, "failed to deploy ArbDebug")
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), l2client)
+	Require(t, err)
+	arbownerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("6b"), l2client)
+	Require(t, err)
+	networkFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{1, 6, 5}))
+	tx, err = arbowner.SetNetworkFeeAccount(&ownerTxOpts, networkFeeAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	networkFeeAccount, err := arbownerPublic.GetNetworkFeeAccount(ownerCallOpts)
+	Require(t, err)
+	infraFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{3, 2, 6}))
+	tx, err = arbowner.SetInfraFeeAccount(&ownerTxOpts, infraFeeAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	infraFeeAccount, err := arbownerPublic.GetInfraFeeAccount(ownerCallOpts)
+	Require(t, err)
+	t.Log("Network fee account: ", networkFeeAccount)
+	t.Log("Infra fee account: ", infraFeeAccount)
+
+	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+
+	//elevateL2Basefee(t, ctx, l2client, l2info, userCallOpts)
+	// {
+	basefeeBefore := GetBaseFee(t, l2client, ctx)
+	colors.PrintBlue("Elevating basefee...")
+	arbostestabi, err := precompilesgen.ArbosTestMetaData.GetAbi()
+	Require(t, err)
+	_, err = precompilesgen.NewArbosTest(common.HexToAddress("0x69"), l2client)
+	Require(t, err, "failed to deploy ArbosTest")
+
+	burnAmount := arbnode.ConfigDefaultL1Test().RPC.RPCGasCap
+	burnTarget := uint64(10 * l2pricing.InitialSpeedLimitPerSecondV6 * l2pricing.InitialBacklogTolerance)
+	for i := uint64(0); i < burnTarget/burnAmount; i++ {
+		burnArbGas := arbostestabi.Methods["burnArbGas"]
+		data, err := burnArbGas.Inputs.Pack(arbmath.UintToBig(burnAmount - l2info.TransferGas))
+		Require(t, err)
+		input := append([]byte{}, burnArbGas.ID...)
+		input = append(input, data...)
+		to := common.HexToAddress("0x69")
+		tx := l2info.PrepareTxTo("Faucet", &to, burnAmount, big.NewInt(0), input)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+	}
+	basefee := GetBaseFee(t, l2client, ctx)
+	colors.PrintBlue("<<< done. Basefee: ", basefee, " diff:", basefee.Uint64()-basefeeBefore.Uint64())
+	// }
+
+	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+
+	// estimate the gas needed to auto-redeem the retryable
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e16)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
+	Require(t, err, "failed to deploy NodeInterface")
+	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL2.NoSend = true
+	usertxoptsL2.GasMargin = 0
+	tx, err = nodeInterface.EstimateRetryableTicket(
+		&usertxoptsL2,
+		usertxoptsL2.From,
+		deposit,
+		simpleAddr,
+		callValue,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		simpleABI.Methods["incrementRedeem"].ID,
+	)
+	Require(t, err, "failed to estimate retryable submission")
+	estimate := tx.Gas()
+	colors.PrintBlue("estimate: ", estimate)
+
+	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxoptsL1,
+		simpleAddr,
+		common.Big0,
+		callValue,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		arbmath.UintToBig(estimate),
+		big.NewInt(l2pricing.InitialBaseFeeWei*2), // TODO update for elevated basefee
+		simpleABI.Methods["incrementRedeem"].ID,
+	)
+	Require(t, err)
+
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+	if l1receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1receipt indicated failure")
+	}
+
+	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+
+	receipt, err := WaitForTx(ctx, l2client, lookupL2Hash(l1receipt), time.Second*5)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t)
+	}
+	// verify that the increment happened, so we know the retry succeeded
+	counter, err := simple.Counter(&bind.CallOpts{})
+	Require(t, err)
+
+	if counter != 1 {
+		Fatal(t, "Unexpected counter:", counter)
+	}
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "Unexpected log count:", len(receipt.Logs))
+	}
+	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
+	Require(t, err)
+	aliasedSender := util.RemapL1Address(usertxoptsL1.From)
+	if parsed.Caller != aliasedSender {
+		Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
+	}
+	if parsed.Redeemer != ownerTxOpts.From {
+		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
+	}
+}
+
+//// elevateL2Basefee by burning gas exceeding speed limit
+//func elevateL2Basefee(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info *BlockchainTestInfo, callopts *bind.CallOpts) {
+//}
