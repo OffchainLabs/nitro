@@ -382,7 +382,21 @@ impl Module {
         }
         func_type_idxs.extend(bin.functions.iter());
 
-        let internals = host::new_internal_funcs(stylus_data);
+        let func_exports: HashMap<String, u32> = bin
+            .exports
+            .iter()
+            .filter_map(|(name, (offset, kind))| {
+                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
+            })
+            .collect();
+
+        let stylus_main = func_exports
+            .iter()
+            .find(|x| x.0 == STYLUS_ENTRY_POINT)
+            .and_then(|x| Some(x.1));
+        let internals = host::new_internal_funcs(
+            stylus_data.and_then(|x| stylus_main.and_then(|y| Some((x, y.clone())))),
+        );
         let internals_offset = (code.len() + bin.codes.len()) as u32;
         let internals_types = internals.iter().map(|f| f.ty.clone());
 
@@ -538,13 +552,6 @@ impl Module {
         ensure!(!code.is_empty(), "Module has no code");
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
-        let func_exports = bin
-            .exports
-            .iter()
-            .filter_map(|(name, (offset, kind))| {
-                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
-            })
-            .collect();
 
         Ok(Module {
             memory,

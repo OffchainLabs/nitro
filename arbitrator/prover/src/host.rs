@@ -31,6 +31,7 @@ pub enum InternalFunc {
     UserSetInk,
     UserStackLeft,
     UserSetStack,
+    CallMain,
 }
 
 impl InternalFunc {
@@ -52,6 +53,7 @@ impl InternalFunc {
             UserSetInk    => func!([I64, I32], []), // λ(ink_left, ink_status)
             UserStackLeft => func!([], [I32]),      // λ() → stack_left
             UserSetStack  => func!([I32], []),      // λ(stack_left)
+            CallMain      => func!([I32], [I32]),
         };
         ty
     }
@@ -312,7 +314,7 @@ impl Hostio {
                 dynamic!(UserSetStack);
             }
             ProgramCallMain => {
-                // λ(module, main, args_len) → status
+                // λ(module, internals, args_len) → status
                 opcode!(PushErrorGuard);
                 opcode!(ArbitraryJumpIf, prior + body.len() + 3);
                 opcode!(I32Const, UserOutcomeKind::Failure as u32);
@@ -320,9 +322,7 @@ impl Hostio {
 
                 // jumps here in the happy case
                 opcode!(LocalGet, 2); // args_len
-                opcode!(LocalGet, 0); // module
-                opcode!(LocalGet, 1); // main
-                opcode!(CrossModuleDynamicCall); // consumes module and main, passing args_len
+                dynamic!(CallMain);
                 opcode!(PopErrorGuard);
             }
             UserInkLeft => {
@@ -363,7 +363,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn new_internal_funcs(globals: Option<StylusData>) -> Vec<Function> {
+pub fn new_internal_funcs(stylus_data: Option<(StylusData, u32)>) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -412,7 +412,7 @@ pub fn new_internal_funcs(globals: Option<StylusData>) -> Vec<Function> {
 
     let mut add_func = |code: &[_], internal| add_func(code_func(code, internal), internal);
 
-    if let Some(globals) = globals {
+    if let Some((globals, main_idx)) = stylus_data {
         let (gas, status, depth) = globals.global_offsets();
         add_func(&[Instruction::with_data(GlobalGet, gas)], UserInkLeft);
         add_func(&[Instruction::with_data(GlobalGet, status)], UserInkStatus);
@@ -425,6 +425,7 @@ pub fn new_internal_funcs(globals: Option<StylusData>) -> Vec<Function> {
         );
         add_func(&[Instruction::with_data(GlobalGet, depth)], UserStackLeft);
         add_func(&[Instruction::with_data(GlobalSet, depth)], UserSetStack);
+        add_func(&[Instruction::with_data(Call, main_idx as u64)], CallMain);
     }
     funcs
 }
