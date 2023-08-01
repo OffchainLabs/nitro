@@ -11,7 +11,6 @@ import (
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	modes "github.com/OffchainLabs/bold/challenge-manager/types"
-	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -236,17 +235,17 @@ func TestBoldProtocol(t *testing.T) {
 		Fail(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
 	}
 
-	assertionA, err := poster.PostLatestAssertion(ctx)
+	t.Log("Honest party posting assertion at batch 1, pos 0")
+	_, err = poster.PostLatestAssertion(ctx)
 	Require(t, err)
-	t.Logf("Honest %s, and %+v", containers.Trunc(assertionA.Id().Hash.Bytes()), assertionA)
 
-	assertionA, err = poster.PostAssertionAndMoveStake(ctx)
+	t.Log("Honest party posting assertion at batch 2, pos 0")
+	_, err = poster.PostAssertionAndMoveStake(ctx)
 	Require(t, err)
-	t.Logf("Honest %s, and %+v", containers.Trunc(assertionA.Id().Bytes()), assertionA)
 
-	assertionB, err := posterB.PostLatestAssertion(ctx)
+	t.Log("Evil party posting rival assertion at batch 2, pos 0")
+	_, err = posterB.PostLatestAssertion(ctx)
 	Require(t, err)
-	t.Logf("evil %s, and %+v", containers.Trunc(assertionB.Id().Bytes()), assertionB)
 
 	manager, err := challengemanager.New(
 		ctx,
