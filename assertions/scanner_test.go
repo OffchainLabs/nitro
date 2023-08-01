@@ -22,6 +22,16 @@ import (
 
 func TestScanner_ProcessAssertionCreation(t *testing.T) {
 	ctx := context.Background()
+	t.Run("ignores genesis", func(t *testing.T) {
+		p := &mocks.MockProtocol{}
+		assertionHash := mockId(1)
+		p.On("ReadAssertionCreationInfo", ctx, assertionHash).Return(&protocol.AssertionCreatedInfo{
+			ParentAssertionHash: common.Hash{},
+		}, nil)
+		scanner := assertions.NewScanner(p, nil, nil, nil, common.Address{}, "", time.Second)
+		err := scanner.ProcessAssertionCreation(ctx, assertionHash)
+		require.NoError(t, err)
+	})
 	t.Run("no fork detected", func(t *testing.T) {
 		manager, _, mockStateProvider, cfg := setupChallengeManager(t)
 

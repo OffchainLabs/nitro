@@ -12,6 +12,7 @@ go_library(
         "//chain-abstraction:protocol",
         "//chain-abstraction/sol-implementation",
         "//challenge-manager/types",
+        "//containers",
         "//layer2-state-provider",
         "//runtime",
         "//solgen/go/rollupgen",

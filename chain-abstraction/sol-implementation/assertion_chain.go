@@ -101,6 +101,10 @@ func NewAssertionChain(
 	return chain, nil
 }
 
+func (a *AssertionChain) RollupAddress() common.Address {
+	return a.rollupAddr
+}
+
 func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
 	var b [32]byte
 	copy(b[:], assertionHash.Bytes())

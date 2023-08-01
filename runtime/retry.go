@@ -33,6 +33,7 @@ func UntilSucceeds[T any](ctx context.Context, fn func() (T, error)) (T, error) 
 			count++
 			pkglog.Error("Failed to call function after retries", log.Ctx{
 				"retryCount": count,
+				"err":        err,
 			})
 			retryCounter.Inc(1)
 			time.Sleep(sleepTime)

@@ -116,13 +116,6 @@ func WithRPCClient(client *rpc.Client) Opt {
 	}
 }
 
-// WithAssertionPostingInterval specifies how often to post new assertions, if in MakeMode.
-// act on its responsibilities.
-
-// WithAssertionScanningInterval specifies how often to scan for new assertions.
-
-// WithMaxDelaySeconds specifies the maximum number of seconds that the challenge manager will open a challenge.
-
 // New sets up a challenge manager instance provided a protocol, state manager, and additional options.
 func New(
 	ctx context.Context,
