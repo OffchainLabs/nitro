@@ -10,7 +10,7 @@ use arbutil::{
     operator::OperatorCode,
     Bytes32, Color,
 };
-use eyre::{bail, eyre, ErrReport, Result};
+use eyre::{bail, eyre, Context, ErrReport, Result};
 use prover::binary::WasmBinary;
 use prover::programs::{
     config::PricingParams,
@@ -365,24 +365,18 @@ pub fn compile_user_wasm(
     debug_mode: bool,
 ) -> Result<(Vec<u8>, Bytes32, u16)> {
     let compile = CompileConfig::version(version, debug_mode);
-    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(wasm, page_limit, &compile) {
-        Err(err) => return Err(err.wrap_err("failed to parse program")),
-        Ok(res) => res,
-    };
+    let (bin, stylus_data, footprint) =
+        WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse program")?;
 
-    let canonical_hash = match prover::machine::Module::from_user_binary(
+    let canonical_hash = prover::machine::Module::from_user_binary(
         &bin,
         compile.debug.debug_funcs,
         Some(stylus_data),
-    ) {
-        Err(err) => return Err(err.wrap_err("failed to build module from program")),
-        Ok(res) => res.hash(),
-    };
+    )
+    .wrap_err("failed to build module from program")?
+    .hash();
 
-    let module = match module(wasm, compile) {
-        Err(err) => return Err(err.wrap_err("failed generating stylus module")),
-        Ok(module) => module,
-    };
+    let module = module(wasm, compile).wrap_err("failed generating stylus module")?;
 
     Ok((module, canonical_hash, footprint))
 }

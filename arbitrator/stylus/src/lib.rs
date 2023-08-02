@@ -8,7 +8,7 @@ use arbutil::evm::{
 };
 use eyre::ErrReport;
 use native::NativeInstance;
-use prover::{binary::WasmBinary, programs::prelude::*};
+use prover::programs::prelude::*;
 use run::RunProgram;
 use std::mem;
 
