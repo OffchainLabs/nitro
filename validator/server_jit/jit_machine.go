@@ -29,7 +29,7 @@ type JitMachine struct {
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-	invocation := []string{"--binary", binaryPath, "--forks"}
+	invocation := []string{"--binary", binaryPath, "--forks", "--debug"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
 	}
@@ -204,6 +204,13 @@ func (machine *JitMachine) prove(
 	}
 
 	// send user wasms
+	debugFlag := uint8(0)
+	if entry.DebugChain {
+		debugFlag = 1
+	}
+	if err := writeUint8(debugFlag); err != nil {
+		return state, err
+	}
 	userWasms := entry.UserWasms
 	if err := writeUint32(uint32(len(userWasms))); err != nil {
 		return state, err

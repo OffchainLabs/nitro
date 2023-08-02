@@ -4,7 +4,7 @@
 use crate::{
     gostack::GoStack,
     machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
-    socket,
+    socket::{self, read_u8},
 };
 
 use arbutil::Color;
@@ -313,6 +313,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.preimages.insert(hash, preimage);
     }
 
+    let stylus_debug = socket::read_u8(stream)? != 0;
     let programs_count = socket::read_u32(stream)?;
     for _ in 0..programs_count {
         let codehash = socket::read_bytes32(stream)?;
@@ -322,7 +323,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         // todo: test wasm against codehash?
         // no need to test page_limit, we're just retracing previous compilation
         let (module, computed_hash, _) =
-            match native::compile_user_wasm(wasm.as_slice(), version, u16::MAX, false) {
+            match native::compile_user_wasm(wasm.as_slice(), version, u16::MAX, stylus_debug) {
                 Err(err) => return Escape::hostio(err.to_string()),
                 Ok(res) => res,
             };
