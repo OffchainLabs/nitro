@@ -7,7 +7,9 @@ pragma solidity ^0.8.0;
 import "./IRollupEventInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IDelayedMessageProvider.sol";
+import "../precompiles/ArbGasInfo.sol";
 import "../libraries/DelegateCallAware.sol";
+import "../libraries/ArbitrumChecker.sol";
 import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 import {AlreadyInit, HadZeroInit} from "../libraries/Error.sol";
 
@@ -30,8 +32,23 @@ contract RollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, Delegat
         rollup = address(_bridge.rollup());
     }
 
-    function rollupInitialized(uint256 chainId) external override onlyRollup {
-        bytes memory initMsg = abi.encodePacked(chainId);
+    function rollupInitialized(uint256 chainId, string calldata chainConfig)
+        external
+        override
+        onlyRollup
+    {
+        require(bytes(chainConfig).length > 0, "EMPTY_CHAIN_CONFIG");
+        uint8 initMsgVersion = 1;
+        uint256 currentDataCost = block.basefee;
+        if (ArbitrumChecker.runningOnArbitrum()) {
+            currentDataCost += ArbGasInfo(address(0x6c)).getL1BaseFeeEstimate();
+        }
+        bytes memory initMsg = abi.encodePacked(
+            chainId,
+            initMsgVersion,
+            currentDataCost,
+            chainConfig
+        );
         uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),

@@ -108,4 +108,10 @@ interface IRollupAdmin {
      * @param _validatorWhitelistDisabled new value of validatorWhitelistDisabled, i.e. true = disabled
      */
     function setValidatorWhitelistDisabled(bool _validatorWhitelistDisabled) external;
+
+    /**
+     * @notice set a new challengeManager contract
+     * @param _challengeManager new value of challengeManager
+     */
+    function setChallengeManager(address _challengeManager) external;
 }

@@ -26,12 +26,13 @@ var (
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
+	_ = abi.ConvertType
 )
 
 // AddressAliasHelperMetaData contains all meta data concerning the AddressAliasHelper contract.
 var AddressAliasHelperMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212209320e2b9f64930e5f97ec08a2a0bb5f9879b7dd7312a8267dfaf9a3413a580c564736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212200274468d8af1a36d9d4b98694c681da3c2c699de43a978ba4bf4190e90fee1cc64736f6c63430008110033",
 }
 
 // AddressAliasHelperABI is the input ABI used to generate the binding from.
@@ -156,11 +157,11 @@ func NewAddressAliasHelperFilterer(address common.Address, filterer bind.Contrac
 
 // bindAddressAliasHelper binds a generic wrapper to an already deployed contract.
 func bindAddressAliasHelper(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(AddressAliasHelperABI))
+	parsed, err := AddressAliasHelperMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -203,8 +204,8 @@ func (_AddressAliasHelper *AddressAliasHelperTransactorRaw) Transact(opts *bind.
 
 // AdminFallbackProxyMetaData contains all meta data concerning the AdminFallbackProxy contract.
 var AdminFallbackProxyMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"adminLogic\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"adminData\",\"type\":\"bytes\"},{\"internalType\":\"address\",\"name\":\"userLogic\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"userData\",\"type\":\"bytes\"},{\"internalType\":\"address\",\"name\":\"adminAddr\",\"type\":\"address\"}],\"stateMutability\":\"payable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"previousAdmin\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"newAdmin\",\"type\":\"address\"}],\"name\":\"AdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"beacon\",\"type\":\"address\"}],\"name\":\"BeaconUpgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"implementation\",\"type\":\"address\"}],\"name\":\"Upgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"implementation\",\"type\":\"address\"}],\"name\":\"UpgradedSecondary\",\"type\":\"event\"},{\"stateMutability\":\"payable\",\"type\":\"fallback\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
-	Bin: "0x608060405260405162000c7a38038062000c7a8339810160408190526200002691620006fd565b6200005360017fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6104620007a0565b60008051602062000bf383398151915214620000735762000073620007c2565b620000a060017f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbd620007a0565b60008051602062000c1383398151915214620000c057620000c0620007c2565b620000ed60017f2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546e620007a0565b60008051602062000c5a833981519152146200010d576200010d620007c2565b62000118816200013f565b62000126858560006200019a565b6200013483836000620001d7565b50505050506200082b565b7f7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f6200016a620001e2565b604080516001600160a01b03928316815291841660208301520160405180910390a162000197816200021b565b50565b620001a583620002d0565b600082511180620001b35750805b15620001d257620001d083836200031260201b620000291760201c565b505b505050565b620001a58362000343565b60006200020c60008051602062000bf383398151915260001b6200038560201b620000551760201c565b546001600160a01b0316919050565b6001600160a01b038116620002865760405162461bcd60e51b815260206004820152602660248201527f455243313936373a206e65772061646d696e20697320746865207a65726f206160448201526564647265737360d01b60648201526084015b60405180910390fd5b80620002af60008051602062000bf383398151915260001b6200038560201b620000551760201c565b80546001600160a01b0319166001600160a01b039290921691909117905550565b620002db8162000388565b6040516001600160a01b038216907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b90600090a250565b60606200033a838360405180606001604052806027815260200162000c33602791396200042b565b90505b92915050565b6200034e8162000513565b6040516001600160a01b038216907ff7eed2a7fabbf1bec8d55ed5e785cc76622376dde5df4ff15470551e030b813490600090a250565b90565b6200039e81620005c660201b620000581760201c565b620004025760405162461bcd60e51b815260206004820152602d60248201527f455243313936373a206e657720696d706c656d656e746174696f6e206973206e60448201526c1bdd08184818dbdb9d1c9858dd609a1b60648201526084016200027d565b80620002af60008051602062000c1383398151915260001b6200038560201b620000551760201c565b60606001600160a01b0384163b620004955760405162461bcd60e51b815260206004820152602660248201527f416464726573733a2064656c65676174652063616c6c20746f206e6f6e2d636f6044820152651b9d1c9858dd60d21b60648201526084016200027d565b600080856001600160a01b031685604051620004b29190620007d8565b600060405180830381855af49150503d8060008114620004ef576040519150601f19603f3d011682016040523d82523d6000602084013e620004f4565b606091505b50909250905062000507828286620005d5565b925050505b9392505050565b6200052981620005c660201b620000581760201c565b6200059d5760405162461bcd60e51b815260206004820152603760248201527f455243313936373a206e6577207365636f6e6461727920696d706c656d656e7460448201527f6174696f6e206973206e6f74206120636f6e747261637400000000000000000060648201526084016200027d565b80620002af60008051602062000c5a83398151915260001b6200038560201b620000551760201c565b6001600160a01b03163b151590565b60608315620005e65750816200050c565b825115620005f75782518084602001fd5b8160405162461bcd60e51b81526004016200027d9190620007f6565b80516001600160a01b03811681146200062b57600080fd5b919050565b634e487b7160e01b600052604160045260246000fd5b60005b838110156200066357818101518382015260200162000649565b50506000910152565b600082601f8301126200067e57600080fd5b81516001600160401b03808211156200069b576200069b62000630565b604051601f8301601f19908116603f01168101908282118183101715620006c657620006c662000630565b81604052838152866020858801011115620006e057600080fd5b620006f384602083016020890162000646565b9695505050505050565b600080600080600060a086880312156200071657600080fd5b620007218662000613565b60208701519095506001600160401b03808211156200073f57600080fd5b6200074d89838a016200066c565b95506200075d6040890162000613565b945060608801519150808211156200077457600080fd5b5062000783888289016200066c565b925050620007946080870162000613565b90509295509295909350565b818103818111156200033d57634e487b7160e01b600052601160045260246000fd5b634e487b7160e01b600052600160045260246000fd5b60008251620007ec81846020870162000646565b9190910192915050565b60208152600082518060208401526200081781604085016020870162000646565b601f01601f19169190910160400192915050565b6103b8806200083b6000396000f3fe60806040523661001357610011610017565b005b6100115b610027610022610067565b61012d565b565b606061004e838360405180606001604052806027815260200161035c60279139610151565b9392505050565b90565b6001600160a01b03163b151590565b600060043610156100ad5760405162461bcd60e51b815260206004820152600b60248201526a4e4f5f46554e435f53494760a81b60448201526064015b60405180910390fd5b6000336100b861022c565b6001600160a01b0316036100d3576100ce61025f565b6100db565b6100db610287565b90506100e681610058565b6101285760405162461bcd60e51b815260206004820152601360248201527215105491d15517d393d517d0d3d395149050d5606a1b60448201526064016100a4565b919050565b3660008037600080366000845af43d6000803e80801561014c573d6000f35b3d6000fd5b606061015c84610058565b6101b75760405162461bcd60e51b815260206004820152602660248201527f416464726573733a2064656c65676174652063616c6c20746f206e6f6e2d636f6044820152651b9d1c9858dd60d21b60648201526084016100a4565b600080856001600160a01b0316856040516101d2919061030c565b600060405180830381855af49150503d806000811461020d576040519150601f19603f3d011682016040523d82523d6000602084013e610212565b606091505b50915091506102228282866102af565b9695505050505050565b60007fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d61035b546001600160a01b0316919050565b60007f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc610250565b60007f2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d610250565b606083156102be57508161004e565b8251156102ce5782518084602001fd5b8160405162461bcd60e51b81526004016100a49190610328565b60005b838110156103035781810151838201526020016102eb565b50506000910152565b6000825161031e8184602087016102e8565b9190910192915050565b60208152600082518060208401526103478160408501602087016102e8565b601f01601f1916919091016040019291505056fe416464726573733a206c6f772d6c6576656c2064656c65676174652063616c6c206661696c6564a26469706673582212201668183a8403e45b232b0d9bd5d1837b894015ac3e2e5e09043e344cd3054e2e64736f6c63430008110033b53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc416464726573733a206c6f772d6c6576656c2064656c65676174652063616c6c206661696c65642b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"previousAdmin\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"newAdmin\",\"type\":\"address\"}],\"name\":\"AdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"beacon\",\"type\":\"address\"}],\"name\":\"BeaconUpgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"implementation\",\"type\":\"address\"}],\"name\":\"Upgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"implementation\",\"type\":\"address\"}],\"name\":\"UpgradedSecondary\",\"type\":\"event\"},{\"stateMutability\":\"payable\",\"type\":\"fallback\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
+	Bin: "0x608060405234801561001057600080fd5b50610245806100206000396000f3fe60806040523661001357610011610017565b005b6100115b610027610022610029565b61015b565b565b6000600436101561009b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152600b60248201527f4e4f5f46554e435f53494700000000000000000000000000000000000000000060448201526064015b60405180910390fd5b6000336100a661017f565b73ffffffffffffffffffffffffffffffffffffffff16036100ce576100c96101bf565b6100d6565b6100d66101e7565b905073ffffffffffffffffffffffffffffffffffffffff81163b610156576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601360248201527f5441524745545f4e4f545f434f4e5452414354000000000000000000000000006044820152606401610092565b919050565b3660008037600080366000845af43d6000803e80801561017a573d6000f35b3d6000fd5b60007fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d61035b5473ffffffffffffffffffffffffffffffffffffffff16919050565b60007f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc6101a3565b60007f2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d6101a356fea264697066735822122079db84a24ce52436423818d6427891ec09c0063d50228fc3ed3e49bc0d180d5c64736f6c63430008110033",
 }
 
 // AdminFallbackProxyABI is the input ABI used to generate the binding from.
@@ -216,7 +217,7 @@ var AdminFallbackProxyABI = AdminFallbackProxyMetaData.ABI
 var AdminFallbackProxyBin = AdminFallbackProxyMetaData.Bin
 
 // DeployAdminFallbackProxy deploys a new Ethereum contract, binding an instance of AdminFallbackProxy to it.
-func DeployAdminFallbackProxy(auth *bind.TransactOpts, backend bind.ContractBackend, adminLogic common.Address, adminData []byte, userLogic common.Address, userData []byte, adminAddr common.Address) (common.Address, *types.Transaction, *AdminFallbackProxy, error) {
+func DeployAdminFallbackProxy(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *AdminFallbackProxy, error) {
 	parsed, err := AdminFallbackProxyMetaData.GetAbi()
 	if err != nil {
 		return common.Address{}, nil, nil, err
@@ -225,7 +226,7 @@ func DeployAdminFallbackProxy(auth *bind.TransactOpts, backend bind.ContractBack
 		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
 	}
 
-	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(AdminFallbackProxyBin), backend, adminLogic, adminData, userLogic, userData, adminAddr)
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(AdminFallbackProxyBin), backend)
 	if err != nil {
 		return common.Address{}, nil, nil, err
 	}
@@ -329,11 +330,11 @@ func NewAdminFallbackProxyFilterer(address common.Address, filterer bind.Contrac
 
 // bindAdminFallbackProxy binds a generic wrapper to an already deployed contract.
 func bindAdminFallbackProxy(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(AdminFallbackProxyABI))
+	parsed, err := AdminFallbackProxyMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -983,10 +984,183 @@ func (_AdminFallbackProxy *AdminFallbackProxyFilterer) ParseUpgradedSecondary(lo
 	return event, nil
 }
 
+// ArbitrumCheckerMetaData contains all meta data concerning the ArbitrumChecker contract.
+var ArbitrumCheckerMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122088f0f10a349caa75ac705621e66061a51e4a864400c471ac25ca30d141b1fb5264736f6c63430008110033",
+}
+
+// ArbitrumCheckerABI is the input ABI used to generate the binding from.
+// Deprecated: Use ArbitrumCheckerMetaData.ABI instead.
+var ArbitrumCheckerABI = ArbitrumCheckerMetaData.ABI
+
+// ArbitrumCheckerBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use ArbitrumCheckerMetaData.Bin instead.
+var ArbitrumCheckerBin = ArbitrumCheckerMetaData.Bin
+
+// DeployArbitrumChecker deploys a new Ethereum contract, binding an instance of ArbitrumChecker to it.
+func DeployArbitrumChecker(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *ArbitrumChecker, error) {
+	parsed, err := ArbitrumCheckerMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(ArbitrumCheckerBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &ArbitrumChecker{ArbitrumCheckerCaller: ArbitrumCheckerCaller{contract: contract}, ArbitrumCheckerTransactor: ArbitrumCheckerTransactor{contract: contract}, ArbitrumCheckerFilterer: ArbitrumCheckerFilterer{contract: contract}}, nil
+}
+
+// ArbitrumChecker is an auto generated Go binding around an Ethereum contract.
+type ArbitrumChecker struct {
+	ArbitrumCheckerCaller     // Read-only binding to the contract
+	ArbitrumCheckerTransactor // Write-only binding to the contract
+	ArbitrumCheckerFilterer   // Log filterer for contract events
+}
+
+// ArbitrumCheckerCaller is an auto generated read-only Go binding around an Ethereum contract.
+type ArbitrumCheckerCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbitrumCheckerTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type ArbitrumCheckerTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbitrumCheckerFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type ArbitrumCheckerFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbitrumCheckerSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type ArbitrumCheckerSession struct {
+	Contract     *ArbitrumChecker  // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// ArbitrumCheckerCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type ArbitrumCheckerCallerSession struct {
+	Contract *ArbitrumCheckerCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts          // Call options to use throughout this session
+}
+
+// ArbitrumCheckerTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type ArbitrumCheckerTransactorSession struct {
+	Contract     *ArbitrumCheckerTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts          // Transaction auth options to use throughout this session
+}
+
+// ArbitrumCheckerRaw is an auto generated low-level Go binding around an Ethereum contract.
+type ArbitrumCheckerRaw struct {
+	Contract *ArbitrumChecker // Generic contract binding to access the raw methods on
+}
+
+// ArbitrumCheckerCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type ArbitrumCheckerCallerRaw struct {
+	Contract *ArbitrumCheckerCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// ArbitrumCheckerTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type ArbitrumCheckerTransactorRaw struct {
+	Contract *ArbitrumCheckerTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewArbitrumChecker creates a new instance of ArbitrumChecker, bound to a specific deployed contract.
+func NewArbitrumChecker(address common.Address, backend bind.ContractBackend) (*ArbitrumChecker, error) {
+	contract, err := bindArbitrumChecker(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbitrumChecker{ArbitrumCheckerCaller: ArbitrumCheckerCaller{contract: contract}, ArbitrumCheckerTransactor: ArbitrumCheckerTransactor{contract: contract}, ArbitrumCheckerFilterer: ArbitrumCheckerFilterer{contract: contract}}, nil
+}
+
+// NewArbitrumCheckerCaller creates a new read-only instance of ArbitrumChecker, bound to a specific deployed contract.
+func NewArbitrumCheckerCaller(address common.Address, caller bind.ContractCaller) (*ArbitrumCheckerCaller, error) {
+	contract, err := bindArbitrumChecker(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbitrumCheckerCaller{contract: contract}, nil
+}
+
+// NewArbitrumCheckerTransactor creates a new write-only instance of ArbitrumChecker, bound to a specific deployed contract.
+func NewArbitrumCheckerTransactor(address common.Address, transactor bind.ContractTransactor) (*ArbitrumCheckerTransactor, error) {
+	contract, err := bindArbitrumChecker(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbitrumCheckerTransactor{contract: contract}, nil
+}
+
+// NewArbitrumCheckerFilterer creates a new log filterer instance of ArbitrumChecker, bound to a specific deployed contract.
+func NewArbitrumCheckerFilterer(address common.Address, filterer bind.ContractFilterer) (*ArbitrumCheckerFilterer, error) {
+	contract, err := bindArbitrumChecker(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbitrumCheckerFilterer{contract: contract}, nil
+}
+
+// bindArbitrumChecker binds a generic wrapper to an already deployed contract.
+func bindArbitrumChecker(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := ArbitrumCheckerMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ArbitrumChecker *ArbitrumCheckerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ArbitrumChecker.Contract.ArbitrumCheckerCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ArbitrumChecker *ArbitrumCheckerRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbitrumChecker.Contract.ArbitrumCheckerTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ArbitrumChecker *ArbitrumCheckerRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ArbitrumChecker.Contract.ArbitrumCheckerTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ArbitrumChecker *ArbitrumCheckerCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ArbitrumChecker.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ArbitrumChecker *ArbitrumCheckerTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbitrumChecker.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ArbitrumChecker *ArbitrumCheckerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ArbitrumChecker.Contract.contract.Transact(opts, method, params...)
+}
+
 // CryptographyPrimitivesMetaData contains all meta data concerning the CryptographyPrimitives contract.
 var CryptographyPrimitivesMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122083f6b513c80378ec3f1cfc2d902f8503f093a964370cc897ce8576556e444fa964736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220f1825c30b183f222548264d973da80fdb28b52ae34fc25bd175f80f59d96e76e64736f6c63430008110033",
 }
 
 // CryptographyPrimitivesABI is the input ABI used to generate the binding from.
@@ -1111,11 +1285,11 @@ func NewCryptographyPrimitivesFilterer(address common.Address, filterer bind.Con
 
 // bindCryptographyPrimitives binds a generic wrapper to an already deployed contract.
 func bindCryptographyPrimitives(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(CryptographyPrimitivesABI))
+	parsed, err := CryptographyPrimitivesMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1262,11 +1436,11 @@ func NewDelegateCallAwareFilterer(address common.Address, filterer bind.Contract
 
 // bindDelegateCallAware binds a generic wrapper to an already deployed contract.
 func bindDelegateCallAware(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(DelegateCallAwareABI))
+	parsed, err := DelegateCallAwareMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1413,11 +1587,11 @@ func NewDoubleLogicERC1967UpgradeFilterer(address common.Address, filterer bind.
 
 // bindDoubleLogicERC1967Upgrade binds a generic wrapper to an already deployed contract.
 func bindDoubleLogicERC1967Upgrade(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(DoubleLogicERC1967UpgradeABI))
+	parsed, err := DoubleLogicERC1967UpgradeMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -2131,11 +2305,11 @@ func NewDoubleLogicUUPSUpgradeableFilterer(address common.Address, filterer bind
 
 // bindDoubleLogicUUPSUpgradeable binds a generic wrapper to an already deployed contract.
 func bindDoubleLogicUUPSUpgradeable(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(DoubleLogicUUPSUpgradeableABI))
+	parsed, err := DoubleLogicUUPSUpgradeableMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -2964,11 +3138,11 @@ func NewGasRefundEnabledFilterer(address common.Address, filterer bind.ContractF
 
 // bindGasRefundEnabled binds a generic wrapper to an already deployed contract.
 func bindGasRefundEnabled(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(GasRefundEnabledABI))
+	parsed, err := GasRefundEnabledMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -3115,11 +3289,11 @@ func NewIGasRefunderFilterer(address common.Address, filterer bind.ContractFilte
 
 // bindIGasRefunder binds a generic wrapper to an already deployed contract.
 func bindIGasRefunder(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(IGasRefunderABI))
+	parsed, err := IGasRefunderMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -3184,7 +3358,7 @@ func (_IGasRefunder *IGasRefunderTransactorSession) OnGasSpent(spender common.Ad
 // MerkleLibMetaData contains all meta data concerning the MerkleLib contract.
 var MerkleLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212204d4a6f4807bca3b7831a8273c2fbcad10ffa11d0ac882aac4468409b87c11d4e64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212207645fa9528c6fa661fff7f22099413f7c95bcbed0dbb89948e348514544066be64736f6c63430008110033",
 }
 
 // MerkleLibABI is the input ABI used to generate the binding from.
@@ -3309,11 +3483,11 @@ func NewMerkleLibFilterer(address common.Address, filterer bind.ContractFilterer
 
 // bindMerkleLib binds a generic wrapper to an already deployed contract.
 func bindMerkleLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(MerkleLibABI))
+	parsed, err := MerkleLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -3460,11 +3634,11 @@ func NewUUPSNotUpgradeableFilterer(address common.Address, filterer bind.Contrac
 
 // bindUUPSNotUpgradeable binds a generic wrapper to an already deployed contract.
 func bindUUPSNotUpgradeable(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(UUPSNotUpgradeableABI))
+	parsed, err := UUPSNotUpgradeableMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and

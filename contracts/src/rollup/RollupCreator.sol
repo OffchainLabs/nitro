@@ -11,14 +11,11 @@ import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.so
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./RollupProxy.sol";
+import "./IRollupAdmin.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(
-        address indexed rollupAddress,
-        address inboxAddress,
-        address adminProxy,
-        address sequencerInbox,
-        address bridge
+        address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address bridge
     );
     event TemplatesUpdated();
 
@@ -52,54 +49,23 @@ contract RollupCreator is Ownable {
         emit TemplatesUpdated();
     }
 
-    struct CreateRollupFrame {
-        ProxyAdmin admin;
-        IBridge bridge;
-        ISequencerInbox sequencerInbox;
-        IInbox inbox;
-        IRollupEventInbox rollupEventInbox;
-        IOutbox outbox;
-        RollupProxy rollup;
-    }
-
-    // After this setup:
-    // Rollup should be the owner of bridge
-    // RollupOwner should be the owner of Rollup's ProxyAdmin
-    // RollupOwner should be the owner of Rollup
-    // Bridge should have a single inbox and outbox
-    function createRollup(Config memory config, address expectedRollupAddr)
-        external
-        returns (address)
+    // internal function to workaround stack limit
+    function createChallengeManager(address rollupAddr, address proxyAdminAddr, Config memory config)
+        internal
+        returns (IEdgeChallengeManager)
     {
-        CreateRollupFrame memory frame;
-        frame.admin = new ProxyAdmin();
-
-        (
-            frame.bridge,
-            frame.sequencerInbox,
-            frame.inbox,
-            frame.rollupEventInbox,
-            frame.outbox
-        ) = bridgeCreator.createBridge(
-            address(frame.admin),
-            expectedRollupAddr,
-            config.sequencerInboxMaxTimeVariation
-        );
-
-        frame.admin.transferOwnership(config.owner);
-
         IEdgeChallengeManager challengeManager = IEdgeChallengeManager(
             address(
                 new TransparentUpgradeableProxy(
                     address(challengeManagerTemplate),
-                    address(frame.admin),
+                    proxyAdminAddr,
                     ""
                 )
             )
         );
-        
+
         challengeManager.initialize({
-            _assertionChain: IAssertionChain(expectedRollupAddr),
+            _assertionChain: IAssertionChain(rollupAddr),
             _challengePeriodBlocks: config.confirmPeriodBlocks,
             _oneStepProofEntry: osp,
             layerZeroBlockEdgeHeight: config.layerZeroBlockEdgeHeight,
@@ -110,14 +76,61 @@ contract RollupCreator is Ownable {
             _excessStakeReceiver: config.owner
         });
 
-        frame.rollup = new RollupProxy(
+        return challengeManager;
+    }
+
+    function createRollup(Config memory config) external returns (address) {
+        return createRollup(config, address(0), new address[](0), false);
+    }
+
+    /**
+     * @notice Create a new rollup
+     * @dev After this setup:
+     * @dev - Rollup should be the owner of bridge
+     * @dev - RollupOwner should be the owner of Rollup's ProxyAdmin
+     * @dev - RollupOwner should be the owner of Rollup
+     * @dev - Bridge should have a single inbox and outbox
+     * @dev - Validators and batch poster should be set if provided
+     * @param config       The configuration for the rollup
+     * @param _batchPoster The address of the batch poster, not used when set to zero address
+     * @param _validators  The list of validator addresses, not used when set to empty list
+     * @return The address of the newly created rollup
+     */
+    function createRollup(
+        Config memory config,
+        address _batchPoster,
+        address[] memory _validators,
+        bool disableValidatorWhitelist
+    ) public returns (address) {        
+        ProxyAdmin proxyAdmin = new ProxyAdmin();
+        proxyAdmin.transferOwnership(config.owner);
+
+        // Create the rollup proxy to figure out the address and initialize it later
+        RollupProxy rollup = new RollupProxy{salt: keccak256(abi.encode(config))}();
+
+        (
+            IBridge bridge,
+            ISequencerInbox sequencerInbox,
+            IInbox inbox,
+            IRollupEventInbox rollupEventInbox,
+            IOutbox outbox
+        ) = bridgeCreator.createBridge(address(proxyAdmin), address(rollup), config.sequencerInboxMaxTimeVariation);
+
+        IEdgeChallengeManager challengeManager = createChallengeManager(address(rollup), address(proxyAdmin), config);
+
+        // initialize the rollup with this contract as owner to set batch poster and validators
+        // it will transfer the ownership back to the actual owner later
+        address actualOwner = config.owner;
+        config.owner = address(this);
+
+        rollup.initializeProxy(
             config,
             ContractDependencies({
-                bridge: frame.bridge,
-                sequencerInbox: frame.sequencerInbox,
-                inbox: frame.inbox,
-                outbox: frame.outbox,
-                rollupEventInbox: frame.rollupEventInbox,
+                bridge: bridge,
+                sequencerInbox: sequencerInbox,
+                inbox: inbox,
+                outbox: outbox,
+                rollupEventInbox: rollupEventInbox,
                 challengeManager: challengeManager,
                 rollupAdminLogic: address(rollupAdminLogic),
                 rollupUserLogic: rollupUserLogic,
@@ -125,15 +138,27 @@ contract RollupCreator is Ownable {
                 validatorWalletCreator: validatorWalletCreator
             })
         );
-        require(address(frame.rollup) == expectedRollupAddr, "WRONG_ROLLUP_ADDR");
+
+        // setting batch poster, if the address provided is not zero address
+        if (_batchPoster != address(0)) {
+            sequencerInbox.setIsBatchPoster(_batchPoster, true);
+        }
+        // Call setValidator on the newly created rollup contract just if validator set is not empty
+        if (_validators.length != 0) {
+            bool[] memory _vals = new bool[](_validators.length);
+            for (uint256 i = 0; i < _validators.length; i++) {
+                _vals[i] = true;
+            }
+            IRollupAdmin(address(rollup)).setValidator(_validators, _vals);
+        }
+        if(disableValidatorWhitelist == true) {
+            IRollupAdmin(address(rollup)).setValidatorWhitelistDisabled(disableValidatorWhitelist);
+        }
+        IRollupAdmin(address(rollup)).setOwner(actualOwner);
 
         emit RollupCreated(
-            address(frame.rollup),
-            address(frame.inbox),
-            address(frame.admin),
-            address(frame.sequencerInbox),
-            address(frame.bridge)
+            address(rollup), address(inbox), address(proxyAdmin), address(sequencerInbox), address(bridge)
         );
-        return address(frame.rollup);
+        return address(rollup);
     }
 }

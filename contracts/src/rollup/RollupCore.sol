@@ -17,7 +17,7 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 import "../challengeV2/EdgeChallengeManager.sol";
-import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+import "../libraries/ArbitrumChecker.sol";
 
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using AssertionNodeLib for AssertionNode;
@@ -106,6 +106,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     bool public validatorWhitelistDisabled;
     address public anyTrustFastConfirmer;
 
+    // If the chain this RollupCore is deployed on is an Arbitrum chain.
+    bool internal immutable _hostChainIsArbitrum = ArbitrumChecker.runningOnArbitrum();
+    // If the chain RollupCore is deployed on, this will contain the ArbSys.blockNumber() at each node's creation.
+    mapping(bytes32 => uint256) internal _assertionCreatedAtArbSysBlock;
+
     function sequencerInbox() public view virtual returns (ISequencerInbox) {
         return ISequencerInbox(bridge.sequencerInbox());
     }
@@ -126,6 +131,30 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function getAssertion(bytes32 assertionHash) public view override returns (AssertionNode memory) {
         return getAssertionStorage(assertionHash);
+    }
+
+    /**
+     * @notice Returns the block in which the given assertion was created for looking up its creation event.
+     * Unlike the assertion's createdAtBlock field, this will be the ArbSys blockNumber if the host chain is an Arbitrum chain.
+     * That means that the block number returned for this is usable for event queries.
+     * This function will revert if the given assertion hash does not exist.
+     * @dev This function is meant for internal use only and has no stability guarantees.
+     */
+    function getAssertionCreationBlockForLogLookup(bytes32 assertionHash)
+        external
+        view
+        override
+        returns (uint256)
+    {
+        if (_hostChainIsArbitrum) {
+            uint256 blockNum = _assertionCreatedAtArbSysBlock[assertionHash];
+            require(blockNum > 0, "NO_ASSERTION");
+            return blockNum;
+        } else {
+            AssertionNode storage assertion = getAssertionStorage(assertionHash);
+            assertion.requireExists();
+            return assertion.createdAtBlock;
+        }
     }
 
     /**
@@ -468,6 +497,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             address(challengeManager),
             confirmPeriodBlocks
         );
+        if (_hostChainIsArbitrum) {
+            _assertionCreatedAtArbSysBlock[newAssertionHash] = ArbSys(address(100)).arbBlockNumber();
+        }
 
         return newAssertionHash;
     }

@@ -24,6 +24,8 @@ contract Simple {
     }
 
     function incrementRedeem() external {
+        require(msg.sender == tx.origin, "SENDER_NOT_ORIGIN");
+        require(ArbSys(address(0x64)).wasMyCallersAddressAliased(), "NOT_ALIASED");
         counter++;
         emit RedeemedEvent(msg.sender, ArbRetryableTx(address(110)).getCurrentRedeemer());
     }
@@ -35,6 +37,10 @@ contract Simple {
     function checkBlockHashes() external view returns (uint256) {
         require(blockhash(block.number - 1) != blockhash(block.number - 2), "SAME_BLOCK_HASH");
         return block.number;
+    }
+
+    function getBlockDifficulty() external view returns (uint256) {
+        return block.difficulty;
     }
 
     function noop() external pure {}

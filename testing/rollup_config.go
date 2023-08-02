@@ -50,6 +50,7 @@ func GenerateRollupConfig(
 		Owner:               rollupOwner,
 		LoserStakeEscrow:    loserStakeEscrow,
 		ChainId:             chainId,
+		ChainConfig:         "{ 'config': 'Test config'}",
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),

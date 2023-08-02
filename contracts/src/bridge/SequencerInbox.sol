@@ -27,10 +27,13 @@ import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "../rollup/IRollupLogic.sol";
 import "./Messages.sol";
+import "../precompiles/ArbGasInfo.sol";
+import "../precompiles/ArbSys.sol";
 
 import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
+import "../libraries/ArbitrumChecker.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
 /**
@@ -63,6 +66,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     uint256 internal immutable deployTimeChainId = block.chainid;
+
+    mapping(address => bool) public isSequencer;
+
+    // If the chain this SequencerInbox is deployed on is an Arbitrum chain.
+    bool internal immutable hostChainIsArbitrum = ArbitrumChecker.runningOnArbitrum();
 
     function _chainIdChanged() internal view returns (bool) {
         return deployTimeChainId != block.chainid;
@@ -385,13 +393,29 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             // this msg isn't included in the current sequencer batch, but instead added to
             // the delayed messages queue that is yet to be included
             address batchPoster = msg.sender;
-            bytes memory spendingReportMsg = abi.encodePacked(
-                block.timestamp,
-                batchPoster,
-                dataHash,
-                seqMessageIndex,
-                block.basefee
-            );
+            bytes memory spendingReportMsg;
+            if (hostChainIsArbitrum) {
+                // Include extra gas for the host chain's L1 gas charging
+                uint256 l1Fees = ArbGasInfo(address(0x6c)).getCurrentTxL1GasFees();
+                uint256 extraGas = l1Fees / block.basefee;
+                require(extraGas <= type(uint64).max, "L1_GAS_NOT_UINT64");
+                spendingReportMsg = abi.encodePacked(
+                    block.timestamp,
+                    batchPoster,
+                    dataHash,
+                    seqMessageIndex,
+                    block.basefee,
+                    uint64(extraGas)
+                );
+            } else {
+                spendingReportMsg = abi.encodePacked(
+                    block.timestamp,
+                    batchPoster,
+                    dataHash,
+                    seqMessageIndex,
+                    block.basefee
+                );
+            }
             uint256 msgNum = bridge.submitBatchSpendingReport(
                 batchPoster,
                 keccak256(spendingReportMsg)
@@ -431,9 +455,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         require(keysetBytes.length < 64 * 1024, "keyset is too large");
 
         if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
+        uint256 creationBlock = block.number;
+        if (hostChainIsArbitrum) {
+            creationBlock = ArbSys(address(100)).arbBlockNumber();
+        }
         dasKeySetInfo[ksHash] = DasKeySetInfo({
             isValidKeyset: true,
-            creationBlock: uint64(block.number)
+            creationBlock: uint64(creationBlock)
         });
         emit SetValidKeyset(ksHash, keysetBytes);
         emit OwnerFunctionCalled(2);
@@ -448,6 +476,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
+    }
+
+    /// @inheritdoc ISequencerInbox
+    function setIsSequencer(address addr, bool isSequencer_) external onlyRollupOwner {
+        isSequencer[addr] = isSequencer_;
+        emit OwnerFunctionCalled(4);
     }
 
     function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {

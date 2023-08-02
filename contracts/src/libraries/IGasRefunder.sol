@@ -21,10 +21,7 @@ abstract contract GasRefundEnabled {
         uint256 startGasLeft = gasleft();
         _;
         if (address(gasRefunder) != address(0)) {
-            uint256 calldataSize;
-            assembly {
-                calldataSize := calldatasize()
-            }
+            uint256 calldataSize = msg.data.length;
             uint256 calldataWords = (calldataSize + 31) / 32;
             // account for the CALLDATACOPY cost of the proxy contract, including the memory expansion cost
             // memory_expansion_cost = (memory_size_word ** 2) / 512 + (3 * memory_size_word)

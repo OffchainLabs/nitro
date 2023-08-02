@@ -77,6 +77,15 @@ interface IRollupCore is IAssertionChain {
     function getAssertion(bytes32 assertionHash) external view returns (AssertionNode memory);
 
     /**
+     * @notice Returns the block in which the given assertion was created for looking up its creation event.
+     * Unlike the assertion's createdAtBlock field, this will be the ArbSys blockNumber if the host chain is an Arbitrum chain.
+     * That means that the block number returned for this is usable for event queries.
+     * This function will revert if the given assertion hash does not exist.
+     * @dev This function is meant for internal use only and has no stability guarantees.
+     */
+    function getAssertionCreationBlockForLogLookup(bytes32 assertionHash) external view returns (uint256);
+
+    /**
      * @notice Get the address of the staker at the given index
      * @param stakerNum Index of the staker
      * @return Address of the staker

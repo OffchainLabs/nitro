@@ -28,6 +28,7 @@ contracts/cache
 contracts/out
 contracts/formatter.sh
 contracts/build
+contracts/test/storage/*-old.dot
 
 .DS_Store
 .env

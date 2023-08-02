@@ -9,13 +9,27 @@ import "./IRollupAdmin.sol";
 import "./Config.sol";
 
 contract RollupProxy is AdminFallbackProxy {
-    constructor(Config memory config, ContractDependencies memory connectedContracts)
-        AdminFallbackProxy(
-            address(connectedContracts.rollupAdminLogic),
-            abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
-            address(connectedContracts.rollupUserLogic),
-            abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken),
-            config.owner
-        )
-    {}
+    function initializeProxy(Config memory config, ContractDependencies memory connectedContracts)
+        external
+    {
+        if (
+            _getAdmin() == address(0) &&
+            _getImplementation() == address(0) &&
+            _getSecondaryImplementation() == address(0)
+        ) {
+            _initialize(
+                address(connectedContracts.rollupAdminLogic),
+                abi.encodeCall(
+                    IRollupAdmin.initialize,
+                    (config,
+                    connectedContracts)
+                ),
+                address(connectedContracts.rollupUserLogic),
+                abi.encodeCall(IRollupUser.initialize, (config.stakeToken)),
+                config.owner
+            );
+        } else {
+            _fallback();
+        }
+    }
 }

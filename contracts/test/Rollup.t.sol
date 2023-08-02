@@ -100,6 +100,7 @@ contract RollupTest is Test {
         Config memory config = Config({
             baseStake: BASE_STAKE,
             chainId: 0,
+            chainConfig: "{}",
             confirmPeriodBlocks: uint64(CONFIRM_PERIOD_BLOCKS),
             owner: owner,
             sequencerInboxMaxTimeVariation: ISequencerInbox.MaxTimeVariation({
@@ -119,18 +120,12 @@ contract RollupTest is Test {
             anyTrustFastConfirmer: anyTrustFastConfirmer
         });
 
-        address expectedRollupAddr = address(
-            uint160(
-                uint256(keccak256(abi.encodePacked(bytes1(0xd6), bytes1(0x94), address(rollupCreator), bytes1(0x03))))
-            )
-        );
+        vm.expectEmit(false, false, false, false);
+        emit RollupCreated(address(0), address(0), address(0), address(0), address(0));
+        address rollupAddr = rollupCreator.createRollup(config);
 
-        vm.expectEmit(true, true, false, false);
-        emit RollupCreated(expectedRollupAddr, address(0), address(0), address(0), address(0));
-        rollupCreator.createRollup(config, expectedRollupAddr);
-
-        userRollup = RollupUserLogic(address(expectedRollupAddr));
-        adminRollup = RollupAdminLogic(address(expectedRollupAddr));
+        userRollup = RollupUserLogic(address(rollupAddr));
+        adminRollup = RollupAdminLogic(address(rollupAddr));
         challengeManager = EdgeChallengeManager(address(userRollup.challengeManager()));
 
         vm.startPrank(owner);
@@ -1136,5 +1131,16 @@ contract RollupTest is Test {
         ISequencerInbox sequencerInbox = userRollup.sequencerInbox();
         vm.expectRevert(NotBatchPoster.selector);
         sequencerInbox.addSequencerL2Batch(0, "0x", 0, IGasRefunder(address(0)), 0, 0);
+    }
+
+    function testSuccessSetChallengeManager() public {
+        vm.prank(owner);
+        adminRollup.setChallengeManager(address(0xdeadbeef));
+        assertEq(address(userRollup.challengeManager()), address(0xdeadbeef));
+    }
+
+    function testRevertSetChallengeManager() public {
+        vm.expectRevert();
+        adminRollup.setChallengeManager(address(0xdeadbeef));
     }
 }

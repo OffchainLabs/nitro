@@ -4,7 +4,7 @@ rankdir=LR
 color=black
 arrowhead=open
 node [shape=record, style=filled, fillcolor=gray95 fontname="Courier New"]
-3 [label="SequencerInbox \<\<Contract\>\>\n | {{ slot| 0 | 1 | 2 | 3 | 4-7 | 8 } | { type: \<inherited contract\>.variable (bytes) | {  uint256: totalDelayedMessagesRead (32) } | {  unallocated (12)  |  IBridge: bridge (20) } | {  unallocated (12)  |  IOwnable: rollup (20) } | {  mapping\(address=\>bool\): isBatchPoster (32) } | { <9> ISequencerInbox.MaxTimeVariation: maxTimeVariation (128) } | { <12> mapping\(bytes32=\>DasKeySetInfo\): dasKeySetInfo (32) }}}"]
+3 [label="SequencerInbox \<\<Contract\>\>\n | {{ slot| 0 | 1 | 2 | 3 | 4-7 | 8 | 9 } | { type: \<inherited contract\>.variable (bytes) | {  uint256: totalDelayedMessagesRead (32) } | {  unallocated (12)  |  IBridge: bridge (20) } | {  unallocated (12)  |  IOwnable: rollup (20) } | {  mapping\(address=\>bool\): isBatchPoster (32) } | { <9> ISequencerInbox.MaxTimeVariation: maxTimeVariation (128) } | { <12> mapping\(bytes32=\>DasKeySetInfo\): dasKeySetInfo (32) } | {  mapping\(address=\>bool\): isSequencer (32) }}}"]
 
 1 [label="ISequencerInbox.MaxTimeVariation \<\<Struct\>\>\n | {{ slot| 4 | 5 | 6 | 7 } | { type: variable (bytes) | {  uint256: MaxTimeVariation.delayBlocks (32) } | {  uint256: MaxTimeVariation.futureBlocks (32) } | {  uint256: MaxTimeVariation.delaySeconds (32) } | {  uint256: MaxTimeVariation.futureSeconds (32) }}}"]
 

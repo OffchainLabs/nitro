@@ -26,12 +26,13 @@ var (
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
+	_ = abi.ConvertType
 )
 
 // DeserializeMetaData contains all meta data concerning the Deserialize contract.
 var DeserializeMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220f0e30fb3bb09179652281503b64c9463bcc17518061d73ab1bea21b14cdf2b9764736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122028bc0e8d807835c43bd502d0767b3d6cac5caac25ea74c42338331b3c0893ae764736f6c63430008110033",
 }
 
 // DeserializeABI is the input ABI used to generate the binding from.
@@ -156,11 +157,11 @@ func NewDeserializeFilterer(address common.Address, filterer bind.ContractFilter
 
 // bindDeserialize binds a generic wrapper to an already deployed contract.
 func bindDeserialize(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(DeserializeABI))
+	parsed, err := DeserializeMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -204,7 +205,7 @@ func (_Deserialize *DeserializeTransactorRaw) Transact(opts *bind.TransactOpts, 
 // GlobalStateLibMetaData contains all meta data concerning the GlobalStateLib contract.
 var GlobalStateLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212203cc26002d081595eef402b338903c8d312aaffe6c8c983c37c265898defb1f8764736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220b21e746000be1e5d1216b926f18cf761d659f46317d86c8ff9b5c5e434894aeb64736f6c63430008110033",
 }
 
 // GlobalStateLibABI is the input ABI used to generate the binding from.
@@ -329,11 +330,11 @@ func NewGlobalStateLibFilterer(address common.Address, filterer bind.ContractFil
 
 // bindGlobalStateLib binds a generic wrapper to an already deployed contract.
 func bindGlobalStateLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(GlobalStateLibABI))
+	parsed, err := GlobalStateLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -377,7 +378,7 @@ func (_GlobalStateLib *GlobalStateLibTransactorRaw) Transact(opts *bind.Transact
 // InstructionsMetaData contains all meta data concerning the Instructions contract.
 var InstructionsMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212200e07398527c05174fff9a5983955a39eb1b5e0ebbc089176d56ea0997e4b7ecb64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220be6777b2f67e89eb017575060a83fa93e42d63180773d5f409680a291a522c5564736f6c63430008110033",
 }
 
 // InstructionsABI is the input ABI used to generate the binding from.
@@ -502,11 +503,11 @@ func NewInstructionsFilterer(address common.Address, filterer bind.ContractFilte
 
 // bindInstructions binds a generic wrapper to an already deployed contract.
 func bindInstructions(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(InstructionsABI))
+	parsed, err := InstructionsMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -550,7 +551,7 @@ func (_Instructions *InstructionsTransactorRaw) Transact(opts *bind.TransactOpts
 // MachineLibMetaData contains all meta data concerning the MachineLib contract.
 var MachineLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220c099f7597a2cf7ea74c16dd52ff15a2e61ef896a32418f21a59913b74d26e21364736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212202fa6b9edbf7460862f1e3684d4c7c5d75397fa1872c81bcacc8c2841992cedbf64736f6c63430008110033",
 }
 
 // MachineLibABI is the input ABI used to generate the binding from.
@@ -675,11 +676,11 @@ func NewMachineLibFilterer(address common.Address, filterer bind.ContractFiltere
 
 // bindMachineLib binds a generic wrapper to an already deployed contract.
 func bindMachineLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(MachineLibABI))
+	parsed, err := MachineLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -723,7 +724,7 @@ func (_MachineLib *MachineLibTransactorRaw) Transact(opts *bind.TransactOpts, me
 // MerkleProofLibMetaData contains all meta data concerning the MerkleProofLib contract.
 var MerkleProofLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220b3c9a6b93d80b64558a6cb7f674060006742f491827313179285419b85fcb63e64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122036614e5cac0a4df8bbcd50c73c0b1b4ba56f31c8dcee78c46a1e2d371f8d435564736f6c63430008110033",
 }
 
 // MerkleProofLibABI is the input ABI used to generate the binding from.
@@ -848,11 +849,11 @@ func NewMerkleProofLibFilterer(address common.Address, filterer bind.ContractFil
 
 // bindMerkleProofLib binds a generic wrapper to an already deployed contract.
 func bindMerkleProofLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(MerkleProofLibABI))
+	parsed, err := MerkleProofLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -896,7 +897,7 @@ func (_MerkleProofLib *MerkleProofLibTransactorRaw) Transact(opts *bind.Transact
 // ModuleLibMetaData contains all meta data concerning the ModuleLib contract.
 var ModuleLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220b0e674215d8ada005f48203aab3c3577ae137b9c218fcaf411014222e3701d4164736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122002e341cfc3ee108b2f0a399e4dc3307fe261cd643459a0730ff381c85bdc5c1864736f6c63430008110033",
 }
 
 // ModuleLibABI is the input ABI used to generate the binding from.
@@ -1021,11 +1022,11 @@ func NewModuleLibFilterer(address common.Address, filterer bind.ContractFilterer
 
 // bindModuleLib binds a generic wrapper to an already deployed contract.
 func bindModuleLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ModuleLibABI))
+	parsed, err := ModuleLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1069,7 +1070,7 @@ func (_ModuleLib *ModuleLibTransactorRaw) Transact(opts *bind.TransactOpts, meth
 // ModuleMemoryCompactLibMetaData contains all meta data concerning the ModuleMemoryCompactLib contract.
 var ModuleMemoryCompactLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220f5e07a7fb3622b70c2b011dbf1d1b2b2c96786ff9b5fcf277c9179354b0e4bf964736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122043941c0e703138d54a507818ae810844fc6748ff0523e82316f54887e7b0c51164736f6c63430008110033",
 }
 
 // ModuleMemoryCompactLibABI is the input ABI used to generate the binding from.
@@ -1194,11 +1195,11 @@ func NewModuleMemoryCompactLibFilterer(address common.Address, filterer bind.Con
 
 // bindModuleMemoryCompactLib binds a generic wrapper to an already deployed contract.
 func bindModuleMemoryCompactLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ModuleMemoryCompactLibABI))
+	parsed, err := ModuleMemoryCompactLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1242,7 +1243,7 @@ func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibTransactorRaw) Transact(opt
 // ModuleMemoryLibMetaData contains all meta data concerning the ModuleMemoryLib contract.
 var ModuleMemoryLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220dc4be20121e648cd29ad3a836a16d4a9cc34bd577b2b005f944007668443130b64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122024cc7f666515d7fa17d825b6ca90c62f857fa2366817ffd21636e5a3597dbdb664736f6c63430008110033",
 }
 
 // ModuleMemoryLibABI is the input ABI used to generate the binding from.
@@ -1367,11 +1368,11 @@ func NewModuleMemoryLibFilterer(address common.Address, filterer bind.ContractFi
 
 // bindModuleMemoryLib binds a generic wrapper to an already deployed contract.
 func bindModuleMemoryLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ModuleMemoryLibABI))
+	parsed, err := ModuleMemoryLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1415,7 +1416,7 @@ func (_ModuleMemoryLib *ModuleMemoryLibTransactorRaw) Transact(opts *bind.Transa
 // PcArrayLibMetaData contains all meta data concerning the PcArrayLib contract.
 var PcArrayLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212203d78f376958ec0b9dddfb4be351513a7b9ddcf29dc0ecef1bd55706962fbdfcc64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220fc0ff68454f60baa7f6495a9d471d3fa292a85c5eeb6162a388f1aea0a3b17b964736f6c63430008110033",
 }
 
 // PcArrayLibABI is the input ABI used to generate the binding from.
@@ -1540,11 +1541,11 @@ func NewPcArrayLibFilterer(address common.Address, filterer bind.ContractFiltere
 
 // bindPcArrayLib binds a generic wrapper to an already deployed contract.
 func bindPcArrayLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(PcArrayLibABI))
+	parsed, err := PcArrayLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1588,7 +1589,7 @@ func (_PcArrayLib *PcArrayLibTransactorRaw) Transact(opts *bind.TransactOpts, me
 // StackFrameLibMetaData contains all meta data concerning the StackFrameLib contract.
 var StackFrameLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220a0efceeaa85534e3f19a4e108a822fcb8a944d8a4a202b2120e813d007c9412764736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220243574188b7a26c30bb5e679f186ed2d172948e7444dd94e5cd46114c3661a3c64736f6c63430008110033",
 }
 
 // StackFrameLibABI is the input ABI used to generate the binding from.
@@ -1713,11 +1714,11 @@ func NewStackFrameLibFilterer(address common.Address, filterer bind.ContractFilt
 
 // bindStackFrameLib binds a generic wrapper to an already deployed contract.
 func bindStackFrameLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(StackFrameLibABI))
+	parsed, err := StackFrameLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1761,7 +1762,7 @@ func (_StackFrameLib *StackFrameLibTransactorRaw) Transact(opts *bind.TransactOp
 // ValueArrayLibMetaData contains all meta data concerning the ValueArrayLib contract.
 var ValueArrayLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220decab838fb391b68df7af61bd078860d97b497b55e9d419dd3a367dec4c8b73e64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220bd47d0f241bed2cda2b804be29f633242caca030d7203afa8b5ad21a34251ef464736f6c63430008110033",
 }
 
 // ValueArrayLibABI is the input ABI used to generate the binding from.
@@ -1886,11 +1887,11 @@ func NewValueArrayLibFilterer(address common.Address, filterer bind.ContractFilt
 
 // bindValueArrayLib binds a generic wrapper to an already deployed contract.
 func bindValueArrayLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ValueArrayLibABI))
+	parsed, err := ValueArrayLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1934,7 +1935,7 @@ func (_ValueArrayLib *ValueArrayLibTransactorRaw) Transact(opts *bind.TransactOp
 // ValueLibMetaData contains all meta data concerning the ValueLib contract.
 var ValueLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122008dba40bcade6f60725f93998964c31c5f86de45a0d71f47062d2f025233751164736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212206e8af1e65a78e7f297ba48b3b7ee3d07e5a289af1cdca3511b7ba0356f3188ef64736f6c63430008110033",
 }
 
 // ValueLibABI is the input ABI used to generate the binding from.
@@ -2059,11 +2060,11 @@ func NewValueLibFilterer(address common.Address, filterer bind.ContractFilterer)
 
 // bindValueLib binds a generic wrapper to an already deployed contract.
 func bindValueLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ValueLibABI))
+	parsed, err := ValueLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -2107,7 +2108,7 @@ func (_ValueLib *ValueLibTransactorRaw) Transact(opts *bind.TransactOpts, method
 // ValueStackLibMetaData contains all meta data concerning the ValueStackLib contract.
 var ValueStackLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220ed2528873d8fc58546b8dcbf5746eaac263f27c4998a1c7a4356ef2c6dedfb7264736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212209088e2b855fa5fab4115385d0ed33443580429eaf6d2e24c5820232048d98b2c64736f6c63430008110033",
 }
 
 // ValueStackLibABI is the input ABI used to generate the binding from.
@@ -2232,11 +2233,11 @@ func NewValueStackLibFilterer(address common.Address, filterer bind.ContractFilt
 
 // bindValueStackLib binds a generic wrapper to an already deployed contract.
 func bindValueStackLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ValueStackLibABI))
+	parsed, err := ValueStackLibMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and

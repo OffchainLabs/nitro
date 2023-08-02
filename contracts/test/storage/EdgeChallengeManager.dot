@@ -1,0 +1,15 @@
+
+digraph StorageDiagram {
+rankdir=LR
+color=black
+arrowhead=open
+node [shape=record, style=filled, fillcolor=gray95 fontname="Courier New"]
+3 [label="EdgeChallengeManager \<\<Contract\>\>\n | {{ slot| 0 | 1-2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 } | { type: \<inherited contract\>.variable (bytes) | {  unallocated (30)  |  bool: Initializable._initializing (1)  |  uint8: Initializable._initialized (1) } | { <18> EdgeStore: store (64) } | {  unallocated (12)  |  address: excessStakeReceiver (20) } | {  unallocated (12)  |  IERC20: stakeToken (20) } | {  uint256: stakeAmount (32) } | {  uint256: challengePeriodBlocks (32) } | {  unallocated (12)  |  IAssertionChain: assertionChain (20) } | {  unallocated (12)  |  IOneStepProofEntry: oneStepProofEntry (20) } | {  uint256: LAYERZERO_BLOCKEDGE_HEIGHT (32) } | {  uint256: LAYERZERO_BIGSTEPEDGE_HEIGHT (32) } | {  uint256: LAYERZERO_SMALLSTEPEDGE_HEIGHT (32) }}}"]
+
+1 [label="ChallengeEdge \<\<Struct\>\>\n | {{ slot| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 } | { type: variable (bytes) | {  bytes32: originId (32) } | {  bytes32: startHistoryRoot (32) } | {  uint256: startHeight (32) } | {  bytes32: endHistoryRoot (32) } | {  uint256: endHeight (32) } | {  bytes32: lowerChildId (32) } | {  bytes32: upperChildId (32) } | {  uint256: createdAtBlock (32) } | {  bytes32: claimId (32) } | {  unallocated (9)  |  bool: refunded (1)  |  EdgeType: eType (1)  |  EdgeStatus: status (1)  |  address: staker (20) }}}"]
+
+2 [label="EdgeStore \<\<Struct\>\>\n | {{ slot| 1 | 2 } | { type: variable (bytes) | { <16> mapping\(bytes32=\>ChallengeEdge\): edges (32) } | {  mapping\(bytes32=\>bytes32\): firstRivals (32) }}}"]
+
+ 3:18 -> 2
+ 2:16 -> 1
+}
