@@ -296,9 +296,16 @@ func TestRectifyMapping(t *testing.T) {
 func checkIfRectifyMappingWorks(t *testing.T, addr common.Address, aset *AddressSet, asetSize uint64, ownerIndex uint64) {
 	t.Helper()
 	Require(t, aset.RectifyMapping(addr))
+	// Check if AllMembers returns the correct list
+	ownerList, err := aset.AllMembers(asetSize)
+	Require(t, err)
 	addrHash := common.BytesToHash(addr.Bytes())
 	addrHashInList, index, isOwner, err := aset.getMapping(addrHash)
-	if size(t, aset) != asetSize || !isOwner || err != nil || index != ownerIndex || addrHash != addrHashInList {
+	Require(t, err)
+	if size(t, aset) != asetSize || !isOwner ||
+		index != ownerIndex || addrHash != addrHashInList ||
+		len(ownerList) != int(asetSize) || ownerList[ownerIndex-1] != addr {
+
 		Fail(t, "RectifyMapping did not fix the mismatch")
 	}
 }
