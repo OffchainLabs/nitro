@@ -42,6 +42,40 @@ time/
     Abstract time utilities
 ```
 
+## Research Specification
+
+BOLD has an accompanying research specification that outlines the foundations of the protocol in more detail, found under [docs/research-specs/BOLDChallengeProtocol.pdf](./docs/research-specs/BOLDChallengeProtocol.pdf).
+
+## Using BOLD
+
+BOLD is meant to be imported as a dependency in Arbitrum chains' validator software as follows:
+
+```go
+import (
+    "github.com/OffchainLabs/bold/challenge-manager"
+)
+
+...
+
+manager, err := challengemanager.New(
+    ctx,
+    chain, // Bindings to the challenge manager contracts.
+    client, // Ethereum chain client.
+    stateManager, // L2 state provider.
+    rollupAddress, // Address of the RollupCore contract.
+    challengemanager.WithMode(types.WatchtowerMode), // Validation mode.
+)
+if err != nil {
+    return nil, err
+}
+go manager.Start(ctx)
+```
+
+When provided with an L2 state provider, such as an Arbitrum Nitro validator, the challenge manager
+from BOLD can be started as a background routine that is in charge of asserting states on Ethereum,
+initiating challenges on malicious assertions, confirming assertions, and winning challenges against
+malicious parties.
+
 ## Building
 
 ### Go Code
@@ -163,6 +197,20 @@ go run ./solgen/main.go
 
 You should now have Go bindings inside of `solgen/go`
 
+## Documentation
+
+Go doc reference is available at [pkg.go.dev][https://pkg.go.dev/github.com/OffchainLabs/bold], and an architecture guide to the codebase can be found under [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+
+## Security Audit
+
+BOLD has been audited by [Trail of Bits](https://www.trailofbits.com/) as of commit [60f97068c12cca73c45117a05ba1922f949fd6ae](https://github.com/OffchainLabs/bold/commit/60f97068c12cca73c45117a05ba1922f949fd6ae). All issues found have been resolved.
+
+The audit report can be found under [docs/audits/TrailOfBitsAudit](./docs/audits/TrailOfBitsAudit.pdf).
+
 ## License
 
 BOLD uses [Business Source License 1.1](./LICENSE)
+
+## Credits
+
+Huge credits on this project go to those who created BOLD and were involved in its implementation: Ed Felten, Yafah Edelman, Chris Bucklang, Harry Ng, Lee Bousfield, Terence Tsao, Mario Alvarez, Preston Van Loon, Mahimna Kelkar, Daniel Goldman, Raul Jordan
