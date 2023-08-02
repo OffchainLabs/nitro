@@ -69,9 +69,7 @@ func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
 type AssertionChain interface {
 	// Read-only methods.
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
-	GenesisAssertionHash(ctx context.Context) (common.Hash, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
-	RollupAddress() common.Address
 	LatestCreatedAssertion(ctx context.Context) (Assertion, error)
 	ReadAssertionCreationInfo(
 		ctx context.Context, id AssertionHash,

@@ -404,11 +404,6 @@ func (m *MockProtocol) NumAssertions(ctx context.Context) (uint64, error) {
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockProtocol) RollupAddress() common.Address {
-	args := m.Called()
-	return args.Get(0).(common.Address)
-}
-
 func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionHash) (protocol.Assertion, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
@@ -422,11 +417,6 @@ func (m *MockProtocol) AssertionUnrivaledBlocks(ctx context.Context, assertionHa
 func (m *MockProtocol) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error) {
 	args := m.Called(ctx, edgeId)
 	return args.Get(0).(protocol.AssertionHash), args.Error(1)
-}
-
-func (m *MockProtocol) GenesisAssertionHash(ctx context.Context) (common.Hash, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(common.Hash), args.Error(1)
 }
 
 func (m *MockProtocol) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (protocol.OriginHeights, error) {

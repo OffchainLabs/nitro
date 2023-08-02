@@ -15,7 +15,6 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
-	"github.com/OffchainLabs/bold/containers"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -170,57 +169,37 @@ func (s *Scanner) ProcessAssertionCreation(
 	ctx context.Context,
 	assertionHash protocol.AssertionHash,
 ) error {
+	srvlog.Info("Processed assertion creation event", log.Ctx{"validatorName": s.validatorName})
+	s.assertionsProcessedCount++
 	creationInfo, err := s.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
-		srvlog.Error("Could not read creation", log.Ctx{"err": err})
 		return err
 	}
-	prevAssertionHash := creationInfo.ParentAssertionHash
-	// If the assertion is the genesis assertion, we ignore it.
-	if (prevAssertionHash == common.Hash{}) {
-		return nil
-	}
-	srvlog.Info("Processing assertion creation event", log.Ctx{"validatorName": s.validatorName, "hash": containers.Trunc(assertionHash.Hash[:])})
-	s.assertionsProcessedCount++
-
-	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: prevAssertionHash})
+	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	if err != nil {
-		srvlog.Error("Could not get prev assertion", log.Ctx{"err": err})
 		return err
 	}
 	hasSecondChild, err := prevAssertion.HasSecondChild()
 	if err != nil {
-		srvlog.Error("Could not check if has second child", log.Ctx{"err": err})
 		return err
 	}
 	if !hasSecondChild {
 		srvlog.Info("No fork detected in assertion chain", log.Ctx{"validatorName": s.validatorName})
 		return nil
 	}
-	srvlog.Info("Assertion has second child", log.Ctx{"hash": containers.Trunc(prevAssertionHash[:])})
 	s.forksDetectedCount++
-
 	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
 	msgCount, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
 	switch {
 	case errors.Is(err, l2stateprovider.ErrNoExecutionState):
-		srvlog.Warn("Disagreed with execution state of posted assertion", log.Ctx{
-			"parentAssertionHash":   containers.Trunc(creationInfo.ParentAssertionHash[:]),
-			"detectedAssertionHash": containers.Trunc(assertionHash.Hash[:]),
-			"msgCount":              msgCount,
-		})
 		return nil
 	case err != nil:
-		srvlog.Error("Could not check execution state msg count for seen assertion", log.Ctx{"err": err})
 		return err
 	default:
 	}
-	srvlog.Info("Agreed with execution state of posted assertion", log.Ctx{
-		"parentAssertionHash":   containers.Trunc(creationInfo.ParentAssertionHash[:]),
-		"detectedAssertionHash": containers.Trunc(assertionHash.Hash[:]),
-		"msgCount":              msgCount,
-	})
+
 	if s.challengeReader.Mode() == types.DefensiveMode || s.challengeReader.Mode() == types.MakeMode {
+
 		// Generating a random integer between 0 and max delay second to wait before challenging.
 		// This is to avoid all validators challenging at the same time.
 		mds := 1 // default max delay seconds to 1 to avoid panic
@@ -231,7 +210,6 @@ func (s *Scanner) ProcessAssertionCreation(
 		if err != nil {
 			return err
 		}
-		srvlog.Info("Submitting a challenge to assertion with two children", log.Ctx{"assertionHash": containers.Trunc(prevAssertionHash[:])})
 		srvlog.Info("Waiting before challenging", log.Ctx{"delay": randSecs})
 		time.Sleep(time.Duration(randSecs) * time.Second)
 
@@ -241,6 +219,12 @@ func (s *Scanner) ProcessAssertionCreation(
 		s.challengesSubmittedCount++
 		return nil
 	}
+
+	srvlog.Error("Detected invalid assertion, but not configured to challenge", log.Ctx{
+		"parentAssertionHash":   creationInfo.ParentAssertionHash,
+		"detectedAssertionHash": assertionHash,
+		"msgCount":              msgCount,
+	})
 	return nil
 }
 
