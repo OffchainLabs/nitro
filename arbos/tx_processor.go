@@ -385,7 +385,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		poster = p.evm.Context.Coinbase
 	}
 
-	if p.msg.TxRunMode != core.MessageEthcallMode {
+	if p.msg.TxRunMode == core.MessageCommitMode {
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
