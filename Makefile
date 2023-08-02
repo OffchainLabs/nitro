@@ -484,10 +484,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w -d
 	@touch $@
 
-.make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+.make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make
 	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t .
 	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t .
-	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./scripts/build-brotli.sh -f -d -t .
 	@touch $@
 
 .make/machines: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
