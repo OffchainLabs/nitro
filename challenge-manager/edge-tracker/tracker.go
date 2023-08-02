@@ -248,9 +248,6 @@ func (et *Tracker) Act(ctx context.Context) error {
 	// Edge is at a one-step-proof in a small-step challenge.
 	case edgeAtOneStepProof:
 		if err := et.submitOneStepProof(ctx); err != nil {
-			if errors.Is(err, errBadOneStepProof) {
-				return et.fsm.Do(edgeConfirm{})
-			}
 			srvlog.Error("Could not submit one step proof", err, fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
