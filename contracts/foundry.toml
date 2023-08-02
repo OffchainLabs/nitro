@@ -2,5 +2,7 @@
 src = 'src'
 out = 'out'
 libs = ['lib']
-
+solc = '0.8.17'
+optimizer = true
+optimizer_runs = 2000
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

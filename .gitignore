@@ -30,3 +30,4 @@ contracts/formatter.sh
 contracts/build
 
 .DS_Store
+.env

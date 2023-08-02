@@ -5,7 +5,6 @@ import '@nomiclabs/hardhat-etherscan'
 import '@typechain/hardhat'
 import 'solidity-coverage'
 import 'hardhat-gas-reporter'
-import prodConfig from './hardhat.prod-config'
 
 const solidity = {
   compilers: [
@@ -14,16 +13,7 @@ const solidity = {
       settings: {
         optimizer: {
           enabled: true,
-          runs: 100,
-        },
-      },
-    },
-    {
-      version: '0.8.0',
-      settings: {
-        optimizer: {
-          enabled: true,
-          runs: 100,
+          runs: 2000,
         },
       },
     },
@@ -58,8 +48,11 @@ if (process.env['INTERFACE_TESTER_SOLC_VERSION']) {
  * @type import('hardhat/config').HardhatUserConfig
  */
 module.exports = {
-  ...prodConfig,
   solidity,
+  paths: {
+    sources: './src',
+    artifacts: 'build/contracts',
+  },
   namedAccounts: {
     deployer: {
       default: 0,
