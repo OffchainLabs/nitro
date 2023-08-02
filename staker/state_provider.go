@@ -142,6 +142,27 @@ func (s *StateManager) HistoryCommitmentAtMessage(ctx context.Context, messageNu
 	return commitments.New([]common.Hash{stateRoot})
 }
 
+func (s *StateManager) HistoryCommitmentAtBatch(ctx context.Context, batchNumber uint64) (commitments.History, error) {
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchNumber)
+	if err != nil {
+		return commitments.History{}, err
+	}
+	fmt.Printf("Computing state root at msg %d and batch %d\n", batchMsgCount, batchNumber)
+	res, err := s.validator.streamer.ResultAtCount(batchMsgCount - 1)
+	if err != nil {
+		return commitments.History{}, err
+	}
+	state := validator.GoGlobalState{
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+		Batch:      batchNumber,
+		PosInBatch: 0,
+	}
+	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
+	fmt.Printf("Got global state %+v and machine hash %#x\n", state, machineHash)
+	return commitments.New([]common.Hash{machineHash})
+}
+
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
 // challenge heights blockHeight and blockHeight+1.
 func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, toBigStep uint64) (commitments.History, error) {
@@ -560,6 +581,7 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	if blockStart == 0 {
 		blockStart += 1
 	}
+	fmt.Printf("In states up to...")
 	for i := blockStart; i <= blockEnd; i++ {
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
@@ -572,16 +594,22 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 		if err != nil {
 			return nil, err
 		}
-		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-		stateRoots = append(stateRoots, stateRoot)
-		lastStateRoot = stateRoot
 		if gs.Batch >= nextBatchCount {
 			if gs.Batch > nextBatchCount || gs.PosInBatch > 0 {
 				return nil, fmt.Errorf("overran next batch count %v with global state batch %v position %v", nextBatchCount, gs.Batch, gs.PosInBatch)
 			}
 			break
 		}
+		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+		fmt.Printf("Global state %+v and machine hash %#x\n", gs, stateRoot)
+		stateRoots = append(stateRoots, stateRoot)
+		lastStateRoot = stateRoot
 	}
+	fmt.Println("Done states up to with roots below")
+	for _, rt := range stateRoots {
+		fmt.Printf("   %#x\n", rt)
+	}
+	fmt.Println("=====end roots")
 	for len(stateRoots) < desiredStatesLen {
 		stateRoots = append(stateRoots, lastStateRoot)
 	}
