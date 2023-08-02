@@ -161,6 +161,8 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	colors.PrintMint("Deploying multiaddr and compiling it")
 
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("norevert-multicall"))
+	fallibleAddr := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
+	colors.PrintBlue("fallible deployed to ", fallibleAddr.Hex())
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
@@ -200,8 +202,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 			compileProgramData,
 		)...,
 	)
-	legacyErrorMethod := "0x1e48fe82"
-	innerCallArgs = multicallNorevertAppend(innerCallArgs, vm.CALL, types.ArbDebugAddress, hexutil.MustDecode(legacyErrorMethod))
+	innerCallArgs = multicallNorevertAppend(innerCallArgs, vm.CALL, fallibleAddr, hexutil.MustDecode("0x00"))
 
 	// Our second inner call will attempt to call a program that has not yet been compiled, and revert on error.
 	secondInnerCallArgs := []byte{0x01}
