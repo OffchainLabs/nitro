@@ -324,7 +324,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         // no need to test page_limit, we're just retracing previous compilation
         let (module, computed_hash, _) =
             match native::compile_user_wasm(wasm.as_slice(), version, u16::MAX, stylus_debug) {
-                Err(err) => return Escape::hostio(err.to_string()),
+                Err(err) => return Escape::hostio(format!("{:?}", err)),
                 Ok(res) => res,
             };
         if compiled_hash != *computed_hash {
