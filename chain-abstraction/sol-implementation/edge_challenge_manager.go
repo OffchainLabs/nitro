@@ -419,7 +419,7 @@ func (cm *specChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (u
 	return h.Uint64(), nil
 }
 
-// Duration of the challenge period in blocks.
+// ChallengePeriodBlocks is the duration of the challenge period in blocks.
 func (cm *specChallengeManager) ChallengePeriodBlocks(
 	ctx context.Context,
 ) (uint64, error) {
@@ -433,7 +433,7 @@ func (cm *specChallengeManager) ChallengePeriodBlocks(
 	return res.Uint64(), nil
 }
 
-// Gets an edge by its hash.
+// GetEdge gets an edge by its hash.
 func (cm *specChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
@@ -474,7 +474,7 @@ func (cm *specChallengeManager) GetEdge(
 	})), nil
 }
 
-// Calculates an edge hash given its challenge id, start history, and end history.
+// CalculateEdgeId calculates an edge hash given its challenge id, start history, and end history.
 func (cm *specChallengeManager) CalculateEdgeId(
 	ctx context.Context,
 	edgeType protocol.EdgeType,

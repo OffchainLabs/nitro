@@ -17,7 +17,7 @@ type EdgeId string
 type Commit string
 type OriginId string
 
-// Mock Edge for challenge tree specific tests, making it easier for test ergonomics.
+// Edge for challenge tree specific tests, making it easier for test ergonomics.
 type Edge struct {
 	ID            EdgeId
 	EdgeType      protocol.EdgeType
@@ -71,7 +71,7 @@ func (e *Edge) ComputeMutualId() string {
 	)
 }
 
-// The claim id of the edge, if any
+// ClaimId of the edge, if any
 func (e *Edge) ClaimId() option.Option[protocol.ClaimId] {
 	if e.ClaimID == "" {
 		return option.None[protocol.ClaimId]()
@@ -79,7 +79,7 @@ func (e *Edge) ClaimId() option.Option[protocol.ClaimId] {
 	return option.Some(protocol.ClaimId(common.BytesToHash([]byte(e.ClaimID))))
 }
 
-// The lower child of the edge, if any.
+// LowerChild of the edge, if any.
 func (e *Edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
 	if e.LowerChildID == "" {
 		return option.None[protocol.EdgeId](), nil
@@ -87,7 +87,7 @@ func (e *Edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], er
 	return option.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.LowerChildID))}), nil
 }
 
-// The upper child of the edge, if any.
+// UpperChild of the edge, if any.
 func (e *Edge) UpperChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
 	if e.UpperChildID == "" {
 		return option.None[protocol.EdgeId](), nil
@@ -99,38 +99,38 @@ func (e *Edge) HasChildren(ctx context.Context) (bool, error) {
 	return e.LowerChildID != "" && e.UpperChildID != "", nil
 }
 
-// The ministaker of an edge. Only existing for level zero edges.
+// MiniStaker of an edge. Only existing for level zero edges.
 func (*Edge) MiniStaker() option.Option[common.Address] {
 	return option.None[common.Address]()
 }
 
-// The assertion hash of the parent assertion that originated the challenge
+// AssertionHash of the parent assertion that originated the challenge
 // at the top-level.
 func (*Edge) AssertionHash(_ context.Context) (protocol.AssertionHash, error) {
 	return protocol.AssertionHash{}, nil
 }
 
-// The time in seconds an edge has been unrivaled.
+// TimeUnrivaled in seconds an edge has been unrivaled.
 func (*Edge) TimeUnrivaled(_ context.Context) (uint64, error) {
 	return 0, nil
 }
 
-// The status of an edge.
+// Status of an edge.
 func (*Edge) Status(_ context.Context) (protocol.EdgeStatus, error) {
 	return 0, nil
 }
 
-// Whether or not an edge has rivals.
+// HasRival if an edge has rivals.
 func (*Edge) HasRival(_ context.Context) (bool, error) {
 	return false, nil
 }
 
-// Checks if an edge has a length one rival.
+// HasLengthOneRival checks if an edge has a length one rival.
 func (*Edge) HasLengthOneRival(_ context.Context) (bool, error) {
 	return false, nil
 }
 
-// The history commitment for the top-level edge the current edge's challenge is made upon.
+// TopLevelClaimHeight for the top-level edge the current edge's challenge is made upon.
 // This is used at subchallenge creation boundaries.
 func (*Edge) TopLevelClaimHeight(_ context.Context) (protocol.OriginHeights, error) {
 	return protocol.OriginHeights{}, nil

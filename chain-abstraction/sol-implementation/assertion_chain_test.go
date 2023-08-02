@@ -353,7 +353,7 @@ func TestLatestCreatedAssertion(t *testing.T) {
 	var latestAssertionID [32]byte
 	copy(latestAssertionID[:], expected.Id().Bytes())
 	var fakeAssertionID [32]byte
-	copy(fakeAssertionID[:], []byte("fake assertion id as parent"))
+	copy(fakeAssertionID[:], "fake assertion id as parent")
 
 	evtID := abiEvt.ID
 	validTopics := []common.Hash{evtID, latestAssertionID, fakeAssertionID}
