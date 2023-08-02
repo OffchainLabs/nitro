@@ -273,7 +273,11 @@ func (p Programs) CallProgram(
 		txOrigin:        evm.TxContext.Origin,
 	}
 
-	return callUserWasm(contract.Address(), program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	address := contract.Address()
+	if contract.CodeAddr != nil {
+		address = *contract.CodeAddr
+	}
+	return callUserWasm(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
