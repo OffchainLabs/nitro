@@ -6,14 +6,12 @@ use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
     heapify, wavm,
 };
-use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
     binary::WasmBinary,
     programs::config::{CompileConfig, PricingParams, StylusConfig},
-    machine::Module,
 };
-use std::{mem, path::Path, sync::Arc};
+use std::mem;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -48,7 +46,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let debug = sp.read_u32() != 0;
     let page_limit = sp.read_u16();
     sp.skip_space();
-    let (out_hash_ptr, mut out_hash_len) = sp.read_go_slice();
+    let (out_hash_ptr, out_hash_len) = sp.read_go_slice();
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
