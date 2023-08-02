@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -47,9 +47,9 @@ type BroadcastMessage struct {
 }
 
 type BroadcastFeedMessage struct {
-	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
-	Message        arbstate.MessageWithMetadata `json:"message"`
-	Signature      []byte                       `json:"signature"`
+	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
+	Message        arbostypes.MessageWithMetadata `json:"message"`
+	Signature      []byte                         `json:"signature"`
 }
 
 func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
@@ -70,7 +70,7 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 	}
 }
 
-func (b *Broadcaster) NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
+func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
@@ -90,7 +90,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(message arbstate.MessageWithMetada
 	}, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
+func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) error {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error("recovered error in BroadcastSingle", "recover", r)
@@ -110,9 +110,14 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
 
 	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
+	b.BroadcastFeedMessages(broadcastFeedMessages)
+}
+
+func (b *Broadcaster) BroadcastFeedMessages(messages []*BroadcastFeedMessage) {
+
 	bm := BroadcastMessage{
 		Version:  1,
-		Messages: broadcastFeedMessages,
+		Messages: messages,
 	}
 
 	b.server.Broadcast(bm)
@@ -155,9 +160,4 @@ func (b *Broadcaster) StopAndWait() {
 
 func (b *Broadcaster) Started() bool {
 	return b.server.Started()
-}
-
-// Not thread safe
-func (b *Broadcaster) PopulateBacklog(messages []*BroadcastFeedMessage) {
-	b.catchupBuffer.Reset(messages)
 }

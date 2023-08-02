@@ -18,15 +18,18 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -65,7 +68,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2info := NewBlockChainTestInfo(
+		t,
+		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		transferGas,
+	)
+	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, l2chainConfig, nil, l2info)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
@@ -75,17 +85,19 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil)
 	defer l2nodeB.StopAndWait()
 
-	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
+	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
-			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
+			Fatal(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
 		}
 	} else {
 		if nodeAGenesis != nodeBGenesis {
-			Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+			Fatal(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
 		}
 	}
+
+	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2clientA, ctx)
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 
@@ -132,17 +144,16 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
-	blockValidatorConfig.URL = valStack.WSEndpoint()
 
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.ArbInterface.BlockChain(),
-		l2nodeA.ChainDB,
+		l2nodeA.Execution.Recorder,
 		l2nodeA.ArbDB,
 		nil,
-		&blockValidatorConfig,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -154,7 +165,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
@@ -171,11 +185,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.ArbInterface.BlockChain(),
-		l2nodeB.ChainDB,
+		l2nodeB.Execution.Recorder,
 		l2nodeB.ArbDB,
 		nil,
-		&blockValidatorConfig,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -187,7 +201,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessB,
+		nil,
+		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
@@ -207,7 +224,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	if stakerC.Strategy() != staker.WatchtowerStrategy {
@@ -277,7 +297,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
-			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after block -1 expected global state") {
+			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after msg 0 expected global state") {
 				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
@@ -291,7 +311,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 					Require(t, err)
 					proxyAdminAddr := common.BytesToAddress(proxyAdminBytes)
 					if proxyAdminAddr == (common.Address{}) {
-						Fail(t, "failed to get challenge manager proxy admin")
+						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
 					proxyAdmin, err := mocksgen.NewProxyAdminForBinding(proxyAdminAddr, l1client)
@@ -305,7 +325,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				}
 			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
 				// Expected error when trying to re-stake after losing initial stake.
-			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+			} else if strings.Contains(err.Error(), "start state not in chain") && sawStakerZombie {
 				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
 			} else if strings.Contains(err.Error(), "STAKER_IS_ZOMBIE") && sawStakerZombie {
 				// Expected error when the staker is a zombie and thus can't advance its stake.
@@ -335,14 +355,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
 		Require(t, err)
 		if isHonestZombie {
-			Fail(t, "staker A became a zombie")
+			Fatal(t, "staker A became a zombie")
 		}
 		watchTx, err := stakerC.Act(ctx)
 		if err != nil && !strings.Contains(err.Error(), "catch up") {
 			Require(t, err, "watchtower staker failed to act")
 		}
 		if watchTx != nil {
-			Fail(t, "watchtower staker made a transaction")
+			Fatal(t, "watchtower staker made a transaction")
 		}
 		if !stakerAWasStaked {
 			stakerAWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
@@ -358,7 +378,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	if stakerATxs == 0 || stakerBTxs == 0 {
-		Fail(t, "staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
+		Fatal(t, "staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
 	}
 
 	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
@@ -367,18 +387,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if latestConfirmedNode <= 1 && !honestStakerInactive {
 		latestCreatedNode, err := rollup.LatestNodeCreated(&bind.CallOpts{})
 		Require(t, err)
-		Fail(t, "latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
+		Fatal(t, "latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
 	}
 
 	if faultyStaker && !sawStakerZombie {
-		Fail(t, "staker B didn't become a zombie despite being faulty")
+		Fatal(t, "staker B didn't become a zombie despite being faulty")
 	}
 
 	if !stakerAWasStaked {
-		Fail(t, "staker A was never staked")
+		Fatal(t, "staker A was never staked")
 	}
 	if !stakerBWasStaked {
-		Fail(t, "staker B was never staked")
+		Fatal(t, "staker B was never staked")
 	}
 }
 

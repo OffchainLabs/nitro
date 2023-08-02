@@ -82,9 +82,9 @@ func TestBloom(t *testing.T) {
 	}
 
 	for {
-		sectionSize, sectionNum := node.Backend.APIBackend().BloomStatus()
+		sectionSize, sectionNum := node.Execution.Backend.APIBackend().BloomStatus()
 		if sectionSize != 256 {
-			Fail(t, "unexpected section size: ", sectionSize)
+			Fatal(t, "unexpected section size: ", sectionSize)
 		}
 		t.Log("sections: ", sectionNum, "/", uint64(countsNum)/sectionSize)
 		if sectionSize*(sectionNum+1) > uint64(countsNum) && sectionNum > 1 {
@@ -102,7 +102,7 @@ func TestBloom(t *testing.T) {
 	logs, err := client.FilterLogs(ctx, nullEventQuery)
 	Require(t, err)
 	if len(logs) != len(nullEventCounts) {
-		Fail(t, "expected ", len(nullEventCounts), " logs, got ", len(logs))
+		Fatal(t, "expected ", len(nullEventCounts), " logs, got ", len(logs))
 	}
 	incrementEventQuery := ethereum.FilterQuery{
 		Topics: [][]common.Hash{{simpleABI.Events["CounterEvent"].ID}},
@@ -110,14 +110,14 @@ func TestBloom(t *testing.T) {
 	logs, err = client.FilterLogs(ctx, incrementEventQuery)
 	Require(t, err)
 	if len(logs) != len(eventCounts) {
-		Fail(t, "expected ", len(eventCounts), " logs, got ", len(logs))
+		Fatal(t, "expected ", len(eventCounts), " logs, got ", len(logs))
 	}
 	for _, log := range logs {
 		parsedLog, err := simple.ParseCounterEvent(log)
 		Require(t, err)
 		_, expected := eventCounts[parsedLog.Count-1]
 		if !expected {
-			Fail(t, "unxpected count in logs: ", parsedLog.Count)
+			Fatal(t, "unxpected count in logs: ", parsedLog.Count)
 		}
 	}
 }

@@ -12,7 +12,7 @@ fn test_crate() -> eyre::Result<()> {
     let source = std::fs::read("programs/pure/main.wat")?;
 
     let mut store = Store::default();
-    let module = Module::new(&store, &source)?;
+    let module = Module::new(&store, source)?;
     let imports = imports! {};
     let instance = Instance::new(&mut store, &module, &imports)?;
 

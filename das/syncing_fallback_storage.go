@@ -63,7 +63,7 @@ type SyncToStorageConfig struct {
 	RetentionPeriod      time.Duration `koanf:"retention-period"`
 	DelayOnError         time.Duration `koanf:"delay-on-error"`
 	IgnoreWriteErrors    bool          `koanf:"ignore-write-errors"`
-	L1BlocksPerRead      uint64        `koanf:"l1-blocks-per-read"`
+	L1BlocksPerRead      uint64        `koanf:"parent-chain-blocks-per-read"`
 	StateDir             string        `koanf:"state-dir"`
 }
 
@@ -82,7 +82,7 @@ func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".check-already-exists", DefaultSyncToStorageConfig.CheckAlreadyExists, "check if the data already exists in this DAS's storage. Must be disabled for fast sync with an IPFS backend")
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
 	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
-	f.Uint64(prefix+".l1-blocks-per-read", DefaultSyncToStorageConfig.L1BlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
+	f.Uint64(prefix+".parent-chain-blocks-per-read", DefaultSyncToStorageConfig.L1BlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
 	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to retain synced data (defaults to forever)")
 	f.Duration(prefix+".delay-on-error", DefaultSyncToStorageConfig.DelayOnError, "time to wait if encountered an error before retrying")
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
@@ -370,20 +370,25 @@ func (s *l1SyncService) readMore(ctx context.Context) error {
 func (s *l1SyncService) mainThread(ctx context.Context) {
 	headerChan, unsubscribe := s.l1Reader.Subscribe(false)
 	defer unsubscribe()
+	errCount := 0
 	for {
 		err := s.readMore(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Error("error trying to sync from L1", "err", err)
+			errCount++
+			if errCount > 5 {
+				log.Error("error trying to sync from L1", "err", err)
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(s.config.DelayOnError):
+			case <-time.After(s.config.DelayOnError * time.Duration(errCount)):
 			}
 			continue
 		}
+		errCount = 0
 		if s.catchingUp {
 			// we're behind. Don't wait.
 			continue
