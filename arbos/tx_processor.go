@@ -385,7 +385,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		poster = p.evm.Context.Coinbase
 	}
 
-	if basefee.Sign() > 0 {
+	if p.msg.TxRunMode == core.MessageCommitMode {
+		p.msg.SkipL1Charging = false
+	}
+	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
 		// Since tips go to the network, and not to the poster, we use the basefee.
 		// Note, this only determines the amount of gas bought, not the price per gas.
 
