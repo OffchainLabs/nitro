@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -291,8 +290,10 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 func TestSubmissionGasCosts(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
 	defer teardown()
+	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, l2client, l2info)
+	elevateL2Basefee(t, ctx, l2client, l2info)
 
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -310,6 +311,11 @@ func TestSubmissionGasCosts(t *testing.T) {
 	colors.PrintBlue("Fee Refund  ", feeRefundAddress)
 
 	fundsBeforeSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
+	Require(t, err)
+
+	infraBalanceBefore, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceBefore, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
 
 	usefulGas := params.TxGas
@@ -340,6 +346,23 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+
+	submissionReceipt, err := WaitForTx(ctx, l2client, lookupL2Hash(l1receipt), time.Second*5)
+	Require(t, err)
+	if submissionReceipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t)
+	}
+	if len(submissionReceipt.Logs) != 2 {
+		Fatal(t, "Unexpected number of logs:", len(submissionReceipt.Logs))
+	}
+	firstRetryTxId := submissionReceipt.Logs[1].Topics[2]
+	// get receipt for the auto-redeem
+	redeemReceipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	Require(t, err)
+	if redeemReceipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "first retry tx failed")
+	}
+
 	l2BaseFee := GetBaseFee(t, l2client, ctx)
 	excessGasPrice := arbmath.BigSub(gasFeeCap, l2BaseFee)
 	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
@@ -354,11 +377,16 @@ func TestSubmissionGasCosts(t *testing.T) {
 	receiveFunds, err := l2client.BalanceAt(ctx, receiveAddress, nil)
 	Require(t, err)
 
+	infraBalanceAfter, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceAfter, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	Require(t, err)
+
 	colors.PrintBlue("CallGas    ", retryableGas)
 	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
 	colors.PrintBlue("Payment    ", usertxopts.Value)
 
-	colors.PrintMint("Faucet before ", fundsBeforeSubmit)
+	colors.PrintMint("Faucet before ", fundsAfterSubmit)
 	colors.PrintMint("Faucet after  ", fundsAfterSubmit)
 
 	// the retryable should pay the receiver the supplied callvalue
@@ -396,6 +424,30 @@ func TestSubmissionGasCosts(t *testing.T) {
 		colors.PrintRed("Observed ", diff)
 		colors.PrintRed("Off by   ", arbmath.BigSub(expectedGasChange, diff))
 		Fatal(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
+	}
+
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
+	Require(t, err)
+	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+
+	expectedFee := arbmath.BigMulByUint(l2BaseFee, usefulGas)
+	expectedInfraFee := arbmath.BigMulByUint(minimumBaseFee, usefulGas)
+	expectedNetworkFee := arbmath.BigSub(expectedFee, expectedInfraFee)
+
+	infraFee := arbmath.BigSub(infraBalanceAfter, infraBalanceBefore)
+	networkFee := arbmath.BigSub(networkBalanceAfter, networkBalanceBefore)
+	fee := arbmath.BigAdd(infraFee, networkFee)
+
+	colors.PrintMint("paid infra fee:      ", infraFee)
+	colors.PrintMint("paid network fee:    ", networkFee)
+	colors.PrintMint("paid fee:            ", fee)
+
+	if !arbmath.BigEquals(infraFee, expectedInfraFee) {
+		Fatal(t, "Unexpected infra fee paid, want:", expectedInfraFee, "have:", infraFee)
+	}
+	if !arbmath.BigEquals(networkFee, expectedNetworkFee) {
+		Fatal(t, "Unexpected network fee paid, want:", expectedNetworkFee, "have:", networkFee)
 	}
 }
 
@@ -584,7 +636,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 func TestRetryableSubmissionAndAutoRedeemFees(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
 	defer teardown()
-	setupFeeAddresses(t, ctx, l2client, l2info)
+	_, _ = setupFeeAddresses(t, ctx, l2client, l2info)
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
@@ -651,18 +703,11 @@ func TestRetryableSubmissionAndAutoRedeemFees(t *testing.T) {
 	// ticketId := receipt.Logs[0].Topics[1]
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 
-	// get receipt for the auto-redeem, make sure it failed
+	// get receipt for the auto-redeem
 	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "first retry tx failed")
-	}
-
-	// check the receipt for the retry
-	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*1)
-	Require(t, err)
-	if receipt.Status != 1 {
-		Fatal(t, receipt.Status)
 	}
 
 	// verify that the increment happened, so we know the retry succeeded
@@ -690,7 +735,7 @@ func TestRetryableSubmissionAndAutoRedeemFees(t *testing.T) {
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
 	defer teardown()
-	setupFeeAddresses(t, ctx, l2client, l2info)
+	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, l2client, l2info)
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
@@ -698,6 +743,11 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	Require(t, err)
 
 	elevateL2Basefee(t, ctx, l2client, l2info)
+
+	infraBalanceBefore, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceBefore, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	Require(t, err)
 
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -743,6 +793,11 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "first retry tx shouldn't have succeeded")
 	}
 
+	infraBalanceAfterSubmission, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceAfterSubmission, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	Require(t, err)
+
 	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)
@@ -758,6 +813,11 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "retry failed")
 	}
+
+	infraBalanceAfterRedeem, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceAfterRedeem, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	Require(t, err)
 
 	// verify that the increment happened, so we know the retry succeeded
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -779,6 +839,16 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	if parsed.Redeemer != usertxoptsL2.From {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", usertxoptsL2.From)
 	}
+
+	infraFeeSubmission := arbmath.BigSub(infraBalanceAfterSubmission, infraBalanceBefore)
+	networkFeeSubmission := arbmath.BigSub(networkBalanceAfterSubmission, networkBalanceBefore)
+	infraFeeRedeem := arbmath.BigSub(infraBalanceAfterRedeem, infraBalanceAfterSubmission)
+	networkFeeRedeem := arbmath.BigSub(networkBalanceAfterRedeem, networkBalanceAfterSubmission)
+
+	colors.PrintMint("submission - paid infra fee:      ", infraFeeSubmission)
+	colors.PrintMint("submission - paid network fee:    ", networkFeeSubmission)
+	colors.PrintMint("redeem - paid infra fee:      ", infraFeeRedeem)
+	colors.PrintMint("redeem - paid network fee:    ", networkFeeRedeem)
 }
 
 // elevateL2Basefee by burning gas exceeding speed limit
@@ -808,7 +878,7 @@ func elevateL2Basefee(t *testing.T, ctx context.Context, l2client *ethclient.Cli
 	colors.PrintBlue("New base fee: ", baseFee, " diff:", baseFee.Uint64()-baseFeeBefore.Uint64())
 }
 
-func setupFeeAddresses(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info *BlockchainTestInfo) {
+func setupFeeAddresses(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info *BlockchainTestInfo) (common.Address, common.Address) {
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	ownerCallOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 	// make "Owner" a chain owner
@@ -822,20 +892,23 @@ func setupFeeAddresses(t *testing.T, ctx context.Context, l2client *ethclient.Cl
 	Require(t, err)
 	arbownerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("6b"), l2client)
 	Require(t, err)
-	networkFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{1, 6, 5}))
+	l2info.GenerateAccount("InfraFee")
+	l2info.GenerateAccount("NetworkFee")
+	networkFeeAddr := l2info.GetAddress("NetworkFee")
+	infraFeeAddr := l2info.GetAddress("InfraFee")
 	tx, err = arbowner.SetNetworkFeeAccount(&ownerTxOpts, networkFeeAddr)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	networkFeeAccount, err := arbownerPublic.GetNetworkFeeAccount(ownerCallOpts)
 	Require(t, err)
-	infraFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{3, 2, 6}))
 	tx, err = arbowner.SetInfraFeeAccount(&ownerTxOpts, infraFeeAddr)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	infraFeeAccount, err := arbownerPublic.GetInfraFeeAccount(ownerCallOpts)
 	Require(t, err)
-	t.Log("Network fee account: ", networkFeeAccount)
 	t.Log("Infra fee account: ", infraFeeAccount)
+	t.Log("Network fee account: ", networkFeeAccount)
+	return infraFeeAddr, networkFeeAddr
 }
