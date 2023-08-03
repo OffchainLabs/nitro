@@ -189,7 +189,7 @@ func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *ty
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, auth.GasLimit, auth.Value)
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, 0, auth.Value)
 }
 
 func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -296,7 +296,7 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, auth.GasLimit, auth.Value)
+	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, 0, callValue)
 	if err != nil {
 		return nil, err
 	}
