@@ -72,7 +72,6 @@ type ContractValidatorWallet struct {
 	rollup                  *rollupgen.RollupUserLogic
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
-	contractABI             abi.ABI
 	dataPoster              *dataposter.DataPoster
 }
 
@@ -87,10 +86,6 @@ func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Addre
 			return nil, err
 		}
 	}
-	abi, err := abi.JSON(strings.NewReader(rollupgen.ValidatorWalletABI))
-	if err != nil {
-		return nil, fmt.Errorf("parsing ValidatorWalletABI: %w", err)
-	}
 	rollup, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -104,7 +99,6 @@ func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Addre
 		rollupAddress:     rollupAddress,
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
-		contractABI:       abi,
 		dataPoster:        dp,
 	}
 	// Go complains if we make an address variable before wallet and copy it in
@@ -191,7 +185,7 @@ func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *ty
 	if err != nil {
 		return nil, err
 	}
-	data, err := v.contractABI.Pack("executeTransactionWithGasRefunder", gasRefunder, tx.Data(), *tx.To(), tx.Value())
+	data, err := validatorABI.Pack("executeTransactionWithGasRefunder", gasRefunder, tx.Data(), *tx.To(), tx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
@@ -298,7 +292,11 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	if err != nil {
 		return nil, err
 	}
-	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(auth, gasRefunder, data, dest, amount)
+	txData, err := validatorABI.Pack("executeTransactionsWithGasRefunder", gasRefunder, data, dest, amount)
+	if err != nil {
+		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
+	}
+	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, auth.GasLimit, auth.Value)
 	if err != nil {
 		return nil, err
 	}
