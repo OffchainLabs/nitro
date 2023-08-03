@@ -18,9 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -65,7 +68,7 @@ type ContractValidatorWallet struct {
 	con                     *rollupgen.ValidatorWallet
 	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
-	l1Reader                L1ReaderInterface
+	l1Reader                *headerreader.HeaderReader
 	auth                    *bind.TransactOpts
 	walletFactoryAddr       common.Address
 	rollupFromBlock         int64
@@ -73,11 +76,13 @@ type ContractValidatorWallet struct {
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
+	extraGas                uint64
 }
 
 var _ ValidatorWalletInterface = (*ContractValidatorWallet)(nil)
 
-func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ContractValidatorWallet, error) {
+func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
+	extraGas uint64) (*ContractValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -100,6 +105,7 @@ func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Addre
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
 		dataPoster:        dp,
+		extraGas:          extraGas,
 	}
 	// Go complains if we make an address variable before wallet and copy it in
 	wallet.address.Store(address)
@@ -189,7 +195,15 @@ func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *ty
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, auth.GasLimit, auth.Value)
+	gas := auth.GasLimit
+	if gas == 0 {
+		g, err := v.estimateGas(ctx, auth.Value, data)
+		if err != nil {
+			return nil, err
+		}
+		gas = g
+	}
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value)
 }
 
 func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -296,12 +310,54 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, auth.GasLimit, auth.Value)
+	gas := auth.GasLimit
+	if gas == 0 {
+		g, err := v.estimateGas(ctx, auth.Value, txData)
+		if err != nil {
+			return nil, err
+		}
+		gas = g
+	}
+	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value)
 	if err != nil {
 		return nil, err
 	}
 	builder.transactions = nil
 	return arbTx, nil
+}
+
+func (v *ContractValidatorWallet) estimateGas(ctx context.Context, value *big.Int, data []byte) (uint64, error) {
+	h, err := v.l1Reader.LastHeader(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("getting the last header: %w", err)
+	}
+	gasFeeCap := new(big.Int).Mul(h.BaseFee, big.NewInt(2))
+	gasFeeCap = arbmath.BigMax(gasFeeCap, arbmath.FloatToBig(params.GWei))
+
+	gasTipCap, err := v.l1Reader.Client().SuggestGasTipCap(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
+	}
+	gp, err := v.l1Reader.Client().SuggestGasPrice(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("getting suggested gas price: %w", err)
+	}
+	g, err := v.l1Reader.Client().EstimateGas(
+		ctx,
+		ethereum.CallMsg{
+			From:      v.auth.From,
+			To:        v.Address(),
+			Value:     value,
+			Data:      data,
+			GasFeeCap: gasFeeCap,
+			GasTipCap: gasTipCap,
+			GasPrice:  gp,
+		},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("estimating gas: %w", err)
+	}
+	return g + v.extraGas, nil
 }
 
 func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
