@@ -218,3 +218,36 @@ func TestComponentEstimate(t *testing.T) {
 		Fatal(t, l2Estimate, l2Used)
 	}
 }
+
+func TestDisableL1Charging(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+	addr := common.HexToAddress("0x12345678")
+
+	gasWithL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	Require(t, err)
+
+	gasWithoutL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr, SkipL1Charging: true})
+	Require(t, err)
+
+	if gasWithL1Charging <= gasWithoutL1Charging {
+		Fatal(t, "SkipL1Charging didn't disable L1 charging")
+	}
+	if gasWithoutL1Charging != params.TxGas {
+		Fatal(t, "Incorrect gas estimate with disabled L1 charging")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithL1Charging}, nil)
+	Require(t, err)
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging}, nil)
+	if err == nil {
+		Fatal(t, "CallContract passed with insufficient gas")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
+	Require(t, err)
+}
