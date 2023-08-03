@@ -531,36 +531,15 @@ var ExecutionStateAbi = abi.Arguments{
 
 func (s *L2StateBackend) OneStepProofData(
 	ctx context.Context,
-	cfgSnapshot *l2stateprovider.ConfigSnapshot,
+	wasmModuleRoot common.Hash,
 	postState rollupgen.ExecutionState,
 	messageNumber,
 	bigStep,
 	smallStep uint64,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
-	inboxMaxCountProof, packErr := ExecutionStateAbi.Pack(
-		postState.GlobalState.Bytes32Vals[0],
-		postState.GlobalState.Bytes32Vals[1],
-		postState.GlobalState.U64Vals[0],
-		postState.GlobalState.U64Vals[1],
-		postState.MachineStatus,
-	)
-	if packErr != nil {
-		err = packErr
-		return
-	}
-
-	wasmModuleRootProof, packErr := WasmModuleProofAbi.Pack(
-		cfgSnapshot.RequiredStake,
-		cfgSnapshot.ChallengeManagerAddress,
-		cfgSnapshot.ConfirmPeriodBlocks,
-	)
-	if packErr != nil {
-		err = packErr
-		return
-	}
 	startCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
-		cfgSnapshot.WasmModuleRoot,
+		wasmModuleRoot,
 		messageNumber,
 		bigStep,
 		smallStep,
@@ -571,7 +550,7 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 	endCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
-		cfgSnapshot.WasmModuleRoot,
+		wasmModuleRoot,
 		messageNumber,
 		bigStep,
 		smallStep+1,
@@ -612,12 +591,8 @@ func (s *L2StateBackend) OneStepProofData(
 	}
 
 	data = &protocol.OneStepData{
-		BeforeHash:             startCommit.LastLeaf,
-		Proof:                  osp,
-		InboxMsgCountSeen:      cfgSnapshot.InboxMaxCount,
-		InboxMsgCountSeenProof: inboxMaxCountProof,
-		WasmModuleRoot:         cfgSnapshot.WasmModuleRoot,
-		WasmModuleRootProof:    wasmModuleRootProof,
+		BeforeHash: startCommit.LastLeaf,
+		Proof:      osp,
 	}
 	startLeafInclusionProof = startCommit.LastLeafProof
 	endLeafInclusionProof = endCommit.LastLeafProof

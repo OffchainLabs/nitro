@@ -6,15 +6,17 @@ package solimpl_test
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
@@ -203,9 +205,8 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			ctx,
 			protocol.EdgeId{Hash: common.BytesToHash([]byte("foo"))},
 			&protocol.OneStepData{
-				BeforeHash:        common.Hash{},
-				Proof:             make([]byte, 0),
-				InboxMsgCountSeen: big.NewInt(0),
+				BeforeHash: common.Hash{},
+				Proof:      make([]byte, 0),
 			},
 			make([]common.Hash, 0),
 			make([]common.Hash, 0),
@@ -230,17 +231,9 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, id)
 		require.NoError(t, err)
 
-		cfgSnapshot := &l2stateprovider.ConfigSnapshot{
-			RequiredStake:           parentAssertionCreationInfo.RequiredStake,
-			ChallengeManagerAddress: parentAssertionCreationInfo.ChallengeManager,
-			ConfirmPeriodBlocks:     parentAssertionCreationInfo.ConfirmPeriodBlocks,
-			WasmModuleRoot:          parentAssertionCreationInfo.WasmModuleRoot,
-			InboxMaxCount:           big.NewInt(1),
-		}
-
 		data, startInclusionProof, endInclusionProof, err := honestStateManager.OneStepProofData(
 			ctx,
-			cfgSnapshot,
+			parentAssertionCreationInfo.WasmModuleRoot,
 			parentAssertionCreationInfo.AfterState,
 			fromBlockChallengeHeight,
 			fromBigStep,
@@ -369,6 +362,83 @@ func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 		require.Equal(t, protocol.EdgeConfirmed, status)
 		require.NoError(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{})) // already confirmed should not fail.
 	})
+}
+
+func TestUpgradingConfigMidChallenge(t *testing.T) {
+	ctx := context.Background()
+	scenario := setupOneStepProofScenario(t)
+
+	rollupAddr := scenario.topLevelFork.Addrs.Rollup
+	backend := scenario.topLevelFork.Backend
+	adminAccount := scenario.topLevelFork.Accounts[0].TxOpts
+
+	// We upgrade the Rollup's config values.
+	adminLogic, err := rollupgen.NewRollupAdminLogic(rollupAddr, backend)
+	require.NoError(t, err)
+
+	newWasmModuleRoot := common.BytesToHash([]byte("nyannyannyan"))
+	tx, err := adminLogic.SetWasmModuleRoot(adminAccount, newWasmModuleRoot)
+	require.NoError(t, err)
+	err = challenge_testing.WaitForTx(ctx, backend, tx)
+	require.NoError(t, err)
+	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+
+	tx, err = adminLogic.SetConfirmPeriodBlocks(adminAccount, uint64(329094))
+	require.NoError(t, err)
+	err = challenge_testing.WaitForTx(ctx, backend, tx)
+	require.NoError(t, err)
+	receipt, err = backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+
+	// We confirm the edge by one-step-proof.
+	honestEdge := scenario.smallStepHonestEdge
+	chain := scenario.topLevelFork.Chains[0]
+	challengeManager, err := scenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+
+	honestStateManager := scenario.honestStateManager
+	fromBlockChallengeHeight := uint64(0)
+	fromBigStep := uint64(0)
+	smallStep := uint64(0)
+
+	id, err := honestEdge.AssertionHash(ctx)
+	require.NoError(t, err)
+	parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, id)
+	require.NoError(t, err)
+
+	// We check the config snapshot used for the one step proof is different than what
+	// is now onchain, as these values changed mid-challenge.
+	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(&bind.CallOpts{})
+	require.NoError(t, err)
+	require.Equal(t, newWasmModuleRoot[:], gotWasmModuleRoot[:])
+	require.NotEqual(t, parentAssertionCreationInfo.WasmModuleRoot[:], gotWasmModuleRoot)
+
+	data, startInclusionProof, endInclusionProof, err := honestStateManager.OneStepProofData(
+		ctx,
+		parentAssertionCreationInfo.WasmModuleRoot,
+		parentAssertionCreationInfo.AfterState,
+		fromBlockChallengeHeight,
+		fromBigStep,
+		smallStep,
+	)
+	require.NoError(t, err)
+
+	err = challengeManager.ConfirmEdgeByOneStepProof(
+		ctx,
+		honestEdge.Id(),
+		data,
+		startInclusionProof,
+		endInclusionProof,
+	)
+	require.NoError(t, err)
+
+	// Check the edge was confirmed.
+	edgeStatus, err := honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, edgeStatus)
 }
 
 // Returns a snapshot of the data for a scenario in which both honest

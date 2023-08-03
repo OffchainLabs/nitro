@@ -676,16 +676,9 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cfgSnapshot := &l2stateprovider.ConfigSnapshot{
-		RequiredStake:           parentAssertionCreationInfo.RequiredStake,
-		ChallengeManagerAddress: parentAssertionCreationInfo.ChallengeManager,
-		ConfirmPeriodBlocks:     parentAssertionCreationInfo.ConfirmPeriodBlocks,
-		WasmModuleRoot:          parentAssertionCreationInfo.WasmModuleRoot,
-		InboxMaxCount:           parentAssertionCreationInfo.InboxMaxCount,
-	}
 	data, beforeStateInclusionProof, afterStateInclusionProof, err := et.stateProvider.OneStepProofData(
 		ctx,
-		cfgSnapshot,
+		parentAssertionCreationInfo.WasmModuleRoot,
 		parentAssertionCreationInfo.AfterState,
 		fromAssertionHeight,
 		fromBigStep,

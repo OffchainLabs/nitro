@@ -130,7 +130,7 @@ type PrefixProver interface {
 type OneStepProofProvider interface {
 	OneStepProofData(
 		ctx context.Context,
-		cfgSnapshot *ConfigSnapshot,
+		wasmModuleRoot common.Hash,
 		postState rollupgen.ExecutionState,
 		messageNumber,
 		bigStep,
