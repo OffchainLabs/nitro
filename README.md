@@ -213,4 +213,4 @@ BOLD uses [Business Source License 1.1](./LICENSE)
 
 ## Credits
 
-Huge credits on this project go to those who created BOLD and were involved in its implementation: Ed Felten, Yafah Edelman, Chris Bucklang, Harry Ng, Lee Bousfield, Terence Tsao, Mario Alvarez, Preston Van Loon, Mahimna Kelkar, Daniel Goldman, Raul Jordan
+Huge credits on this project go to those who created BOLD and were involved in its implementation: Ed Felten, Yafah Edelman, Chris Buckland, Harry Ng, Lee Bousfield, Terence Tsao, Mario Alvarez, Preston Van Loon, Mahimna Kelkar, Aman Sanghi, Daniel Goldman, Raul Jordan
