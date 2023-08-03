@@ -506,7 +506,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			if infraFeeAccount != (common.Address{}) {
 				infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
 				p.state.Restrict(err)
-				if arbmath.BigLessThan(basefee, infraFee) { // TODO doc HERE BE DRAGONS
+				// TODO MinBaseFeeWei change during RetryTx execution may cause incorrect calculation of the part of the refund that should be taken from infraFeeAccount. Unless the balances of network and infra fee accounts are too low, the amount transferred to refund address should remain correct.
+				if arbmath.BigLessThan(basefee, infraFee) {
 					infraFee = basefee
 				}
 				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)

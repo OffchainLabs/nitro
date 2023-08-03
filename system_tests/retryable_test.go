@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -140,7 +141,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
 	Require(t, err, "failed to deploy NodeInterface")
 
-	// estimate the gas needed to auto-redeem the retryable
+	// estimate the gas needed to auto redeem the retryable
 	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL2.NoSend = true
 	usertxoptsL2.GasMargin = 0
@@ -158,7 +159,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	estimate := tx.Gas()
 	colors.PrintBlue("estimate: ", estimate)
 
-	// submit & auto-redeem the retryable using the gas estimate
+	// submit & auto redeem the retryable using the gas estimate
 	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL1.Value = deposit
 	l1tx, err := delayedInbox.CreateRetryableTicket(
@@ -243,7 +244,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	ticketId := receipt.Logs[0].Topics[1]
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 
-	// get receipt for the auto-redeem, make sure it failed
+	// get receipt for the auto redeem, make sure it failed
 	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
@@ -356,7 +357,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "Unexpected number of logs:", len(submissionReceipt.Logs))
 	}
 	firstRetryTxId := submissionReceipt.Logs[1].Topics[2]
-	// get receipt for the auto-redeem
+	// get receipt for the auto redeem
 	redeemReceipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if redeemReceipt.Status != types.ReceiptStatusSuccessful {
@@ -633,105 +634,6 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	}
 }
 
-func TestRetryableSubmissionAndAutoRedeemFees(t *testing.T) {
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
-	defer teardown()
-	_, _ = setupFeeAddresses(t, ctx, l2client, l2info)
-
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
-	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
-	Require(t, err)
-
-	elevateL2Basefee(t, ctx, l2client, l2info)
-
-	beneficiaryAddress := l2info.GetAddress("Beneficiary")
-	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-
-	// estimate the gas needed to auto-redeem the retryable
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
-	Require(t, err, "failed to deploy NodeInterface")
-	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxoptsL2.NoSend = true
-	usertxoptsL2.GasMargin = 0
-	tx, err := nodeInterface.EstimateRetryableTicket(
-		&usertxoptsL2,
-		usertxoptsL2.From,
-		deposit,
-		simpleAddr,
-		common.Big0,
-		beneficiaryAddress,
-		beneficiaryAddress,
-		simpleABI.Methods["incrementRedeem"].ID,
-	)
-	Require(t, err, "failed to estimate retryable submission")
-	estimate := tx.Gas()
-	colors.PrintBlue("estimate: ", estimate)
-
-	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxoptsL1.Value = deposit
-	baseFee := GetBaseFee(t, l2client, ctx)
-	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&usertxoptsL1,
-		simpleAddr,
-		common.Big0,
-		big.NewInt(1e16),
-		beneficiaryAddress,
-		beneficiaryAddress,
-		arbmath.UintToBig(estimate),
-		big.NewInt(baseFee.Int64()*2),
-		simpleABI.Methods["incrementRedeem"].ID,
-	)
-	Require(t, err)
-
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
-	Require(t, err)
-	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "l1receipt indicated failure")
-	}
-
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
-
-	receipt, err := WaitForTx(ctx, l2client, lookupL2Hash(l1receipt), time.Second*5)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t)
-	}
-	if len(receipt.Logs) != 2 {
-		Fatal(t, len(receipt.Logs))
-	}
-	// ticketId := receipt.Logs[0].Topics[1]
-	firstRetryTxId := receipt.Logs[1].Topics[2]
-
-	// get receipt for the auto-redeem
-	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "first retry tx failed")
-	}
-
-	// verify that the increment happened, so we know the retry succeeded
-	counter, err := simple.Counter(&bind.CallOpts{})
-	Require(t, err)
-
-	if counter != 1 {
-		Fatal(t, "Unexpected counter:", counter)
-	}
-
-	if len(receipt.Logs) != 1 {
-		Fatal(t, "Unexpected log count:", len(receipt.Logs))
-	}
-	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
-	Require(t, err)
-	aliasedSender := util.RemapL1Address(usertxoptsL1.From)
-	if parsed.Caller != aliasedSender {
-		Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
-	}
-	if parsed.Redeemer != beneficiaryAddress {
-		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", beneficiaryAddress)
-	}
-}
-
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
 	defer teardown()
@@ -776,20 +678,21 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := WaitForTx(ctx, l2client, lookupL2Hash(l1receipt), time.Second*5)
+	submissionTxHash := lookupL2Hash(l1receipt)
+	submissionReceipt, err := WaitForTx(ctx, l2client, submissionTxHash, time.Second*5)
 	Require(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
+	if submissionReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
 	}
-	if len(receipt.Logs) != 2 {
-		Fatal(t, len(receipt.Logs))
+	if len(submissionReceipt.Logs) != 2 {
+		Fatal(t, len(submissionReceipt.Logs))
 	}
-	ticketId := receipt.Logs[0].Topics[1]
-	firstRetryTxId := receipt.Logs[1].Topics[2]
-	// get receipt for the auto-redeem, make sure it failed
-	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	ticketId := submissionReceipt.Logs[0].Topics[1]
+	firstRetryTxId := submissionReceipt.Logs[1].Topics[2]
+	// get receipt for the auto redeem, make sure it failed
+	autoRedeemReceipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
-	if receipt.Status != types.ReceiptStatusFailed {
+	if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
 		Fatal(t, "first retry tx shouldn't have succeeded")
 	}
 
@@ -803,14 +706,14 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(&usertxoptsL2, ticketId)
 	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
+	redeemReceipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	retryTxId := receipt.Logs[0].Topics[2]
+	retryTxId := redeemReceipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry
-	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	retryReceipt, err := WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
+	if retryReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "retry failed")
 	}
 
@@ -827,10 +730,10 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "Unexpected counter:", counter)
 	}
 
-	if len(receipt.Logs) != 1 {
-		Fatal(t, "Unexpected log count:", len(receipt.Logs))
+	if len(retryReceipt.Logs) != 1 {
+		Fatal(t, "Unexpected log count:", len(retryReceipt.Logs))
 	}
-	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
+	parsed, err := simple.ParseRedeemedEvent(*retryReceipt.Logs[0])
 	Require(t, err)
 	aliasedSender := util.RemapL1Address(usertxoptsL1.From)
 	if parsed.Caller != aliasedSender {
@@ -840,15 +743,64 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", usertxoptsL2.From)
 	}
 
-	infraFeeSubmission := arbmath.BigSub(infraBalanceAfterSubmission, infraBalanceBefore)
-	networkFeeSubmission := arbmath.BigSub(networkBalanceAfterSubmission, networkBalanceBefore)
-	infraFeeRedeem := arbmath.BigSub(infraBalanceAfterRedeem, infraBalanceAfterSubmission)
-	networkFeeRedeem := arbmath.BigSub(networkBalanceAfterRedeem, networkBalanceAfterSubmission)
+	infraSubmissionFee := arbmath.BigSub(infraBalanceAfterSubmission, infraBalanceBefore)
+	networkSubmissionFee := arbmath.BigSub(networkBalanceAfterSubmission, networkBalanceBefore)
+	infraRedeemFee := arbmath.BigSub(infraBalanceAfterRedeem, infraBalanceAfterSubmission)
+	networkRedeemFee := arbmath.BigSub(networkBalanceAfterRedeem, networkBalanceAfterSubmission)
 
-	colors.PrintMint("submission - paid infra fee:      ", infraFeeSubmission)
-	colors.PrintMint("submission - paid network fee:    ", networkFeeSubmission)
-	colors.PrintMint("redeem - paid infra fee:      ", infraFeeRedeem)
-	colors.PrintMint("redeem - paid network fee:    ", networkFeeRedeem)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
+	Require(t, err)
+	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	submissionTxOuter, _, err := l2client.TransactionByHash(ctx, submissionTxHash)
+	Require(t, err)
+	submissionBaseFee := GetBaseFeeAt(t, l2client, ctx, submissionReceipt.BlockNumber)
+	submissionTx := submissionTxOuter.GetInner().(*types.ArbitrumSubmitRetryableTx)
+	// submission + auto redeemed retry expected fees
+	retryableSubmissionFee := retryables.RetryableSubmissionFee(len(submissionTx.RetryData), submissionTx.L1BaseFee)
+	expectedSubmissionFee := arbmath.BigMulByUint(submissionBaseFee, autoRedeemReceipt.GasUsed)
+	expectedInfraSubmissionFee := arbmath.BigMulByUint(minimumBaseFee, autoRedeemReceipt.GasUsed)
+	expectedNetworkSubmissionFee := arbmath.BigAdd(
+		arbmath.BigSub(expectedSubmissionFee, expectedInfraSubmissionFee),
+		retryableSubmissionFee,
+	)
+
+	retryTxOuter, _, err := l2client.TransactionByHash(ctx, retryTxId)
+	Require(t, err)
+	retryTx := retryTxOuter.GetInner().(*types.ArbitrumRetryTx)
+	redeemBaseFee := GetBaseFeeAt(t, l2client, ctx, redeemReceipt.BlockNumber)
+
+	t.Log("redeem base fee:", redeemBaseFee)
+	// redeem & retry expected fees
+	redeemGasUsed := redeemReceipt.GasUsed - redeemReceipt.GasUsedForL1 - retryTx.Gas + retryReceipt.GasUsed
+	expectedRedeemFee := arbmath.BigMulByUint(redeemBaseFee, redeemGasUsed)
+	expectedInfraRedeemFee := arbmath.BigMulByUint(minimumBaseFee, redeemGasUsed)
+	expectedNetworkRedeemFee := arbmath.BigSub(expectedRedeemFee, expectedInfraRedeemFee)
+
+	t.Log("submission gas:         ", submissionReceipt.GasUsed)
+	t.Log("auto redeemed retry gas:", autoRedeemReceipt.GasUsed)
+	t.Log("redeem gas:             ", redeemReceipt.GasUsed)
+	t.Log("retry gas:              ", retryReceipt.GasUsed)
+	colors.PrintMint("submission and auto redeemed retry - paid infra fee:        ", infraSubmissionFee)
+	colors.PrintBlue("submission and auto redeemed retry - expected infra fee:    ", expectedInfraSubmissionFee)
+	colors.PrintMint("submission and auto redeemed retry - paid network fee:      ", networkSubmissionFee)
+	colors.PrintBlue("submission and auto redeemed retry - expected network fee:  ", expectedNetworkSubmissionFee)
+	colors.PrintMint("redeem and retry - paid infra fee:            ", infraRedeemFee)
+	colors.PrintBlue("redeem and retry - expected infra fee:        ", expectedInfraRedeemFee)
+	colors.PrintMint("redeem and retry - paid network fee:          ", networkRedeemFee)
+	colors.PrintBlue("redeem and retry - expected network fee:      ", expectedNetworkRedeemFee)
+	if !arbmath.BigEquals(infraSubmissionFee, expectedInfraSubmissionFee) {
+		Fatal(t, "Unexpected infra fee paid by submission and auto redeem, want:", expectedInfraSubmissionFee, "have:", infraSubmissionFee)
+	}
+	if !arbmath.BigEquals(networkSubmissionFee, expectedNetworkSubmissionFee) {
+		Fatal(t, "Unexpected network fee paid by submission and auto redeem, want:", expectedNetworkSubmissionFee, "have:", networkSubmissionFee)
+	}
+	if !arbmath.BigEquals(infraRedeemFee, expectedInfraRedeemFee) {
+		Fatal(t, "Unexpected infra fee paid by redeem and retry, want:", expectedInfraRedeemFee, "have:", infraRedeemFee)
+	}
+	if !arbmath.BigEquals(networkRedeemFee, expectedNetworkRedeemFee) {
+		Fatal(t, "Unexpected network fee paid by redeem and retry, want:", expectedNetworkRedeemFee, "have:", networkRedeemFee)
+	}
 }
 
 // elevateL2Basefee by burning gas exceeding speed limit
