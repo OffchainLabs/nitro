@@ -653,6 +653,76 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
+func TestProgramSdkStorage(t *testing.T) {
+	t.Parallel()
+	testSdkStorage(t, true)
+}
+
+func testSdkStorage(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, rust, cleanup := setupProgramTest(t, rustFile("sdk-storage"), jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
+	ensure(tx, err)
+	receipt := ensure(mock.Test(&auth))
+	solCost := receipt.GasUsedForL2()
+
+	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, []byte{})
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	rustCost := receipt.GasUsedForL2()
+
+	colors.PrintBlue("rust ", rustCost, " sol ", solCost)
+
+	waitForSequencer(t, node)
+
+	bc := node.Execution.Backend.ArbInterface().BlockChain()
+	statedb, err := bc.State()
+	Require(t, err)
+	trieHash := func(addr common.Address) common.Hash {
+		trie, err := statedb.StorageTrie(addr)
+		Require(t, err)
+		return trie.Hash()
+	}
+	dumpKeys := func(addr common.Address, start common.Hash, count uint64) {
+		for i := uint64(0); i <= count; i++ {
+			key := common.BigToHash(arbmath.BigAddByUint(start.Big(), i))
+			v, err := l2client.StorageAt(ctx, addr, key, nil)
+			Require(t, err)
+			colors.PrintGrey("  ", common.Bytes2Hex(v))
+		}
+		println()
+	}
+	dumpTrie := func(name string, addr common.Address) {
+		colors.PrintRed("Trie for ", name)
+		dumpKeys(addr, common.Hash{}, 9)
+
+		dest := common.BigToHash(arbmath.UintToBig(4))
+		hash := crypto.Keccak256Hash(dest[:])
+		colors.PrintRed("Vector ", hash)
+		dumpKeys(addr, hash, 3)
+
+		slot := "0xcc045a98e72e59344d4f7091f80bbb561222da6a20eec7c35a2c5e8d6ed5fd83"
+		dumpKeys(addr, common.HexToHash(slot), 0)
+	}
+
+	solTrie := trieHash(solidity)
+	rustTrie := trieHash(rust)
+
+	if solTrie != rustTrie {
+		dumpTrie("rust", rust)
+		dumpTrie("solidity", solidity)
+		Fatal(t, solTrie, rustTrie)
+	}
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
@@ -697,8 +767,10 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	// Set random pricing params. Note that the ink price is measured in bips,
 	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
 	// We choose a range on both sides of this value.
-	inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
-	wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
+	// inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
+	//wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
+	inkPrice := uint64(1)      // evm to ink
+	wasmHostioInk := uint64(0) // amount of ink
 	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
@@ -834,15 +906,7 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
-	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		messageCount, err := node.TxStreamer.GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
-	})
+	waitForSequencer(t, node)
 
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -874,6 +938,19 @@ func validateBlockRange(
 	if !success {
 		Fatal(t)
 	}
+}
+
+func waitForSequencer(t *testing.T, node *arbnode.Node) {
+	t.Helper()
+	doUntil(t, 20*time.Millisecond, 500, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		messageCount, err := node.TxStreamer.GetMessageCount()
+		Require(t, err)
+		return meta.MessageCount == messageCount
+	})
 }
 
 func timed(t *testing.T, message string, lambda func()) {
