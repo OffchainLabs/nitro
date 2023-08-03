@@ -768,7 +768,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
 	// We choose a range on both sides of this value.
 	// inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
-	//wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
+	// wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
 	inkPrice := uint64(1)      // evm to ink
 	wasmHostioInk := uint64(0) // amount of ink
 	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
