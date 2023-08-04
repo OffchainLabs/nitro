@@ -297,7 +297,7 @@ func TestRectifyMapping(t *testing.T) {
 func checkIfRectifyMappingWorks(t *testing.T, aset *AddressSet, owners []common.Address, clearList bool) {
 	t.Helper()
 	if clearList {
-		aset.ClearList()
+		Require(t, aset.ClearList())
 	}
 	for index, owner := range owners {
 		Require(t, aset.RectifyMapping(owner))
