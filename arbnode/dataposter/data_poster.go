@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -86,8 +87,10 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 	}
 	var queue QueueStorage
 	switch {
-	case config().EnableLevelDB:
+	case config().UseLevelDB:
 		queue = leveldb.New(db)
+	case config().UseNoOpStorage:
+		queue = &noop.Storage{}
 	case redisClient == nil:
 		queue = slice.NewStorage()
 	default:
@@ -533,7 +536,8 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
-	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
+	UseLevelDB             bool                       `koanf:"use-leveldb" reload:"hot"`
+	UseNoOpStorage         bool                       `koanf:"use-noop-storage" reload:"hot"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -549,7 +553,8 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseLevelDB, "uses noop storage, it doesn't store anything")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -560,7 +565,8 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
-	EnableLevelDB:          false,
+	UseLevelDB:             false,
+	UseNoOpStorage:         false,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
@@ -571,5 +577,6 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
-	EnableLevelDB:          false,
+	UseLevelDB:             false,
+	UseNoOpStorage:         false,
 }
