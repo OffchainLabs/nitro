@@ -279,8 +279,8 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         (result, len.assert_u32(), cost.assert_u64())
     }
 
-    fn get_return_data(&mut self) -> Bytes {
-        let [data] = call!(self, 1, GetReturnData);
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Bytes {
+        let [data] = call!(self, 1, GetReturnData, offset, size);
         data.assert_bytes()
     }
 

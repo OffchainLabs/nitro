@@ -5,6 +5,7 @@
 
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
+    crypto,
     evm::{self, api::EvmApi, user::UserOutcomeKind},
     Bytes20, Bytes32,
 };
@@ -17,14 +18,14 @@ pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     Ok(())
 }
 
-pub(crate) fn return_data<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
+pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(len.into())?;
     env.outs = env.read_slice(ptr, len)?;
     Ok(())
 }
 
-pub(crate) fn account_load_bytes32<E: EvmApi>(
+pub(crate) fn storage_load_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     dest: u32,
@@ -37,7 +38,7 @@ pub(crate) fn account_load_bytes32<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn account_store_bytes32<E: EvmApi>(
+pub(crate) fn storage_store_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     value: u32,
@@ -58,14 +59,14 @@ pub(crate) fn call_contract<E: EvmApi>(
     data: u32,
     data_len: u32,
     value: u32,
-    ink: u64,
+    gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
     let value = Some(value);
     let call = |api: &mut E, contract, data, gas, value: Option<_>| {
         api.contract_call(contract, data, gas, value.unwrap())
     };
-    do_call(env, contract, data, data_len, value, ink, ret_len, call)
+    do_call(env, contract, data, data_len, value, gas, ret_len, call)
 }
 
 pub(crate) fn delegate_call_contract<E: EvmApi>(
@@ -73,11 +74,11 @@ pub(crate) fn delegate_call_contract<E: EvmApi>(
     contract: u32,
     data: u32,
     data_len: u32,
-    ink: u64,
+    gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
     let call = |api: &mut E, contract, data, gas, _| api.delegate_call(contract, data, gas);
-    do_call(env, contract, data, data_len, None, ink, ret_len, call)
+    do_call(env, contract, data, data_len, None, gas, ret_len, call)
 }
 
 pub(crate) fn static_call_contract<E: EvmApi>(
@@ -85,11 +86,11 @@ pub(crate) fn static_call_contract<E: EvmApi>(
     contract: u32,
     data: u32,
     data_len: u32,
-    ink: u64,
+    gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
     let call = |api: &mut E, contract, data, gas, _| api.static_call(contract, data, gas);
-    do_call(env, contract, data, data_len, None, ink, ret_len, call)
+    do_call(env, contract, data, data_len, None, gas, ret_len, call)
 }
 
 pub(crate) fn do_call<F, E>(
@@ -98,7 +99,7 @@ pub(crate) fn do_call<F, E>(
     calldata: u32,
     calldata_len: u32,
     value: Option<u32>,
-    mut ink: u64,
+    mut gas: u64,
     return_data_len: u32,
     call: F,
 ) -> Result<u8, Escape>
@@ -108,9 +109,8 @@ where
 {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(calldata_len.into())?;
-    ink = ink.min(env.ink_ready()?); // provide no more than what the user has
+    gas = gas.min(env.gas_left()?); // provide no more than what the user has
 
-    let gas = env.pricing().ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
     let value = value.map(|x| env.read_bytes32(x)).transpose()?;
@@ -171,15 +171,19 @@ pub(crate) fn create2<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn read_return_data<E: EvmApi>(mut env: WasmEnvMut<E>, dest: u32) -> MaybeEscape {
+pub(crate) fn read_return_data<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    dest: u32,
+    offset: u32,
+    size: u32,
+) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    let len = env.evm_data.return_data_len;
-    env.pay_for_evm_copy(len.into())?;
+    env.pay_for_evm_copy(size.into())?;
 
-    let data = env.evm_api.get_return_data();
+    let data = env.evm_api.get_return_data(offset, size);
+    assert!(data.len() <= size as usize);
     env.write_slice(dest, &data)?;
-    assert_eq!(data.len(), len as usize);
-    Ok(())
+    Ok(data.len() as u32)
 }
 
 pub(crate) fn return_data_size<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
@@ -250,10 +254,10 @@ pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> Mayb
     Ok(())
 }
 
-pub(crate) fn block_chainid<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CHAINID_GAS)?;
-    env.write_bytes32(ptr, env.evm_data.block_chainid)?;
+    env.write_bytes32(ptr, env.evm_data.chainid)?;
     Ok(())
 }
 
@@ -301,6 +305,21 @@ pub(crate) fn msg_value<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CALLVALUE_GAS)?;
     env.write_bytes32(ptr, env.evm_data.msg_value)?;
+    Ok(())
+}
+
+pub(crate) fn native_keccak256<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    input: u32,
+    len: u32,
+    output: u32,
+) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_keccak(len.into())?;
+
+    let preimage = env.read_slice(input, len)?;
+    let digest = crypto::keccak(preimage);
+    env.write_bytes32(output, digest.into())?;
     Ok(())
 }
 

@@ -71,7 +71,7 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
         self.set_stack(config.max_depth);
 
         let store = &mut self.store;
-        let mut env = self.env.as_mut(store);
+        let env = self.env.as_mut(store);
         env.args = args.to_owned();
         env.outs.clear();
         env.config = Some(config);

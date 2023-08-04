@@ -7,7 +7,7 @@
 // For C programs reliant on the standard library, cross compile clang with wasi
 //     https://github.com/WebAssembly/wasi-sdk
 
-#include "../../../langs/c/arbitrum.h"
+#include "../../../langs/c/stylus.h"
 
 extern uint64_t siphash24(const void *src, unsigned long len, const uint8_t key[16]);
 
