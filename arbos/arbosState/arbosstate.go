@@ -303,7 +303,16 @@ func (state *ArbosState) UpgradeArbosVersion(
 					ErrFatalNodeOutOfDate,
 				)
 			}
-			// no state changes needed
+			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
+			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
+
+			// We had mistakenly initialized AmortizedCostCapBips to math.MaxUint64 in older versions,
+			// but the correct value to disable the amortization cap is 0.
+			oldAmortizationCap, err := state.l1PricingState.AmortizedCostCapBips()
+			ensure(err)
+			if oldAmortizationCap == math.MaxUint64 {
+				ensure(state.l1PricingState.SetAmortizedCostCapBips(0))
+			}
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -315,7 +324,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 	}
 
 	if firstTime && upgradeTo >= 6 {
-		state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		if upgradeTo < 11 {
+			state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		}
 		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))
 		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV6))
 		state.Restrict(state.l2PricingState.SetMaxPerBlockGasLimit(l2pricing.InitialPerBlockGasLimitV6))
