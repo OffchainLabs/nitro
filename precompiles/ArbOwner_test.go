@@ -28,6 +28,10 @@ func TestArbOwner(t *testing.T) {
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	Require(t, err)
+	if state.ArbOSVersion() == 11 {
+		// Undo effects of ClearList on mapping
+		Require(t, state.ChainOwners().RectifyMapping(common.Address{}))
+	}
 	Require(t, state.ChainOwners().Add(caller))
 
 	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])

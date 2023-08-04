@@ -111,7 +111,7 @@ func (aset *AddressSet) RectifyMapping(addr common.Address) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	slot, _ := aset.byAddress.GetUint64(addrAsHash)
 	atSlot, _ := aset.backingStorage.GetByUint64(slot)
-	if atSlot == addrAsHash {
+	if atSlot == addrAsHash && atSlot != common.BytesToHash(common.Address{}.Bytes()) {
 		return nil
 	}
 
