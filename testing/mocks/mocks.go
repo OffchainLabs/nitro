@@ -441,6 +441,11 @@ func (m *MockProtocol) ReadAssertionCreationInfo(
 	return args.Get(0).(*protocol.AssertionCreatedInfo), args.Error(1)
 }
 
+func (m *MockProtocol) LatestCreatedAssertionHashes(ctx context.Context) ([]protocol.AssertionHash, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]protocol.AssertionHash), args.Error(1)
+}
+
 // Mutating methods.
 func (m *MockProtocol) ConfirmAssertionByChallengeWinner(
 	ctx context.Context,

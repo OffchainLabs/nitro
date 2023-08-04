@@ -7,7 +7,7 @@ import (
 )
 
 func TestHealthzHandler(t *testing.T) {
-	s, _ := NewTestServer(t)
+	s, _, _ := NewTestServer(t)
 
 	req, err := http.NewRequest("GET", "/healthz", nil)
 	if err != nil {

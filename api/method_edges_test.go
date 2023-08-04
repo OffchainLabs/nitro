@@ -14,7 +14,7 @@ import (
 )
 
 func TestListEdges(t *testing.T) {
-	s, d := NewTestServer(t)
+	s, d, _ := NewTestServer(t)
 
 	d.Edges = []protocol.SpecEdge{
 		&mock.Edge{
@@ -96,7 +96,7 @@ func TestListEdges(t *testing.T) {
 }
 
 func TestGetEdge(t *testing.T) {
-	s, _ := NewTestServer(t)
+	s, _, _ := NewTestServer(t)
 
 	req, err := http.NewRequest("GET", "/edges/foo", nil)
 	if err != nil {

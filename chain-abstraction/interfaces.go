@@ -56,6 +56,8 @@ type AssertionCreatedInfo struct {
 	AssertionHash       common.Hash
 	WasmModuleRoot      common.Hash
 	ChallengeManager    common.Address
+	TransactionHash     common.Hash
+	CreationBlock       uint64
 }
 
 func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
@@ -71,6 +73,7 @@ type AssertionChain interface {
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
 	LatestCreatedAssertion(ctx context.Context) (Assertion, error)
+	LatestCreatedAssertionHashes(ctx context.Context) ([]AssertionHash, error)
 	ReadAssertionCreationInfo(
 		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)

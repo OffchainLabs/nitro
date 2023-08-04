@@ -6,7 +6,7 @@ import (
 )
 
 func (s *Server) listEdgesHandler(w http.ResponseWriter, r *http.Request) {
-	e, err := convertSpecEdgeEdgesToEdges(r.Context(), s.data.GetEdges())
+	e, err := convertSpecEdgeEdgesToEdges(r.Context(), s.edges.GetEdges())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

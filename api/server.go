@@ -1,4 +1,4 @@
-// Package api defines an API server for BOLD, allowig retrieval of information
+// Package api defines an API server for BOLD, allowing retrieval of information
 // from both the assertion chain and the challenge manager contracts in order to
 // understand ongoing challenges.
 package api
@@ -15,19 +15,23 @@ import (
 
 var (
 	ErrNoConfig                 = errors.New("no config provided")
-	ErrNoDataAccessor           = errors.New("no data accessor provided")
+	ErrNoEdgesProvider          = errors.New("no edges provider")
+	ErrNoAssertionsProvider     = errors.New("no assertions provider")
 	ErrAlreadyRegisteredMethods = errors.New("already registered methods")
 )
 
 type Config struct {
-	Address      string
-	DataAccessor DataAccessor
+	Address            string
+	EdgesProvider      EdgesProvider
+	AssertionsProvider AssertionsProvider
 }
 
 type Server struct {
 	srv *http.Server
 
-	data   DataAccessor
+	edges      EdgesProvider
+	assertions AssertionsProvider
+
 	router *mux.Router
 
 	registered bool
@@ -42,8 +46,11 @@ func NewServer(cfg *Config) (*Server, error) {
 		cfg.Address = ":8080"
 	}
 
-	if cfg.DataAccessor == nil {
-		return nil, ErrNoDataAccessor
+	if cfg.EdgesProvider == nil {
+		return nil, ErrNoEdgesProvider
+	}
+	if cfg.AssertionsProvider == nil {
+		return nil, ErrNoAssertionsProvider
 	}
 
 	r := mux.NewRouter()
@@ -56,8 +63,9 @@ func NewServer(cfg *Config) (*Server, error) {
 			ReadTimeout:       15 * time.Second,
 			ReadHeaderTimeout: 15 * time.Second,
 		},
-		data:   cfg.DataAccessor,
-		router: r,
+		edges:      cfg.EdgesProvider,
+		assertions: cfg.AssertionsProvider,
+		router:     r,
 	}
 
 	if err := s.registerMethods(); err != nil {
@@ -83,11 +91,11 @@ func (s *Server) registerMethods() error {
 	s.router.HandleFunc("/healthz", healthzHandler).Methods("GET")
 
 	// Assertions
-	s.router.HandleFunc("/assertions", listAssertionsHandler).Methods("GET")
-	s.router.HandleFunc("/assertions/{id}", getAssertionHandler).Methods("GET")
+	s.router.HandleFunc("/assertions", s.listAssertionsHandler).Methods("GET")
+	s.router.HandleFunc("/assertions/{id}", s.getAssertionHandler).Methods("GET")
 
 	// Edges
-	s.router.HandleFunc("/edges", s.listEdgesHandler).Methods("GET") // TODO: Query params like IsChallenge?
+	s.router.HandleFunc("/edges", s.listEdgesHandler).Methods("GET")
 	s.router.HandleFunc("/edges/{id}", s.getEdgeHandler).Methods("GET")
 
 	s.registered = true

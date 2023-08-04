@@ -6,13 +6,15 @@ import (
 	"github.com/OffchainLabs/bold/api"
 )
 
-func NewTestServer(t *testing.T) (*api.Server, *FakeDataAccessor) {
+func NewTestServer(t *testing.T) (*api.Server, *FakeEdgesProvider, *FakeAssertionProvider) {
 	t.Helper()
 
-	data := &FakeDataAccessor{}
+	edges := &FakeEdgesProvider{}
+	assertions := &FakeAssertionProvider{}
 
 	s, err := api.NewServer(&api.Config{
-		DataAccessor: data,
+		EdgesProvider:      edges,
+		AssertionsProvider: assertions,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -22,5 +24,5 @@ func NewTestServer(t *testing.T) (*api.Server, *FakeDataAccessor) {
 		t.Fatal("server methods not registered")
 	}
 
-	return s, data
+	return s, edges, assertions
 }
