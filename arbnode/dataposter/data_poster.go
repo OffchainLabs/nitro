@@ -128,7 +128,7 @@ func (p *DataPoster[Meta]) Sender() common.Address {
 }
 
 // Does basic check whether posting transaction with specified nonce would
-// result in exceeding maxsimum queue length or maxsimum transactions in mempool.
+// result in exceeding maximum queue length or maximum transactions in mempool.
 func (p *DataPoster[Meta]) canPostWithNonce(ctx context.Context, nextNonce uint64) error {
 	cfg := p.config()
 	// If the queue has reached configured max size, don't post a transaction.
