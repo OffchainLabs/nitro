@@ -230,7 +230,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
 	if err != nil {
 		return nil, err
@@ -247,9 +247,16 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
+	var validatorAddrs []common.Address
+	for i := uint64(1); i <= authorizeValidators; i++ {
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
+	}
+
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
+		batchPoster,
+		validatorAddrs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -261,38 +268,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
-	}
-
-	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
-	if err != nil {
-		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
-	}
-
-	// if a zero sequencer address is specified, don't authorize any sequencers
-	if sequencer != (common.Address{}) {
-		tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-		err = andTxSucceeded(ctx, l1Reader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("error setting is batch poster: %w", err)
-		}
-	}
-
-	var allowValidators []bool
-	var validatorAddrs []common.Address
-	for i := uint64(1); i <= authorizeValidators; i++ {
-		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
-		allowValidators = append(allowValidators, true)
-	}
-	if len(validatorAddrs) > 0 {
-		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
-		if err != nil {
-			return nil, fmt.Errorf("error getting rollup admin: %w", err)
-		}
-		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-		err = andTxSucceeded(ctx, l1Reader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("error setting validator: %w", err)
-		}
 	}
 
 	return &chaininfo.RollupAddresses{

@@ -162,6 +162,16 @@ func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, erro
 	return c.State.L1PricingState().Inertia()
 }
 
+// GetL1RewardRate gets the L1 pricer reward rate
+func (con ArbGasInfo) GetL1RewardRate(c ctx, evm mech) (uint64, error) {
+	return c.State.L1PricingState().GetRewardsRate()
+}
+
+// GetL1RewardRecipient gets the L1 pricer reward recipient
+func (con ArbGasInfo) GetL1RewardRecipient(c ctx, evm mech) (common.Address, error) {
+	return c.State.L1PricingState().GetRewardsRecepient()
+}
+
 // GetL1GasPriceEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return con.GetL1BaseFeeEstimate(c, evm)
