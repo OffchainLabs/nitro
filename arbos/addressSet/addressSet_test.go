@@ -202,7 +202,7 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 		Fail(t, "Logs and current state did not match")
 	}
 	// Run RectifyMapping to fix the issue
-	checkIfRectifyMappingWorks(t, addr4, aset, 1, 1)
+	checkIfRectifyMappingWorks(t, aset, []common.Address{addr4}, true)
 	Require(t, aset.Clear())
 
 	// Test Arb1 history
@@ -223,7 +223,7 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 		Fail(t, "Logs and current state did not match")
 	}
 	// Run RectifyMapping to fix the issue
-	checkIfRectifyMappingWorks(t, addr3, aset, 1, 1)
+	checkIfRectifyMappingWorks(t, aset, []common.Address{addr3}, true)
 	Require(t, aset.Clear())
 
 	// Test Goerli history
@@ -247,7 +247,7 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 		Fail(t, "Logs and current state did not match")
 	}
 	// Run RectifyMapping to fix the issue
-	checkIfRectifyMappingWorks(t, addr4, aset, 1, 1)
+	checkIfRectifyMappingWorks(t, aset, []common.Address{addr4}, true)
 }
 
 func TestRectifyMapping(t *testing.T) {
@@ -265,10 +265,6 @@ func TestRectifyMapping(t *testing.T) {
 	Require(t, aset.Add(addr2))
 	Require(t, aset.Add(addr3))
 
-	// RectifyMapping should not do anything if the mapping is correct
-	addr := possibleAddresses[rand.Intn(len(possibleAddresses))]
-	Require(t, aset.RectifyMapping(addr))
-
 	// Non owner's should not be able to call RectifyMapping
 	err := aset.RectifyMapping(testhelpers.RandomAddress())
 	if err == nil {
@@ -278,35 +274,46 @@ func TestRectifyMapping(t *testing.T) {
 	// Corrupt the list and verify if RectifyMapping fixes it
 	addrHash := common.BytesToHash(addr2.Bytes())
 	Require(t, aset.backingStorage.SetByUint64(uint64(1), addrHash))
-	checkIfRectifyMappingWorks(t, addr1, aset, 3, 1)
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, true)
 
 	// Corrupt the map and verify if RectifyMapping fixes it
 	addrHash = common.BytesToHash(addr2.Bytes())
 	Require(t, aset.byAddress.Set(addrHash, util.UintToHash(uint64(6))))
-	checkIfRectifyMappingWorks(t, addr2, aset, 3, 2)
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, true)
 
 	// Add a new owner to the map and verify if RectifyMapping syncs list with the map
 	// to check for the case where list has fewer owners than expected
 	addr4 := testhelpers.RandomAddress()
 	addrHash = common.BytesToHash(addr4.Bytes())
 	Require(t, aset.byAddress.Set(addrHash, util.UintToHash(uint64(1))))
-	checkIfRectifyMappingWorks(t, addr4, aset, 4, 4)
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, true)
+
+	// RectifyMapping should not do anything if the mapping is correct
+	// Check to verify functionality post fix
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, false)
+
 }
 
-func checkIfRectifyMappingWorks(t *testing.T, addr common.Address, aset *AddressSet, asetSize uint64, ownerIndex uint64) {
+func checkIfRectifyMappingWorks(t *testing.T, aset *AddressSet, owners []common.Address, clearList bool) {
 	t.Helper()
-	Require(t, aset.RectifyMapping(addr))
-	// Check if AllMembers returns the correct list
-	ownerList, err := aset.AllMembers(asetSize)
-	Require(t, err)
-	addrHash := common.BytesToHash(addr.Bytes())
-	addrHashInList, index, isOwner, err := aset.getMapping(addrHash)
-	Require(t, err)
-	if size(t, aset) != asetSize || !isOwner ||
-		index != ownerIndex || addrHash != addrHashInList ||
-		len(ownerList) != int(asetSize) || ownerList[ownerIndex-1] != addr {
+	if clearList {
+		aset.ClearList()
+	}
+	for index, owner := range owners {
+		Require(t, aset.RectifyMapping(owner))
 
-		Fail(t, "RectifyMapping did not fix the mismatch")
+		addrAsHash := common.BytesToHash(owner.Bytes())
+		slot, err := aset.byAddress.GetUint64(addrAsHash)
+		Require(t, err)
+		atSlot, err := aset.backingStorage.GetByUint64(slot)
+		Require(t, err)
+		if slot == 0 || atSlot != addrAsHash {
+			Fail(t, "RectifyMapping did not fix the mismatch")
+		}
+
+		if clearList && int(size(t, aset)) != index+1 {
+			Fail(t, "RectifyMapping did not fix the mismatch")
+		}
 	}
 }
 

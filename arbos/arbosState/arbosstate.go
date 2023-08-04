@@ -303,7 +303,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 					ErrFatalNodeOutOfDate,
 				)
 			}
-			// no state changes needed
+			ensure(state.ChainOwners().ClearList())
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
