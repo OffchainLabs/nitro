@@ -110,6 +110,10 @@ impl GoStack {
         self
     }
 
+    pub unsafe fn read_bool32(&mut self) -> bool {
+        self.read_u32() != 0
+    }
+
     pub unsafe fn read_go_slice(&mut self) -> (u64, u64) {
         let ptr = self.read_u64();
         let len = self.read_u64();

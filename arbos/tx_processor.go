@@ -41,8 +41,9 @@ type TxProcessor struct {
 	posterGas        uint64
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
-	Callers          []common.Address
-	TopTxType        *byte // set once in StartTxHook
+	Contracts        []*vm.Contract
+	Programs         map[common.Address]uint // # of active contexts for each program
+	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
@@ -62,7 +63,8 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		PosterFee:           new(big.Int),
 		posterGas:           0,
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
-		Callers:             []common.Address{},
+		Contracts:           []*vm.Contract{},
+		Programs:            make(map[common.Address]uint),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -72,12 +74,20 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 	}
 }
 
-func (p *TxProcessor) PushCaller(addr common.Address) {
-	p.Callers = append(p.Callers, addr)
+func (p *TxProcessor) PushContract(contract *vm.Contract, stylus bool) {
+	p.Contracts = append(p.Contracts, contract)
+	if stylus {
+		p.Programs[contract.Address()]++
+	}
 }
 
-func (p *TxProcessor) PopCaller() {
-	p.Callers = p.Callers[:len(p.Callers)-1]
+func (p *TxProcessor) PopContract(stylus bool) {
+	newLen := len(p.Contracts) - 1
+	popped := p.Contracts[newLen]
+	p.Contracts = p.Contracts[:newLen]
+	if stylus {
+		p.Programs[popped.Address()]--
+	}
 }
 
 // Attempts to subtract up to `take` from `pool` without going negative.
@@ -105,12 +115,16 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, program, util.TracingDuringEVM)
 	}
 
+	// reentrant if more than one open context exists
+	reentrant := p.Programs[program] > 1
+
 	return p.state.Programs().CallProgram(
 		scope,
 		p.evm.StateDB,
 		interpreter,
 		tracingInfo,
 		input,
+		reentrant,
 	)
 }
 

@@ -130,7 +130,7 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 /// go side: λ(
 ///     blockBasefee, chainid *[32]byte, blockCoinbase *[20]byte, blockGasLimit u64,
 ///     blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
@@ -146,7 +146,9 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
+        reentrant: sp.read_bool32(),
         return_data_len: 0,
     };
+    sp.skip_space();
     sp.write_ptr(heapify(evm_data));
 }
