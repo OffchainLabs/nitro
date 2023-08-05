@@ -141,6 +141,6 @@ func (d *evmData) encode() *rustEvmData {
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
-		u32(arbmath.BoolToUint32(d.reentrant)),
+		u32(d.reentrant),
 	)
 }

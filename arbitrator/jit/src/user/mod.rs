@@ -146,7 +146,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
-        reentrant: sp.read_bool32(),
+        reentrant: sp.read_u32(),
         return_data_len: 0,
     };
     sp.skip_space();

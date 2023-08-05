@@ -294,6 +294,11 @@ pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> M
     Ok(())
 }
 
+pub(crate) fn msg_reentrant<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
+    let env = WasmEnv::start(&mut env)?;
+    Ok(env.evm_data.reentrant as u32)
+}
+
 pub(crate) fn msg_sender<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CALLER_GAS)?;

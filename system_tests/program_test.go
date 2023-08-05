@@ -223,8 +223,10 @@ func testCalls(t *testing.T, jit bool) {
 			}
 
 			// do the two following calls
-			args = append(args, 0x00)
-			args = append(args, zeroHashBytes...)
+			args = append(args, kinds[opcode])
+			if opcode == vm.CALL {
+				args = append(args, zeroHashBytes...)
+			}
 			args = append(args, callsAddr[:]...)
 			args = append(args, 2)
 
@@ -235,7 +237,12 @@ func testCalls(t *testing.T, jit bool) {
 			}
 			return args
 		}
-		tree := nest(3)[53:]
+		var tree []uint8
+		if opcode == vm.CALL {
+			tree = nest(3)[53:]
+		} else {
+			tree = nest(3)[21:]
+		}
 		tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, tree)
 		ensure(tx, l2client.SendTransaction(ctx, tx))
 
@@ -846,6 +853,7 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 func assertStorageAt(
 	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
 ) {
+	t.Helper()
 	storedBytes, err := l2client.StorageAt(ctx, contract, key, nil)
 	Require(t, err)
 	storedValue := common.BytesToHash(storedBytes)

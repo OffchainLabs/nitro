@@ -42,7 +42,7 @@ type TxProcessor struct {
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint // # of active contexts for each program
+	Programs         map[common.Address]uint // # of distinct context spans for each program
 	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
@@ -74,18 +74,20 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 	}
 }
 
-func (p *TxProcessor) PushContract(contract *vm.Contract, stylus bool) {
+func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	p.Contracts = append(p.Contracts, contract)
-	if stylus {
+
+	if !contract.IsDelegateOrCallcode() {
 		p.Programs[contract.Address()]++
 	}
 }
 
-func (p *TxProcessor) PopContract(stylus bool) {
+func (p *TxProcessor) PopContract() {
 	newLen := len(p.Contracts) - 1
 	popped := p.Contracts[newLen]
 	p.Contracts = p.Contracts[:newLen]
-	if stylus {
+
+	if !popped.IsDelegateOrCallcode() {
 		p.Programs[popped.Address()]--
 	}
 }
@@ -107,16 +109,16 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 
 func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
 	contract := scope.Contract
-	program := contract.Address()
+	acting := contract.Address()
 
 	var tracingInfo *util.TracingInfo
 	if interpreter.Config().Debug {
 		caller := contract.CallerAddress
-		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, program, util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
 	}
 
-	// reentrant if more than one open context exists
-	reentrant := p.Programs[program] > 1
+	// reentrant if more than one open same-actor context span exists
+	reentrant := p.Programs[acting] > 1
 
 	return p.state.Programs().CallProgram(
 		scope,

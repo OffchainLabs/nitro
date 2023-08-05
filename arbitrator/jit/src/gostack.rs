@@ -215,10 +215,6 @@ impl GoStack {
         self
     }
 
-    pub fn read_bool32(&mut self) -> bool {
-        self.read_u32() != 0
-    }
-
     pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
         u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
