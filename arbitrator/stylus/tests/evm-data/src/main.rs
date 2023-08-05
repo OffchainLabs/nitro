@@ -65,10 +65,10 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(arb_precompile_codehash.unwrap_or_default());
     output.extend(eth_precompile_codehash.unwrap_or_default());
 
-    output.extend(ink_price.to_be_bytes::<8>());
-    output.extend(gas_left_before.to_be_bytes::<8>());
-    output.extend(ink_left_before.to_be_bytes::<8>());
-    output.extend(gas_left_after.to_be_bytes::<8>());
-    output.extend(ink_left_after.to_be_bytes::<8>());
+    output.extend(ink_price.to_be_bytes());
+    output.extend(gas_left_before.to_be_bytes());
+    output.extend(ink_left_before.to_be_bytes());
+    output.extend(gas_left_after.to_be_bytes());
+    output.extend(ink_left_after.to_be_bytes());
     Ok(output)
 }

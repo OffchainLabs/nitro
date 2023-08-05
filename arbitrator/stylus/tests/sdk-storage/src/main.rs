@@ -4,7 +4,7 @@
 #![no_main]
 
 use stylus_sdk::{
-    alloy_primitives::{Address, Uint, B256, I32, U16, U256, U32, U64, U8},
+    alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
     stylus_proc::sol_storage,
 };
@@ -38,14 +38,25 @@ sol_storage! {
     pub struct Maps {
         mapping(uint256 => address) basic;
         mapping(address => bool[]) vects;
-        mapping(uint32 => address)[] array;
+        mapping(int32 => address)[] array;
         mapping(bytes1 => mapping(bool => uint256)) nested;
         mapping(string => Struct) structs;
     };
 }
 
-fn user_main(_: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let mut contract = unsafe { Contract::new(U256::ZERO, 0) };
+fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+    let contract = unsafe { Contract::new(U256::ZERO, 0) };
+    let selector = u32::from_be_bytes(input[0..4].try_into().unwrap());
+    stylus_sdk::debug::println(format!("{selector:x}"));
+    match selector {
+        0xf809f205 => populate(contract),
+        0xa7f43779 => remove(contract),
+        _ => panic!("unknown method"),
+    }
+    Ok(vec![])
+}
+
+fn populate(mut contract: Contract) {
 
     // test primitives
     let owner = Address::with_last_byte(0x70);
@@ -145,7 +156,8 @@ fn user_main(_: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut array = maps.array;
     for i in 0..4 {
         let mut map = array.grow();
-        map.insert(U32::from(i), Address::with_last_byte(i));
+        let value = I32::from_le_bytes::<4>((i as u32).to_le_bytes());
+        map.insert(value, Address::with_last_byte(i));
     }
 
     // test maps of maps
@@ -171,6 +183,11 @@ fn user_main(_: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         entry.other.set(contract.sub.other.get());
         entry.word.set(contract.sub.word.get());
     }
-    
-    Ok(vec![])
+}
+
+fn remove(contract: Contract) {
+    let mut bytes_full = contract.bytes_full;
+    while let Some(value) = bytes_full.pop() {
+        assert_eq!(value as usize, bytes_full.len());
+    }
 }
