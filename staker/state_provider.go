@@ -32,9 +32,6 @@ var (
 	}
 )
 
-var p l2stateprovider.Provider
- p=&StateManager{}
-
 var ErrChainCatchingUp = errors.New("chain catching up")
 
 type StateManager struct {
