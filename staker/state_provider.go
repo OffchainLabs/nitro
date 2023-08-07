@@ -147,7 +147,6 @@ func (s *StateManager) HistoryCommitmentAtBatch(ctx context.Context, batchNumber
 	if err != nil {
 		return commitments.History{}, err
 	}
-	fmt.Printf("Computing state root at msg %d and batch %d\n", batchMsgCount, batchNumber)
 	res, err := s.validator.streamer.ResultAtCount(batchMsgCount - 1)
 	if err != nil {
 		return commitments.History{}, err
@@ -159,7 +158,6 @@ func (s *StateManager) HistoryCommitmentAtBatch(ctx context.Context, batchNumber
 		PosInBatch: 0,
 	}
 	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
-	fmt.Printf("Got global state %+v and machine hash %#x\n", state, machineHash)
 	return commitments.New([]common.Hash{machineHash})
 }
 
@@ -170,7 +168,6 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 	if err != nil {
 		return commitments.History{}, err
 	}
-	fmt.Printf("Big step leaves, message %d, to big step %d, total %d\n", messageNumber, toBigStep, len(result))
 	return commitments.New(result)
 }
 
@@ -581,7 +578,6 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	if blockStart == 0 {
 		blockStart += 1
 	}
-	fmt.Printf("In states up to...")
 	for i := blockStart; i <= blockEnd; i++ {
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 		if err != nil {
@@ -601,15 +597,9 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 			break
 		}
 		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-		fmt.Printf("Global state %+v and machine hash %#x\n", gs, stateRoot)
 		stateRoots = append(stateRoots, stateRoot)
 		lastStateRoot = stateRoot
 	}
-	fmt.Println("Done states up to with roots below")
-	for _, rt := range stateRoots {
-		fmt.Printf("   %#x\n", rt)
-	}
-	fmt.Println("=====end roots")
 	for len(stateRoots) < desiredStatesLen {
 		stateRoots = append(stateRoots, lastStateRoot)
 	}
