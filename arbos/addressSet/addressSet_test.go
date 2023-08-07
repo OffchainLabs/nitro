@@ -10,6 +10,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -290,7 +292,10 @@ func TestRectifyMapping(t *testing.T) {
 
 	// RectifyMapping should not do anything if the mapping is correct
 	// Check to verify functionality post fix
-	checkIfRectifyMappingWorks(t, aset, possibleAddresses, false)
+	err = aset.RectifyMapping(addr1)
+	if err == nil {
+		Fail(t, "RectifyMapping called by a correctly mapped owner")
+	}
 
 }
 
@@ -314,6 +319,12 @@ func checkIfRectifyMappingWorks(t *testing.T, aset *AddressSet, owners []common.
 		if clearList && int(size(t, aset)) != index+1 {
 			Fail(t, "RectifyMapping did not fix the mismatch")
 		}
+	}
+	allMembers, err := aset.AllMembers(size(t, aset))
+	Require(t, err)
+	less := func(a, b common.Address) bool { return a.String() < b.String() }
+	if cmp.Diff(owners, allMembers, cmpopts.SortSlices(less)) != "" {
+		Fail(t, "RectifyMapping did not fix the mismatch")
 	}
 }
 

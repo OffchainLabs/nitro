@@ -315,7 +315,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 			}
 
 			// Clear chainOwners list to allow rectification of the mapping.
-			ensure(state.chainOwners.ClearList())
+			if !firstTime {
+				ensure(state.chainOwners.ClearList())
+			}
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

@@ -106,13 +106,19 @@ func (aset *AddressSet) RectifyMapping(addr common.Address) error {
 		return errors.New("RectifyMapping: Address is not an owner")
 	}
 
-	// If the mapping is correct, RectifyMapping shouldnt do anything
-	// Additional safety check to avoid corrupting the mapping after the initial fix
+	// If the mapping is correct, RectifyMapping shouldn't do anything
+	// Additional safety check to avoid corruption of mapping after the initial fix
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	slot, _ := aset.byAddress.GetUint64(addrAsHash)
-	atSlot, _ := aset.backingStorage.GetByUint64(slot)
-	if atSlot == addrAsHash && atSlot != common.BytesToHash(common.Address{}.Bytes()) {
-		return nil
+	slot, err := aset.byAddress.GetUint64(addrAsHash)
+	if err != nil {
+		return err
+	}
+	atSlot, err := aset.backingStorage.GetByUint64(slot)
+	if err != nil {
+		return err
+	}
+	if atSlot == addrAsHash {
+		return errors.New("RectifyMapping: Owner address is correctly mapped")
 	}
 
 	// Remove the owner from map and add them as a new owner
