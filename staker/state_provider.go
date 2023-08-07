@@ -32,6 +32,9 @@ var (
 	}
 )
 
+var p l2stateprovider.Provider
+ p=&StateManager{}
+
 var ErrChainCatchingUp = errors.New("chain catching up")
 
 type StateManager struct {
@@ -317,35 +320,15 @@ var ExecutionStateAbi = abi.Arguments{
 
 func (s *StateManager) OneStepProofData(
 	ctx context.Context,
-	cfgSnapshot *l2stateprovider.ConfigSnapshot,
+	wasmModuleRoot common.Hash,
 	postState rollupgen.ExecutionState,
 	messageNumber,
 	bigStep,
 	smallStep uint64,
 ) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
-	inboxMaxCountProof, err := ExecutionStateAbi.Pack(
-		postState.GlobalState.Bytes32Vals[0],
-		postState.GlobalState.Bytes32Vals[1],
-		postState.GlobalState.U64Vals[0],
-		postState.GlobalState.U64Vals[1],
-		postState.MachineStatus,
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	wasmModuleRootProof, err := WasmModuleProofAbi.Pack(
-		cfgSnapshot.RequiredStake,
-		cfgSnapshot.ChallengeManagerAddress,
-		cfgSnapshot.ConfirmPeriodBlocks,
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
 	endCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
-		cfgSnapshot.WasmModuleRoot,
+		wasmModuleRoot,
 		messageNumber,
 		bigStep,
 		smallStep+1,
@@ -355,7 +338,7 @@ func (s *StateManager) OneStepProofData(
 	}
 	startCommit, err := s.SmallStepCommitmentUpTo(
 		ctx,
-		cfgSnapshot.WasmModuleRoot,
+		wasmModuleRoot,
 		messageNumber,
 		bigStep,
 		smallStep,
@@ -374,7 +357,7 @@ func (s *StateManager) OneStepProofData(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(cfgSnapshot.WasmModuleRoot, input).Await(ctx)
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -406,12 +389,8 @@ func (s *StateManager) OneStepProofData(
 	}
 
 	data := &protocol.OneStepData{
-		BeforeHash:             startCommit.LastLeaf,
-		Proof:                  oneStepProof,
-		InboxMsgCountSeen:      cfgSnapshot.InboxMaxCount,
-		InboxMsgCountSeenProof: inboxMaxCountProof,
-		WasmModuleRoot:         cfgSnapshot.WasmModuleRoot,
-		WasmModuleRootProof:    wasmModuleRootProof,
+		BeforeHash: startCommit.LastLeaf,
+		Proof:      oneStepProof,
 	}
 	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil
 }
