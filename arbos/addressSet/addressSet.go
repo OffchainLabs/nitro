@@ -117,7 +117,11 @@ func (aset *AddressSet) RectifyMapping(addr common.Address) error {
 	if err != nil {
 		return err
 	}
-	if atSlot == addrAsHash {
+	size, err := aset.size.Get()
+	if err != nil {
+		return err
+	}
+	if atSlot == addrAsHash && slot <= size {
 		return errors.New("RectifyMapping: Owner address is correctly mapped")
 	}
 
