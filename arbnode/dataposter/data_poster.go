@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package dataposter
@@ -38,7 +38,8 @@ type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
-	auth              *bind.TransactOpts
+	sender            common.Address
+	signer            bind.SignerFn
 	redisLock         AttemptLocker
 	config            ConfigFetcher
 	replacementTimes  []time.Duration
@@ -57,10 +58,10 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
-	var replacementTimes []time.Duration
+func parseReplacementTimes(val string) ([]time.Duration, error) {
+	var res []time.Duration
 	var lastReplacementTime time.Duration
-	for _, s := range strings.Split(config().ReplacementTimes, ",") {
+	for _, s := range strings.Split(val, ",") {
 		t, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, err
@@ -68,14 +69,22 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 		if t <= lastReplacementTime {
 			return nil, errors.New("replacement times must be increasing")
 		}
-		replacementTimes = append(replacementTimes, t)
+		res = append(res, t)
 		lastReplacementTime = t
 	}
-	if len(replacementTimes) == 0 {
+	if len(res) == 0 {
 		log.Warn("disabling replace-by-fee for data poster")
 	}
-	// To avoid special casing "don't replace again", replace in 10 years
-	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
+	// To avoid special casing "don't replace again", replace in 10 years.
+	return append(res, time.Hour*24*365*10), nil
+
+}
+
+func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+	replacementTimes, err := parseReplacementTimes(config().ReplacementTimes)
+	if err != nil {
+		return nil, err
+	}
 	var queue QueueStorage[queuedTransaction[Meta]]
 	switch {
 	case config().EnableLevelDB:
@@ -92,7 +101,8 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 	return &DataPoster[Meta]{
 		headerReader:      headerReader,
 		client:            headerReader.Client(),
-		auth:              auth,
+		sender:            auth.From,
+		signer:            auth.Signer,
 		config:            config,
 		replacementTimes:  replacementTimes,
 		metadataRetriever: metadataRetriever,
@@ -102,8 +112,8 @@ func NewDataPoster[Meta any](db ethdb.Database, headerReader *headerreader.Heade
 	}, nil
 }
 
-func (p *DataPoster[Meta]) From() common.Address {
-	return p.auth.From
+func (p *DataPoster[Meta]) Sender() common.Address {
+	return p.sender
 }
 
 func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
@@ -131,7 +141,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 			}
 		}
 		if config.MaxMempoolTransactions > 0 {
-			unconfirmedNonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
+			unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
 			if err != nil {
 				return 0, emptyMeta, fmt.Errorf("failed to get unconfirmed nonce: %w", err)
 			}
@@ -149,7 +159,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
-		nonce, err := p.client.NonceAt(ctx, p.auth.From, nonceQueryBlock)
+		nonce, err := p.client.NonceAt(ctx, p.sender, nonceQueryBlock)
 		if err != nil {
 			return 0, emptyMeta, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
@@ -256,7 +266,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		Value:     new(big.Int),
 		Data:      calldata,
 	}
-	fullTx, err := p.auth.Signer(p.auth.From, types.NewTx(&inner))
+	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
 	if err != nil {
 		return err
 	}
@@ -303,7 +313,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 	return p.saveTx(ctx, newTx, &newerTx)
 }
 
-// the mutex must be held by the caller
+// The mutex must be held by the caller.
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
 	newFeeCap, newTipCap, err := p.feeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
@@ -336,7 +346,7 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 	newTx.Sent = false
 	newTx.Data.GasFeeCap = newFeeCap
 	newTx.Data.GasTipCap = newTipCap
-	newTx.FullTx, err = p.auth.Signer(p.auth.From, types.NewTx(&newTx.Data))
+	newTx.FullTx, err = p.signer(p.sender, types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
 	}
@@ -344,7 +354,9 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 	return p.sendTx(ctx, prevTx, &newTx)
 }
 
-// the mutex must be held by the caller
+// Gets latest known or finalized block header (depending on config flag),
+// gets the nonce of the dataposter sender and stores it if it has increased.
+// The mutex must be held by the caller.
 func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	var blockNumQuery *big.Int
 	if p.config().WaitForL1Finality {
@@ -357,7 +369,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 	if p.lastBlock != nil && arbmath.BigEquals(p.lastBlock, header.Number) {
 		return nil
 	}
-	nonce, err := p.client.NonceAt(ctx, p.auth.From, header.Number)
+	nonce, err := p.client.NonceAt(ctx, p.sender, header.Number)
 	if err != nil {
 		if p.lastBlock != nil {
 			log.Warn("failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
@@ -365,20 +377,21 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 		}
 		return err
 	}
-	if nonce > p.nonce {
-		log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
-		if len(p.errorCount) > 0 {
-			for x := p.nonce; x < nonce; x++ {
-				delete(p.errorCount, x)
-			}
+	// Ignore if nonce hasn't increased.
+	if nonce <= p.nonce {
+		return nil
+	}
+	log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
+	if len(p.errorCount) > 0 {
+		for x := p.nonce; x < nonce; x++ {
+			delete(p.errorCount, x)
 		}
-		// We don't prune the most recent transaction in order to ensure that the data poster
-		// always has a reference point in its queue of the latest transaction nonce and metadata.
-		// nonce > 0 is implied by nonce > p.nonce, so this won't underflow.
-		err := p.queue.Prune(ctx, nonce-1)
-		if err != nil {
-			return err
-		}
+	}
+	// We don't prune the most recent transaction in order to ensure that the data poster
+	// always has a reference point in its queue of the latest transaction nonce and metadata.
+	// nonce > 0 is implied by nonce > p.nonce, so this won't underflow.
+	if err := p.queue.Prune(ctx, nonce-1); err != nil {
+		return err
 	}
 	// We update these two variables together because they should remain in sync even if there's an error.
 	p.lastBlock = header.Number
@@ -390,7 +403,7 @@ func (p *DataPoster[Meta]) updateNonce(ctx context.Context) error {
 func (p *DataPoster[Meta]) updateBalance(ctx context.Context) error {
 	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
-	balance, err := p.client.BalanceAt(ctx, p.auth.From, big.NewInt(-1))
+	balance, err := p.client.BalanceAt(ctx, p.sender, big.NewInt(-1))
 	if err != nil {
 		return err
 	}
@@ -420,6 +433,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 
 const minWait = time.Second * 10
 
+// Tries to acquire redis lock, updates balance and nonce,
 func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
 	p.CallIteratively(func(ctx context.Context) time.Duration {
@@ -444,9 +458,9 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
 		}
-		unconfirmedNonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
 		if err != nil {
-			log.Warn("failed to get latest nonce", "err", err)
+			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
 		}
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
@@ -454,7 +468,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		// replacing them by fee.
 		queueContents, err := p.queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
-			log.Warn("failed to get tx queue contents", "err", err)
+			log.Warn("Failed to get tx queue contents", "err", err)
 			return minWait
 		}
 		for index, tx := range queueContents {
