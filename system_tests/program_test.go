@@ -506,7 +506,7 @@ func TestProgramReturnData(t *testing.T) {
 }
 
 func testReturnData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) {
