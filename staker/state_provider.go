@@ -22,6 +22,8 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
+var _ l2stateprovider.Provider = (*StateManager)(nil)
+
 // Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
 var (
 	b32Arr, _ = abi.NewType("bytes32[]", "", nil)

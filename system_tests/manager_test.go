@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -75,12 +76,15 @@ func TestHistoryCommitmentUpTo(t *testing.T) {
 	Require(t, err)
 	expectedHistoryCommitment, err := commitments.New(
 		[]common.Hash{
-			validator.GoGlobalState{
-				BlockHash:  res1.BlockHash,
-				SendRoot:   res1.SendRoot,
-				Batch:      1,
-				PosInBatch: 0,
-			}.Hash(),
+			crypto.Keccak256Hash(
+				[]byte("Machine finished:"),
+				validator.GoGlobalState{
+					BlockHash:  res1.BlockHash,
+					SendRoot:   res1.SendRoot,
+					Batch:      1,
+					PosInBatch: 0,
+				}.Hash().Bytes(),
+			),
 		},
 	)
 	Require(t, err)
@@ -123,34 +127,32 @@ func TestHistoryCommitmentUpToBatch(t *testing.T) {
 	l2node, l1stack, manager := setupManger(t, ctx)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
-	res0, err := l2node.TxStreamer.ResultAtCount(0)
-	Require(t, err)
 	res1, err := l2node.TxStreamer.ResultAtCount(1)
 	Require(t, err)
 	expectedHistoryCommitment, err := commitments.New(
 		[]common.Hash{
-			validator.GoGlobalState{
-				BlockHash:  res0.BlockHash,
-				SendRoot:   res0.SendRoot,
-				Batch:      0,
-				PosInBatch: 0,
-			}.Hash(),
-			validator.GoGlobalState{
-				BlockHash:  res1.BlockHash,
-				SendRoot:   res1.SendRoot,
-				Batch:      1,
-				PosInBatch: 0,
-			}.Hash(),
-			validator.GoGlobalState{
-				BlockHash:  res1.BlockHash,
-				SendRoot:   res1.SendRoot,
-				Batch:      1,
-				PosInBatch: 0,
-			}.Hash(),
+			crypto.Keccak256Hash(
+				[]byte("Machine finished:"),
+				validator.GoGlobalState{
+					BlockHash:  res1.BlockHash,
+					SendRoot:   res1.SendRoot,
+					Batch:      1,
+					PosInBatch: 0,
+				}.Hash().Bytes(),
+			),
+			crypto.Keccak256Hash(
+				[]byte("Machine finished:"),
+				validator.GoGlobalState{
+					BlockHash:  res1.BlockHash,
+					SendRoot:   res1.SendRoot,
+					Batch:      1,
+					PosInBatch: 0,
+				}.Hash().Bytes(),
+			),
 		},
 	)
 	Require(t, err)
-	historyCommitment, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 2, 1)
+	historyCommitment, err := manager.HistoryCommitmentUpToBatch(ctx, 1, 2, 2)
 	Require(t, err)
 	if !reflect.DeepEqual(historyCommitment, expectedHistoryCommitment) {
 		Fail(t, "Unexpected HistoryCommitment", historyCommitment, "(expected ", expectedHistoryCommitment, ")")
@@ -191,14 +193,14 @@ func TestAllPrefixProofs(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
-	from := uint64(0)
-	to := uint64(2)
+	from := uint64(1)
+	to := uint64(3)
 
-	loCommit, err := manager.HistoryCommitmentAtMessage(ctx, from)
+	loCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 1, from, 10)
 	Require(t, err)
-	hiCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, to, 10)
+	hiCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 1, to, 10)
 	Require(t, err)
-	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, from, to, 10)
+	packedProof, err := manager.PrefixProofUpToBatch(ctx, 1, from, to, 10)
 	Require(t, err)
 
 	data, err := staker.ProofArgs.Unpack(packedProof)
@@ -223,9 +225,9 @@ func TestAllPrefixProofs(t *testing.T) {
 
 	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
 		PreRoot:      loCommit.Merkle,
-		PreSize:      from + 1,
+		PreSize:      from,
 		PostRoot:     hiCommit.Merkle,
-		PostSize:     to + 1,
+		PostSize:     to,
 		PreExpansion: preExpansionHashes,
 		PrefixProof:  prefixProof,
 	})
