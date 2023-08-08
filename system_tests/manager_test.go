@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"math/big"
 	"reflect"
 	"strings"
@@ -399,4 +400,9 @@ func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, 
 	manager, err := staker.NewStateManager(stateless, nil, numOpcodesPerBigStepTest, maxWavmOpcodesTest, t.TempDir())
 	Require(t, err)
 	return l2node, l1stack, manager
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }
