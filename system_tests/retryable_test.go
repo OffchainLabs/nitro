@@ -755,7 +755,10 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	submissionTxOuter, _, err := l2client.TransactionByHash(ctx, submissionTxHash)
 	Require(t, err)
 	submissionBaseFee := GetBaseFeeAt(t, l2client, ctx, submissionReceipt.BlockNumber)
-	submissionTx := submissionTxOuter.GetInner().(*types.ArbitrumSubmitRetryableTx)
+	submissionTx, ok := submissionTxOuter.GetInner().(*types.ArbitrumSubmitRetryableTx)
+	if !ok {
+		Fatal(t, "inner tx isn't ArbitrumSubmitRetryableTx")
+	}
 	// submission + auto redeemed retry expected fees
 	retryableSubmissionFee := retryables.RetryableSubmissionFee(len(submissionTx.RetryData), submissionTx.L1BaseFee)
 	expectedSubmissionFee := arbmath.BigMulByUint(submissionBaseFee, autoRedeemReceipt.GasUsed)
@@ -767,7 +770,10 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 
 	retryTxOuter, _, err := l2client.TransactionByHash(ctx, retryTxId)
 	Require(t, err)
-	retryTx := retryTxOuter.GetInner().(*types.ArbitrumRetryTx)
+	retryTx, ok := retryTxOuter.GetInner().(*types.ArbitrumRetryTx)
+	if !ok {
+		Fatal(t, "inner tx isn't ArbitrumRetryTx")
+	}
 	redeemBaseFee := GetBaseFeeAt(t, l2client, ctx, redeemReceipt.BlockNumber)
 
 	t.Log("redeem base fee:", redeemBaseFee)

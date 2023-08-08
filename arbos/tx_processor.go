@@ -271,13 +271,12 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		gascost := arbmath.BigMulByUint(basefee, usergas)
 		networkCost := gascost
 		if p.state.ArbOSVersion() >= 11 {
-			infraFeeAccount, _ := p.state.InfraFeeAccount()
+			infraFeeAccount, err := p.state.InfraFeeAccount()
+			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
-				infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 				p.state.Restrict(err)
-				if arbmath.BigLessThan(basefee, infraFee) {
-					infraFee = basefee
-				}
+				infraFee := arbmath.BigMin(minBaseFee, basefee)
 				infraCost := arbmath.BigMulByUint(infraFee, usergas)
 				if err := transfer(&tx.From, &infraFeeAccount, infraCost); err != nil {
 					glog.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
@@ -507,12 +506,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
 			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
-				infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 				p.state.Restrict(err)
 				// TODO MinBaseFeeWei change during RetryTx execution may cause incorrect calculation of the part of the refund that should be taken from infraFeeAccount. Unless the balances of network and infra fee accounts are too low, the amount transferred to refund address should remain correct.
-				if arbmath.BigLessThan(basefee, infraFee) {
-					infraFee = basefee
-				}
+				infraFee := arbmath.BigMin(minBaseFee, basefee)
 				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
 				infraRefund = takeFunds(networkRefund, infraRefund)
 				refund(&infraFeeAccount, infraRefund)
@@ -556,11 +553,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
 		p.state.Restrict(err)
 		if infraFeeAccount != (common.Address{}) {
-			infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+			minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 			p.state.Restrict(err)
-			if arbmath.BigLessThan(basefee, infraFee) {
-				infraFee = basefee
-			}
+			infraFee := arbmath.BigMin(minBaseFee, basefee)
 			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
 			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
 			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, purpose)
