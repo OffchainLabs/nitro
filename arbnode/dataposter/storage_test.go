@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
@@ -17,7 +18,10 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-var ignoreData = cmpopts.IgnoreFields(storage.QueuedTransaction{}, "Data")
+var ignoreData = cmp.Options{
+	cmpopts.IgnoreFields(storage.QueuedTransaction{}, "Data"),
+	cmpopts.IgnoreFields(types.Transaction{}, "hash", "size", "from"),
+}
 
 func newLevelDBStorage(t *testing.T) *leveldb.Storage {
 	t.Helper()
