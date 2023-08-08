@@ -313,6 +313,11 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if oldAmortizationCap == math.MaxUint64 {
 				ensure(state.l1PricingState.SetAmortizedCostCapBips(0))
 			}
+
+			// Clear chainOwners list to allow rectification of the mapping.
+			if !firstTime {
+				ensure(state.chainOwners.ClearList())
+			}
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
