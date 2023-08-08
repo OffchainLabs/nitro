@@ -1,6 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+// Package dataposter implements generic functionality to post transactions.
 package dataposter
 
 import (
@@ -33,6 +34,12 @@ import (
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
+// Dataposter implements functionality to post transactions on the chain. It
+// is initialized with specified sender/signer and keeps nonce of that address
+// as it posts transactions.
+// Transactions are also saved in the queue when it's being sent, and when
+// persistant storage is used for the queue, after restarting the node
+// dataposter will pick up where it left.
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {
 	stopwaiter.StopWaiter
@@ -46,6 +53,10 @@ type DataPoster struct {
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 
 	// These fields are protected by the mutex.
+	// TODO: factor out these fields into separate structure, since now one
+	// needs to make sure call sites of methods that change these values hold
+	// the lock (currently ensured by having comments like:
+	// "the mutex must be held by the caller" above the function).
 	mutex      sync.Mutex
 	lastBlock  *big.Int
 	balance    *big.Int
@@ -115,52 +126,68 @@ func (p *DataPoster) Sender() common.Address {
 	return p.sender
 }
 
+// Does basic check whether posting transaction with specified nonce would
+// result in exceeding maximum queue length or maximum transactions in mempool.
+func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) error {
+	cfg := p.config()
+	// If the queue has reached configured max size, don't post a transaction.
+	if cfg.MaxQueuedTransactions > 0 {
+		queueLen, err := p.queue.Length(ctx)
+		if err != nil {
+			return fmt.Errorf("getting queue length: %w", err)
+		}
+		if queueLen >= cfg.MaxQueuedTransactions {
+			return fmt.Errorf("posting a transaction with nonce: %d will exceed max allowed dataposter queued transactions: %d, current nonce: %d", nextNonce, cfg.MaxQueuedTransactions, p.nonce)
+		}
+	}
+	// Check that posting a new transaction won't exceed maximum pending
+	// transactions in mempool.
+	if cfg.MaxMempoolTransactions > 0 {
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
+		if err != nil {
+			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
+		}
+		if nextNonce-unconfirmedNonce > cfg.MaxMempoolTransactions {
+			return fmt.Errorf("posting a transaction with nonce: %d will exceed max mempool size: %d, unconfirmed nonce: %d", nextNonce, cfg.MaxMempoolTransactions, unconfirmedNonce)
+		}
+	}
+	return nil
+}
+
+// GetNextNonceAndMeta retrieves generates next nonce, validates that a
+// transaction can be posted with that nonce, and fetches "Meta" either last
+// queued iterm (if queue isn't empty) or retrieves with last block.
 func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
 	config := p.config()
-	var emptyMeta []byte
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
-		return 0, emptyMeta, err
+		return 0, nil, err
 	}
 	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
-		return 0, emptyMeta, err
+		return 0, nil, err
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.Data.Nonce + 1
-		if config.MaxQueuedTransactions > 0 {
-			queueLen, err := p.queue.Length(ctx)
-			if err != nil {
-				return 0, emptyMeta, err
-			}
-			if queueLen >= config.MaxQueuedTransactions {
-				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while current nonce is %v would exceed max data poster queue length of %v", nextNonce, p.nonce, config.MaxQueuedTransactions)
-			}
-		}
-		if config.MaxMempoolTransactions > 0 {
-			unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
-			if err != nil {
-				return 0, emptyMeta, fmt.Errorf("failed to get unconfirmed nonce: %w", err)
-			}
-			if nextNonce >= unconfirmedNonce+config.MaxMempoolTransactions {
-				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while unconfirmed nonce is %v would exceed max mempool transactions of %v", nextNonce, unconfirmedNonce, config.MaxMempoolTransactions)
-			}
+		if err := p.canPostWithNonce(ctx, nextNonce); err != nil {
+			return 0, nil, err
 		}
 		return nextNonce, lastQueueItem.Meta, nil
 	}
-	err = p.updateNonce(ctx)
-	if err != nil {
+
+	if err := p.updateNonce(ctx); err != nil {
 		if !p.queue.IsPersistent() && config.WaitForL1Finality {
-			return 0, emptyMeta, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
+			return 0, nil, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
 		nonce, err := p.client.NonceAt(ctx, p.sender, nonceQueryBlock)
 		if err != nil {
-			return 0, emptyMeta, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
+			return 0, nil, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
 		p.lastBlock = nonceQueryBlock
 		p.nonce = nonce
@@ -290,20 +317,16 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
 	if prevTx != newTx {
-		err := p.saveTx(ctx, prevTx, newTx)
-		if err != nil {
+		if err := p.saveTx(ctx, prevTx, newTx); err != nil {
 			return err
 		}
 	}
-	err := p.client.SendTransaction(ctx, newTx.FullTx)
-	if err != nil {
-		if strings.Contains(err.Error(), "already known") || strings.Contains(err.Error(), "nonce too low") {
-			log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
-			err = nil
-		} else {
+	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
+		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap())
 			return err
 		}
+		log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 	} else {
 		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
 	}
