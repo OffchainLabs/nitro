@@ -27,6 +27,12 @@ type QueuedTransaction struct {
 }
 
 func (qt *QueuedTransaction) Equals(v *QueuedTransaction) bool {
+	if (qt != nil) != (v != nil) {
+		return false
+	}
+	if qt == nil {
+		return true
+	}
 	if (qt.FullTx != nil) != (v.FullTx != nil) {
 		return false
 	}
