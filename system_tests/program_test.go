@@ -892,12 +892,12 @@ func validateBlockRange(
 
 	// wait until all the blocks are sequenced
 	lastBlock := arbmath.MaxInt(blocks...)
+	lastMessageCount := arbutil.BlockNumberToMessageCount(lastBlock, 0)
+
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
+		msgExecuted, err := node.Execution.ExecEngine.HeadMessageNumber()
 		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
+		return msgExecuted+1 >= lastMessageCount
 	})
 
 	blockHeight, err := l2client.BlockNumber(ctx)
