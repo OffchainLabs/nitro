@@ -361,8 +361,7 @@ func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, 
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	_, l2node, l2client, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, l2chainConfig, nil, l2info)
-	execNode := getExecNode(t, l2node)
+	_, l2node, l2client, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, l2chainConfig, nil, l2info)
 	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2client, ctx)
 	l2info.GenerateAccount("BackgroundUser")
 	balance := big.NewInt(params.Ether)
@@ -388,7 +387,7 @@ func setupManger(t *testing.T, ctx context.Context) (*arbnode.Node, *node.Node, 
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		execNode,
+		l2node.Execution.Recorder,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
