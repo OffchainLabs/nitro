@@ -460,7 +460,6 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 
 const minWait = time.Second * 10
 
-
 // Dataposter keeps iteratively doing the following: updates the its balance
 // and nonce according to the pending block, fetches queue content, checks for
 // replace-by-fee after specified durations, and tries to send unsent
