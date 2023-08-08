@@ -432,7 +432,7 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 
 const minWait = time.Second * 10
 
-// Tries tu acquire redis lock, updates balance and nonce,
+// Tries to acquire redis lock, updates balance and nonce,
 func (p *DataPoster) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
 	p.CallIteratively(func(ctx context.Context) time.Duration {
