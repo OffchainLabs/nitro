@@ -94,10 +94,13 @@ stylus_cargo = arbitrator/stylus/tests/.cargo/config.toml
 
 stylus_lang_rust = $(wildcard arbitrator/langs/rust/src/*.rs arbitrator/langs/rust/*.toml)
 stylus_lang_c    = $(wildcard arbitrator/langs/c/*.c arbitrator/langs/c/*.h)
+stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
 
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(stylus_test_dir)/$(1)/*.c $(stylus_test_dir)/$(1)/*.h) $(stylus_lang_c)
+stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
+
 stylus_test_keccak_wasm           = $(call get_stylus_test_wasm,keccak)
 stylus_test_keccak_src            = $(call get_stylus_test_rust,keccak)
 stylus_test_keccak-100_wasm       = $(call get_stylus_test_wasm,keccak-100)
@@ -119,7 +122,7 @@ stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data
 stylus_test_siphash_wasm          = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src           = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -351,6 +354,9 @@ $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wa
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
+
+$(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
+	cargo run --manifest-path arbitrator/langs/bf/Cargo.toml $< -o $@
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	cargo build --manifest-path $< --release --config $(stylus_cargo)

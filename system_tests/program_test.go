@@ -210,7 +210,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	colors.PrintMint("Sending multicall tx expecting a failure")
 
 	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
-	l2client.SendTransaction(ctx, tx)
+	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
 	// Then, we call the program keccakA and expect it to fail due to it not being compiled.
@@ -506,7 +506,7 @@ func TestProgramReturnData(t *testing.T) {
 }
 
 func testReturnData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) {
