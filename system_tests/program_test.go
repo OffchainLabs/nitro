@@ -33,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/valnode"
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
@@ -714,12 +715,16 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
 
 	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.Enable = true
+	l2config.BlockValidator.Enable = false
+	l2config.Staker.Enable = true
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 	l2config.Sequencer.MaxRevertGasReject = 0
 	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
-	AddDefaultValNode(t, ctx, l2config, jit)
+	valConf := valnode.TestValidationConfig
+	valConf.UseJit = jit
+	_, valStack := createTestValidationNode(t, ctx, &valConf)
+	configByValidationNode(t, l2config, valStack)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
 
