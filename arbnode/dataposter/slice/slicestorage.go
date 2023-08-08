@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 )
@@ -72,7 +71,7 @@ func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.Queued
 		for queueIdx >= len(s.queue) {
 			s.queue = append(s.queue, nil)
 		}
-		if !reflect.DeepEqual(prev, s.queue[queueIdx]) {
+		if !prev.Equals(s.queue[queueIdx]) {
 			return fmt.Errorf("replacing different item than expected at index: %v: %v %v", index, prev, s.queue[queueIdx])
 		}
 		s.queue[queueIdx] = new
