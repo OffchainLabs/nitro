@@ -342,6 +342,20 @@ fn test_c() -> Result<()> {
 }
 
 #[test]
+fn test_bf() -> Result<()> {
+    // in cat.b
+    //     the output is the input
+
+    let (compile, config, ink) = test_configs();
+    let args = "Hello world!".as_bytes();
+
+    let mut native = TestInstance::new_linked("tests/bf/cat.wasm", &compile, config)?;
+    let output = run_native(&mut native, &args, ink)?;
+    assert_eq!(output, args);
+    Ok(())
+}
+
+#[test]
 fn test_fallible() -> Result<()> {
     // in fallible.rs
     //     an input starting with 0x00 will execute an unreachable

@@ -3,9 +3,9 @@
 
 #![no_main]
 
-use arbitrum::{evm, Bytes32};
+use stylus_sdk::{alloy_primitives::B256, evm};
 
-arbitrum::arbitrum_main!(user_main);
+stylus_sdk::entrypoint!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let num_topics = input[0];
@@ -13,7 +13,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
     let mut topics = vec![];
     for _ in 0..num_topics {
-        topics.push(Bytes32::from_slice(&input[..32]).unwrap());
+        topics.push(B256::try_from(&input[..32]).unwrap());
         input = &input[32..];
     }
     evm::log(&topics, input).unwrap();

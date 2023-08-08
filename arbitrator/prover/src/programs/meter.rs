@@ -260,9 +260,13 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 
     fn pay_for_evm_copy(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
-        let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
+        let gas = evm::evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
         self.buy_gas(gas)
+    }
+
+    fn pay_for_evm_keccak(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+        let gas = evm::evm_words(bytes).saturating_mul(evm::KECCAK_WORD_GAS);
+        self.buy_gas(gas.saturating_add(evm::KECCAK_256_GAS))
     }
 
     fn pay_for_evm_log(&mut self, topics: u32, data_len: u32) -> Result<(), OutOfInkError> {

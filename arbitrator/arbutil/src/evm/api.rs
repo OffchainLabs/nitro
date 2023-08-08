@@ -112,7 +112,7 @@ pub trait EvmApi: Send + 'static {
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATASIZE`.
-    fn get_return_data(&mut self) -> Vec<u8>;
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8>;
 
     /// Emits an EVM log with the given number of topics and data, the first bytes of which should be the topic data.
     /// Returns an error message on failure.
