@@ -203,10 +203,10 @@ func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64,
 }
 
 //export getReturnDataImpl
-func getReturnDataImpl(api usize, output *rustVec) {
+func getReturnDataImpl(api usize, output *rustVec, offset u32, size u32) {
 	closures := getApi(api)
-	return_data := closures.getReturnData()
-	output.setBytes(return_data)
+	returnData := closures.getReturnData(uint32(offset), uint32(size))
+	output.setBytes(returnData)
 }
 
 //export emitLogImpl
@@ -323,7 +323,7 @@ func (params *goParams) encode() C.StylusConfig {
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
-		block_chainid:    hashToBytes32(data.blockChainId),
+		chainid:          hashToBytes32(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
 		block_gas_limit:  u64(data.blockGasLimit),
 		block_number:     hashToBytes32(data.blockNumber),

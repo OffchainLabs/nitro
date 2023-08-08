@@ -3,6 +3,7 @@
 
 use crate::{evm_api::ApiCaller, Program};
 use arbutil::{
+    crypto,
     evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
     wavm, Bytes20, Bytes32,
 };
@@ -16,14 +17,14 @@ pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__return_data(ptr: usize, len: usize) {
+pub unsafe extern "C" fn user_host__write_result(ptr: usize, len: usize) {
     let program = Program::start();
     program.pay_for_evm_copy(len as u64).unwrap();
     program.outs = wavm::read_slice_usize(ptr, len);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize) {
+pub unsafe extern "C" fn user_host__storage_load_bytes32(key: usize, ptr: usize) {
     let program = Program::start();
     let key = wavm::read_bytes32(key);
 
@@ -33,7 +34,7 @@ pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_store_bytes32(key: usize, value: usize) {
+pub unsafe extern "C" fn user_host__storage_store_bytes32(key: usize, value: usize) {
     let program = Program::start();
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
 
@@ -53,14 +54,14 @@ pub unsafe extern "C" fn user_host__call_contract(
     calldata: usize,
     calldata_len: usize,
     value: usize,
-    ink: u64,
+    gas: u64,
     ret_len: usize,
 ) -> u8 {
     let value = Some(value);
     let call = |api: EvmCaller, contract, input, gas, value: Option<_>| {
         api.contract_call(contract, input, gas, value.unwrap())
     };
-    do_call(contract, calldata, calldata_len, value, ink, ret_len, call)
+    do_call(contract, calldata, calldata_len, value, gas, ret_len, call)
 }
 
 #[no_mangle]
@@ -68,11 +69,11 @@ pub unsafe extern "C" fn user_host__delegate_call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
-    ink: u64,
+    gas: u64,
     ret_len: usize,
 ) -> u8 {
     let call = |api: EvmCaller, contract, input, gas, _| api.delegate_call(contract, input, gas);
-    do_call(contract, calldata, calldata_len, None, ink, ret_len, call)
+    do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
 }
 
 #[no_mangle]
@@ -80,11 +81,11 @@ pub unsafe extern "C" fn user_host__static_call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
-    ink: u64,
+    gas: u64,
     ret_len: usize,
 ) -> u8 {
     let call = |api: EvmCaller, contract, input, gas, _| api.static_call(contract, input, gas);
-    do_call(contract, calldata, calldata_len, None, ink, ret_len, call)
+    do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
 }
 
 unsafe fn do_call<F>(
@@ -92,7 +93,7 @@ unsafe fn do_call<F>(
     calldata: usize,
     calldata_len: usize,
     value: Option<usize>,
-    mut ink: u64,
+    mut gas: u64,
     return_data_len: usize,
     call: F,
 ) -> u8
@@ -101,9 +102,8 @@ where
 {
     let program = Program::start();
     program.pay_for_evm_copy(calldata_len as u64).unwrap();
-    ink = ink.min(program.ink_ready().unwrap());
+    gas = gas.min(program.gas_left().unwrap());
 
-    let gas = program.pricing().ink_to_gas(ink);
     let contract = wavm::read_bytes20(contract).into();
     let input = wavm::read_slice_usize(calldata, calldata_len);
     let value = value.map(|x| Bytes32(wavm::read_bytes32(x)));
@@ -165,14 +165,18 @@ pub unsafe extern "C" fn user_host__create2(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__read_return_data(ptr: usize) {
+pub unsafe extern "C" fn user_host__read_return_data(
+    ptr: usize,
+    offset: usize,
+    size: usize,
+) -> usize {
     let program = Program::start();
-    let len = program.evm_data.return_data_len;
-    program.pay_for_evm_copy(len.into()).unwrap();
+    program.pay_for_evm_copy(size as u64).unwrap();
 
-    let data = program.evm_api.get_return_data();
-    assert_eq!(data.len(), len as usize);
+    let data = program.evm_api.get_return_data(offset as u32, size as u32);
+    assert!(data.len() <= size);
     wavm::write_slice_usize(&data, ptr);
+    data.len()
 }
 
 #[no_mangle]
@@ -236,11 +240,11 @@ pub unsafe extern "C" fn user_host__block_basefee(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_chainid(ptr: usize) {
+pub unsafe extern "C" fn user_host__chainid(ptr: usize) {
     let program = Program::start();
     program.buy_gas(evm::CHAINID_GAS).unwrap();
-    let block_chainid = program.evm_data.block_chainid.as_ref();
-    wavm::write_slice_usize(block_chainid, ptr)
+    let chainid = program.evm_data.chainid.as_ref();
+    wavm::write_slice_usize(chainid, ptr)
 }
 
 #[no_mangle]
@@ -295,6 +299,16 @@ pub unsafe extern "C" fn user_host__msg_value(ptr: usize) {
     program.buy_gas(evm::CALLVALUE_GAS).unwrap();
     let msg_value = program.evm_data.msg_value.as_ref();
     wavm::write_slice_usize(msg_value, ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__native_keccak256(bytes: usize, len: usize, output: usize) {
+    let program = Program::start();
+    program.pay_for_evm_keccak(len as u64).unwrap();
+
+    let preimage = wavm::read_slice_usize(bytes, len);
+    let digest = crypto::keccak(preimage);
+    wavm::write_slice_usize(&digest, output)
 }
 
 #[no_mangle]

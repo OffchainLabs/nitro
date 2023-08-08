@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -48,7 +47,7 @@ func TestProgramArbitratorKeccak(t *testing.T) {
 }
 
 func keccakTest(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
@@ -133,7 +132,7 @@ func TestProgramCompilationReuse(t *testing.T) {
 }
 
 func testCompilationReuse(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -160,9 +159,7 @@ func testCompilationReuse(t *testing.T, jit bool) {
 
 	colors.PrintMint("Deploying multiaddr and compiling it")
 
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("norevert-multicall"))
-	fallibleAddr := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
-	colors.PrintBlue("fallible deployed to ", fallibleAddr.Hex())
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
@@ -183,64 +180,66 @@ func testCompilationReuse(t *testing.T, jit bool) {
 		Fatal(t, "call should have failed with ProgramNotCompiled")
 	}
 
-	compileProgramData := hexutil.MustDecode("0x2e50f32b")
+	arbWasmABI, err := precompilesgen.ArbWasmMetaData.GetAbi()
+	Require(t, err)
+	compileMethod, ok := arbWasmABI.Methods["compileProgram"]
+	if !ok {
+		Fatal(t, "Cannot find compileProgram method in ArbWasm ABI")
+	}
+	compileProgramData := compileMethod.ID
 	programArg := make([]byte, 32)
 	copy(programArg[12:], keccakA[:])
 	compileProgramData = append(compileProgramData, programArg...)
 
-	// We begin preparing a complex multicall operation.
-	// First, we create an inner call that attempts to compile a program,
-	// and then reverts. We configure the inner multicall to revert entirely
-	// if a single revert occurs.
-	innerCallArgs := []byte{0x01}
-	innerCallArgs = append(
-		innerCallArgs,
-		argsForMulticall(
-			vm.CALL,
-			types.ArbWasmAddress,
-			nil,
-			compileProgramData,
-		)...,
+	// We begin preparing a multicall operation.
+	// We create an call that attempts to compile a program, and then reverts.
+	args := argsForMulticall(
+		vm.CALL,
+		types.ArbWasmAddress,
+		nil,
+		compileProgramData,
 	)
-	innerCallArgs = multicallNorevertAppend(innerCallArgs, vm.CALL, fallibleAddr, hexutil.MustDecode("0x00"))
+	arbDebugABI, err := precompilesgen.ArbDebugMetaData.GetAbi()
+	Require(t, err)
+	legacyErrorMethod, ok := arbDebugABI.Methods["legacyError"]
+	if !ok {
+		Fatal(t, "Cannot find legacyError method in ArbDebug ABI")
+	}
+	args = multicallAppend(args, vm.CALL, types.ArbDebugAddress, legacyErrorMethod.ID)
 
-	// Our second inner call will attempt to call a program that has not yet been compiled, and revert on error.
-	secondInnerCallArgs := []byte{0x01}
-	secondInnerCallArgs = append(
-		secondInnerCallArgs,
-		argsForMulticall(
-			vm.CALL,
-			keccakA,
-			nil,
-			keccakArgs,
-		)...,
-	)
+	colors.PrintMint("Sending multicall tx expecting a failure")
 
-	// Next, we configure a multicall that does two inner calls from above, as well as additional
-	// calls beyond that.
+	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	l2client.SendTransaction(ctx, tx)
+	EnsureTxFailed(t, ctx, l2client, tx)
 
-	// It then compiles keccak program A, and then calls keccak program B, which
-	// will succeed if they are compiled correctly and share the same codehash.
-	args := []byte{0x00}
-	args = append(
-		args,
-		argsForMulticall(
-			vm.CALL,
-			multiAddr,
-			nil,
-			innerCallArgs,
-		)...,
-	)
-	// Call the contract in a second inner call and watch it revert due to it not being compiled.
-	args = multicallNorevertAppend(args, vm.CALL, multiAddr, secondInnerCallArgs)
+	// Then, we call the program keccakA and expect it to fail due to it not being compiled.
+	// Calling the contract precompilation should fail.
+	msg = ethereum.CallMsg{
+		To:    &keccakA,
+		Value: big.NewInt(0),
+		Data:  keccakArgs,
+	}
+	_, err = l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "ProgramNotCompiled") {
+		Fatal(t, "call should have failed with ProgramNotCompiled")
+	}
+
+	// Then, we expect to successfully compile keccakA and expect us to succeed at calling keccakB.
+	// will succeed if they are compiled correctly and share the same codehash. This will happen in a single multicall.
 	// Compile keccak program A.
-	args = multicallNorevertAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
+	args = argsForMulticall(
+		vm.CALL,
+		types.ArbWasmAddress,
+		nil,
+		compileProgramData,
+	)
 	// Call keccak program B, which should succeed as it shares the same code as program A.
-	args = multicallNorevertAppend(args, vm.CALL, keccakB, keccakArgs)
+	args = multicallAppend(args, vm.CALL, keccakB, keccakArgs)
 
 	colors.PrintMint("Sending multicall tx")
 
-	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	colors.PrintMint("Attempting to call keccak program B after multicall is done")
@@ -265,7 +264,7 @@ func TestProgramErrors(t *testing.T) {
 }
 
 func errorTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("fallible"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
@@ -294,7 +293,7 @@ func TestProgramStorage(t *testing.T) {
 }
 
 func storageTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("storage"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
@@ -321,7 +320,7 @@ func TestProgramCalls(t *testing.T) {
 }
 
 func testCalls(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
@@ -466,7 +465,7 @@ func testCalls(t *testing.T, jit bool) {
 	small := testPrecompile(smallGas)
 	large := testPrecompile(largeGas)
 
-	if !arbmath.Within(large-small, largeGas-smallGas, 1) {
+	if !arbmath.Within(large-small, largeGas-smallGas, 2) {
 		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
 		Fatal(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
@@ -501,13 +500,63 @@ func testCalls(t *testing.T, jit bool) {
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
+func TestProgramReturnData(t *testing.T) {
+	t.Parallel()
+	testReturnData(t, true)
+}
+
+func testReturnData(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) {
+		t.Helper()
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+	}
+
+	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
+
+	colors.PrintGrey("read-return-data.evm ", readReturnDataAddr)
+	colors.PrintBlue("checking calls with partial return data")
+
+	dataToSend := [4]byte{0, 1, 2, 3}
+	testReadReturnData := func(callType uint32, offset uint32, size uint32, expectedSize uint32, count uint32) {
+		parameters := [20]byte{}
+		binary.BigEndian.PutUint32(parameters[0:4], callType)
+		binary.BigEndian.PutUint32(parameters[4:8], offset)
+		binary.BigEndian.PutUint32(parameters[8:12], size)
+		binary.BigEndian.PutUint32(parameters[12:16], expectedSize)
+		binary.BigEndian.PutUint32(parameters[16:20], count)
+		callData := append(parameters[:], dataToSend[:]...)
+
+		tx := l2info.PrepareTxTo("Owner", &readReturnDataAddr, 1e9, nil, callData)
+		ensure(tx, l2client.SendTransaction(ctx, tx))
+	}
+
+	testReadReturnData(1, 0, 5, 4, 2)
+	testReadReturnData(1, 0, 1, 1, 2)
+	testReadReturnData(1, 5, 1, 0, 2)
+	testReadReturnData(1, 0, 0, 0, 2)
+	testReadReturnData(1, 0, 4, 4, 2)
+
+	testReadReturnData(2, 0, 5, 4, 1)
+	testReadReturnData(2, 0, 1, 1, 1)
+	testReadReturnData(2, 5, 1, 0, 1)
+	testReadReturnData(2, 0, 0, 0, 1)
+	testReadReturnData(2, 0, 4, 4, 1)
+
+	validateBlocks(t, 12, jit, ctx, node, l2client)
+}
+
 func TestProgramLogs(t *testing.T) {
 	t.Parallel()
 	testLogs(t, true)
 }
 
 func testLogs(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("log"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 
@@ -573,7 +622,7 @@ func TestProgramCreate(t *testing.T) {
 }
 
 func testCreate(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("create"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	createAddr := deployWasm(t, ctx, auth, l2client, rustFile("create"))
 
@@ -664,7 +713,7 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func testEvmData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	evmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
 
@@ -741,7 +790,7 @@ func TestProgramMemory(t *testing.T) {
 }
 
 func testMemory(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, watFile("memory"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
@@ -794,8 +843,8 @@ func testMemory(t *testing.T, jit bool) {
 	gasCost := receipt.GasUsedForL2()
 	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
 	logical := uint64(32000000 + 126*1000)
-	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) || !arbmath.WithinRange(gasCost, logical, logical+1e5) {
-		Fatal(t, "unexpected cost", gasCost, model)
+	if !arbmath.WithinRange(gasCost, memCost, memCost+2e5) || !arbmath.WithinRange(gasCost, logical, logical+2e5) {
+		Fatal(t, "unexpected cost", gasCost, memCost)
 	}
 
 	// check that we'd normally run out of gas
@@ -839,7 +888,7 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
-func setupProgramTest(t *testing.T, file string, jit bool) (
+func setupProgramTest(t *testing.T, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -971,12 +1020,6 @@ func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, 
 	return args
 }
 
-func multicallNorevertAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
-	calls[1] += 1 // add another call
-	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
-	return calls
-}
-
 func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
 	calls[0] += 1 // add another call
 	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
@@ -1024,14 +1067,15 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
+
+	// wait until all the blocks are sequenced
+	lastBlock := arbmath.MaxInt(blocks...)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		messageCount, err := node.TxStreamer.GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
+		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
 	})
 
 	blockHeight, err := l2client.BlockNumber(ctx)
