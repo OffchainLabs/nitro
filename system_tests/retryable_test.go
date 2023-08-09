@@ -37,7 +37,7 @@ func retryableSetup(t *testing.T) (
 	*ethclient.Client,
 	*ethclient.Client,
 	*bridgegen.Inbox,
-	func(*types.Receipt) common.Hash,
+	func(*types.Receipt) *types.Transaction,
 	context.Context,
 	func(),
 ) {
@@ -53,7 +53,7 @@ func retryableSetup(t *testing.T) (
 	delayedBridge, err := arbnode.NewDelayedBridge(l1client, l1info.GetAddress("Bridge"), 0)
 	Require(t, err)
 
-	lookupL2Hash := func(l1Receipt *types.Receipt) common.Hash {
+	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
@@ -85,7 +85,7 @@ func retryableSetup(t *testing.T) (
 		if len(submissionTxs) != 1 {
 			Fatal(t, "expected 1 tx from submission, found", len(submissionTxs))
 		}
-		return submissionTxs[0].Hash()
+		return submissionTxs[0]
 	}
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
@@ -110,7 +110,7 @@ func retryableSetup(t *testing.T) (
 		l2node.StopAndWait()
 		requireClose(t, l1stack)
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown
+	return l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown
 }
 
 func TestRetryableNoExist(t *testing.T) {
@@ -129,7 +129,7 @@ func TestRetryableNoExist(t *testing.T) {
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
 	user2Address := l2info.GetAddress("User2")
@@ -175,15 +175,15 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
-	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "l1receipt indicated failure")
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
@@ -199,7 +199,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -225,19 +225,16 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
-	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "l1receipt indicated failure")
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
 	Require(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t)
-	}
 	if len(receipt.Logs) != 2 {
 		Fatal(t, len(receipt.Logs))
 	}
@@ -263,7 +260,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	// check the receipt for the retry
 	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
-	if receipt.Status != 1 {
+	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, receipt.Status)
 	}
 
@@ -291,7 +288,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 func TestSubmissionGasCosts(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, l2client, l2info)
 	elevateL2Basefee(t, ctx, l2client, l2info)
@@ -340,19 +337,17 @@ func TestSubmissionGasCosts(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
-	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "l1receipt indicated failure")
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	submissionReceipt, err := WaitForTx(ctx, l2client, lookupL2Hash(l1receipt), time.Second*5)
+	submissionTxOuter := lookupL2Tx(l1Receipt)
+	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, submissionTxOuter)
 	Require(t, err)
-	if submissionReceipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t)
-	}
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, "Unexpected number of logs:", len(submissionReceipt.Logs))
 	}
@@ -463,7 +458,7 @@ func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient
 
 func TestDepositETH(t *testing.T) {
 	t.Parallel()
-	_, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	_, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
 	faucetAddr := l1info.GetAddress("Faucet")
@@ -490,13 +485,9 @@ func TestDepositETH(t *testing.T) {
 	}
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	txHash := lookupSubmitRetryableL2TxHash(l1Receipt)
-	l2Receipt, err := WaitForTx(ctx, l2client, txHash, time.Second*5)
+	l2Receipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
 	if err != nil {
-		t.Fatalf("WaitForTx(%v) unexpected error: %v", txHash, err)
-	}
-	if l2Receipt.Status != types.ReceiptStatusSuccessful {
-		t.Errorf("Got transaction status: %v, want: %v", l2Receipt.Status, types.ReceiptStatusSuccessful)
+		t.Fatalf("EnsureTxSucceeded unexpected error: %v", err)
 	}
 	newBalance, err := l2client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
 	if err != nil {
@@ -508,7 +499,7 @@ func TestDepositETH(t *testing.T) {
 }
 
 func TestArbitrumContractTx(t *testing.T) {
-	l2Info, l1Info, l2Client, l1Client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
+	l2Info, l1Info, l2Client, l1Client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	faucetL2Addr := util.RemapL1Address(l1Info.GetAddress("Faucet"))
 	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), l2Info, l2Client, ctx)
@@ -552,13 +543,9 @@ func TestArbitrumContractTx(t *testing.T) {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
 	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
-	txHash := lookupL2Hash(receipt)
-	receipt, err = WaitForTx(ctx, l2Client, txHash, time.Second*5)
+	receipt, err = EnsureTxSucceeded(ctx, l2Client, lookupL2Tx(receipt))
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
-	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
 }
 
@@ -635,7 +622,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Hash, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, l2client, l2info)
 
@@ -670,20 +657,17 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
 	Require(t, err)
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
-	if l1receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "l1receipt indicated failure")
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	submissionTxHash := lookupL2Hash(l1receipt)
-	submissionReceipt, err := WaitForTx(ctx, l2client, submissionTxHash, time.Second*5)
+	submissionTxOuter := lookupL2Tx(l1Receipt)
+	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, submissionTxOuter)
 	Require(t, err)
-	if submissionReceipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t)
-	}
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, len(submissionReceipt.Logs))
 	}
@@ -751,8 +735,6 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
 	Require(t, err)
 	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
-	Require(t, err)
-	submissionTxOuter, _, err := l2client.TransactionByHash(ctx, submissionTxHash)
 	Require(t, err)
 	submissionBaseFee := GetBaseFeeAt(t, l2client, ctx, submissionReceipt.BlockNumber)
 	submissionTx, ok := submissionTxOuter.GetInner().(*types.ArbitrumSubmitRetryableTx)
