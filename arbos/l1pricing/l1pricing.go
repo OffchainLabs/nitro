@@ -72,9 +72,10 @@ const (
 )
 
 const (
-	InitialInertia           = 10
-	InitialPerUnitReward     = 10
-	InitialPerBatchGasCostV6 = 100000
+	InitialInertia            = 10
+	InitialPerUnitReward      = 10
+	InitialPerBatchGasCostV6  = 100_000
+	InitialPerBatchGasCostV12 = 210_000 // overriden as part of the upgrade
 )
 
 // one minute at 100000 bytes / sec
@@ -145,6 +146,10 @@ func (ps *L1PricingState) SetPayRewardsTo(addr common.Address) error {
 	return ps.payRewardsTo.Set(addr)
 }
 
+func (ps *L1PricingState) GetRewardsRecepient() (common.Address, error) {
+	return ps.payRewardsTo.Get()
+}
+
 func (ps *L1PricingState) EquilibrationUnits() (*big.Int, error) {
 	return ps.equilibrationUnits.Get()
 }
@@ -167,6 +172,10 @@ func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 
 func (ps *L1PricingState) SetPerUnitReward(weiPerUnit uint64) error {
 	return ps.perUnitReward.Set(weiPerUnit)
+}
+
+func (ps *L1PricingState) GetRewardsRate() (uint64, error) {
+	return ps.perUnitReward.Get()
 }
 
 func (ps *L1PricingState) LastUpdateTime() (uint64, error) {

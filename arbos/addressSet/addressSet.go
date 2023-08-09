@@ -4,6 +4,8 @@
 package addressSet
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -84,6 +86,54 @@ func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, err
 	return ret, nil
 }
 
+func (aset *AddressSet) ClearList() error {
+	size, err := aset.size.Get()
+	if err != nil || size == 0 {
+		return err
+	}
+	for i := uint64(1); i <= size; i++ {
+		err = aset.backingStorage.ClearByUint64(i)
+		if err != nil {
+			return err
+		}
+	}
+	return aset.size.Clear()
+}
+
+func (aset *AddressSet) RectifyMapping(addr common.Address) error {
+	isOwner, err := aset.IsMember(addr)
+	if !isOwner || err != nil {
+		return errors.New("RectifyMapping: Address is not an owner")
+	}
+
+	// If the mapping is correct, RectifyMapping shouldn't do anything
+	// Additional safety check to avoid corruption of mapping after the initial fix
+	addrAsHash := common.BytesToHash(addr.Bytes())
+	slot, err := aset.byAddress.GetUint64(addrAsHash)
+	if err != nil {
+		return err
+	}
+	atSlot, err := aset.backingStorage.GetByUint64(slot)
+	if err != nil {
+		return err
+	}
+	size, err := aset.size.Get()
+	if err != nil {
+		return err
+	}
+	if atSlot == addrAsHash && slot <= size {
+		return errors.New("RectifyMapping: Owner address is correctly mapped")
+	}
+
+	// Remove the owner from map and add them as a new owner
+	err = aset.byAddress.Clear(addrAsHash)
+	if err != nil {
+		return err
+	}
+
+	return aset.Add(addr)
+}
+
 func (aset *AddressSet) Add(addr common.Address) error {
 	present, err := aset.IsMember(addr)
 	if present || err != nil {
@@ -93,14 +143,13 @@ func (aset *AddressSet) Add(addr common.Address) error {
 	if err != nil {
 		return err
 	}
-	sba := aset.backingStorage.OpenStorageBackedAddress(1 + size)
 	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	err = aset.byAddress.Set(addrAsHash, slot)
 	if err != nil {
 		return err
 	}
-	sba = aset.backingStorage.OpenStorageBackedAddress(1 + size)
+	sba := aset.backingStorage.OpenStorageBackedAddress(1 + size)
 	err = sba.Set(addr)
 	if err != nil {
 		return err

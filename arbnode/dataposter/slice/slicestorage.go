@@ -19,7 +19,7 @@ func NewStorage[Item any]() *Storage[Item] {
 	return &Storage[Item]{}
 }
 
-func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage[Item]) FetchContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	ret := s.queue
 	if startingIndex >= s.firstNonce+uint64(len(s.queue)) || maxResults == 0 {
 		return nil, nil
@@ -33,19 +33,19 @@ func (s *Storage[Item]) GetContents(_ context.Context, startingIndex uint64, max
 	return ret, nil
 }
 
-func (s *Storage[Item]) GetLast(context.Context) (*Item, error) {
+func (s *Storage[Item]) FetchLast(context.Context) (*Item, error) {
 	if len(s.queue) == 0 {
 		return nil, nil
 	}
 	return s.queue[len(s.queue)-1], nil
 }
 
-func (s *Storage[Item]) Prune(_ context.Context, keepStartingAt uint64) error {
-	if keepStartingAt >= s.firstNonce+uint64(len(s.queue)) {
+func (s *Storage[Item]) Prune(_ context.Context, until uint64) error {
+	if until >= s.firstNonce+uint64(len(s.queue)) {
 		s.queue = nil
-	} else if keepStartingAt >= s.firstNonce {
-		s.queue = s.queue[keepStartingAt-s.firstNonce:]
-		s.firstNonce = keepStartingAt
+	} else if until >= s.firstNonce {
+		s.queue = s.queue[until-s.firstNonce:]
+		s.firstNonce = until
 	}
 	return nil
 }
