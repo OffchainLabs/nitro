@@ -23,6 +23,7 @@ var (
 	limitCheckDurationHistogram = metrics.NewRegisteredHistogram("arb/rpc/limitcheck/duration", nil, metrics.NewBoundedHistogramSample())
 	limitCheckSuccessCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/success", nil)
 	limitCheckFailureCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/failure", nil)
+	errNotSupported             = errors.New("not supported")
 )
 
 // Init adds the resource manager's httpServer to a custom hook in geth.
@@ -33,7 +34,15 @@ var (
 func Init(conf *Config) {
 	if conf.MemoryLimitPercent > 0 {
 		node.WrapHTTPHandler = func(srv http.Handler) (http.Handler, error) {
-			return newHttpServer(srv, newLimitChecker(conf)), nil
+			var c limitChecker
+			var err error
+			c, err = newCgroupsMemoryLimitCheckerIfSupported(conf)
+			if errors.Is(err, errNotSupported) {
+				log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
+				c = &trivialLimitChecker{}
+			}
+
+			return newHttpServer(srv, c), nil
 		}
 	}
 }
@@ -95,25 +104,22 @@ func isSupported(c limitChecker) bool {
 	return err == nil
 }
 
-// newLimitChecker attempts to auto-discover the mechanism by which it
-// can check system limits. Currently Cgroups V1 and V2 are supported.
-// If no supported mechanism is discovered, it logs an error and
-// fails open, ie it creates a trivialLimitChecker that does no checks.
-func newLimitChecker(conf *Config) limitChecker {
+// newCgroupsMemoryLimitCheckerIfSupported attempts to auto-discover whether
+// Cgroups V1 or V2 is supported for checking system memory limits.
+func newCgroupsMemoryLimitCheckerIfSupported(conf *Config) (*cgroupsMemoryLimitChecker, error) {
 	c := newCgroupsMemoryLimitChecker(cgroupsV1MemoryFiles, conf.MemoryLimitPercent)
 	if isSupported(c) {
 		log.Info("Cgroups v1 detected, enabling memory limit RPC throttling")
-		return c
+		return c, nil
 	}
 
 	c = newCgroupsMemoryLimitChecker(cgroupsV2MemoryFiles, conf.MemoryLimitPercent)
 	if isSupported(c) {
 		log.Info("Cgroups v2 detected, enabling memory limit RPC throttling")
-		return c
+		return c, nil
 	}
 
-	log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
-	return &trivialLimitChecker{}
+	return nil, errNotSupported
 }
 
 // trivialLimitChecker checks no limits, so its limits are never exceeded.

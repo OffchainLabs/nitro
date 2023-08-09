@@ -57,36 +57,37 @@ func TestCgroupsFailIfCantOpen(t *testing.T) {
 	}
 }
 
-func TestCgroupsLimitNotExceeded(t *testing.T) {
-	testFiles := makeCgroupsTestDir(t.TempDir())
-	c := newCgroupsMemoryLimitChecker(testFiles, 95)
-
-	var err error
-	if err = updateFakeCgroupFiles(c, 1000, 1000, 51); err != nil {
-		t.Fatal(err)
-	}
-	exceeded, err := c.isLimitExceeded()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if exceeded {
-		t.Fatal("Expected under limit")
-	}
-}
-
-func TestCgroupsLimitExceeded(t *testing.T) {
-	testFiles := makeCgroupsTestDir(t.TempDir())
-	c := newCgroupsMemoryLimitChecker(testFiles, 95)
-
-	var err error
-	if err = updateFakeCgroupFiles(c, 1000, 1000, 50); err != nil {
-		t.Fatal(err)
-	}
-	exceeded, err := c.isLimitExceeded()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !exceeded {
-		t.Fatal("Expected over limit")
+func TestCgroupsMemoryLimit(t *testing.T) {
+	for _, tc := range []struct {
+		desc     string
+		inactive int
+		want     bool
+	}{
+		{
+			desc:     "limit should be exceeded",
+			inactive: 50,
+			want:     true,
+		},
+		{
+			desc:     "limit should not be exceeded",
+			inactive: 51,
+			want:     false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			testFiles := makeCgroupsTestDir(t.TempDir())
+			c := newCgroupsMemoryLimitChecker(testFiles, 95)
+			if err := updateFakeCgroupFiles(c, 1000, 1000, tc.inactive); err != nil {
+				t.Fatalf("Updating cgroup files: %v", err)
+			}
+			exceeded, err := c.isLimitExceeded()
+			if err != nil {
+				t.Fatalf("Checking if limit exceeded: %v", err)
+			}
+			if exceeded != tc.want {
+				t.Errorf("isLimitExceeded() = %t, want %t", exceeded, tc.want)
+			}
+		},
+		)
 	}
 }
