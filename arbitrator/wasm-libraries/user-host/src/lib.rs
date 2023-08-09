@@ -8,7 +8,7 @@ use prover::programs::{meter::MeteredMachine, prelude::StylusConfig};
 mod evm_api;
 mod ink;
 mod link;
-mod user;
+mod host;
 
 pub(crate) static mut PROGRAMS: Vec<Program> = vec![];
 

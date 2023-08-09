@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use prover::programs::prelude::StylusConfig;
 
 mod ink;
-pub mod user;
+pub mod host;
 
 pub(crate) static mut ARGS: Vec<u8> = vec![];
 pub(crate) static mut OUTS: Vec<u8> = vec![];
