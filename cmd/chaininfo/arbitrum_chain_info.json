@@ -1,6 +1,5 @@
 [
   {
-    "chain-id": 42161,
     "chain-name": "arb1",
     "parent-chain-id": 1,
     "sequencer-url": "https://arb1-sequencer.arbitrum.io/rpc",
@@ -50,7 +49,6 @@
     }
   },
   {
-    "chain-id": 42170,
     "chain-name": "nova",
     "parent-chain-id": 1,
     "sequencer-url": "https://nova.arbitrum.io/rpc",
@@ -100,7 +98,6 @@
     }
   },
   {
-    "chain-id": 421613,
     "chain-name": "goerli-rollup",
     "parent-chain-id": 5,
     "sequencer-url": "https://goerli-rollup.arbitrum.io/rpc",
@@ -149,7 +146,6 @@
     }
   },
   {
-    "chain-id": 412346,
     "chain-name": "arb-dev-test",
     "chain-config":
     {
@@ -185,7 +181,6 @@
     }
   },
   {
-    "chain-id": 412347,
     "chain-name": "anytrust-dev-test",
     "chain-config":
     {

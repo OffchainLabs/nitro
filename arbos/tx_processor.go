@@ -110,11 +110,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	evm := p.evm
 
 	startTracer := func() func() {
-		if !evm.Config.Debug {
+		tracer := evm.Config.Tracer
+		if tracer == nil {
 			return func() {}
 		}
 		evm.IncrementDepth() // fake a call
-		tracer := evm.Config.Tracer
 		from := p.msg.From
 		tracer.CaptureStart(evm, from, *p.msg.To, false, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 
@@ -269,10 +269,28 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// pay for the retryable's gas and update the pools
 		gascost := arbmath.BigMulByUint(basefee, usergas)
-		if err := transfer(&tx.From, &networkFeeAccount, gascost); err != nil {
-			// should be impossible because we just checked the tx.From balance
-			glog.Error("failed to transfer gas cost to network fee account", "err", err)
-			return true, 0, nil, ticketId.Bytes()
+		networkCost := gascost
+		if p.state.ArbOSVersion() >= 11 {
+			infraFeeAccount, err := p.state.InfraFeeAccount()
+			p.state.Restrict(err)
+			if infraFeeAccount != (common.Address{}) {
+				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
+				p.state.Restrict(err)
+				infraFee := arbmath.BigMin(minBaseFee, basefee)
+				infraCost := arbmath.BigMulByUint(infraFee, usergas)
+				infraCost = takeFunds(networkCost, infraCost)
+				if err := transfer(&tx.From, &infraFeeAccount, infraCost); err != nil {
+					glog.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
+					return true, 0, nil, ticketId.Bytes()
+				}
+			}
+		}
+		if arbmath.BigGreaterThan(networkCost, common.Big0) {
+			if err := transfer(&tx.From, &networkFeeAccount, networkCost); err != nil {
+				// should be impossible because we just checked the tx.From balance
+				glog.Error("failed to transfer gas cost to network fee account", "err", err)
+				return true, 0, nil, ticketId.Bytes()
+			}
 		}
 
 		withheldGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
@@ -318,7 +336,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			glog.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
-		if evm.Config.Debug {
+		if tracer := evm.Config.Tracer; tracer != nil {
 			redeem, err := util.PackArbRetryableTxRedeem(ticketId)
 			if err == nil {
 				tracingInfo.MockCall(redeem, usergas, from, types.ArbRetryableTxAddress, common.Big0)
@@ -385,7 +403,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		poster = p.evm.Context.Coinbase
 	}
 
-	if basefee.Sign() > 0 {
+	if p.msg.TxRunMode == core.MessageCommitMode {
+		p.msg.SkipL1Charging = false
+	}
+	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
 		// Since tips go to the network, and not to the poster, we use the basefee.
 		// Note, this only determines the amount of gas bought, not the price per gas.
 
@@ -450,29 +471,29 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
-		refundNetworkFee := func(amount *big.Int) {
-			const errLog = "network fee address doesn't have enough funds to give user refund"
+		refund := func(refundFrom common.Address, amount *big.Int) {
+			const errLog = "fee address doesn't have enough funds to give user refund"
 
 			// Refund funds to the fee refund address without overdrafting the L1 deposit.
 			toRefundAddr := takeFunds(maxRefund, amount)
-			err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
+			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
 			if err != nil {
 				// Normally the network fee address should be holding any collected fees.
 				// However, in theory, they could've been transfered out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error(errLog, "err", err)
+				log.Error(errLog, "err", err, "feeAddress", refundFrom)
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
-			err = util.TransferBalance(&networkFeeAccount, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
+			err = util.TransferBalance(&refundFrom, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
 			if err != nil {
-				log.Error(errLog, "err", err)
+				log.Error(errLog, "err", err, "feeAddress", refundFrom)
 			}
 		}
 
 		if success {
 			// If successful, refund the submission fee.
-			refundNetworkFee(inner.SubmissionFeeRefund)
+			refund(networkFeeAccount, inner.SubmissionFeeRefund)
 		} else {
 			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
@@ -480,7 +501,21 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
 		takeFunds(maxRefund, arbmath.BigMulByUint(basefee, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
-		refundNetworkFee(gasRefund)
+		networkRefund := gasRefund
+		if p.state.ArbOSVersion() >= 11 {
+			infraFeeAccount, err := p.state.InfraFeeAccount()
+			p.state.Restrict(err)
+			if infraFeeAccount != (common.Address{}) {
+				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
+				p.state.Restrict(err)
+				// TODO MinBaseFeeWei change during RetryTx execution may cause incorrect calculation of the part of the refund that should be taken from infraFeeAccount. Unless the balances of network and infra fee accounts are too low, the amount transferred to refund address should remain correct.
+				infraFee := arbmath.BigMin(minBaseFee, basefee)
+				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
+				infraRefund = takeFunds(networkRefund, infraRefund)
+				refund(infraFeeAccount, infraRefund)
+			}
+		}
+		refund(networkFeeAccount, networkRefund)
 
 		if success {
 			// we don't want to charge for this
@@ -518,11 +553,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
 		p.state.Restrict(err)
 		if infraFeeAccount != (common.Address{}) {
-			infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+			minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 			p.state.Restrict(err)
-			if arbmath.BigLessThan(basefee, infraFee) {
-				infraFee = basefee
-			}
+			infraFee := arbmath.BigMin(minBaseFee, basefee)
 			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
 			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
 			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, purpose)
