@@ -265,7 +265,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 			if err != nil {
 				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
 			}
-			if bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
+			if bytes.Equal(from.Bytes(), b.dataPoster.Sender().Bytes()) {
 				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 				if err != nil {
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
@@ -649,7 +649,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		return 0, err
 	}
 	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
-		From: b.dataPoster.From(),
+		From: b.dataPoster.Sender(),
 		To:   &b.seqInboxAddr,
 		Data: data,
 	})
@@ -913,8 +913,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
-		if b.dataPoster.From() != (common.Address{}) {
-			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.From(), nil)
+		if b.dataPoster.Sender() != (common.Address{}) {
+			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.Sender(), nil)
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
