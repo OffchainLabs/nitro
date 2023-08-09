@@ -12,12 +12,14 @@ use std::{
     fmt::{Debug, Display},
     io,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 use thiserror::Error;
 use wasmer::{
-    AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut,
-    WasmPtr,
+    AsStoreRef, FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut, WasmPtr,
 };
+use wasmer_types::RawValue;
+use wasmer_vm::VMGlobalDefinition;
 
 pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
 
@@ -42,14 +44,6 @@ pub struct WasmEnv<E: EvmApi> {
     pub compile: CompileConfig,
     /// The runtime config
     pub config: Option<StylusConfig>,
-}
-
-#[derive(Clone, Debug)]
-pub struct MeterData {
-    /// The amount of ink left
-    pub ink_left: Global,
-    /// Whether the instance has run out of ink
-    pub ink_status: Global,
 }
 
 impl<E: EvmApi> WasmEnv<E> {
@@ -84,10 +78,45 @@ impl<E: EvmApi> WasmEnv<E> {
         HostioInfo { env, memory, store }
     }
 
+    pub fn meter(&mut self) -> &mut MeterData {
+        self.meter.as_mut().expect("not metered")
+    }
+
     pub fn say<D: Display>(&self, text: D) {
         println!("{} {text}", "Stylus says:".yellow());
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct MeterData {
+    /// The amount of ink left
+    pub ink_left: NonNull<VMGlobalDefinition>,
+    /// Whether the instance has run out of ink
+    pub ink_status: NonNull<VMGlobalDefinition>,
+}
+
+impl MeterData {
+    pub fn ink(&self) -> u64 {
+        unsafe { self.ink_left.as_ref().val.u64 }
+    }
+
+    pub fn status(&self) -> u32 {
+        unsafe { self.ink_status.as_ref().val.u32 }
+    }
+
+    pub fn set_ink(&mut self, ink: u64) {
+        unsafe { self.ink_left.as_mut().val = RawValue { u64: ink } }
+    }
+
+    pub fn set_status(&mut self, status: u32) {
+        unsafe { self.ink_status.as_mut().val = RawValue { u32: status } }
+    }
+}
+
+/// The data we're pointing to is owned by the `NativeInstance`.
+/// These are simple integers whose lifetime is that of the instance.
+/// Stylus is also single-threaded.
+unsafe impl Send for MeterData {}
 
 pub struct HostioInfo<'a, E: EvmApi> {
     pub env: &'a mut WasmEnv<E>,
@@ -163,26 +192,17 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
 
 impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
     fn ink_left(&mut self) -> MachineMeter {
-        let store = &mut self.store;
-        let meter = self.env.meter.as_ref().unwrap();
-        let status = meter.ink_status.get(store);
-        let status = status.try_into().expect("type mismatch");
-        let ink = meter.ink_left.get(store);
-        let ink = ink.try_into().expect("type mismatch");
-
-        match status {
-            0_u32 => MachineMeter::Ready(ink),
+        let vm = self.env.meter();
+        match vm.status() {
+            0_u32 => MachineMeter::Ready(vm.ink()),
             _ => MachineMeter::Exhausted,
         }
     }
 
-    fn set_meter(&mut self, value: MachineMeter) {
-        let store = &mut self.store;
-        let meter = self.env.meter.as_ref().unwrap();
-        let ink = value.ink();
-        let status = value.status();
-        meter.ink_left.set(store, ink.into()).unwrap();
-        meter.ink_status.set(store, status.into()).unwrap();
+    fn set_meter(&mut self, meter: MachineMeter) {
+        let vm = self.env.meter();
+        vm.set_ink(meter.ink());
+        vm.set_status(meter.status());
     }
 }
 

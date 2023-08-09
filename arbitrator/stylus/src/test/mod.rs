@@ -18,6 +18,9 @@ mod misc;
 mod native;
 mod wavm;
 
+#[cfg(feature = "timings")]
+mod timings;
+
 type TestInstance = NativeInstance<TestEvmApi>;
 
 impl TestInstance {
@@ -29,6 +32,7 @@ impl TestInstance {
             },
         };
         let mut native = Self::new_from_store(path, store, imports)?;
+        native.set_meter_data();
         native.set_ink(u64::MAX);
         native.set_stack(u32::MAX);
         Ok(native)
@@ -60,8 +64,12 @@ impl TestInstance {
         Self::new(instance, store, env)
     }
 
-    fn new_linked(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
-        Self::new_with_evm(path, compile, config).map(|x| x.0)
+    fn new_linked(
+        path: impl AsRef<str>,
+        compile: &CompileConfig,
+        config: StylusConfig,
+    ) -> Result<Self> {
+        Self::new_with_evm(path.as_ref(), compile, config).map(|x| x.0)
     }
 
     fn new_with_evm(

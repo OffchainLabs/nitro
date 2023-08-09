@@ -60,6 +60,9 @@ const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
 
+const initialInkPrice = 1000
+const initialHostioInk = 5294
+
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
@@ -69,9 +72,9 @@ func Initialize(sto *storage.Storage) {
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
-	_ = inkPrice.Set(1)
+	_ = inkPrice.Set(initialInkPrice)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
-	_ = wasmHostioInk.Set(0)
+	_ = wasmHostioInk.Set(initialHostioInk)
 	_ = freePages.Set(initialFreePages)
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)

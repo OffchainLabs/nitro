@@ -43,6 +43,7 @@ pub enum EvmApiMethod {
     AccountBalance,
     AccountCodeHash,
     AddPages,
+    NullApi,
 }
 
 pub trait EvmApi: Send + 'static {

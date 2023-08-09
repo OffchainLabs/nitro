@@ -163,7 +163,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/prover/Cargo.toml
+          args: -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
 
       - name: Rustfmt
         uses: actions-rs/cargo@v1

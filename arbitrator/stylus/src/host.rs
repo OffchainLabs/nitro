@@ -378,3 +378,5 @@ pub(crate) fn console_tee<E: EvmApi, T: Into<Value> + Copy>(
     env.say(value.into());
     Ok(value)
 }
+
+pub(crate) fn null_host<E: EvmApi>(_: WasmEnvMut<E>) {}
