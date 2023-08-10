@@ -66,7 +66,7 @@ type BatchPoster struct {
 	seqInboxAddr common.Address
 	building     *buildingBatch
 	daWriter     das.DataAvailabilityServiceWriter
-	dataPoster   *dataposter.DataPoster[batchPosterPosition]
+	dataPoster   *dataposter.DataPoster
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 	backlog      uint64    // An estimate of the number of unposted batches
@@ -326,10 +326,10 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	}
 }
 
-func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
 	if err != nil {
-		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
+		return nil, fmt.Errorf("error getting latest batch count: %w", err)
 	}
 	inboxBatchCount := bigInboxBatchCount.Uint64()
 	var prevBatchMeta BatchMetadata
@@ -337,14 +337,14 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 		var err error
 		prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
 		if err != nil {
-			return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
+			return nil, fmt.Errorf("error getting latest batch metadata: %w", err)
 		}
 	}
-	return batchPosterPosition{
+	return rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        prevBatchMeta.MessageCount,
 		DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
 		NextSeqNum:          inboxBatchCount,
-	}, nil
+	})
 }
 
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
@@ -677,9 +677,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
-	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	nonce, batchPositionBytes, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
+	}
+	var batchPosition batchPosterPosition
+	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
+		return false, fmt.Errorf("decoding batch position: %w", err)
 	}
 
 	dbBatchCount, err := b.inbox.GetBatchCount()
@@ -859,10 +863,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	newMeta := batchPosterPosition{
+	newMeta, err := rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        b.building.msgCount,
 		DelayedMessageCount: b.building.segments.delayedMsg,
 		NextSeqNum:          batchPosition.NextSeqNum + 1,
+	})
+	if err != nil {
+		return false, err
 	}
 	err = b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
