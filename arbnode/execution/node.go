@@ -77,14 +77,14 @@ func CreateExecutionNode(
 	}
 
 	return &ExecutionNode{
-		chainDB,
-		backend,
-		filterSystem,
-		arbInterface,
-		execEngine,
-		recorder,
-		sequencer,
-		txPublisher,
+		ChainDB:      chainDB,
+		Backend:      backend,
+		FilterSystem: filterSystem,
+		ArbInterface: arbInterface,
+		ExecEngine:   execEngine,
+		Recorder:     recorder,
+		Sequencer:    sequencer,
+		TxPublisher:  txPublisher,
 	}, nil
 
 }
