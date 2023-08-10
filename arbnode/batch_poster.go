@@ -684,7 +684,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 	var batchPosition batchPosterPosition
 	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
-		return false, err
+		return false, fmt.Errorf("decoding batch position: %w", err)
 	}
 
 	dbBatchCount, err := b.inbox.GetBatchCount()
