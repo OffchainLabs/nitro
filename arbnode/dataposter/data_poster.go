@@ -601,7 +601,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
-	MaxTipCapGwei:          0.1,
+	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }
 
@@ -613,6 +613,6 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
-	MaxTipCapGwei:          0.1,
+	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }
