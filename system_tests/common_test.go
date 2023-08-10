@@ -439,6 +439,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+	fmt.Println("Parsing first init message")
 	bridge, err := arbnode.NewDelayedBridge(l1client, addresses.Bridge, addresses.DeployedAt)
 	Require(t, err)
 	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)

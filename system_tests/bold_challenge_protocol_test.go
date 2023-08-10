@@ -3,6 +3,7 @@ package arbtest
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
@@ -294,6 +295,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	if chainConfig == nil {
 		chainConfig = params.ArbitrumDevTestChainConfig()
 	}
+	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	fatalErrChan := make(chan error, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
@@ -406,6 +408,9 @@ func deployContractsOnly(
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
 	)
+	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
+	Require(t, err)
+	cfg.ChainConfig = string(config)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
 		backend,
@@ -552,6 +557,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
+	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
@@ -583,7 +589,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
 	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
