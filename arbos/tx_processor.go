@@ -110,11 +110,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	evm := p.evm
 
 	startTracer := func() func() {
-		if !evm.Config.Debug {
+		tracer := evm.Config.Tracer
+		if tracer == nil {
 			return func() {}
 		}
 		evm.IncrementDepth() // fake a call
-		tracer := evm.Config.Tracer
 		from := p.msg.From
 		tracer.CaptureStart(evm, from, *p.msg.To, false, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 
@@ -336,7 +336,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			glog.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
-		if evm.Config.Debug {
+		if tracer := evm.Config.Tracer; tracer != nil {
 			redeem, err := util.PackArbRetryableTxRedeem(ticketId)
 			if err == nil {
 				tracingInfo.MockCall(redeem, usergas, from, types.ArbRetryableTxAddress, common.Big0)

@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -167,16 +168,30 @@ func mainImpl() int {
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
 
+	pathResolver := func(workdir string) func(string) string {
+		if workdir == "" {
+			workdir, err = os.Getwd()
+			if err != nil {
+				log.Warn("Failed to get workdir", "err", err)
+			}
+		}
+		return func(path string) string {
+			if filepath.IsAbs(path) {
+				return path
+			}
+			return filepath.Join(workdir, path)
+		}
+	}
+
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := stackConf.ResolvePath("jwtsecret")
+		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
 		}
 		stackConf.JWTSecret = filename
 	}
-
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -353,6 +368,11 @@ func mainImpl() int {
 
 	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
 
+	var sameProcessValidationNodeEnabled bool
+	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
+		sameProcessValidationNodeEnabled = true
+		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+	}
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -412,7 +432,7 @@ func mainImpl() int {
 	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
-	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
+	if sameProcessValidationNodeEnabled {
 		valNode, err = valnode.CreateValidationNode(
 			func() *valnode.Config { return &liveNodeConfig.Get().Validation },
 			stack,
@@ -443,7 +463,7 @@ func mainImpl() int {
 		return 1
 	}
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, stackConf.ResolvePath); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
