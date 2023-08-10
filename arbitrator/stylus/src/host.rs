@@ -199,7 +199,7 @@ pub(crate) fn emit_log<E: EvmApi>(
     len: u32,
     topics: u32,
 ) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env, PTR_INK + EVM_API_INK)?;
+    let mut env = WasmEnv::start(&mut env, EVM_API_INK)?;
     if topics > 4 || len < topics * 32 {
         return Escape::logical("bad topic data");
     }
