@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -187,10 +188,15 @@ func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot
 	if toBigStep == 0 {
 		return commitments.New(stateRoots)
 	}
+	fmt.Printf("Requesting intermediates message %d and to big step %d\n", messageNumber, toBigStep)
+	start := time.Now()
+	// TODO: The problem here is that on cache hit, we will already have the first state, and therefore have
+	// duplicate first states. We should move this logic to inside the intermediate big step leaves function itself.
 	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return commitments.History{}, err
 	}
+	fmt.Printf("In big step commit, took %v to get intermediate leaves\n", time.Since(start).Seconds())
 	stateRoots = append(stateRoots, result...)
 	commit, err := commitments.New(stateRoots)
 	if err != nil {
@@ -286,10 +292,13 @@ func (s *StateManager) BigStepPrefixProof(
 	stateRoots := []common.Hash{
 		machineHash,
 	}
+	fmt.Printf("In big step prefix intermediates message %d and to big step %d\n", messageNumber, toBigStep)
+	start := time.Now()
 	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Took %v to get big step leaves\n", time.Since(start))
 	stateRoots = append(stateRoots, prefixLeaves...)
 	loSize := fromBigStep + 1
 	hiSize := toBigStep + 1
@@ -454,10 +463,15 @@ func (s *StateManager) AgreesWithHistoryCommitment(
 			return false, err
 		}
 	case protocol.BigStepChallengeEdge:
+		checkHeight := heights.BlockChallengeOriginHeight
+		if checkHeight == 0 {
+			checkHeight++
+		}
+
 		localCommit, err = s.BigStepCommitmentUpTo(
 			ctx,
 			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
+			uint64(checkHeight),
 			history.Height,
 		)
 		if err != nil {
@@ -500,6 +514,7 @@ func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []com
 }
 
 func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) ([]common.Hash, error) {
+	fmt.Println("Requesting cache for block and to big step", blockHeight, toBigStep)
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: wasmModuleRoot,
 		MessageHeight:  protocol.Height(blockHeight),
