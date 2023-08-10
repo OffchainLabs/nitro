@@ -240,7 +240,6 @@ pub unsafe extern "C" fn user_host__block_basefee(ptr: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__chainid(ptr: usize) {
     let program = Program::start(PTR_INK);
-    program.buy_gas(evm::CHAINID_GAS).unwrap();
     wavm::write_bytes32(ptr, program.evm_data.chainid)
 }
 
@@ -275,6 +274,12 @@ pub unsafe extern "C" fn user_host__contract_address(ptr: usize) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 {
+    let program = Program::start(0);
+    program.evm_data.reentrant
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__msg_sender(ptr: usize) {
     let program = Program::start(PTR_INK);
     wavm::write_bytes20(ptr, program.evm_data.msg_sender)
@@ -283,7 +288,6 @@ pub unsafe extern "C" fn user_host__msg_sender(ptr: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__msg_value(ptr: usize) {
     let program = Program::start(PTR_INK);
-    program.buy_gas(evm::CALLVALUE_GAS).unwrap();
     wavm::write_bytes32(ptr, program.evm_data.msg_value)
 }
 
@@ -300,7 +304,6 @@ pub unsafe extern "C" fn user_host__native_keccak256(bytes: usize, len: usize, o
 #[no_mangle]
 pub unsafe extern "C" fn user_host__tx_gas_price(ptr: usize) {
     let program = Program::start(PTR_INK);
-    program.buy_gas(evm::GASPRICE_GAS).unwrap();
     wavm::write_bytes32(ptr, program.evm_data.tx_gas_price)
 }
 

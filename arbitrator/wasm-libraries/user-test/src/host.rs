@@ -85,3 +85,9 @@ pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: usize, len: usize, ou
     let digest = crypto::keccak(preimage);
     wavm::write_slice_usize(&digest, output);
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__msg_reentrant() -> u32 {
+    let _ = Program::start(0);
+    0
+}

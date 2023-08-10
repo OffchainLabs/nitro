@@ -41,8 +41,9 @@ type TxProcessor struct {
 	posterGas        uint64
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
-	Callers          []common.Address
-	TopTxType        *byte // set once in StartTxHook
+	Contracts        []*vm.Contract
+	Programs         map[common.Address]uint // # of distinct context spans for each program
+	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
@@ -62,7 +63,8 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		PosterFee:           new(big.Int),
 		posterGas:           0,
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
-		Callers:             []common.Address{},
+		Contracts:           []*vm.Contract{},
+		Programs:            make(map[common.Address]uint),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -72,12 +74,22 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 	}
 }
 
-func (p *TxProcessor) PushCaller(addr common.Address) {
-	p.Callers = append(p.Callers, addr)
+func (p *TxProcessor) PushContract(contract *vm.Contract) {
+	p.Contracts = append(p.Contracts, contract)
+
+	if !contract.IsDelegateOrCallcode() {
+		p.Programs[contract.Address()]++
+	}
 }
 
-func (p *TxProcessor) PopCaller() {
-	p.Callers = p.Callers[:len(p.Callers)-1]
+func (p *TxProcessor) PopContract() {
+	newLen := len(p.Contracts) - 1
+	popped := p.Contracts[newLen]
+	p.Contracts = p.Contracts[:newLen]
+
+	if !popped.IsDelegateOrCallcode() {
+		p.Programs[popped.Address()]--
+	}
 }
 
 // Attempts to subtract up to `take` from `pool` without going negative.
@@ -97,13 +109,16 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 
 func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
 	contract := scope.Contract
-	program := contract.Address()
+	acting := contract.Address()
 
 	var tracingInfo *util.TracingInfo
 	if interpreter.Config().Debug {
 		caller := contract.CallerAddress
-		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, program, util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
 	}
+
+	// reentrant if more than one open same-actor context span exists
+	reentrant := p.Programs[acting] > 1
 
 	return p.state.Programs().CallProgram(
 		scope,
@@ -111,6 +126,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		interpreter,
 		tracingInfo,
 		input,
+		reentrant,
 	)
 }
 

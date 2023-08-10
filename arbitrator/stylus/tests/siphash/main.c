@@ -26,4 +26,4 @@ ArbResult user_main(const uint8_t * args, size_t args_len) {
     };
 }
 
-ARBITRUM_MAIN(user_main);
+ENTRYPOINT(user_main);

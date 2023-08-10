@@ -329,6 +329,7 @@ func (data *evmData) encode() C.EvmData {
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
+		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
 	}
 }

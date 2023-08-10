@@ -5,7 +5,7 @@
     (import "vm_hooks" "read_args"    (func $read_args    (param i32)))
     (import "vm_hooks" "write_result" (func $write_result (param i32 i32)))
     (memory (export "memory") 1 1)
-    (func $main (export "arbitrum_main") (param $args_len i32) (result i32)
+    (func $main (export "user_entrypoint") (param $args_len i32) (result i32)
         (local $i i32)
 
         ;; write args to 0x0

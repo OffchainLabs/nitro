@@ -25,6 +25,7 @@
     (func (export "vm_hooks__block_number")           (param i32) unreachable)
     (func (export "vm_hooks__block_timestamp")        (result i64) unreachable)
     (func (export "vm_hooks__contract_address")       (param i32) unreachable)
+    (func (export "vm_hooks__msg_reentrant")          (result i32) unreachable)
     (func (export "vm_hooks__msg_sender")             (param i32) unreachable)
     (func (export "vm_hooks__msg_value")              (param i32) unreachable)
     (func (export "vm_hooks__native_keccak256")       (param i32 i32 i32) unreachable)
