@@ -113,7 +113,7 @@ func errorTest(t *testing.T, jit bool) {
 		Fatal(t, "call should have failed")
 	}
 
-	validateBlocks(t, 7, jit, ctx, node, l2client)
+	validateBlocks(t, 6, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -330,7 +330,7 @@ func testCalls(t *testing.T, jit bool) {
 		Fatal(t, balance, value)
 	}
 
-	blocks := []uint64{11}
+	blocks := []uint64{10}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
@@ -381,7 +381,7 @@ func testReturnData(t *testing.T, jit bool) {
 	testReadReturnData(2, 0, 0, 0, 1)
 	testReadReturnData(2, 0, 4, 4, 1)
 
-	validateBlocks(t, 12, jit, ctx, node, l2client)
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramLogs(t *testing.T) {
@@ -446,7 +446,7 @@ func testLogs(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 11, jit, ctx, node, l2client)
+	validateBlocks(t, 10, jit, ctx, node, l2client)
 }
 
 func TestProgramCreate(t *testing.T) {
