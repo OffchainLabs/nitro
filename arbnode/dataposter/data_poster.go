@@ -147,7 +147,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
-		if nextNonce-unconfirmedNonce > cfg.MaxMempoolTransactions {
+		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("posting a transaction with nonce: %d will exceed max mempool size: %d, unconfirmed nonce: %d", nextNonce, cfg.MaxMempoolTransactions, unconfirmedNonce)
 		}
 	}

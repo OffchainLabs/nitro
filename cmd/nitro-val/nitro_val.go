@@ -109,6 +109,9 @@ func mainImpl() int {
 
 		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
+
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
