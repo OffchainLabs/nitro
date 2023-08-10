@@ -1,6 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::{Bytes20, Bytes32};
+
 extern "C" {
     fn wavm_caller_load8(ptr: usize) -> u8;
     fn wavm_caller_load32(ptr: usize) -> u32;
@@ -88,12 +90,20 @@ pub unsafe fn read_slice_usize(mut ptr: usize, mut len: usize) -> Vec<u8> {
     data
 }
 
-pub unsafe fn read_bytes20(ptr: usize) -> [u8; 20] {
+pub unsafe fn read_bytes20(ptr: usize) -> Bytes20 {
     let data = read_slice_usize(ptr, 20);
     data.try_into().unwrap()
 }
 
-pub unsafe fn read_bytes32(ptr: usize) -> [u8; 32] {
+pub unsafe fn read_bytes32(ptr: usize) -> Bytes32 {
     let data = read_slice_usize(ptr, 32);
     data.try_into().unwrap()
+}
+
+pub unsafe fn write_bytes20(ptr: usize, value: Bytes20) {
+    write_slice_usize(&value.0, ptr)
+}
+
+pub unsafe fn write_bytes32(ptr: usize, value: Bytes32) {
+    write_slice_usize(&value.0, ptr)
 }

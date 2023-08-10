@@ -11,10 +11,10 @@ import (
 
 type MemoryModel struct {
 	freePages uint16 // number of pages the tx gets for free
-	pageGas   uint32 // base gas to charge per wasm page
+	pageGas   uint16 // base gas to charge per wasm page
 }
 
-func NewMemoryModel(freePages uint16, pageGas uint32) *MemoryModel {
+func NewMemoryModel(freePages uint16, pageGas uint16) *MemoryModel {
 	return &MemoryModel{
 		freePages: freePages,
 		pageGas:   pageGas,

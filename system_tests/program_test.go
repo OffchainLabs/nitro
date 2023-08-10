@@ -113,7 +113,7 @@ func errorTest(t *testing.T, jit bool) {
 		Fatal(t, "call should have failed")
 	}
 
-	validateBlocks(t, 7, jit, ctx, node, l2client)
+	validateBlocks(t, 6, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -330,7 +330,7 @@ func testCalls(t *testing.T, jit bool) {
 		Fatal(t, balance, value)
 	}
 
-	blocks := []uint64{11}
+	blocks := []uint64{10}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
@@ -381,7 +381,7 @@ func testReturnData(t *testing.T, jit bool) {
 	testReadReturnData(2, 0, 0, 0, 1)
 	testReadReturnData(2, 0, 4, 4, 1)
 
-	validateBlocks(t, 12, jit, ctx, node, l2client)
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramLogs(t *testing.T) {
@@ -446,7 +446,7 @@ func testLogs(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 11, jit, ctx, node, l2client)
+	validateBlocks(t, 10, jit, ctx, node, l2client)
 }
 
 func TestProgramCreate(t *testing.T) {
@@ -582,19 +582,23 @@ func testEvmData(t *testing.T, jit bool) {
 		result = result[count:]
 		return data
 	}
+	getU32 := func(name string) uint32 {
+		t.Helper()
+		return binary.BigEndian.Uint32(advance(4, name))
+	}
 	getU64 := func(name string) uint64 {
 		t.Helper()
 		return binary.BigEndian.Uint64(advance(8, name))
 	}
 
-	inkPrice := getU64("ink price")
+	inkPrice := uint64(getU32("ink price"))
 	gasLeftBefore := getU64("gas left before")
 	inkLeftBefore := getU64("ink left before")
 	gasLeftAfter := getU64("gas left after")
 	inkLeftAfter := getU64("ink left after")
 
 	gasUsed := gasLeftBefore - gasLeftAfter
-	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
+	calculatedGasUsed := (inkLeftBefore - inkLeftAfter) / inkPrice
 
 	// Should be within 1 gas
 	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
@@ -648,7 +652,6 @@ func testMemory(t *testing.T, jit bool) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
-	ensure(arbOwner.SetWasmHostioInk(&auth, 0))
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
@@ -751,16 +754,12 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 		return receipt
 	}
 
-	// Set random pricing params. Note that the ink price is measured in bips,
-	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
-	// We choose a range on both sides of this value.
-	inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
-	wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
-	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
+	// Set random pricing params
+	inkPrice := testhelpers.RandomUint32(1, 20000) // evm to ink
+	colors.PrintMint(fmt.Sprintf("ink price=%d", inkPrice))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
 
 	programAddress := deployWasm(t, ctx, auth, l2client, file)
 	return ctx, node, l2info, l2client, auth, programAddress, cleanup

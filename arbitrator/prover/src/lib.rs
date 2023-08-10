@@ -200,7 +200,7 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
     wasm: *const u8,
     wasm_len: u32,
-    version: u32,
+    version: u16,
     debug: u32,
     root: *const Bytes32,
 ) -> *mut libc::c_char {

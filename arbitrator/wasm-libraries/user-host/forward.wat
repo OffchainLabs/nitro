@@ -33,7 +33,7 @@
     (import "user_host" "arbitrator_forward__msg_value"        (func $msg_value        (param i32)))
     (import "user_host" "arbitrator_forward__native_keccak256" (func $native_keccak256 (param i32 i32 i32)))
     (import "user_host" "arbitrator_forward__tx_gas_price"     (func $tx_gas_price     (param i32)))
-    (import "user_host" "arbitrator_forward__tx_ink_price"     (func $tx_ink_price     (result i64)))
+    (import "user_host" "arbitrator_forward__tx_ink_price"     (func $tx_ink_price     (result i32)))
     (import "user_host" "arbitrator_forward__tx_origin"        (func $tx_origin        (param i32)))
     (import "user_host" "arbitrator_forward__memory_grow"      (func $memory_grow      (param i32)))
     (export "vm_hooks__read_args"              (func $read_args))

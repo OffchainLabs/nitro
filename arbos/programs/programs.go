@@ -21,29 +21,29 @@ import (
 type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
-	inkPrice       storage.StorageBackedUBips
+	inkPrice       storage.StorageBackedUint24
 	wasmMaxDepth   storage.StorageBackedUint32
-	wasmHostioInk  storage.StorageBackedUint64
 	freePages      storage.StorageBackedUint16
-	pageGas        storage.StorageBackedUint32
+	pageGas        storage.StorageBackedUint16
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
-	version        storage.StorageBackedUint32
+	version        storage.StorageBackedUint16
 }
 
 type Program struct {
 	footprint uint16
-	version   uint32
+	version   uint16
 	address   common.Address // not saved in state
 }
 
-var machineVersionsKey = []byte{0}
+type uint24 = arbmath.Uint24
+
+var programDataKey = []byte{0}
 
 const (
 	versionOffset uint64 = iota
 	inkPriceOffset
 	wasmMaxDepthOffset
-	wasmHostioInkOffset
 	freePagesOffset
 	pageGasOffset
 	pageRampOffset
@@ -51,7 +51,7 @@ const (
 )
 
 var ProgramNotCompiledError func() error
-var ProgramOutOfDateError func(version uint32) error
+var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
 
 const MaxWasmSize = 64 * 1024
@@ -59,19 +59,18 @@ const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
+const initialInkPrice = 10000     // 1 evm gas buys 10k ink
 
 func Initialize(sto *storage.Storage) {
-	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
+	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
-	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
 	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
-	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
+	pageGas := sto.OpenStorageBackedUint16(pageGasOffset)
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
-	version := sto.OpenStorageBackedUint64(versionOffset)
-	_ = inkPrice.Set(1)
+	version := sto.OpenStorageBackedUint16(versionOffset)
+	_ = inkPrice.Set(initialInkPrice)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
-	_ = wasmHostioInk.Set(0)
 	_ = freePages.Set(initialFreePages)
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
@@ -82,31 +81,31 @@ func Initialize(sto *storage.Storage) {
 func Open(sto *storage.Storage) *Programs {
 	return &Programs{
 		backingStorage: sto,
-		programs:       sto.OpenSubStorage(machineVersionsKey),
-		inkPrice:       sto.OpenStorageBackedUBips(inkPriceOffset),
+		programs:       sto.OpenSubStorage(programDataKey),
+		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
 		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
-		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
+		pageGas:        sto.OpenStorageBackedUint16(pageGasOffset),
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
-		version:        sto.OpenStorageBackedUint32(versionOffset),
+		version:        sto.OpenStorageBackedUint16(versionOffset),
 	}
 }
 
-func (p Programs) StylusVersion() (uint32, error) {
+func (p Programs) StylusVersion() (uint16, error) {
 	return p.version.Get()
 }
 
-func (p Programs) InkPrice() (arbmath.UBips, error) {
+func (p Programs) InkPrice() (uint24, error) {
 	return p.inkPrice.Get()
 }
 
-func (p Programs) SetInkPrice(price arbmath.UBips) error {
-	if price == 0 {
-		return errors.New("ink price must be nonzero")
+func (p Programs) SetInkPrice(value uint32) error {
+	ink, err := arbmath.IntToUint24(value)
+	if err != nil || ink == 0 {
+		return errors.New("ink price must be a positive uint24")
 	}
-	return p.inkPrice.Set(price)
+	return p.inkPrice.Set(ink)
 }
 
 func (p Programs) WasmMaxDepth() (uint32, error) {
@@ -117,14 +116,6 @@ func (p Programs) SetWasmMaxDepth(depth uint32) error {
 	return p.wasmMaxDepth.Set(depth)
 }
 
-func (p Programs) WasmHostioInk() (uint64, error) {
-	return p.wasmHostioInk.Get()
-}
-
-func (p Programs) SetWasmHostioInk(ink uint64) error {
-	return p.wasmHostioInk.Set(ink)
-}
-
 func (p Programs) FreePages() (uint16, error) {
 	return p.freePages.Get()
 }
@@ -133,11 +124,11 @@ func (p Programs) SetFreePages(pages uint16) error {
 	return p.freePages.Set(pages)
 }
 
-func (p Programs) PageGas() (uint32, error) {
+func (p Programs) PageGas() (uint16, error) {
 	return p.pageGas.Get()
 }
 
-func (p Programs) SetPageGas(gas uint32) error {
+func (p Programs) SetPageGas(gas uint16) error {
 	return p.pageGas.Set(gas)
 }
 
@@ -157,11 +148,7 @@ func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
 }
 
-func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
-	return p.programs.GetUint32(program.Hash())
-}
-
-func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, bool, error) {
+func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 
 	version, err := p.StylusVersion()
@@ -286,35 +273,43 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
-func (p Program) serialize() common.Hash {
-	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(p.footprint))
-	copy(data[28:], arbmath.Uint32ToBytes(p.version))
-	return data
-}
-
 func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 	address := contract.Address()
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
+	return p.deserializeProgram(address)
+}
+
+func (p Programs) deserializeProgram(address common.Address) (Program, error) {
 	data, err := p.programs.Get(address.Hash())
 	return Program{
-		footprint: arbmath.BytesToUint16(data[26:28]),
-		version:   arbmath.BytesToUint32(data[28:]),
+		footprint: arbmath.BytesToUint16(data[28:30]),
+		version:   arbmath.BytesToUint16(data[30:]),
 		address:   address,
 	}, err
 }
 
+func (p Program) serialize() common.Hash {
+	data := common.Hash{}
+	copy(data[28:], arbmath.Uint16ToBytes(p.footprint))
+	copy(data[30:], arbmath.Uint16ToBytes(p.version))
+	return data
+}
+
+func (p Programs) ProgramVersion(address common.Address) (uint16, error) {
+	program, err := p.deserializeProgram(address)
+	return program.version, err
+}
+
 type goParams struct {
-	version   uint32
+	version   uint16
 	maxDepth  uint32
-	inkPrice  uint64
-	hostioInk uint64
+	inkPrice  uint24
 	debugMode uint32
 }
 
-func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
+func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
@@ -323,16 +318,11 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	hostioInk, err := p.WasmHostioInk()
-	if err != nil {
-		return nil, err
-	}
 
 	config := &goParams{
-		version:   version,
-		maxDepth:  maxDepth,
-		inkPrice:  inkPrice.Uint64(),
-		hostioInk: hostioInk,
+		version:  version,
+		maxDepth: maxDepth,
+		inkPrice: inkPrice,
 	}
 	if debug {
 		config.debugMode = 1

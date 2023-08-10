@@ -94,6 +94,11 @@ impl GoStack {
         self
     }
 
+    pub fn skip_u16(&mut self) -> &mut Self {
+        self.advance(2);
+        self
+    }
+    
     pub fn skip_u32(&mut self) -> &mut Self {
         self.advance(4);
         self

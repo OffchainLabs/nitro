@@ -161,23 +161,32 @@ impl<E: EvmApi> NativeInstance<E> {
             imports.define("console", "tee_i64", func!(host::console_tee::<E, u64>));
             imports.define("console", "tee_f32", func!(host::console_tee::<E, f32>));
             imports.define("console", "tee_f64", func!(host::console_tee::<E, f64>));
+            imports.define("debug", "null_host", func!(host::null_host));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
         let memory = exports.get_memory("memory")?.clone();
 
-        let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
-        let ink_left = expect_global(STYLUS_INK_LEFT);
-        let ink_status = expect_global(STYLUS_INK_STATUS);
-
         let env = func_env.as_mut(&mut store);
         env.memory = Some(memory);
-        env.meter = Some(MeterData {
+
+        let mut native = Self::new(instance, store, func_env);
+        native.set_meter_data();
+        Ok(native)
+    }
+
+    pub fn set_meter_data(&mut self) {
+        let store = &mut self.store;
+        let exports = &self.instance.exports;
+
+        let expect_global = |name| -> Global { exports.get_global(name).unwrap().clone() };
+        let ink_left = unsafe { expect_global(STYLUS_INK_LEFT).vmglobal(store) };
+        let ink_status = unsafe { expect_global(STYLUS_INK_STATUS).vmglobal(store) };
+
+        self.env_mut().meter = Some(MeterData {
             ink_left,
             ink_status,
         });
-
-        Ok(Self::new(instance, store, func_env))
     }
 
     pub fn get_global<T>(&mut self, name: &str) -> Result<T>
@@ -231,18 +240,17 @@ impl<E: EvmApi> DerefMut for NativeInstance<E> {
 
 impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
     fn ink_left(&mut self) -> MachineMeter {
-        let status = self.get_global(STYLUS_INK_STATUS).unwrap();
-        let mut ink = || self.get_global(STYLUS_INK_LEFT).unwrap();
-
-        match status {
-            0 => MachineMeter::Ready(ink()),
+        let vm = self.env_mut().meter();
+        match vm.status() {
+            0 => MachineMeter::Ready(vm.ink()),
             _ => MachineMeter::Exhausted,
         }
     }
 
     fn set_meter(&mut self, meter: MachineMeter) {
-        self.set_global(STYLUS_INK_LEFT, meter.ink()).unwrap();
-        self.set_global(STYLUS_INK_STATUS, meter.status()).unwrap();
+        let vm = self.env_mut().meter();
+        vm.set_ink(meter.ink());
+        vm.set_status(meter.status());
     }
 }
 
@@ -338,7 +346,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "msg_sender" => stub!(|_: u32|),
             "msg_value" => stub!(|_: u32|),
             "tx_gas_price" => stub!(|_: u32|),
-            "tx_ink_price" => stub!(u64 <- ||),
+            "tx_ink_price" => stub!(u32 <- ||),
             "tx_origin" => stub!(|_: u32|),
             "memory_grow" => stub!(|_: u16|),
             "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
@@ -354,6 +362,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         imports.define("console", "tee_i64", stub!(u64 <- |_: u64|));
         imports.define("console", "tee_f32", stub!(f32 <- |_: f32|));
         imports.define("console", "tee_f64", stub!(f64 <- |_: f64|));
+        imports.define("debug", "null_host", stub!(||));
     }
     Instance::new(&mut store, &module, &imports)?;
 

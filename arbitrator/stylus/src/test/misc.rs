@@ -23,6 +23,8 @@ fn test_bulk_memory() -> Result<()> {
     };
 
     let mut native = NativeInstance::new_from_store(filename, store, imports)?;
+    native.set_meter_data();
+
     let starter = native.get_start()?;
     native.set_stack(config.max_depth);
     native.set_ink(ink);
