@@ -286,6 +286,12 @@ pub unsafe extern "C" fn user_host__contract_address(ptr: usize) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 {
+    let program = Program::start();
+    program.evm_data.reentrant
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__msg_sender(ptr: usize) {
     let program = Program::start();
     program.buy_gas(evm::CALLER_GAS).unwrap();

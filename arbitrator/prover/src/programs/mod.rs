@@ -36,7 +36,7 @@ pub mod meter;
 pub mod prelude;
 pub mod start;
 
-pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";
+pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;

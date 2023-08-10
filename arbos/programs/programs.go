@@ -211,6 +211,7 @@ func (p Programs) CallProgram(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
+	reentrant bool,
 ) ([]byte, error) {
 
 	// ensure the program is runnable
@@ -267,6 +268,7 @@ func (p Programs) CallProgram(
 		msgValue:        common.BigToHash(contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
+		reentrant:       arbmath.BoolToUint32(reentrant),
 	}
 
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
@@ -350,6 +352,7 @@ type evmData struct {
 	msgValue        common.Hash
 	txGasPrice      common.Hash
 	txOrigin        common.Address
+	reentrant       uint32
 }
 
 type userStatus uint8
