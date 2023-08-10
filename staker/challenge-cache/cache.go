@@ -87,8 +87,10 @@ func (c *Cache) Get(
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
+		fmt.Printf("CACHE _miss_ FOR %+v\n", lookup)
 		return nil, ErrNotFoundInCache
 	}
+	fmt.Printf("CACHE **HIT** FOR %+v\n", lookup)
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err

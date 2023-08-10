@@ -166,11 +166,37 @@ func (s *StateManager) HistoryCommitmentAtBatch(ctx context.Context, batchNumber
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
 // challenge heights blockHeight and blockHeight+1.
 func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, toBigStep uint64) (commitments.History, error) {
+	res, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return commitments.History{}, err
+	}
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return commitments.History{}, err
+	}
+	state := validator.GoGlobalState{
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+		Batch:      batch,
+		PosInBatch: 0,
+	}
+	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
+	stateRoots := []common.Hash{
+		machineHash,
+	}
+	if toBigStep == 0 {
+		return commitments.New(stateRoots)
+	}
 	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return commitments.History{}, err
 	}
-	return commitments.New(result)
+	stateRoots = append(stateRoots, result...)
+	commit, err := commitments.New(stateRoots)
+	if err != nil {
+		return commitments.History{}, err
+	}
+	return commit, nil
 }
 
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
@@ -242,13 +268,32 @@ func (s *StateManager) BigStepPrefixProof(
 	fromBigStep uint64,
 	toBigStep uint64,
 ) ([]byte, error) {
+	res, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return nil, err
+	}
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return nil, err
+	}
+	state := validator.GoGlobalState{
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+		Batch:      batch,
+		PosInBatch: 0,
+	}
+	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
+	stateRoots := []common.Hash{
+		machineHash,
+	}
 	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return nil, err
 	}
+	stateRoots = append(stateRoots, prefixLeaves...)
 	loSize := fromBigStep + 1
 	hiSize := toBigStep + 1
-	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
+	return s.getPrefixProof(loSize, hiSize, stateRoots)
 }
 
 // SmallStepPrefixProof Produces a small step prefix proof from height A to B for big step S to S+1 and

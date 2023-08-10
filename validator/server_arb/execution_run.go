@@ -66,7 +66,7 @@ func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigSt
 		if !machine.IsRunning() {
 			return stateRoots, nil
 		}
-		for i := uint64(0); i <= toBigStep; i++ {
+		for i := uint64(1); i <= toBigStep; i++ {
 			position := i * numOpcodesPerBigStep
 			if err = machine.Step(ctx, position); err != nil {
 				return nil, err
