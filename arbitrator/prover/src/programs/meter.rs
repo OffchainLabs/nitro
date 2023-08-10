@@ -235,6 +235,26 @@ pub trait MeteredMachine {
         }
         Ok(())
     }
+
+    /// Pays for a write into the client.
+    fn pay_for_write(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+        self.buy_ink(sat_add_mul(18287, 31, bytes.saturating_sub(32)))
+    }
+
+    /// Pays for a read into the host.
+    fn pay_for_read(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+        self.buy_ink(sat_add_mul(40423, 61, bytes.saturating_sub(32)))
+    }
+
+    /// Pays for both I/O and keccak.
+    fn pay_for_keccak(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+        self.buy_ink(sat_add_mul(268527, 41920, evm::evm_words(bytes)))
+    }
+
+    /// Pays for copying bytes from geth.
+    fn pay_for_geth_bytes(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+        self.pay_for_read(bytes) // TODO: determine value
+    }
 }
 
 pub trait GasMeteredMachine: MeteredMachine {
@@ -259,21 +279,15 @@ pub trait GasMeteredMachine: MeteredMachine {
         self.require_ink(pricing.gas_to_ink(gas))
     }
 
-    fn pay_for_evm_copy(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
-        let gas = evm::evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
-        self.buy_gas(gas)
-    }
-
-    fn pay_for_evm_keccak(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
-        let gas = evm::evm_words(bytes).saturating_mul(evm::KECCAK_WORD_GAS);
-        self.buy_gas(gas.saturating_add(evm::KECCAK_256_GAS))
-    }
-
     fn pay_for_evm_log(&mut self, topics: u32, data_len: u32) -> Result<(), OutOfInkError> {
         let cost = (1 + topics as u64) * evm::LOG_TOPIC_GAS;
         let cost = cost.saturating_add(data_len as u64 * evm::LOG_DATA_GAS);
         self.buy_gas(cost)
     }
+}
+
+fn sat_add_mul(base: u64, per: u64, count: u64) -> u64 {
+    base.saturating_add(per.saturating_mul(count))
 }
 
 impl MeteredMachine for Machine {

@@ -20,13 +20,12 @@ use stylus::native;
 mod evm_api;
 
 /// Compiles and instruments user wasm.
-/// go side: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u32, err *Vec<u8>)
+/// go side: λ(wasm []byte, pageLimit, version, u16, debug u32) (machine *Machine, footprint u32, err *Vec<u8>)
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
-    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
     let page_limit = sp.read_u16();
-    sp.skip_space();
+    let compile = CompileConfig::version(sp.read_u16(), sp.read_u32() != 0);
 
     macro_rules! error {
         ($error:expr) => {{
@@ -110,20 +109,19 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
+/// go side: λ(version u16, maxDepth, inkPrice u32, debugMode: u32) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
 
     let config = StylusConfig {
-        version: sp.read_u32(),
-        max_depth: sp.read_u32(),
+        version: sp.read_u16(),
+        max_depth: sp.skip_u16().read_u32(),
         pricing: PricingParams {
-            ink_price: sp.read_u64(),
-            hostio_ink: sp.read_u64(),
+            ink_price: sp.read_u32(),
         },
     };
     let compile = CompileConfig::version(config.version, sp.read_u32() != 0);
-    sp.skip_space().write_ptr(heapify((compile, config)));
+    sp.write_ptr(heapify((compile, config)));
 }
 
 /// Creates an `EvmData` from its component parts.

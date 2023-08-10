@@ -117,7 +117,6 @@ fn test_compile_config() -> CompileConfig {
 fn uniform_cost_config() -> StylusConfig {
     let mut stylus_config = StylusConfig::default();
     stylus_config.pricing.ink_price = 10000;
-    stylus_config.pricing.hostio_ink = 100;
     stylus_config
 }
 

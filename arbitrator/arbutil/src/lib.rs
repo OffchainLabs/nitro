@@ -8,6 +8,7 @@ pub mod evm;
 pub mod format;
 pub mod math;
 pub mod operator;
+pub mod pricing;
 pub mod types;
 
 pub use color::{Color, DebugColor};

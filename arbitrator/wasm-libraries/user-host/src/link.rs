@@ -37,17 +37,16 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u16, err *Vec<u8>)
+/// Safety: λ(wasm []byte, pageLimit, version u16, debug u32) (machine *Machine, footprint u16, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
-    let version = sp.read_u32();
-    let debug = sp.read_u32() != 0;
     let page_limit = sp.read_u16();
-    sp.skip_space();
+    let version = sp.read_u16();
+    let debug = sp.read_u32() != 0;
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -113,11 +112,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();
     let root = (root != 0).then(|| wavm::read_bytes32(root));
-    let module = root.unwrap_or_else(|| machine.main_module_hash().0);
+    let module = root.unwrap_or_else(|| machine.main_module_hash());
     let (main, internals) = machine.program_info();
 
     // link the program and ready its instrumentation
-    let module = wavm_link_module(&MemoryLeaf(module));
+    let module = wavm_link_module(&MemoryLeaf(module.0));
     program_set_ink(module, internals, ink);
     program_set_stack(module, internals, config.max_depth);
 
@@ -191,14 +190,13 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 ) {
     let mut sp = GoStack::new(sp);
     let config = StylusConfig {
-        version: sp.read_u32(),
-        max_depth: sp.read_u32(),
+        version: sp.read_u16(),
+        max_depth: sp.skip_u16().read_u32(),
         pricing: PricingParams {
-            ink_price: sp.read_u64(),
-            hostio_ink: sp.read_u64(),
+            ink_price: sp.read_u32(),
         },
     };
-    sp.skip_space(); // skip debugMode
+    sp.skip_u32(); // skip debugMode
     sp.write_ptr(heapify(config));
 }
 
@@ -215,17 +213,17 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
     use wavm::{read_bytes20, read_bytes32};
     let mut sp = GoStack::new(sp);
     let evm_data = EvmData {
-        block_basefee: read_bytes32(sp.read_go_ptr()).into(),
-        chainid: read_bytes32(sp.read_go_ptr()).into(),
-        block_coinbase: read_bytes20(sp.read_go_ptr()).into(),
+        block_basefee: read_bytes32(sp.read_go_ptr()),
+        chainid: read_bytes32(sp.read_go_ptr()),
+        block_coinbase: read_bytes20(sp.read_go_ptr()),
         block_gas_limit: sp.read_u64(),
-        block_number: read_bytes32(sp.read_go_ptr()).into(),
+        block_number: read_bytes32(sp.read_go_ptr()),
         block_timestamp: sp.read_u64(),
-        contract_address: read_bytes20(sp.read_go_ptr()).into(),
-        msg_sender: read_bytes20(sp.read_go_ptr()).into(),
-        msg_value: read_bytes32(sp.read_go_ptr()).into(),
-        tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
-        tx_origin: read_bytes20(sp.read_go_ptr()).into(),
+        contract_address: read_bytes20(sp.read_go_ptr()),
+        msg_sender: read_bytes20(sp.read_go_ptr()),
+        msg_value: read_bytes32(sp.read_go_ptr()),
+        tx_gas_price: read_bytes32(sp.read_go_ptr()),
+        tx_origin: read_bytes20(sp.read_go_ptr()),
         return_data_len: 0,
     };
     sp.write_ptr(heapify(evm_data));

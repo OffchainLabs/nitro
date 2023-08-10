@@ -1,14 +1,17 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use arbutil::evm::{js::JsEvmApi, EvmData};
+use arbutil::{
+    evm::{js::JsEvmApi, EvmData},
+    pricing,
+};
 use evm_api::ApiCaller;
 use prover::programs::{meter::MeteredMachine, prelude::StylusConfig};
 
 mod evm_api;
+mod host;
 mod ink;
 mod link;
-mod host;
 
 pub(crate) static mut PROGRAMS: Vec<Program> = vec![];
 
@@ -40,9 +43,13 @@ impl Program {
         self.outs
     }
 
-    pub fn start() -> &'static mut Self {
-        let program = unsafe { PROGRAMS.last_mut().expect("no program") };
-        program.buy_ink(program.config.pricing.hostio_ink).unwrap();
+    pub fn start(cost: u64) -> &'static mut Self {
+        let program = Self::start_free();
+        program.buy_ink(pricing::HOSTIO_INK + cost).unwrap();
         program
+    }
+
+    pub fn start_free() -> &'static mut Self {
+        unsafe { PROGRAMS.last_mut().expect("no program") }
     }
 }

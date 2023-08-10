@@ -3,7 +3,7 @@
 
 use arbutil::{
     evm::{api::EvmApi, EvmData},
-    Bytes20, Bytes32, Color,
+    pricing, Bytes20, Bytes32, Color,
 };
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
@@ -11,6 +11,7 @@ use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
     fmt::{Debug, Display},
     io,
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -65,10 +66,12 @@ impl<E: EvmApi> WasmEnv<E> {
         }
     }
 
-    pub fn start<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
+    pub fn start<'a>(
+        env: &'a mut WasmEnvMut<'_, E>,
+        ink: u64,
+    ) -> Result<HostioInfo<'a, E>, Escape> {
         let mut info = Self::start_free(env);
-        let cost = info.config().pricing.hostio_ink;
-        info.buy_ink(cost)?;
+        info.buy_ink(pricing::HOSTIO_INK + ink)?;
         Ok(info)
     }
 
@@ -165,14 +168,21 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         Ok(data)
     }
 
+    // TODO: use the unstable array_assum_init
+    pub fn read_fixed<const N: usize>(&self, ptr: u32) -> Result<[u8; N], MemoryAccessError> {
+        let mut data = [MaybeUninit::uninit(); N];
+        self.view().read_uninit(ptr.into(), &mut data)?;
+        Ok(data.map(|x| unsafe { x.assume_init() }))
+    }
+
     pub fn read_bytes20(&self, ptr: u32) -> eyre::Result<Bytes20> {
-        let data = self.read_slice(ptr, 20)?;
-        Ok(data.try_into()?)
+        let data = self.read_fixed(ptr)?;
+        Ok(data.into())
     }
 
     pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
-        let data = self.read_slice(ptr, 32)?;
-        Ok(data.try_into()?)
+        let data = self.read_fixed(ptr)?;
+        Ok(data.into())
     }
 
     pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {

@@ -641,7 +641,6 @@ func testMemory(t *testing.T, jit bool) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
-	ensure(arbOwner.SetWasmHostioInk(&auth, 0))
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
@@ -744,16 +743,12 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 		return receipt
 	}
 
-	// Set random pricing params. Note that the ink price is measured in bips,
-	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
-	// We choose a range on both sides of this value.
-	inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
-	wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
-	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
+	// Set random pricing params
+	inkPrice := testhelpers.RandomUint32(1, 20000) // evm to ink
+	colors.PrintMint(fmt.Sprintf("ink price=%d", inkPrice))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
 
 	programAddress := deployWasm(t, ctx, auth, l2client, file)
 	return ctx, node, l2info, l2client, auth, programAddress, cleanup

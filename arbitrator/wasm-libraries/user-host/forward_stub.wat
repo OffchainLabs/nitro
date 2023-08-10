@@ -29,7 +29,7 @@
     (func (export "vm_hooks__msg_value")              (param i32) unreachable)
     (func (export "vm_hooks__native_keccak256")       (param i32 i32 i32) unreachable)
     (func (export "vm_hooks__tx_gas_price")           (param i32) unreachable)
-    (func (export "vm_hooks__tx_ink_price")           (result i64) unreachable)
+    (func (export "vm_hooks__tx_ink_price")           (result i32) unreachable)
     (func (export "vm_hooks__tx_origin")              (param i32) unreachable)
     (func (export "vm_hooks__memory_grow")            (param i32) unreachable)
 )

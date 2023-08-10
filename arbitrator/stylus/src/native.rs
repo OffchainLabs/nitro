@@ -344,7 +344,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "msg_sender" => stub!(|_: u32|),
             "msg_value" => stub!(|_: u32|),
             "tx_gas_price" => stub!(|_: u32|),
-            "tx_ink_price" => stub!(u64 <- ||),
+            "tx_ink_price" => stub!(u32 <- ||),
             "tx_origin" => stub!(|_: u32|),
             "memory_grow" => stub!(|_: u16|),
             "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
