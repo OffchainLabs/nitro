@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -30,6 +31,7 @@ var (
 	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
 	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
+	stakerLatestConfirmedNodeGauge  = metrics.NewRegisteredGauge("arb/staker/confirmed_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
 	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
 	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
@@ -172,14 +174,17 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type DangerousConfig struct {
-	WithoutBlockValidator bool `koanf:"without-block-validator"`
+	IgnoreRollupWasmModuleRoot bool `koanf:"ignore-rollup-wasm-module-root"`
+	WithoutBlockValidator      bool `koanf:"without-block-validator"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	WithoutBlockValidator: false,
+	IgnoreRollupWasmModuleRoot: false,
+	WithoutBlockValidator:      false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".ignore-rollup-wasm-module-root", DefaultL1ValidatorConfig.Dangerous.IgnoreRollupWasmModuleRoot, "DANGEROUS! make assertions even when the wasm module root is wrong")
 	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
 
@@ -192,11 +197,16 @@ type LatestStakedNotifier interface {
 	UpdateLatestStaked(count arbutil.MessageIndex, globalState validator.GoGlobalState)
 }
 
+type LatestConfirmedNotifier interface {
+	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState)
+}
+
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
 	l1Reader                L1ReaderInterface
-	notifiers               []LatestStakedNotifier
+	stakedNotifiers         []LatestStakedNotifier
+	confirmedNotifiers      []LatestConfirmedNotifier
 	activeChallenge         *ChallengeManager
 	baseCallOpts            bind.CallOpts
 	config                  L1ValidatorConfig
@@ -216,7 +226,8 @@ func NewStaker(
 	config L1ValidatorConfig,
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
-	notifiers []LatestStakedNotifier,
+	stakedNotifiers []LatestStakedNotifier,
+	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
@@ -231,13 +242,14 @@ func NewStaker(
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
-	if config.StartFromStaked {
-		notifiers = append(notifiers, blockValidator)
+	if config.StartFromStaked && blockValidator != nil {
+		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
-		notifiers:               notifiers,
+		stakedNotifiers:         stakedNotifiers,
+		confirmedNotifiers:      confirmedNotifiers,
 		baseCallOpts:            callOpts,
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
@@ -277,50 +289,50 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (s *Staker) checkLatestStaked(ctx context.Context) error {
-	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
-	if err != nil {
-		return fmt.Errorf("couldn't get LatestStaked: %w", err)
+func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address) (uint64, arbutil.MessageIndex, *validator.GoGlobalState, error) {
+	callOpts := s.getCallOpts(ctx)
+	if s.l1Reader.UseFinalityData() {
+		callOpts.BlockNumber = big.NewInt(int64(rpc.FinalizedBlockNumber))
 	}
-	stakerLatestStakedNodeGauge.Update(int64(latestStaked))
+	latestStaked, _, err := s.validatorUtils.LatestStaked(s.getCallOpts(ctx), s.rollupAddress, staker)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("couldn't get LatestStaked(%v): %w", staker, err)
+	}
 	if latestStaked == 0 {
-		return nil
+		return latestStaked, 0, nil, nil
 	}
 
 	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
 	if err != nil {
-		return fmt.Errorf("couldn't look up latest node: %w", err)
+		return 0, 0, nil, fmt.Errorf("couldn't look up latest assertion of %v (%v): %w", staker, latestStaked, err)
 	}
 
-	stakedGlobalState := stakedInfo.AfterState().GlobalState
-	caughtUp, count, err := GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, stakedGlobalState)
+	globalState := stakedInfo.AfterState().GlobalState
+	caughtUp, count, err := GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, globalState)
 	if err != nil {
 		if errors.Is(err, ErrGlobalStateNotInChain) && s.fatalErr != nil {
-			fatal := fmt.Errorf("latest staked not in chain: %w", err)
+			fatal := fmt.Errorf("latest assertion of %v (%v) not in chain: %w", staker, latestStaked, err)
 			s.fatalErr <- fatal
 		}
-		return fmt.Errorf("staker: latest staked %w", err)
+		return 0, 0, nil, fmt.Errorf("latest assertion of %v (%v): %w", staker, latestStaked, err)
 	}
 
 	if !caughtUp {
-		log.Info("latest valid not yet in our node", "staked", stakedGlobalState)
-		return nil
+		log.Info("latest assertion not yet in our node", "staker", staker, "assertion", latestStaked, "state", globalState)
+		return latestStaked, 0, nil, nil
 	}
 
 	processedCount, err := s.txStreamer.GetProcessedMessageCount()
 	if err != nil {
-		return err
+		return 0, 0, nil, err
 	}
 
 	if processedCount < count {
-		log.Info("execution catching up to last validated", "validatedCount", count, "processedCount", processedCount)
-		return nil
+		log.Info("execution catching up to rollup", "staker", staker, "rollupCount", count, "processedCount", processedCount)
+		return latestStaked, 0, nil, nil
 	}
 
-	for _, notifier := range s.notifiers {
-		notifier.UpdateLatestStaked(count, stakedGlobalState)
-	}
-	return nil
+	return latestStaked, count, &globalState, nil
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
@@ -378,9 +390,31 @@ func (s *Staker) Start(ctxIn context.Context) {
 		return backoff
 	})
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		err := s.checkLatestStaked(ctx)
+		wallet := s.wallet.AddressOrZero()
+		staked, stakedMsgCount, stakedGlobalState, err := s.getLatestStakedState(ctx, wallet)
 		if err != nil && ctx.Err() == nil {
 			log.Error("staker: error checking latest staked", "err", err)
+		}
+		stakerLatestStakedNodeGauge.Update(int64(staked))
+		if stakedGlobalState != nil {
+			for _, notifier := range s.stakedNotifiers {
+				notifier.UpdateLatestStaked(stakedMsgCount, *stakedGlobalState)
+			}
+		}
+		confirmed := staked
+		confirmedMsgCount := stakedMsgCount
+		confirmedGlobalState := stakedGlobalState
+		if wallet != (common.Address{}) {
+			confirmed, confirmedMsgCount, confirmedGlobalState, err = s.getLatestStakedState(ctx, common.Address{})
+			if err != nil && ctx.Err() == nil {
+				log.Error("staker: error checking latest confirmed", "err", err)
+			}
+		}
+		stakerLatestConfirmedNodeGauge.Update(int64(confirmed))
+		if confirmedGlobalState != nil {
+			for _, notifier := range s.confirmedNotifiers {
+				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
+			}
 		}
 		return s.config.StakerInterval
 	})
@@ -693,7 +727,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 
 func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
 	active := effectiveStrategy >= StakeLatestStrategy
-	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, s.config.MakeAssertionInterval)
+	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, &s.config)
 	if err != nil {
 		return fmt.Errorf("error generating node action: %w", err)
 	}

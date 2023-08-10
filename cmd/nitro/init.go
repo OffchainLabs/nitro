@@ -41,7 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 )
 
 type InitConfig struct {
@@ -77,7 +77,7 @@ var InitConfigDefault = InitConfig{
 	ResetToMsg:      -1,
 }
 
-func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
+func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
 	f.String(prefix+".url", InitConfigDefault.Url, "url to download initializtion data - will poll if download fails")
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")

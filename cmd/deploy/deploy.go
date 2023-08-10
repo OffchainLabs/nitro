@@ -150,7 +150,6 @@ func main() {
 	}
 	chainsInfo := []chaininfo.ChainInfo{
 		{
-			ChainId:         chainConfig.ChainID.Uint64(),
 			ChainName:       *l2ChainName,
 			ParentChainId:   l1ChainId.Uint64(),
 			ChainConfig:     &chainConfig,

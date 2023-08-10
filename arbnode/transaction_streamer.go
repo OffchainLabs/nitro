@@ -858,8 +858,8 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	return nil
 }
 
-func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
+func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
+	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
@@ -940,7 +940,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	s.execLastMsgCount = prevMessageCount
+	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -38,7 +39,9 @@ func init() {
 
 type ValidatorWalletInterface interface {
 	Initialize(context.Context) error
+	// Address must be able to be called concurrently with other functions
 	Address() *common.Address
+	// Address must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
@@ -53,7 +56,7 @@ type ValidatorWalletInterface interface {
 
 type ContractValidatorWallet struct {
 	con                     *rollupgen.ValidatorWallet
-	address                 *common.Address
+	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
 	l1Reader                L1ReaderInterface
 	auth                    *bind.TransactOpts
@@ -79,9 +82,8 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 	if err != nil {
 		return nil, err
 	}
-	return &ContractValidatorWallet{
+	wallet := &ContractValidatorWallet{
 		con:               con,
-		address:           address,
 		onWalletCreated:   onWalletCreated,
 		l1Reader:          l1Reader,
 		auth:              auth,
@@ -89,7 +91,10 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 		rollupAddress:     rollupAddress,
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
-	}, nil
+	}
+	// Go complains if we make an address variable before wallet and copy it in
+	wallet.address.Store(address)
+	return wallet, nil
 }
 
 func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
@@ -127,15 +132,16 @@ func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
 
 // May be the nil if the wallet hasn't been deployed yet
 func (v *ContractValidatorWallet) Address() *common.Address {
-	return v.address
+	return v.address.Load()
 }
 
 // May be zero if the wallet hasn't been deployed yet
 func (v *ContractValidatorWallet) AddressOrZero() common.Address {
-	if v.address == nil {
+	addr := v.address.Load()
+	if addr == nil {
 		return common.Address{}
 	}
-	return *v.address
+	return *addr
 }
 
 func (v *ContractValidatorWallet) TxSenderAddress() *common.Address {
@@ -183,7 +189,7 @@ func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMi
 		}
 		return nil
 	}
-	if v.address == nil {
+	if v.address.Load() == nil {
 		auth, err := v.getAuth(ctx, nil)
 		if err != nil {
 			return err
@@ -195,12 +201,12 @@ func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMi
 		if addr == nil {
 			return nil
 		}
-		v.address = addr
+		v.address.Store(addr)
 		if v.onWalletCreated != nil {
 			v.onWalletCreated(*addr)
 		}
 	}
-	con, err := rollupgen.NewValidatorWallet(*v.address, v.l1Reader.Client())
+	con, err := rollupgen.NewValidatorWallet(*v.Address(), v.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -260,7 +266,7 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 		totalAmount = totalAmount.Add(totalAmount, tx.Value())
 	}
 
-	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.address, nil)
+	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.Address(), nil)
 	if err != nil {
 		return nil, err
 	}
