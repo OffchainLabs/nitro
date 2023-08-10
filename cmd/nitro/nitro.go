@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -167,16 +168,30 @@ func mainImpl() int {
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
 
+	pathResolver := func(workdir string) func(string) string {
+		if workdir == "" {
+			workdir, err = os.Getwd()
+			if err != nil {
+				log.Warn("Failed to get workdir", "err", err)
+			}
+		}
+		return func(path string) string {
+			if filepath.IsAbs(path) {
+				return path
+			}
+			return filepath.Join(workdir, path)
+		}
+	}
+
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := stackConf.ResolvePath("jwtsecret")
+		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
 		}
 		stackConf.JWTSecret = filename
 	}
-
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -379,12 +394,18 @@ func mainImpl() int {
 		return 1
 	}
 
+	var deferFuncs []func()
+	defer func() {
+		for i := range deferFuncs {
+			deferFuncs[i]()
+		}
+	}()
+
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
-	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
-		// Calling Stop on the blockchain multiple times does nothing
-		defer l2BlockChain.Stop()
+		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
+	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
 	if err != nil {
 		flag.Usage()
 		log.Error("error initializing database", "err", err)
@@ -392,7 +413,7 @@ func mainImpl() int {
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
-	defer closeDb(arbDb, "arbDb")
+	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		return 1
@@ -442,7 +463,7 @@ func mainImpl() int {
 		return 1
 	}
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, stackConf.ResolvePath); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
@@ -484,7 +505,8 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
-		defer currentNode.StopAndWait()
+		// remove previous deferFuncs, StopAndWait closes database and blockchain.
+		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -736,7 +758,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
-		"chain.id":         chainInfo.ChainId,
+		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
 	if chainInfo.SequencerUrl != "" {

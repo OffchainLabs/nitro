@@ -234,6 +234,12 @@ func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
 	return header.BaseFee
 }
 
+func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+	header, err := client.HeaderByNumber(ctx, blockNum)
+	Require(t, err)
+	return header.BaseFee
+}
+
 type lifecycle struct {
 	start func() error
 	stop  func() error

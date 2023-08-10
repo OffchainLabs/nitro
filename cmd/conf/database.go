@@ -15,6 +15,7 @@ import (
 type PersistentConfig struct {
 	GlobalConfig string `koanf:"global-config"`
 	Chain        string `koanf:"chain"`
+	LogDir       string `koanf:"log-dir"`
 	Handles      int    `koanf:"handles"`
 	Ancient      string `koanf:"ancient"`
 }
@@ -22,6 +23,7 @@ type PersistentConfig struct {
 var PersistentConfigDefault = PersistentConfig{
 	GlobalConfig: ".arbitrum",
 	Chain:        "",
+	LogDir:       "",
 	Handles:      512,
 	Ancient:      "",
 }
@@ -29,6 +31,7 @@ var PersistentConfigDefault = PersistentConfig{
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
+	f.String(prefix+".log-dir", PersistentConfigDefault.LogDir, "directory to store log file")
 	f.Int(prefix+".handles", PersistentConfigDefault.Handles, "number of file descriptor handles to use for the database")
 	f.String(prefix+".ancient", PersistentConfigDefault.Ancient, "directory of ancient where the chain freezer can be opened")
 }
@@ -60,6 +63,19 @@ func (c *PersistentConfig) ResolveDirectoryNames() error {
 		return fmt.Errorf("database in --persistent.chain (%s) directory, try specifying parent directory", c.Chain)
 	}
 
+	// Make Log directory relative to persistent storage directory if not already absolute
+	if !filepath.IsAbs(c.LogDir) {
+		c.LogDir = path.Join(c.Chain, c.LogDir)
+	}
+	if c.LogDir != c.Chain {
+		err = os.MkdirAll(c.LogDir, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("unable to create Log directory: %w", err)
+		}
+		if DatabaseInDirectory(c.LogDir) {
+			return fmt.Errorf("database in --persistent.log-dir (%s) directory, try specifying parent directory", c.LogDir)
+		}
+	}
 	return nil
 }
 
