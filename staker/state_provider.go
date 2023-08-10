@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -167,42 +166,13 @@ func (s *StateManager) HistoryCommitmentAtBatch(ctx context.Context, batchNumber
 // BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
 // challenge heights blockHeight and blockHeight+1.
 func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, toBigStep uint64) (commitments.History, error) {
-	res, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageNumber))
-	if err != nil {
-		return commitments.History{}, err
-	}
-	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
-	if err != nil {
-		return commitments.History{}, err
-	}
-	state := validator.GoGlobalState{
-		BlockHash:  res.BlockHash,
-		SendRoot:   res.SendRoot,
-		Batch:      batch,
-		PosInBatch: 0,
-	}
-	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
-	stateRoots := []common.Hash{
-		machineHash,
-	}
-	if toBigStep == 0 {
-		return commitments.New(stateRoots)
-	}
-	fmt.Printf("Requesting intermediates message %d and to big step %d\n", messageNumber, toBigStep)
-	start := time.Now()
 	// TODO: The problem here is that on cache hit, we will already have the first state, and therefore have
 	// duplicate first states. We should move this logic to inside the intermediate big step leaves function itself.
 	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return commitments.History{}, err
 	}
-	fmt.Printf("In big step commit, took %v to get intermediate leaves\n", time.Since(start).Seconds())
-	stateRoots = append(stateRoots, result...)
-	commit, err := commitments.New(stateRoots)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	return commit, nil
+	return commitments.New(result)
 }
 
 // SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
@@ -274,35 +244,13 @@ func (s *StateManager) BigStepPrefixProof(
 	fromBigStep uint64,
 	toBigStep uint64,
 ) ([]byte, error) {
-	res, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageNumber))
-	if err != nil {
-		return nil, err
-	}
-	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
-	if err != nil {
-		return nil, err
-	}
-	state := validator.GoGlobalState{
-		BlockHash:  res.BlockHash,
-		SendRoot:   res.SendRoot,
-		Batch:      batch,
-		PosInBatch: 0,
-	}
-	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
-	stateRoots := []common.Hash{
-		machineHash,
-	}
-	fmt.Printf("In big step prefix intermediates message %d and to big step %d\n", messageNumber, toBigStep)
-	start := time.Now()
 	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Took %v to get big step leaves\n", time.Since(start))
-	stateRoots = append(stateRoots, prefixLeaves...)
 	loSize := fromBigStep + 1
 	hiSize := toBigStep + 1
-	return s.getPrefixProof(loSize, hiSize, stateRoots)
+	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
 }
 
 // SmallStepPrefixProof Produces a small step prefix proof from height A to B for big step S to S+1 and
@@ -514,7 +462,6 @@ func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []com
 }
 
 func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) ([]common.Hash, error) {
-	fmt.Println("Requesting cache for block and to big step", blockHeight, toBigStep)
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: wasmModuleRoot,
 		MessageHeight:  protocol.Height(blockHeight),
@@ -524,6 +471,29 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 	if err == nil {
 		return cachedRoots, nil
 	}
+
+	res, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return nil, err
+	}
+	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return nil, err
+	}
+	state := validator.GoGlobalState{
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+		Batch:      batch,
+		PosInBatch: 0,
+	}
+	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
+	stateRoots := []common.Hash{
+		machineHash,
+	}
+	if toBigStep == 0 {
+		return stateRoots, nil
+	}
+
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
 		return nil, err
@@ -541,15 +511,16 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 	if err != nil {
 		return nil, err
 	}
+	stateRoots = append(stateRoots, result...)
 	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
 	if len(result) > 1 {
-		if err := s.historyCache.Put(cacheKey, result); err != nil {
+		if err := s.historyCache.Put(cacheKey, stateRoots); err != nil {
 			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
 				return nil, err
 			}
 		}
 	}
-	return result, nil
+	return stateRoots, nil
 }
 
 func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) ([]common.Hash, error) {
