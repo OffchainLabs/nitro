@@ -393,8 +393,7 @@ func EncodeBlobs(data []byte) []kzg4844.Blob {
 	if len(data)%blobLen > 0 {
 		partiallyFilledBlob = 1
 	}
-	blobCount := len(data)/blobLen + partiallyFilledBlob
-	blobs := make([]kzg4844.Blob, blobCount, blobCount)
+	blobs := make([]kzg4844.Blob, len(data)/blobLen+partiallyFilledBlob)
 
 	for i, blob := range blobs {
 		start := i * blobLen

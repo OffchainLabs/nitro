@@ -14,7 +14,7 @@ func Test_prepareTxTypeToPost(t *testing.T) {
 	l2MessageData := []byte("foobar")
 	t.Run("EIP-4844 style txs contain valid blobs from L2 message data", func(t *testing.T) {
 		dataPoster.isEip4844 = true
-		preparedTx, _, _, err := dataPoster.prepareTxTypeToPost(
+		preparedTx, _, err := dataPoster.prepareTxTypeToPost(
 			big.NewInt(1),
 			big.NewInt(2),
 			&DataToPost{
@@ -60,7 +60,7 @@ func Test_prepareTxTypeToPost(t *testing.T) {
 	})
 	t.Run("Non-EIP-4844 style txs embed L2 message data within calldata", func(t *testing.T) {
 		dataPoster.isEip4844 = true
-		preparedTx, _, _, err := dataPoster.prepareTxTypeToPost(
+		preparedTx, _, err := dataPoster.prepareTxTypeToPost(
 			big.NewInt(1),
 			big.NewInt(2),
 			&DataToPost{
