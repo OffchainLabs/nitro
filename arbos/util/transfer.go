@@ -37,7 +37,7 @@ func TransferBalance(
 	if to != nil {
 		evm.StateDB.AddBalance(*to, amount)
 	}
-	if evm.Config.Debug {
+	if evm.Config.Tracer != nil {
 		tracer := evm.Config.Tracer
 
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
