@@ -35,8 +35,7 @@ func Init(conf *Config) {
 	if conf.MemoryLimitPercent > 0 {
 		node.WrapHTTPHandler = func(srv http.Handler) (http.Handler, error) {
 			var c limitChecker
-			var err error
-			c, err = newCgroupsMemoryLimitCheckerIfSupported(conf)
+			c, err := newCgroupsMemoryLimitCheckerIfSupported(conf)
 			if errors.Is(err, errNotSupported) {
 				log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
 				c = &trivialLimitChecker{}

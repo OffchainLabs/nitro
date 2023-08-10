@@ -51,8 +51,7 @@ func makeCgroupsTestDir(cgroupDir string) cgroupsMemoryFiles {
 func TestCgroupsFailIfCantOpen(t *testing.T) {
 	testFiles := makeCgroupsTestDir(t.TempDir())
 	c := newCgroupsMemoryLimitChecker(testFiles, 95)
-	var err error
-	if _, err = c.isLimitExceeded(); err == nil {
+	if _, err := c.isLimitExceeded(); err == nil {
 		t.Fatal("Should fail open if can't read files")
 	}
 }
