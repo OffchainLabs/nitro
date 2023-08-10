@@ -70,6 +70,7 @@ func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
 // which is used for all challenges in the protocol.
 type AssertionChain interface {
 	// Read-only methods.
+	IsStaked(ctx context.Context) (bool, error)
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
 	LatestCreatedAssertion(ctx context.Context) (Assertion, error)
@@ -83,7 +84,12 @@ type AssertionChain interface {
 	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (OriginHeights, error)
 
 	// Mutating methods.
-	CreateAssertion(
+	NewStakeOnNewAssertion(
+		ctx context.Context,
+		assertionCreationInfo *AssertionCreatedInfo,
+		postState *ExecutionState,
+	) (Assertion, error)
+	StakeOnNewAssertion(
 		ctx context.Context,
 		assertionCreationInfo *AssertionCreatedInfo,
 		postState *ExecutionState,

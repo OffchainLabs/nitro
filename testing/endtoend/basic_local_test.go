@@ -221,11 +221,11 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 		alicePoster := assertions.NewPoster(aChain, scenario.AliceStateManager, "alice", time.Hour)
 		bobPoster := assertions.NewPoster(bChain, scenario.BobStateManager, "bob", time.Hour)
 
-		aliceLeaf, err := alicePoster.PostLatestAssertion(ctx)
+		aliceLeaf, err := alicePoster.PostAssertionAndNewStake(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		bobLeaf, err := bobPoster.PostLatestAssertion(ctx)
+		bobLeaf, err := bobPoster.PostAssertionAndNewStake(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -282,9 +282,9 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 
 		alicePoster := assertions.NewPoster(aChain, s.AliceStateManager, "alice", time.Hour)
 		bobPoster := assertions.NewPoster(bChain, s.BobStateManager, "bob", time.Hour)
-		aliceLeaf, err := alicePoster.PostLatestAssertion(ctx)
+		aliceLeaf, err := alicePoster.PostAssertionAndNewStake(ctx)
 		require.NoError(t, err)
-		bobLeaf, err := bobPoster.PostLatestAssertion(bobCtx)
+		bobLeaf, err := bobPoster.PostAssertionAndNewStake(bobCtx)
 		require.NoError(t, err)
 		aliceScanner := assertions.NewScanner(aChain, s.AliceStateManager, be.Client(), alice, rollup, "alice", time.Hour)
 		bobScanner := assertions.NewScanner(bChain, s.BobStateManager, be.Client(), bob, rollup, "bob", time.Hour)

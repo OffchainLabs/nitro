@@ -259,6 +259,7 @@ func (a *AnvilLocal) DeployRollup() (common.Address, error) {
 			miniStake,
 			stakeToken,
 		),
+		false, // Do not use a mock bridge.
 	)
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "could not deploy rollup stack")

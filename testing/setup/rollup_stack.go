@@ -98,7 +98,7 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	assertion, err := setup.Chains[0].CreateAssertion(
+	assertion, err := setup.Chains[0].NewStakeOnNewAssertion(
 		ctx,
 		genesisCreationInfo,
 		honestPostState,
@@ -111,7 +111,7 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	forkedAssertion, err := setup.Chains[1].CreateAssertion(
+	forkedAssertion, err := setup.Chains[1].NewStakeOnNewAssertion(
 		ctx,
 		genesisCreationInfo,
 		evilPostState,
@@ -133,15 +133,28 @@ func CreateTwoValidatorFork(
 }
 
 type ChainSetup struct {
-	Chains       []*solimpl.AssertionChain
-	Accounts     []*TestAccount
-	Addrs        *RollupAddresses
-	Backend      *backends.SimulatedBackend
-	RollupConfig rollupgen.Config
+	Chains        []*solimpl.AssertionChain
+	Accounts      []*TestAccount
+	Addrs         *RollupAddresses
+	Backend       *backends.SimulatedBackend
+	RollupConfig  rollupgen.Config
+	useMockBridge bool
 }
 
-func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
+type Opt func(setup *ChainSetup)
+
+func WithMockBridge() Opt {
+	return func(setup *ChainSetup) {
+		setup.useMockBridge = true
+	}
+}
+
+func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	ctx := context.Background()
+	setp := &ChainSetup{}
+	for _, o := range opts {
+		o(setp)
+	}
 	accs, backend, err := Accounts(4)
 	if err != nil {
 		return nil, err
@@ -206,8 +219,9 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		ctx,
 		backend,
 		accs[0].TxOpts,
-		common.Address{}, // Sequencer addr.
+		accs[0].TxOpts.From, // Sequencer addr.
 		cfg,
+		setp.useMockBridge,
 	)
 	if err != nil {
 		return nil, err
@@ -299,13 +313,12 @@ func ChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		}
 	}
 
-	return &ChainSetup{
-		Chains:       chains,
-		Accounts:     accs,
-		Addrs:        addresses,
-		Backend:      backend,
-		RollupConfig: cfg,
-	}, nil
+	setp.Chains = chains
+	setp.Accounts = accs
+	setp.Addrs = addresses
+	setp.Backend = backend
+	setp.RollupConfig = cfg
+	return setp, nil
 }
 
 type RollupAddresses struct {
@@ -325,8 +338,9 @@ func DeployFullRollupStack(
 	deployAuth *bind.TransactOpts,
 	sequencer common.Address,
 	config rollupgen.Config,
+	useMockBridge bool,
 ) (*RollupAddresses, error) {
-	rollupCreator, rollupUserAddr, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth)
+	rollupCreator, rollupUserAddr, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, useMockBridge)
 	if err != nil {
 		return nil, err
 	}
@@ -419,10 +433,21 @@ func deployBridgeCreator(
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend Backend,
+	useMockBridge bool,
 ) (common.Address, error) {
-	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, backend)
-	if err != nil {
-		return common.Address{}, err
+	var bridgeTemplate common.Address
+	var tx *types.Transaction
+	var err error
+	if useMockBridge {
+		bridgeTemplate, tx, _, err = mocksgen.DeployBridgeStub(auth, backend)
+		if err != nil {
+			return common.Address{}, err
+		}
+	} else {
+		bridgeTemplate, tx, _, err = bridgegen.DeployBridge(auth, backend)
+		if err != nil {
+			return common.Address{}, err
+		}
 	}
 	err = challenge_testing.TxSucceeded(ctx, tx, bridgeTemplate, backend, err)
 	if err != nil {
@@ -520,8 +545,9 @@ func deployRollupCreator(
 	ctx context.Context,
 	backend Backend,
 	auth *bind.TransactOpts,
+	useMockBridge bool,
 ) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, auth, backend)
+	bridgeCreator, err := deployBridgeCreator(ctx, auth, backend, useMockBridge)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}

@@ -18,6 +18,7 @@ contract BridgeStub is IBridge {
     mapping(address => InOutInfo) private allowedDelayedInboxesMap;
     //mapping(address => InOutInfo) private allowedOutboxesMap;
 
+    IOwnable rollupItem;
     address[] public allowedDelayedInboxList;
     address[] public allowedOutboxList;
 
@@ -41,7 +42,7 @@ contract BridgeStub is IBridge {
     }
 
     function allowedOutboxes(address) external pure override returns (bool) {
-        revert("NOT_IMPLEMENTED");
+        return true;
     }
 
     function enqueueDelayedMessage(
@@ -132,7 +133,7 @@ contract BridgeStub is IBridge {
         uint256,
         bytes calldata
     ) external pure override returns (bool, bytes memory) {
-        revert("NOT_IMPLEMENTED");
+        revert("NOT_IMPLEMENTED_EXECUTE_CALL");
     }
 
     function setDelayedInbox(address inbox, bool enabled) external override {
@@ -159,7 +160,6 @@ contract BridgeStub is IBridge {
         address, /* outbox */
         bool /* enabled*/
     ) external pure override {
-        revert("NOT_IMPLEMENTED");
     }
 
     function delayedMessageCount() external view override returns (uint256) {
@@ -170,13 +170,13 @@ contract BridgeStub is IBridge {
         return sequencerInboxAccs.length;
     }
 
-    function rollup() external pure override returns (IOwnable) {
-        revert("NOT_IMPLEMENTED");
+    function rollup() external view override returns (IOwnable) {
+        return rollupItem;
     }
 
     function acceptFundsFromOldBridge() external payable {}
 
-    function initialize(IOwnable) external pure {
-        revert("NOT_IMPLEMENTED");
+    function initialize(IOwnable rollup_) external {
+        rollupItem = rollup_;
     }
 }

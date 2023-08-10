@@ -456,7 +456,21 @@ func (m *MockProtocol) ConfirmAssertionByChallengeWinner(
 	return args.Error(0)
 }
 
-func (m *MockProtocol) CreateAssertion(
+func (m *MockProtocol) IsStaked(ctx context.Context) (bool, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+func (m *MockProtocol) NewStakeOnNewAssertion(
+	ctx context.Context,
+	assertionCreationInfo *protocol.AssertionCreatedInfo,
+	postState *protocol.ExecutionState,
+) (protocol.Assertion, error) {
+	args := m.Called(ctx, assertionCreationInfo, postState)
+	return args.Get(0).(protocol.Assertion), args.Error(1)
+}
+
+func (m *MockProtocol) StakeOnNewAssertion(
 	ctx context.Context,
 	assertionCreationInfo *protocol.AssertionCreatedInfo,
 	postState *protocol.ExecutionState,
