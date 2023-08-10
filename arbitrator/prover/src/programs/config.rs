@@ -24,7 +24,7 @@ use {
 pub struct StylusConfig {
     /// Version the program was compiled against
     pub version: u16,
-    /// The maximum size of the stack
+    /// The maximum size of the stack, measured in words
     pub max_depth: u32,
     /// Pricing parameters supplied at runtime
     pub pricing: PricingParams,

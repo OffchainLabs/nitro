@@ -40,7 +40,7 @@ type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
 func compileUserWasm(
-	db vm.StateDB, program common.Address, wasm []byte, pageLimit uint16, version uint16, debug bool,
+	db vm.StateDB, program common.Address, wasm []byte, pageLimit, version uint16, debug bool,
 ) (uint16, error) {
 	footprint := uint16(0)
 	output := &rustVec{}
