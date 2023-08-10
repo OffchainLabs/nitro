@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -167,16 +168,30 @@ func mainImpl() int {
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
 
+	pathResolver := func(workdir string) func(string) string {
+		if workdir == "" {
+			workdir, err = os.Getwd()
+			if err != nil {
+				log.Warn("Failed to get workdir", "err", err)
+			}
+		}
+		return func(path string) string {
+			if filepath.IsAbs(path) {
+				return path
+			}
+			return filepath.Join(workdir, path)
+		}
+	}
+
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := stackConf.ResolvePath("jwtsecret")
+		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
 		}
 		stackConf.JWTSecret = filename
 	}
-
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -443,7 +458,7 @@ func mainImpl() int {
 		return 1
 	}
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, stackConf.ResolvePath); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
