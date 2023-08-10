@@ -261,7 +261,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return err
 	}
-	tx, txData, networkBlobTx, err := p.prepareTxTypeToPost(feeCap, tipCap, data, nonce, to, gasLimit)
+	tx, networkBlobTx, err := p.prepareTxTypeToPost(feeCap, tipCap, data, nonce, to, gasLimit)
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,6 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	}
 	networkBlobTx.Transaction = fullTx
 	queuedTx := queuedTransaction[Meta]{
-		Data:            txData,
 		NetworkBlobTx:   networkBlobTx,
 		FullTx:          fullTx,
 		Meta:            meta,
@@ -286,20 +285,20 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 // posting EIP-4844 style blob transactions to reduce costs on L1.
 func (p *DataPoster[Meta]) prepareTxTypeToPost(
 	feeCap, tipCap *big.Int, data *DataToPost, nonce uint64, to common.Address, gasLimit uint64,
-) (*types.Transaction, types.TxData, *types.BlobTxWithBlobs, error) {
+) (*types.Transaction, *types.BlobTxWithBlobs, error) {
 	if p.isEip4844 {
 		dataBlobs := blobs.EncodeBlobs(data.L2MessageData)
 		commitments, proofs, versionedHashes, err := blobs.ComputeCommitmentsProofsAndHashes(dataBlobs)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		tCap, overflows := uint256.FromBig(tipCap)
 		if overflows {
-			return nil, nil, nil, fmt.Errorf("tip cap overflows: %s", tipCap.String())
+			return nil, nil, fmt.Errorf("tip cap overflows: %s", tipCap.String())
 		}
 		fCap, overflows := uint256.FromBig(feeCap)
 		if overflows {
-			return nil, nil, nil, fmt.Errorf("fee cap overflows: %s", feeCap.String())
+			return nil, nil, fmt.Errorf("fee cap overflows: %s", feeCap.String())
 		}
 		txData := &types.BlobTx{
 			Nonce:      nonce,
@@ -315,7 +314,7 @@ func (p *DataPoster[Meta]) prepareTxTypeToPost(
 		tx := types.NewTx(txData)
 		txWithBlobs := types.NewBlobTxWithBlobs(tx, dataBlobs, commitments, proofs)
 
-		return tx, txData, txWithBlobs, nil
+		return tx, txWithBlobs, nil
 	}
 	txData := &types.DynamicFeeTx{
 		Nonce:     nonce,
@@ -326,7 +325,7 @@ func (p *DataPoster[Meta]) prepareTxTypeToPost(
 		Value:     new(big.Int),
 		Data:      data.SequencerInboxCalldata,
 	}
-	return types.NewTx(txData), txData, nil, nil
+	return types.NewTx(txData), nil, nil
 }
 
 // the mutex must be held by the caller
@@ -445,7 +444,6 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 		tx = types.NewTx(txData)
 	}
 	newTx.Sent = false
-	newTx.Data = txData
 	newTx.FullTx, err = p.auth.Signer(p.auth.From, tx)
 	txWithBlobs.Transaction = newTx.FullTx
 	newTx.NetworkBlobTx = txWithBlobs
@@ -601,7 +599,6 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 
 type queuedTransaction[Meta any] struct {
 	FullTx          *types.Transaction
-	Data            types.TxData
 	NetworkBlobTx   *types.BlobTxWithBlobs
 	Meta            Meta
 	Sent            bool
