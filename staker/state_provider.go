@@ -224,9 +224,6 @@ func (s *StateManager) PrefixProofUpToBatch(
 	toMessageNumber,
 	batchCount uint64,
 ) ([]byte, error) {
-	if toMessageNumber > batchCount {
-		return nil, errors.New("toMessageNumber should not be greater than batchCount")
-	}
 	states, err := s.statesUpTo(startHeight, toMessageNumber, batchCount)
 	if err != nil {
 		return nil, err

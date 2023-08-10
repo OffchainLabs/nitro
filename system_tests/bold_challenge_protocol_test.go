@@ -47,36 +47,6 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 20) // 1048576
 )
 
-// func TestWeirdProofError(t *testing.T) {
-// 	rawRoots := [][]byte{
-// 		hexutil.MustDecode("0xd781e3a672f2f16cbf9f3a2f4d2d9714ba2818f4b378870010d4c78b60ca7301"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 		hexutil.MustDecode("0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96"),
-// 	}
-// 	stateRoots := make([]common.Hash, len(rawRoots))
-// 	for i := 0; i < len(rawRoots); i++ {
-// 		stateRoots[i] = common.BytesToHash(rawRoots[i])
-// 	}
-// 	compute, err := prefixproofs.Root(stateRoots)
-// 	Require(t, err)
-// 	t.Logf("%#x and %d", compute, len(stateRoots))
-// 	Fail(t, "oops")
-// 	//
-// 	// DONE WITH PREFIX PROOF COMPUTATION, commit {Height:16 Merkle:0x433f2814c890c651c5fe70c208c6d25436325bbcddb054706a784aa9551396f0 FirstLeaf:0xd781e3a672f2f16cbf9f3a2f4d2d9714ba2818f4b378870010d4c78b60ca7301 LastLeafProof:[0x0000000000000000000000000000000000000000000000000000000000000000 0x0000000000000000000000000000000000000000000000000000000000000000 0x0000000000000000000000000000000000000000000000000000000000000000 0x0000000000000000000000000000000000000000000000000000000000000000 0x76469513ad2bfb1ab0e25233daf50dcf2bf9c413a509ba3d9aca48fbc361aea4] FirstLeafProof:[0xc21068ed09a6bed80fa47668e8b04c83aac25b6e5c6d0c6eb0616a77b5dca2af 0xa5637fb3c6ac430e11175e34abcbb0b3caffba79ac15b9d8439a3b3722415263 0xf80f90ce52e1abc37ee458cbf22c839d7facba76c400f5e4e106d7ab68c38bbb 0xbb999b6b6b11cc690c159dad5dc5984a30b48200fe6ce2e681ebdcf0ff6f6a7c 0x9982027f45622ecf649efb8373312e366662a4badac4013083bafffeaef7cdf0] LastLeaf:0x2805bce9a15caab3f29c31391ec595da38aae54446080aae2043404cd8135b96}
-// }
-
 func TestBoldProtocol(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -236,6 +206,8 @@ func TestBoldProtocol(t *testing.T) {
 	_, err = poster.PostAssertion(ctx)
 	Require(t, err)
 
+	time.Sleep(10 * time.Second)
+
 	t.Log("Honest party posting assertion at batch 2, pos 0")
 	_, err = poster.PostAssertion(ctx)
 	Require(t, err)
@@ -254,6 +226,7 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithMode(modes.DefensiveMode),
 		challengemanager.WithAssertionPostingInterval(time.Hour),
 		challengemanager.WithAssertionScanningInterval(5*time.Second),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 	)
 	Require(t, err)
 	manager.Start(ctx)
@@ -268,6 +241,7 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithMode(modes.DefensiveMode),
 		challengemanager.WithAssertionPostingInterval(time.Hour),
 		challengemanager.WithAssertionScanningInterval(5*time.Second),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 	)
 	Require(t, err)
 	managerB.Start(ctx)
