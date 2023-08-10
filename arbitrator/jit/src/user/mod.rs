@@ -20,7 +20,7 @@ use stylus::native;
 mod evm_api;
 
 /// Compiles and instruments user wasm.
-/// go side: λ(wasm []byte, pageLimit, version, u16, debug u32) (machine *Machine, footprint u32, err *Vec<u8>)
+/// go side: λ(wasm []byte, pageLimit, version u16, debug u32) (machine *Machine, footprint u32, err *Vec<u8>)
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
