@@ -189,6 +189,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
+
+    // The Go compiler places these on the stack as follows
+    // | version | 2 garbage bytes | max_depth | ink_price | debugMode | result ptr |
+
     let config = StylusConfig {
         version: sp.read_u16(),
         max_depth: sp.skip_u16().read_u32(),

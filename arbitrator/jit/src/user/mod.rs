@@ -113,6 +113,9 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
 
+    // The Go compiler places these on the stack as follows
+    // | version | 2 garbage bytes | max_depth | ink_price | debugMode | result ptr |
+
     let config = StylusConfig {
         version: sp.read_u16(),
         max_depth: sp.skip_u16().read_u32(),
