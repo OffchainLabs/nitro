@@ -20,13 +20,12 @@ use stylus::native;
 mod evm_api;
 
 /// Compiles and instruments user wasm.
-/// go side: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u32, err *Vec<u8>)
+/// go side: λ(wasm []byte, pageLimit, version u16, debug u32) (machine *Machine, footprint u32, err *Vec<u8>)
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
-    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
     let page_limit = sp.read_u16();
-    sp.skip_space();
+    let compile = CompileConfig::version(sp.read_u16(), sp.read_u32() != 0);
 
     macro_rules! error {
         ($error:expr) => {{
@@ -110,33 +109,35 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
+/// go side: λ(version u16, maxDepth, inkPrice u32, debugMode: u32) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
 
+    // The Go compiler places these on the stack as follows
+    // | version | 2 garbage bytes | max_depth | ink_price | debugMode | result ptr |
+
     let config = StylusConfig {
-        version: sp.read_u32(),
-        max_depth: sp.read_u32(),
+        version: sp.read_u16(),
+        max_depth: sp.skip_u16().read_u32(),
         pricing: PricingParams {
-            ink_price: sp.read_u64(),
-            hostio_ink: sp.read_u64(),
+            ink_price: sp.read_u32(),
         },
     };
     let compile = CompileConfig::version(config.version, sp.read_u32() != 0);
-    sp.skip_space().write_ptr(heapify((compile, config)));
+    sp.write_ptr(heapify((compile, config)));
 }
 
 /// Creates an `EvmData` from its component parts.
 /// go side: λ(
-///     blockBasefee, blockChainid *[32]byte, blockCoinbase *[20]byte,
-///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte,
+///     blockBasefee, chainid *[32]byte, blockCoinbase *[20]byte, blockGasLimit u64,
+///     blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let evm_data = EvmData {
         block_basefee: sp.read_bytes32().into(),
-        block_chainid: sp.read_bytes32().into(),
+        chainid: sp.read_bytes32().into(),
         block_coinbase: sp.read_bytes20().into(),
         block_gas_limit: sp.read_u64(),
         block_number: sp.read_bytes32().into(),
@@ -146,7 +147,9 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
+        reentrant: sp.read_u32(),
         return_data_len: 0,
     };
+    sp.skip_space();
     sp.write_ptr(heapify(evm_data));
 }

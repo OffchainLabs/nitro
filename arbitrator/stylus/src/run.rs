@@ -33,7 +33,6 @@ impl RunProgram for Machine {
             config.version.into(),
             config.max_depth.into(),
             config.pricing.ink_price.into(),
-            config.pricing.hostio_ink.into(),
         ];
         let args_ptr = call!("user_test", "prepare", push_vec);
         let user_host = self.find_module("user_test")?;

@@ -34,7 +34,7 @@ type rustMachine byte
 type rustEvmData byte
 
 func compileUserWasmRustImpl(
-	wasm []byte, version, debugMode u32, pageLimit u16,
+	wasm []byte, pageLimit, version u16, debugMode u32,
 ) (machine *rustMachine, footprint u16, err *rustVec)
 
 func callUserWasmRustImpl(
@@ -44,10 +44,10 @@ func callUserWasmRustImpl(
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
+func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
-	blockChainId *hash,
+	chainId *hash,
 	blockCoinbase *addr,
 	blockGasLimit u64,
 	blockNumber *hash,
@@ -57,9 +57,10 @@ func rustEvmDataImpl(
 	msgValue *hash,
 	txGasPrice *hash,
 	txOrigin *addr,
+	reentrant u32,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, error) {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u16, debug bool) (u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
 	_, footprint, err := compileMachine(db, program, wasm, pageLimit, version, debugMode)
 	return footprint, err
@@ -88,7 +89,7 @@ func callUserWasm(
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 
-	root := db.NoncanonicalProgramHash(program.address, params.version)
+	root := db.NoncanonicalProgramHash(program.address, uint32(params.version))
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 
@@ -106,9 +107,9 @@ func callUserWasm(
 }
 
 func compileMachine(
-	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
+	db vm.StateDB, program addr, wasm []byte, pageLimit, version u16, debugMode u32,
 ) (*rustMachine, u16, error) {
-	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
+	machine, footprint, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode)
 	if err != nil {
 		_, err := userFailure.output(err.intoSlice())
 		return nil, footprint, err
@@ -124,13 +125,13 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice, p.hostioInk, p.debugMode)
+	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice.ToUint32(), p.debugMode)
 }
 
 func (d *evmData) encode() *rustEvmData {
 	return rustEvmDataImpl(
 		&d.blockBasefee,
-		&d.blockChainId,
+		&d.chainId,
 		&d.blockCoinbase,
 		u64(d.blockGasLimit),
 		&d.blockNumber,
@@ -140,5 +141,6 @@ func (d *evmData) encode() *rustEvmData {
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
+		u32(d.reentrant),
 	)
 }

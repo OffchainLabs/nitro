@@ -64,7 +64,7 @@ pub const ORIGIN_GAS: u64 = GAS_QUICK_STEP;
 #[repr(C)]
 pub struct EvmData {
     pub block_basefee: Bytes32,
-    pub block_chainid: Bytes32,
+    pub chainid: Bytes32,
     pub block_coinbase: Bytes20,
     pub block_gas_limit: u64,
     pub block_number: Bytes32,
@@ -74,6 +74,7 @@ pub struct EvmData {
     pub msg_value: Bytes32,
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
+    pub reentrant: u32,
     pub return_data_len: u32,
 }
 

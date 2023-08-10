@@ -58,7 +58,8 @@ pub struct GoEvmApi {
         gas: *mut u64,
         return_data_len: *mut u32,
     ) -> EvmApiStatus,
-    pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
+    pub get_return_data:
+        unsafe extern "C" fn(id: usize, output: *mut RustVec, offset: u32, size: u32),
     pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: u32) -> EvmApiStatus,
     pub account_balance:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // balance
@@ -218,9 +219,9 @@ impl EvmApi for GoEvmApi {
         (result, return_data_len, call_gas)
     }
 
-    fn get_return_data(&mut self) -> Vec<u8> {
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
         let mut data = RustVec::new(vec![]);
-        call!(self, get_return_data, ptr!(data));
+        call!(self, get_return_data, ptr!(data), offset, size);
         into_vec!(data)
     }
 

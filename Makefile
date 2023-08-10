@@ -95,34 +95,39 @@ stylus_cargo = arbitrator/stylus/tests/.cargo/config.toml
 rust_sdk = arbitrator/langs/rust
 stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(rust_sdk)/*/*.toml)
 stylus_lang_c    = $(wildcard arbitrator/langs/c/*.c arbitrator/langs/c/*.h)
+stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
 
 cargo_nightly = cargo +nightly build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
 
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(stylus_test_dir)/$(1)/*.c $(stylus_test_dir)/$(1)/*.h) $(stylus_lang_c)
-stylus_test_keccak_wasm      = $(call get_stylus_test_wasm,keccak)
-stylus_test_keccak_src       = $(call get_stylus_test_rust,keccak)
-stylus_test_keccak-100_wasm  = $(call get_stylus_test_wasm,keccak-100)
-stylus_test_keccak-100_src   = $(call get_stylus_test_rust,keccak-100)
-stylus_test_fallible_wasm    = $(call get_stylus_test_wasm,fallible)
-stylus_test_fallible_src     = $(call get_stylus_test_rust,fallible)
-stylus_test_storage_wasm     = $(call get_stylus_test_wasm,storage)
-stylus_test_storage_src      = $(call get_stylus_test_rust,storage)
-stylus_test_multicall_wasm   = $(call get_stylus_test_wasm,multicall)
-stylus_test_multicall_src    = $(call get_stylus_test_rust,multicall)
-stylus_test_log_wasm         = $(call get_stylus_test_wasm,log)
-stylus_test_log_src          = $(call get_stylus_test_rust,log)
-stylus_test_create_wasm      = $(call get_stylus_test_wasm,create)
-stylus_test_create_src       = $(call get_stylus_test_rust,create)
-stylus_test_evm-data_wasm    = $(call get_stylus_test_wasm,evm-data)
-stylus_test_evm-data_src     = $(call get_stylus_test_rust,evm-data)
-stylus_test_sdk-storage_wasm = $(call get_stylus_test_wasm,sdk-storage)
-stylus_test_sdk-storage_src  = $(call get_stylus_test_rust,sdk-storage)
-stylus_test_siphash_wasm     = $(stylus_test_dir)/siphash/siphash.wasm
-stylus_test_siphash_src      = $(call get_stylus_test_c,siphash)
+stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_sdk-storage_wasm)
+stylus_test_keccak_wasm           = $(call get_stylus_test_wasm,keccak)
+stylus_test_keccak_src            = $(call get_stylus_test_rust,keccak)
+stylus_test_keccak-100_wasm       = $(call get_stylus_test_wasm,keccak-100)
+stylus_test_keccak-100_src        = $(call get_stylus_test_rust,keccak-100)
+stylus_test_fallible_wasm         = $(call get_stylus_test_wasm,fallible)
+stylus_test_fallible_src          = $(call get_stylus_test_rust,fallible)
+stylus_test_storage_wasm          = $(call get_stylus_test_wasm,storage)
+stylus_test_storage_src           = $(call get_stylus_test_rust,storage)
+stylus_test_multicall_wasm        = $(call get_stylus_test_wasm,multicall)
+stylus_test_multicall_src         = $(call get_stylus_test_rust,multicall)
+stylus_test_log_wasm              = $(call get_stylus_test_wasm,log)
+stylus_test_log_src               = $(call get_stylus_test_rust,log)
+stylus_test_create_wasm           = $(call get_stylus_test_wasm,create)
+stylus_test_create_src            = $(call get_stylus_test_rust,create)
+stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
+stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
+stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
+stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
+stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
+stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
+stylus_test_siphash_wasm          = $(stylus_test_dir)/siphash/siphash.wasm
+stylus_test_siphash_src           = $(call get_stylus_test_c,siphash)
+
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -353,6 +358,9 @@ $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wa
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
 
+$(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
+	cargo run --manifest-path arbitrator/langs/bf/Cargo.toml $< -o $@
+
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
@@ -382,6 +390,10 @@ $(stylus_test_create_wasm): $(stylus_test_create_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
 	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 

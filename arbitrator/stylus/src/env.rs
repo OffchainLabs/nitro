@@ -3,7 +3,7 @@
 
 use arbutil::{
     evm::{api::EvmApi, EvmData},
-    Bytes20, Bytes32, Color,
+    pricing, Bytes20, Bytes32, Color,
 };
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
@@ -11,13 +11,16 @@ use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
     fmt::{Debug, Display},
     io,
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 use thiserror::Error;
 use wasmer::{
-    AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut,
-    WasmPtr,
+    AsStoreRef, FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut, WasmPtr,
 };
+use wasmer_types::RawValue;
+use wasmer_vm::VMGlobalDefinition;
 
 pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
 
@@ -44,14 +47,6 @@ pub struct WasmEnv<E: EvmApi> {
     pub config: Option<StylusConfig>,
 }
 
-#[derive(Clone, Debug)]
-pub struct MeterData {
-    /// The amount of ink left
-    pub ink_left: Global,
-    /// Whether the instance has run out of ink
-    pub ink_status: Global,
-}
-
 impl<E: EvmApi> WasmEnv<E> {
     pub fn new(
         compile: CompileConfig,
@@ -71,10 +66,12 @@ impl<E: EvmApi> WasmEnv<E> {
         }
     }
 
-    pub fn start<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
+    pub fn start<'a>(
+        env: &'a mut WasmEnvMut<'_, E>,
+        ink: u64,
+    ) -> Result<HostioInfo<'a, E>, Escape> {
         let mut info = Self::start_free(env);
-        let cost = info.config().pricing.hostio_ink;
-        info.buy_ink(cost)?;
+        info.buy_ink(pricing::HOSTIO_INK + ink)?;
         Ok(info)
     }
 
@@ -84,10 +81,45 @@ impl<E: EvmApi> WasmEnv<E> {
         HostioInfo { env, memory, store }
     }
 
+    pub fn meter(&mut self) -> &mut MeterData {
+        self.meter.as_mut().expect("not metered")
+    }
+
     pub fn say<D: Display>(&self, text: D) {
         println!("{} {text}", "Stylus says:".yellow());
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct MeterData {
+    /// The amount of ink left
+    pub ink_left: NonNull<VMGlobalDefinition>,
+    /// Whether the instance has run out of ink
+    pub ink_status: NonNull<VMGlobalDefinition>,
+}
+
+impl MeterData {
+    pub fn ink(&self) -> u64 {
+        unsafe { self.ink_left.as_ref().val.u64 }
+    }
+
+    pub fn status(&self) -> u32 {
+        unsafe { self.ink_status.as_ref().val.u32 }
+    }
+
+    pub fn set_ink(&mut self, ink: u64) {
+        unsafe { self.ink_left.as_mut().val = RawValue { u64: ink } }
+    }
+
+    pub fn set_status(&mut self, status: u32) {
+        unsafe { self.ink_status.as_mut().val = RawValue { u32: status } }
+    }
+}
+
+/// The data we're pointing to is owned by the `NativeInstance`.
+/// These are simple integers whose lifetime is that of the instance.
+/// Stylus is also single-threaded.
+unsafe impl Send for MeterData {}
 
 pub struct HostioInfo<'a, E: EvmApi> {
     pub env: &'a mut WasmEnv<E>,
@@ -136,14 +168,21 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         Ok(data)
     }
 
+    // TODO: use the unstable array_assum_init
+    pub fn read_fixed<const N: usize>(&self, ptr: u32) -> Result<[u8; N], MemoryAccessError> {
+        let mut data = [MaybeUninit::uninit(); N];
+        self.view().read_uninit(ptr.into(), &mut data)?;
+        Ok(data.map(|x| unsafe { x.assume_init() }))
+    }
+
     pub fn read_bytes20(&self, ptr: u32) -> eyre::Result<Bytes20> {
-        let data = self.read_slice(ptr, 20)?;
-        Ok(data.try_into()?)
+        let data = self.read_fixed(ptr)?;
+        Ok(data.into())
     }
 
     pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
-        let data = self.read_slice(ptr, 32)?;
-        Ok(data.try_into()?)
+        let data = self.read_fixed(ptr)?;
+        Ok(data.into())
     }
 
     pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
@@ -163,26 +202,17 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
 
 impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
     fn ink_left(&mut self) -> MachineMeter {
-        let store = &mut self.store;
-        let meter = self.env.meter.as_ref().unwrap();
-        let status = meter.ink_status.get(store);
-        let status = status.try_into().expect("type mismatch");
-        let ink = meter.ink_left.get(store);
-        let ink = ink.try_into().expect("type mismatch");
-
-        match status {
-            0_u32 => MachineMeter::Ready(ink),
+        let vm = self.env.meter();
+        match vm.status() {
+            0_u32 => MachineMeter::Ready(vm.ink()),
             _ => MachineMeter::Exhausted,
         }
     }
 
-    fn set_meter(&mut self, value: MachineMeter) {
-        let store = &mut self.store;
-        let meter = self.env.meter.as_ref().unwrap();
-        let ink = value.ink();
-        let status = value.status();
-        meter.ink_left.set(store, ink.into()).unwrap();
-        meter.ink_status.set(store, status.into()).unwrap();
+    fn set_meter(&mut self, meter: MachineMeter) {
+        let vm = self.env.meter();
+        vm.set_ink(meter.ink());
+        vm.set_status(meter.status());
     }
 }
 

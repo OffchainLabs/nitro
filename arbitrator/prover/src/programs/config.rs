@@ -23,7 +23,7 @@ use {
 #[repr(C)]
 pub struct StylusConfig {
     /// Version the program was compiled against
-    pub version: u32,
+    pub version: u16,
     /// The maximum size of the stack, measured in words
     pub max_depth: u32,
     /// Pricing parameters supplied at runtime
@@ -34,9 +34,7 @@ pub struct StylusConfig {
 #[repr(C)]
 pub struct PricingParams {
     /// The price of ink, measured in bips of an evm gas
-    pub ink_price: u64,
-    /// The amount of ink one pays to do a user_host call
-    pub hostio_ink: u64,
+    pub ink_price: u32,
 }
 
 impl Default for StylusConfig {
@@ -51,16 +49,13 @@ impl Default for StylusConfig {
 
 impl Default for PricingParams {
     fn default() -> Self {
-        Self {
-            ink_price: 1,
-            hostio_ink: 0,
-        }
+        Self { ink_price: 1 }
     }
 }
 
 impl StylusConfig {
-    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
-        let pricing = PricingParams::new(ink_price, hostio_ink);
+    pub const fn new(version: u16, max_depth: u32, ink_price: u32) -> Self {
+        let pricing = PricingParams::new(ink_price);
         Self {
             version,
             max_depth,
@@ -71,19 +66,16 @@ impl StylusConfig {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub const fn new(ink_price: u64, hostio_ink: u64) -> Self {
-        Self {
-            ink_price,
-            hostio_ink,
-        }
+    pub const fn new(ink_price: u32) -> Self {
+        Self { ink_price }
     }
 
     pub fn gas_to_ink(&self, gas: u64) -> u64 {
-        gas.saturating_mul(100_00) / self.ink_price
+        gas.saturating_mul(self.ink_price.into())
     }
 
     pub fn ink_to_gas(&self, ink: u64) -> u64 {
-        ink.saturating_mul(self.ink_price) / 100_00
+        ink / self.ink_price as u64 // never 0
     }
 }
 
@@ -92,7 +84,7 @@ pub type OpCosts = fn(&Operator) -> u64;
 #[derive(Clone, Debug, Default)]
 pub struct CompileConfig {
     /// Version of the compiler to use
-    pub version: u32,
+    pub version: u16,
     /// Pricing parameters used for metering
     pub pricing: CompilePricingParams,
     /// Memory bounds
@@ -151,7 +143,7 @@ impl Default for CompileMemoryParams {
 }
 
 impl CompileConfig {
-    pub fn version(version: u32, debug_chain: bool) -> Self {
+    pub fn version(version: u16, debug_chain: bool) -> Self {
         let mut config = Self::default();
         config.version = version;
         config.debug.debug_funcs = debug_chain;
