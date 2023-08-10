@@ -14,7 +14,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -124,7 +126,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		nextNonce := lastQueueItem.Data.Nonce + 1
+		nextNonce := lastQueueItem.FullTx.Nonce() + 1
 		if config.MaxQueuedTransactions > 0 {
 			queueLen, err := p.queue.Length(ctx)
 			if err != nil {
@@ -259,7 +261,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return err
 	}
-	tx, txData, txWrapData, err := p.prepareTxTypeToPost(feeCap, tipCap, data, nonce, to, gasLimit)
+	tx, txData, networkBlobTx, err := p.prepareTxTypeToPost(feeCap, tipCap, data, nonce, to, gasLimit)
 	if err != nil {
 		return err
 	}
@@ -267,9 +269,10 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return err
 	}
+	networkBlobTx.Transaction = fullTx
 	queuedTx := queuedTransaction[Meta]{
 		Data:            txData,
-		BlobData:        txWrapData,
+		NetworkBlobTx:   networkBlobTx,
 		FullTx:          fullTx,
 		Meta:            meta,
 		Sent:            false,
@@ -283,10 +286,10 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 // posting EIP-4844 style blob transactions to reduce costs on L1.
 func (p *DataPoster[Meta]) prepareTxTypeToPost(
 	feeCap, tipCap *big.Int, data *DataToPost, nonce uint64, to common.Address, gasLimit uint64,
-) (*types.Transaction, types.TxData, types.TxWrapData, error) {
+) (*types.Transaction, types.TxData, *types.BlobTxWithBlobs, error) {
 	if p.isEip4844 {
 		dataBlobs := blobs.EncodeBlobs(data.L2MessageData)
-		commitments, versionedHashes, aggregatedProof, err := dataBlobs.ComputeCommitmentsAndAggregatedProof()
+		commitments, proofs, versionedHashes, err := blobs.ComputeCommitmentsProofsAndHashes(dataBlobs)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -298,26 +301,21 @@ func (p *DataPoster[Meta]) prepareTxTypeToPost(
 		if overflows {
 			return nil, nil, nil, fmt.Errorf("fee cap overflows: %s", feeCap.String())
 		}
-		txData := &types.SignedBlobTx{
-			Message: types.BlobTxMessage{
-				Nonce:               view.Uint64View(nonce),
-				GasTipCap:           view.Uint256View(*tCap),
-				GasFeeCap:           view.Uint256View(*fCap),
-				Gas:                 view.Uint64View(gasLimit),
-				Data:                data.SequencerInboxCalldata,
-				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
-				Value:               view.Uint256View(*uint256.NewInt(0)),
-				BlobVersionedHashes: versionedHashes,
-				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
-			},
+		txData := &types.BlobTx{
+			Nonce:      nonce,
+			GasTipCap:  tCap,
+			GasFeeCap:  fCap,
+			Gas:        gasLimit,
+			To:         to,
+			Value:      uint256.NewInt(0),
+			Data:       data.SequencerInboxCalldata,
+			BlobFeeCap: fCap, // TODO is this set correctly?
+			BlobHashes: versionedHashes,
 		}
-		blobWrap := &blobs.BlobTxWrapData{
-			BlobKzgs:           commitments,
-			Blobs:              dataBlobs,
-			KzgAggregatedProof: aggregatedProof,
-		}
-		txWrapData := blobs.ToGethWrapData(blobWrap)
-		return types.NewTx(txData, types.WithTxWrapData(txWrapData)), txData, txWrapData, nil
+		tx := types.NewTx(txData)
+		txWithBlobs := types.NewBlobTxWithBlobs(tx, dataBlobs, commitments, proofs)
+
+		return tx, txData, txWithBlobs, nil
 	}
 	txData := &types.DynamicFeeTx{
 		Nonce:     nonce,
@@ -346,7 +344,20 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 			return err
 		}
 	}
-	err := p.client.SendTransaction(ctx, newTx.FullTx)
+	var err error
+	if newTx.NetworkBlobTx != nil {
+		rlpData, err := newTx.NetworkBlobTx.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		client, ok := p.client.(*ethclient.Client)
+		if !ok {
+			return errors.New("unexpected type in p.client")
+		}
+		err = client.Client().CallContext(ctx, nil, "eth_sendRawTransaction", hexutil.Encode(rlpData))
+	} else {
+		err = p.client.SendTransaction(ctx, newTx.FullTx)
+	}
 	if err != nil {
 		if strings.Contains(err.Error(), "already known") || strings.Contains(err.Error(), "nonce too low") {
 			log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
@@ -365,12 +376,11 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.FullTx.Gas(), prevTx.FullTx.GasFeeCap(), prevTx.FullTx.GasTipCap(), prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Gas(), prevTx.FullTx.GasFeeCap(), prevTx.FullTx.GasTipCap(), prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
 
-	desiredFeeCap := newFeeCap
 	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.FullTx.Gas()))
 	newFeeCap = arbmath.BigMin(newFeeCap, maxFeeCap)
 	minNewFeeCap := arbmath.BigMulByBips(prevTx.FullTx.GasFeeCap(), minRbfIncrease)
@@ -378,10 +388,10 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
 		log.Debug(
 			"no need to replace by fee transaction",
-			"nonce", prevTx.Data.Nonce,
-			"lastFeeCap", prevTx.Data.GasFeeCap,
+			"nonce", prevTx.FullTx.Nonce(),
+			"lastFeeCap", prevTx.FullTx.GasFeeCap(),
 			"recommendedFeeCap", newFeeCap,
-			"lastTipCap", prevTx.Data.GasTipCap,
+			"lastTipCap", prevTx.FullTx.GasTipCap(),
 			"recommendedTipCap", newTipCap,
 		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
@@ -398,6 +408,7 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 	}
 	var txData types.TxData
 	var tx *types.Transaction
+	var txWithBlobs *types.BlobTxWithBlobs
 	if p.isEip4844 {
 		tCap, ok := uint256.FromBig(newTipCap)
 		if !ok {
@@ -407,19 +418,20 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 		if !ok {
 			return errors.New("fee cap is not a big int")
 		}
-		txData = &types.SignedBlobTx{
-			Message: types.BlobTxMessage{
-				Nonce:               view.Uint64View(newTx.FullTx.Nonce()),
-				GasTipCap:           view.Uint256View(*tCap),
-				GasFeeCap:           view.Uint256View(*fCap),
-				Gas:                 view.Uint64View(newTx.FullTx.Gas()),
-				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(newTx.FullTx.To())},
-				Value:               view.Uint256View(*uint256.NewInt(0)),
-				BlobVersionedHashes: newTx.FullTx.DataHashes(),
-				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
-			},
+
+		txData := &types.BlobTx{
+			Nonce:      newTx.FullTx.Nonce(),
+			GasTipCap:  tCap,
+			GasFeeCap:  fCap,
+			Gas:        newTx.FullTx.Gas(),
+			To:         *newTx.FullTx.To(),
+			Value:      uint256.NewInt(0),
+			Data:       newTx.FullTx.Data(),
+			BlobFeeCap: fCap, // TODO is this set correctly?
+			BlobHashes: newTx.FullTx.BlobHashes(),
 		}
-		tx = types.NewTx(newTx.Data, types.WithTxWrapData(newTx.BlobData))
+		tx = types.NewTx(txData)
+		txWithBlobs = newTx.NetworkBlobTx
 	} else {
 		txData = &types.DynamicFeeTx{
 			Nonce:     newTx.FullTx.Nonce(),
@@ -435,6 +447,8 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 	newTx.Sent = false
 	newTx.Data = txData
 	newTx.FullTx, err = p.auth.Signer(p.auth.From, tx)
+	txWithBlobs.Transaction = newTx.FullTx
+	newTx.NetworkBlobTx = txWithBlobs
 	if err != nil {
 		return err
 	}
@@ -513,7 +527,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 	} else {
 		delete(p.errorCount, nonce)
 	}
-	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.Data.GasFeeCap, "tipCap", tx.Data.GasTipCap)
+	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.FullTx.GasFeeCap(), "tipCap", tx.FullTx.GasTipCap())
 }
 
 const minWait = time.Second * 10
@@ -588,7 +602,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 type queuedTransaction[Meta any] struct {
 	FullTx          *types.Transaction
 	Data            types.TxData
-	BlobData        types.TxWrapData
+	NetworkBlobTx   *types.BlobTxWithBlobs
 	Meta            Meta
 	Sent            bool
 	Created         time.Time // may be earlier than the tx was given to the tx poster

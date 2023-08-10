@@ -1,23 +1,12 @@
 package blobs
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/cryptography/kzg"
-	"github.com/protolambda/go-kzg/bls"
-	"github.com/protolambda/ztyp/codec"
-	"github.com/protolambda/ztyp/tree"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 )
 
+/*
 // Compressed BLS12-381 G1 element
 type KZGCommitment [48]byte
 
@@ -394,29 +383,32 @@ func ToGethWrapData(b *BlobTxWrapData) types.TxWrapData {
 		KzgAggregatedProof: proof,
 	}
 }
+*/
 
 // EncodeBlobs takes in raw bytes data to convert into blobs used for KZG commitment EIP-4844
 // transactions on Ethereum.
-func EncodeBlobs(data []byte) Blobs {
-	blobs := []Blob{{}}
-	blobIndex := 0
-	fieldIndex := -1
-	for i := 0; i < len(data); i += 31 {
-		fieldIndex++
-		if fieldIndex == params.FieldElementsPerBlob {
-			blobs = append(blobs, Blob{})
-			blobIndex++
-			fieldIndex = 0
-		}
-		max := i + 31
-		if max > len(data) {
-			max = len(data)
-		}
-		copy(blobs[blobIndex][fieldIndex][:], data[i:max])
+func EncodeBlobs(data []byte) []kzg4844.Blob {
+	const blobLen = len(kzg4844.Blob{})
+	partiallyFilledBlob := 0
+	if len(data)%blobLen > 0 {
+		partiallyFilledBlob = 1
 	}
+	blobCount := len(data)/blobLen + partiallyFilledBlob
+	blobs := make([]kzg4844.Blob, blobCount, blobCount)
+
+	for i, blob := range blobs {
+		start := i * blobLen
+		end := (i + 1) * blobLen
+		if end > len(data) {
+			end = len(data)
+		}
+		copy(blob[:], data[start:end])
+	}
+
 	return blobs
 }
 
+/*
 func (blob *Blob) ComputeCommitment() (commitment KZGCommitment, ok bool) {
 	frs := make([]bls.Fr, len(blob))
 	for i, elem := range blob {
@@ -457,53 +449,31 @@ func (blobs Blobs) ComputeCommitments() (commitments []KZGCommitment, versionedH
 	}
 	return commitments, versionedHashes, true
 }
+*/
 
-// Return KZG commitments, versioned hashes and the aggregated KZG proof that correspond to these blobs
-func (blobs Blobs) ComputeCommitmentsAndAggregatedProof() (commitments []KZGCommitment, versionedHashes []common.Hash, aggregatedProof KZGProof, err error) {
-	commitments = make([]KZGCommitment, len(blobs))
-	versionedHashes = make([]common.Hash, len(blobs))
+// Return KZG commitments, proofs, and versioned hashes that corresponds to these blobs
+func ComputeCommitmentsProofsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []kzg4844.Proof, []common.Hash, error) {
+	commitments := make([]kzg4844.Commitment, len(blobs))
+	proofs := make([]kzg4844.Proof, len(blobs))
+	versionedHashes := make([]common.Hash, len(blobs))
+
 	for i, blob := range blobs {
-		var ok bool
-		commitments[i], ok = blob.ComputeCommitment()
-		if !ok {
-			return nil, nil, KZGProof{}, errors.New("invalid blob for commitment")
+		var err error
+		commitments[i], err = kzg4844.BlobToCommitment(blob)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		versionedHashes[i] = commitments[i].ComputeVersionedHash()
+		proofs[i], err = kzg4844.ComputeBlobProof(blob, commitments[i])
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		versionedHashes[i] = vm.KZGToVersionedHash(commitments[i])
 	}
 
-	var kzgProof KZGProof
-	if len(blobs) != 0 {
-		aggregatePoly, aggregateCommitmentG1, err := computeAggregateKzgCommitment(blobs, commitments)
-		if err != nil {
-			return nil, nil, KZGProof{}, err
-		}
-
-		var aggregateCommitment KZGCommitment
-		copy(aggregateCommitment[:], bls.ToCompressedG1(aggregateCommitmentG1))
-
-		var aggregateBlob Blob
-		for i := range aggregatePoly {
-			aggregateBlob[i] = bls.FrTo32(&aggregatePoly[i])
-		}
-		sum, err := sszHash(&PolynomialAndCommitment{aggregateBlob, aggregateCommitment})
-		if err != nil {
-			return nil, nil, KZGProof{}, err
-		}
-		var z bls.Fr
-		hashToFr(&z, sum)
-
-		var y bls.Fr
-		kzg.EvaluatePolyInEvaluationForm(&y, aggregatePoly, &z)
-
-		aggProofG1, err := kzg.ComputeProof(aggregatePoly, &z)
-		if err != nil {
-			return nil, nil, KZGProof{}, err
-		}
-		copy(kzgProof[:], bls.ToCompressedG1(aggProofG1))
-	}
-
-	return commitments, versionedHashes, kzgProof, nil
+	return commitments, proofs, versionedHashes, nil
 }
+
+/*
 
 func computePowers(r *bls.Fr, n int) []bls.Fr {
 	var currentPower bls.Fr
@@ -564,3 +534,4 @@ func sszHash(c codec.Serializable) ([32]byte, error) {
 	copy(sum[:], sha.Sum(nil))
 	return sum, nil
 }
+*/
