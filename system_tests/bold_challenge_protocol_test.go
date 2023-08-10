@@ -24,13 +24,13 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -88,17 +88,15 @@ func TestBoldProtocol(t *testing.T) {
 		transferGas,
 	)
 
-	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, nil, l2chainConfig, nil, l2info)
+	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
-	execNodeA := getExecNode(t, l2nodeA)
 
-	l2clientB, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil, stakeTokenAddr)
+	l2clientB, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
-	execNodeB := getExecNode(t, l2nodeB)
 
-	nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
+	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
 	if nodeAGenesis != nodeBGenesis {
 		Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
 	}
@@ -135,7 +133,7 @@ func TestBoldProtocol(t *testing.T) {
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		execNodeA,
+		l2nodeA.Execution.Recorder,
 		l2nodeA.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -149,7 +147,7 @@ func TestBoldProtocol(t *testing.T) {
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		execNodeB,
+		l2nodeB.Execution.Recorder,
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -227,8 +225,8 @@ func TestBoldProtocol(t *testing.T) {
 	t.Logf("Node A, count %d, msgs %d, acc %s", bcA, msgA, accA)
 	t.Logf("Node B, count %d, msgs %d, acc %s", bcB, msgB, accB)
 
-	nodeALatest := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBLatest := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
+	nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
 	if nodeALatest == nodeBLatest {
 		Fail(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
 	}
@@ -282,7 +280,6 @@ func createTestNodeOnL1ForBoldProtocol(
 	ctx context.Context,
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
-	execConfig *gethexec.Config,
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
 	l2info_in info,
@@ -293,9 +290,6 @@ func createTestNodeOnL1ForBoldProtocol(
 ) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
-	}
-	if execConfig == nil {
-		execConfig = gethexec.ConfigDefaultTest()
 	}
 	if chainConfig == nil {
 		chainConfig = params.ArbitrumDevTestChainConfig()
@@ -362,34 +356,22 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	if !isSequencer {
 		nodeConfig.BatchPoster.Enable = false
-		nodeConfig.Sequencer = false
 		nodeConfig.DelayedSequencer.Enable = false
-		execConfig.Sequencer.Enable = false
 	}
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	Require(t, execConfig.Validate())
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
-	Require(t, err)
-
-	execclient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stack)
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, execclient, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
+		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
-	Require(t, execNode.Initialize(ctx))
-
 	Require(t, currentNode.Start(ctx))
-
-	Require(t, execNode.Start(ctx))
 
 	l2client = ClientForStack(t, l2stack)
 
-	StartWatchChanErr(t, ctx, fatalErrChan, currentNode, execNode)
+	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
 	return
 }
@@ -561,17 +543,16 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
-	execConfig *gethexec.Config,
 	stackConfig *node.Config,
 	stakeTokenAddr common.Address,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
-	if execConfig == nil {
-		execConfig = gethexec.ConfigDefaultNonSequencerTest()
+	if nodeConfig == nil {
+		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
-	feedErrChan := make(chan error, 10)
+	fatalErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		Fatal(t, err)
@@ -588,44 +569,33 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
-	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
-	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-	firstExec := getExecNode(t, first)
-
-	chainConfig := firstExec.ArbInterface.BlockChain().Config()
+	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
 	addresses, assertionChain := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("EvilInbox", addresses.Inbox)
 
-	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
-	Require(t, err)
-
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	Require(t, execConfig.Validate())
-	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+
+	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
+	initMessage := getInitMessage(ctx, t, l1client, addresses)
+
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
-	execclient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stack)
-
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, execclient, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, feedErrChan)
+	l2node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan)
 	Require(t, err)
 
-	Require(t, currentExec.Initialize(ctx))
+	Require(t, l2node.Start(ctx))
 
-	err = currentNode.Start(ctx)
-	Require(t, err, nodeConfig.BlockValidator.ValidationServer.URL, " l2: ", l2stack.WSEndpoint())
 	l2client := ClientForStack(t, l2stack)
 
-	Require(t, currentExec.Start(ctx))
+	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 
-	StartWatchChanErr(t, ctx, feedErrChan, currentNode, currentExec)
-
-	return l2client, currentNode, assertionChain
+	return l2client, l2node, assertionChain
 }
