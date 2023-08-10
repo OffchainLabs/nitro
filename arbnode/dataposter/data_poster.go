@@ -215,6 +215,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFee
 		return nil, nil, err
 	}
 	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(config.MinTipCapGwei*params.GWei))
+	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(config.MaxTipCapGwei*params.GWei))
 
 	hugeTipIncrease := false
 	if lastTipCap != nil {
@@ -555,6 +556,7 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
 	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
 }
 
@@ -582,6 +584,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }
 
@@ -593,5 +596,6 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }
