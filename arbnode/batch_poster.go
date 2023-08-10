@@ -55,21 +55,22 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader     *headerreader.HeaderReader
-	inbox        *InboxTracker
-	streamer     *TransactionStreamer
-	config       BatchPosterConfigFetcher
-	seqInbox     *bridgegen.SequencerInbox
-	bridge       *bridgegen.Bridge
-	syncMonitor  *SyncMonitor
-	seqInboxABI  *abi.ABI
-	seqInboxAddr common.Address
-	building     *buildingBatch
-	daWriter     das.DataAvailabilityServiceWriter
-	dataPoster   *dataposter.DataPoster
-	redisLock    *SimpleRedisLock
-	firstAccErr  time.Time // first time a continuous missing accumulator occurred
-	backlog      uint64    // An estimate of the number of unposted batches
+	l1Reader        *headerreader.HeaderReader
+	inbox           *InboxTracker
+	streamer        *TransactionStreamer
+	config          BatchPosterConfigFetcher
+	seqInbox        *bridgegen.SequencerInbox
+	bridge          *bridgegen.Bridge
+	syncMonitor     *SyncMonitor
+	seqInboxABI     *abi.ABI
+	seqInboxAddr    common.Address
+	building        *buildingBatch
+	daWriter        das.DataAvailabilityServiceWriter
+	dataPoster      *dataposter.DataPoster
+	redisLock       *SimpleRedisLock
+	firstAccErr     time.Time // first time a continuous missing accumulator occurred
+	backlog         uint64    // An estimate of the number of unposted batches
+	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
 	batchReverted atomic.Bool // indicates whether data poster batch was reverted
 }
@@ -92,7 +93,7 @@ type BatchPosterConfig struct {
 	MaxBatchSize                       int                         `koanf:"max-size" reload:"hot"`
 	MaxBatchPostDelay                  time.Duration               `koanf:"max-delay" reload:"hot"`
 	WaitForMaxBatchPostDelay           bool                        `koanf:"wait-for-max-delay" reload:"hot"`
-	BatchPollDelay                     time.Duration               `koanf:"poll-delay" reload:"hot"`
+	PollInterval                       time.Duration               `koanf:"poll-interval" reload:"hot"`
 	PostingErrorDelay                  time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel                   int                         `koanf:"compression-level" reload:"hot"`
 	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period" reload:"hot"`
@@ -141,7 +142,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxBatchPostDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxBatchPostDelay, "wait for the max batch delay, even if the batch is full")
-	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
+	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
@@ -159,7 +160,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDasFallbackStoreDataOnChain: false,
 	MaxBatchSize:                       100000,
-	BatchPollDelay:                     time.Second * 10,
+	PollInterval:                       time.Second * 10,
 	PostingErrorDelay:                  time.Second * 10,
 	MaxBatchPostDelay:                  time.Hour,
 	WaitForMaxBatchPostDelay:           false,
@@ -184,7 +185,7 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:                   true,
 	MaxBatchSize:             100000,
-	BatchPollDelay:           time.Millisecond * 10,
+	PollInterval:             time.Millisecond * 10,
 	PostingErrorDelay:        time.Millisecond * 10,
 	MaxBatchPostDelay:        0,
 	WaitForMaxBatchPostDelay: false,
@@ -797,6 +798,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			l1BoundMaxTimestamp = math.MaxUint64
 		}
 		if msg.Message.Header.BlockNumber > l1BoundMaxBlockNumber || msg.Message.Header.Timestamp > l1BoundMaxTimestamp {
+			b.lastHitL1Bounds = time.Now()
 			log.Info(
 				"not posting more messages because block number or timestamp exceed L1 bounds",
 				"blockNumber", msg.Message.Header.BlockNumber,
@@ -884,22 +886,31 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"current delayed", b.building.segments.delayedMsg,
 		"total segments", len(b.building.segments.rawSegments),
 	)
+	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	unpostedMessages := msgCount - b.building.msgCount
 	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
 	if b.backlog > 10 {
 		logLevel := log.Warn
-		if b.backlog > 30 {
+		if recentlyHitL1Bounds {
+			logLevel = log.Info
+		} else if b.backlog > 30 {
 			logLevel = log.Error
 		}
 		logLevel(
 			"a large batch posting backlog exists",
+			"recentlyHitL1Bounds", recentlyHitL1Bounds,
 			"currentPosition", b.building.msgCount,
 			"messageCount", msgCount,
 			"lastPostedMessages", postedMessages,
 			"unpostedMessages", unpostedMessages,
 			"batchBacklogEstimate", b.backlog,
 		)
+	}
+	if recentlyHitL1Bounds {
+		// This backlog isn't "real" in that we don't want to post any more messages.
+		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
+		b.backlog = 0
 	}
 	b.building = nil
 	return true, nil
@@ -930,7 +941,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		if !b.redisLock.AttemptLock(ctx) {
 			b.building = nil
-			return b.config().BatchPollDelay
+			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
@@ -953,7 +964,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		} else if posted {
 			return 0
 		} else {
-			return b.config().BatchPollDelay
+			return b.config().PollInterval
 		}
 	})
 }
