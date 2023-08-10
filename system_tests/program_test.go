@@ -575,19 +575,23 @@ func testEvmData(t *testing.T, jit bool) {
 		result = result[count:]
 		return data
 	}
+	getU32 := func(name string) uint32 {
+		t.Helper()
+		return binary.BigEndian.Uint32(advance(4, name))
+	}
 	getU64 := func(name string) uint64 {
 		t.Helper()
 		return binary.BigEndian.Uint64(advance(8, name))
 	}
 
-	inkPrice := getU64("ink price")
+	inkPrice := uint64(getU32("ink price"))
 	gasLeftBefore := getU64("gas left before")
 	inkLeftBefore := getU64("ink left before")
 	gasLeftAfter := getU64("gas left after")
 	inkLeftAfter := getU64("ink left after")
 
 	gasUsed := gasLeftBefore - gasLeftAfter
-	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
+	calculatedGasUsed := (inkLeftBefore - inkLeftAfter) / inkPrice
 
 	// Should be within 1 gas
 	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
