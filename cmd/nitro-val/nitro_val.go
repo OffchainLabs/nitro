@@ -88,13 +88,13 @@ func mainImpl() int {
 		}
 	}
 
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Workdir))
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Workdir)("jwtsecret")
+		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -107,7 +107,7 @@ func mainImpl() int {
 	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
 
-		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(newCfg.Workdir))
+		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
 	stack, err := node.New(&stackConf)
 	if err != nil {

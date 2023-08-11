@@ -37,9 +37,8 @@ func TransferBalance(
 	if to != nil {
 		evm.StateDB.AddBalance(*to, amount)
 	}
-	if evm.Config.Tracer != nil {
-		tracer := evm.Config.Tracer
 
+	if tracer := evm.Config.Tracer; tracer != nil {
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
 			// A non-zero depth implies this transfer is occuring inside EVM execution
 			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())

@@ -68,7 +68,7 @@ type BatchPoster struct {
 	seqInboxAddr common.Address
 	building     *buildingBatch
 	daWriter     das.DataAvailabilityServiceWriter
-	dataPoster   *dataposter.DataPoster[batchPosterPosition]
+	dataPoster   *dataposter.DataPoster
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 	backlog      uint64    // An estimate of the number of unposted batches
@@ -271,7 +271,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 			if err != nil {
 				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
 			}
-			if bytes.Equal(from.Bytes(), b.dataPoster.From().Bytes()) {
+			if bytes.Equal(from.Bytes(), b.dataPoster.Sender().Bytes()) {
 				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 				if err != nil {
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
@@ -332,10 +332,10 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	}
 }
 
-func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
 	if err != nil {
-		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
+		return nil, fmt.Errorf("error getting latest batch count: %w", err)
 	}
 	inboxBatchCount := bigInboxBatchCount.Uint64()
 	var prevBatchMeta BatchMetadata
@@ -343,14 +343,14 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 		var err error
 		prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
 		if err != nil {
-			return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
+			return nil, fmt.Errorf("error getting latest batch metadata: %w", err)
 		}
 	}
-	return batchPosterPosition{
+	return rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        prevBatchMeta.MessageCount,
 		DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
 		NextSeqNum:          inboxBatchCount,
-	}, nil
+	})
 }
 
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
@@ -681,7 +681,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		return 0, err
 	}
 	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
-		From: b.dataPoster.From(),
+		From: b.dataPoster.Sender(),
 		To:   &b.seqInboxAddr,
 		Data: data.SequencerInboxCalldata,
 	})
@@ -709,9 +709,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
-	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	nonce, batchPositionBytes, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
+	}
+	var batchPosition batchPosterPosition
+	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
+		return false, fmt.Errorf("decoding batch position: %w", err)
 	}
 
 	dbBatchCount, err := b.inbox.GetBatchCount()
@@ -891,10 +895,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	newMeta := batchPosterPosition{
+	newMeta, err := rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        b.building.msgCount,
 		DelayedMessageCount: b.building.segments.delayedMsg,
 		NextSeqNum:          batchPosition.NextSeqNum + 1,
+	})
+	if err != nil {
+		return false, err
 	}
 	err = b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
@@ -945,8 +952,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
-		if b.dataPoster.From() != (common.Address{}) {
-			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.From(), nil)
+		if b.dataPoster.Sender() != (common.Address{}) {
+			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.Sender(), nil)
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
