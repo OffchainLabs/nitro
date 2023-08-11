@@ -386,11 +386,6 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
-	queueTimeout := s.config().QueueTimeout
-	// Just to be safe, make sure we don't run over twice the queue timeout
-	parentCtx, cancel := context.WithTimeout(parentCtx, queueTimeout*2)
-	defer cancel()
-
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx, options)
@@ -415,8 +410,14 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
-	ctx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
+	queueTimeout := s.config().QueueTimeout
+	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
+	// Just to be safe, make sure we don't run over twice the queue timeout
+	submissionStart := time.Now()
+	abortDeadline := submissionStart.Add(queueTimeout * 2)
+	abortCtx, cancel := context.WithDeadline(parentCtx, abortDeadline)
+	defer cancel()
 
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
@@ -424,22 +425,26 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		options,
 		resultChan,
 		false,
-		ctx,
+		queueCtx,
 		time.Now(),
 	}
 	select {
 	case s.txQueue <- queueItem:
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-queueCtx.Done():
+		return queueCtx.Err()
 	}
 
 	select {
 	case res := <-resultChan:
 		return res
-	case <-parentCtx.Done():
-		// We use parentCtx here and not ctx, because the QueueTimeout only applies to the background queue.
+	case <-abortCtx.Done():
+		// We use abortCtx here and not queueCtx, because the QueueTimeout only applies to the background queue.
 		// We want to give the background queue as much time as possible to make a response.
-		return parentCtx.Err()
+		if time.Now().After(abortDeadline) {
+			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
+			log.Warn("transaction sequencing hit abort deadline", "submissionStart", submissionStart, "queueTimeout", queueTimeout, "txHash", tx.Hash())
+		}
+		return abortCtx.Err()
 	}
 }
 
