@@ -268,11 +268,16 @@ func (c nonceFailureCache) Contains(err NonceError) bool {
 }
 
 func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
+	expiry := queueItem.firstAppearance.Add(c.getExpiry())
+	if c.Contains(err) || time.Now().After(expiry) {
+		queueItem.returnResult(err)
+		return
+	}
 	key := addressAndNonce{err.sender, err.txNonce}
 	val := &nonceFailure{
 		queueItem: queueItem,
 		nonceErr:  err,
-		expiry:    queueItem.firstAppearance.Add(c.getExpiry()),
+		expiry:    expiry,
 		revived:   false,
 	}
 	evicted := c.LruCache.Add(key, val)
@@ -369,8 +374,8 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 
 var ErrRetrySequencer = errors.New("please retry transaction")
 
-func (s *Sequencer) ctxWithQueueTimeout(inctx context.Context) (context.Context, context.CancelFunc) {
-	timeout := s.config().QueueTimeout
+// ctxWithTimeout is like context.WithTimeout except a timeout of 0 means unlimited instead of instantly expired.
+func ctxWithTimeout(inctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout == time.Duration(0) {
 		return context.WithCancel(inctx)
 	}
@@ -380,6 +385,11 @@ func (s *Sequencer) ctxWithQueueTimeout(inctx context.Context) (context.Context,
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
+
+	queueTimeout := s.config().QueueTimeout
+	// Just to be safe, make sure we don't run over twice the queue timeout
+	parentCtx, cancel := context.WithTimeout(parentCtx, queueTimeout*2)
+	defer cancel()
 
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
@@ -405,7 +415,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
-	ctx, cancelFunc := s.ctxWithQueueTimeout(parentCtx)
+	ctx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
 
 	resultChan := make(chan error, 1)
@@ -696,11 +706,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 					continue
 				}
 				// Retry this transaction if its predecessor appears
-				if s.nonceFailures.Contains(nonceError) {
-					queueItem.returnResult(err)
-				} else {
-					s.nonceFailures.Add(nonceError, queueItem)
-				}
+				s.nonceFailures.Add(nonceError, queueItem)
 				continue
 			} else if err != nil {
 				nonceCacheRejectedCounter.Inc(1)
@@ -994,7 +1000,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 {
+	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 && s.nonceFailures.Len() == 0 {
 		return
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
@@ -1013,6 +1019,7 @@ func (s *Sequencer) StopAndWait() {
 				_, failure, _ := s.nonceFailures.GetOldest()
 				failure.revived = true
 				item = failure.queueItem
+				source = "nonceFailures"
 				s.nonceFailures.RemoveOldest()
 			} else {
 				select {
