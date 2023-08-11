@@ -722,8 +722,6 @@ func testSdkStorage(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, rust, cleanup := setupProgramTest(t, rustFile("sdk-storage"), jit)
 	defer cleanup()
 
-	t.SkipNow()
-
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -734,57 +732,47 @@ func testSdkStorage(t *testing.T, jit bool) {
 
 	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
 	ensure(tx, err)
-	receipt := ensure(mock.Populate(&auth))
+	tx, err = mock.Populate(&auth)
+	receipt := ensure(tx, err)
 	solCost := receipt.GasUsedForL2()
 
 	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, tx.Data())
 	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
 	rustCost := receipt.GasUsedForL2()
 
-	colors.PrintBlue("rust ", rustCost, " sol ", solCost)
+	check := func() {
+		colors.PrintBlue("rust ", rustCost, " sol ", solCost)
 
-	// ensure txes are sequenced before checking state
-	waitForSequencer(t, node, receipt.BlockNumber.Uint64())
+		// ensure txes are sequenced before checking state
+		waitForSequencer(t, node, receipt.BlockNumber.Uint64())
 
-	bc := node.Execution.Backend.ArbInterface().BlockChain()
-	statedb, err := bc.State()
-	Require(t, err)
-	trieHash := func(addr common.Address) common.Hash {
-		trie, err := statedb.StorageTrie(addr)
+		bc := node.Execution.Backend.ArbInterface().BlockChain()
+		statedb, err := bc.State()
 		Require(t, err)
-		return trie.Hash()
-	}
-	dumpKeys := func(addr common.Address, start common.Hash, count uint64) {
-		for i := uint64(0); i <= count; i++ {
-			key := common.BigToHash(arbmath.BigAddByUint(start.Big(), i))
-			v, err := l2client.StorageAt(ctx, addr, key, nil)
+		trieHash := func(addr common.Address) common.Hash {
+			trie, err := statedb.StorageTrie(addr)
 			Require(t, err)
-			colors.PrintGrey("  ", common.Bytes2Hex(v))
+			return trie.Hash()
 		}
-		println()
-	}
-	dumpTrie := func(name string, addr common.Address) {
-		colors.PrintRed("Trie for ", name)
-		dumpKeys(addr, common.Hash{}, 9)
 
-		dest := common.BigToHash(arbmath.UintToBig(4))
-		hash := crypto.Keccak256Hash(dest[:])
-		colors.PrintRed("Vector ", hash)
-		dumpKeys(addr, hash, 3)
-
-		slot := "0xcc045a98e72e59344d4f7091f80bbb561222da6a20eec7c35a2c5e8d6ed5fd83"
-		dumpKeys(addr, common.HexToHash(slot), 0)
+		solTrie := trieHash(solidity)
+		rustTrie := trieHash(rust)
+		if solTrie != rustTrie {
+			Fatal(t, solTrie, rustTrie)
+		}
 	}
 
-	solTrie := trieHash(solidity)
-	rustTrie := trieHash(rust)
+	check()
 
-	if solTrie != rustTrie {
-		dumpTrie("rust", rust)
-		dumpTrie("solidity", solidity)
-		Fatal(t, solTrie, rustTrie)
-	}
+	colors.PrintBlue("checking removal")
+	tx, err = mock.Remove(&auth)
+	receipt = ensure(tx, err)
+	solCost = receipt.GasUsedForL2()
 
+	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, tx.Data())
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	rustCost = receipt.GasUsedForL2()
+	check()
 }
 
 func setupProgramTest(t *testing.T, file string, jit bool) (

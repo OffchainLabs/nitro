@@ -47,7 +47,6 @@ sol_storage! {
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let contract = unsafe { Contract::new(U256::ZERO, 0) };
     let selector = u32::from_be_bytes(input[0..4].try_into().unwrap());
-    stylus_sdk::debug::println(format!("{selector:x}"));
     match selector {
         0xf809f205 => populate(contract),
         0xa7f43779 => remove(contract),
@@ -57,7 +56,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 }
 
 fn populate(mut contract: Contract) {
-
     // test primitives
     let owner = Address::with_last_byte(0x70);
     contract.flag.set(true);
@@ -109,28 +107,34 @@ fn populate(mut contract: Contract) {
         }
     }
 
-    // test bytes and strings (TODO: add compares and pops)
+    // test bytes
     let mut bytes_full = contract.bytes_full;
     let mut bytes_long = contract.bytes_long;
-    let mut chars = contract.chars;
+
     for i in 0..31 {
         bytes_full.push(i);
     }
-    for i in 0..34 {
+    for i in 0..80 {
         bytes_long.push(i);
-    }
-    for c in "arbitrum stylus".chars() {
-        chars.push(c);
     }
     for i in 0..31 {
         assert_eq!(bytes_full.get(i), Some(i));
     }
-    for i in 0..34 {
+    for i in 0..80 {
         let setter = bytes_long.get_mut(i).unwrap();
         assert_eq!(setter.get()[0], i);
     }
     assert_eq!(bytes_full.get(32), None);
-    assert_eq!(bytes_long.get(34), None);
+    assert_eq!(bytes_long.get(80), None);
+
+    // test strings
+    let mut chars = contract.chars;
+    assert!(chars.is_empty() && chars.len() == 0);
+    assert_eq!(chars.get_string(), "");
+    for c in "arbitrum stylus".chars() {
+        chars.push(c);
+    }
+    assert_eq!(chars.get_string(), "arbitrum stylus");
 
     // test basic maps
     let maps = contract.maps;
@@ -186,8 +190,55 @@ fn populate(mut contract: Contract) {
 }
 
 fn remove(contract: Contract) {
+    // pop all elements
     let mut bytes_full = contract.bytes_full;
     while let Some(value) = bytes_full.pop() {
         assert_eq!(value as usize, bytes_full.len());
     }
+    assert!(bytes_full.is_empty());
+
+    // pop until representation change
+    let mut bytes_long = contract.bytes_long;
+    while bytes_long.len() > 16 {
+        assert!(bytes_long.pop().is_some());
+    }
+
+    // overwrite strings
+    let mut chars = contract.chars;
+    let spiders = r"/\oo/\ //\\(oo)//\\ /\oo/\";
+    chars.set_str(spiders.repeat(6));
+    chars.set_str("wasm is cute <3");
+
+    // pop all elements
+    let mut vector = contract.vector;
+    while let Some(x) = vector.pop() {
+        assert!(x == U64::from(vector.len()) || x == U64::from(77));
+    }
+    assert!(vector.is_empty() && vector.len() == 0);
+
+    // clear inner vectors
+    let mut nested = contract.nested;
+    while nested.len() > 2 {
+        nested.clear_last();
+    }
+    nested.shrink().map(|mut x| x.clear());
+
+    // clear map elements
+    let maps = contract.maps;
+    let mut basic = maps.basic;
+    for i in 0..7 {
+        basic.delete(Uint::from(i));
+    }
+    let value = basic.take(Uint::from(7));
+    assert_eq!(value, Address::with_last_byte(7));
+    let value = basic.replace(Uint::from(8), Address::with_last_byte(32));
+    assert_eq!(value, Address::with_last_byte(8));
+
+    // clear vectors in map
+    let mut vects = maps.vects;
+    for a in 0..3 {
+        let mut bools = vects.setter(Address::with_last_byte(a));
+        bools.clear();
+    }
+    vects.delete(Address::with_last_byte(3));
 }
