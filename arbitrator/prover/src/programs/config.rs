@@ -71,7 +71,7 @@ impl PricingParams {
     }
 
     pub fn gas_to_ink(&self, gas: u64) -> u64 {
-        gas * self.ink_price as u64
+        gas.saturating_mul(self.ink_price.into())
     }
 
     pub fn ink_to_gas(&self, ink: u64) -> u64 {
@@ -155,9 +155,9 @@ impl CompileConfig {
                 config.bounds.heap_bound = Pages(128); // 8 mb
                 config.bounds.max_frame_size = 1024 * 1024;
                 config.pricing = CompilePricingParams {
-                    costs: |_| 1,
-                    memory_fill_ink: 1,
-                    memory_copy_ink: 1,
+                    costs: |_| 50,
+                    memory_fill_ink: 50,
+                    memory_copy_ink: 50,
                 };
             }
             _ => panic!("no config exists for Stylus version {version}"),

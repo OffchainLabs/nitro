@@ -54,7 +54,7 @@ var ProgramNotCompiledError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
 
-const MaxWasmSize = 64 * 1024
+const MaxWasmSize = 128 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term

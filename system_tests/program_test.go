@@ -713,6 +713,68 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
+func TestProgramSdkStorage(t *testing.T) {
+	t.Parallel()
+	testSdkStorage(t, true)
+}
+
+func testSdkStorage(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, rust, cleanup := setupProgramTest(t, rustFile("sdk-storage"), jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
+	ensure(tx, err)
+	tx, err = mock.Populate(&auth)
+	receipt := ensure(tx, err)
+	solCost := receipt.GasUsedForL2()
+
+	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, tx.Data())
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	rustCost := receipt.GasUsedForL2()
+
+	check := func() {
+		colors.PrintBlue("rust ", rustCost, " sol ", solCost)
+
+		// ensure txes are sequenced before checking state
+		waitForSequencer(t, node, receipt.BlockNumber.Uint64())
+
+		bc := node.Execution.Backend.ArbInterface().BlockChain()
+		statedb, err := bc.State()
+		Require(t, err)
+		trieHash := func(addr common.Address) common.Hash {
+			trie, err := statedb.StorageTrie(addr)
+			Require(t, err)
+			return trie.Hash()
+		}
+
+		solTrie := trieHash(solidity)
+		rustTrie := trieHash(rust)
+		if solTrie != rustTrie {
+			Fatal(t, solTrie, rustTrie)
+		}
+	}
+
+	check()
+
+	colors.PrintBlue("checking removal")
+	tx, err = mock.Remove(&auth)
+	receipt = ensure(tx, err)
+	solCost = receipt.GasUsedForL2()
+
+	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, tx.Data())
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	rustCost = receipt.GasUsedForL2()
+	check()
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
@@ -888,20 +950,11 @@ func validateBlocks(
 }
 
 func validateBlockRange(
-	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
+	t *testing.T, blocks []uint64, jit bool,
+	ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
-
-	// wait until all the blocks are sequenced
-	lastBlock := arbmath.MaxInt(blocks...)
-	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
-	})
-
+	waitForSequencer(t, node, arbmath.MaxInt(blocks...))
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
@@ -932,6 +985,17 @@ func validateBlockRange(
 	if !success {
 		Fatal(t)
 	}
+}
+
+func waitForSequencer(t *testing.T, node *arbnode.Node, block uint64) {
+	t.Helper()
+	doUntil(t, 20*time.Millisecond, 500, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(block, 0)
+	})
 }
 
 func timed(t *testing.T, message string, lambda func()) {
