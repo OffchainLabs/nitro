@@ -206,8 +206,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(
-///     blockBasefee, chainid *[32]byte, blockCoinbase *[20]byte, blockGasLimit u64,
-///     blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     blockBasefee *[32]byte, chainid u64, blockCoinbase *[20]byte, blockGasLimit,
+///     blockNumber, blockTimestamp u64, contractAddress, msgSender *[20]byte,
 ///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
 ///) *EvmData
 #[no_mangle]
