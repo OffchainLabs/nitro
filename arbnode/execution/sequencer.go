@@ -413,10 +413,9 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	queueTimeout := s.config().QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
+
 	// Just to be safe, make sure we don't run over twice the queue timeout
-	submissionStart := time.Now()
-	abortDeadline := submissionStart.Add(queueTimeout * 2)
-	abortCtx, cancel := context.WithDeadline(parentCtx, abortDeadline)
+	abortCtx, cancel := ctxWithTimeout(parentCtx, queueTimeout*2)
 	defer cancel()
 
 	resultChan := make(chan error, 1)
@@ -440,11 +439,12 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	case <-abortCtx.Done():
 		// We use abortCtx here and not queueCtx, because the QueueTimeout only applies to the background queue.
 		// We want to give the background queue as much time as possible to make a response.
-		if time.Now().After(abortDeadline) {
+		err := abortCtx.Err()
+		if parentCtx.Err() == nil {
 			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
-			log.Warn("Transaction sequencing hit abort deadline", "submissionStart", submissionStart, "queueTimeout", queueTimeout, "txHash", tx.Hash())
+			log.Warn("Transaction sequencing hit abort deadline", "err", err, "submittedAt", queueItem.firstAppearance, "queueTimeout", queueTimeout, "txHash", tx.Hash())
 		}
-		return abortCtx.Err()
+		return err
 	}
 }
 
