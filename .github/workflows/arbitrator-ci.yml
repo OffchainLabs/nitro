@@ -87,7 +87,9 @@ jobs:
         run: rustup target add wasm32-wasi wasm32-unknown-unknown
 
       - name: Install nightly wasm targets
-        run: rustup target add wasm32-unknown-unknown --toolchain nightly
+        run: |
+          rustup component add rust-src --toolchain nightly
+          rustup target add wasm32-unknown-unknown --toolchain nightly
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
