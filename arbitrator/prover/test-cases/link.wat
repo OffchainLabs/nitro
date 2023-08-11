@@ -5,31 +5,31 @@
     (import "hostio" "wavm_link_module" (func $link (param i32) (result i32)))
     (import "hostio" "wavm_unlink_module" (func $unlink (param) (result)))
     (data (i32.const 0x000)
-        "\b8\ef\6c\9d\e3\a2\aa\9a\94\56\09\7b\13\ef\19\ab\82\ab\c6\d2\eb\76\ca\72\9a\dd\b8\20\84\7b\7a\f7") ;; block
+        "\ae\dc\38\6b\36\2c\42\23\73\d0\10\e1\e6\72\a8\6b\58\9f\10\79\8f\3a\84\89\f1\c1\55\d8\3a\7c\74\08") ;; block
     (data (i32.const 0x020)
-        "\e0\7a\1c\2e\5f\26\ab\ff\5b\ef\d4\ae\b4\c1\7a\18\52\06\cd\be\9c\ea\fb\c3\b6\4a\03\4b\c0\c4\51\14") ;; call
+        "\a5\3a\c1\b1\a1\2e\87\f1\a9\68\67\13\25\1e\f9\75\85\30\5f\51\47\3c\87\3f\f4\4b\02\74\00\53\b7\44") ;; call
     (data (i32.const 0x040)
-        "\4c\85\59\6e\e9\89\38\42\7e\52\63\f5\98\c9\fe\23\4a\17\11\d8\37\e3\ed\d4\2a\93\e7\32\15\c2\d7\1c") ;; indirect
+        "\ad\24\b8\29\6b\15\4e\50\48\0b\69\89\f1\cc\ed\68\22\ae\2f\b2\e8\3d\ed\50\06\d4\fb\5b\c1\bd\dd\e1") ;; indirect
     (data (i32.const 0x060)
-        "\f9\0f\a0\15\f7\e0\52\c2\c8\ec\ac\1c\b7\a3\58\8c\00\52\52\95\a1\ec\a0\55\90\74\aa\11\3f\4e\75\55") ;; const
+        "\3d\92\82\57\c7\5f\03\cd\98\d1\49\7a\7b\6b\e1\13\b0\d3\92\38\94\f4\27\3b\5a\94\e4\2f\8c\ac\fb\06") ;; const
     (data (i32.const 0x080)
-        "\2d\e2\b0\dd\15\63\31\27\e5\31\2d\2d\23\e4\13\67\a0\d5\4d\0e\66\d9\2d\79\37\5d\44\7c\d0\80\f8\b0") ;; div
+        "\27\6e\5d\0d\79\e8\b8\c5\e4\77\45\e4\8e\fb\93\eb\b9\83\1e\38\e1\a5\34\e5\15\a3\87\af\75\fc\b0\75") ;; div
     (data (i32.const 0x0a0)
-        "\91\7a\9d\9d\03\77\07\f0\f7\84\b4\f1\01\e5\50\ff\5f\40\13\34\c1\af\c1\f2\f6\8f\f7\03\a3\ba\32\47") ;; globals
+        "\3f\b4\8c\32\cd\4e\12\1b\a6\af\18\d4\36\b2\2c\87\ba\f3\08\e9\d6\6d\91\61\69\dd\cc\91\6b\ae\77\6d") ;; globals
     (data (i32.const 0x0c0)
-        "\31\81\c9\76\80\55\57\40\6d\93\0d\46\3b\60\31\de\4b\0f\93\14\8e\78\58\63\8c\66\88\55\c3\d3\47\b2") ;; if-else
+        "\8f\b0\a8\9e\16\fa\76\ac\3e\16\86\94\4b\ce\17\e1\87\c6\ed\de\da\4d\49\9b\b4\70\47\7d\0b\0f\cf\c5") ;; if-else
     (data (i32.const 0x0e0)
-        "\8d\e8\a2\29\d8\22\25\97\3e\57\7f\17\2f\b0\24\94\3f\fe\73\6b\ef\34\18\10\4b\18\73\87\4c\3d\97\88") ;; locals
+        "\ec\2c\89\ff\20\c7\a8\af\4b\76\e0\0d\18\d7\24\27\aa\86\81\50\2a\f6\41\31\01\9f\24\fc\cf\06\92\b8") ;; locals
     (data (i32.const 0x100)
-        "\6a\0b\f4\9a\9f\c4\68\18\a5\23\79\11\bf\3a\8d\02\72\ea\e1\21\db\b8\f3\a5\72\d3\66\9a\27\f1\01\74") ;; loop
+        "\f5\70\c9\95\e1\71\4b\55\fe\70\1f\90\ce\31\c4\ed\11\35\25\b0\4a\4d\01\f9\3c\77\39\8b\f4\cd\0c\10") ;; loop
     (data (i32.const 0x120)
-        "\35\fb\41\8d\94\da\56\dc\3b\2e\8f\6c\7f\43\bf\dd\9a\30\7c\27\b9\b2\e0\dd\7d\15\29\36\53\ca\b7\77") ;; math
+        "\54\07\a2\84\19\02\c5\5c\3c\d9\52\3c\fd\03\7a\b3\d5\1b\00\b7\9a\89\cf\de\ed\5a\c0\69\90\31\49\0d") ;; math
     (data (i32.const 0x140)
-        "\26\d0\56\ce\4a\fa\f1\ef\cd\d2\7a\4d\64\48\a3\86\5a\00\5f\6f\89\7e\a4\95\5c\b9\2d\b8\f1\04\eb\3e") ;; iops
+        "\ea\15\0f\0e\ae\6d\e9\21\05\f4\45\bd\a8\b6\0f\4f\ea\e6\57\f4\b4\d5\64\e5\7e\bb\1b\6c\12\82\8a\77") ;; iops
     (data (i32.const 0x160)
-        "\dd\13\30\ba\64\c6\e1\e9\e9\c3\b0\f9\63\c8\d9\69\c9\f0\13\70\42\17\f3\9e\60\c3\0d\13\5b\48\a5\88") ;; user
+        "\a6\d9\ac\fb\b4\01\cd\f8\4d\eb\6c\4c\07\cd\89\97\f7\c6\76\07\a7\6a\e9\a6\6f\60\04\c4\34\e7\2b\eb") ;; user
     (data (i32.const 0x180)
-        "\07\33\43\e0\1d\b9\16\3e\99\1a\99\bd\cc\93\bf\26\15\f4\4c\11\c3\32\c0\2c\65\ba\76\11\76\eb\c1\7b") ;; return
+        "\1f\e6\67\ce\e9\86\70\06\b5\11\5d\fd\08\c1\6b\76\c3\8d\6c\a2\de\42\e5\ab\45\89\cc\6d\c0\88\d7\c4") ;; return
     (func $start (local $counter i32)
 
          ;; add modules
