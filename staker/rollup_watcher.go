@@ -82,6 +82,8 @@ func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64
 		log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
 		if strings.Contains(err.Error(), "execution reverted") {
 			r.unSupportedL3Method.Store(true)
+		} else {
+			return nil, err
 		}
 	}
 	node, err := r.GetNode(callOpts, nodeNum)
