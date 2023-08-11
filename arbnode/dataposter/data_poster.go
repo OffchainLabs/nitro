@@ -302,12 +302,12 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return err
 	}
-	fullTx, err := p.auth.Signer(p.auth.From, tx)
+	fullTx, err := p.signer(p.sender, tx)
 	if err != nil {
 		return err
 	}
 	networkBlobTx.Transaction = fullTx
-	queuedTx := queuedTransaction[Meta]{
+	queuedTx := storage.QueuedTransaction{
 		NetworkBlobTx:   networkBlobTx,
 		FullTx:          fullTx,
 		Meta:            meta,
