@@ -69,6 +69,13 @@ jobs:
           override: true
           components: 'llvm-tools-preview, rustfmt'
 
+      - name: Install rust nightly
+        uses: actions-rs/toolchain@v1
+        id: install-rust
+        with:
+          profile: minimal
+          toolchain: "nightly"
+
       - name: Install grcov
         uses: actions-rs/install@v0.1
         with:
