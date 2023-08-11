@@ -319,10 +319,10 @@ func (params *goParams) encode() C.StylusConfig {
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
-		chainid:          hashToBytes32(data.chainId),
+		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
 		block_gas_limit:  u64(data.blockGasLimit),
-		block_number:     hashToBytes32(data.blockNumber),
+		block_number:     u64(data.blockNumber),
 		block_timestamp:  u64(data.blockTimestamp),
 		contract_address: addressToBytes20(data.contractAddress),
 		msg_sender:       addressToBytes20(data.msgSender),

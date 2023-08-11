@@ -245,10 +245,10 @@ func (p Programs) CallProgram(
 
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
-		chainId:         common.BigToHash(evm.ChainConfig().ChainID),
+		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
 		blockGasLimit:   evm.Context.GasLimit,
-		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
+		blockNumber:     l1BlockNumber,
 		blockTimestamp:  evm.Context.Time,
 		contractAddress: contract.Address(), // acting address
 		msgSender:       contract.Caller(),
@@ -332,10 +332,10 @@ func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
 
 type evmData struct {
 	blockBasefee    common.Hash
-	chainId         common.Hash
+	chainId         uint64
 	blockCoinbase   common.Address
 	blockGasLimit   uint64
-	blockNumber     common.Hash
+	blockNumber     uint64
 	blockTimestamp  uint64
 	contractAddress common.Address
 	msgSender       common.Address

@@ -238,9 +238,9 @@ pub unsafe extern "C" fn user_host__block_basefee(ptr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__chainid(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes32(ptr, program.evm_data.chainid)
+pub unsafe extern "C" fn user_host__chainid() -> u64 {
+    let program = Program::start(0);
+    program.evm_data.chainid
 }
 
 #[no_mangle]
@@ -256,9 +256,9 @@ pub unsafe extern "C" fn user_host__block_gas_limit() -> u64 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_number(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes32(ptr, program.evm_data.block_number)
+pub unsafe extern "C" fn user_host__block_number() -> u64 {
+    let program = Program::start(0);
+    program.evm_data.block_number
 }
 
 #[no_mangle]

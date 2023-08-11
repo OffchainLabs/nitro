@@ -37,7 +37,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let ink_price = tx::ink_price();
 
     let mut block_number = block::number();
-    block_number[31] -= 1;
+    block_number -= 1;
 
     // Call burnArbGas
     let gas_left_before = evm::gas_left();
@@ -47,8 +47,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let ink_left_after = evm::ink_left();
 
     let mut output = vec![];
-    output.extend(block_number);
-    output.extend(chainid);
+    output.extend(B256::from(U256::from(block_number)));
+    output.extend(B256::from(U256::from(chainid)));
     output.extend(basefee);
     output.extend(gas_price);
     output.extend(B256::from(U256::from(gas_limit)));

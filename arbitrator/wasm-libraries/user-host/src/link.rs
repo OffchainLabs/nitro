@@ -206,8 +206,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(
-///     blockBasefee, chainid *[32]byte, blockCoinbase *[20]byte, blockGasLimit u64,
-///     blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///     blockBasefee *[32]byte, chainid u64, blockCoinbase *[20]byte, blockGasLimit,
+///     blockNumber, blockTimestamp u64, contractAddress, msgSender *[20]byte,
 ///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
 ///) *EvmData
 #[no_mangle]
@@ -218,10 +218,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
     let mut sp = GoStack::new(sp);
     let evm_data = EvmData {
         block_basefee: read_bytes32(sp.read_go_ptr()),
-        chainid: read_bytes32(sp.read_go_ptr()),
+        chainid: sp.read_u64(),
         block_coinbase: read_bytes20(sp.read_go_ptr()),
         block_gas_limit: sp.read_u64(),
-        block_number: read_bytes32(sp.read_go_ptr()),
+        block_number: sp.read_u64(),
         block_timestamp: sp.read_u64(),
         contract_address: read_bytes20(sp.read_go_ptr()),
         msg_sender: read_bytes20(sp.read_go_ptr()),

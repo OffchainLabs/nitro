@@ -4,7 +4,7 @@
 (module
     (import "vm_hooks" "read_args"    (func $read_args    (param i32)))
     (import "vm_hooks" "write_result" (func $write_result (param i32 i32)))
-    (import "vm_hooks" "chainid"      (func $test         (param i32)))
+    (import "vm_hooks" "chainid"      (func $test         (result i64)))
     (memory (export "memory") 1 1)
     (func $main (export "user_entrypoint") (param $args_len i32) (result i32)
         (local $i i32)
@@ -19,8 +19,8 @@
 
         (loop
             ;; call the test function
-            i32.const 0
             call $test
+            drop
 
             ;; decrement and loop
             (i32.sub (local.get $i) (i32.const 1))
