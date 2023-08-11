@@ -40,13 +40,13 @@ type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
 func compileUserWasm(
-	db vm.StateDB, program common.Address, wasm []byte, pageLimit uint16, version uint32, debug bool,
+	db vm.StateDB, program common.Address, wasm []byte, pageLimit, version uint16, debug bool,
 ) (uint16, error) {
 	footprint := uint16(0)
 	output := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
-		u32(version),
+		u16(version),
 		u16(pageLimit),
 		(*u16)(&footprint),
 		output,
@@ -55,7 +55,7 @@ func compileUserWasm(
 	data := output.intoBytes()
 	result, err := status.output(data)
 	if err == nil {
-		db.SetCompiledWasmCode(program, result, version)
+		db.SetCompiledWasmCode(program, result, uint32(version)) // TODO: use u16 in statedb
 	} else {
 		data := arbutil.ToStringOrHex(data)
 		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
@@ -75,9 +75,9 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program.address, stylusParams.version)
+		db.RecordProgram(program.address, uint32(stylusParams.version)) // TODO: use u16 in statedb
 	}
-	module := db.GetCompiledWasmCode(program.address, stylusParams.version)
+	module := db.GetCompiledWasmCode(program.address, uint32(stylusParams.version)) // TODO: use u16 in statedb
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
@@ -307,11 +307,10 @@ func goSlice(slice []byte) C.GoSliceData {
 
 func (params *goParams) encode() C.StylusConfig {
 	pricing := C.PricingParams{
-		ink_price:  u64(params.inkPrice),
-		hostio_ink: u64(params.hostioInk),
+		ink_price: u32(params.inkPrice.ToUint32()),
 	}
 	return C.StylusConfig{
-		version:   u32(params.version),
+		version:   u16(params.version),
 		max_depth: u32(params.maxDepth),
 		pricing:   pricing,
 	}
@@ -320,16 +319,17 @@ func (params *goParams) encode() C.StylusConfig {
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
-		chainid:          hashToBytes32(data.chainId),
+		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
 		block_gas_limit:  u64(data.blockGasLimit),
-		block_number:     hashToBytes32(data.blockNumber),
+		block_number:     u64(data.blockNumber),
 		block_timestamp:  u64(data.blockTimestamp),
 		contract_address: addressToBytes20(data.contractAddress),
 		msg_sender:       addressToBytes20(data.msgSender),
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
+		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
 	}
 }

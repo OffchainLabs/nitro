@@ -30,6 +30,8 @@ arbitrator/wasm-testsuite/target/
 arbitrator/tools/wasmer/target/
 arbitrator/tools/wasm-tools/
 arbitrator/tools/module_roots/
+arbitrator/langs/rust/target/
+arbitrator/langs/bf/target/
 
 # Compiled files
 **/*.o

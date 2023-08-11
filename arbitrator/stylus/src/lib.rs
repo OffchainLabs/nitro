@@ -88,7 +88,7 @@ impl RustVec {
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
-    version: u32,
+    version: u16,
     page_limit: u16,
     footprint: *mut u16,
     output: *mut RustVec,

@@ -11,7 +11,6 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -163,19 +162,14 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 	return weiToTransfer, nil
 }
 
-// Sets the price (in evm gas basis points) of ink
-func (con ArbOwner) SetInkPrice(c ctx, evm mech, price uint64) error {
-	return c.State.Programs().SetInkPrice(arbmath.UBips(price))
+// Sets the amount of ink 1 gas buys
+func (con ArbOwner) SetInkPrice(c ctx, evm mech, ink uint32) error {
+	return c.State.Programs().SetInkPrice(ink)
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
 func (con ArbOwner) SetWasmMaxDepth(c ctx, evm mech, depth uint32) error {
 	return c.State.Programs().SetWasmMaxDepth(depth)
-}
-
-// Sets the cost of starting a stylus hostio call
-func (con ArbOwner) SetWasmHostioInk(c ctx, evm mech, ink uint64) error {
-	return c.State.Programs().SetWasmHostioInk(ink)
 }
 
 // Gets the number of free wasm pages a tx gets
@@ -184,7 +178,7 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 }
 
 // Sets the base cost of each additional wasm page
-func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint32) error {
+func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 	return c.State.Programs().SetPageGas(gas)
 }
 

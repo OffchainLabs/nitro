@@ -113,7 +113,7 @@ func errorTest(t *testing.T, jit bool) {
 		Fatal(t, "call should have failed")
 	}
 
-	validateBlocks(t, 7, jit, ctx, node, l2client)
+	validateBlocks(t, 6, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -223,8 +223,10 @@ func testCalls(t *testing.T, jit bool) {
 			}
 
 			// do the two following calls
-			args = append(args, 0x00)
-			args = append(args, zeroHashBytes...)
+			args = append(args, kinds[opcode])
+			if opcode == vm.CALL {
+				args = append(args, zeroHashBytes...)
+			}
 			args = append(args, callsAddr[:]...)
 			args = append(args, 2)
 
@@ -235,7 +237,12 @@ func testCalls(t *testing.T, jit bool) {
 			}
 			return args
 		}
-		tree := nest(3)[53:]
+		var tree []uint8
+		if opcode == vm.CALL {
+			tree = nest(3)[53:]
+		} else {
+			tree = nest(3)[21:]
+		}
 		tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, tree)
 		ensure(tx, l2client.SendTransaction(ctx, tx))
 
@@ -323,7 +330,7 @@ func testCalls(t *testing.T, jit bool) {
 		Fatal(t, balance, value)
 	}
 
-	blocks := []uint64{11}
+	blocks := []uint64{10}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
@@ -374,7 +381,7 @@ func testReturnData(t *testing.T, jit bool) {
 	testReadReturnData(2, 0, 0, 0, 1)
 	testReadReturnData(2, 0, 4, 4, 1)
 
-	validateBlocks(t, 12, jit, ctx, node, l2client)
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramLogs(t *testing.T) {
@@ -439,7 +446,7 @@ func testLogs(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 11, jit, ctx, node, l2client)
+	validateBlocks(t, 10, jit, ctx, node, l2client)
 }
 
 func TestProgramCreate(t *testing.T) {
@@ -575,19 +582,23 @@ func testEvmData(t *testing.T, jit bool) {
 		result = result[count:]
 		return data
 	}
+	getU32 := func(name string) uint32 {
+		t.Helper()
+		return binary.BigEndian.Uint32(advance(4, name))
+	}
 	getU64 := func(name string) uint64 {
 		t.Helper()
 		return binary.BigEndian.Uint64(advance(8, name))
 	}
 
-	inkPrice := getU64("ink price")
+	inkPrice := uint64(getU32("ink price"))
 	gasLeftBefore := getU64("gas left before")
 	inkLeftBefore := getU64("ink left before")
 	gasLeftAfter := getU64("gas left after")
 	inkLeftAfter := getU64("ink left after")
 
 	gasUsed := gasLeftBefore - gasLeftAfter
-	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
+	calculatedGasUsed := (inkLeftBefore - inkLeftAfter) / inkPrice
 
 	// Should be within 1 gas
 	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
@@ -641,7 +652,6 @@ func testMemory(t *testing.T, jit bool) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
-	ensure(arbOwner.SetWasmHostioInk(&auth, 0))
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
@@ -703,6 +713,68 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
+func TestProgramSdkStorage(t *testing.T) {
+	t.Parallel()
+	testSdkStorage(t, true)
+}
+
+func testSdkStorage(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, rust, cleanup := setupProgramTest(t, rustFile("sdk-storage"), jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
+	ensure(tx, err)
+	tx, err = mock.Populate(&auth)
+	receipt := ensure(tx, err)
+	solCost := receipt.GasUsedForL2()
+
+	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, tx.Data())
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	rustCost := receipt.GasUsedForL2()
+
+	check := func() {
+		colors.PrintBlue("rust ", rustCost, " sol ", solCost)
+
+		// ensure txes are sequenced before checking state
+		waitForSequencer(t, node, receipt.BlockNumber.Uint64())
+
+		bc := node.Execution.Backend.ArbInterface().BlockChain()
+		statedb, err := bc.State()
+		Require(t, err)
+		trieHash := func(addr common.Address) common.Hash {
+			trie, err := statedb.StorageTrie(addr)
+			Require(t, err)
+			return trie.Hash()
+		}
+
+		solTrie := trieHash(solidity)
+		rustTrie := trieHash(rust)
+		if solTrie != rustTrie {
+			Fatal(t, solTrie, rustTrie)
+		}
+	}
+
+	check()
+
+	colors.PrintBlue("checking removal")
+	tx, err = mock.Remove(&auth)
+	receipt = ensure(tx, err)
+	solCost = receipt.GasUsedForL2()
+
+	tx = l2info.PrepareTxTo("Owner", &rust, 1e9, nil, tx.Data())
+	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	rustCost = receipt.GasUsedForL2()
+	check()
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
@@ -744,16 +816,12 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 		return receipt
 	}
 
-	// Set random pricing params. Note that the ink price is measured in bips,
-	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
-	// We choose a range on both sides of this value.
-	inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
-	wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
-	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
+	// Set random pricing params
+	inkPrice := testhelpers.RandomUint32(1, 20000) // evm to ink
+	colors.PrintMint(fmt.Sprintf("ink price=%d", inkPrice))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
 
 	programAddress := deployWasm(t, ctx, auth, l2client, file)
 	return ctx, node, l2info, l2client, auth, programAddress, cleanup
@@ -846,6 +914,7 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 func assertStorageAt(
 	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
 ) {
+	t.Helper()
 	storedBytes, err := l2client.StorageAt(ctx, contract, key, nil)
 	Require(t, err)
 	storedValue := common.BytesToHash(storedBytes)
@@ -881,20 +950,11 @@ func validateBlocks(
 }
 
 func validateBlockRange(
-	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
+	t *testing.T, blocks []uint64, jit bool,
+	ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
 	t.Helper()
-
-	// wait until all the blocks are sequenced
-	lastBlock := arbmath.MaxInt(blocks...)
-	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(lastBlock, 0)
-	})
-
+	waitForSequencer(t, node, arbmath.MaxInt(blocks...))
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
@@ -925,6 +985,17 @@ func validateBlockRange(
 	if !success {
 		Fatal(t)
 	}
+}
+
+func waitForSequencer(t *testing.T, node *arbnode.Node, block uint64) {
+	t.Helper()
+	doUntil(t, 20*time.Millisecond, 500, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(block, 0)
+	})
 }
 
 func timed(t *testing.T, message string, lambda func()) {

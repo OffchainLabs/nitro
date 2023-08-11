@@ -5,7 +5,7 @@
 
 use stylus_sdk::{contract::Call, alloy_primitives::{Address, B256}};
 
-stylus_sdk::entrypoint!(user_main);
+stylus_sdk::entrypoint!(user_main, true);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();

@@ -240,10 +240,9 @@ fn test_heap() -> Result<()> {
     //     the input is the target size and amount to step each `memory.grow`
     //     the output is the memory size in pages
 
-    let (mut compile, mut config, _) = test_configs();
+    let (mut compile, config, _) = test_configs();
     compile.bounds.heap_bound = Pages(128);
     compile.pricing.costs = |_| 0;
-    config.pricing.hostio_ink = 0;
 
     let extra: u8 = rand::random::<u8>() % 128;
 
@@ -255,7 +254,7 @@ fn test_heap() -> Result<()> {
         let pages = run_native(&mut native, &args, ink)?[0];
         assert_eq!(pages, 128);
 
-        let used = ink - native.ink_ready()?;
+        let used = config.pricing.ink_to_gas(ink - native.ink_ready()?);
         ensure!((used as i64 - 32_000_000).abs() < 3_000, "wrong ink");
         assert_eq!(native.memory_size(), Pages(128));
 
@@ -339,6 +338,20 @@ fn test_c() -> Result<()> {
     assert_eq!(hex::encode(output), args_string);
 
     check_instrumentation(native, machine)
+}
+
+#[test]
+fn test_bf() -> Result<()> {
+    // in cat.b
+    //     the output is the input
+
+    let (compile, config, ink) = test_configs();
+    let args = "Hello world!".as_bytes();
+
+    let mut native = TestInstance::new_linked("tests/bf/cat.wasm", &compile, config)?;
+    let output = run_native(&mut native, args, ink)?;
+    assert_eq!(output, args);
+    Ok(())
 }
 
 #[test]
