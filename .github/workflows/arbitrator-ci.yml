@@ -71,7 +71,7 @@ jobs:
 
       - name: Install rust nightly
         uses: actions-rs/toolchain@v1
-        id: install-rust
+        id: install-rust-nightly
         with:
           profile: minimal
           toolchain: "nightly"
