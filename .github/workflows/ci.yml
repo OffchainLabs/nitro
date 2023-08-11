@@ -53,6 +53,21 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
+      - name: Install rust stable
+        uses: actions-rs/toolchain@v1
+        id: install-rust
+        with:
+          profile: minimal
+          toolchain: "stable"
+          override: true
+
+      - name: Install rust nightly
+        uses: actions-rs/toolchain@v1
+        id: install-rust
+        with:
+          profile: minimal
+          toolchain: "nightly"
+
       - name: Install rust wasm32-unknown-unknown
         uses: actions-rs/toolchain@v1
         with:
@@ -60,7 +75,7 @@ jobs:
           toolchain: "stable"
           target: wasm32-unknown-unknown
 
-      - name: Install rust wasm32-unknown-unknown
+      - name: Install rust wasm32-unknown-unknown nightly
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -73,14 +88,6 @@ jobs:
           profile: minimal
           toolchain: "stable"
           target: wasm32-wasi
-
-      - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        id: install-rust
-        with:
-          profile: minimal
-          toolchain: "stable"
-          override: true
 
       - name: Cache Build Products
         uses: actions/cache@v3
