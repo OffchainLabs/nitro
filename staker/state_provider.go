@@ -533,22 +533,24 @@ func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModu
 	if err == nil {
 		return cachedRoots, nil
 	}
+	fmt.Println("Getting ready validation entry", blockHeight)
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get validation entry: %w", err)
 	}
 	input, err := entry.ToInput()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not turn entry to input: %w", err)
 	}
 	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create execution run: %w", err)
 	}
+	fmt.Printf("Getting small step leaves from big step %d to small step %d\n", bigStep, toSmallStep)
 	smallStepLeaves := execRun.GetSmallStepLeavesUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
 	result, err := smallStepLeaves.Await(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get small step leaves: %w", err)
 	}
 	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
 	if len(result) > 1 {

@@ -82,12 +82,35 @@ func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64
 		var stateRoots []common.Hash
 		fromSmall := bigStep * numOpcodesPerBigStep
 		toSmall := fromSmall + toSmallStep
+
+		position := toSmall
+		var machine MachineInterface
+		var err error
+		if position == ^uint64(0) {
+			machine, err = e.cache.GetFinalMachine(ctx)
+		} else {
+			// todo cache last machina
+			machine, err = e.cache.GetMachineAt(ctx, position)
+		}
+		if err != nil {
+			return nil, err
+		}
+		machineStep := machine.GetStepCount()
+		fmt.Printf("Got machine at position %d, and has step count %d\n", position, machineStep)
+
+		if position != machineStep {
+			machineRunning := machine.IsRunning()
+			if machineRunning || machineStep > position {
+				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+			}
+
+		}
+		fmt.Printf("Stepping from %d to %d\n", fromSmall, toSmall)
 		for i := fromSmall; i <= toSmall; i++ {
-			machineStep, err := e.intermediateGetStepAt(ctx, i)
-			if err != nil {
+			if err = machine.Step(ctx, position); err != nil {
 				return nil, err
 			}
-			stateRoots = append(stateRoots, machineStep.Hash)
+			stateRoots = append(stateRoots, machine.Hash())
 		}
 		return stateRoots, nil
 	})
@@ -111,7 +134,6 @@ func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint6
 		if machineRunning || machineStep > position {
 			return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
 		}
-
 	}
 	result := &validator.MachineStepResult{
 		Position:    machineStep,
