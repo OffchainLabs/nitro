@@ -168,8 +168,8 @@ func (con ArbOwner) SetInkPrice(c ctx, evm mech, ink uint32) error {
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
-func (con ArbOwner) SetWasmMaxDepth(c ctx, evm mech, depth uint32) error {
-	return c.State.Programs().SetWasmMaxDepth(depth)
+func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
+	return c.State.Programs().SetMaxStackDepth(depth)
 }
 
 // Gets the number of free wasm pages a tx gets
@@ -190,6 +190,11 @@ func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint64) error {
 // Sets the initial number of pages a wasm may allocate
 func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return c.State.Programs().SetPageLimit(limit)
+}
+
+// SetWasmCallScalar sets the call overhead priced per half of a kb of compressed wasm
+func (con ArbOwner) SetWasmCallScalar(c ctx, _ mech, gas uint16) error {
+	return c.State.Programs().SetCallScalar(gas)
 }
 
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {

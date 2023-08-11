@@ -33,8 +33,8 @@ func (con ArbWasm) InkPrice(c ctx, _ mech) (uint32, error) {
 }
 
 // Gets the wasm stack size limit
-func (con ArbWasm) WasmMaxDepth(c ctx, _ mech) (uint32, error) {
-	return c.State.Programs().WasmMaxDepth()
+func (con ArbWasm) MaxStackDepth(c ctx, _ mech) (uint32, error) {
+	return c.State.Programs().MaxStackDepth()
 }
 
 // Gets the number of free wasm pages a tx gets
@@ -60,4 +60,9 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 // Gets the current program version
 func (con ArbWasm) ProgramVersion(c ctx, _ mech, program addr) (uint16, error) {
 	return c.State.Programs().ProgramVersion(program)
+}
+
+// Gets the call overhead priced per half of a kb of compressed wasm
+func (con ArbWasm) CallScalar(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().CallScalar()
 }

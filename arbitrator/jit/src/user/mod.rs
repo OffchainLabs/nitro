@@ -109,7 +109,9 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// go side: λ(version u16, maxDepth, inkPrice u32, debugMode: u32) *(CompileConfig, StylusConfig)
+/// go side: λ(
+///     version, callScalar u16, maxDepth, inkPrice u32, debugMode: u32,
+/// ) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
 
@@ -118,7 +120,8 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 
     let config = StylusConfig {
         version: sp.read_u16(),
-        max_depth: sp.skip_u16().read_u32(),
+        call_scalar: sp.read_u16(),
+        max_depth: sp.read_u32(),
         pricing: PricingParams {
             ink_price: sp.read_u32(),
         },
