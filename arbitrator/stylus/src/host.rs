@@ -253,10 +253,9 @@ pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> Mayb
     Ok(())
 }
 
-pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
-    let env = WasmEnv::start(&mut env, PTR_INK)?;
-    env.write_bytes32(ptr, env.evm_data.chainid)?;
-    Ok(())
+pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+    let env = WasmEnv::start(&mut env, 0)?;
+    Ok(env.evm_data.chainid)
 }
 
 pub(crate) fn block_coinbase<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
@@ -270,10 +269,9 @@ pub(crate) fn block_gas_limit<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, 
     Ok(env.evm_data.block_gas_limit)
 }
 
-pub(crate) fn block_number<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
-    let env = WasmEnv::start(&mut env, PTR_INK)?;
-    env.write_bytes32(ptr, env.evm_data.block_number)?;
-    Ok(())
+pub(crate) fn block_number<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+    let env = WasmEnv::start(&mut env, 0)?;
+    Ok(env.evm_data.block_number)
 }
 
 pub(crate) fn block_timestamp<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {

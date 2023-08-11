@@ -47,10 +47,10 @@ func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
-	chainId *hash,
+	chainId u64,
 	blockCoinbase *addr,
 	blockGasLimit u64,
-	blockNumber *hash,
+	blockNumber u64,
 	blockTimestamp u64,
 	contractAddress *addr,
 	msgSender *addr,
@@ -131,10 +131,10 @@ func (p *goParams) encode() *rustConfig {
 func (d *evmData) encode() *rustEvmData {
 	return rustEvmDataImpl(
 		&d.blockBasefee,
-		&d.chainId,
+		u64(d.chainId),
 		&d.blockCoinbase,
 		u64(d.blockGasLimit),
-		&d.blockNumber,
+		u64(d.blockNumber),
 		u64(d.blockTimestamp),
 		&d.contractAddress,
 		&d.msgSender,
