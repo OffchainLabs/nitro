@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/celestia"
 )
 
 type StatelessBlockValidator struct {
@@ -34,12 +35,13 @@ type StatelessBlockValidator struct {
 
 	recorder execution.ExecutionRecorder
 
-	inboxReader  InboxReaderInterface
-	inboxTracker InboxTrackerInterface
-	streamer     TransactionStreamerInterface
-	db           ethdb.Database
-	daService    arbstate.DataAvailabilityReader
-	blobReader   arbstate.BlobReader
+	inboxReader     InboxReaderInterface
+	inboxTracker    InboxTrackerInterface
+	streamer        TransactionStreamerInterface
+	db              ethdb.Database
+	daService       arbstate.DataAvailabilityReader
+	celestiaService celestia.DataAvailabilityReader
+	blobReader      arbstate.BlobReader
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -223,6 +225,7 @@ func NewStatelessBlockValidator(
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	blobReader arbstate.BlobReader,
+	celestiaService celestia.DataAvailabilityReader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
@@ -244,6 +247,7 @@ func NewStatelessBlockValidator(
 		db:                 arbdb,
 		daService:          das,
 		blobReader:         blobReader,
+		celestiaService:    celestiaService,
 	}
 	return validator, nil
 }
@@ -289,6 +293,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
+
 	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
@@ -328,6 +333,17 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				}
 			}
 		}
+		if arbstate.IsCelestiaMessageHeaderByte(batch.Data[40]) {
+			if v.celestiaService == nil {
+				log.Warn("Celestia not configured, but sequencer message found with Celestia header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromCelestiaBatch(ctx, batch.Number, batch.Data, v.celestiaService, e.Preimages)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
 	}
 
 	e.msg = nil // no longer needed

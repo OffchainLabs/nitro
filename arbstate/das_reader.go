@@ -16,6 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/celestia"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
@@ -24,11 +25,19 @@ type DataAvailabilityReader interface {
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
 
+type CelestiaDataAvailabilityReader interface {
+	celestia.DataAvailabilityReader
+}
+
 var ErrHashMismatch = errors.New("result does not match expected hash")
 
 // DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80
+
+// CelestiaMessageHeaderFlag indicates that this data is a Blob Pointer
+// which will be used to retrieve data from Celestia
+const CelestiaMessageHeaderFlag byte = 0x0c
 
 // TreeDASMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
 // Ignored when DASMessageHeaderFlag is not set.
@@ -47,7 +56,7 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 const BrotliMessageHeaderByte byte = 0
 
 // KnownHeaderBits is all header bits with known meaning to this nitro version
-const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+const KnownHeaderBits byte = DASMessageHeaderFlag | CelestiaMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
 
 // hasBits returns true if `checking` has all `bits`
 func hasBits(checking byte, bits byte) bool {
@@ -72,6 +81,10 @@ func IsZeroheavyEncodedHeaderByte(header byte) bool {
 
 func IsBlobHashesHeaderByte(header byte) bool {
 	return hasBits(header, BlobHashesHeaderFlag)
+}
+
+func IsCelestiaMessageHeaderByte(b uint8) bool {
+	return hasBits(header, CelestiaMessageHeaderFlag)
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {

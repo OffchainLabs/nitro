@@ -172,6 +172,10 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
                 return GoValue::Null;
             }
         }
+    } else if source == PROCESS_ID {
+        if field == b"pid" {
+            return GoValue::Number(1.);
+        }
     }
 
     if let Some(source) = DynamicObjectPool::singleton().get(source).cloned() {

@@ -23,6 +23,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/celestia"
+	"github.com/offchainlabs/nitro/das/celestia/tree"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/zeroheavy"
@@ -360,6 +362,108 @@ func (b *dAProviderForBlobReader) RecoverPayloadFromBatch(
 	if err != nil {
 		log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
 		return nil, nil
+	}
+	return payload, nil
+}
+
+func NewDAProviderCelestia(celestia DataAvailabilityReader) *dAProviderForCelestia {
+	return &dAProviderForCelestia{
+		celestia: celestia,
+	}
+}
+
+type dAProviderForCelestia struct {
+	celestia DataAvailabilityReader
+}
+
+func (d *dAProviderForCelestia) IsValidHeaderByte(headerByte byte) bool {
+	return IsCelestiaMessageHeaderByte(headerByte)
+}
+
+func (b *dAProviderForCelestia) RecoverPayloadFromBatch(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	keysetValidationMode KeysetValidationMode,
+) ([]byte, error) {
+	var sha256Preimages map[common.Hash][]byte
+	if preimages != nil {
+		if preimages[arbutil.Sha2_256PreimageType] == nil {
+			preimages[arbutil.Sha2_256PreimageType] = make(map[common.Hash][]byte)
+		}
+		sha256Preimages = preimages[arbutil.Sha2_256PreimageType]
+	}
+
+	buf := bytes.NewBuffer(sequencerMsg[40:])
+
+	header, err := buf.ReadByte()
+	if err != nil {
+		log.Error("Couldn't deserialize Celestia header byte", "err", err)
+		return nil, nil
+	}
+	if !celestia.IsCelestiaMessageHeaderByte(header) {
+		log.Error("Couldn't deserialize Celestia header byte", "err", errors.New("tried to deserialize a message that doesn't have the Celestia header"))
+		return nil, nil
+	}
+
+	recordPreimage := func(key common.Hash, value []byte) {
+		sha256Preimages[key] = value
+	}
+
+	blobPointer := celestia.BlobPointer{}
+	blobBytes := buf.Bytes()
+	blobPointer.UnmarshalBinary(blobBytes)
+	if err != nil {
+		log.Error("Couldn't unmarshal Celestia blob pointer", "err", err)
+		return nil, nil
+	}
+
+	payload, squareData, err := celestiaReader.Read(ctx, &blobPointer)
+	if err != nil {
+		log.Error("Failed to resolve blob pointer from celestia", "err", err)
+		return nil, err
+	}
+
+	if sha256Preimages != nil {
+		if squareData == nil {
+			log.Error("squareData is nil, read from replay binary, but preimages are empty")
+			return nil, err
+		}
+
+		rowIndex := squareData.StartRow
+		squareSize := squareData.SquareSize
+		for _, row := range squareData.Rows {
+			// half of the squareSize for the EDS gives us the original length of the data
+			treeConstructor := tree.NewConstructor(recordPreimage, squareSize/2)
+			root, err := tree.ComputeNmtRoot(treeConstructor, uint(rowIndex), row)
+			if err != nil {
+				log.Error("Failed to compute row root", "err", err)
+				return nil, err
+			}
+
+			rowRootMatches := bytes.Equal(squareData.RowRoots[rowIndex], root)
+			if !rowRootMatches {
+				log.Error("Row roots do not match", "eds row root", squareData.RowRoots[rowIndex], "calculated", root)
+				log.Error("Row roots", "row_roots", squareData.RowRoots)
+				return nil, err
+			}
+			rowIndex += 1
+		}
+
+		rowsCount := len(squareData.RowRoots)
+		slices := make([][]byte, rowsCount+rowsCount)
+		copy(slices[0:rowsCount], squareData.RowRoots)
+		copy(slices[rowsCount:], squareData.ColumnRoots)
+
+		dataRoot := tree.HashFromByteSlices(recordPreimage, slices)
+
+		dataRootMatches := bytes.Equal(dataRoot, blobPointer.DataRoot[:])
+		if !dataRootMatches {
+			log.Error("Data Root do not match", "blobPointer data root", blobPointer.DataRoot, "calculated", dataRoot)
+			return nil, nil
+		}
 	}
 	return payload, nil
 }

@@ -206,6 +206,7 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
             }
             None => GoValue::Null,
         },
+        (PROCESS_ID, b"pid") => GoValue::Number(1.),
         _ => {
             let field = String::from_utf8_lossy(field);
             eprintln!("Go trying to access unimplemented unknown JS value {source} field {field}");
