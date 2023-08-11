@@ -60,6 +60,13 @@ jobs:
           toolchain: "stable"
           target: wasm32-unknown-unknown
 
+      - name: Install rust wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "nightly"
+          target: wasm32-unknown-unknown
+
       - name: Install rust wasm32-wasi
         uses: actions-rs/toolchain@v1
         with:
