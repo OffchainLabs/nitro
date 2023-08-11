@@ -375,11 +375,11 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 var ErrRetrySequencer = errors.New("please retry transaction")
 
 // ctxWithTimeout is like context.WithTimeout except a timeout of 0 means unlimited instead of instantly expired.
-func ctxWithTimeout(inctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout == time.Duration(0) {
-		return context.WithCancel(inctx)
+		return context.WithCancel(ctx)
 	}
-	return context.WithTimeout(inctx, timeout)
+	return context.WithTimeout(ctx, timeout)
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
@@ -442,7 +442,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		// We want to give the background queue as much time as possible to make a response.
 		if time.Now().After(abortDeadline) {
 			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
-			log.Warn("transaction sequencing hit abort deadline", "submissionStart", submissionStart, "queueTimeout", queueTimeout, "txHash", tx.Hash())
+			log.Warn("Transaction sequencing hit abort deadline", "submissionStart", submissionStart, "queueTimeout", queueTimeout, "txHash", tx.Hash())
 		}
 		return abortCtx.Err()
 	}
@@ -1009,7 +1009,7 @@ func (s *Sequencer) StopAndWait() {
 		return
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
-	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len(), "nonceFailures", s.nonceFailures.Len())
+	log.Warn("Sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len(), "nonceFailures", s.nonceFailures.Len())
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
 		var wg sync.WaitGroup
