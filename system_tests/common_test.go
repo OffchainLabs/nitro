@@ -17,9 +17,6 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/offchainlabs/nitro/validator/valnode"
-
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -30,7 +27,9 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -238,6 +237,12 @@ func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
 	return header.BaseFee
 }
 
+func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+	header, err := client.HeaderByNumber(ctx, blockNum)
+	Require(t, err)
+	return header.BaseFee
+}
+
 type lifecycle struct {
 	start func() error
 	stop  func() error
@@ -323,6 +328,8 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 
 	stack, err := node.New(&stackConf)
 	Require(t, err)

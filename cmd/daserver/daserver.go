@@ -45,6 +45,8 @@ type DAServerConfig struct {
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 }
 
 var DefaultDAServerConfig = DAServerConfig{
@@ -60,6 +62,8 @@ var DefaultDAServerConfig = DAServerConfig{
 	ConfConfig:         genericconf.ConfConfigDefault,
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	PProf:              false,
+	PprofCfg:           genericconf.PProfDefault,
 	LogLevel:           3,
 }
 
@@ -88,6 +92,9 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 
 	f.Bool("metrics", DefaultDAServerConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+
+	f.Bool("pprof", DefaultDAServerConfig.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
 
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
@@ -135,6 +142,28 @@ func (c *L1ReaderCloser) String() string {
 	return "l1 reader closer"
 }
 
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *DAServerConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 func startup() error {
 	// Some different defaults to DAS config in a node.
 	das.DefaultDataAvailabilityConfig.Enable = true
@@ -151,16 +180,8 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	if serverConfig.Metrics {
-		if len(serverConfig.MetricsServer.Addr) == 0 {
-			fmt.Printf("Metrics is enabled, but missing --metrics-server.addr")
-			return nil
-		}
-
-		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
-
-		address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
-		exp.Setup(address)
+	if err := startMetrics(serverConfig); err != nil {
+		return err
 	}
 
 	sigint := make(chan os.Signal, 1)

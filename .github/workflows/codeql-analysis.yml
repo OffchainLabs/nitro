@@ -23,6 +23,7 @@ on:
 jobs:
   analyze:
     name: Analyze
+    if: github.repository == 'OffchainLabs/nitro' # don't run in any forks without "Advanced Security" enabled
     runs-on: ubuntu-8
     permissions:
       actions: read
@@ -59,14 +60,14 @@ jobs:
         config-file: ./.github/codeql/codeql-config.yml
 
     - name: Setup nodejs
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v3
       with:
         node-version: '16'
         cache: 'yarn'
         cache-dependency-path: '**/yarn.lock'
 
     - name: Install go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v4
       with:
         go-version: 1.20.x
 

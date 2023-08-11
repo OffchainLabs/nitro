@@ -267,11 +267,13 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				lastValidated := arbNode.BlockValidator.LastBlockValidated()
-				if lastValidated == expectedBlockNumber {
+				expectedPos, err := arbNode.Execution.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
+				Require(t, err)
+				lastValidated := arbNode.BlockValidator.Validated(t)
+				if lastValidated == expectedPos+1 {
 					break
 				} else if i >= 1000 {
-					Fatal(t, "timed out waiting for block validator; have", lastValidated, "want", expectedBlockNumber)
+					Fatal(t, "timed out waiting for block validator; have", lastValidated, "want", expectedPos+1)
 				}
 				time.Sleep(time.Second)
 			}
