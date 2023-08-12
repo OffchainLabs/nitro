@@ -6,7 +6,7 @@
 use stylus_sdk::{
     alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
-    stylus_proc::sol_storage,
+    stylus_proc::{sol_storage, Erase},
 };
 
 #[global_allocator]
@@ -29,6 +29,7 @@ sol_storage! {
         Maps maps;
     };
 
+    #[derive(Erase)]
     pub struct Struct {
         uint16 num;
         int32 other;
@@ -189,7 +190,7 @@ fn populate(mut contract: Contract) {
     }
 }
 
-fn remove(contract: Contract) {
+fn remove(mut contract: Contract) {
     // pop all elements
     let mut bytes_full = contract.bytes_full;
     while let Some(value) = bytes_full.pop() {
@@ -216,14 +217,14 @@ fn remove(contract: Contract) {
     }
     assert!(vector.is_empty() && vector.len() == 0);
 
-    // clear inner vectors
+    // erase inner vectors
     let mut nested = contract.nested;
     while nested.len() > 2 {
-        nested.clear_last();
+        nested.erase_last();
     }
-    nested.shrink().map(|mut x| x.clear());
+    nested.shrink().map(|mut x| x.erase());
 
-    // clear map elements
+    // erase map elements
     let maps = contract.maps;
     let mut basic = maps.basic;
     for i in 0..7 {
@@ -234,11 +235,14 @@ fn remove(contract: Contract) {
     let value = basic.replace(Uint::from(8), Address::with_last_byte(32));
     assert_eq!(value, Address::with_last_byte(8));
 
-    // clear vectors in map
+    // erase vectors in map
     let mut vects = maps.vects;
     for a in 0..3 {
         let mut bools = vects.setter(Address::with_last_byte(a));
-        bools.clear();
+        bools.erase();
     }
     vects.delete(Address::with_last_byte(3));
+
+    // erase a struct
+    contract.structs.erase_last();
 }
