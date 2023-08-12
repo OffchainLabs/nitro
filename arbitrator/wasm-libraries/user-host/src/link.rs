@@ -183,7 +183,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version, callScalar u16, maxDepth, inkPrice u32, debugMode u32) *StylusConfig
+/// Safety: λ(version u16, maxDepth, inkPrice u32, debugMode u32) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
@@ -191,12 +191,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     let mut sp = GoStack::new(sp);
 
     // The Go compiler places these on the stack as follows
-    // | version | call_scalar| max_depth | ink_price | debugMode | result ptr |
+    // | version | 2 garbage bytes | max_depth | ink_price | debugMode | result ptr |
 
     let config = StylusConfig {
         version: sp.read_u16(),
-        call_scalar: sp.read_u16(),
-        max_depth: sp.read_u32(),
+        max_depth: sp.skip_u16().read_u32(),
         pricing: PricingParams {
             ink_price: sp.read_u32(),
         },

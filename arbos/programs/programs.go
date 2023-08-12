@@ -32,10 +32,10 @@ type Programs struct {
 }
 
 type Program struct {
-	compressedSize uint16 // Unit is half of a kb
-	footprint      uint16
-	version        uint16
-	address        common.Address // not saved in state
+	wasmSize  uint16 // Unit is half of a kb
+	footprint uint16
+	version   uint16
+	address   common.Address // not saved in state
 }
 
 type uint24 = arbmath.Uint24
@@ -63,8 +63,8 @@ const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
 const initialInkPrice = 10000     // 1 evm gas buys 10k ink
-const initialCallScalar = 8       // call cost per half of a kb.  As an example 64kb costs 1024 gas
-const compressedWasmDivisor = 512 // compressed size unit is half of a kb
+const initialCallScalar = 8       // call cost per half kb.  With default, 64kb costs 1024 gas
+const wasmSizeDivisor = 512       // wasm size unit is half kb
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
@@ -179,7 +179,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 		return 0, false, ProgramUpToDateError()
 	}
 
-	wasm, fullCompressedSize, err := getWasm(statedb, program)
+	wasm, err := getWasm(statedb, program)
 	if err != nil {
 		return 0, false, err
 	}
@@ -200,15 +200,15 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	// note: the actual payment for the expansion happens in Rust
 	statedb.AddStylusPagesEver(footprint)
 
-	// compressedSize is stored as half kb units, rounding up
-	sizeNumerator := arbmath.SaturatingAdd(fullCompressedSize, compressedWasmDivisor)
-	compressedSize := uint16(sizeNumerator / compressedWasmDivisor)
+	// wasmSize is stored as half kb units, rounding up
+	sizeNumerator := arbmath.SaturatingAdd(len(wasm), wasmSizeDivisor)
+	wasmSize := uint16(sizeNumerator / wasmSizeDivisor)
 
 	programData := Program{
-		compressedSize: compressedSize,
-		footprint:      footprint,
-		version:        version,
-		address:        program,
+		wasmSize:  wasmSize,
+		footprint: footprint,
+		version:   version,
+		address:   program,
 	}
 	return version, false, p.programs.Set(program.Hash(), programData.serialize())
 }
@@ -262,7 +262,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	callCost := uint64(program.compressedSize) * uint64(callScalar)
+	callCost := uint64(program.wasmSize) * uint64(callScalar)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
@@ -288,17 +288,16 @@ func (p Programs) CallProgram(
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
-func getWasm(statedb vm.StateDB, program common.Address) ([]byte, int, error) {
+func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
 	if prefixedWasm == nil {
-		return nil, 0, fmt.Errorf("missing wasm at address %v", program)
+		return nil, fmt.Errorf("missing wasm at address %v", program)
 	}
-	compressedWasm, err := state.StripStylusPrefix(prefixedWasm)
+	wasm, err := state.StripStylusPrefix(prefixedWasm)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	wasm, err := arbcompress.Decompress(compressedWasm, MaxWasmSize)
-	return wasm, len(compressedWasm), err
+	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
 func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
@@ -312,16 +311,16 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 func (p Programs) deserializeProgram(address common.Address) (Program, error) {
 	data, err := p.programs.Get(address.Hash())
 	return Program{
-		compressedSize: arbmath.BytesToUint16(data[26:28]),
-		footprint:      arbmath.BytesToUint16(data[28:30]),
-		version:        arbmath.BytesToUint16(data[30:]),
-		address:        address,
+		wasmSize:  arbmath.BytesToUint16(data[26:28]),
+		footprint: arbmath.BytesToUint16(data[28:30]),
+		version:   arbmath.BytesToUint16(data[30:]),
+		address:   address,
 	}, err
 }
 
 func (p Program) serialize() common.Hash {
 	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(p.compressedSize))
+	copy(data[26:], arbmath.Uint16ToBytes(p.wasmSize))
 	copy(data[28:], arbmath.Uint16ToBytes(p.footprint))
 	copy(data[30:], arbmath.Uint16ToBytes(p.version))
 	return data
@@ -333,11 +332,10 @@ func (p Programs) ProgramVersion(address common.Address) (uint16, error) {
 }
 
 type goParams struct {
-	version    uint16
-	callScalar uint16
-	maxDepth   uint32
-	inkPrice   uint24
-	debugMode  uint32
+	version   uint16
+	maxDepth  uint32
+	inkPrice  uint24
+	debugMode uint32
 }
 
 func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
@@ -349,16 +347,11 @@ func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	callScalar, err := p.CallScalar()
-	if err != nil {
-		return nil, err
-	}
 
 	config := &goParams{
-		version:    version,
-		callScalar: callScalar,
-		maxDepth:   maxDepth,
-		inkPrice:   inkPrice,
+		version:  version,
+		maxDepth: maxDepth,
+		inkPrice: inkPrice,
 	}
 	if debug {
 		config.debugMode = 1

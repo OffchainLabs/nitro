@@ -24,8 +24,6 @@ use {
 pub struct StylusConfig {
     /// Version the program was compiled against
     pub version: u16,
-    /// Call overhead priced per half of a kb of compressed wasm
-    pub call_scalar: u16,
     /// The maximum size of the stack, measured in words
     pub max_depth: u32,
     /// Pricing parameters supplied at runtime
@@ -43,7 +41,6 @@ impl Default for StylusConfig {
     fn default() -> Self {
         Self {
             version: 0,
-            call_scalar: 0,
             max_depth: u32::MAX,
             pricing: PricingParams::default(),
         }
@@ -57,11 +54,10 @@ impl Default for PricingParams {
 }
 
 impl StylusConfig {
-    pub const fn new(version: u16, call_scalar: u16, max_depth: u32, ink_price: u32) -> Self {
+    pub const fn new(version: u16, max_depth: u32, ink_price: u32) -> Self {
         let pricing = PricingParams::new(ink_price);
         Self {
             version,
-            call_scalar,
             max_depth,
             pricing,
         }

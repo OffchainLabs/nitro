@@ -192,7 +192,7 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return c.State.Programs().SetPageLimit(limit)
 }
 
-// SetWasmCallScalar sets the call overhead priced per half of a kb of compressed wasm
+// SetWasmCallScalar sets the added wasm call cost based on binary size
 func (con ArbOwner) SetWasmCallScalar(c ctx, _ mech, gas uint16) error {
 	return c.State.Programs().SetCallScalar(gas)
 }

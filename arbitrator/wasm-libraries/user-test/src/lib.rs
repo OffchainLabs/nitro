@@ -30,11 +30,10 @@ pub struct Program;
 pub unsafe extern "C" fn user_test__prepare(
     len: usize,
     version: u16,
-    call_scalar: u16,
     max_depth: u32,
     ink_price: u32,
 ) -> *const u8 {
-    let config = StylusConfig::new(version, call_scalar, max_depth, ink_price);
+    let config = StylusConfig::new(version, max_depth, ink_price);
     CONFIG = Some(config);
     ARGS = vec![0; len];
     ARGS.as_ptr()

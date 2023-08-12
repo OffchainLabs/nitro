@@ -31,7 +31,6 @@ impl RunProgram for Machine {
         let push_vec = vec![
             args_len,
             config.version.into(),
-            config.call_scalar.into(),
             config.max_depth.into(),
             config.pricing.ink_price.into(),
         ];
