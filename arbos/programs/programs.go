@@ -63,8 +63,7 @@ const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
 const initialInkPrice = 10000     // 1 evm gas buys 10k ink
-const initialCallScalar = 8       // call cost per half kb.  With default, 64kb costs 1024 gas
-const wasmSizeDivisor = 512       // wasm size unit is half kb
+const initialCallScalar = 8       // call cost per half kb.
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
@@ -201,8 +200,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	statedb.AddStylusPagesEver(footprint)
 
 	// wasmSize is stored as half kb units, rounding up
-	sizeNumerator := arbmath.SaturatingAdd(len(wasm), wasmSizeDivisor)
-	wasmSize := uint16(sizeNumerator / wasmSizeDivisor)
+	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
 		wasmSize:  wasmSize,

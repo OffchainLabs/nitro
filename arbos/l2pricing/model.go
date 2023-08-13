@@ -30,7 +30,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 		return err
 	}
 	// pay off some of the backlog with the added gas, stopping at 0
-	backlog = arbmath.SaturatingUCast(arbmath.SaturatingSub(int64(backlog), gas))
+	backlog = arbmath.SaturatingUCast[uint64](arbmath.SaturatingSub(int64(backlog), gas))
 	return ps.SetGasBacklog(backlog)
 }
 

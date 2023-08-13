@@ -320,11 +320,11 @@ func SaturatingCast(value uint64) int64 {
 }
 
 // SaturatingUCast cast an int64 to a uint64, clipping to [0, 2^63-1]
-func SaturatingUCast(value int64) uint64 {
+func SaturatingUCast[T Unsigned, S Signed](value S) T {
 	if value < 0 {
 		return 0
 	}
-	return uint64(value)
+	return T(value)
 }
 
 func SaturatingCastToUint(value *big.Int) uint64 {
