@@ -22,15 +22,17 @@ type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	inkPrice       storage.StorageBackedUint24
-	wasmMaxDepth   storage.StorageBackedUint32
+	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
 	pageGas        storage.StorageBackedUint16
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
+	callScalar     storage.StorageBackedUint16
 	version        storage.StorageBackedUint16
 }
 
 type Program struct {
+	wasmSize  uint16 // Unit is half of a kb
 	footprint uint16
 	version   uint16
 	address   common.Address // not saved in state
@@ -43,11 +45,12 @@ var programDataKey = []byte{0}
 const (
 	versionOffset uint64 = iota
 	inkPriceOffset
-	wasmMaxDepthOffset
+	maxStackDepthOffset
 	freePagesOffset
 	pageGasOffset
 	pageRampOffset
 	pageLimitOffset
+	callScalarOffset
 )
 
 var ProgramNotCompiledError func() error
@@ -60,21 +63,24 @@ const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
 const initialInkPrice = 10000     // 1 evm gas buys 10k ink
+const initialCallScalar = 8       // call cost per half kb.
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
-	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
+	maxStackDepth := sto.OpenStorageBackedUint32(maxStackDepthOffset)
 	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
 	pageGas := sto.OpenStorageBackedUint16(pageGasOffset)
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
+	callScalar := sto.OpenStorageBackedUint16(callScalarOffset)
 	version := sto.OpenStorageBackedUint16(versionOffset)
 	_ = inkPrice.Set(initialInkPrice)
-	_ = wasmMaxDepth.Set(math.MaxUint32)
+	_ = maxStackDepth.Set(math.MaxUint32)
 	_ = freePages.Set(initialFreePages)
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
 	_ = pageLimit.Set(initialPageLimit)
+	_ = callScalar.Set(initialCallScalar)
 	_ = version.Set(1)
 }
 
@@ -83,11 +89,12 @@ func Open(sto *storage.Storage) *Programs {
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
-		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
+		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
 		pageGas:        sto.OpenStorageBackedUint16(pageGasOffset),
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
+		callScalar:     sto.OpenStorageBackedUint16(callScalarOffset),
 		version:        sto.OpenStorageBackedUint16(versionOffset),
 	}
 }
@@ -108,12 +115,12 @@ func (p Programs) SetInkPrice(value uint32) error {
 	return p.inkPrice.Set(ink)
 }
 
-func (p Programs) WasmMaxDepth() (uint32, error) {
-	return p.wasmMaxDepth.Get()
+func (p Programs) MaxStackDepth() (uint32, error) {
+	return p.maxStackDepth.Get()
 }
 
-func (p Programs) SetWasmMaxDepth(depth uint32) error {
-	return p.wasmMaxDepth.Set(depth)
+func (p Programs) SetMaxStackDepth(depth uint32) error {
+	return p.maxStackDepth.Set(depth)
 }
 
 func (p Programs) FreePages() (uint16, error) {
@@ -146,6 +153,14 @@ func (p Programs) PageLimit() (uint16, error) {
 
 func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
+}
+
+func (p Programs) CallScalar() (uint16, error) {
+	return p.callScalar.Get()
+}
+
+func (p Programs) SetCallScalar(scalar uint16) error {
+	return p.callScalar.Set(scalar)
 }
 
 func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
@@ -184,7 +199,11 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	// note: the actual payment for the expansion happens in Rust
 	statedb.AddStylusPagesEver(footprint)
 
+	// wasmSize is stored as half kb units, rounding up
+	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
+
 	programData := Program{
+		wasmSize:  wasmSize,
 		footprint: footprint,
 		version:   version,
 		address:   program,
@@ -236,7 +255,13 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	cost := model.GasCost(program.footprint, open, ever)
+	memoryCost := model.GasCost(program.footprint, open, ever)
+	callScalar, err := p.CallScalar()
+	if err != nil {
+		return nil, err
+	}
+	callCost := uint64(program.wasmSize) * uint64(callScalar)
+	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
 	}
@@ -284,6 +309,7 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 func (p Programs) deserializeProgram(address common.Address) (Program, error) {
 	data, err := p.programs.Get(address.Hash())
 	return Program{
+		wasmSize:  arbmath.BytesToUint16(data[26:28]),
 		footprint: arbmath.BytesToUint16(data[28:30]),
 		version:   arbmath.BytesToUint16(data[30:]),
 		address:   address,
@@ -292,6 +318,7 @@ func (p Programs) deserializeProgram(address common.Address) (Program, error) {
 
 func (p Program) serialize() common.Hash {
 	data := common.Hash{}
+	copy(data[26:], arbmath.Uint16ToBytes(p.wasmSize))
 	copy(data[28:], arbmath.Uint16ToBytes(p.footprint))
 	copy(data[30:], arbmath.Uint16ToBytes(p.version))
 	return data
@@ -310,7 +337,7 @@ type goParams struct {
 }
 
 func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
-	maxDepth, err := p.WasmMaxDepth()
+	maxDepth, err := p.MaxStackDepth()
 	if err != nil {
 		return nil, err
 	}
