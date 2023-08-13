@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -39,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -903,4 +906,19 @@ func deploySimple(
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return addr, simple
+}
+
+func TestMain(m *testing.M) {
+	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
+	if logLevelEnv != "" {
+		logLevel, err := strconv.ParseUint(logLevelEnv, 10, 32)
+		if err != nil || logLevel > uint64(log.LvlTrace) {
+			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
+		}
+		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+		glogger.Verbosity(log.Lvl(logLevel))
+		log.Root().SetHandler(glogger)
+	}
+	code := m.Run()
+	os.Exit(code)
 }
