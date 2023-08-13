@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -319,10 +320,14 @@ func SaturatingCast(value uint64) int64 {
 	return int64(value)
 }
 
-// SaturatingUCast cast an int64 to a uint64, clipping to [0, 2^63-1]
+// SaturatingUCast cast a signed integer to an unsigned one, clipping to [0, T::MAX]
 func SaturatingUCast[T Unsigned, S Signed](value S) T {
-	if value < 0 {
+	if value <= 0 {
 		return 0
+	}
+	tSmall := unsafe.Sizeof(T(0)) < unsafe.Sizeof(S(0))
+	if tSmall && value >= S(^T(0)) {
+		return ^T(0)
 	}
 	return T(value)
 }

@@ -59,6 +59,24 @@ func TestMath(t *testing.T) {
 			Fail(t, "incorrect", "2^", i, diff, approx, correct)
 		}
 	}
+
+	assert := func(cond bool) {
+		t.Helper()
+		if !cond {
+			Fail(t)
+		}
+	}
+	assert(uint64(math.MaxInt64) == SaturatingUCast[uint64](int64(math.MaxInt64)))
+	assert(uint64(math.MaxInt64-1) == SaturatingUCast[uint64](int64(math.MaxInt64-1)))
+	assert(uint64(math.MaxInt64-1) == SaturatingUCast[uint64](math.MaxInt64-1))
+	assert(uint64(math.MaxInt64) == SaturatingUCast[uint64](math.MaxInt64))
+	assert(uint32(math.MaxUint32) == SaturatingUCast[uint32](math.MaxInt64-1))
+	assert(uint16(math.MaxUint16) == SaturatingUCast[uint16](math.MaxInt32))
+	assert(uint16(math.MaxUint16) == SaturatingUCast[uint16](math.MaxInt32-1))
+	assert(uint16(math.MaxUint16) == SaturatingUCast[uint16](math.MaxInt-1))
+	assert(uint8(math.MaxUint8) == SaturatingUCast[uint8](math.MaxInt-1))
+	assert(uint(math.MaxInt-1) == SaturatingUCast[uint](math.MaxInt-1))
+	assert(uint(math.MaxInt-1) == SaturatingUCast[uint](int64(math.MaxInt-1)))
 }
 
 func Fail(t *testing.T, printables ...interface{}) {
