@@ -162,6 +162,7 @@ func mainImpl() int {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	stackConf.DBEngine = "leveldb"
+	nodeConfig.Rpc.Apply(&stackConf)
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -757,7 +758,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
