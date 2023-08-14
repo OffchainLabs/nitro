@@ -88,7 +88,7 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
-	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"` // DO NOT SUBMIT: add default values before sending for a review.
+	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"`
 	RedisUrl                 string                        `koanf:"redis-url"`
 	RedisLock                redislock.SimpleCfg           `koanf:"redis-lock" reload:"hot"`
 }
@@ -113,6 +113,9 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data_poster", f)
+	f.String(prefix+".redis-url", DefaultBlockValidatorConfig.RedisUrl, "redis url for block validator")
+	redislock.AddConfigOptions(prefix+".redis-lock", f)
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -130,6 +133,8 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 	DataPoster:               dataposter.DefaultDataPosterConfig,
+	RedisUrl:                 "",
+	RedisLock:                redislock.DefaultCfg,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -143,6 +148,8 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 	DataPoster:               dataposter.TestDataPosterConfig,
+	RedisUrl:                 "",
+	RedisLock:                redislock.DefaultCfg,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{

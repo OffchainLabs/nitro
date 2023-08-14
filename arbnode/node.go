@@ -543,7 +543,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
+func ValidatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
@@ -551,7 +551,7 @@ func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	}
 	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
 	lockCfgFetcher := func() *redislock.SimpleCfg {
 		return &cfg.BlockValidator.RedisLock
@@ -802,7 +802,7 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		dp, err := validatorDataposter(
+		dp, err := ValidatorDataposter(
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			l1Reader,
 			txOptsValidator,
