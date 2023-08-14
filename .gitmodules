@@ -18,9 +18,6 @@
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
-[submodule "prysm"]
-	path = prysm
-	url = https://github.com/prysmaticlabs/prysm
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
