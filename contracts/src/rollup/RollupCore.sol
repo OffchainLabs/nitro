@@ -45,12 +45,12 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // A -- B -- C
     //       \-- D
     // Since we know that only one assertion chain can be correct, we only need one stake available
-    // to be refunded at any one time, and any more than one stake can be immediately consficated.
+    // to be refunded at any one time, and any more than one stake can be immediately confiscated.
     // So in the above situation although 2 stakes are not available to be withdrawn as they are locked
     // by C and D, only 1 stake needs to remain in the contract since one of the stakes will eventually
     // be confiscated anyway.
     // In practice, what we do here is increase the withdrawable amount of an escrow address that is
-    // expected to be controlled by the DAO, whenever the lineage forks.
+    // expected to be controlled by the rollup owner, whenever the lineage forks.
 
     // Moving stake
     // ------------------------------
@@ -66,8 +66,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     // Updating stake amount
     // ------------------------------
-    // The stake required to create an assertion can be updated by the DAO. A required stake value is stored on each
-    // assertion, and shows how much stake is required to create the next assertion it. Since we only store the last
+    // The stake required to create an assertion can be updated by the rollup owner. A required stake value is stored on each
+    // assertion, and shows how much stake is required to create the next assertion. Since we only store the last
     // assertion made by a validator, we don't know if it has previously staked on lower/higher amounts and
     // therefore offer partial withdrawals due to this difference. Instead we enforce that either all of the
     // validators stake is locked, or none of it.
