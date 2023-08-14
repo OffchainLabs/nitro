@@ -494,6 +494,7 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 		return stateRoots, nil
 	}
 
+	fmt.Printf("BIG STEP validation entry at block height %d\n", blockHeight)
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
 		return nil, err

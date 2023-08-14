@@ -256,6 +256,10 @@ func NewStatelessBlockValidator(
 	return validator, nil
 }
 
+func (v *StatelessBlockValidator) ExecutionSpawner() validator.ExecutionSpawner {
+	return v.execSpawner
+}
+
 func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 	v.moduleMutex.Lock()
 	defer v.moduleMutex.Unlock()
