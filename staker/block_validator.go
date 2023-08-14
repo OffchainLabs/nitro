@@ -113,7 +113,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data_poster", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 	f.String(prefix+".redis-url", DefaultBlockValidatorConfig.RedisUrl, "redis url for block validator")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 }
