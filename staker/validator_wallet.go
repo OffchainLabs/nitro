@@ -330,10 +330,6 @@ func (v *ContractValidatorWallet) estimateGas(ctx context.Context, value *big.In
 	if err != nil {
 		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
 	}
-	gp, err := v.l1Reader.Client().SuggestGasPrice(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("getting suggested gas price: %w", err)
-	}
 	g, err := v.l1Reader.Client().EstimateGas(
 		ctx,
 		ethereum.CallMsg{
@@ -343,7 +339,6 @@ func (v *ContractValidatorWallet) estimateGas(ctx context.Context, value *big.In
 			Data:      data,
 			GasFeeCap: gasFeeCap,
 			GasTipCap: gasTipCap,
-			GasPrice:  gp,
 		},
 	)
 	if err != nil {
@@ -403,7 +398,6 @@ func (v *ContractValidatorWallet) TestTransactions(ctx context.Context, txs []*t
 		Value: totalAmount,
 		Data:  realData,
 	}
-	log.Error("anodar testTransactions pendingcallcontract", "msg", msg)
 	_, err = v.L1Client().PendingCallContract(ctx, msg)
 	return err
 }
