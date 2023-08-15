@@ -217,7 +217,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		err = valWalletB.Initialize(ctx)
 		Require(t, err)
 	}
-	valWalletC, err := staker.NewContractValidatorWallet(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {}, 10000)
+	dpC, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2nodeB.ArbDB, storage.BlockValidatorPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	if err != nil {
+		t.Fatalf("Error creating validator dataposter: %v", err)
+	}
+	valWalletC, err := staker.NewContractValidatorWallet(dpC, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {}, 10000)
 	Require(t, err)
 	valConfig.Strategy = "Watchtower"
 	stakerC, err := staker.NewStaker(
