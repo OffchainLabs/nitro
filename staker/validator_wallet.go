@@ -195,13 +195,9 @@ func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *ty
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	gas := auth.GasLimit
-	if gas == 0 {
-		g, err := v.estimateGas(ctx, auth.Value, data)
-		if err != nil {
-			return nil, err
-		}
-		gas = g
+	gas, err := v.gasForTxData(ctx, auth, data)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
 	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value)
 }
@@ -310,13 +306,9 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	gas := auth.GasLimit
-	if gas == 0 {
-		g, err := v.estimateGas(ctx, auth.Value, txData)
-		if err != nil {
-			return nil, err
-		}
-		gas = g
+	gas, err := v.gasForTxData(ctx, auth, txData)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
 	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value)
 	if err != nil {
@@ -365,7 +357,23 @@ func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challen
 	if err != nil {
 		return nil, err
 	}
-	return v.con.TimeoutChallenges(auth, v.challengeManagerAddress, challenges)
+	data, err := validatorABI.Pack("timeoutChallenges", v.challengeManagerAddress, challenges)
+	if err != nil {
+		return nil, fmt.Errorf("packing arguments for timeoutChallenges: %w", err)
+	}
+	gas, err := v.gasForTxData(ctx, auth, data)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data: %w", err)
+	}
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value)
+}
+
+// gasForTxData returns auth.GasLimit if it's nonzero, otherwise returns estimate.
+func (v *ContractValidatorWallet) gasForTxData(ctx context.Context, auth *bind.TransactOpts, data []byte) (uint64, error) {
+	if auth.GasLimit != 0 {
+		return auth.GasLimit, nil
+	}
+	return v.estimateGas(ctx, auth.Value, data)
 }
 
 func (v *ContractValidatorWallet) L1Client() arbutil.L1Interface {
@@ -395,6 +403,7 @@ func (v *ContractValidatorWallet) TestTransactions(ctx context.Context, txs []*t
 		Value: totalAmount,
 		Data:  realData,
 	}
+	log.Error("anodar testTransactions pendingcallcontract", "msg", msg)
 	_, err = v.L1Client().PendingCallContract(ctx, msg)
 	return err
 }
