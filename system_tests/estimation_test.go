@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -134,7 +134,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
-	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
+	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
@@ -217,4 +217,37 @@ func TestComponentEstimate(t *testing.T) {
 	if l2Estimate != l2Used {
 		Fatal(t, l2Estimate, l2Used)
 	}
+}
+
+func TestDisableL1Charging(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+	addr := common.HexToAddress("0x12345678")
+
+	gasWithL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	Require(t, err)
+
+	gasWithoutL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr, SkipL1Charging: true})
+	Require(t, err)
+
+	if gasWithL1Charging <= gasWithoutL1Charging {
+		Fatal(t, "SkipL1Charging didn't disable L1 charging")
+	}
+	if gasWithoutL1Charging != params.TxGas {
+		Fatal(t, "Incorrect gas estimate with disabled L1 charging")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithL1Charging}, nil)
+	Require(t, err)
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging}, nil)
+	if err == nil {
+		Fatal(t, "CallContract passed with insufficient gas")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
+	Require(t, err)
 }

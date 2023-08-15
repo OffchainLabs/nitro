@@ -1,10 +1,13 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package server_api
 
 import (
 	"encoding/base64"
 
 	"github.com/ethereum/go-ethereum/common"
-
+	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -17,7 +20,7 @@ type ValidationInputJson struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	PreimagesB64  map[string]string
+	PreimagesB64  jsonapi.PreimagesMapJson
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
@@ -30,12 +33,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
-		PreimagesB64:  make(map[string]string),
-	}
-	for hash, data := range entry.Preimages {
-		encHash := base64.StdEncoding.EncodeToString(hash.Bytes())
-		encData := base64.StdEncoding.EncodeToString(data)
-		res.PreimagesB64[encHash] = encData
+		PreimagesB64:  jsonapi.NewPreimagesMapJson(entry.Preimages),
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
@@ -50,24 +48,13 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
-		Preimages:     make(map[common.Hash][]byte),
+		Preimages:     entry.PreimagesB64.Map,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
 		return nil, err
 	}
 	valInput.DelayedMsg = delayed
-	for encHash, encData := range entry.PreimagesB64 {
-		hash, err := base64.StdEncoding.DecodeString(encHash)
-		if err != nil {
-			return nil, err
-		}
-		data, err := base64.StdEncoding.DecodeString(encData)
-		if err != nil {
-			return nil, err
-		}
-		valInput.Preimages[common.BytesToHash(hash)] = data
-	}
 	for _, binfo := range entry.BatchInfo {
 		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
 		if err != nil {

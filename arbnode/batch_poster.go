@@ -9,22 +9,26 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -62,11 +66,25 @@ type BatchPoster struct {
 	seqInboxAddr common.Address
 	building     *buildingBatch
 	daWriter     das.DataAvailabilityServiceWriter
-	dataPoster   *dataposter.DataPoster[batchPosterPosition]
+	dataPoster   *dataposter.DataPoster
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 	backlog      uint64    // An estimate of the number of unposted batches
+
+	batchReverted atomic.Bool // indicates whether data poster batch was reverted
 }
+
+type l1BlockBound int
+
+// This enum starts at 1 to avoid the empty initialization of 0 being valid
+const (
+	// Default is Safe if the L1 reader has finality data enabled, otherwise Latest
+	l1BlockBoundDefault l1BlockBound = iota + 1
+	l1BlockBoundSafe
+	l1BlockBoundFinalized
+	l1BlockBoundLatest
+	l1BlockBoundIgnore
+)
 
 type BatchPosterConfig struct {
 	Enable                             bool                        `koanf:"enable"`
@@ -84,8 +102,11 @@ type BatchPosterConfig struct {
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	L1Wallet                           genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound                       string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass                 time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
 
-	gasRefunder common.Address
+	gasRefunder  common.Address
+	l1BlockBound l1BlockBound
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -96,12 +117,25 @@ func (c *BatchPosterConfig) Validate() error {
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
+	if c.L1BlockBound == "" {
+		c.l1BlockBound = l1BlockBoundDefault
+	} else if c.L1BlockBound == "safe" {
+		c.l1BlockBound = l1BlockBoundSafe
+	} else if c.L1BlockBound == "finalized" {
+		c.l1BlockBound = l1BlockBoundFinalized
+	} else if c.L1BlockBound == "latest" {
+		c.l1BlockBound = l1BlockBoundLatest
+	} else if c.L1BlockBound == "ignore" {
+		c.l1BlockBound = l1BlockBoundIgnore
+	} else {
+		return fmt.Errorf("invalid L1 block bound tag \"%v\" (see --help for options)", c.L1BlockBound)
+	}
 	return nil
 }
 
 type BatchPosterConfigFetcher func() *BatchPosterConfig
 
-func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
@@ -114,6 +148,8 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
+	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
+	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
@@ -133,6 +169,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                       "",
+	L1BlockBoundBypass:                 time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -156,9 +194,11 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:            10_000,
 	DataPoster:               dataposter.TestDataPosterConfig,
 	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:             "",
+	L1BlockBoundBypass:       time.Hour,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -201,17 +241,95 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(dataPosterDB, l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
+// checkRevert checks blocks with number in range [from, to] whether they
+// contain reverted batch_poster transaction.
+func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, error) {
+	if from > to {
+		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
+	}
+	for idx := from; idx <= to; idx++ {
+		number := big.NewInt(idx)
+		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
+		if err != nil {
+			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
+		}
+		for idx, tx := range block.Transactions() {
+			from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
+			if err != nil {
+				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
+			}
+			if bytes.Equal(from.Bytes(), b.dataPoster.Sender().Bytes()) {
+				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+				if err != nil {
+					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+				}
+				if r.Status == types.ReceiptStatusFailed {
+					log.Error("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+// pollForReverts runs a gouroutine that listens to l1 block headers, checks
+// if any transaction made by batch poster was reverted.
+func (b *BatchPoster) pollForReverts(ctx context.Context) {
+	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
+	defer unsubscribe()
+
+	last := int64(0) // number of last seen block
+	for {
+		// Poll until:
+		// - L1 headers reader channel is closed, or
+		// - polling is through context, or
+		// - we see a transaction in the block from dataposter that was reverted.
+		select {
+		case h, closed := <-headerCh:
+			if closed {
+				log.Info("L1 headers channel has been closed")
+				return
+			}
+			// If this is the first block header, set last seen as number-1.
+			// We may see same block number again if there is L1 reorg, in that
+			// case we check the block again.
+			if last == 0 || last == h.Number.Int64() {
+				last = h.Number.Int64() - 1
+			}
+			if h.Number.Int64()-last > 100 {
+				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", last, "current", h.Number)
+				last = h.Number.Int64()
+				continue
+			}
+
+			reverted, err := b.checkReverts(ctx, last+1, h.Number.Int64())
+			if err != nil {
+				log.Error("Checking batch reverts", "error", err)
+				continue
+			}
+			if reverted {
+				b.batchReverted.Store(true)
+				return
+			}
+			last = h.Number.Int64()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
 	if err != nil {
-		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
+		return nil, fmt.Errorf("error getting latest batch count: %w", err)
 	}
 	inboxBatchCount := bigInboxBatchCount.Uint64()
 	var prevBatchMeta BatchMetadata
@@ -219,14 +337,14 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 		var err error
 		prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
 		if err != nil {
-			return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
+			return nil, fmt.Errorf("error getting latest batch metadata: %w", err)
 		}
 	}
-	return batchPosterPosition{
+	return rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        prevBatchMeta.MessageCount,
 		DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
 		NextSeqNum:          inboxBatchCount,
-	}, nil
+	})
 }
 
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
@@ -531,7 +649,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		return 0, err
 	}
 	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
-		From: b.dataPoster.From(),
+		From: b.dataPoster.Sender(),
 		To:   &b.seqInboxAddr,
 		Data: data,
 	})
@@ -553,10 +671,19 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	return gas + config.ExtraBatchGas, nil
 }
 
+const ethPosBlockTime = 12 * time.Second
+
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
-	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	if b.batchReverted.Load() {
+		return false, fmt.Errorf("batch was reverted, not posting any more batches")
+	}
+	nonce, batchPositionBytes, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
+	}
+	var batchPosition batchPosterPosition
+	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
+		return false, fmt.Errorf("decoding batch position: %w", err)
 	}
 
 	dbBatchCount, err := b.inbox.GetBatchCount()
@@ -591,10 +718,92 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	config := b.config()
 	forcePostBatch := time.Since(firstMsgTime) >= config.MaxBatchPostDelay
 
+	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
+	var l1BoundMaxTimestamp uint64 = math.MaxUint64
+	var l1BoundMinBlockNumber uint64
+	var l1BoundMinTimestamp uint64
+	hasL1Bound := config.l1BlockBound != l1BlockBoundIgnore
+	if hasL1Bound {
+		var l1Bound *types.Header
+		var err error
+		if config.l1BlockBound == l1BlockBoundLatest {
+			l1Bound, err = b.l1Reader.LastHeader(ctx)
+		} else if config.l1BlockBound == l1BlockBoundSafe || config.l1BlockBound == l1BlockBoundDefault {
+			l1Bound, err = b.l1Reader.LatestSafeBlockHeader(ctx)
+			if errors.Is(err, headerreader.ErrBlockNumberNotSupported) && config.l1BlockBound == l1BlockBoundDefault {
+				// If getting the latest safe block is unsupported, and the L1BlockBound configuration is the default,
+				// fall back to using the latest block instead of the safe block.
+				l1Bound, err = b.l1Reader.LastHeader(ctx)
+			}
+		} else {
+			if config.l1BlockBound != l1BlockBoundFinalized {
+				log.Error(
+					"unknown L1 block bound config value; falling back on using finalized",
+					"l1BlockBoundString", config.L1BlockBound,
+					"l1BlockBoundEnum", config.l1BlockBound,
+				)
+			}
+			l1Bound, err = b.l1Reader.LatestFinalizedBlockHeader(ctx)
+		}
+		if err != nil {
+			return false, fmt.Errorf("error getting L1 bound block: %w", err)
+		}
+
+		maxTimeVariation, err := b.seqInbox.MaxTimeVariation(&bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: l1Bound.Number,
+		})
+		if err != nil {
+			// This might happen if the latest finalized block is old enough that our L1 node no longer has its state
+			log.Warn("error getting max time variation on L1 bound block; falling back on latest block", "err", err)
+			maxTimeVariation, err = b.seqInbox.MaxTimeVariation(&bind.CallOpts{Context: ctx})
+			if err != nil {
+				return false, fmt.Errorf("error getting max time variation: %w", err)
+			}
+		}
+
+		l1BoundBlockNumber := arbutil.ParentHeaderToL1BlockNumber(l1Bound)
+		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, arbmath.BigToUintSaturating(maxTimeVariation.FutureBlocks))
+		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
+
+		if config.L1BlockBoundBypass > 0 {
+			latestHeader, err := b.l1Reader.LastHeader(ctx)
+			if err != nil {
+				return false, err
+			}
+			blockNumberWithPadding := arbmath.SaturatingUAdd(arbmath.BigToUintSaturating(latestHeader.Number), uint64(config.L1BlockBoundBypass/ethPosBlockTime))
+			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
+
+			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelayBlocks))
+			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelaySeconds))
+		}
+	}
+
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
+			break
+		}
+		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumber || msg.Message.Header.Timestamp < l1BoundMinTimestamp {
+			log.Error(
+				"disabling L1 bound as batch posting message is close to the maximum delay",
+				"blockNumber", msg.Message.Header.BlockNumber,
+				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+				"timestamp", msg.Message.Header.Timestamp,
+				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+			)
+			l1BoundMaxBlockNumber = math.MaxUint64
+			l1BoundMaxTimestamp = math.MaxUint64
+		}
+		if msg.Message.Header.BlockNumber > l1BoundMaxBlockNumber || msg.Message.Header.Timestamp > l1BoundMaxTimestamp {
+			log.Info(
+				"not posting more messages because block number or timestamp exceed L1 bounds",
+				"blockNumber", msg.Message.Header.BlockNumber,
+				"l1BoundMaxBlockNumber", l1BoundMaxBlockNumber,
+				"timestamp", msg.Message.Header.Timestamp,
+				"l1BoundMaxTimestamp", l1BoundMaxTimestamp,
+			)
 			break
 		}
 		success, err := b.building.segments.AddMessage(msg)
@@ -636,7 +845,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
-				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+				return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
 			}
 			log.Warn("Falling back to storing data on chain", "err", err)
 		} else if err != nil {
@@ -654,10 +863,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	newMeta := batchPosterPosition{
+	newMeta, err := rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        b.building.msgCount,
 		DelayedMessageCount: b.building.segments.delayedMsg,
 		NextSeqNum:          batchPosition.NextSeqNum + 1,
+	})
+	if err != nil {
+		return false, err
 	}
 	err = b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
@@ -697,6 +909,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.dataPoster.Start(ctxIn)
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
+	b.LaunchThread(b.pollForReverts)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -707,8 +920,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
-		if b.dataPoster.From() != (common.Address{}) {
-			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.From(), nil)
+		if b.dataPoster.Sender() != (common.Address{}) {
+			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.Sender(), nil)
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
@@ -723,7 +936,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.ErrStorageRace) {
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace) {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {

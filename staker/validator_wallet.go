@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -38,7 +39,9 @@ func init() {
 
 type ValidatorWalletInterface interface {
 	Initialize(context.Context) error
+	// Address must be able to be called concurrently with other functions
 	Address() *common.Address
+	// Address must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
@@ -53,7 +56,7 @@ type ValidatorWalletInterface interface {
 
 type ContractValidatorWallet struct {
 	con                     *rollupgen.ValidatorWallet
-	address                 *common.Address
+	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
 	l1Reader                L1ReaderInterface
 	auth                    *bind.TransactOpts
@@ -79,9 +82,8 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 	if err != nil {
 		return nil, err
 	}
-	return &ContractValidatorWallet{
+	wallet := &ContractValidatorWallet{
 		con:               con,
-		address:           address,
 		onWalletCreated:   onWalletCreated,
 		l1Reader:          l1Reader,
 		auth:              auth,
@@ -89,7 +91,10 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 		rollupAddress:     rollupAddress,
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
-	}, nil
+	}
+	// Go complains if we make an address variable before wallet and copy it in
+	wallet.address.Store(address)
+	return wallet, nil
 }
 
 func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
@@ -127,15 +132,16 @@ func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
 
 // May be the nil if the wallet hasn't been deployed yet
 func (v *ContractValidatorWallet) Address() *common.Address {
-	return v.address
+	return v.address.Load()
 }
 
 // May be zero if the wallet hasn't been deployed yet
 func (v *ContractValidatorWallet) AddressOrZero() common.Address {
-	if v.address == nil {
+	addr := v.address.Load()
+	if addr == nil {
 		return common.Address{}
 	}
-	return *v.address
+	return *addr
 }
 
 func (v *ContractValidatorWallet) TxSenderAddress() *common.Address {
@@ -152,12 +158,25 @@ func (v *ContractValidatorWallet) From() common.Address {
 	return v.auth.From
 }
 
-func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
-	oldAuthValue := v.auth.Value
-	v.auth.Value = tx.Value()
-	defer (func() { v.auth.Value = oldAuthValue })()
+// nil value == 0 value
+func (v *ContractValidatorWallet) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
+	newAuth := *v.auth
+	newAuth.Context = ctx
+	newAuth.Value = value
+	nonce, err := v.L1Client().NonceAt(ctx, v.auth.From, nil)
+	if err != nil {
+		return nil, err
+	}
+	newAuth.Nonce = new(big.Int).SetUint64(nonce)
+	return &newAuth, nil
+}
 
-	return v.con.ExecuteTransactionWithGasRefunder(v.auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
+func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
+	auth, err := v.getAuth(ctx, tx.Value())
+	if err != nil {
+		return nil, err
+	}
+	return v.con.ExecuteTransactionWithGasRefunder(auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
 }
 
 func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -170,20 +189,24 @@ func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMi
 		}
 		return nil
 	}
-	if v.address == nil {
-		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing)
+	if v.address.Load() == nil {
+		auth, err := v.getAuth(ctx, nil)
+		if err != nil {
+			return err
+		}
+		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, auth, v.l1Reader, createIfMissing)
 		if err != nil {
 			return err
 		}
 		if addr == nil {
 			return nil
 		}
-		v.address = addr
+		v.address.Store(addr)
 		if v.onWalletCreated != nil {
 			v.onWalletCreated(*addr)
 		}
 	}
-	con, err := rollupgen.NewValidatorWallet(*v.address, v.l1Reader.Client())
+	con, err := rollupgen.NewValidatorWallet(*v.Address(), v.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -243,19 +266,20 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 		totalAmount = totalAmount.Add(totalAmount, tx.Value())
 	}
 
-	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.address, nil)
+	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.Address(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	oldAuthValue := v.auth.Value
-	v.auth.Value = new(big.Int).Sub(totalAmount, balanceInContract)
-	if v.auth.Value.Sign() < 0 {
-		v.auth.Value.SetInt64(0)
+	callValue := new(big.Int).Sub(totalAmount, balanceInContract)
+	if callValue.Sign() < 0 {
+		callValue.SetInt64(0)
 	}
-	defer (func() { v.auth.Value = oldAuthValue })()
-
-	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(v.auth, gasRefunder, data, dest, amount)
+	auth, err := v.getAuth(ctx, callValue)
+	if err != nil {
+		return nil, err
+	}
+	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(auth, gasRefunder, data, dest, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +288,11 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 }
 
 func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
-	return v.con.TimeoutChallenges(v.auth, v.challengeManagerAddress, challenges)
+	auth, err := v.getAuth(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return v.con.TimeoutChallenges(auth, v.challengeManagerAddress, challenges)
 }
 
 func (v *ContractValidatorWallet) L1Client() arbutil.L1Interface {

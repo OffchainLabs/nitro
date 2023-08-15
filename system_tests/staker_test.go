@@ -35,7 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {
+func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
 		l2info.Accounts["BackgroundUser"].Nonce = i
 		tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
@@ -46,19 +46,6 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 		if err != nil {
 			return err
-		}
-		if faultyStaker {
-			// Create a different transaction for the second node
-			l2info.Accounts["BackgroundUser"].Nonce = i
-			tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
-			err = l2clientB.SendTransaction(ctx, tx)
-			if err != nil {
-				return err
-			}
-			_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
-			if err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -82,7 +69,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil)
+	config := arbnode.ConfigDefaultL1Test()
+	config.Sequencer.Enable = false
+	config.DelayedSequencer.Enable = false
+	config.BatchPoster.Enable = false
+	_, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, config, nil)
 	defer l2nodeB.StopAndWait()
 
 	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
@@ -132,6 +123,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
+	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, l1client)
+	Require(t, err)
+
 	valConfig := staker.L1ValidatorConfig{}
 
 	valWalletA, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
@@ -149,8 +143,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution.ArbInterface.BlockChain(),
-		l2nodeA.Execution.ChainDB,
+		l2nodeA.Execution.Recorder,
 		l2nodeA.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -166,7 +159,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
@@ -183,8 +179,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution.ArbInterface.BlockChain(),
-		l2nodeB.Execution.ChainDB,
+		l2nodeB.Execution.Recorder,
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -200,7 +195,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessB,
+		nil,
+		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
@@ -220,7 +218,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig,
 		nil,
 		statelessA,
+		nil,
+		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		nil,
 	)
 	Require(t, err)
 	if stakerC.Strategy() != staker.WatchtowerStrategy {
@@ -236,12 +237,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
-	if faultyStaker {
-		err = l2clientB.SendTransaction(ctx, tx)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
-		Require(t, err)
-	}
 
 	// Continually make L2 transactions in a background thread
 	backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
@@ -252,7 +247,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})()
 	go (func() {
 		defer close(backgroundTxsShutdownChan)
-		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA, l2clientB, faultyStaker)
+		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA)
 		if !errors.Is(err, context.Canceled) {
 			log.Warn("error making background txs", "err", err)
 		}
@@ -290,13 +285,16 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
-			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after block -1 expected global state") {
+			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after msg 0 expected global state") {
 				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
 
-					mockImpl, _, _, err := mocksgen.DeployTimedOutChallengeManager(&deployAuth, l1client)
+					mockImpl, tx, _, err := mocksgen.DeployTimedOutChallengeManager(&deployAuth, l1client)
 					Require(t, err)
+					_, err = EnsureTxSucceeded(ctx, l1client, tx)
+					Require(t, err)
+
 					managerAddr := valWalletA.ChallengeManagerAddress()
 					// 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103
 					proxyAdminSlot := common.BigToHash(arbmath.BigSub(crypto.Keccak256Hash([]byte("eip1967.proxy.admin")).Big(), common.Big1))
@@ -309,7 +307,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 					proxyAdmin, err := mocksgen.NewProxyAdminForBinding(proxyAdminAddr, l1client)
 					Require(t, err)
-					tx, err := proxyAdmin.Upgrade(&deployAuth, managerAddr, mockImpl)
+					tx, err = proxyAdmin.Upgrade(&deployAuth, managerAddr, mockImpl)
 					Require(t, err)
 					_, err = EnsureTxSucceeded(ctx, l1client, tx)
 					Require(t, err)
@@ -318,7 +316,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				}
 			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
 				// Expected error when trying to re-stake after losing initial stake.
-			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+			} else if strings.Contains(err.Error(), "start state not in chain") && sawStakerZombie {
 				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
 			} else if strings.Contains(err.Error(), "STAKER_IS_ZOMBIE") && sawStakerZombie {
 				// Expected error when the staker is a zombie and thus can't advance its stake.
@@ -335,9 +333,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
-			challengeAddr, err := rollup.CurrentChallenge(&bind.CallOpts{}, valWalletAddrA)
+			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, l1authB.From, big.NewInt(1024))
 			Require(t, err)
-			if challengeAddr != 0 {
+			if staker.ConflictType(conflictInfo.Ty) == staker.CONFLICT_TYPE_FOUND {
 				cancelBackgroundTxs()
 			}
 		}
@@ -350,6 +348,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		if isHonestZombie {
 			Fatal(t, "staker A became a zombie")
 		}
+		fmt.Printf("watchtower staker acting:\n")
 		watchTx, err := stakerC.Act(ctx)
 		if err != nil && !strings.Contains(err.Error(), "catch up") {
 			Require(t, err, "watchtower staker failed to act")

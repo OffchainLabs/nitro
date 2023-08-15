@@ -110,7 +110,7 @@ func TestDASRekey(t *testing.T) {
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -126,7 +126,7 @@ func TestDASRekey(t *testing.T) {
 		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
 		// Setup L2 chain
-		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, l2info, nodeDir, chainConfig, nil)
+		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, l2info, nodeDir, chainConfig, initMessage, nil, nil)
 		l2info.GenerateAccount("User2")
 
 		// Setup DAS config
@@ -238,7 +238,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
@@ -304,7 +304,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 
 	// Setup L2 chain
-	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, "", chainConfig, nil)
+	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
 	l2info.GenerateAccount("User2")
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)

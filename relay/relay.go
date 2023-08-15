@@ -146,6 +146,8 @@ type Config struct {
 	LogType       string                          `koanf:"log-type"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 	Node          NodeConfig                      `koanf:"node"`
 	Queue         int                             `koanf:"queue"`
 }
@@ -157,6 +159,8 @@ var ConfigDefault = Config{
 	LogType:       "plaintext",
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 	Node:          NodeConfigDefault,
 	Queue:         1024,
 }
@@ -168,6 +172,8 @@ func ConfigAddOptions(f *flag.FlagSet) {
 	f.String("log-type", ConfigDefault.LogType, "log type")
 	f.Bool("metrics", ConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.Bool("pprof", ConfigDefault.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
 	NodeConfigAddOptions("node", f)
 	f.Int("queue", ConfigDefault.Queue, "size of relay queue")
 }

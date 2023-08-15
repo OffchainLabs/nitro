@@ -619,12 +619,12 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
-		processedMessages, err := c.streamer.exec.HeadMessageNumber()
+		processedMessages, err := c.streamer.GetProcessedMessageCount()
 		if err != nil {
 			log.Warn("coordinator: failed to read processed message count", "err", err)
 			processedMessages = 0
 		}
-		if processedMessages+1 >= localMsgCount {
+		if processedMessages >= localMsgCount {
 			// we're here because we don't currently hold the lock
 			// sequencer is already either paused or forwarding
 			c.sequencer.Pause()
