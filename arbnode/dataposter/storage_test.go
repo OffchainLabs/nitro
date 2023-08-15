@@ -57,7 +57,7 @@ func newRedisStorage(ctx context.Context, t *testing.T) *redis.Storage {
 func valueOf(i int) *storage.QueuedTransaction {
 	return &storage.QueuedTransaction{
 		Meta: []byte{byte(i)},
-		Data: types.DynamicFeeTx{
+		FullTx: types.NewTx(&types.DynamicFeeTx{
 			ChainID:    big.NewInt(int64(i)),
 			Nonce:      uint64(i),
 			GasTipCap:  big.NewInt(int64(i)),
@@ -69,7 +69,7 @@ func valueOf(i int) *storage.QueuedTransaction {
 			V:          big.NewInt(int64(i)),
 			R:          big.NewInt(int64(i)),
 			S:          big.NewInt(int64(i)),
-		},
+		}),
 	}
 }
 

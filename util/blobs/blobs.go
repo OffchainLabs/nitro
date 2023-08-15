@@ -4,6 +4,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 /*
@@ -388,22 +389,22 @@ func ToGethWrapData(b *BlobTxWrapData) types.TxWrapData {
 // EncodeBlobs takes in raw bytes data to convert into blobs used for KZG commitment EIP-4844
 // transactions on Ethereum.
 func EncodeBlobs(data []byte) []kzg4844.Blob {
-	const blobLen = len(kzg4844.Blob{})
-	partiallyFilledBlob := 0
-	if len(data)%blobLen > 0 {
-		partiallyFilledBlob = 1
-	}
-	blobs := make([]kzg4844.Blob, len(data)/blobLen+partiallyFilledBlob)
-
-	for i, blob := range blobs {
-		start := i * blobLen
-		end := (i + 1) * blobLen
-		if end > len(data) {
-			end = len(data)
+	blobs := []kzg4844.Blob{{}}
+	blobIndex := 0
+	fieldIndex := -1
+	for i := 0; i < len(data); i += 31 {
+		fieldIndex++
+		if fieldIndex == params.BlobTxFieldElementsPerBlob {
+			blobs = append(blobs, kzg4844.Blob{})
+			blobIndex++
+			fieldIndex = 0
 		}
-		copy(blob[:], data[start:end])
+		max := i + 31
+		if max > len(data) {
+			max = len(data)
+		}
+		copy(blobs[blobIndex][fieldIndex*32+1:], data[i:max])
 	}
-
 	return blobs
 }
 
@@ -456,13 +457,13 @@ func ComputeCommitmentsProofsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitme
 	proofs := make([]kzg4844.Proof, len(blobs))
 	versionedHashes := make([]common.Hash, len(blobs))
 
-	for i, blob := range blobs {
+	for i := range blobs {
 		var err error
-		commitments[i], err = kzg4844.BlobToCommitment(blob)
+		commitments[i], err = kzg4844.BlobToCommitment(blobs[i])
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		proofs[i], err = kzg4844.ComputeBlobProof(blob, commitments[i])
+		proofs[i], err = kzg4844.ComputeBlobProof(blobs[i], commitments[i])
 		if err != nil {
 			return nil, nil, nil, err
 		}
