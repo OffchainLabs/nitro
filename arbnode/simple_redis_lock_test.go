@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -20,7 +21,7 @@ const test_release_frac = 5
 const test_delay = time.Millisecond
 const test_redisKey_prefix = "__TEMP_SimpleRedisLockTest__"
 
-func attemptLock(ctx context.Context, s *SimpleRedisLock, flag *int32, wg *sync.WaitGroup) {
+func attemptLock(ctx context.Context, s *redislock.Simple, flag *int32, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for i := 0; i < test_attempts; i++ {
 		if s.AttemptLock(ctx) {
@@ -46,22 +47,22 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 	Require(t, err)
 	Require(t, redisClient.Del(ctx, redisKey).Err())
 
-	conf := &SimpleRedisLockConfig{
+	conf := &redislock.SimpleCfg{
 		LockoutDuration: test_delay * test_attempts * 10,
 		RefreshDuration: test_delay * 2,
 		Key:             redisKey,
 		BackgroundLock:  backgound,
 	}
-	confFetcher := func() *SimpleRedisLockConfig { return conf }
+	confFetcher := func() *redislock.SimpleCfg { return conf }
 
-	locks := make([]*SimpleRedisLock, 0)
+	locks := make([]*redislock.Simple, 0)
 	for i := 0; i < test_threads; i++ {
 		var err error
-		var lock *SimpleRedisLock
+		var lock *redislock.Simple
 		if chosen < 0 || chosen == i {
-			lock, err = NewSimpleRedisLock(redisClient, confFetcher, prepareTrue)
+			lock, err = redislock.NewSimple(redisClient, confFetcher, prepareTrue)
 		} else {
-			lock, err = NewSimpleRedisLock(redisClient, confFetcher, prepareFalse)
+			lock, err = redislock.NewSimple(redisClient, confFetcher, prepareFalse)
 		}
 		if err != nil {
 			t.Fatal(err)
