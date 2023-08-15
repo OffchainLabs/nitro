@@ -90,8 +90,8 @@ func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.Queued
 		s.queue = append(s.queue, newEnc)
 	} else if index >= s.firstNonce {
 		queueIdx := int(index - s.firstNonce)
-		if queueIdx > len(s.queue) {
-			return fmt.Errorf("attempted to set out-of-bounds index %v in queue starting at %v of length %v", index, s.firstNonce, len(s.queue))
+		for queueIdx >= len(s.queue) {
+			s.queue = append(s.queue, nil)
 		}
 		prevEnc, err := rlp.EncodeToBytes(prev)
 		if err != nil {
