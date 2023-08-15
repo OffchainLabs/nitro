@@ -147,7 +147,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
-		if nextNonce-unconfirmedNonce > cfg.MaxMempoolTransactions {
+		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("posting a transaction with nonce: %d will exceed max mempool size: %d, unconfirmed nonce: %d", nextNonce, cfg.MaxMempoolTransactions, unconfirmedNonce)
 		}
 	}
@@ -215,6 +215,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFee
 		return nil, nil, err
 	}
 	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(config.MinTipCapGwei*params.GWei))
+	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(config.MaxTipCapGwei*params.GWei))
 
 	hugeTipIncrease := false
 	if lastTipCap != nil {
@@ -395,16 +396,20 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 	nonce, err := p.client.NonceAt(ctx, p.sender, header.Number)
 	if err != nil {
 		if p.lastBlock != nil {
-			log.Warn("failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
+			log.Warn("Failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
 			return nil
 		}
 		return err
 	}
 	// Ignore if nonce hasn't increased.
 	if nonce <= p.nonce {
+		// Still update last block number.
+		if nonce == p.nonce {
+			p.lastBlock = header.Number
+		}
 		return nil
 	}
-	log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
+	log.Info("Data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 	if len(p.errorCount) > 0 {
 		for x := p.nonce; x < nonce; x++ {
 			delete(p.errorCount, x)
@@ -556,6 +561,7 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
 	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
 }
 
@@ -583,6 +589,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }
 
@@ -594,5 +601,6 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }

@@ -543,7 +543,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
+func ValidatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
@@ -551,7 +551,7 @@ func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	}
 	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
 	lockCfgFetcher := func() *redislock.SimpleCfg {
 		return &cfg.BlockValidator.RedisLock
@@ -685,29 +685,29 @@ func createNodeImpl(
 
 	if !config.L1Reader.Enable {
 		return &Node{
-			arbDb,
-			stack,
-			exec,
-			nil,
-			txStreamer,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			broadcastServer,
-			broadcastClients,
-			coordinator,
-			maintenanceRunner,
-			nil,
-			classicOutbox,
-			syncMonitor,
-			configFetcher,
-			ctx,
+			ArbDB:                   arbDb,
+			Stack:                   stack,
+			Execution:               exec,
+			L1Reader:                nil,
+			TxStreamer:              txStreamer,
+			DeployInfo:              nil,
+			InboxReader:             nil,
+			InboxTracker:            nil,
+			DelayedSequencer:        nil,
+			BatchPoster:             nil,
+			MessagePruner:           nil,
+			BlockValidator:          nil,
+			StatelessBlockValidator: nil,
+			Staker:                  nil,
+			BroadcastServer:         broadcastServer,
+			BroadcastClients:        broadcastClients,
+			SeqCoordinator:          coordinator,
+			MaintenanceRunner:       maintenanceRunner,
+			DASLifecycleManager:     nil,
+			ClassicOutboxRetriever:  classicOutbox,
+			SyncMonitor:             syncMonitor,
+			configFetcher:           configFetcher,
+			ctx:                     ctx,
 		}, nil
 	}
 
@@ -802,7 +802,7 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		dp, err := validatorDataposter(
+		dp, err := ValidatorDataposter(
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			l1Reader,
 			txOptsValidator,
@@ -882,29 +882,29 @@ func createNodeImpl(
 	}
 
 	return &Node{
-		arbDb,
-		stack,
-		exec,
-		l1Reader,
-		txStreamer,
-		deployInfo,
-		inboxReader,
-		inboxTracker,
-		delayedSequencer,
-		batchPoster,
-		messagePruner,
-		blockValidator,
-		statelessBlockValidator,
-		stakerObj,
-		broadcastServer,
-		broadcastClients,
-		coordinator,
-		maintenanceRunner,
-		dasLifecycleManager,
-		classicOutbox,
-		syncMonitor,
-		configFetcher,
-		ctx,
+		ArbDB:                   arbDb,
+		Stack:                   stack,
+		Execution:               exec,
+		L1Reader:                l1Reader,
+		TxStreamer:              txStreamer,
+		DeployInfo:              deployInfo,
+		InboxReader:             inboxReader,
+		InboxTracker:            inboxTracker,
+		DelayedSequencer:        delayedSequencer,
+		BatchPoster:             batchPoster,
+		MessagePruner:           messagePruner,
+		BlockValidator:          blockValidator,
+		StatelessBlockValidator: statelessBlockValidator,
+		Staker:                  stakerObj,
+		BroadcastServer:         broadcastServer,
+		BroadcastClients:        broadcastClients,
+		SeqCoordinator:          coordinator,
+		MaintenanceRunner:       maintenanceRunner,
+		DASLifecycleManager:     dasLifecycleManager,
+		ClassicOutboxRetriever:  classicOutbox,
+		SyncMonitor:             syncMonitor,
+		configFetcher:           configFetcher,
+		ctx:                     ctx,
 	}, nil
 }
 

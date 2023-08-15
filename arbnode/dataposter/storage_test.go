@@ -2,6 +2,7 @@ package dataposter
 
 import (
 	"context"
+	"math/big"
 	"path"
 	"testing"
 
@@ -19,7 +20,10 @@ import (
 )
 
 var ignoreData = cmp.Options{
-	cmpopts.IgnoreFields(storage.QueuedTransaction{}, "Data"),
+	cmpopts.IgnoreUnexported(
+		types.DynamicFeeTx{},
+		big.Int{},
+	),
 	cmpopts.IgnoreFields(types.Transaction{}, "hash", "size", "from"),
 }
 
@@ -53,6 +57,19 @@ func newRedisStorage(ctx context.Context, t *testing.T) *redis.Storage {
 func valueOf(i int) *storage.QueuedTransaction {
 	return &storage.QueuedTransaction{
 		Meta: []byte{byte(i)},
+		Data: types.DynamicFeeTx{
+			ChainID:    big.NewInt(int64(i)),
+			Nonce:      uint64(i),
+			GasTipCap:  big.NewInt(int64(i)),
+			GasFeeCap:  big.NewInt(int64(i)),
+			Gas:        uint64(i),
+			Value:      big.NewInt(int64(i)),
+			Data:       []byte{byte(i % 8)},
+			AccessList: types.AccessList{},
+			V:          big.NewInt(int64(i)),
+			R:          big.NewInt(int64(i)),
+			S:          big.NewInt(int64(i)),
+		},
 	}
 }
 

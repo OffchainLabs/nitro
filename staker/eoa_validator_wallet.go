@@ -90,24 +90,24 @@ func (w *EoaValidatorWallet) TestTransactions(context.Context, []*types.Transact
 // by validator wallet.
 func (w *EoaValidatorWallet) pollForNonce(ctx context.Context) (uint64, error) {
 	var nonce uint64
-	// Loop until nonce of dataposter catches up with the number of transactions
-	// validator posted to dataposter.
 	flag := true
 	for flag {
 		var err error
 		select {
+		// TODO: consider adding config for eoa validator wallet and pull this
+		// polling time from there.
 		case <-time.After(100 * time.Millisecond):
 			nonce, _, err = w.dataPoster.GetNextNonceAndMeta(ctx)
 			if err != nil {
 				return 0, fmt.Errorf("get next nonce and meta: %w", err)
 			}
-			if nonce >= uint64(w.txCount.Load()) {
+			if nonce >= w.txCount.Load() {
 				flag = false
 				break
 			}
 			log.Warn("Dataposter nonce too low", "nonce", nonce, "validator tx count", w.txCount.Load())
 		case <-ctx.Done():
-			return 0, fmt.Errorf("context cancelled")
+			return 0, ctx.Err()
 		}
 	}
 	return nonce, nil
