@@ -312,10 +312,10 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
 		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
-		log.Warn(
-			"latest L1 block is old", "l1Block", storedHeader.Number,
-			"l1Timestamp", l1Timetamp, "age", headerTime,
-		)
+		// log.Warn(
+		// 	"latest L1 block is old", "l1Block", storedHeader.Number,
+		// 	"l1Timestamp", l1Timetamp, "age", headerTime,
+		// )
 	}
 }
 

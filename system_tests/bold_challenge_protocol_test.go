@@ -10,6 +10,8 @@ import (
 
 	"github.com/OffchainLabs/bold/assertions"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
+	modes "github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -25,7 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -208,71 +209,71 @@ func TestBoldProtocol(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	t.Log("Honest party posting assertion at batch 2, pos 0")
-	honest, err := poster.PostAssertion(ctx)
+	_, err = poster.PostAssertion(ctx)
 	Require(t, err)
 
 	t.Log("Evil party posting rival assertion at batch 2, pos 0")
 	_, err = posterB.PostAssertion(ctx)
 	Require(t, err)
 
-	// manager, err := challengemanager.New(
-	// 	ctx,
-	// 	assertionChain,
-	// 	l1client,
-	// 	stateManager,
-	// 	assertionChain.RollupAddress(),
-	// 	challengemanager.WithName("honest"),
-	// 	challengemanager.WithMode(modes.DefensiveMode),
-	// 	challengemanager.WithAssertionPostingInterval(time.Hour),
-	// 	challengemanager.WithAssertionScanningInterval(5*time.Second),
-	// 	challengemanager.WithEdgeTrackerWakeInterval(time.Second),
-	// )
+	manager, err := challengemanager.New(
+		ctx,
+		assertionChain,
+		l1client,
+		stateManager,
+		assertionChain.RollupAddress(),
+		challengemanager.WithName("honest"),
+		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(5*time.Second),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+	)
+	Require(t, err)
+	manager.Start(ctx)
+
+	managerB, err := challengemanager.New(
+		ctx,
+		chainB,
+		l1client,
+		stateManagerB,
+		assertionChain.RollupAddress(),
+		challengemanager.WithName("evil"),
+		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(5*time.Second),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+	)
+	Require(t, err)
+	managerB.Start(ctx)
+
+	// creationInfo, err := chainB.ReadAssertionCreationInfo(ctx, honest.Id())
 	// Require(t, err)
-	// manager.Start(ctx)
 
-	// managerB, err := challengemanager.New(
-	// 	ctx,
-	// 	chainB,
-	// 	l1client,
-	// 	stateManagerB,
-	// 	assertionChain.RollupAddress(),
-	// 	challengemanager.WithName("evil"),
-	// 	challengemanager.WithMode(modes.DefensiveMode),
-	// 	challengemanager.WithAssertionPostingInterval(time.Hour),
-	// 	challengemanager.WithAssertionScanningInterval(5*time.Second),
-	// 	challengemanager.WithEdgeTrackerWakeInterval(time.Second),
-	// )
+	// entry, err := statelessA.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(1))
 	// Require(t, err)
-	// managerB.Start(ctx)
+	// input, err := entry.ToInput()
+	// Require(t, err)
+	// execRun, err := statelessA.ExecutionSpawner().CreateExecutionRun(creationInfo.WasmModuleRoot, input).Await(ctx)
+	// Require(t, err)
 
-	creationInfo, err := chainB.ReadAssertionCreationInfo(ctx, honest.Id())
-	Require(t, err)
+	// bigStepLeaves := execRun.GetBigStepLeavesUpTo(bigStepChallengeLeafHeight, smallStepChallengeLeafHeight)
+	// result, err := bigStepLeaves.Await(ctx)
+	// Require(t, err)
+	// t.Logf("Got result %d with first %#x and last %#x", len(result), result[0], result[len(result)-1])
 
-	entry, err := statelessA.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(1))
-	Require(t, err)
-	input, err := entry.ToInput()
-	Require(t, err)
-	execRun, err := statelessA.ExecutionSpawner().CreateExecutionRun(creationInfo.WasmModuleRoot, input).Await(ctx)
-	Require(t, err)
+	// entry, err = statelessA.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(1))
+	// Require(t, err)
+	// input, err = entry.ToInput()
+	// Require(t, err)
+	// execRun, err = statelessA.ExecutionSpawner().CreateExecutionRun(creationInfo.WasmModuleRoot, input).Await(ctx)
+	// Require(t, err)
 
-	bigStepLeaves := execRun.GetBigStepLeavesUpTo(bigStepChallengeLeafHeight, smallStepChallengeLeafHeight)
-	result, err := bigStepLeaves.Await(ctx)
-	Require(t, err)
-	t.Logf("Got result %d with first %#x and last %#x", len(result), result[0], result[len(result)-1])
-
-	entry, err = statelessA.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(1))
-	Require(t, err)
-	input, err = entry.ToInput()
-	Require(t, err)
-	execRun, err = statelessA.ExecutionSpawner().CreateExecutionRun(creationInfo.WasmModuleRoot, input).Await(ctx)
-	Require(t, err)
-
-	t.Log("=======")
-	bigStep := uint64(58)
-	bigStepLeaves = execRun.GetSmallStepLeavesUpTo(bigStep, smallStepChallengeLeafHeight, smallStepChallengeLeafHeight)
-	result, err = bigStepLeaves.Await(ctx)
-	Require(t, err)
-	t.Logf("Got result %d with first %#x and last %#x", len(result), result[0], result[len(result)-1])
+	// t.Log("=======")
+	// bigStep := uint64(58)
+	// bigStepLeaves = execRun.GetSmallStepLeavesUpTo(bigStep, smallStepChallengeLeafHeight, smallStepChallengeLeafHeight)
+	// result, err = bigStepLeaves.Await(ctx)
+	// Require(t, err)
+	// t.Logf("Got result %d with first %#x and last %#x", len(result), result[0], result[len(result)-1])
 
 	// entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	// input, err := entry.ToInput()

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -67,16 +66,14 @@ func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigSt
 		if !machine.IsRunning() {
 			return stateRoots, nil
 		}
-		gs := machine.GetGlobalState()
-		fmt.Printf("i = 0, gs: %+v and status=%d mach=%#x\n", gs, machine.Status(), crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
-		for i := uint64(1); i <= toBigStep; i++ {
-			position := i * numOpcodesPerBigStep
-			if err = machine.Step(ctx, position); err != nil {
+		for i := uint64(0); i < toBigStep; i++ {
+			if err = machine.Step(ctx, numOpcodesPerBigStep); err != nil {
 				return nil, err
 			}
-			gs := machine.GetGlobalState()
 			hash := machine.Hash()
-			fmt.Printf("big=%d (individual_step=%d), status=%d, blockhash=%#x, batch=%d and mach=%#x\n", i, position, machine.Status(), gs.BlockHash[:4], gs.Batch, hash[:8])
+			if i%300 == 0 {
+				fmt.Printf("Big step %d, hash=%#x\n", i, hash[:8])
+			}
 			stateRoots = append(stateRoots, hash)
 		}
 		return stateRoots, nil
@@ -86,72 +83,40 @@ func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigSt
 func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		var stateRoots []common.Hash
-		//fromSmall := bigStep * numOpcodesPerBigStep
-		//toSmall := fromSmall + toSmallStep
-
-		//position := fromSmall
-		var machine MachineInterface
-		var err error
-		// if position == ^uint64(0) {
-		// 	machine, err = e.cache.GetFinalMachine(ctx)
-		// } else {
-		// 	// todo cache last machina
-		machine, err = e.cache.GetMachineAt(ctx, 58*numOpcodesPerBigStep)
-		// }
+		position := bigStep * numOpcodesPerBigStep
+		machine, err := e.cache.GetMachineAt(ctx, position)
 		if err != nil {
 			return nil, err
 		}
-		// machineStep := machine.GetStepCount()
-		// gs := machine.GetGlobalState()
-		// hash := machine.Hash()
-		// fmt.Printf("Small pos=%d, step_count=%d, status=%d, hash=%#x, gs=%#x, batch=%d\n", 0, machineStep, machine.Status(), hash[:8], gs.BlockHash[:4], gs.Batch)
-
-		// if err = machine.Step(ctx, 58*numOpcodesPerBigStep); err != nil {
-		// 	return nil, err
-		// }
 
 		machineStep := machine.GetStepCount()
 		gs := machine.GetGlobalState()
 		hash := machine.Hash()
-		fmt.Printf("step_count=%d, status=%d, hash=%#x, gs=%#x, batch=%d\n", machineStep, machine.Status(), hash[:8], gs.BlockHash[:4], gs.Batch)
+		fmt.Printf("Small pos=%d, step_count=%d, status=%d, hash=%#x, gs=%#x, batch=%d\n", position, machineStep, machine.Status(), hash[:8], gs.BlockHash[:4], gs.Batch)
+		stateRoots = append(stateRoots, hash)
 
-		// if err = machine.Step(ctx, position+numOpcodesPerBigStep); err != nil {
-		// 	return nil, err
-		// }
+		if position != machineStep {
+			machineRunning := machine.IsRunning()
+			if machineRunning || machineStep > position {
+				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+			}
+		}
 
-		// machineStep = machine.GetStepCount()
-		// gs = machine.GetGlobalState()
-		// hash = machine.Hash()
-		// fmt.Printf("Small pos=%d, step_count=%d, status=%d, hash=%#x, gs=%#x, batch=%d\n", position, machineStep, machine.Status(), hash[:8], gs.BlockHash[:4], gs.Batch)
+		for i := uint64(0); i < toSmallStep; i++ {
+			if err = machine.Step(ctx, 1); err != nil {
+				return nil, err
+			}
+			hash := machine.Hash()
+			if i%300 == 0 {
+				fmt.Printf("Small step %d, hash=%#x\n", i, hash[:8])
+			}
+			stateRoots = append(stateRoots, hash)
+		}
+		machineStep = machine.GetStepCount()
+		gs = machine.GetGlobalState()
+		hash = machine.Hash()
+		fmt.Printf("After loop step_count=%d, status=%d, hash=%#x, gs=%#x, batch=%d\n", machineStep, machine.Status(), hash[:8], gs.BlockHash[:4], gs.Batch)
 
-		// stateRoots = append(stateRoots, hash)
-		// gs := machine.GetGlobalState()
-		// fmt.Printf("i = 0, gs: %+v and status=%d mach=%#x\n", gs, machine.Status(), crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
-		// for i := uint64(1); i <= bigStep; i++ {
-		// 	position := i * numOpcodesPerBigStep
-		// 	if err = machine.Step(ctx, position); err != nil {
-		// 		return nil, err
-		// 	}
-		// 	gs := machine.GetGlobalState()
-		// 	hash := machine.Hash()
-		// 	fmt.Printf("big=%d (individual_step=%d), status=%d, blockhash=%#x, batch=%d and mach=%#x\n", i, position, machine.Status(), gs.BlockHash[:4], gs.Batch, hash[:8])
-		// 	stateRoots = append(stateRoots, hash)
-		// }
-
-		// if position != machineStep {
-		// 	machineRunning := machine.IsRunning()
-		// 	if machineRunning || machineStep > position {
-		// 		return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
-		// 	}
-
-		// }
-		// fmt.Printf("Stepping from %d to %d\n", fromSmall, toSmall)
-		// for i := fromSmall; i <= toSmall; i++ {
-		// 	if err = machine.Step(ctx, position); err != nil {
-		// 		return nil, err
-		// 	}
-		// 	stateRoots = append(stateRoots, machine.Hash())
-		// }
 		return stateRoots, nil
 	})
 }
