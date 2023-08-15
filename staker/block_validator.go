@@ -91,6 +91,7 @@ type BlockValidatorConfig struct {
 	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"`
 	RedisUrl                 string                        `koanf:"redis-url"`
 	RedisLock                redislock.SimpleCfg           `koanf:"redis-lock" reload:"hot"`
+	ExtraGas                 uint64                        `koanf:"extra-gas" reload:"hot"`
 }
 
 func (c *BlockValidatorConfig) Validate() error {
@@ -112,6 +113,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
+	f.Uint64(prefix+".extra-gas", DefaultBlockValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 	f.String(prefix+".redis-url", DefaultBlockValidatorConfig.RedisUrl, "redis url for block validator")
@@ -135,6 +137,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	DataPoster:               dataposter.DefaultDataPosterConfig,
 	RedisUrl:                 "",
 	RedisLock:                redislock.DefaultCfg,
+	ExtraGas:                 50000,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -150,6 +153,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	DataPoster:               dataposter.TestDataPosterConfig,
 	RedisUrl:                 "",
 	RedisLock:                redislock.DefaultCfg,
+	ExtraGas:                 50000,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
