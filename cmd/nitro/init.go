@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -329,7 +330,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
+		validatorDb := rawdb.NewTable(arbDb, storage.BlockValidatorPrefix)
 		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
