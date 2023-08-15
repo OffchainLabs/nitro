@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -75,7 +76,7 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	for _, s := range strings.Split(val, ",") {
 		t, err := time.ParseDuration(s)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parsing durations: %w", err)
 		}
 		if t <= lastReplacementTime {
 			return nil, errors.New("replacement times must be increasing")
@@ -97,8 +98,10 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 	}
 	var queue QueueStorage
 	switch {
-	case config().EnableLevelDB:
+	case config().UseLevelDB:
 		queue = leveldb.New(db)
+	case config().UseNoOpStorage:
+		queue = &noop.Storage{}
 	case redisClient == nil:
 		queue = slice.NewStorage()
 	default:
@@ -273,16 +276,17 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, gasLimit uint64, lastFee
 	return newFeeCap, newTipCap, nil
 }
 
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64) error {
+func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	err := p.updateBalance(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to update data poster balance: %w", err)
+		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
+
 	feeCap, tipCap, err := p.feeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	inner := types.DynamicFeeTx{
 		Nonce:     nonce,
@@ -290,12 +294,12 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		GasFeeCap: feeCap,
 		Gas:       gasLimit,
 		To:        &to,
-		Value:     new(big.Int),
+		Value:     value,
 		Data:      calldata,
 	}
 	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	queuedTx := storage.QueuedTransaction{
 		Data:            inner,
@@ -305,7 +309,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Created:         dataCreatedAt,
 		NextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
-	return p.sendTx(ctx, nil, &queuedTx)
+	return fullTx, p.sendTx(ctx, nil, &queuedTx)
 }
 
 // the mutex must be held by the caller
@@ -560,6 +564,8 @@ type DataPosterConfig struct {
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
+	UseLevelDB             bool                       `koanf:"use-leveldb" reload:"hot"`
+	UseNoOpStorage         bool                       `koanf:"use-noop-storage" reload:"hot"`
 	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
 	EnableLevelDB          bool                       `koanf:"enable-leveldb" reload:"hot"`
 }
@@ -577,7 +583,8 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Bool(prefix+".enable-leveldb", DefaultDataPosterConfig.EnableLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseLevelDB, "uses noop storage, it doesn't store anything")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -588,6 +595,8 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	UseLevelDB:             false,
+	UseNoOpStorage:         false,
 	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }
@@ -600,6 +609,8 @@ var TestDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
 	MinTipCapGwei:          0.05,
+	UseLevelDB:             false,
+	UseNoOpStorage:         false,
 	MaxTipCapGwei:          5,
 	EnableLevelDB:          false,
 }

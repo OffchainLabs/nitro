@@ -26,7 +26,10 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -41,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -539,6 +543,29 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
+func ValidatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor) (*dataposter.DataPoster, error) {
+	cfg := cfgFetcher.Get()
+	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+		return nil, nil
+	}
+	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
+	if err != nil {
+		return nil, fmt.Errorf("creating redis client from url: %w", err)
+	}
+	lockCfgFetcher := func() *redislock.SimpleCfg {
+		return &cfg.BlockValidator.RedisLock
+	}
+	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
+	if err != nil {
+		return nil, err
+	}
+	dpCfg := func() *dataposter.DataPosterConfig {
+		return &cfg.BlockValidator.DataPoster
+	}
+	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
+}
+
 func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
@@ -741,7 +768,7 @@ func createNodeImpl(
 			inboxTracker,
 			txStreamer,
 			exec.Recorder,
-			rawdb.NewTable(arbDb, BlockValidatorPrefix),
+			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			daReader,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
@@ -775,6 +802,16 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
+		dp, err := ValidatorDataposter(
+			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
+			l1Reader,
+			txOptsValidator,
+			configFetcher,
+			syncMonitor,
+		)
+		if err != nil {
+			return nil, err
+		}
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
 			var existingWalletAddress *common.Address
@@ -786,7 +823,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {})
+			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, config.BlockValidator.ExtraGas)
 			if err != nil {
 				return nil, err
 			}
@@ -794,7 +831,7 @@ func createNodeImpl(
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOptsValidator)
+			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator)
 			if err != nil {
 				return nil, err
 			}
@@ -833,7 +870,7 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(rawdb.NewTable(arbDb, BlockValidatorPrefix), l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
+		batchPoster, err = NewBatchPoster(rawdb.NewTable(arbDb, storage.BatchPosterPrefix), l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
 		if err != nil {
 			return nil, err
 		}
