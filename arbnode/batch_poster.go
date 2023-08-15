@@ -56,21 +56,23 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader        *headerreader.HeaderReader
-	inbox           *InboxTracker
-	streamer        *TransactionStreamer
-	config          BatchPosterConfigFetcher
-	seqInbox        *bridgegen.SequencerInbox
-	bridge          *bridgegen.Bridge
-	syncMonitor     *SyncMonitor
-	seqInboxABI     *abi.ABI
-	seqInboxAddr    common.Address
-	building        *buildingBatch
-	daWriter        das.DataAvailabilityServiceWriter
-	dataPoster      *dataposter.DataPoster
-	redisLock       *redislock.Simple
-	firstAccErr     time.Time // first time a continuous missing accumulator occurred
-	backlog         uint64    // An estimate of the number of unposted batches
+	l1Reader     *headerreader.HeaderReader
+	inbox        *InboxTracker
+	streamer     *TransactionStreamer
+	config       BatchPosterConfigFetcher
+	seqInbox     *bridgegen.SequencerInbox
+	bridge       *bridgegen.Bridge
+	syncMonitor  *SyncMonitor
+	seqInboxABI  *abi.ABI
+	seqInboxAddr common.Address
+	building     *buildingBatch
+	daWriter     das.DataAvailabilityServiceWriter
+	dataPoster   *dataposter.DataPoster
+	redisLock    *redislock.Simple
+	firstAccErr  time.Time // first time a continuous missing accumulator occurred
+	// An estimate of the number of batches we want to post but haven't yet.
+	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
+	backlog         uint64
 	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
 	batchReverted atomic.Bool // indicates whether data poster batch was reverted
