@@ -234,7 +234,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
 	if err != nil {
 		return nil, err
@@ -251,9 +251,16 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
+	var validatorAddrs []common.Address
+	for i := uint64(1); i <= authorizeValidators; i++ {
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
+	}
+
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
+		batchPoster,
+		validatorAddrs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -265,38 +272,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
-	}
-
-	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
-	if err != nil {
-		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
-	}
-
-	// if a zero sequencer address is specified, don't authorize any sequencers
-	if sequencer != (common.Address{}) {
-		tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-		err = andTxSucceeded(ctx, l1Reader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("error setting is batch poster: %w", err)
-		}
-	}
-
-	var allowValidators []bool
-	var validatorAddrs []common.Address
-	for i := uint64(1); i <= authorizeValidators; i++ {
-		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
-		allowValidators = append(allowValidators, true)
-	}
-	if len(validatorAddrs) > 0 {
-		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
-		if err != nil {
-			return nil, fmt.Errorf("error getting rollup admin: %w", err)
-		}
-		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-		err = andTxSucceeded(ctx, l1Reader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("error setting validator: %w", err)
-		}
 	}
 
 	return &chaininfo.RollupAddresses{
@@ -568,7 +543,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
+func ValidatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
@@ -576,7 +551,7 @@ func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	}
 	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
 	lockCfgFetcher := func() *redislock.SimpleCfg {
 		return &cfg.BlockValidator.RedisLock
@@ -710,29 +685,29 @@ func createNodeImpl(
 
 	if !config.L1Reader.Enable {
 		return &Node{
-			arbDb,
-			stack,
-			exec,
-			nil,
-			txStreamer,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			broadcastServer,
-			broadcastClients,
-			coordinator,
-			maintenanceRunner,
-			nil,
-			classicOutbox,
-			syncMonitor,
-			configFetcher,
-			ctx,
+			ArbDB:                   arbDb,
+			Stack:                   stack,
+			Execution:               exec,
+			L1Reader:                nil,
+			TxStreamer:              txStreamer,
+			DeployInfo:              nil,
+			InboxReader:             nil,
+			InboxTracker:            nil,
+			DelayedSequencer:        nil,
+			BatchPoster:             nil,
+			MessagePruner:           nil,
+			BlockValidator:          nil,
+			StatelessBlockValidator: nil,
+			Staker:                  nil,
+			BroadcastServer:         broadcastServer,
+			BroadcastClients:        broadcastClients,
+			SeqCoordinator:          coordinator,
+			MaintenanceRunner:       maintenanceRunner,
+			DASLifecycleManager:     nil,
+			ClassicOutboxRetriever:  classicOutbox,
+			SyncMonitor:             syncMonitor,
+			configFetcher:           configFetcher,
+			ctx:                     ctx,
 		}, nil
 	}
 
@@ -827,7 +802,7 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		dp, err := validatorDataposter(
+		dp, err := ValidatorDataposter(
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			l1Reader,
 			txOptsValidator,
@@ -907,29 +882,29 @@ func createNodeImpl(
 	}
 
 	return &Node{
-		arbDb,
-		stack,
-		exec,
-		l1Reader,
-		txStreamer,
-		deployInfo,
-		inboxReader,
-		inboxTracker,
-		delayedSequencer,
-		batchPoster,
-		messagePruner,
-		blockValidator,
-		statelessBlockValidator,
-		stakerObj,
-		broadcastServer,
-		broadcastClients,
-		coordinator,
-		maintenanceRunner,
-		dasLifecycleManager,
-		classicOutbox,
-		syncMonitor,
-		configFetcher,
-		ctx,
+		ArbDB:                   arbDb,
+		Stack:                   stack,
+		Execution:               exec,
+		L1Reader:                l1Reader,
+		TxStreamer:              txStreamer,
+		DeployInfo:              deployInfo,
+		InboxReader:             inboxReader,
+		InboxTracker:            inboxTracker,
+		DelayedSequencer:        delayedSequencer,
+		BatchPoster:             batchPoster,
+		MessagePruner:           messagePruner,
+		BlockValidator:          blockValidator,
+		StatelessBlockValidator: statelessBlockValidator,
+		Staker:                  stakerObj,
+		BroadcastServer:         broadcastServer,
+		BroadcastClients:        broadcastClients,
+		SeqCoordinator:          coordinator,
+		MaintenanceRunner:       maintenanceRunner,
+		DASLifecycleManager:     dasLifecycleManager,
+		ClassicOutboxRetriever:  classicOutbox,
+		SyncMonitor:             syncMonitor,
+		configFetcher:           configFetcher,
+		ctx:                     ctx,
 	}, nil
 }
 

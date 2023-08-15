@@ -88,7 +88,7 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
-	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"` // DO NOT SUBMIT: add default values before sending for a review.
+	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"`
 	RedisUrl                 string                        `koanf:"redis-url"`
 	RedisLock                redislock.SimpleCfg           `koanf:"redis-lock" reload:"hot"`
 	ExtraGas                 uint64                        `koanf:"extra-gas" reload:"hot"`
@@ -115,6 +115,9 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	f.Uint64(prefix+".extra-gas", DefaultBlockValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	f.String(prefix+".redis-url", DefaultBlockValidatorConfig.RedisUrl, "redis url for block validator")
+	redislock.AddConfigOptions(prefix+".redis-lock", f)
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -132,6 +135,8 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 	DataPoster:               dataposter.DefaultDataPosterConfig,
+	RedisUrl:                 "",
+	RedisLock:                redislock.DefaultCfg,
 	ExtraGas:                 50000,
 }
 
@@ -146,6 +151,8 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 	DataPoster:               dataposter.TestDataPosterConfig,
+	RedisUrl:                 "",
+	RedisLock:                redislock.DefaultCfg,
 	ExtraGas:                 50000,
 }
 

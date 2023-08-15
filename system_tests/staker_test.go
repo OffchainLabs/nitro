@@ -21,14 +21,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -37,8 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -56,29 +51,6 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		}
 	}
 	return nil
-}
-
-func validatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
-	transactOpts *bind.TransactOpts, cfgFetcher arbnode.ConfigFetcher, syncMonitor *arbnode.SyncMonitor) (*dataposter.DataPoster, error) {
-	cfg := cfgFetcher.Get()
-	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
-		return nil, nil
-	}
-	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
-	if err != nil {
-		return nil, fmt.Errorf("creating redis client from url: %w", err)
-	}
-	lockCfgFetcher := func() *redislock.SimpleCfg {
-		return &cfg.BlockValidator.RedisLock
-	}
-	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
-	if err != nil {
-		return nil, fmt.Errorf("creating redis lock: %w", err)
-	}
-	dpCfg := func() *dataposter.DataPosterConfig {
-		return &cfg.BlockValidator.DataPoster
-	}
-	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
 }
 
 func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {

@@ -2,10 +2,12 @@ package dataposter
 
 import (
 	"context"
+	"math/big"
 	"path"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
@@ -17,7 +19,13 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-var ignoreData = cmpopts.IgnoreFields(storage.QueuedTransaction{}, "Data")
+var ignoreData = cmp.Options{
+	cmpopts.IgnoreUnexported(
+		types.DynamicFeeTx{},
+		big.Int{},
+	),
+	cmpopts.IgnoreFields(types.Transaction{}, "hash", "size", "from"),
+}
 
 func newLevelDBStorage(t *testing.T) *leveldb.Storage {
 	t.Helper()
@@ -49,6 +57,19 @@ func newRedisStorage(ctx context.Context, t *testing.T) *redis.Storage {
 func valueOf(i int) *storage.QueuedTransaction {
 	return &storage.QueuedTransaction{
 		Meta: []byte{byte(i)},
+		Data: types.DynamicFeeTx{
+			ChainID:    big.NewInt(int64(i)),
+			Nonce:      uint64(i),
+			GasTipCap:  big.NewInt(int64(i)),
+			GasFeeCap:  big.NewInt(int64(i)),
+			Gas:        uint64(i),
+			Value:      big.NewInt(int64(i)),
+			Data:       []byte{byte(i % 8)},
+			AccessList: types.AccessList{},
+			V:          big.NewInt(int64(i)),
+			R:          big.NewInt(int64(i)),
+			S:          big.NewInt(int64(i)),
+		},
 	}
 }
 
