@@ -831,19 +831,19 @@ func setupConfigWithDAS(
 
 	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
-		KeyConfig: das.KeyConfig{
+		Key: das.KeyConfig{
 			KeyDir: dbPath,
 		},
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
+		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorageConfig: das.LocalDBStorageConfig{
+		LocalDBStorage: das.LocalDBStorageConfig{
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
 		RequestTimeout:           5 * time.Second,
-		L1NodeURL:                "none",
+		ParentChainNodeURL:       "none",
 		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
@@ -872,12 +872,12 @@ func setupConfigWithDAS(
 			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
 			SignerMask:          1,
 		}
-		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
+		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey

@@ -26,7 +26,7 @@ type ArbitratorSpawnerConfig struct {
 	Workers        int                `koanf:"workers" reload:"hot"`
 	OutputPath     string             `koanf:"output-path" reload:"hot"`
 	Execution      MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
-	ExecRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
+	ExecRunTimeout time.Duration      `koanf:"exec-run-timeout" reload:"hot"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig

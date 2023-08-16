@@ -89,7 +89,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
 	config.Node.Feed.Output = *newBroadcasterConfigTest()
-	config.L2.ChainId = bigChainId.Uint64()
+	config.Chain.ID = bigChainId.Uint64()
 
 	feedErrChan := make(chan error, 10)
 	currentRelay, err := relay.NewRelay(&config, feedErrChan)
@@ -145,7 +145,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
+	nodeConfigC.DataAvailability.RPCAggregator.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC, nil)
 	defer nodeC.StopAndWait()
@@ -157,7 +157,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
+	nodeConfigB.DataAvailability.RPCAggregator.Enable = false
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB, nil)
 	defer nodeB.StopAndWait()
 

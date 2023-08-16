@@ -23,7 +23,7 @@ func TestRedisStorageService(t *testing.T) {
 	redisService, err := NewRedisStorageService(
 		RedisConfig{
 			Enable:     true,
-			RedisUrl:   "redis://" + server.Addr(),
+			Url:        "redis://" + server.Addr(),
 			Expiration: time.Hour,
 			KeyConfig:  "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 		}, baseStorageService)
@@ -75,7 +75,7 @@ func TestRedisStorageService(t *testing.T) {
 	redisServiceWithEmptyBaseStorage, err := NewRedisStorageService(
 		RedisConfig{
 			Enable:     true,
-			RedisUrl:   "redis://" + server.Addr(),
+			Url:        "redis://" + server.Addr(),
 			Expiration: time.Hour,
 			KeyConfig:  "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 		}, emptyBaseStorageService)

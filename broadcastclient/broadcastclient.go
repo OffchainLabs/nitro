@@ -68,8 +68,8 @@ type Config struct {
 	RequireChainId          bool                     `koanf:"require-chain-id" reload:"hot"`
 	RequireFeedVersion      bool                     `koanf:"require-feed-version" reload:"hot"`
 	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
-	URLs                    []string                 `koanf:"url"`
-	Verifier                signature.VerifierConfig `koanf:"verify"`
+	URLs                    []string                 `koanf:"urls"`
+	Verifier                signature.VerifierConfig `koanf:"verifier"`
 	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
 }
 
@@ -85,8 +85,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
-	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
-	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
+	f.StringSlice(prefix+".urls", DefaultConfig.URLs, "URL of sequencer feed source")
+	signature.FeedVerifierConfigAddOptions(prefix+".verifier", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
 
