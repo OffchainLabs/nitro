@@ -14,7 +14,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::Color;
+use arbutil::{Color, PreimageType};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -651,7 +651,7 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-pub type PreimageResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes>>;
+pub type PreimageResolver = Arc<dyn Fn(u64, PreimageType, Bytes32) -> Option<CBytes>>;
 
 /// Wraps a preimage resolver to provide an easier API
 /// and cache the last preimage retrieved.
@@ -675,7 +675,7 @@ impl PreimageResolverWrapper {
         }
     }
 
-    pub fn get(&mut self, context: u64, hash: Bytes32) -> Option<&[u8]> {
+    pub fn get(&mut self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<&[u8]> {
         // TODO: this is unnecessarily complicated by the rust borrow checker.
         // This will probably be simplifiable when Polonius is shipped.
         if matches!(&self.last_resolved, Some(r) if r.0 != hash) {
@@ -684,19 +684,19 @@ impl PreimageResolverWrapper {
         match &mut self.last_resolved {
             Some(resolved) => Some(&resolved.1),
             x => {
-                let data = (self.resolver)(context, hash)?;
+                let data = (self.resolver)(context, ty, hash)?;
                 Some(&x.insert((hash, data)).1)
             }
         }
     }
 
-    pub fn get_const(&self, context: u64, hash: Bytes32) -> Option<CBytes> {
+    pub fn get_const(&self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<CBytes> {
         if let Some(resolved) = &self.last_resolved {
             if resolved.0 == hash {
                 return Some(resolved.1.clone());
             }
         }
-        (self.resolver)(context, hash)
+        (self.resolver)(context, ty, hash)
     }
 }
 
@@ -848,7 +848,7 @@ where
 }
 
 pub fn get_empty_preimage_resolver() -> PreimageResolver {
-    Arc::new(|_, _| None) as _
+    Arc::new(|_, _, _| None) as _
 }
 
 impl Machine {
@@ -1864,8 +1864,11 @@ impl Machine {
                 Opcode::ReadPreImage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let preimage_ty = PreimageType::try_from(u8::try_from(inst.argument_data)?)?;
                     if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) = self.preimage_resolver.get(self.context, hash) {
+                        if let Some(preimage) =
+                            self.preimage_resolver.get(self.context, preimage_ty, hash)
+                        {
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                             let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -2279,10 +2282,19 @@ impl Machine {
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     if next_inst.opcode == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let preimage = match self.preimage_resolver.get_const(self.context, hash) {
-                            Some(b) => b,
-                            None => panic!("Missing requested preimage for hash {}", hash),
-                        };
+                        let preimage_ty = PreimageType::try_from(
+                            u8::try_from(next_inst.argument_data)
+                                .expect("ReadPreImage argument data is out of range for a u8"),
+                        )
+                        .expect("Invalid preimage type in ReadPreImage argument data");
+                        let preimage =
+                            match self
+                                .preimage_resolver
+                                .get_const(self.context, preimage_ty, hash)
+                            {
+                                Some(b) => b,
+                                None => panic!("Missing requested preimage for hash {}", hash),
+                            };
                         data.push(0); // preimage proof type
                         data.extend(preimage);
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {

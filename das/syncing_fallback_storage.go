@@ -212,22 +212,24 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	binary.BigEndian.PutUint64(header[32:40], deliveredEvent.AfterDelayedMessagesRead.Uint64())
 
 	data = append(header, data...)
-	preimages := make(map[common.Hash][]byte)
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
 	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimages, arbstate.KeysetValidate); err != nil {
 		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
 		return err
 	}
-	for hash, contents := range preimages {
-		var err error
-		if s.config.CheckAlreadyExists {
-			_, err = s.syncTo.GetByHash(ctx, hash)
-		}
-		if err == nil || errors.Is(err, ErrNotFound) {
-			if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
+	for _, preimages := range preimages {
+		for hash, contents := range preimages {
+			var err error
+			if s.config.CheckAlreadyExists {
+				_, err = s.syncTo.GetByHash(ctx, hash)
+			}
+			if err == nil || errors.Is(err, ErrNotFound) {
+				if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
+					return err
+				}
+			} else {
 				return err
 			}
-		} else {
-			return err
 		}
 	}
 	seqNumber := deliveredEvent.BatchSequenceNumber
