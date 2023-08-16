@@ -1,3 +1,5 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 /*
 * Package challengecache stores validator state roots for L2 states within
 challenges in text files using a directory hierarchy structure for efficient lookup. Each file
