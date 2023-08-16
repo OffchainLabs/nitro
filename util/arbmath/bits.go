@@ -74,3 +74,8 @@ func BoolToUint32(value bool) uint32 {
 	}
 	return 0
 }
+
+// BoolToUint32 assigns a nonzero value when true
+func UintToBool[T Unsigned](value T) bool {
+	return value != 0
+}

@@ -5,6 +5,7 @@ package burn
 
 import (
 	"fmt"
+	"math"
 
 	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -14,6 +15,7 @@ type Burner interface {
 	Burn(amount uint64) error
 	Burned() uint64
 	BurnOut() error
+	GasLeft() uint64
 	Restrict(err error)
 	HandleError(err error) error
 	ReadOnly() bool
@@ -44,6 +46,10 @@ func (burner *SystemBurner) Burned() uint64 {
 
 func (burner *SystemBurner) BurnOut() error {
 	panic("called BurnOut on a system burner")
+}
+
+func (burner *SystemBurner) GasLeft() uint64 {
+	return math.MaxUint64
 }
 
 func (burner *SystemBurner) Restrict(err error) {

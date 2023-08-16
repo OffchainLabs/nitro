@@ -243,6 +243,10 @@ impl GoStack {
         values
     }
 
+    pub fn read_bool32(&mut self) -> bool {
+        self.read_u32() != 0
+    }
+
     pub fn read_go_ptr(&mut self) -> u32 {
         self.read_u64().try_into().expect("go pointer doesn't fit")
     }

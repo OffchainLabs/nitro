@@ -25,9 +25,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type u8 = C.uint8_t
@@ -35,32 +35,58 @@ type u16 = C.uint16_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
+type cbool = C._Bool
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
 func compileUserWasm(
-	db vm.StateDB, program common.Address, wasm []byte, pageLimit, version uint16, debug bool,
-) (uint16, error) {
-	footprint := uint16(0)
+	db vm.StateDB,
+	program common.Address,
+	wasm []byte,
+	page_limit uint16,
+	version uint16,
+	debug bool,
+	burner burn.Burner,
+) (*wasmPricingInfo, error) {
+
+	// check that compilation would succeed during proving
+	rustInfo := &C.WasmPricingInfo{}
 	output := &rustVec{}
-	status := userStatus(C.stylus_compile(
+	status := userStatus(C.stylus_parse_wasm(
+		goSlice(wasm),
+		u16(page_limit),
+		u16(version),
+		cbool(debug),
+		rustInfo,
+		output,
+	))
+	if status != userSuccess {
+		_, msg, err := status.toResult(output.intoBytes(), debug)
+		if debug {
+			log.Warn("stylus parse failed", "err", err, "msg", msg, "program", program)
+		}
+		return nil, err
+	}
+
+	info := rustInfo.decode()
+	if err := payForCompilation(burner, &info); err != nil {
+		return nil, err
+	}
+
+	// compilation succeeds during proving, so failure should not be possible
+	status = userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u16(version),
-		u16(pageLimit),
-		(*u16)(&footprint),
+		cbool(debug),
 		output,
-		usize(arbmath.BoolToUint32(debug)),
 	))
-	data := output.intoBytes()
-	result, err := status.output(data)
-	if err == nil {
-		db.SetCompiledWasmCode(program, result, uint32(version)) // TODO: use u16 in statedb
-	} else {
-		data := arbutil.ToStringOrHex(data)
-		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
+	data, msg, err := status.toResult(output.intoBytes(), debug)
+	if err != nil {
+		log.Crit("compile failed", "err", err, "msg", msg, "program", program)
 	}
-	return footprint, err
+	db.SetCompiledWasmCode(program, data, uint32(version)) // TODO: use u16 in statedb
+	return &info, err
 }
 
 func callUserWasm(
@@ -93,12 +119,11 @@ func callUserWasm(
 		output,
 		(*u64)(&scope.Contract.Gas),
 	))
-	returnData := output.intoBytes()
-	data, err := status.output(returnData)
 
-	if status == userFailure {
-		str := arbutil.ToStringOrHex(returnData)
-		log.Debug("program failure", "err", string(data), "program", program.address, "returnData", str)
+	debug := stylusParams.debugMode != 0
+	data, msg, err := status.toResult(output.intoBytes(), debug)
+	if status == userFailure && debug {
+		log.Warn("program failure", "err", err, "msg", msg, "program", program.address)
 	}
 	return data, err
 }
@@ -331,5 +356,12 @@ func (data *evmData) encode() C.EvmData {
 		tx_origin:        addressToBytes20(data.txOrigin),
 		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
+	}
+}
+
+func (info *C.WasmPricingInfo) decode() wasmPricingInfo {
+	return wasmPricingInfo{
+		footprint: uint16(info.footprint),
+		size:      uint32(info.size),
 	}
 }

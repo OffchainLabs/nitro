@@ -6,7 +6,7 @@ use digest::Digest;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[cfg(feature = "native")]
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,10 +77,10 @@ impl Merkle {
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let empty_layer = *empty_layers.last().unwrap();
 
-            #[cfg(feature = "native")]
+            #[cfg(feature = "rayon")]
             let new_layer = layers.last().unwrap().par_chunks(2);
 
-            #[cfg(not(feature = "native"))]
+            #[cfg(not(feature = "rayon"))]
             let new_layer = layers.last().unwrap().chunks(2);
 
             let new_layer = new_layer

@@ -847,6 +847,7 @@ func deployWasm(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
 ) common.Address {
 	wasm := readWasmFile(t, file)
+	auth.GasLimit = 32000000 // skip gas estimation
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 	return compileWasm(t, ctx, auth, l2client, programAddress)

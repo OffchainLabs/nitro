@@ -4,16 +4,15 @@
 use crate::{evm_api::ApiCaller, Program, PROGRAMS};
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
+    format::DebugBytes,
     heapify, wavm,
 };
-use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    binary::WasmBinary,
-    programs::config::{CompileConfig, PricingParams, StylusConfig},
+    programs::config::{PricingParams, StylusConfig},
     Machine,
 };
-use std::{mem, path::Path, sync::Arc};
+use std::mem;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -36,8 +35,17 @@ extern "C" {
 #[repr(C, align(256))]
 struct MemoryLeaf([u8; 32]);
 
-/// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, pageLimit, version u16, debug u32) (machine *Machine, footprint u16, err *Vec<u8>)
+/// Compiles and instruments a user wasm.
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(wasm []byte, pageLimit, version u16, debug u32) (mach *Machine, info WasmInfo, err *Vec<u8>)
+///
+/// These values are placed on the stack as follows
+///     stack:  || wasm... || pageLimit | version | debug || mach ptr || info... || err ptr ||
+///     info:   || footprint | 2 pad | size ||
+///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
@@ -46,53 +54,37 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let wasm = sp.read_go_slice_owned();
     let page_limit = sp.read_u16();
     let version = sp.read_u16();
-    let debug = sp.read_u32() != 0;
+    let debug = sp.read_bool32();
 
-    macro_rules! error {
-        ($msg:expr, $error:expr) => {{
-            let error = $error.wrap_err($msg);
-            let error = format!("{error:?}").as_bytes().to_vec();
+    match Machine::new_user_stub(&wasm, page_limit, version, debug) {
+        Ok((machine, info)) => {
+            let footprint = info.footprint;
+            let size = info.size;
+            sp.write_ptr(heapify(machine));
+            sp.write_u16(footprint).skip_u16().write_u32(size); // wasm info
             sp.write_nullptr();
-            sp.skip_space(); // skip footprint
-            sp.write_ptr(heapify(error));
-            return;
-        }};
+        }
+        Err(error) => {
+            sp.write_nullptr();
+            sp.skip_space(); // skip wasm info
+            sp.write_ptr(heapify(error.debug_bytes()));
+        }
     }
-
-    let compile = CompileConfig::version(version, debug);
-    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
-        Ok(parse) => parse,
-        Err(error) => error!("failed to parse program", error),
-    };
-
-    let forward = include_bytes!("../../../../target/machines/latest/forward_stub.wasm");
-    let forward = prover::binary::parse(forward, Path::new("forward")).unwrap();
-
-    let machine = Machine::from_binaries(
-        &[forward],
-        bin,
-        false,
-        false,
-        false,
-        compile.debug.debug_funcs,
-        debug,
-        prover::machine::GlobalState::default(),
-        HashMap::default(),
-        Arc::new(|_, _| panic!("user program tried to read preimage")),
-        Some(stylus_data),
-    );
-    let machine = match machine {
-        Ok(machine) => machine,
-        Err(err) => error!("failed to instrument program", err),
-    };
-    sp.write_ptr(heapify(machine));
-    sp.write_u16(footprint).skip_space();
-    sp.write_nullptr();
 }
 
 /// Links and executes a user wasm.
-/// λ(mach *Machine, calldata []byte, params *Config, evmApi []byte, evmData *EvmData, gas *u64, root *[32]byte)
-///     -> (status byte, out *Vec<u8>)
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(
+///           mach *Machine, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
+///           gas *u64, root *[32]byte
+///     ) -> (status byte, out *Vec<u8>)
+///
+/// These values are placed on the stack as follows
+///     || mach || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
+///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
     sp: usize,
@@ -182,16 +174,37 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     mem::drop(vec)
 }
 
+/// Drops a `Machine`.
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(mach *Machine)
+///
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustMachineDropImpl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+    let mach: Machine = sp.unbox();
+    mem::drop(mach)
+}
+
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version u16, maxDepth, inkPrice u32, debugMode u32) *StylusConfig
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(version u16, maxDepth, inkPrice u32, debugMode u32) *StylusConfig
+///
+/// The values are placed on the stack as follows
+///     || version | 2 garbage bytes | max_depth || ink_price | debugMode || result ptr ||
+///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-
-    // The Go compiler places these on the stack as follows
-    // | version | 2 garbage bytes | max_depth | ink_price | debugMode | result ptr |
 
     let config = StylusConfig {
         version: sp.read_u16(),
@@ -205,11 +218,20 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(
-///     blockBasefee *[32]byte, chainid u64, blockCoinbase *[20]byte, blockGasLimit,
-///     blockNumber, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
-///) *EvmData
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(
+///         blockBasefee *[32]byte, chainid u64, blockCoinbase *[20]byte, blockGasLimit,
+///         blockNumber, blockTimestamp u64, contractAddress, msgSender *[20]byte,
+///         msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
+///     ) -> *EvmData
+///
+/// These values are placed on the stack as follows
+///     || baseFee || chainid || coinbase || gas limit || block number || timestamp || address ||
+///     || sender || value || gas price || origin || reentrant | 4 pad || data ptr ||
+///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
     sp: usize,

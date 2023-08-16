@@ -13,8 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -190,21 +192,18 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
+	burner := p.programs.Burner()
+	info, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
 		return 0, true, err
 	}
-
-	// reflect the fact that, briefly, the footprint was allocated
-	// note: the actual payment for the expansion happens in Rust
-	statedb.AddStylusPagesEver(footprint)
 
 	// wasmSize is stored as half kb units, rounding up
 	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
 		wasmSize:  wasmSize,
-		footprint: footprint,
+		footprint: info.footprint,
 		version:   version,
 		address:   program,
 	}
@@ -382,20 +381,38 @@ const (
 	userOutOfStack
 )
 
-func (status userStatus) output(data []byte) ([]byte, error) {
+func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
+	details := func() string {
+		if debug {
+			return arbutil.ToStringOrHex(data)
+		}
+		return ""
+	}
 	switch status {
 	case userSuccess:
-		return data, nil
+		return data, "", nil
 	case userRevert:
-		return data, vm.ErrExecutionReverted
+		return data, details(), vm.ErrExecutionReverted
 	case userFailure:
-		return nil, vm.ErrExecutionReverted
+		return nil, details(), vm.ErrExecutionReverted
 	case userOutOfInk:
-		return nil, vm.ErrOutOfGas
+		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
-		return nil, vm.ErrDepth
+		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", common.Bytes2Hex(data))
-		return nil, vm.ErrExecutionReverted
+		return nil, details(), vm.ErrExecutionReverted
 	}
+}
+
+type wasmPricingInfo struct {
+	footprint uint16
+	size      uint32
+}
+
+// Pay for compilation. Right now this is a fixed amount of gas.
+// In the future, costs will be variable and based on the wasm.
+// Note: memory expansion costs are baked into compilation charging.
+func payForCompilation(burner burn.Burner, _info *wasmPricingInfo) error {
+	return burner.Burn(14000000)
 }
