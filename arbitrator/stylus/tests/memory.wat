@@ -5,7 +5,7 @@
     (import "vm_hooks" "memory_grow" (func (param i32)))
     (import "vm_hooks" "read_args"   (func $read_args   (param i32)))
     (import "vm_hooks" "write_result" (func $write_result (param i32 i32)))
-    (func (export "arbitrum_main") (param $args_len i32) (result i32)
+    (func (export "user_entrypoint") (param $args_len i32) (result i32)
         (local $size i32) (local $step i32)
 
         ;; store the target size argument at offset 0

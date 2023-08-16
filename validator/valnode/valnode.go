@@ -71,6 +71,19 @@ type ValidationNode struct {
 	jitSpawner *server_jit.JitSpawner
 }
 
+func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
+	found := false
+	for _, module := range stackConf.AuthModules {
+		if module == server_api.Namespace {
+			found = true
+			break
+		}
+	}
+	if !found {
+		stackConf.AuthModules = append(stackConf.AuthModules, server_api.Namespace)
+	}
+}
+
 func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error) (*ValidationNode, error) {
 	config := configFetcher()
 	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
@@ -84,7 +97,6 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
-	node.DefaultAuthModules = []string{server_api.Namespace}
 	var serverAPI *server_api.ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {

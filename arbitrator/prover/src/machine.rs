@@ -1083,7 +1083,7 @@ impl Machine {
     pub fn add_program(
         &mut self,
         wasm: &[u8],
-        version: u32,
+        version: u16,
         debug_funcs: bool,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {

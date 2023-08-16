@@ -59,6 +59,11 @@ func RandomCallValue(limit int64) *big.Int {
 }
 
 // Computes a psuedo-random uint64 on the interval [min, max]
+func RandomUint32(min, max uint32) uint32 {
+	return uint32(RandomUint64(uint64(min), uint64(max)))
+}
+
+// Computes a psuedo-random uint64 on the interval [min, max]
 func RandomUint64(min, max uint64) uint64 {
 	return uint64(rand.Uint64()%(max-min+1) + min)
 }
