@@ -12,7 +12,7 @@ import (
 )
 
 type L1Config struct {
-	ChainID    uint64                   `koanf:"chain-id"`
+	ID         uint64                   `koanf:"id"`
 	Connection rpcclient.ClientConfig   `koanf:"connection" reload:"hot"`
 	Wallet     genericconf.WalletConfig `koanf:"wallet"`
 }
@@ -25,7 +25,7 @@ var L1ConnectionConfigDefault = rpcclient.ClientConfig{
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID:    0,
+	ID:         0,
 	Connection: L1ConnectionConfigDefault,
 	Wallet:     DefaultL1WalletConfig,
 }
@@ -39,7 +39,7 @@ var DefaultL1WalletConfig = genericconf.WalletConfig{
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
+	f.Uint64(prefix+".id", L1ConfigDefault.ID, "if set other than 0, will be used to validate database and L1 connection")
 	rpcclient.RPCClientAddOptions(prefix+".connection", f, &L1ConfigDefault.Connection)
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, L1ConfigDefault.Wallet.Pathname)
 }
