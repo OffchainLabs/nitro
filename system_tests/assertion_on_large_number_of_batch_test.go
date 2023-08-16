@@ -131,7 +131,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
-	l2Info, l2Stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil)
+	l2Info, l2Stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
 	rollupAddresses.Bridge = bridgeAddr
 	rollupAddresses.SequencerInbox = seqInboxAddr
 
@@ -147,6 +147,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	Require(t, err)
 	deployAuth := l1Info.GetDefaultTransactOpts("RollupOwner", ctx)
 	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	Require(t, err)
 
 	for i := 0; i <= int(math.Pow(2, 26)); i++ {
 		makeBatch(t, l2Node, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
