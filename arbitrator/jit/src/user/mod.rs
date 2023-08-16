@@ -42,7 +42,6 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     macro_rules! error {
         ($error:expr) => {{
             let error = $error.wrap_err("failed to compile").debug_bytes();
-            println!("Error: {:?}", &error);
             sp.write_nullptr();
             sp.skip_space(); // skip info
             sp.write_ptr(heapify(error));
@@ -154,7 +153,6 @@ pub fn drop_machine(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let module: Vec<u8> = sp.unbox();
     mem::drop(module);
-    println!("Machine dropped");
 }
 
 /// Creates a `StylusConfig` from its component parts.
