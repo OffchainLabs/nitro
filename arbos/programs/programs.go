@@ -192,7 +192,11 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
+	// charge 3 million up front to begin compilation
 	burner := p.programs.Burner()
+	if err := burner.Burn(3000000); err != nil {
+		return 0, false, err
+	}
 	info, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
 		return 0, true, err
@@ -414,5 +418,5 @@ type wasmPricingInfo struct {
 // In the future, costs will be variable and based on the wasm.
 // Note: memory expansion costs are baked into compilation charging.
 func payForCompilation(burner burn.Burner, _info *wasmPricingInfo) error {
-	return burner.Burn(14000000)
+	return burner.Burn(11000000)
 }
