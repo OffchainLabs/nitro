@@ -27,9 +27,9 @@ func newBroadcasterConfigTest() *wsbroadcastserver.BroadcasterConfig {
 
 func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 	return &broadcastclient.Config{
-		URLs:    []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
+		URL:     []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
 		Timeout: 200 * time.Millisecond,
-		Verifier: signature.VerifierConfig{
+		Verify: signature.VerifierConfig{
 			Dangerous: signature.DangerousVerifierConfig{
 				AcceptMissing: true,
 			},

@@ -369,7 +369,7 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
-	resourcemanager.Init(&nodeConfig.Node.ResourceManagement)
+	resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
 
 	var sameProcessValidationNodeEnabled bool
 	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
@@ -768,7 +768,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.FeedUrl != "" {
-		chainDefaults["node.feed.input.urls"] = chainInfo.FeedUrl
+		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true

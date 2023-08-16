@@ -297,7 +297,7 @@ type Config struct {
 	Forwarder           execution.ForwarderConfig        `koanf:"forwarder"`
 	TxPreChecker        execution.TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
 	BlockValidator      staker.BlockValidatorConfig      `koanf:"block-validator" reload:"hot"`
-	RecordingDB         arbitrum.RecordingDatabaseConfig `koanf:"recording-db"`
+	RecordingDatabase   arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
 	Feed                broadcastclient.FeedConfig       `koanf:"feed" reload:"hot"`
 	Staker              staker.L1ValidatorConfig         `koanf:"staker"`
 	SeqCoordinator      SeqCoordinatorConfig             `koanf:"seq-coordinator"`
@@ -309,7 +309,7 @@ type Config struct {
 	TxLookupLimit       uint64                           `koanf:"tx-lookup-limit"`
 	TransactionStreamer TransactionStreamerConfig        `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig                `koanf:"maintenance" reload:"hot"`
-	ResourceManagement  resourcemanager.Config           `koanf:"resource-management" reload:"hot"`
+	ResourceMgmt        resourcemanager.Config           `koanf:"resource-mgmt" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -373,7 +373,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	execution.AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	execution.TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
-	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-db", f)
+	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
@@ -384,7 +384,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
-	resourcemanager.ConfigAddOptions(prefix+".resource-management", f)
+	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -401,7 +401,7 @@ var ConfigDefault = Config{
 	ForwardingTarget:    "",
 	TxPreChecker:        execution.DefaultTxPreCheckerConfig,
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
-	RecordingDB:         arbitrum.DefaultRecordingDatabaseConfig,
+	RecordingDatabase:   arbitrum.DefaultRecordingDatabaseConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
 	Staker:              staker.DefaultL1ValidatorConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
@@ -412,7 +412,7 @@ var ConfigDefault = Config{
 	TxLookupLimit:       126_230_400, // 1 year at 4 blocks per second
 	Caching:             execution.DefaultCachingConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
-	ResourceManagement:  resourcemanager.DefaultConfig,
+	ResourceMgmt:        resourcemanager.DefaultConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -447,7 +447,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Sequencer = execution.TestSequencerConfig
 	config.ParentChainReader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
-	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
+	config.Feed.Input.Verify.Dangerous.AcceptMissing = true
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
@@ -613,7 +613,7 @@ func createNodeImpl(
 	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
 	txprecheckConfigFetcher := func() *execution.TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 	exec, err := execution.CreateExecutionNode(stack, chainDb, l2BlockChain, l1Reader, syncMonitor,
-		config.ForwardingTargetF(), &config.Forwarder, config.RPC, &config.RecordingDB,
+		config.ForwardingTargetF(), &config.Forwarder, config.RPC, &config.RecordingDatabase,
 		sequencerConfigFetcher, txprecheckConfigFetcher)
 	if err != nil {
 		return nil, err
