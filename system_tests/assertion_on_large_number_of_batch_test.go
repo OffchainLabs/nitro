@@ -1,6 +1,9 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
+//go:build assertion_on_large_number_of_batch_test
+// +build assertion_on_large_number_of_batch_test
+
 package arbtest
 
 import (
