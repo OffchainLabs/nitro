@@ -1,6 +1,9 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
@@ -150,11 +153,13 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 
 	for i := 0; i < 4; i++ {
 		emptyArray, err := rlp.EncodeToBytes([]uint8{})
+		finalItemArray, err := rlp.EncodeToBytes([]uint8{1})
 		Require(t, err)
 		var out []byte
-		for len(out)+len(emptyArray) < arbstate.MaxDecompressedLen {
+		for len(out)+len(emptyArray)+len(finalItemArray) <= arbstate.MaxDecompressedLen {
 			out = append(out, emptyArray...)
 		}
+		out = append(out, finalItemArray...)
 		batch := []uint8{0}
 		compressed, err := arbcompress.CompressWell(out)
 		Require(t, err)
