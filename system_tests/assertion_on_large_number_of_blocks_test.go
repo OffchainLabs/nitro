@@ -145,7 +145,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	rollup, err := rollupgen.NewRollupAdminLogic(l2Node.DeployInfo.Rollup, l1Backend)
 	Require(t, err)
 	deployAuth := l1Info.GetDefaultTransactOpts("RollupOwner", ctx)
-	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	_, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
 
 	for i := 0; i < 4; i++ {
