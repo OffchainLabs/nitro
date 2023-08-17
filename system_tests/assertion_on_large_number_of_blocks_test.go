@@ -1,16 +1,13 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build assertion_on_large_number_of_batch_test
-// +build assertion_on_large_number_of_batch_test
-
 package arbtest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"math"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"os"
 	"testing"
@@ -44,21 +41,11 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 20) // 1048576
 )
 
-// Helps in testing the feasibility of assertion after the protocol upgrade.
-func TestAssertionOnLargeNumberOfBatchEnsuringBatchExist(t *testing.T, ) {
-	testAssertionOnLargeNumberOfBatch(t, true)
-}
-
-// Same as TestAssertionOnLargeNumberOfBatchEnsuringBatchExist but
-// does not wait to check if transaction succeeded which helps with fast completion.
-func TestAssertionOnLargeNumberOfBatchWithoutEnsuringBatchExist(t *testing.T, ) {
-	testAssertionOnLargeNumberOfBatch(t, false)
-}
-func testAssertionOnLargeNumberOfBatch(t *testing.T, enableEnsureTxSucceeded bool) {
+func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2node, assertionChain := setupAndPostBatches(t, ctx, enableEnsureTxSucceeded)
+	l2node, assertionChain := setupAndPostBatches(t, ctx)
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
@@ -89,7 +76,7 @@ func testAssertionOnLargeNumberOfBatch(t *testing.T, enableEnsureTxSucceeded boo
 	Require(t, err)
 }
 
-func setupAndPostBatches(t *testing.T, ctx context.Context, enableEnsureTxSucceeded bool) (*arbnode.Node, protocol.Protocol) {
+func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, protocol.Protocol) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
@@ -160,25 +147,36 @@ func setupAndPostBatches(t *testing.T, ctx context.Context, enableEnsureTxSuccee
 	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
 
-	for i := int64(0); i <= int64(math.Pow(2, 26)); i++ {
-		if enableEnsureTxSucceeded {
-			makeBatch(t, l2Node, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
-		} else {
-			sequencerTxOpts.Nonce = big.NewInt(i)
-			batchBuffer := bytes.NewBuffer([]byte{})
-			for j := int64(0); j < makeBatch_MsgsPerBatch; j++ {
-				err = writeTxToBatch(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(j), []byte{}))
-				Require(t, err)
-			}
-			compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
-			Require(t, err)
-			message := append([]byte{0}, compressed...)
-
-			seqNum := new(big.Int).Lsh(common.Big1, 256)
-			seqNum.Sub(seqNum, common.Big1)
-			_, err = seqInbox.AddSequencerL2BatchFromOrigin0(&sequencerTxOpts, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
-			Require(t, err)
+	for i := 0; i < 4; i++ {
+		emptyArray, err := rlp.EncodeToBytes([]uint8{})
+		Require(t, err)
+		var out []byte
+		for len(out)+len(emptyArray) < arbstate.MaxDecompressedLen {
+			out = append(out, emptyArray...)
 		}
+		batch := []uint8{0}
+		compressed, err := arbcompress.CompressWell(out)
+		Require(t, err)
+		batch = append(batch, compressed...)
+
+		seqNum := new(big.Int).Lsh(common.Big1, 256)
+		seqNum.Sub(seqNum, common.Big1)
+		tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(&sequencerTxOpts, seqNum, batch, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l1Backend, tx)
+		Require(t, err)
+
+		nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, seqInboxAddr, 0)
+		Require(t, err)
+		batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
+		Require(t, err)
+		if len(batches) == 0 {
+			Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
+		}
+		err = l2Node.InboxTracker.AddSequencerBatches(ctx, l1Backend, batches)
+		Require(t, err)
+		_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+		Require(t, err, "failed to get batch metadata after adding batch:")
 	}
 	return l2Node, assertionChain
 }
