@@ -20,3 +20,6 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
+[submodule "linter/golangci-lint"]
+	path = linter/golangci-lint
+	url = https://github.com/golangci/golangci-lint

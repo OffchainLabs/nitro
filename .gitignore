@@ -21,3 +21,4 @@ yarn-error.log
 local/
 testdata
 system_tests/test-data/*
+linter/koanf/koanf.so

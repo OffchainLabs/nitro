@@ -304,7 +304,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 # strategic rules to minimize dependency building
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
-	golangci-lint run --fix
+	make build -C linter/golangci-lint
+	go build -buildmode=plugin -o linter/koanf/koanf.so linter/koanf/koanf.go
+	./linter/golangci-lint/golangci-lint run --fix
 	yarn --cwd contracts solhint
 	@touch $@
 
