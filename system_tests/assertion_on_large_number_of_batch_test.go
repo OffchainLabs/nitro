@@ -1,12 +1,10 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build assertion_on_large_number_of_batch_test
-// +build assertion_on_large_number_of_batch_test
-
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -29,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
@@ -43,11 +42,20 @@ var (
 )
 
 // Helps in testing the feasibility of assertion after the protocol upgrade.
-func TestAssertionOnLargeNumberOfBatch(t *testing.T) {
+func TestAssertionOnLargeNumberOfBatchEnsuringBatchExist(t *testing.T, ) {
+	testAssertionOnLargeNumberOfBatch(t, true)
+}
+
+// Same as TestAssertionOnLargeNumberOfBatchEnsuringBatchExist but
+// does not wait to check if transaction succeeded which helps with fast completion.
+func TestAssertionOnLargeNumberOfBatchWithoutEnsuringBatchExist(t *testing.T, ) {
+	testAssertionOnLargeNumberOfBatch(t, false)
+}
+func testAssertionOnLargeNumberOfBatch(t *testing.T, enableEnsureTxSucceeded bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2node, assertionChain := setupAndPostBatches(t, ctx)
+	l2node, assertionChain := setupAndPostBatches(t, ctx, enableEnsureTxSucceeded)
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
@@ -78,7 +86,7 @@ func TestAssertionOnLargeNumberOfBatch(t *testing.T) {
 	Require(t, err)
 }
 
-func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, protocol.Protocol) {
+func setupAndPostBatches(t *testing.T, ctx context.Context, enableEnsureTxSucceeded bool) (*arbnode.Node, protocol.Protocol) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
@@ -149,8 +157,25 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
 
-	for i := 0; i <= int(math.Pow(2, 26)); i++ {
-		makeBatch(t, l2Node, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+	for i := int64(0); i <= int64(math.Pow(2, 26)); i++ {
+		if enableEnsureTxSucceeded {
+			makeBatch(t, l2Node, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+		} else {
+			sequencerTxOpts.Nonce = big.NewInt(i)
+			batchBuffer := bytes.NewBuffer([]byte{})
+			for j := int64(0); j < makeBatch_MsgsPerBatch; j++ {
+				err = writeTxToBatch(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(j), []byte{}))
+				Require(t, err)
+			}
+			compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
+			Require(t, err)
+			message := append([]byte{0}, compressed...)
+
+			seqNum := new(big.Int).Lsh(common.Big1, 256)
+			seqNum.Sub(seqNum, common.Big1)
+			_, err = seqInbox.AddSequencerL2BatchFromOrigin0(&sequencerTxOpts, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+			Require(t, err)
+		}
 	}
 	return l2Node, assertionChain
 }
@@ -215,13 +240,16 @@ func deployBoldContracts(
 	Require(t, err)
 	tx, err := tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, asserter.From, seed)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, addresses.Rollup, value)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, chalManagerAddr, value)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 
 	return &chaininfo.RollupAddresses{
 		Bridge:                 addresses.Bridge,
