@@ -48,7 +48,7 @@ func TestStaticForwarder(t *testing.T) {
 	nodeConfigB.Sequencer.Enable = false
 	nodeConfigB.DelayedSequencer.Enable = false
 	nodeConfigB.Forwarder.RedisUrl = ""
-	nodeConfigB.ForwardingTargetImpl = ipcPath
+	nodeConfigB.ForwardingTarget = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
 
 	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nodeConfigB, nil)
@@ -104,7 +104,7 @@ func fallbackSequencer(
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.SeqCoordinator.Enable = opts.enableSecCoordinator
 	nodeConfig.SeqCoordinator.RedisUrl = opts.redisUrl
-	nodeConfig.SeqCoordinator.MyUrlImpl = opts.ipcPath
+	nodeConfig.SeqCoordinator.MyUrl = opts.ipcPath
 	return createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, stackConfig)
 }
 
@@ -128,7 +128,7 @@ func createForwardingNode(
 	nodeConfig.Sequencer.Enable = false
 	nodeConfig.DelayedSequencer.Enable = false
 	nodeConfig.Forwarder.RedisUrl = redisUrl
-	nodeConfig.ForwardingTargetImpl = fallbackPath
+	nodeConfig.ForwardingTarget = fallbackPath
 	//	nodeConfig.Feed.Output.Enable = false
 
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, stackConfig)
@@ -151,7 +151,7 @@ func createSequencer(
 	nodeConfig.BatchPoster.Enable = true
 	nodeConfig.SeqCoordinator.Enable = true
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
-	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
+	nodeConfig.SeqCoordinator.MyUrl = ipcPath
 
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, stackConfig)
 }

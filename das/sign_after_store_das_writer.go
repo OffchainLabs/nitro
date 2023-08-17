@@ -86,14 +86,14 @@ type SignAfterStoreDASWriter struct {
 }
 
 func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDASWriter, error) {
-	privKey, err := config.KeyConfig.BLSPrivKey()
+	privKey, err := config.Key.BLSPrivKey()
 	if err != nil {
 		return nil, err
 	}
-	if config.L1NodeURL == "none" {
+	if config.ParentChainNodeURL == "none" {
 		return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
-	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
 	if err != nil {
 		return nil, err
 	}
