@@ -57,7 +57,8 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
         Ok(module) => module,
         Err(error) => error!(error),
     };
-    sp.write_ptr(heapify(module));
+    let module = heapify(module);
+    sp.write_ptr(module);
     sp.write_u16(footprint).skip_u16().write_u32(size); // wasm info
     sp.write_nullptr();
 }
@@ -151,8 +152,9 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 ///
 pub fn drop_machine(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let module: Vec<u8> = sp.unbox();
-    mem::drop(module);
+    if let Some(module) = sp.unbox_option::<Vec<u8>>() {
+        mem::drop(module);
+    }
 }
 
 /// Creates a `StylusConfig` from its component parts.

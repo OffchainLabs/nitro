@@ -186,8 +186,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustMa
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let mach: Machine = sp.unbox();
-    mem::drop(mach)
+    if let Some(mach) = sp.unbox_option::<Machine>() {
+        mem::drop(mach);
+    }
 }
 
 /// Creates a `StylusConfig` from its component parts.

@@ -57,6 +57,11 @@ impl GoStack {
         *Box::from_raw(self.read_ptr_mut())
     }
 
+    pub unsafe fn unbox_option<T>(&mut self) -> Option<T> {
+        let ptr: *mut T = self.read_ptr_mut();
+        (!ptr.is_null()).then(|| self.unbox())
+    }
+
     pub unsafe fn read_bool32(&mut self) -> bool {
         self.read_u32() != 0
     }
