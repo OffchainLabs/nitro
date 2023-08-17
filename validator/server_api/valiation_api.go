@@ -168,6 +168,19 @@ func (a *ExecServerAPI) GetSmallStepLeavesUpTo(ctx context.Context, execid uint6
 	return res, nil
 }
 
+func (a *ExecServerAPI) GetLeavesInRangeWithStepSize(ctx context.Context, execid uint64, fromStep uint64, toStep uint64, stepSize uint64) ([]common.Hash, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return nil, err
+	}
+	leavesInRange := run.GetLeavesInRangeWithStepSize(fromStep, toStep, stepSize)
+	res, err := leavesInRange.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
 	run, err := a.getRun(execid)
 	if err != nil {

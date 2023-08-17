@@ -93,6 +93,27 @@ func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64
 	})
 }
 
+func (e *executionRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+		var stateRoots []common.Hash
+		machine, err := e.cache.GetMachineAt(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		if !machine.IsRunning() {
+			return stateRoots, nil
+		}
+		for i := fromStep; i <= toStep; i = i + stepSize {
+			machineStep, err := e.intermediateGetStepAt(ctx, i)
+			if err != nil {
+				return nil, err
+			}
+			stateRoots = append(stateRoots, machineStep.Hash)
+		}
+		return stateRoots, nil
+	})
+}
+
 func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint64) (*validator.MachineStepResult, error) {
 	var machine MachineInterface
 	var err error

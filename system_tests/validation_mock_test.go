@@ -125,6 +125,11 @@ func (r *mockExecRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64,
 	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
+func (r *mockExecRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetLeavesInRangeWithStepSize
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
+}
+
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
