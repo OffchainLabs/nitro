@@ -53,7 +53,6 @@ linters-settings:
       - shadow
       - fieldalignment
 
-
   custom:
     koanf:
       path: linter/koanf/koanf.so
