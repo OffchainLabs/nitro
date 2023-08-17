@@ -6,8 +6,6 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"os"
 	"testing"
@@ -26,9 +24,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -41,6 +41,7 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 20) // 1048576
 )
 
+// Helps in testing the feasibility of assertion after the protocol upgrade.
 func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
