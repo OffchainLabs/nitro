@@ -9,7 +9,6 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"os"
 	"testing"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
