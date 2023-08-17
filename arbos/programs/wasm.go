@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -35,7 +36,7 @@ type rustEvmData byte
 
 func compileUserWasmRustImpl(
 	wasm []byte, pageLimit, version u16, debugMode u32,
-) (machine *rustMachine, footprint u16, err *rustVec)
+) (machine *rustMachine, info wasmPricingInfo, err *rustVec)
 
 func callUserWasmRustImpl(
 	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
@@ -44,6 +45,7 @@ func callUserWasmRustImpl(
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
+func rustMachineDropImpl(mach *rustMachine)
 func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
@@ -60,10 +62,26 @@ func rustEvmDataImpl(
 	reentrant u32,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u16, debug bool) (u16, error) {
+func compileUserWasm(
+	db vm.StateDB,
+	program addr,
+	wasm []byte,
+	pageLimit u16,
+	version u16,
+	debug bool,
+	burner burn.Burner,
+) (*wasmPricingInfo, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, footprint, err := compileMachine(db, program, wasm, pageLimit, version, debugMode)
-	return footprint, err
+	machine, info, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode)
+	defer rustMachineDropImpl(machine)
+	if err != nil {
+		_, _, err := userFailure.toResult(err.intoSlice(), debug)
+		return nil, err
+	}
+	if err := payForCompilation(burner, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
 }
 
 func callUserWasm(
@@ -79,14 +97,18 @@ func callUserWasm(
 ) ([]byte, error) {
 	// since the program has previously passed compilation, don't limit memory
 	pageLimit := uint16(math.MaxUint16)
+	debug := arbmath.UintToBool(params.debugMode)
 
 	wasm, err := getWasm(db, program.address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, _, err := compileMachine(db, program.address, wasm, pageLimit, params.version, params.debugMode)
+
+	// compile the machine (TODO: reuse these)
+	machine, _, errVec := compileUserWasmRustImpl(wasm, pageLimit, params.version, params.debugMode)
 	if err != nil {
-		log.Crit("failed to create machine", "program", program, "err", err)
+		_, _, err := userFailure.toResult(errVec.intoSlice(), debug)
+		return nil, err
 	}
 
 	root := db.NoncanonicalProgramHash(program.address, uint32(params.version))
@@ -102,19 +124,8 @@ func callUserWasm(
 		&scope.Contract.Gas,
 		&root,
 	)
-	result := output.intoSlice()
-	return status.output(result)
-}
-
-func compileMachine(
-	db vm.StateDB, program addr, wasm []byte, pageLimit, version u16, debugMode u32,
-) (*rustMachine, u16, error) {
-	machine, footprint, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode)
-	if err != nil {
-		_, err := userFailure.output(err.intoSlice())
-		return nil, footprint, err
-	}
-	return machine, footprint, nil
+	data, _, err := status.toResult(output.intoSlice(), debug)
+	return data, err
 }
 
 func (vec *rustVec) intoSlice() []byte {

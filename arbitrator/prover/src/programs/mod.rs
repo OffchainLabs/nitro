@@ -349,7 +349,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct StylusData {
     pub ink_left: GlobalIndex,
     pub ink_status: GlobalIndex,
