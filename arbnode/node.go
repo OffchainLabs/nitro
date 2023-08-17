@@ -369,7 +369,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
-	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (if not sequencer)")
 	execution.AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	execution.TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
