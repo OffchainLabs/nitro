@@ -1,14 +1,12 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build !race
-// +build !race
-
 package arbtest
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"os"
 	"testing"
@@ -31,7 +29,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -151,15 +148,13 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	_, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
 
-	for i := 0; i < 4; i++ {
-		emptyArray, err := rlp.EncodeToBytes([]uint8{})
-		finalItemArray, err := rlp.EncodeToBytes([]uint8{1})
+	for i := 0; i < 1024; i++ {
+		emptyArray, err := rlp.EncodeToBytes([]uint8{0})
 		Require(t, err)
 		var out []byte
-		for len(out)+len(emptyArray)+len(finalItemArray) <= arbstate.MaxDecompressedLen {
+		for i := 0; i < arbstate.MaxSegmentsPerSequencerMessage-1; i++ {
 			out = append(out, emptyArray...)
 		}
-		out = append(out, finalItemArray...)
 		batch := []uint8{0}
 		compressed, err := arbcompress.CompressWell(out)
 		Require(t, err)
