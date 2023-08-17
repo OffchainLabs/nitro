@@ -151,7 +151,15 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 }
 
 /// Reads the length of a rust `Vec`
-/// Safety: λ(vec *Vec<u8>) (len u32)
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(vec *Vec<u8>) (len u32)
+///
+/// These values are placed on the stack as follows
+///     || vec ptr || len u32 | pad 4 ||
+///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_readRustVecLenImpl(
     sp: usize,
@@ -162,7 +170,15 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_readRu
 }
 
 /// Copies the contents of a rust `Vec` into a go slice, dropping it in the process
-/// Safety: λ(vec *Vec<u8>, dest []byte)
+///
+/// # Safety
+///
+/// The Go compiler expects the call to take the form
+///     λ(vec *Vec<u8>, dest []byte)
+///
+/// These values are placed on the stack as follows
+///     || vec ptr || dest... ||
+///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVecIntoSliceImpl(
     sp: usize,

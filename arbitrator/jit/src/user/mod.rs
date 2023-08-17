@@ -57,8 +57,7 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
         Ok(module) => module,
         Err(error) => error!(error),
     };
-    let module = heapify(module);
-    sp.write_ptr(module);
+    sp.write_ptr(heapify(module));
     sp.write_u16(footprint).skip_u16().write_u32(size); // wasm info
     sp.write_nullptr();
 }
@@ -114,6 +113,8 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
 /// Reads the length of a rust `Vec`
 ///
 /// # Go side
+///
+/// The Go compiler expects the call to take the form
 ///     λ(vec *Vec<u8>) (len u32)
 ///
 /// These values are placed on the stack as follows
