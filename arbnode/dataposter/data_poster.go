@@ -259,7 +259,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
-	if !config.UseNoOpStorage {
+	if config.AllocateMempoolBalance && !config.UseNoOpStorage {
 		// We reserve half the balance for the first transaction, and then split the remaining balance for all after that.
 		// With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
 		balanceForTx.Div(balanceForTx, common.Big2)
@@ -586,6 +586,7 @@ type DataPosterConfig struct {
 	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64                     `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool                       `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseLevelDB             bool                       `koanf:"use-leveldb" reload:"hot"`
 	UseNoOpStorage         bool                       `koanf:"use-noop-storage" reload:"hot"`
 }
@@ -604,6 +605,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", DefaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
+	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseLevelDB, "uses noop storage, it doesn't store anything")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
@@ -617,7 +619,8 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxMempoolTransactions: 10,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
-	NonceRbfSoftConfs:      2,
+	NonceRbfSoftConfs:      1,
+	AllocateMempoolBalance: true,
 	UseLevelDB:             false,
 	UseNoOpStorage:         false,
 }
@@ -632,6 +635,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
+	AllocateMempoolBalance: true,
 	UseLevelDB:             false,
 	UseNoOpStorage:         false,
 }
