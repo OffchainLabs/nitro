@@ -321,7 +321,7 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
-	if prevTx != newTx {
+	if prevTx == nil || (newTx != nil && newTx.FullTx.Hash() != prevTx.FullTx.Hash()) {
 		if err := p.saveTx(ctx, prevTx, newTx); err != nil {
 			return err
 		}

@@ -170,7 +170,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				oldHeader = previousHeader
 				blocksTraversed++
 			}
-			if oldHeader != header {
+			if oldHeader == nil || (header != nil && oldHeader.Hash() != header.Hash()) {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)
