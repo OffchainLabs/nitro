@@ -112,7 +112,7 @@ func callUserWasm(
 		return nil, err
 	}
 
-	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, uint32(params.version))
+	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, params.version)
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 

@@ -196,7 +196,7 @@ pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
 
 /// Represents a mapping of a WASM program codehash and version to the compiled wasm
 /// code itself and its noncanonical program hash.
-pub type UserWasms = HashMap<(Bytes32, u32), (Vec<u8>, Bytes32)>;
+pub type UserWasms = HashMap<(Bytes32, u16), (Vec<u8>, Bytes32)>;
 
 #[derive(Default)]
 pub struct WasmEnv {

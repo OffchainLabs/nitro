@@ -118,6 +118,9 @@ func (machine *JitMachine) prove(
 	writeUint8 := func(data uint8) error {
 		return writeExact([]byte{data})
 	}
+	writeUint16 := func(data uint16) error {
+		return writeExact(arbmath.Uint16ToBytes(data))
+	}
 	writeUint32 := func(data uint32) error {
 		return writeExact(arbmath.Uint32ToBytes(data))
 	}
@@ -216,7 +219,7 @@ func (machine *JitMachine) prove(
 		if err := writeExact(wasm.NoncanonicalHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeUint32(call.Version); err != nil {
+		if err := writeUint16(call.Version); err != nil {
 			return state, err
 		}
 	}

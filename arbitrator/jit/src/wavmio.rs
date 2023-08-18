@@ -317,7 +317,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let codehash = socket::read_bytes32(stream)?;
         let wasm = socket::read_bytes(stream)?;
         let hash = socket::read_bytes32(stream)?;
-        let version = socket::read_u32(stream)?;
+        let version = socket::read_u16(stream)?;
         env.user_wasms.insert((codehash, version), (wasm, hash));
     }
 

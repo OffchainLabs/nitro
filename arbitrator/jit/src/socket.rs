@@ -20,6 +20,11 @@ pub fn read_u8<T: Read>(reader: &mut BufReader<T>) -> Result<u8, io::Error> {
     reader.read_exact(&mut buf).map(|_| u8::from_be_bytes(buf))
 }
 
+pub fn read_u16<T: Read>(reader: &mut BufReader<T>) -> Result<u16, io::Error> {
+    let mut buf = [0; 2];
+    reader.read_exact(&mut buf).map(|_| u16::from_be_bytes(buf))
+}
+
 pub fn read_u32<T: Read>(reader: &mut BufReader<T>) -> Result<u32, io::Error> {
     let mut buf = [0; 4];
     reader.read_exact(&mut buf).map(|_| u32::from_be_bytes(buf))
