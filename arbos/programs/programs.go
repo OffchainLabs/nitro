@@ -37,7 +37,6 @@ type Program struct {
 	wasmSize  uint16 // Unit is half of a kb
 	footprint uint16
 	version   uint16
-	address   common.Address // not saved in state
 }
 
 type uint24 = arbmath.Uint24
@@ -210,7 +209,6 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 		wasmSize:  wasmSize,
 		footprint: info.footprint,
 		version:   version,
-		address:   program,
 	}
 	return version, false, p.programs.Set(codeHash, programData.serialize())
 }
@@ -287,7 +285,11 @@ func (p Programs) CallProgram(
 		reentrant:       arbmath.BoolToUint32(reentrant),
 	}
 
-	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	address := contract.Address()
+	if contract.CodeAddr != nil {
+		address = *contract.CodeAddr
+	}
+	return callUserWasm(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -303,20 +305,16 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 }
 
 func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
-	address := contract.Address()
-	if contract.CodeAddr != nil {
-		address = *contract.CodeAddr
-	}
-	return p.deserializeProgram(contract.CodeHash, address)
+
+	return p.deserializeProgram(contract.CodeHash)
 }
 
-func (p Programs) deserializeProgram(codeHash common.Hash, address common.Address) (Program, error) {
+func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 	data, err := p.programs.Get(codeHash)
 	return Program{
 		wasmSize:  arbmath.BytesToUint16(data[26:28]),
 		footprint: arbmath.BytesToUint16(data[28:30]),
 		version:   arbmath.BytesToUint16(data[30:]),
-		address:   address,
 	}, err
 }
 
@@ -329,7 +327,7 @@ func (p Program) serialize() common.Hash {
 }
 
 func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
-	program, err := p.deserializeProgram(codeHash, common.Address{})
+	program, err := p.deserializeProgram(codeHash)
 	return program.version, err
 }
 

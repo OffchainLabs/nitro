@@ -85,6 +85,7 @@ func compileUserWasm(
 }
 
 func callUserWasm(
+	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
@@ -99,7 +100,7 @@ func callUserWasm(
 	pageLimit := uint16(math.MaxUint16)
 	debug := arbmath.UintToBool(params.debugMode)
 
-	wasm, err := getWasm(db, program.address)
+	wasm, err := getWasm(db, address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
