@@ -175,7 +175,7 @@ func ConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("pprof", ConfigDefault.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 	NodeConfigAddOptions("node", f)
-	f.Int("queue", ConfigDefault.Queue, "size of relay queue")
+	f.Int("queue", ConfigDefault.Queue, "queue for incoming messages from sequencer")
 }
 
 type NodeConfig struct {
