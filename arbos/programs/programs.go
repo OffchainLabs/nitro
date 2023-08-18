@@ -13,116 +13,116 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
-	inkPrice       storage.StorageBackedUBips
-	wasmMaxDepth   storage.StorageBackedUint32
-	wasmHostioInk  storage.StorageBackedUint64
+	inkPrice       storage.StorageBackedUint24
+	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
-	pageGas        storage.StorageBackedUint32
+	pageGas        storage.StorageBackedUint16
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
-	version        storage.StorageBackedUint32
+	callScalar     storage.StorageBackedUint16
+	version        storage.StorageBackedUint16
 }
 
 type Program struct {
+	wasmSize  uint16 // Unit is half of a kb
 	footprint uint16
-	version   uint32
+	version   uint16
 	address   common.Address // not saved in state
 }
 
-var machineVersionsKey = []byte{0}
+type uint24 = arbmath.Uint24
+
+var programDataKey = []byte{0}
 
 const (
 	versionOffset uint64 = iota
 	inkPriceOffset
-	wasmMaxDepthOffset
-	wasmHostioInkOffset
+	maxStackDepthOffset
 	freePagesOffset
 	pageGasOffset
 	pageRampOffset
 	pageLimitOffset
+	callScalarOffset
 )
 
 var ProgramNotCompiledError func() error
+var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
-var ProgramOutOfDateError func(version uint32) error
 
-const MaxWasmSize = 64 * 1024
+const MaxWasmSize = 128 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
+const initialInkPrice = 10000     // 1 evm gas buys 10k ink
+const initialCallScalar = 8       // call cost per half kb.
 
 func Initialize(sto *storage.Storage) {
-	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
-	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
-	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
+	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
+	maxStackDepth := sto.OpenStorageBackedUint32(maxStackDepthOffset)
 	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
-	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
+	pageGas := sto.OpenStorageBackedUint16(pageGasOffset)
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
-	version := sto.OpenStorageBackedUint64(versionOffset)
-	_ = inkPrice.Set(1)
-	_ = wasmMaxDepth.Set(math.MaxUint32)
-	_ = wasmHostioInk.Set(0)
+	callScalar := sto.OpenStorageBackedUint16(callScalarOffset)
+	version := sto.OpenStorageBackedUint16(versionOffset)
+	_ = inkPrice.Set(initialInkPrice)
+	_ = maxStackDepth.Set(math.MaxUint32)
 	_ = freePages.Set(initialFreePages)
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
 	_ = pageLimit.Set(initialPageLimit)
+	_ = callScalar.Set(initialCallScalar)
 	_ = version.Set(1)
 }
 
 func Open(sto *storage.Storage) *Programs {
 	return &Programs{
 		backingStorage: sto,
-		programs:       sto.OpenSubStorage(machineVersionsKey),
-		inkPrice:       sto.OpenStorageBackedUBips(inkPriceOffset),
-		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
+		programs:       sto.OpenSubStorage(programDataKey),
+		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
+		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
-		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
+		pageGas:        sto.OpenStorageBackedUint16(pageGasOffset),
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
-		version:        sto.OpenStorageBackedUint32(versionOffset),
+		callScalar:     sto.OpenStorageBackedUint16(callScalarOffset),
+		version:        sto.OpenStorageBackedUint16(versionOffset),
 	}
 }
 
-func (p Programs) StylusVersion() (uint32, error) {
+func (p Programs) StylusVersion() (uint16, error) {
 	return p.version.Get()
 }
 
-func (p Programs) InkPrice() (arbmath.UBips, error) {
+func (p Programs) InkPrice() (uint24, error) {
 	return p.inkPrice.Get()
 }
 
-func (p Programs) SetInkPrice(price arbmath.UBips) error {
-	if price == 0 {
-		return errors.New("ink price must be nonzero")
+func (p Programs) SetInkPrice(value uint32) error {
+	ink, err := arbmath.IntToUint24(value)
+	if err != nil || ink == 0 {
+		return errors.New("ink price must be a positive uint24")
 	}
-	return p.inkPrice.Set(price)
+	return p.inkPrice.Set(ink)
 }
 
-func (p Programs) WasmMaxDepth() (uint32, error) {
-	return p.wasmMaxDepth.Get()
+func (p Programs) MaxStackDepth() (uint32, error) {
+	return p.maxStackDepth.Get()
 }
 
-func (p Programs) SetWasmMaxDepth(depth uint32) error {
-	return p.wasmMaxDepth.Set(depth)
-}
-
-func (p Programs) WasmHostioInk() (uint64, error) {
-	return p.wasmHostioInk.Get()
-}
-
-func (p Programs) SetWasmHostioInk(ink uint64) error {
-	return p.wasmHostioInk.Set(ink)
+func (p Programs) SetMaxStackDepth(depth uint32) error {
+	return p.maxStackDepth.Set(depth)
 }
 
 func (p Programs) FreePages() (uint16, error) {
@@ -133,11 +133,11 @@ func (p Programs) SetFreePages(pages uint16) error {
 	return p.freePages.Set(pages)
 }
 
-func (p Programs) PageGas() (uint32, error) {
+func (p Programs) PageGas() (uint16, error) {
 	return p.pageGas.Get()
 }
 
-func (p Programs) SetPageGas(gas uint32) error {
+func (p Programs) SetPageGas(gas uint16) error {
 	return p.pageGas.Set(gas)
 }
 
@@ -157,11 +157,15 @@ func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
 }
 
-func (p Programs) ProgramVersion(codeHash common.Hash) (uint32, error) {
-	return p.programs.GetUint32(codeHash)
+func (p Programs) CallScalar() (uint16, error) {
+	return p.callScalar.Get()
 }
 
-func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, bool, error) {
+func (p Programs) SetCallScalar(scalar uint16) error {
+	return p.callScalar.Set(scalar)
+}
+
+func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(program)
 
@@ -189,17 +193,22 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
+	// charge 3 million up front to begin compilation
+	burner := p.programs.Burner()
+	if err := burner.Burn(3000000); err != nil {
+		return 0, false, err
+	}
+	info, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
 		return 0, true, err
 	}
 
-	// reflect the fact that, briefly, the footprint was allocated
-	// note: the actual payment for the expansion happens in Rust
-	statedb.AddStylusPagesEver(footprint)
+	// wasmSize is stored as half kb units, rounding up
+	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
-		footprint: footprint,
+		wasmSize:  wasmSize,
+		footprint: info.footprint,
 		version:   version,
 		address:   program,
 	}
@@ -212,6 +221,7 @@ func (p Programs) CallProgram(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
+	reentrant bool,
 ) ([]byte, error) {
 
 	// ensure the program is runnable
@@ -249,7 +259,13 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	cost := model.GasCost(program.footprint, open, ever)
+	memoryCost := model.GasCost(program.footprint, open, ever)
+	callScalar, err := p.CallScalar()
+	if err != nil {
+		return nil, err
+	}
+	callCost := uint64(program.wasmSize) * uint64(callScalar)
+	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
 	}
@@ -258,16 +274,17 @@ func (p Programs) CallProgram(
 
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
-		chainId:         common.BigToHash(evm.ChainConfig().ChainID),
+		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
 		blockGasLimit:   evm.Context.GasLimit,
-		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
+		blockNumber:     l1BlockNumber,
 		blockTimestamp:  evm.Context.Time,
 		contractAddress: scope.Contract.Address(),
 		msgSender:       scope.Contract.Caller(),
 		msgValue:        common.BigToHash(scope.Contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
+		reentrant:       arbmath.BoolToUint32(reentrant),
 	}
 
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
@@ -285,36 +302,46 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
-func (p Program) serialize() common.Hash {
-	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(p.footprint))
-	copy(data[28:], arbmath.Uint32ToBytes(p.version))
-	return data
-}
-
 func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 	address := contract.Address()
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	data, err := p.programs.Get(contract.CodeHash)
+	return p.deserializeProgram(contract.CodeHash, address)
+}
+
+func (p Programs) deserializeProgram(codeHash common.Hash, address common.Address) (Program, error) {
+	data, err := p.programs.Get(codeHash)
 	return Program{
-		footprint: arbmath.BytesToUint16(data[26:28]),
-		version:   arbmath.BytesToUint32(data[28:]),
+		wasmSize:  arbmath.BytesToUint16(data[26:28]),
+		footprint: arbmath.BytesToUint16(data[28:30]),
+		version:   arbmath.BytesToUint16(data[30:]),
 		address:   address,
 	}, err
 }
 
+func (p Program) serialize() common.Hash {
+	data := common.Hash{}
+	copy(data[26:], arbmath.Uint16ToBytes(p.wasmSize))
+	copy(data[28:], arbmath.Uint16ToBytes(p.footprint))
+	copy(data[30:], arbmath.Uint16ToBytes(p.version))
+	return data
+}
+
+func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
+	program, err := p.deserializeProgram(codeHash, common.Address{})
+	return program.version, err
+}
+
 type goParams struct {
-	version   uint32
+	version   uint16
 	maxDepth  uint32
-	inkPrice  uint64
-	hostioInk uint64
+	inkPrice  uint24
 	debugMode uint32
 }
 
-func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
-	maxDepth, err := p.WasmMaxDepth()
+func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
+	maxDepth, err := p.MaxStackDepth()
 	if err != nil {
 		return nil, err
 	}
@@ -322,16 +349,11 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	hostioInk, err := p.WasmHostioInk()
-	if err != nil {
-		return nil, err
-	}
 
 	config := &goParams{
-		version:   version,
-		maxDepth:  maxDepth,
-		inkPrice:  inkPrice.Uint64(),
-		hostioInk: hostioInk,
+		version:  version,
+		maxDepth: maxDepth,
+		inkPrice: inkPrice,
 	}
 	if debug {
 		config.debugMode = 1
@@ -341,16 +363,17 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 
 type evmData struct {
 	blockBasefee    common.Hash
-	chainId         common.Hash
+	chainId         uint64
 	blockCoinbase   common.Address
 	blockGasLimit   uint64
-	blockNumber     common.Hash
+	blockNumber     uint64
 	blockTimestamp  uint64
 	contractAddress common.Address
 	msgSender       common.Address
 	msgValue        common.Hash
 	txGasPrice      common.Hash
 	txOrigin        common.Address
+	reentrant       uint32
 }
 
 type userStatus uint8
@@ -363,20 +386,38 @@ const (
 	userOutOfStack
 )
 
-func (status userStatus) output(data []byte) ([]byte, error) {
+func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
+	details := func() string {
+		if debug {
+			return arbutil.ToStringOrHex(data)
+		}
+		return ""
+	}
 	switch status {
 	case userSuccess:
-		return data, nil
+		return data, "", nil
 	case userRevert:
-		return data, vm.ErrExecutionReverted
+		return data, details(), vm.ErrExecutionReverted
 	case userFailure:
-		return nil, vm.ErrExecutionReverted
+		return nil, details(), vm.ErrExecutionReverted
 	case userOutOfInk:
-		return nil, vm.ErrOutOfGas
+		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
-		return nil, vm.ErrDepth
+		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", common.Bytes2Hex(data))
-		return nil, vm.ErrExecutionReverted
+		return nil, details(), vm.ErrExecutionReverted
 	}
+}
+
+type wasmPricingInfo struct {
+	footprint uint16
+	size      uint32
+}
+
+// Pay for compilation. Right now this is a fixed amount of gas.
+// In the future, costs will be variable and based on the wasm.
+// Note: memory expansion costs are baked into compilation charging.
+func payForCompilation(burner burn.Burner, _info *wasmPricingInfo) error {
+	return burner.Burn(11000000)
 }

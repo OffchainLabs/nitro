@@ -324,6 +324,8 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
 
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 

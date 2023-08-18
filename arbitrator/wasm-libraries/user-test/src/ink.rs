@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use arbutil::pricing;
 use prover::programs::{
     config::PricingParams,
     prelude::{GasMeteredMachine, MachineMeter, MeteredMachine},
@@ -39,10 +40,13 @@ impl GasMeteredMachine for Program {
 }
 
 impl Program {
-    pub fn start() -> Self {
-        let mut program = Program;
-        let hostio_ink = program.pricing().hostio_ink;
-        program.buy_ink(hostio_ink).unwrap();
+    pub fn start(cost: u64) -> Self {
+        let mut program = Self::start_free();
+        program.buy_ink(pricing::HOSTIO_INK + cost).unwrap();
         program
+    }
+
+    pub fn start_free() -> Self {
+        Self
     }
 }

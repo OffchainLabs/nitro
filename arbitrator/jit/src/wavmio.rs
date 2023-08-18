@@ -261,7 +261,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
         address.pop(); // pop the newline
         if address.is_empty() {
-            return Ok(());
+            return Escape::exit(0);
         }
         if debug {
             println!("Child will connect to {address}");

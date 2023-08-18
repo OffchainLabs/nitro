@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -34,8 +35,8 @@ type rustMachine byte
 type rustEvmData byte
 
 func compileUserWasmRustImpl(
-	wasm []byte, version, debugMode u32, pageLimit u16,
-) (machine *rustMachine, footprint u16, err *rustVec)
+	wasm []byte, pageLimit, version u16, debugMode u32,
+) (machine *rustMachine, info wasmPricingInfo, err *rustVec)
 
 func callUserWasmRustImpl(
 	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
@@ -44,25 +45,43 @@ func callUserWasmRustImpl(
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
+func rustMachineDropImpl(mach *rustMachine)
+func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
-	chainId *hash,
+	chainId u64,
 	blockCoinbase *addr,
 	blockGasLimit u64,
-	blockNumber *hash,
+	blockNumber u64,
 	blockTimestamp u64,
 	contractAddress *addr,
 	msgSender *addr,
 	msgValue *hash,
 	txGasPrice *hash,
 	txOrigin *addr,
+	reentrant u32,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, error) {
+func compileUserWasm(
+	db vm.StateDB,
+	program addr,
+	wasm []byte,
+	pageLimit u16,
+	version u16,
+	debug bool,
+	burner burn.Burner,
+) (*wasmPricingInfo, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, footprint, err := compileMachine(db, program, wasm, pageLimit, version, debugMode)
-	return footprint, err
+	machine, info, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode)
+	defer rustMachineDropImpl(machine)
+	if err != nil {
+		_, _, err := userFailure.toResult(err.intoSlice(), debug)
+		return nil, err
+	}
+	if err := payForCompilation(burner, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
 }
 
 func callUserWasm(
@@ -78,17 +97,21 @@ func callUserWasm(
 ) ([]byte, error) {
 	// since the program has previously passed compilation, don't limit memory
 	pageLimit := uint16(math.MaxUint16)
+	debug := arbmath.UintToBool(params.debugMode)
 
 	wasm, err := getWasm(db, program.address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, _, err := compileMachine(db, program.address, wasm, pageLimit, params.version, params.debugMode)
+
+	// compile the machine (TODO: reuse these)
+	machine, _, errVec := compileUserWasmRustImpl(wasm, pageLimit, params.version, params.debugMode)
 	if err != nil {
-		log.Crit("failed to create machine", "program", program, "err", err)
+		_, _, err := userFailure.toResult(errVec.intoSlice(), debug)
+		return nil, err
 	}
 
-	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, params.version)
+	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, uint32(params.version))
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 
@@ -101,19 +124,8 @@ func callUserWasm(
 		&scope.Contract.Gas,
 		&root,
 	)
-	result := output.intoSlice()
-	return status.output(result)
-}
-
-func compileMachine(
-	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
-) (*rustMachine, u16, error) {
-	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
-	if err != nil {
-		_, err := userFailure.output(err.intoSlice())
-		return nil, footprint, err
-	}
-	return machine, footprint, nil
+	data, _, err := status.toResult(output.intoSlice(), debug)
+	return data, err
 }
 
 func (vec *rustVec) intoSlice() []byte {
@@ -124,21 +136,22 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice, p.hostioInk, p.debugMode)
+	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice.ToUint32(), p.debugMode)
 }
 
 func (d *evmData) encode() *rustEvmData {
 	return rustEvmDataImpl(
 		&d.blockBasefee,
-		&d.chainId,
+		u64(d.chainId),
 		&d.blockCoinbase,
 		u64(d.blockGasLimit),
-		&d.blockNumber,
+		u64(d.blockNumber),
 		u64(d.blockTimestamp),
 		&d.contractAddress,
 		&d.msgSender,
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
+		u32(d.reentrant),
 	)
 }

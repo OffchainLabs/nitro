@@ -13,7 +13,7 @@ use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
 use wasmer_types::Pages;
 
-#[cfg(feature = "native")]
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 pub struct MemoryType {
@@ -105,10 +105,10 @@ impl Memory {
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
 
-        #[cfg(feature = "native")]
+        #[cfg(feature = "rayon")]
         let leaf_hashes = self.buffer.par_chunks(Self::LEAF_SIZE);
 
-        #[cfg(not(feature = "native"))]
+        #[cfg(not(feature = "rayon"))]
         let leaf_hashes = self.buffer.chunks(Self::LEAF_SIZE);
 
         let mut leaf_hashes: Vec<Bytes32> = leaf_hashes

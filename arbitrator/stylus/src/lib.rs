@@ -2,13 +2,16 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::evm_api::GoEvmApi;
-use arbutil::evm::{
-    user::{UserOutcome, UserOutcomeKind},
-    EvmData,
+use arbutil::{
+    evm::{
+        user::{UserOutcome, UserOutcomeKind},
+        EvmData,
+    },
+    format::DebugBytes,
 };
 use eyre::ErrReport;
 use native::NativeInstance;
-use prover::{binary::WasmBinary, programs::prelude::*};
+use prover::{programs::prelude::*, Machine};
 use run::RunProgram;
 use std::mem;
 
@@ -68,7 +71,7 @@ impl RustVec {
     }
 
     unsafe fn write_err(&mut self, err: ErrReport) -> UserOutcomeKind {
-        self.write(format!("{err:?}").into_bytes());
+        self.write(err.debug_bytes());
         UserOutcomeKind::Failure
     }
 
@@ -79,32 +82,50 @@ impl RustVec {
     }
 }
 
+/// Ensures a user program can be proven.
+/// On success, `wasm_info` is populated with pricing information.
+/// On error, a message is written to `output`.
+///
+/// # Safety
+///
+/// `output` and `wasm_info` must not be null.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_parse_wasm(
+    wasm: GoSliceData,
+    page_limit: u16,
+    version: u16,
+    debug: bool,
+    wasm_info: *mut WasmPricingInfo,
+    output: *mut RustVec,
+) -> UserOutcomeKind {
+    let wasm = wasm.slice();
+    let info = &mut *wasm_info;
+    let output = &mut *output;
+
+    match Machine::new_user_stub(wasm, page_limit, version, debug) {
+        Ok((_, data)) => *info = data,
+        Err(error) => return output.write_err(error),
+    }
+    UserOutcomeKind::Success
+}
+
 /// Compiles a user program to its native representation.
 /// The `output` is either the serialized module or an error string.
 ///
 /// # Safety
 ///
-/// Output must not be null
+/// Output must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
-    version: u32,
-    page_limit: u16,
-    footprint: *mut u16,
+    version: u16,
+    debug_mode: bool,
     output: *mut RustVec,
-    debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-    let compile = CompileConfig::version(version, debug_mode != 0);
+    let compile = CompileConfig::version(version, debug_mode);
 
-    // ensure the wasm compiles during proving
-    *footprint = match WasmBinary::parse_user(wasm, page_limit, &compile) {
-        Ok((.., pages)) => pages,
-        Err(err) => return output.write_err(err.wrap_err("failed to parse program")),
-    };
-
-    // TODO: compilation pricing, including memory charges
     let module = match native::module(wasm, compile) {
         Ok(module) => module,
         Err(err) => return output.write_err(err),
@@ -156,14 +177,16 @@ pub unsafe extern "C" fn stylus_call(
     status
 }
 
-/// Frees the vector.
+/// Frees the vector. Does nothing when the vector is null.
 ///
 /// # Safety
 ///
 /// Must only be called once per vec.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
-    mem::drop(vec.into_vec())
+    if !vec.ptr.is_null() {
+        mem::drop(vec.into_vec())
+    }
 }
 
 /// Overwrites the bytes of the vector.

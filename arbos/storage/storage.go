@@ -410,6 +410,24 @@ func (sbu *StorageBackedUint16) Set(value uint16) error {
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
+type StorageBackedUint24 struct {
+	StorageSlot
+}
+
+func (store *Storage) OpenStorageBackedUint24(offset uint64) StorageBackedUint24 {
+	return StorageBackedUint24{store.NewSlot(offset)}
+}
+
+func (sbu *StorageBackedUint24) Get() (arbmath.Uint24, error) {
+	raw, err := sbu.StorageSlot.Get()
+	value := arbmath.BigToUint24OrPanic(raw.Big())
+	return value, err
+}
+
+func (sbu *StorageBackedUint24) Set(value arbmath.Uint24) error {
+	return sbu.StorageSlot.Set(common.BigToHash(value.ToBig()))
+}
+
 type StorageBackedUint32 struct {
 	StorageSlot
 }
