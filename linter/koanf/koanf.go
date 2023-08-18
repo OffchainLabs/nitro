@@ -9,8 +9,8 @@ import (
 	"unicode"
 
 	"github.com/fatih/structtag"
-
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 func New(conf any) ([]*analysis.Analyzer, error) {
@@ -113,4 +113,8 @@ func normalize(s string) string {
 
 func isAlphanumeric(c rune) bool {
 	return unicode.IsLetter(c) || unicode.IsDigit(c)
+}
+
+func main() {
+	singlechecker.Main(Analyzer)
 }

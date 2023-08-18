@@ -23,7 +23,6 @@ linters:
     - nilerr      # ensure errors aren't mishandled
     - staticcheck # check for suspicious constructs
     - unused      # check for unused constructs
-    - koanf       # check for koanf configurations
 
 linters-settings:
   errcheck:
@@ -52,8 +51,3 @@ linters-settings:
     disable:
       - shadow
       - fieldalignment
-
-  custom:
-    koanf:
-      path: linter/koanf/koanf.so
-      description: Koanf configuration linter
