@@ -201,3 +201,10 @@ impl CompileConfig {
         Store::new(compiler)
     }
 }
+
+/// Information about a wasm for pricing purposes.
+#[repr(C)]
+pub struct WasmPricingInfo {
+    pub footprint: u16,
+    pub size: u32,
+}

@@ -52,7 +52,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(basefee);
     output.extend(gas_price);
     output.extend(B256::from(U256::from(gas_limit)));
-    output.extend(value);
+    output.extend(B256::from(value));
     output.extend(B256::from(U256::from(timestamp)));
     output.extend(address_balance);
 

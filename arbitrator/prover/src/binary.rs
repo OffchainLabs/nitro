@@ -603,11 +603,53 @@ impl<'a> WasmBinary<'a> {
     ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
-
         let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
-        if pages > page_limit as u64 {
+        let debug = compile.debug.debug_funcs;
+
+        // ensure the wasm fits within the remaining amount of memory
+        if pages > page_limit.into() {
             let limit = page_limit.red();
             bail!("memory exceeds limit: {} > {limit}", pages.red());
+        }
+
+        // not strictly necessary, but anti-DoS limits and extra checks in case of bugs
+        macro_rules! limit {
+            ($limit:expr, $count:expr, $name:expr) => {
+                if $count > $limit {
+                    bail!("too many wasm {}", $name);
+                }
+            };
+        }
+        limit!(1, bin.memories.len(), "memories");
+        limit!(100, bin.datas.len(), "datas");
+        limit!(100, bin.elements.len(), "elements");
+        limit!(1_000, bin.exports.len(), "exports");
+        limit!(1_000, bin.tables.len(), "tables");
+        limit!(10_000, bin.codes.len(), "functions");
+        limit!(10_000, bin.globals.len(), "globals");
+
+        let max_len = 500;
+        macro_rules! too_long {
+            ($name:expr, $len:expr) => {
+                bail!(
+                    "wasm {} too long: {} > {}",
+                    $name.red(),
+                    $len.red(),
+                    max_len.red()
+                )
+            };
+        }
+        if let Some((name, _)) = bin.exports.iter().find(|(name, _)| name.len() > max_len) {
+            too_long!("name", name.len())
+        }
+        if bin.names.module.len() > max_len {
+            too_long!("module name", bin.names.module.len())
+        }
+        if !debug && !bin.names.functions.is_empty() {
+            bail!("wasm custom names section not allowed")
+        }
+        if bin.start.is_some() {
+            bail!("wasm start functions not allowed");
         }
         Ok((bin, stylus_data, pages as u16))
     }

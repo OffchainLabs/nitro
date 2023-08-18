@@ -57,6 +57,15 @@ impl GoStack {
         *Box::from_raw(self.read_ptr_mut())
     }
 
+    pub unsafe fn unbox_option<T>(&mut self) -> Option<T> {
+        let ptr: *mut T = self.read_ptr_mut();
+        (!ptr.is_null()).then(|| *Box::from_raw(ptr))
+    }
+
+    pub unsafe fn read_bool32(&mut self) -> bool {
+        self.read_u32() != 0
+    }
+
     pub unsafe fn read_go_ptr(&mut self) -> usize {
         self.read_u64().try_into().expect("go pointer doesn't fit")
     }
@@ -98,7 +107,7 @@ impl GoStack {
         self.advance(2);
         self
     }
-    
+
     pub fn skip_u32(&mut self) -> &mut Self {
         self.advance(4);
         self

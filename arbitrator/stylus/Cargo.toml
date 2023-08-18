@@ -24,11 +24,12 @@ sha3 = "0.10.5"
 hex = "0.4.3"
 
 [features]
-default = ["singlepass_rayon"]
+default = ["rayon", "singlepass_rayon"]
 llvm = ["dep:wasmer-compiler-llvm"]
 benchmark = []
 timings = []
 singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
+rayon = ["prover/rayon"]
 
 [lib]
 crate-type = ["lib", "staticlib"]

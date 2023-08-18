@@ -40,6 +40,7 @@ name = "prover"
 crate-type = ["staticlib", "lib"]
 
 [features]
-default = ["native", "singlepass_rayon"]
-native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "dep:rayon", "dep:brotli2"]
+default = ["native", "rayon", "singlepass_rayon"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "dep:brotli2"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
+rayon = ["dep:rayon"]
