@@ -148,7 +148,6 @@ func testCompilationReuse(t *testing.T, jit bool) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
 	ensure(arbOwner.SetInkPrice(&auth, 1))
-	ensure(arbOwner.SetWasmHostioInk(&auth, 1))
 
 	colors.PrintMint("Deploying same keccak code to two different addresses")
 
@@ -1015,7 +1014,6 @@ func setupProgramTest(t *testing.T, jit bool) (
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
 	return ctx, node, l2info, l2client, auth, cleanup
 }
 
