@@ -81,7 +81,7 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
 	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
+	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
@@ -107,7 +107,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
-	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
+	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")

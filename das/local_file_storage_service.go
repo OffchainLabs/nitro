@@ -22,10 +22,10 @@ import (
 )
 
 type LocalFileStorageConfig struct {
-	Enable                  bool   `koanf:"enable"`
-	DataDir                 string `koanf:"data-dir"`
-	SyncFromStorageServices bool   `koanf:"sync-from-storage-service"`
-	SyncToStorageServices   bool   `koanf:"sync-to-storage-service"`
+	Enable                 bool   `koanf:"enable"`
+	DataDir                string `koanf:"data-dir"`
+	SyncFromStorageService bool   `koanf:"sync-from-storage-service"`
+	SyncToStorageService   bool   `koanf:"sync-to-storage-service"`
 }
 
 var DefaultLocalFileStorageConfig = LocalFileStorageConfig{
@@ -35,8 +35,8 @@ var DefaultLocalFileStorageConfig = LocalFileStorageConfig{
 func LocalFileStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultLocalFileStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a directory of files, one per batch")
 	f.String(prefix+".data-dir", DefaultLocalFileStorageConfig.DataDir, "local data directory")
-	f.Bool(prefix+".sync-from-storage-service", DefaultLocalFileStorageConfig.SyncFromStorageServices, "enable local storage to be used as a source for regular sync storage")
-	f.Bool(prefix+".sync-to-storage-service", DefaultLocalFileStorageConfig.SyncToStorageServices, "enable local storage to be used as a sink for regular sync storage")
+	f.Bool(prefix+".sync-from-storage-service", DefaultLocalFileStorageConfig.SyncFromStorageService, "enable local storage to be used as a source for regular sync storage")
+	f.Bool(prefix+".sync-to-storage-service", DefaultLocalFileStorageConfig.SyncToStorageService, "enable local storage to be used as a sink for regular sync storage")
 }
 
 type LocalFileStorageService struct {

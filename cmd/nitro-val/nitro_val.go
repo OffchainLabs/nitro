@@ -68,7 +68,7 @@ func mainImpl() int {
 	stackConf.DataDir = "" // ephemeral
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
-	nodeConfig.AuthRPC.Apply(&stackConf)
+	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
