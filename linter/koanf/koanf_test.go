@@ -13,7 +13,7 @@ func TestAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get wd: %s", err)
 	}
-	testdata := filepath.Join(filepath.Dir(wd), "testsdata")
+	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	res := analysistest.Run(t, testdata, analyzerForTests, "a")
 	if cnt := countErrors(res); cnt != 1 {
 		t.Errorf("analysistest.Run() got %v errors, expected 1", cnt)
