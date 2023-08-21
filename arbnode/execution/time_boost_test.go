@@ -34,11 +34,7 @@ func (m *mockTx) innerTx() *types.Transaction {
 	return m._innerTx
 }
 
-func TestDiscreteTimeBoost_Normalization(t *testing.T) {
-
-}
-
-func TestDiscreteTimeBoost_OrderByBid(t *testing.T) {
+func TestDiscreteTimeBoost(t *testing.T) {
 	txInputFeed := make(chan boostableTx, 10)
 	txOutputFeed := make(chan boostableTx, 10)
 	srv := newTimeBoostService(
@@ -52,54 +48,196 @@ func TestDiscreteTimeBoost_OrderByBid(t *testing.T) {
 	go srv.run(ctx)
 
 	now := time.Now()
-	txs := []*mockTx{
+
+	testCases := []struct {
+		name     string
+		inputTxs []*mockTx
+		wantIds  []string
+	}{
 		{
+			name: "normalization, no bid orders by timestamp",
+			inputTxs: []*mockTx{
+				{
+					_id:        "a",
+					_bid:       0,
+					_timestamp: now.Add(time.Millisecond * 150),
+				},
+				{
+					_id:        "b",
+					_bid:       0,
+					_timestamp: now,
+				},
+				{
+					_id:        "c",
+					_bid:       0,
+					_timestamp: now.Add(time.Millisecond * 100),
+				},
+				{
+					_id:        "d",
+					_bid:       0,
+					_timestamp: now.Add(time.Millisecond * 200),
+				},
+			},
+			wantIds: []string{"b", "c", "a", "d"},
+		},
+		{
+			name: "order by bid",
+			inputTxs: []*mockTx{
+				{
+					_id:        "a",
+					_bid:       0,
+					_timestamp: now,
+				},
+				{
+					_id:        "b",
+					_bid:       100,
+					_timestamp: now.Add(time.Millisecond * 100),
+				},
+				{
+					_id:        "c",
+					_bid:       200,
+					_timestamp: now.Add(time.Millisecond * 150),
+				},
+				{
+					_id:        "d",
+					_bid:       300,
+					_timestamp: now.Add(time.Millisecond * 200),
+				},
+			},
+			wantIds: []string{"d", "c", "b", "a"},
+		},
+		{
+			name: "timestamp tiebreakers",
+			inputTxs: []*mockTx{
+				{
+					_id:        "a",
+					_bid:       100,
+					_timestamp: now.Add(time.Millisecond * 150),
+				},
+				{
+					_id:        "b",
+					_bid:       100,
+					_timestamp: now,
+				},
+				{
+					_id:        "c",
+					_bid:       200,
+					_timestamp: now.Add(time.Millisecond * 200),
+				},
+				{
+					_id:        "d",
+					_bid:       200,
+					_timestamp: now.Add(time.Millisecond * 100),
+				},
+			},
+			wantIds: []string{"d", "c", "b", "a"},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, tx := range tt.inputTxs {
+				txInputFeed <- tx
+			}
+
+			gotTxs := make([]*mockTx, 0)
+			for i := 0; i < len(tt.inputTxs); i++ {
+				item := <-txOutputFeed
+				gotTxs = append(gotTxs, item.(*mockTx))
+			}
+
+			for i, tx := range gotTxs {
+				if tt.wantIds[i] != tx._id {
+					t.Errorf("i=%d, wanted %s, got %s", i, tt.wantIds[i], tx._id)
+				}
+			}
+		})
+	}
+}
+
+func TestDiscreteTimeBoost_CannotGainAdvantageAcrossRounds(t *testing.T) {
+	txInputFeed := make(chan boostableTx, 10)
+	txOutputFeed := make(chan boostableTx, 10)
+	srv := newTimeBoostService(
+		txInputFeed,
+		txOutputFeed,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go srv.run(ctx)
+
+	now := time.Now()
+
+	inputTxs := []*mockTx{
+		{
+			_id:        "a",
 			_bid:       0,
 			_timestamp: now,
 		},
 		{
+			_id:        "b",
 			_bid:       100,
 			_timestamp: now.Add(time.Millisecond * 100),
 		},
 		{
+			_id:        "c",
 			_bid:       200,
 			_timestamp: now.Add(time.Millisecond * 150),
 		},
 		{
+			_id:        "d",
 			_bid:       300,
+			_timestamp: now.Add(time.Millisecond * 200),
+		},
+		{
+			_id:        "e",
+			_bid:       300,
+			_timestamp: now.Add(time.Millisecond * 150),
+		},
+		{
+			_id:        "f",
+			_bid:       400,
 			_timestamp: now.Add(time.Millisecond * 200),
 		},
 	}
 
-	for _, tx := range txs {
+	for _, tx := range inputTxs[0:2] {
 		txInputFeed <- tx
 	}
 
 	gotTxs := make([]*mockTx, 0)
 
-	for i := 0; i < len(txs); i++ {
+	for i := 0; i < 2; i++ {
 		item := <-txOutputFeed
 		gotTxs = append(gotTxs, item.(*mockTx))
 	}
 
-	want := []uint64{300, 200, 100, 0}
+	for _, tx := range inputTxs[2:4] {
+		txInputFeed <- tx
+	}
+
+	for i := 0; i < 2; i++ {
+		item := <-txOutputFeed
+		gotTxs = append(gotTxs, item.(*mockTx))
+	}
+
+	for _, tx := range inputTxs[4:6] {
+		txInputFeed <- tx
+	}
+
+	for i := 0; i < 2; i++ {
+		item := <-txOutputFeed
+		gotTxs = append(gotTxs, item.(*mockTx))
+	}
+
+	wantIds := []string{"b", "a", "d", "c", "f", "e"}
 	for i, tx := range gotTxs {
-		if want[i] != tx._bid {
-			t.Errorf("i=%d, wanted %d, got %d", i, want[i], tx._bid)
+		if wantIds[i] != tx._id {
+			t.Errorf("i=%d, wanted %s, got %s", i, wantIds[i], tx._id)
 		}
 	}
-}
-
-func TestDiscreteTimeBoost_TimestampTiebreak(t *testing.T) {
-
-}
-
-func TestDiscreteTimeBoost_CannotGainAdvantageAcrossRounds(t *testing.T) {
-
-}
-
-func TestDiscreteTimeBoost_BoostedWithinRoundNotAcross(t *testing.T) {
-
 }
 
 func TestTxPriorityQueue(t *testing.T) {
