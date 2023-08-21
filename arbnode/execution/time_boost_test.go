@@ -214,6 +214,8 @@ func TestDiscreteTimeBoost_CannotGainAdvantageAcrossRounds(t *testing.T) {
 		gotTxs = append(gotTxs, item.(*mockTx))
 	}
 
+	srv.startNextRound()
+
 	for _, tx := range inputTxs[2:4] {
 		txInputFeed <- tx
 	}
@@ -222,6 +224,8 @@ func TestDiscreteTimeBoost_CannotGainAdvantageAcrossRounds(t *testing.T) {
 		item := <-txOutputFeed
 		gotTxs = append(gotTxs, item.(*mockTx))
 	}
+
+	srv.startNextRound()
 
 	for _, tx := range inputTxs[4:6] {
 		txInputFeed <- tx

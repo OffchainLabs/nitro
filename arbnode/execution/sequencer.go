@@ -980,6 +980,11 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		queueItem.returnResult(err)
 	}
+
+	if s.config().TimeBoost {
+		s.boostService.startNextRound()
+	}
+
 	return madeBlock
 }
 

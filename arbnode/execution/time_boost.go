@@ -26,10 +26,11 @@ type boostableTx interface {
 // an output channel using the discrete time boost protocol for sequencing.
 type timeBoostService struct {
 	sync.Mutex
-	txInputFeed  <-chan boostableTx
-	txOutputFeed chan<- boostableTx
-	prioQueue    timeBoostableTxs
-	gFactor      time.Duration
+	txInputFeed    <-chan boostableTx
+	txOutputFeed   chan<- boostableTx
+	prioQueue      timeBoostableTxs
+	gFactor        time.Duration
+	nextRoundStart chan struct{}
 }
 
 type opt func(*timeBoostService)
@@ -51,10 +52,11 @@ func newTimeBoostService(
 	prioQueue := make(timeBoostableTxs, 0)
 	heap.Init(&prioQueue)
 	s := &timeBoostService{
-		txInputFeed:  inputFeed,
-		txOutputFeed: outputFeed,
-		prioQueue:    make(timeBoostableTxs, 0),
-		gFactor:      defaultMaxBoostFactor * time.Millisecond,
+		txInputFeed:    inputFeed,
+		txOutputFeed:   outputFeed,
+		prioQueue:      make(timeBoostableTxs, 0),
+		gFactor:        defaultMaxBoostFactor * time.Millisecond,
+		nextRoundStart: make(chan struct{}, 1),
 	}
 	for _, o := range opts {
 		o(s)
@@ -82,12 +84,17 @@ func (s *timeBoostService) run(ctx context.Context) {
 				s.txOutputFeed <- tx
 			}
 			s.Unlock()
+		case <-s.nextRoundStart:
 			// We start the next round of time boost.
 			afterChan = time.After(s.gFactor)
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func (s *timeBoostService) startNextRound() {
+	s.nextRoundStart <- struct{}{}
 }
 
 // Defines a type that implements the heap.Interface interface from
