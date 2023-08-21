@@ -70,7 +70,6 @@ func main() {
 
 		target := index
 		priorityForm.Clear(true)
-		priorityForm.AddTextView("Additional details:", "Status:\nBlockNumber:", 0, 2, false, true)
 		priorityForm.AddDropDown("Change priority to ->", priorities, index, func(priority string, selection int) {
 			target = selection
 		})
@@ -99,7 +98,7 @@ func main() {
 			pages.SwitchToPage("Menu")
 			app.SetFocus(prioritySeqList)
 		})
-		priorityForm.SetFocus(1)
+		priorityForm.SetFocus(0)
 		app.SetFocus(priorityForm)
 	})
 
@@ -114,7 +113,6 @@ func main() {
 
 		target := index
 		nonPriorityForm.Clear(true)
-		nonPriorityForm.AddTextView("Additional details:", "Status:\nBlockNumber:", 0, 2, false, true)
 		nonPriorityForm.AddDropDown("Set priority to ->", priorities, index, func(priority string, selection int) {
 			target = selection
 		})
@@ -140,7 +138,7 @@ func main() {
 			pages.SwitchToPage("Menu")
 			app.SetFocus(nonPrioritySeqList)
 		})
-		nonPriorityForm.SetFocus(1)
+		nonPriorityForm.SetFocus(0)
 		app.SetFocus(nonPriorityForm)
 	})
 
@@ -236,17 +234,17 @@ func (sm *manager) populateLists(ctx context.Context) {
 		if seqURL == chosen {
 			sec = fmt.Sprintf(" %vchosen", emoji.LeftArrow)
 		}
-		status := fmt.Sprintf("%v ", emoji.RedCircle)
+		status := fmt.Sprintf("(%d) %v ", index, emoji.RedCircle)
 		if _, ok := sm.livelinessMap[seqURL]; ok {
-			status = fmt.Sprintf("%v ", emoji.GreenCircle)
+			status = fmt.Sprintf("(%d) %v ", index, emoji.GreenCircle)
 		}
-		prioritySeqList.AddItem(status+seqURL+sec, "", int32(48+index), nil).SetSecondaryTextColor(tcell.ColorPurple)
+		prioritySeqList.AddItem(status+seqURL+sec, "", rune(0), nil).SetSecondaryTextColor(tcell.ColorPurple)
 	}
 
 	nonPrioritySeqList.Clear()
-	status := fmt.Sprintf("%v ", emoji.GreenCircle)
+	status := fmt.Sprintf("(-) %v ", emoji.GreenCircle)
 	for _, seqURL := range sm.nonPriorityList {
-		nonPrioritySeqList.AddItem(status+seqURL, "", rune(45), nil)
+		nonPrioritySeqList.AddItem(status+seqURL, "", rune(0), nil)
 	}
 }
 
