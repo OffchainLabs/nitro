@@ -65,6 +65,7 @@ type SequencerConfig struct {
 	MaxTxDataSize               int                      `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	TimeBoost                   bool                     `koanf:"time-boost"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -113,6 +114,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,
+	TimeBoost:               false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -129,6 +131,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxTxDataSize:               95000,
 	NonceFailureCacheSize:       1024,
 	NonceFailureCacheExpiry:     time.Second,
+	TimeBoost:                   false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -144,6 +147,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
+	f.Bool(prefix+".time-boost", DefaultSequencerConfig.TimeBoost, "enables time boost ordering for transactions")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -154,6 +158,22 @@ type txQueueItem struct {
 	returnedResult  bool
 	ctx             context.Context
 	firstAppearance time.Time
+}
+
+func (i txQueueItem) bid() uint64 {
+	return i.tx.GasTipCap().Uint64()
+}
+
+func (i txQueueItem) timestamp() time.Time {
+	return i.firstAppearance
+}
+
+func (i txQueueItem) id() string {
+	return i.tx.Hash().Hex()
+}
+
+func (i txQueueItem) innerTx() *types.Transaction {
+	return i.tx
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -309,6 +329,10 @@ type Sequencer struct {
 	activeMutex sync.Mutex
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
+
+	timeBoostTxFeedIn  chan boostableTx
+	timeBoostTxFeedOut chan boostableTx
+	boostService       *timeBoostService
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -325,17 +349,20 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 	s := &Sequencer{
-		execEngine:      execEngine,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
-		l1Reader:        l1Reader,
-		config:          configFetcher,
-		senderWhitelist: senderWhitelist,
-		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1BlockNumber:   0,
-		l1Timestamp:     0,
-		pauseChan:       nil,
-		onForwarderSet:  make(chan struct{}, 1),
+		execEngine:         execEngine,
+		txQueue:            make(chan txQueueItem, config.QueueSize),
+		l1Reader:           l1Reader,
+		config:             configFetcher,
+		senderWhitelist:    senderWhitelist,
+		nonceCache:         newNonceCache(config.NonceCacheSize),
+		l1BlockNumber:      0,
+		l1Timestamp:        0,
+		pauseChan:          nil,
+		onForwarderSet:     make(chan struct{}, 1),
+		timeBoostTxFeedIn:  make(chan boostableTx, 100 /* TODO(RJ): Configure */),
+		timeBoostTxFeedOut: make(chan boostableTx, 100 /* TODO(RJ): Configure */),
 	}
+	s.boostService = newTimeBoostService(s.timeBoostTxFeedIn, s.timeBoostTxFeedOut)
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
@@ -863,6 +890,24 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
+	if s.config().TimeBoost {
+		// If timeboost is enabled, we send the txs to a channel a background boost service
+		// is listening on. This service will then output potentially reordered transactions
+		// to an an output channel accordingly.
+		numQueueItems := len(queueItems)
+		for _, queueItem := range queueItems {
+			s.timeBoostTxFeedIn <- queueItem
+		}
+
+		// Wait until we receive all the output txs we expect from the timeboost service.
+		boostedTxs := make([]*types.Transaction, 0, numQueueItems)
+		for i := 0; i < numQueueItems; i++ {
+			item := <-s.timeBoostTxFeedOut
+			boostedTxs = append(boostedTxs, item.innerTx())
+		}
+		txes = boostedTxs
+	}
+
 	start := time.Now()
 	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
@@ -987,6 +1032,11 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			}
 		})
 
+	}
+
+	// If time boost enabled, we launch the service in the background.
+	if s.config().TimeBoost {
+		go s.boostService.run(ctxIn)
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
