@@ -69,6 +69,13 @@ jobs:
           override: true
           components: 'llvm-tools-preview, rustfmt'
 
+      - name: Install rust nightly
+        uses: actions-rs/toolchain@v1
+        id: install-rust-nightly
+        with:
+          profile: minimal
+          toolchain: "nightly"
+
       - name: Install grcov
         uses: actions-rs/install@v0.1
         with:
@@ -78,6 +85,11 @@ jobs:
 
       - name: Install rust wasm targets
         run: rustup target add wasm32-wasi wasm32-unknown-unknown
+
+      - name: Install nightly wasm targets
+        run: |
+          rustup component add rust-src --toolchain nightly
+          rustup target add wasm32-unknown-unknown --toolchain nightly
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
@@ -163,7 +175,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/prover/Cargo.toml
+          args: -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
 
       - name: Rustfmt
         uses: actions-rs/cargo@v1

@@ -7,6 +7,8 @@ edition = "2021"
 arbutil = { path = "../arbutil/" }
 prover = { path = "../prover/", default-features = false, features = ["native"] }
 wasmer = { path = "../tools/wasmer/lib/api/" }
+wasmer-vm = { path = "../tools/wasmer/lib/vm/" }
+wasmer-types = { path = "../tools/wasmer/lib/types/" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
 wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm", optional = true }
@@ -22,9 +24,10 @@ sha3 = "0.10.5"
 hex = "0.4.3"
 
 [features]
-default = ["singlepass_rayon", "rayon"]
+default = ["rayon", "singlepass_rayon"]
 llvm = ["dep:wasmer-compiler-llvm"]
 benchmark = []
+timings = []
 singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
 rayon = ["prover/rayon"]
 

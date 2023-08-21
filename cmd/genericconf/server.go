@@ -165,9 +165,8 @@ func (a AuthRPCConfig) Apply(stackConf *node.Config) {
 	stackConf.AuthPort = a.Port
 	stackConf.AuthVirtualHosts = []string{} // dont allow http access
 	stackConf.JWTSecret = a.JwtSecret
-	// a few settings are not available as stanard config, but we can change the default. sigh..
-	node.DefaultAuthOrigins = a.Origins
-	node.DefaultAuthModules = a.API
+	stackConf.AuthModules = a.API
+	stackConf.AuthOrigins = a.Origins
 }
 
 var AuthRPCConfigDefault = AuthRPCConfig{

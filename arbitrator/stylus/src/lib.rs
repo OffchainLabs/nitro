@@ -2,9 +2,12 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::evm_api::GoEvmApi;
-use arbutil::evm::{
-    user::{UserOutcome, UserOutcomeKind},
-    EvmData,
+use arbutil::{
+    evm::{
+        user::{UserOutcome, UserOutcomeKind},
+        EvmData,
+    },
+    format::DebugBytes,
 };
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -68,7 +71,7 @@ impl RustVec {
     }
 
     unsafe fn write_err(&mut self, err: ErrReport) -> UserOutcomeKind {
-        self.write(format!("{err:?}").into_bytes());
+        self.write(err.debug_bytes());
         UserOutcomeKind::Failure
     }
 
@@ -79,16 +82,43 @@ impl RustVec {
     }
 }
 
+/// Ensures a user program can be proven.
+/// On success, `wasm_info` is populated with pricing information.
+/// On error, a message is written to `output`.
+///
+/// # Safety
+///
+/// `output` and `wasm_info` must not be null.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_parse_wasm(
+    wasm: GoSliceData,
+    page_limit: u16,
+    version: u16,
+    debug: bool,
+    wasm_info: *mut WasmPricingInfo,
+    output: *mut RustVec,
+) -> UserOutcomeKind {
+    let wasm = wasm.slice();
+    let info = &mut *wasm_info;
+    let output = &mut *output;
+
+    match Machine::new_user_stub(wasm, page_limit, version, debug) {
+        Ok((_, data)) => *info = data,
+        Err(error) => return output.write_err(error),
+    }
+    UserOutcomeKind::Success
+}
+
 /// Compiles a user program to its native representation.
 /// The `output` is either the serialized module or an error string.
 ///
 /// # Safety
 ///
-/// Output, footprint, output_canonical_hash must not be null
+/// Output, footprint, output_canonical_hash must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
-    version: u32,
+    version: u16,
     page_limit: u16,
     out_footprint: *mut u16,
     output: *mut RustVec,
@@ -167,14 +197,16 @@ pub unsafe extern "C" fn stylus_call(
     status
 }
 
-/// Frees the vector.
+/// Frees the vector. Does nothing when the vector is null.
 ///
 /// # Safety
 ///
 /// Must only be called once per vec.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
-    mem::drop(vec.into_vec())
+    if !vec.ptr.is_null() {
+        mem::drop(vec.into_vec())
+    }
 }
 
 /// Overwrites the bytes of the vector.

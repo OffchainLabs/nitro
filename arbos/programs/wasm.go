@@ -9,6 +9,7 @@ package programs
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -31,8 +32,8 @@ type rustMachine byte
 type rustEvmData byte
 
 func compileUserWasmRustImpl(
-	wasm []byte, version, debugMode u32, pageLimit u16, outMachineHash []byte,
-) (machine *rustMachine, footprint u16, err *rustVec)
+	wasm []byte, pageLimit, version u16, debugMode u32, outMachineHash []byte,
+) (machine *rustMachine, info wasmPricingInfo, err *rustVec)
 
 func callUserWasmRustImpl(
 	compiledHash *hash, calldata []byte, params *rustConfig, evmApi []byte,
@@ -41,24 +42,42 @@ func callUserWasmRustImpl(
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
+func rustMachineDropImpl(mach *rustMachine)
+func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
-	chainId *hash,
+	chainId u64,
 	blockCoinbase *addr,
 	blockGasLimit u64,
-	blockNumber *hash,
+	blockNumber u64,
 	blockTimestamp u64,
 	contractAddress *addr,
 	msgSender *addr,
 	msgValue *hash,
 	txGasPrice *hash,
 	txOrigin *addr,
+	reentrant u32,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, common.Hash, error) {
+func compileUserWasm(
+	db vm.StateDB,
+	program addr,
+	wasm []byte,
+	pageLimit u16,
+	version u16,
+	debug bool,
+	burner burn.Burner,
+) (*wasmPricingInfo, common.Hash, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, footprint, hash, err := compileUserWasmRustWrapper(db, program, wasm, pageLimit, version, debugMode)
+	module, info, hash, err := compileUserWasmRustWrapper(db, program, wasm, pageLimit, version, debugMode)
+	defer rustModuleDropImpl(module)
+	if err != nil {
+		_, _, err := userFailure.toResult(err.intoSlice(), debug)
+		return nil, err
+	}
+	if err := payForCompilation(burner, &info); err != nil {
+		return nil, err
+	}
 	return footprint, hash, err
 }
 
@@ -76,6 +95,7 @@ func callUserWasm(
 ) ([]byte, error) {
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
+	debug := arbmath.UintToBool(params.debugMode)
 
 	status, output := callUserWasmRustImpl(
 		&program.compiledHash,
@@ -85,20 +105,19 @@ func callUserWasm(
 		evmData.encode(),
 		&scope.Contract.Gas,
 	)
-	result := output.intoSlice()
-	return status.output(result)
+	data, _, err := status.toResult(output.intoSlice(), debug)
+	return data, err
 }
 
-func compileUserWasmRustWrapper(
+func compileMachine(
 	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
-) (*rustMachine, u16, common.Hash, error) {
-	outHash := common.Hash{}
-	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit, outHash[:])
+) (*rustMachine, u16, error) {
+	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
 	if err != nil {
 		_, err := userFailure.output(err.intoSlice())
-		return nil, footprint, common.Hash{}, err
+		return nil, footprint, err
 	}
-	return machine, footprint, outHash, nil
+	return machine, footprint, nil
 }
 
 func (vec *rustVec) intoSlice() []byte {
@@ -109,21 +128,22 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice, p.hostioInk, p.debugMode)
+	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice.ToUint32(), p.debugMode)
 }
 
 func (d *evmData) encode() *rustEvmData {
 	return rustEvmDataImpl(
 		&d.blockBasefee,
-		&d.chainId,
+		u64(d.chainId),
 		&d.blockCoinbase,
 		u64(d.blockGasLimit),
-		&d.blockNumber,
+		u64(d.blockNumber),
 		u64(d.blockTimestamp),
 		&d.contractAddress,
 		&d.msgSender,
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
+		u32(d.reentrant),
 	)
 }

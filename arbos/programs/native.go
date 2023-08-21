@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -35,21 +36,29 @@ type u16 = C.uint16_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
+type cbool = C._Bool
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
 func compileUserWasm(
-	db vm.StateDB, program common.Address, wasm []byte, pageLimit uint16, version uint32, debug bool,
-) (uint16, common.Hash, error) {
-	footprint := uint16(0)
+	db vm.StateDB,
+	program common.Address,
+	wasm []byte,
+	page_limit uint16,
+	version uint16,
+	debug bool,
+	burner burn.Burner,
+) (*wasmPricingInfo, common.Hash, error) {
+
+	// check that compilation would succeed during proving
+	rustInfo := &C.WasmPricingInfo{}
 	output := &rustVec{}
 	canonicalHashRust := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
-		u32(version),
-		u16(pageLimit),
-		(*u16)(&footprint),
+		u16(version),
+		cbool(debug),
 		output,
 		canonicalHashRust,
 		usize(arbmath.BoolToUint32(debug)),
@@ -62,7 +71,8 @@ func compileUserWasm(
 		return 0, common.Hash{}, err
 	}
 	db.SetCompiledWasmCode(program, result, version)
-	return footprint, common.BytesToHash(canonicalHashRust.intoBytes()), err
+	db.SetCompiledWasmCode(program, data, version)
+	return &info, common.BytesToHash(canonicalHashRust.intoBytes()), err
 }
 
 func callUserWasm(
@@ -78,7 +88,7 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version, program.compiledHash)
+		db.RecordProgram(program.address, scope.Contract.CodeHash, stylusParams.version)
 	}
 	module := db.GetCompiledWasmCode(address, stylusParams.version)
 
@@ -96,12 +106,10 @@ func callUserWasm(
 		output,
 		(*u64)(&scope.Contract.Gas),
 	))
-	returnData := output.intoBytes()
-	data, err := status.output(returnData)
 
 	if status == userFailure {
 		str := arbutil.ToStringOrHex(returnData)
-		log.Debug("program failure", "err", string(data), "program", address, "returnData", str)
+		log.Debug("program failure", "err", string(data), "program", program.address, "returnData", str)
 	}
 	return data, err
 }
@@ -310,11 +318,10 @@ func goSlice(slice []byte) C.GoSliceData {
 
 func (params *goParams) encode() C.StylusConfig {
 	pricing := C.PricingParams{
-		ink_price:  u64(params.inkPrice),
-		hostio_ink: u64(params.hostioInk),
+		ink_price: u32(params.inkPrice.ToUint32()),
 	}
 	return C.StylusConfig{
-		version:   u32(params.version),
+		version:   u16(params.version),
 		max_depth: u32(params.maxDepth),
 		pricing:   pricing,
 	}
@@ -323,16 +330,24 @@ func (params *goParams) encode() C.StylusConfig {
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
-		chainid:          hashToBytes32(data.chainId),
+		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
 		block_gas_limit:  u64(data.blockGasLimit),
-		block_number:     hashToBytes32(data.blockNumber),
+		block_number:     u64(data.blockNumber),
 		block_timestamp:  u64(data.blockTimestamp),
 		contract_address: addressToBytes20(data.contractAddress),
 		msg_sender:       addressToBytes20(data.msgSender),
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
+		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
+	}
+}
+
+func (info *C.WasmPricingInfo) decode() wasmPricingInfo {
+	return wasmPricingInfo{
+		footprint: uint16(info.footprint),
+		size:      uint32(info.size),
 	}
 }

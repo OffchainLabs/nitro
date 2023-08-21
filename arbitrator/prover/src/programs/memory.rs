@@ -7,7 +7,7 @@ pub struct MemoryModel {
     /// Number of pages a tx gets for free
     pub free_pages: u16,
     /// Base cost of each additional wasm page
-    pub page_gas: u32,
+    pub page_gas: u16,
 }
 
 impl Default for MemoryModel {
@@ -20,7 +20,7 @@ impl Default for MemoryModel {
 }
 
 impl MemoryModel {
-    pub const fn new(free_pages: u16, page_gas: u32) -> Self {
+    pub const fn new(free_pages: u16, page_gas: u16) -> Self {
         Self {
             free_pages,
             page_gas,

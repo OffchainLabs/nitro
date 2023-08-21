@@ -262,7 +262,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
         address.pop(); // pop the newline
         if address.is_empty() {
-            return Ok(());
+            return Escape::exit(0);
         }
         if debug {
             println!("Child will connect to {address}");
@@ -319,7 +319,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let codehash = socket::read_bytes32(stream)?;
         let wasm = socket::read_bytes(stream)?;
         let compiled_hash = socket::read_bytes32(stream)?;
-        let version = socket::read_u32(stream)?;
+        let version = socket::read_u16(stream)?;
         // todo: test wasm against codehash?
         // no need to test page_limit, we're just retracing previous compilation
         let (module, computed_hash, _) =

@@ -2,7 +2,7 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (func (export "arbitrum_main") (param $args_len i32) (result i32)
+    (func (export "user_entrypoint") (param $args_len i32) (result i32)
         i32.const 0
     )
     (memory (export "memory") 120 120)

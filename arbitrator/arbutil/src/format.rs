@@ -2,7 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::color::Color;
-use std::{fmt::Display, time::Duration};
+use std::{
+    fmt::{Debug, Display},
+    time::Duration,
+};
 
 #[must_use]
 pub fn time(span: Duration) -> String {
@@ -36,4 +39,14 @@ where
 
 pub fn hex_fmt<T: AsRef<[u8]>>(data: T, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     f.write_str(&hex::encode(data))
+}
+
+pub trait DebugBytes {
+    fn debug_bytes(self) -> Vec<u8>;
+}
+
+impl<T: Debug> DebugBytes for T {
+    fn debug_bytes(self) -> Vec<u8> {
+        format!("{:?}", self).as_bytes().to_vec()
+    }
 }

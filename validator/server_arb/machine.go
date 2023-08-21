@@ -30,6 +30,7 @@ import (
 )
 
 type u8 = C.uint8_t
+type u16 = C.uint16_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
@@ -419,7 +420,7 @@ func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWas
 		m.ptr,
 		(*u8)(arbutil.SliceToPointer(decompressed)),
 		u32(len(decompressed)),
-		u32(call.Version),
+		u16(call.Version),
 		u32(debugInt),
 		&C.struct_Bytes32{hashBytes},
 	)

@@ -9,7 +9,9 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     programs::{
-        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData, STYLUS_ENTRY_POINT,
+        config::{CompileConfig, WasmPricingInfo},
+        meter::MeteredMachine,
+        ModuleMod, StylusData, STYLUS_ENTRY_POINT,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
@@ -451,8 +453,8 @@ impl Module {
             if initial > max_size {
                 bail!(
                     "Memory inits to a size larger than its max: {} vs {}",
-                    limits.initial,
-                    max_size
+                    limits.initial.red(),
+                    max_size.red()
                 );
             }
             let size = initial * page_size;
@@ -1125,12 +1127,49 @@ impl Machine {
         Ok(machine)
     }
 
+    /// Produces a compile-only `Machine` from a user program.
+    /// Note: the machine's imports are stubbed, so execution isn't possible.
+    pub fn new_user_stub(
+        wasm: &[u8],
+        page_limit: u16,
+        version: u16,
+        debug: bool,
+    ) -> Result<(Machine, WasmPricingInfo)> {
+        let compile = CompileConfig::version(version, debug);
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
+
+        let binary = WasmBinary::parse_user(wasm, page_limit, &compile);
+        let (bin, stylus_data, footprint) = match binary {
+            Ok(data) => data,
+            Err(err) => return Err(err.wrap_err("failed to parse program")),
+        };
+        let info = WasmPricingInfo {
+            footprint,
+            size: wasm.len() as u32,
+        };
+        let mach = Self::from_binaries(
+            &[forward],
+            bin,
+            false,
+            false,
+            false,
+            compile.debug.debug_funcs,
+            debug,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("user program tried to read preimage")),
+            Some(stylus_data),
+        )?;
+        Ok((mach, info))
+    }
+
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
     pub fn add_program(
         &mut self,
         wasm: &[u8],
-        version: u32,
+        version: u16,
         debug_funcs: bool,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {

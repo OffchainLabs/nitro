@@ -13,13 +13,13 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
     Ok(if read {
         debug::println(format!("read  {slot}"));
-        let data = load_bytes32(slot);
+        let data = load_bytes32(slot.into());
         debug::println(format!("value {data}"));
         data.0.into()
     } else {
         debug::println(format!("write {slot}"));
         let data = B256::try_from(&input[33..]).unwrap();
-        store_bytes32(slot, data);
+        store_bytes32(slot.into(), data);
         debug::println(format!("value {data}"));
         vec![]
     })

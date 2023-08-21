@@ -9,8 +9,8 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use prover::programs::prelude::StylusConfig;
 
+pub mod host;
 mod ink;
-pub mod user;
 
 pub(crate) static mut ARGS: Vec<u8> = vec![];
 pub(crate) static mut OUTS: Vec<u8> = vec![];
@@ -29,12 +29,11 @@ pub struct Program;
 #[no_mangle]
 pub unsafe extern "C" fn user_test__prepare(
     len: usize,
-    version: u32,
+    version: u16,
     max_depth: u32,
-    ink_price: u64,
-    hostio_ink: u64,
+    ink_price: u32,
 ) -> *const u8 {
-    let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink);
+    let config = StylusConfig::new(version, max_depth, ink_price);
     CONFIG = Some(config);
     ARGS = vec![0; len];
     ARGS.as_ptr()

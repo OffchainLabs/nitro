@@ -94,7 +94,7 @@ fn main() {
         None => (false, "Machine exited prematurely".to_owned()),
     };
 
-    if opts.debug {
+    if opts.debug || !success {
         println!("{message}");
     }
 

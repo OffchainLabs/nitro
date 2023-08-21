@@ -138,8 +138,16 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    /// TODO: replace `unbox` with a safe id-based API
     pub fn unbox<T>(&mut self) -> T {
-        unsafe { *Box::from_raw(self.read_ptr_mut()) }
+        let ptr: *mut T = self.read_ptr_mut();
+        unsafe { *Box::from_raw(ptr) }
+    }
+
+    /// TODO: replace `unbox_option` with a safe id-based API
+    pub fn unbox_option<T>(&mut self) -> Option<T> {
+        let ptr: *mut T = self.read_ptr_mut();
+        (!ptr.is_null()).then(|| unsafe { *Box::from_raw(ptr) })
     }
 
     pub fn write_u8(&mut self, x: u8) -> &mut Self {
@@ -199,6 +207,11 @@ impl GoStack {
         self
     }
 
+    pub fn skip_u16(&mut self) -> &mut Self {
+        self.advance(2);
+        self
+    }
+
     pub fn skip_u32(&mut self) -> &mut Self {
         self.advance(4);
         self
@@ -236,6 +249,10 @@ impl GoStack {
             ptr += 8;
         }
         values
+    }
+
+    pub fn read_bool32(&mut self) -> bool {
+        self.read_u32() != 0
     }
 
     pub fn read_go_ptr(&mut self) -> u32 {
