@@ -4,6 +4,8 @@ package staker
 
 import (
 	"context"
+	"math/big"
+
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
@@ -58,12 +60,26 @@ func NewManager(
 	if err != nil {
 		return nil, err
 	}
+	numBigStepLevel, err := managerBinding.NUMBIGSTEPLEVEL(&callOpts)
+	if err != nil {
+		return nil, err
+	}
+	challengeLeafHeights := make([]uint64, numBigStepLevel.Uint64()+2)
+	for i := uint64(0); i <= numBigStepLevel.Uint64()+1; i++ {
+		leafHeight, err := managerBinding.GetLayerZeroEndHeight(&callOpts, big.NewInt(i))
+		if err != nil {
+			return nil, err
+		}
+		challengeLeafHeights[i] = leafHeight.Uint64()
+	}
+
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
 		nil,
 		smallStepEdgeHeight.Uint64(),
 		bigStepEdgeHeight.Uint64()*smallStepEdgeHeight.Uint64(),
 		historyCacheBaseDir,
+		challengeLeafHeights,
 	)
 	if err != nil {
 		return nil, err

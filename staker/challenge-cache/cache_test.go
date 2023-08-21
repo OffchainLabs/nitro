@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"io"
 	"io/ioutil"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -33,7 +33,7 @@ func TestCache(t *testing.T) {
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageHeight:  0,
-		BigStepHeight:  option.Some(protocol.Height(0)),
+		StepHeights:    []l2stateprovider.Height{l2stateprovider.Height(0)},
 	}
 	t.Run("Not found", func(t *testing.T) {
 		_, err := cache.Get(key, protocol.Height(0))
@@ -252,7 +252,7 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageHeight: 100,
-					BigStepHeight: option.Some(protocol.Height(50)),
+					StepHeights:   []l2stateprovider.Height{l2stateprovider.Height(50)},
 				},
 			},
 			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/big-step-50/state-roots",
@@ -299,7 +299,7 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageHeight:  0,
-		BigStepHeight:  option.Some(protocol.Height(0)),
+		StepHeights:    []l2stateprovider.Height{l2stateprovider.Height(0)},
 	}
 	numRoots := 1 << 20
 	roots := make([]common.Hash, numRoots)

@@ -36,7 +36,7 @@ import (
 	"path/filepath"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -74,7 +74,7 @@ func New(baseDir string) *Cache {
 type Key struct {
 	WavmModuleRoot common.Hash
 	MessageHeight  protocol.Height
-	BigStepHeight  option.Option[protocol.Height]
+	StepHeights    []l2stateprovider.Height
 }
 
 // Get a list of state roots from the cache up to a certain index. State roots are saved as files in the directory
@@ -217,9 +217,9 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
 	key = append(key, fmt.Sprintf("%s-%d", messageNumberPrefix, lookup.MessageHeight))
-	if !lookup.BigStepHeight.IsNone() {
-		bigStepHeight := lookup.BigStepHeight.Unwrap()
-		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, bigStepHeight))
+	for _, height := range lookup.StepHeights {
+		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, height))
+
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
