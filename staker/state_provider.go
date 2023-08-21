@@ -886,8 +886,8 @@ func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoo
 	if err != nil {
 		return nil, err
 	}
-	bigStepLeaves := execRun.GetLeavesInRangeWithStepSize(fromStep, toStep, stepSize)
-	result, err := bigStepLeaves.Await(ctx)
+	stepLeaves := execRun.GetLeavesInRangeWithStepSize(fromStep, toStep, stepSize)
+	result, err := stepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
