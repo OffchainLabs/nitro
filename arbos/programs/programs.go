@@ -332,6 +332,17 @@ func (p Programs) ProgramVersion(address common.Address) (uint16, error) {
 	return program.version, err
 }
 
+func (p Programs) ProgramSize(address common.Address) (uint32, error) {
+	program, err := p.deserializeProgram(address)
+	// wasmSize represents the number of half kb units, return as bytes
+	return uint32(program.wasmSize) * 512, err
+}
+
+func (p Programs) ProgramMemoryFootprint(address common.Address) (uint16, error) {
+	program, err := p.deserializeProgram(address)
+	return program.footprint, err
+}
+
 type goParams struct {
 	version   uint16
 	maxDepth  uint32

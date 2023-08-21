@@ -57,6 +57,16 @@ func keccakTest(t *testing.T, jit bool) {
 	if programVersion != stylusVersion || stylusVersion == 0 {
 		Fatal(t, "unexpected versions", stylusVersion, programVersion)
 	}
+	programSize, err := arbWasm.ProgramSize(nil, programAddress)
+	Require(t, err)
+	if programSize < 20000 || programSize > 30000 {
+		Fatal(t, "unexpected size", programSize)
+	}
+	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, programAddress)
+	Require(t, err)
+	if programMemoryFootprint != 1 {
+		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
+	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)

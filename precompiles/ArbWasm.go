@@ -56,9 +56,19 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().PageLimit()
 }
 
-// Gets the current program version
+// ProgramVersion returns the stylus version that program at addr was most recently compiled against
 func (con ArbWasm) ProgramVersion(c ctx, _ mech, program addr) (uint16, error) {
 	return c.State.Programs().ProgramVersion(program)
+}
+
+// ProgramSize returns the uncompressed size of program at addr
+func (con ArbWasm) ProgramSize(c ctx, _ mech, program addr) (uint32, error) {
+	return c.State.Programs().ProgramSize(program)
+}
+
+// ProgramMemoryFootprint returns the footprint of program at addr
+func (con ArbWasm) ProgramMemoryFootprint(c ctx, _ mech, program addr) (uint16, error) {
+	return c.State.Programs().ProgramMemoryFootprint(program)
 }
 
 // Gets the added wasm call cost paid per half kb uncompressed wasm
