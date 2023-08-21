@@ -226,3 +226,27 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 	}
 	return b.SignTxAs(from, txData)
 }
+
+func (b *BlockchainTestInfo) PrepareBoostableTx(from, to string, gas uint64, value *big.Int, data []byte, priorityFee *big.Int) *types.Transaction {
+	b.T.Helper()
+	addr := b.GetAddress(to)
+	return b.PrepareBoostableTxTo(from, &addr, gas, value, data, priorityFee)
+}
+
+func (b *BlockchainTestInfo) PrepareBoostableTxTo(
+	from string, to *common.Address, gas uint64, value *big.Int, data []byte, priorityFee *big.Int,
+) *types.Transaction {
+	b.T.Helper()
+	info := b.GetInfoWithPrivKey(from)
+	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
+	txData := &types.DynamicFeeTx{
+		To:        to,
+		Gas:       gas,
+		GasFeeCap: new(big.Int).Set(b.GasPrice),
+		Value:     value,
+		Nonce:     txNonce,
+		Data:      data,
+		GasTipCap: priorityFee,
+	}
+	return b.SignTxAs(from, txData)
+}

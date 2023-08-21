@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
@@ -70,6 +72,51 @@ func TestSequencerFeed(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
+}
+
+func TestSequencerFeed_TimeBoost(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seqNodeConfig := arbnode.ConfigDefaultL2Test()
+	seqNodeConfig.Sequencer.TimeBoost = true
+
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
+
+	l2info1, sequencerNode, sequencerClient := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	defer sequencerNode.StopAndWait()
+	clientNodeConfig := arbnode.ConfigDefaultL2Test()
+	port := sequencerNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+
+	_, listenerNode, _ := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	defer listenerNode.StopAndWait()
+
+	l2info1.GenerateAccount("User2")
+
+	txs := make([]*types.Transaction, 10)
+	for i := 0; i < 10; i++ {
+		priorityFee := new(big.Int).SetUint64(100 + uint64(i*50))
+		tx := l2info1.PrepareBoostableTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12+int64(i)), nil, priorityFee)
+		txs[i] = tx
+	}
+
+	// Send out 10 boosted transactions concurrently.
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := range txs {
+		go func(ii int, w *sync.WaitGroup) {
+			defer w.Done()
+			err := sequencerClient.SendTransaction(ctx, txs[ii])
+			Require(t, err)
+		}(i, &wg)
+	}
+	wg.Wait()
+
+	_, err := EnsureTxSucceeded(ctx, sequencerClient, txs[len(txs)-1])
+	Require(t, err)
+	t.Error("fails")
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
