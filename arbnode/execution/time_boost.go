@@ -85,7 +85,9 @@ func (s *timeBoostService) run(ctx context.Context) {
 			}
 			s.Unlock()
 		case <-s.nextRoundStart:
-			// We start the next round of time boost.
+			// We need to await an external notification to start the next round of time boost.
+			// This should be triggered after all txs output in a round of time boost are made
+			// public in the sequencer's output feed.
 			afterChan = time.After(s.gFactor)
 		case <-ctx.Done():
 			return
