@@ -486,7 +486,7 @@ func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModule
 	if err != nil {
 		return nil, err
 	}
-	bigStepLeaves := execRun.GetLeavesInRangeWithStepSize(0, toBigStep*s.numOpcodesPerBigStep, s.numOpcodesPerBigStep)
+	bigStepLeaves := execRun.GetBigStepLeavesUpTo(toBigStep, s.numOpcodesPerBigStep)
 	result, err := bigStepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
@@ -524,7 +524,7 @@ func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModu
 	if err != nil {
 		return nil, err
 	}
-	smallStepLeaves := execRun.GetLeavesInRangeWithStepSize(bigStep*s.numOpcodesPerBigStep, bigStep*s.numOpcodesPerBigStep+toSmallStep, 1)
+	smallStepLeaves := execRun.GetSmallStepLeavesUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
 	result, err := smallStepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
