@@ -41,7 +41,7 @@ func main() {
 
 	args := os.Args[1:]
 	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: redis-seq-manager [redis-url]\n")
+		fmt.Fprintf(os.Stderr, "Usage: seq-coordinator-manager [redis-url]\n")
 		os.Exit(1)
 	}
 	redisURL := args[0]
@@ -70,7 +70,7 @@ func main() {
 
 		target := index
 		priorityForm.Clear(true)
-		priorityForm.AddTextView("Additional details:", "Status:\nBlockNumber:\nStatus:\nBlockNumber:", 0, 2, false, true)
+		priorityForm.AddTextView("Additional details:", "Status:\nBlockNumber:", 0, 2, false, true)
 		priorityForm.AddDropDown("Change priority to ->", priorities, index, func(priority string, selection int) {
 			target = selection
 		})
