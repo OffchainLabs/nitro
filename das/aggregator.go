@@ -82,10 +82,10 @@ func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatur
 }
 
 func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
-	if config.L1NodeURL == "none" {
+	if config.ParentChainNodeURL == "none" {
 		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func NewAggregatorWithSeqInboxCaller(
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 ) (*Aggregator, error) {
 
-	keysetHash, keysetBytes, err := KeysetHashFromServices(services, uint64(config.AggregatorConfig.AssumedHonest))
+	keysetHash, keysetBytes, err := KeysetHashFromServices(services, uint64(config.RPCAggregator.AssumedHonest))
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +129,11 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 
 	return &Aggregator{
-		config:                         config.AggregatorConfig,
+		config:                         config.RPCAggregator,
 		services:                       services,
 		requestTimeout:                 config.RequestTimeout,
-		requiredServicesForStore:       len(services) + 1 - config.AggregatorConfig.AssumedHonest,
-		maxAllowedServiceStoreFailures: config.AggregatorConfig.AssumedHonest - 1,
+		requiredServicesForStore:       len(services) + 1 - config.RPCAggregator.AssumedHonest,
+		maxAllowedServiceStoreFailures: config.RPCAggregator.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    keysetBytes,
 		bpVerifier:                     bpVerifier,

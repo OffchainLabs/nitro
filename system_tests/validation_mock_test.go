@@ -335,7 +335,7 @@ func TestExecutionKeepAlive(t *testing.T) {
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
-	shortTimeoutConfig.ExecRunTimeout = time.Second
+	shortTimeoutConfig.ExecutionRunTimeout = time.Second
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 

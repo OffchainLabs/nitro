@@ -63,7 +63,7 @@ func startup() error {
 	ctx := context.Background()
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
-	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
+	if err != nil || len(relayConfig.Node.Feed.Input.URL) == 0 || relayConfig.Node.Feed.Input.URL[0] == "" || relayConfig.Chain.ID == 0 {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 
