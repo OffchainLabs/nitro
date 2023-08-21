@@ -64,10 +64,10 @@ func main() {
 	}
 
 	wallet := genericconf.WalletConfig{
-		Pathname:     *l1keystore,
-		Account:      *deployAccount,
-		PasswordImpl: *l1passphrase,
-		PrivateKey:   *l1privatekey,
+		Pathname:   *l1keystore,
+		Account:    *deployAccount,
+		Password:   *l1passphrase,
+		PrivateKey: *l1privatekey,
 	}
 	l1TransactionOpts, _, err := util.OpenWallet("l1", &wallet, l1ChainId)
 	if err != nil {

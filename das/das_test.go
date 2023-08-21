@@ -32,18 +32,18 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 
 	config := DataAvailabilityConfig{
 		Enable: true,
-		KeyConfig: KeyConfig{
+		Key: KeyConfig{
 			KeyDir: dbPath,
 		},
-		LocalFileStorageConfig: LocalFileStorageConfig{
+		LocalFileStorage: LocalFileStorageConfig{
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorageConfig: LocalDBStorageConfig{
+		LocalDBStorage: LocalDBStorageConfig{
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
-		L1NodeURL: "none",
+		ParentChainNodeURL: "none",
 	}
 
 	var syncFromStorageServicesFirst []*IterableStorageService
@@ -124,18 +124,18 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 	config := DataAvailabilityConfig{
 		Enable: true,
-		KeyConfig: KeyConfig{
+		Key: KeyConfig{
 			KeyDir: dbPath,
 		},
-		LocalFileStorageConfig: LocalFileStorageConfig{
+		LocalFileStorage: LocalFileStorageConfig{
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorageConfig: LocalDBStorageConfig{
+		LocalDBStorage: LocalDBStorageConfig{
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
-		L1NodeURL: "none",
+		ParentChainNodeURL: "none",
 	}
 
 	var syncFromStorageServices []*IterableStorageService
