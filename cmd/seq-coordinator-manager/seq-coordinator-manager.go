@@ -70,17 +70,37 @@ func main() {
 
 		target := index
 		priorityForm.Clear(true)
-		priorityForm.AddTextView("Additional details:", "Status:\nBlockNumber:", 0, 2, false, true)
+		priorityForm.AddTextView("Additional details:", "Status:\nBlockNumber:\nStatus:\nBlockNumber:", 0, 2, false, true)
 		priorityForm.AddDropDown("Change priority to ->", priorities, index, func(priority string, selection int) {
 			target = selection
 		})
-		priorityForm.AddButton("Save", func() {
+		priorityForm.AddButton("Update", func() {
 			if target != index {
 				seqManager.updatePriorityList(ctx, index, target)
 			}
+			priorityForm.Clear(true)
 			seqManager.populateLists(ctx)
 			pages.SwitchToPage("Menu")
+			app.SetFocus(prioritySeqList)
 		})
+		priorityForm.AddButton("Cancel", func() {
+			priorityForm.Clear(true)
+			pages.SwitchToPage("Menu")
+			app.SetFocus(prioritySeqList)
+		})
+		priorityForm.AddButton("Remove", func() {
+			url := seqManager.priorityList[0]
+			delete(seqManager.prioritiesMap, url)
+			seqManager.updatePriorityList(ctx, index, 0)
+			seqManager.priorityList = seqManager.priorityList[1:]
+
+			priorityForm.Clear(true)
+			seqManager.populateLists(ctx)
+			pages.SwitchToPage("Menu")
+			app.SetFocus(prioritySeqList)
+		})
+		priorityForm.SetFocus(1)
+		app.SetFocus(priorityForm)
 	})
 
 	nonPrioritySeqList.SetSelectedFunc(func(index int, name string, second_name string, shortcut rune) {
@@ -98,14 +118,30 @@ func main() {
 		nonPriorityForm.AddDropDown("Set priority to ->", priorities, index, func(priority string, selection int) {
 			target = selection
 		})
-		nonPriorityForm.AddButton("Save", func() {
-			seqManager.priorityList = append(seqManager.priorityList, seqManager.nonPriorityList[index])
+		nonPriorityForm.AddButton("Update", func() {
+			key := seqManager.nonPriorityList[index]
+			seqManager.priorityList = append(seqManager.priorityList, key)
+			seqManager.prioritiesMap[key]++
+
 			index = len(seqManager.priorityList) - 1
 			seqManager.updatePriorityList(ctx, index, target)
+
 			nonPriorityForm.Clear(true)
 			seqManager.populateLists(ctx)
 			pages.SwitchToPage("Menu")
+			if len(seqManager.nonPriorityList) > 0 {
+				app.SetFocus(nonPrioritySeqList)
+			} else {
+				app.SetFocus(prioritySeqList)
+			}
 		})
+		nonPriorityForm.AddButton("Cancel", func() {
+			nonPriorityForm.Clear(true)
+			pages.SwitchToPage("Menu")
+			app.SetFocus(nonPrioritySeqList)
+		})
+		nonPriorityForm.SetFocus(1)
+		app.SetFocus(nonPriorityForm)
 	})
 
 	// UI design
@@ -118,18 +154,18 @@ func main() {
 		SetText("-----Not in priority list but online-----")
 	instructions := tview.NewTextView().
 		SetTextColor(tcell.ColorYellow).
-		SetText("(r) to refresh \n(a) to add sequencer\n(q) to quit")
+		SetText("(r) to refresh\n(s) to save all changes\n(c) to switch between lists\n(a) to add sequencer\n(q) to quit\n(tab) to navigate")
 
 	flex.SetDirection(tview.FlexRow).
 		AddItem(priorityHeading, 0, 1, false).
 		AddItem(tview.NewFlex().
 			AddItem(prioritySeqList, 0, 2, true).
-			AddItem(priorityForm, 0, 3, false), 0, 12, false).
+			AddItem(priorityForm, 0, 3, true), 0, 12, true).
 		AddItem(nonPriorityHeading, 0, 1, false).
 		AddItem(tview.NewFlex().
 			AddItem(nonPrioritySeqList, 0, 2, true).
-			AddItem(nonPriorityForm, 0, 3, false), 0, 12, false).
-		AddItem(instructions, 0, 2, false).SetBorder(true)
+			AddItem(nonPriorityForm, 0, 3, true), 0, 12, true).
+		AddItem(instructions, 0, 3, false).SetBorder(true)
 
 	flex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Rune() == 114 {
@@ -138,10 +174,24 @@ func main() {
 			nonPriorityForm.Clear(true)
 			seqManager.populateLists(ctx)
 			pages.SwitchToPage("Menu")
+			app.SetFocus(prioritySeqList)
+		} else if event.Rune() == 115 {
+			seqManager.pushUpdates(ctx)
+			priorityForm.Clear(true)
+			nonPriorityForm.Clear(true)
+			seqManager.populateLists(ctx)
+			pages.SwitchToPage("Menu")
+			app.SetFocus(prioritySeqList)
 		} else if event.Rune() == 97 {
 			addSeqForm.Clear(true)
 			seqManager.addSeqPriorityForm(ctx)
 			pages.SwitchToPage("Add Sequencer")
+		} else if event.Rune() == 99 {
+			if prioritySeqList.HasFocus() {
+				app.SetFocus(nonPrioritySeqList)
+			} else {
+				app.SetFocus(prioritySeqList)
+			}
 		} else if event.Rune() == 113 {
 			app.Stop()
 		}
@@ -164,11 +214,14 @@ func (sm *manager) updatePriorityList(ctx context.Context, index int, target int
 	for i := index + 1; i <= target; i++ {
 		sm.priorityList[i], sm.priorityList[i-1] = sm.priorityList[i-1], sm.priorityList[i]
 	}
-	err := sm.redisCoordinator.UpdatePriorities(ctx, sm.priorityList)
-	if err != nil {
-		log.Warn("Failed to update priority, reverting change", "sequencer", sm.priorityList[target], "err", err)
+
+	urlList := []string{}
+	for url := range sm.livelinessMap {
+		if _, ok := sm.prioritiesMap[url]; !ok {
+			urlList = append(urlList, url)
+		}
 	}
-	sm.refreshAllLists(ctx)
+	sm.nonPriorityList = urlList
 }
 
 // populateLists populates seq's in priority list and seq's that are online but not in priority
@@ -187,7 +240,7 @@ func (sm *manager) populateLists(ctx context.Context) {
 		if _, ok := sm.livelinessMap[seqURL]; ok {
 			status = fmt.Sprintf("%v ", emoji.GreenCircle)
 		}
-		prioritySeqList.AddItem(status+seqURL+sec, "", rune(48+index), nil).SetSecondaryTextColor(tcell.ColorPurple)
+		prioritySeqList.AddItem(status+seqURL+sec, "", int32(48+index), nil).SetSecondaryTextColor(tcell.ColorPurple)
 	}
 
 	nonPrioritySeqList.Clear()
@@ -212,16 +265,20 @@ func (sm *manager) addSeqPriorityForm(ctx context.Context) *tview.Form {
 		// check if url is valid, i.e it doesnt already exist in the priority list
 		if _, ok := sm.prioritiesMap[URL]; !ok && URL != "" {
 			sm.priorityList = append(sm.priorityList, URL)
-			err := sm.redisCoordinator.UpdatePriorities(ctx, sm.priorityList)
-			if err != nil {
-				log.Warn("Failed to add sequencer to the priority list", URL)
-			}
-			sm.refreshAllLists(ctx)
 		}
 		sm.populateLists(ctx)
 		pages.SwitchToPage("Menu")
 	})
 	return addSeqForm
+}
+
+// pushUpdates pushes the local changes to the redis server
+func (sm *manager) pushUpdates(ctx context.Context) {
+	err := sm.redisCoordinator.UpdatePriorities(ctx, sm.priorityList)
+	if err != nil {
+		log.Warn("Failed to push local changes to the priority list")
+	}
+	sm.refreshAllLists(ctx)
 }
 
 // refreshAllLists gets the current status of all the lists displayed in the UI
