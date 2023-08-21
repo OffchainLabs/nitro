@@ -858,7 +858,11 @@ func (s *StateManager) computeStepIncrement(startHeights validatedStartHeights) 
 	if challengeLevel+1 == totalChallengeLevels {
 		return 1, nil
 	}
-	return s.challengeLeafHeights[challengeLevel+1], nil
+	total := uint64(1)
+	for i := challengeLevel + 1; i < len(s.challengeLeafHeights); i++ {
+		total *= s.challengeLeafHeights[i]
+	}
+	return total, nil
 }
 
 func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, startHeight []l2stateprovider.Height, fromStep uint64, toStep uint64, stepSize uint64) ([]common.Hash, error) {
