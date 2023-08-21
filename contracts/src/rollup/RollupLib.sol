@@ -62,15 +62,11 @@ library RollupLib {
         bytes32 inboxAcc
     ) internal pure returns (bytes32) {
         // we can no longer have `hasSibling` in the assertion hash as it would allow identical assertions
-        // uint8 hasSiblingInt = hasSibling ? 1 : 0;
-        return
-            keccak256(
-                abi.encodePacked(
-                    parentAssertionHash,
-                    executionStateHash(afterState),
-                    inboxAcc
-                )
-            );
+        return assertionHash(
+            parentAssertionHash,
+            executionStateHash(afterState),
+            inboxAcc
+        );
     }
 
     // Takes in a hash of the afterState instead of the afterState itself
@@ -80,7 +76,6 @@ library RollupLib {
         bytes32 inboxAcc
     ) internal pure returns (bytes32) {
         // we can no longer have `hasSibling` in the assertion hash as it would allow identical assertions
-        // uint8 hasSiblingInt = hasSibling ? 1 : 0;
         return
             keccak256(
                 abi.encodePacked(

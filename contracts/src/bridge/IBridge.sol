@@ -112,4 +112,6 @@ interface IBridge {
     // ---------- initializer ----------
 
     function initialize(IOwnable rollup_) external;
+
+    function updateRollupAddress(IOwnable _rollup) external;
 }

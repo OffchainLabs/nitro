@@ -48,7 +48,7 @@ const deployBehindProxy = async <T extends ContractFactory>(
     .connect(deployer)
     .deploy(instance.address, admin, dataToCallProxy)
   await proxy.deployed()
-  return instance.attach(proxy.address)
+  return instance.attach(proxy.address) as ReturnType<T['deploy']>
 }
 
 describe('Outbox', async function () {

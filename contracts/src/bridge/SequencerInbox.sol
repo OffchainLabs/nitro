@@ -87,6 +87,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         maxTimeVariation = maxTimeVariation_;
     }
 
+    /// @notice Allows the proxy owner to set the rollup address
+    function updateRollupAddress() external onlyDelegated onlyProxyOwner {
+        rollup = bridge.rollup();
+    }
+
     function getTimeBounds() internal view virtual returns (TimeBounds memory) {
         TimeBounds memory bounds;
         if (block.timestamp > maxTimeVariation.delaySeconds) {

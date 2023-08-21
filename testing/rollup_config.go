@@ -32,6 +32,9 @@ func GenerateRollupConfig(
 	loserStakeEscrow common.Address,
 	miniStakeValue *big.Int,
 	stakeToken common.Address,
+	genesisExecutionState rollupgen.ExecutionState,
+	genesisInboxCount *big.Int,
+	anyTrustFastConfirmer common.Address,
 	opts ...Opt,
 ) rollupgen.Config {
 	var confirmPeriod uint64
@@ -60,6 +63,9 @@ func GenerateRollupConfig(
 		LayerZeroBlockEdgeHeight:     big.NewInt(LevelZeroBlockEdgeHeight),
 		LayerZeroBigStepEdgeHeight:   big.NewInt(LevelZeroBigStepEdgeHeight),
 		LayerZeroSmallStepEdgeHeight: big.NewInt(LevelZeroSmallStepEdgeHeight),
+		GenesisExecutionState:        genesisExecutionState,
+		GenesisInboxCount:            genesisInboxCount,
+		AnyTrustFastConfirmer:        anyTrustFastConfirmer,
 	}
 	for _, o := range opts {
 		o(&cfg)

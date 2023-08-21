@@ -68,6 +68,11 @@ contract Outbox is DelegateCallAware, IOutbox {
         rollup = address(_bridge.rollup());
     }
 
+    /// @notice Allows the proxy owner to set the rollup address
+    function updateRollupAddress() external onlyDelegated onlyProxyOwner {
+        rollup = address(bridge.rollup());
+    }
+
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external {
         if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         roots[root] = l2BlockHash;

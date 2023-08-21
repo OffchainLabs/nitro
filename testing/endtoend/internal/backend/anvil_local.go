@@ -222,6 +222,12 @@ func (a *AnvilLocal) DeployRollup() (common.Address, error) {
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := a.deployer.From
 	loserStakeEscrow := common.Address{}
+	anyTrustFastConfirmer := common.Address{}
+	genesisExecutionState := rollupgen.ExecutionState{
+		GlobalState:   rollupgen.GlobalState{},
+		MachineStatus: 1,
+	}
+	genesisInboxCount := big.NewInt(0)
 	miniStake := big.NewInt(1)
 
 	ctx := context.TODO()
@@ -258,6 +264,9 @@ func (a *AnvilLocal) DeployRollup() (common.Address, error) {
 			loserStakeEscrow,
 			miniStake,
 			stakeToken,
+			genesisExecutionState,
+			genesisInboxCount,
+			anyTrustFastConfirmer,
 		),
 		false, // Do not use a mock bridge.
 	)

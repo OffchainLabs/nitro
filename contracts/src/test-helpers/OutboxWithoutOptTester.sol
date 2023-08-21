@@ -54,6 +54,10 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         emit SendRootUpdated(root, l2BlockHash);
     }
 
+    function updateRollupAddress() external onlyDelegated onlyProxyOwner {
+        rollup = address(bridge.rollup());
+    }
+
     /// @notice When l2ToL1Sender returns a nonzero address, the message was originated by an L2 account
     /// When the return value is zero, that means this is a system message
     /// @dev the l2ToL1Sender behaves as the tx.origin, the msg.sender should be validated to protect against reentrancies

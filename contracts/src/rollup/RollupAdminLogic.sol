@@ -28,10 +28,16 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         outbox = connectedContracts.outbox;
         connectedContracts.bridge.setOutbox(address(connectedContracts.outbox), true);
         rollupEventInbox = connectedContracts.rollupEventInbox;
-        connectedContracts.bridge.setDelayedInbox(address(connectedContracts.rollupEventInbox), true);
 
-        connectedContracts.rollupEventInbox.rollupInitialized(config.chainId, config.chainConfig);
-        connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)), 0, 1);
+        // dont need to connect and initialize the event inbox if it's already been initialized
+        if (!bridge.allowedDelayedInboxes(address(connectedContracts.rollupEventInbox))) {
+            connectedContracts.bridge.setDelayedInbox(address(connectedContracts.rollupEventInbox), true);
+            connectedContracts.rollupEventInbox.rollupInitialized(config.chainId, config.chainConfig);
+        }
+
+        if (connectedContracts.sequencerInbox.totalDelayedMessagesRead() == 0) {
+            connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)), 0, 1);
+        }
 
         validatorUtils = connectedContracts.validatorUtils;
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
@@ -54,17 +60,20 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         stakeToken = config.stakeToken;
         anyTrustFastConfirmer = config.anyTrustFastConfirmer;
 
-        GlobalState memory emptyGlobalState;
-        ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
+        bytes32 genesisExecutionHash = RollupLib.executionStateHash(config.genesisExecutionState);
         bytes32 parentAssertionHash = bytes32(0);
         bytes32 inboxAcc = bytes32(0);
         bytes32 genesisHash = RollupLib.assertionHash({
             parentAssertionHash: parentAssertionHash,
-            afterState: emptyExecutionState,
+            afterStateHash: genesisExecutionHash,
             inboxAcc: inboxAcc
         });
 
-        uint64 inboxMaxCount = 1; // force the first assertion to read a message
+        uint256 currentInboxCount = bridge.sequencerMessageCount();
+        // ensure to move the inbox forward by at least one message
+        if (currentInboxCount == config.genesisInboxCount) {
+            currentInboxCount += 1;
+        }
         AssertionNode memory initialAssertion = AssertionNodeLib.createAssertion(
             true,
             RollupLib.configHash({
@@ -72,19 +81,19 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
                 requiredStake: baseStake,
                 challengeManager: address(challengeManager),
                 confirmPeriodBlocks: confirmPeriodBlocks,
-                nextInboxPosition: inboxMaxCount
+                nextInboxPosition: uint64(currentInboxCount)
             })
         );
         initializeCore(initialAssertion, genesisHash);
 
         AssertionInputs memory assertionInputs;
-        assertionInputs.afterState = emptyExecutionState;
+        assertionInputs.afterState = config.genesisExecutionState;
         emit AssertionCreated(
             genesisHash,
             parentAssertionHash,
             assertionInputs,
             inboxAcc,
-            inboxMaxCount,
+            currentInboxCount,
             wasmModuleRoot,
             baseStake,
             address(challengeManager),

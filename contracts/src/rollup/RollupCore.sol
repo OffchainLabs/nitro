@@ -140,12 +140,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * This function will revert if the given assertion hash does not exist.
      * @dev This function is meant for internal use only and has no stability guarantees.
      */
-    function getAssertionCreationBlockForLogLookup(bytes32 assertionHash)
-        external
-        view
-        override
-        returns (uint256)
-    {
+    function getAssertionCreationBlockForLogLookup(bytes32 assertionHash) external view override returns (uint256) {
         if (_hostChainIsArbitrum) {
             uint256 blockNum = _assertionCreatedAtArbSysBlock[assertionHash];
             require(blockNum > 0, "NO_ASSERTION");

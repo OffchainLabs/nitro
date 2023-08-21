@@ -63,6 +63,11 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         rollup = rollup_;
     }
 
+    /// @notice Allows the proxy owner to set the rollup address
+    function updateRollupAddress(IOwnable _rollup) external onlyDelegated onlyProxyOwner {
+        rollup = _rollup;
+    }
+
     modifier onlyRollupOrOwner() {
         if (msg.sender != address(rollup)) {
             address rollupOwner = rollup.owner();
