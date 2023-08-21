@@ -929,7 +929,6 @@ func deployContract(
 ) common.Address {
 	deploy := deployContractInitCode(code, false)
 	basefee := GetBaseFee(t, client, ctx)
-	basefee.Mul(basefee, big.NewInt(2))
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
 	Require(t, err)
 	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{

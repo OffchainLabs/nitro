@@ -805,10 +805,6 @@ func testMemory(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
-	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
-
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -816,6 +812,16 @@ func testMemory(t *testing.T, jit bool) {
 		Require(t, err)
 		return receipt
 	}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+
+	ensure(arbOwner.SetInkPrice(&auth, 1e2))
+	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
+
+	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
 
 	expectFailure := func(to common.Address, data []byte) {
 		t.Helper()
@@ -835,11 +841,6 @@ func testMemory(t *testing.T, jit bool) {
 		Require(t, l2client.SendTransaction(ctx, tx))
 		EnsureTxFailed(t, ctx, l2client, tx)
 	}
-
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
-	Require(t, err)
-	ensure(arbOwner.SetInkPrice(&auth, 1e4))
-	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
 	model := programs.NewMemoryModel(2, 1000)
 
