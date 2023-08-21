@@ -9,7 +9,7 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     programs::{
-        config::{CompileConfig, WasmPricingInfo},
+        config::CompileConfig,
         meter::MeteredMachine,
         ModuleMod, StylusData, STYLUS_ENTRY_POINT,
     },
@@ -1125,43 +1125,6 @@ impl Machine {
         let footprint: u32 = stylus_data.footprint.into();
         machine.call_function("user_test", "set_pages", vec![footprint.into()])?;
         Ok(machine)
-    }
-
-    /// Produces a compile-only `Machine` from a user program.
-    /// Note: the machine's imports are stubbed, so execution isn't possible.
-    pub fn new_user_stub(
-        wasm: &[u8],
-        page_limit: u16,
-        version: u16,
-        debug: bool,
-    ) -> Result<(Machine, WasmPricingInfo)> {
-        let compile = CompileConfig::version(version, debug);
-        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
-        let forward = binary::parse(forward, Path::new("forward")).unwrap();
-
-        let binary = WasmBinary::parse_user(wasm, page_limit, &compile);
-        let (bin, stylus_data, footprint) = match binary {
-            Ok(data) => data,
-            Err(err) => return Err(err.wrap_err("failed to parse program")),
-        };
-        let info = WasmPricingInfo {
-            footprint,
-            size: wasm.len() as u32,
-        };
-        let mach = Self::from_binaries(
-            &[forward],
-            bin,
-            false,
-            false,
-            false,
-            compile.debug.debug_funcs,
-            debug,
-            GlobalState::default(),
-            HashMap::default(),
-            Arc::new(|_, _| panic!("user program tried to read preimage")),
-            Some(stylus_data),
-        )?;
-        Ok((mach, info))
     }
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.

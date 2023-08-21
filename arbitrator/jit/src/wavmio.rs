@@ -4,7 +4,7 @@
 use crate::{
     gostack::GoStack,
     machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
-    socket::{self, read_u8},
+    socket,
 };
 
 use arbutil::Color;

@@ -168,9 +168,17 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
+func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
+	program, err := p.deserializeProgram(codeHash)
+	if err != nil {
+		return 0, err
+	}
+	return program.version, nil
+}
+
+func (p Programs) CompileProgram(evm *vm.EVM, address common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
-	codeHash := statedb.GetCodeHash(program)
+	codeHash := statedb.GetCodeHash(address)
 
 	version, err := p.StylusVersion()
 	if err != nil {
@@ -184,7 +192,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	if latest >= version {
 		return 0, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, program)
+	wasm, err := getWasm(statedb, address)
 	if err != nil {
 		return 0, false, err
 	}
@@ -201,7 +209,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	if err := burner.Burn(3000000); err != nil {
 		return 0, false, err
 	}
-	info, compiledHash, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode, burner)
+	info, compiledHash, err := compileUserWasm(statedb, address, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
 		return 0, true, err
 	}
@@ -318,7 +326,7 @@ func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 	if err != nil {
 		return Program{}, err
 	}
-	compiledHash, err := p.compiledHashes.Get(codehash)
+	compiledHash, err := p.compiledHashes.Get(codeHash)
 	if err != nil {
 		return Program{}, err
 	}

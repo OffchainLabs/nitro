@@ -13,9 +13,7 @@ use arbutil::{
 };
 use prover::{
     programs::{config::PricingParams, prelude::*},
-    Machine,
 };
-use prover::programs::{config::PricingParams, prelude::*};
 use std::mem;
 use stylus::native;
 
@@ -35,9 +33,10 @@ mod evm_api;
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
-    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
     let page_limit = sp.read_u16();
-    sp.skip_space();
+    let version = sp.read_u16();
+    let debug = sp.read_bool32();
+    let (out_hash_ptr, out_hash_len) = sp.read_go_slice();
 
     macro_rules! error {
         ($error:expr) => {{
@@ -56,16 +55,15 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     }
 
     // ensure the wasm compiles during proving
-    let footprint = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
-        Ok((.., pages)) => pages,
-        Err(error) => error!(error),
-    };
-    let module = match native::module(&wasm, compile) {
-        Ok(module) => module,
-        Err(error) => error!(error),
-    };
+    let (module, canonical_hash, info) =
+        match native::compile_user_wasm(&wasm, version, page_limit, debug) {
+            Ok(result) => result,
+            Err(error) => error!(error),
+        };
+
+    sp.write_slice(out_hash_ptr, canonical_hash.as_slice());
     sp.write_ptr(heapify(module));
-    sp.write_u16(footprint).skip_u16().write_u32(size); // wasm info
+    sp.write_u16(info.footprint).skip_u16().write_u32(info.size); // wasm info
     sp.write_nullptr();
 }
 
@@ -166,7 +164,7 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 /// The Go compiler expects the call to take the form
 ///     λ(module *Vec<u8>)
 ///
-pub fn drop_machine(env: WasmEnvMut, sp: u32) {
+pub fn drop_module(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     if let Some(module) = sp.unbox_option::<Vec<u8>>() {
         mem::drop(module);

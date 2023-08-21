@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type u8 = C.uint8_t
@@ -50,27 +49,32 @@ func compileUserWasm(
 	debug bool,
 	burner burn.Burner,
 ) (*wasmPricingInfo, common.Hash, error) {
-
-	// check that compilation would succeed during proving
 	rustInfo := &C.WasmPricingInfo{}
 	output := &rustVec{}
 	canonicalHashRust := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
+		u16(page_limit),
 		u16(version),
 		cbool(debug),
+		rustInfo,
 		output,
 		canonicalHashRust,
-		usize(arbmath.BoolToUint32(debug)),
 	))
-	data := output.intoBytes()
-	result, err := status.output(data)
+	data, msg, err := status.toResult(output.intoBytes(), debug)
+
 	if err != nil {
-		data := arbutil.ToStringOrHex(data)
-		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
-		return 0, common.Hash{}, err
+		if debug {
+			log.Warn("stylus parse failed", "err", err, "msg", msg, "program", program)
+		}
+		return nil, common.Hash{}, err
 	}
-	db.SetCompiledWasmCode(program, result, version)
+
+	info := rustInfo.decode()
+	if err := payForCompilation(burner, &info); err != nil {
+		return nil, common.Hash{}, err
+	}
+
 	db.SetCompiledWasmCode(program, data, version)
 	return &info, common.BytesToHash(canonicalHashRust.intoBytes()), err
 }
@@ -88,7 +92,7 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program.address, scope.Contract.CodeHash, stylusParams.version)
+		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version, program.compiledHash)
 	}
 	module := db.GetCompiledWasmCode(address, stylusParams.version)
 
@@ -107,9 +111,10 @@ func callUserWasm(
 		(*u64)(&scope.Contract.Gas),
 	))
 
-	if status == userFailure {
-		str := arbutil.ToStringOrHex(returnData)
-		log.Debug("program failure", "err", string(data), "program", program.address, "returnData", str)
+	debug := stylusParams.debugMode != 0
+	data, msg, err := status.toResult(output.intoBytes(), debug)
+	if status == userFailure && debug {
+		log.Warn("program failure", "err", err, "msg", msg, "program", address)
 	}
 	return data, err
 }

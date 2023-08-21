@@ -42,7 +42,7 @@ func callUserWasmRustImpl(
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustMachineDropImpl(mach *rustMachine)
+func rustModuleDropImpl(mach *rustMachine)
 func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
@@ -68,17 +68,15 @@ func compileUserWasm(
 	debug bool,
 	burner burn.Burner,
 ) (*wasmPricingInfo, common.Hash, error) {
-	debugMode := arbmath.BoolToUint32(debug)
-	module, info, hash, err := compileUserWasmRustWrapper(db, program, wasm, pageLimit, version, debugMode)
+	module, info, hash, err := compileUserWasmRustWrapper(db, program, wasm, pageLimit, version, debug)
 	defer rustModuleDropImpl(module)
 	if err != nil {
-		_, _, err := userFailure.toResult(err.intoSlice(), debug)
-		return nil, err
+		return nil, common.Hash{}, err
 	}
 	if err := payForCompilation(burner, &info); err != nil {
-		return nil, err
+		return nil, common.Hash{}, err
 	}
-	return footprint, hash, err
+	return &info, hash, err
 }
 
 func callUserWasm(
@@ -109,15 +107,17 @@ func callUserWasm(
 	return data, err
 }
 
-func compileMachine(
-	db vm.StateDB, program addr, wasm []byte, pageLimit u16, version, debugMode u32,
-) (*rustMachine, u16, error) {
-	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
+func compileUserWasmRustWrapper(
+	db vm.StateDB, program addr, wasm []byte, pageLimit, version u16, debug bool,
+) (*rustMachine, wasmPricingInfo, common.Hash, error) {
+	debugMode := arbmath.BoolToUint32(debug)
+	outHash := common.Hash{}
+	machine, info, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode, outHash[:])
 	if err != nil {
-		_, err := userFailure.output(err.intoSlice())
-		return nil, footprint, err
+		_, _, err := userFailure.toResult(err.intoSlice(), debug)
+		return nil, info, outHash, err
 	}
-	return machine, footprint, nil
+	return machine, info, outHash, nil
 }
 
 func (vec *rustVec) intoSlice() []byte {

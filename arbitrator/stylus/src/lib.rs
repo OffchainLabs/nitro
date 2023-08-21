@@ -82,48 +82,21 @@ impl RustVec {
     }
 }
 
-/// Ensures a user program can be proven.
-/// On success, `wasm_info` is populated with pricing information.
-/// On error, a message is written to `output`.
-///
-/// # Safety
-///
-/// `output` and `wasm_info` must not be null.
-#[no_mangle]
-pub unsafe extern "C" fn stylus_parse_wasm(
-    wasm: GoSliceData,
-    page_limit: u16,
-    version: u16,
-    debug: bool,
-    wasm_info: *mut WasmPricingInfo,
-    output: *mut RustVec,
-) -> UserOutcomeKind {
-    let wasm = wasm.slice();
-    let info = &mut *wasm_info;
-    let output = &mut *output;
-
-    match Machine::new_user_stub(wasm, page_limit, version, debug) {
-        Ok((_, data)) => *info = data,
-        Err(error) => return output.write_err(error),
-    }
-    UserOutcomeKind::Success
-}
-
 /// Compiles a user program to its native representation.
 /// The `output` is either the serialized module or an error string.
 ///
 /// # Safety
 ///
-/// Output, footprint, output_canonical_hash must not be null.
+/// Output, pricing_info, output_canonical_hash must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
-    version: u16,
     page_limit: u16,
-    out_footprint: *mut u16,
+    version: u16,
+    debug_mode: bool,
+    out_pricing_info: *mut WasmPricingInfo,
     output: *mut RustVec,
     out_canonical_hash: *mut RustVec,
-    debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
 
@@ -132,25 +105,24 @@ pub unsafe extern "C" fn stylus_compile(
     }
     let output = &mut *output;
 
-    if out_footprint.is_null() {
-        return output.write_err(eyre::eyre!("footprint is null"));
+    if out_pricing_info.is_null() {
+        return output.write_err(eyre::eyre!("pricing_info is null"));
     }
     if out_canonical_hash.is_null() {
         return output.write_err(eyre::eyre!("canonical_hash is null"));
     }
     let out_canonical_hash = &mut *out_canonical_hash;
 
-    let (module, canonical_hash, footprint) =
-        match native::compile_user_wasm(wasm, version, page_limit, debug_mode != 0) {
+    let (module, canonical_hash, pricing_info) =
+        match native::compile_user_wasm(wasm, version, page_limit, debug_mode) {
             Err(err) => return output.write_err(err),
             Ok(val) => val,
         };
 
     out_canonical_hash.write(canonical_hash.to_vec());
-    *out_footprint = footprint;
+    *out_pricing_info = pricing_info;
     output.write(module);
 
-    // TODO: compilation pricing, including memory charges
     UserOutcomeKind::Success
 }
 

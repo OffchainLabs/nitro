@@ -13,7 +13,7 @@ use arbutil::{
 use eyre::{bail, eyre, Context, ErrReport, Result};
 use prover::binary::WasmBinary;
 use prover::programs::{
-    config::PricingParams,
+    config::{PricingParams, WasmPricingInfo},
     counter::{Counter, CountingMachine, OP_OFFSETS},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
@@ -373,10 +373,10 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
 
 pub fn compile_user_wasm(
     wasm: &[u8],
-    version: u32,
+    version: u16,
     page_limit: u16,
     debug_mode: bool,
-) -> Result<(Vec<u8>, Bytes32, u16)> {
+) -> Result<(Vec<u8>, Bytes32, WasmPricingInfo)> {
     let compile = CompileConfig::version(version, debug_mode);
     let (bin, stylus_data, footprint) =
         WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse program")?;
@@ -389,7 +389,11 @@ pub fn compile_user_wasm(
     .wrap_err("failed to build module from program")?
     .hash();
 
+    let info = WasmPricingInfo {
+        size: wasm.len().try_into()?,
+        footprint: footprint,
+    };
     let module = module(wasm, compile).wrap_err("failed generating stylus module")?;
 
-    Ok((module, canonical_hash, footprint))
+    Ok((module, canonical_hash, info))
 }

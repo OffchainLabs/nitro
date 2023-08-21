@@ -22,7 +22,7 @@ TEXT ·rustVecIntoSliceImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·rustMachineDropImpl(SB), NOSPLIT, $0
+TEXT ·rustModuleDropImpl(SB), NOSPLIT, $0
   CallImport
   RET
 

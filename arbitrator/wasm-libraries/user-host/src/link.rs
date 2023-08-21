@@ -10,6 +10,7 @@ use arbutil::{
 use go_abi::GoStack;
 use prover::{
     binary::WasmBinary,
+    machine::Module,
     programs::config::{CompileConfig, PricingParams, StylusConfig},
 };
 use std::mem;
@@ -57,13 +58,24 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let debug = sp.read_bool32();
     let (out_hash_ptr, out_hash_len) = sp.read_go_slice();
 
+    macro_rules! error {
+        ($msg:expr, $error:expr) => {{
+            let error = $error.wrap_err($msg);
+            let error = format!("{error:?}").as_bytes().to_vec();
+            sp.write_nullptr();
+            sp.skip_space(); // skip footprint
+            sp.write_ptr(heapify(error));
+            return;
+        }};
+    }
+
     let compile = CompileConfig::version(version, debug);
     let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
         Ok(parse) => parse,
         Err(error) => error!("failed to parse program", error),
     };
 
-    let module = match prover::machine::Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data)) {
+    let module = match Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data)) {
         Ok(module) => module,
         Err(error) => error!("failed to instrument program", error),
     };
@@ -73,8 +85,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     }
     wavm::write_slice(module.hash().as_slice(), out_hash_ptr);
 
+    let Ok(wasm_len) = TryInto::<u32>::try_into(wasm.len()) else {
+        error!("wasm len not u32",eyre::eyre!("wasm length: {}", wasm.len()));
+    };
     sp.write_ptr(heapify(module));
-    sp.write_u16(footprint).skip_space();
+    sp.write_u16(footprint).skip_u16().write_u32(wasm_len);
     sp.write_nullptr();
 }
 
@@ -108,7 +123,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let ink = pricing.gas_to_ink(wavm::caller_load64(gas));
 
     // link the program and ready its instrumentation
-    let module = wavm_link_module(&MemoryLeaf(compiled_hash));
+    let module = wavm_link_module(&MemoryLeaf(*compiled_hash));
     program_set_ink(module, ink);
     program_set_stack(module, config.max_depth);
 
@@ -190,20 +205,20 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     mem::drop(vec)
 }
 
-/// Drops a `Machine`.
+/// Drops a `Module`.
 ///
 /// # Safety
 ///
 /// The Go compiler expects the call to take the form
-///     λ(mach *Machine)
+///     λ(mach *Module)
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustMachineDropImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustModuleDropImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    if let Some(mach) = sp.unbox_option::<Machine>() {
-        mem::drop(mach);
+    if let Some(module) = sp.unbox_option::<Module>() {
+        mem::drop(module);
     }
 }
 
