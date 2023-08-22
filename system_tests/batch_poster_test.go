@@ -76,7 +76,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	Require(t, err)
 	seqTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	conf.BatchPoster.Enable = true
-	conf.BatchPoster.MaxBatchSize = len(firstTxData) * 2
+	conf.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := l1client.BlockNumber(ctx)
 	Require(t, err)
 	for i := 0; i < parallelBatchPosters; i++ {
@@ -175,7 +175,7 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.CompressionLevel = brotli.BestCompression
-	conf.BatchPoster.MaxBatchPostDelay = time.Hour
+	conf.BatchPoster.MaxDelay = time.Hour
 	conf.RPC.RPCTxFeeCap = 1000.
 	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
 	defer requireClose(t, l1stack)

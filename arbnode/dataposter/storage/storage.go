@@ -10,7 +10,8 @@ import (
 var (
 	ErrStorageRace = errors.New("storage race error")
 
-	DataPosterPrefix string = "d" // the prefix for all data poster keys
+	BlockValidatorPrefix string = "v" // the prefix for all block validator keys
+	BatchPosterPrefix    string = "b" // the prefix for all batch poster keys
 	// TODO(anodar): move everything else from schema.go file to here once
 	// execution split is complete.
 )

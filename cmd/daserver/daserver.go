@@ -38,10 +38,10 @@ type DAServerConfig struct {
 	RESTPort           uint64                              `koanf:"rest-port"`
 	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
 
-	DAConf das.DataAvailabilityConfig `koanf:"data-availability"`
+	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
 
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
-	LogLevel   int                    `koanf:"log-level"`
+	Conf     genericconf.ConfConfig `koanf:"conf"`
+	LogLevel int                    `koanf:"log-level"`
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -58,8 +58,8 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTAddr:           "localhost",
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
-	DAConf:             das.DefaultDataAvailabilityConfig,
-	ConfConfig:         genericconf.ConfConfigDefault,
+	DataAvailability:   das.DefaultDataAvailabilityConfig,
+	Conf:               genericconf.ConfConfigDefault,
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
 	PProf:              false,
@@ -109,7 +109,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	if err := confighelpers.EndCommonParse(k, &serverConfig); err != nil {
 		return nil, err
 	}
-	if serverConfig.ConfConfig.Dump {
+	if serverConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"data-availability.key.priv-key": "",
 		})
@@ -148,6 +148,9 @@ func (c *L1ReaderCloser) String() string {
 func startMetrics(cfg *DAServerConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
 		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
@@ -188,8 +191,8 @@ func startup() error {
 	defer cancel()
 
 	var l1Reader *headerreader.HeaderReader
-	if serverConfig.DAConf.L1NodeURL != "" && serverConfig.DAConf.L1NodeURL != "none" {
-		l1Client, err := das.GetL1Client(ctx, serverConfig.DAConf.L1ConnectionAttempts, serverConfig.DAConf.L1NodeURL)
+	if serverConfig.DataAvailability.ParentChainNodeURL != "" && serverConfig.DataAvailability.ParentChainNodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, serverConfig.DataAvailability.ParentChainConnectionAttempts, serverConfig.DataAvailability.ParentChainNodeURL)
 		if err != nil {
 			return err
 		}
@@ -200,10 +203,10 @@ func startup() error {
 	}
 
 	var seqInboxAddress *common.Address
-	if serverConfig.DAConf.SequencerInboxAddress == "none" {
+	if serverConfig.DataAvailability.SequencerInboxAddress == "none" {
 		seqInboxAddress = nil
-	} else if len(serverConfig.DAConf.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DAConf.SequencerInboxAddress)
+	} else if len(serverConfig.DataAvailability.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DataAvailability.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
@@ -214,7 +217,7 @@ func startup() error {
 		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
 	}
 
-	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
+	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}

@@ -69,7 +69,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			timeLaunching := time.Now()
 			// didn't sequence.. should we have succeeded?
 			if timeLaunching.Before(holdingLockout) {
-				execError = fmt.Errorf("failed while holding lock %s err %w", coord.config.MyUrl(), err)
+				execError = fmt.Errorf("failed while holding lock %s err %w", coord.config.Url(), err)
 				break
 			}
 		}
@@ -79,9 +79,9 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 				continue
 			}
 			if data.sequencer[i] != "" {
-				execError = fmt.Errorf("two sequencers for same msg: submsg %d, success for %s, %s", i, data.sequencer[i], coord.config.MyUrl())
+				execError = fmt.Errorf("two sequencers for same msg: submsg %d, success for %s, %s", i, data.sequencer[i], coord.config.Url())
 			}
-			data.sequencer[i] = coord.config.MyUrl()
+			data.sequencer[i] = coord.config.Url()
 		}
 		if execError != nil {
 			data.err = execError
@@ -99,16 +99,16 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig := TestSeqCoordinatorConfig
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
-	coordConfig.Signing.ECDSA.AcceptSequencer = false
-	coordConfig.Signing.SymmetricFallback = true
-	coordConfig.Signing.SymmetricSign = true
-	coordConfig.Signing.Symmetric.Dangerous.DisableSignatureVerification = true
-	coordConfig.Signing.Symmetric.SigningKey = ""
+	coordConfig.Signer.ECDSA.AcceptSequencer = false
+	coordConfig.Signer.SymmetricFallback = true
+	coordConfig.Signer.SymmetricSign = true
+	coordConfig.Signer.Symmetric.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signer.Symmetric.SigningKey = ""
 	testData := CoordinatorTestData{
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
 	}
-	nullSigner, err := signature.NewSignVerify(&coordConfig.Signing, nil, nil)
+	nullSigner, err := signature.NewSignVerify(&coordConfig.Signer, nil, nil)
 	Require(t, err)
 
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
@@ -121,7 +121,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
-		config.MyUrlImpl = fmt.Sprint(i)
+		config.MyUrl = fmt.Sprint(i)
 		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
