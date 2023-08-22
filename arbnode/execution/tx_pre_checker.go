@@ -115,7 +115,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
-	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number), tx)
+	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time), tx)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Time, extraInfo.ArbOSFormatVersion))
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
