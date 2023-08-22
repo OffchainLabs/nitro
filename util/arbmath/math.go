@@ -175,6 +175,11 @@ func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
+// BigSub subtracts a uint from a huge
+func BigSubByUint(minuend *big.Int, subtrahend uint64) *big.Int {
+	return new(big.Int).Sub(minuend, UintToBig(subtrahend))
+}
+
 // BigMulByFrac multiply a huge by a rational
 func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	value = new(big.Int).Set(value)
