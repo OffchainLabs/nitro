@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -95,7 +96,11 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			l1Txs = append(l1Txs, l1tx)
 		}
 		// adding multiple messages in the same AddLocal to get them in the same L1 block
-		errs := l1backend.TxPool().AddLocals(l1Txs)
+		wrapped := make([]*txpool.Transaction, len(l1Txs))
+		for i, tx := range l1Txs {
+			wrapped[i] = &txpool.Transaction{Tx: tx}
+		}
+		errs := l1backend.TxPool().Add(wrapped, true, false)
 		for _, err := range errs {
 			if err != nil {
 				Fatal(t, err)

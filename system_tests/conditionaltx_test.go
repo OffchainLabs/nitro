@@ -228,8 +228,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	currentRootHash2 := getStorageRootHash(t, node, contractAddress2)
 	currentSlotValueMap2 := getStorageSlotValue(t, node, contractAddress2)
 
-	rpcClient, err := node.Stack.Attach()
-	Require(t, err)
+	rpcClient := node.Stack.Attach()
 
 	l2info.GenerateAccount("User2")
 
@@ -310,8 +309,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	defer cancel()
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
-	rpcClient, err := node.Stack.Attach()
-	Require(t, err)
+	rpcClient := node.Stack.Attach()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	contractAddress, simple := deploySimple(t, ctx, auth, client)
@@ -412,8 +410,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
-	rpcClient, err := node.Stack.Attach()
-	Require(t, err)
+	rpcClient := node.Stack.Attach()
 
 	l2info.GenerateAccount("User2")
 

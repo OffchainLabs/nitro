@@ -382,7 +382,8 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 
 	var err error
 	if newTx.NetworkBlobTx != nil {
-		rlpData, err := newTx.NetworkBlobTx.MarshalBinary()
+		var rlpData []byte
+		rlpData, err = newTx.NetworkBlobTx.MarshalBinary()
 		if err != nil {
 			return err
 		}
