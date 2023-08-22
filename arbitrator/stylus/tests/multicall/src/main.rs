@@ -63,5 +63,5 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 }
 
 fn println(_text: impl AsRef<str>) {
-    // arbitrum::debug::println(text)
+    // stylus_sdk::debug::println(text)
 }
