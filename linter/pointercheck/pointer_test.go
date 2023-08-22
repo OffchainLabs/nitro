@@ -15,8 +15,8 @@ func TestAll(t *testing.T) {
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	res := analysistest.Run(t, testdata, analyzerForTests, "pointercheck")
-	if cnt := countErrors(res); cnt != 5 {
-		t.Errorf("analysistest.Run() got %v errors, expected 5", cnt)
+	if cnt := countErrors(res); cnt != 6 {
+		t.Errorf("analysistest.Run() got %v errors, expected 6", cnt)
 	}
 }
 
