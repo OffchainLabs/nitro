@@ -491,7 +491,7 @@ func testCreate(t *testing.T, jit bool) {
 		// compile the program
 		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 		Require(t, err)
-		ensure(arbWasm.CompileProgram(&auth, storeAddr))
+		ensure(arbWasm.ActivateProgram(&auth, storeAddr))
 
 		// check the program works
 		key := testhelpers.RandomHash()
@@ -686,12 +686,12 @@ func testMemory(t *testing.T, jit bool) {
 	colors.PrintGrey("multicall.rs      ", multiAddr)
 	colors.PrintGrey("grow-and-call.wat ", growCallAddr)
 	colors.PrintGrey("grow-120.wat      ", growHugeAddr)
-	compile, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "compileProgram")
+	activate, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
 	}
-	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(compile(growHugeAddr)))
+	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
 	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
 
 	// check that compilation then succeeds
@@ -860,10 +860,10 @@ func deployWasm(
 	auth.GasLimit = 32000000 // skip gas estimation
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey(name, ": deployed to ", programAddress.Hex())
-	return compileWasm(t, ctx, auth, l2client, programAddress, name)
+	return activateWasm(t, ctx, auth, l2client, programAddress, name)
 }
 
-func compileWasm(
+func activateWasm(
 	t *testing.T,
 	ctx context.Context,
 	auth bind.TransactOpts,
@@ -875,8 +875,8 @@ func compileWasm(
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	timed(t, "compile "+name, func() {
-		tx, err := arbWasm.CompileProgram(&auth, program)
+	timed(t, "activate "+name, func() {
+		tx, err := arbWasm.ActivateProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
