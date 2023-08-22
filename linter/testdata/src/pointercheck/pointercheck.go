@@ -32,3 +32,19 @@ func pointerCmp() {
 		fmt.Println("Not equal")
 	}
 }
+
+func legitCmps() {
+	a, b := &A{}, &A{}
+	if a.x == b.x {
+		fmt.Println("Allowed")
+	}
+}
+
+type cache struct {
+	dirty *A
+}
+
+// matches does pointer comparison.
+func (c *cache) matches(a *A) bool {
+	return c.dirty == a
+}

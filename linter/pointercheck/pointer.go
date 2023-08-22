@@ -78,16 +78,17 @@ func checkExpr(pass *analysis.Pass, e *ast.BinaryExpr) *Result {
 	ret := &Result{}
 	if ptrIdent(pass, e.X) && ptrIdent(pass, e.Y) {
 		ret.Errors = append(ret.Errors, pointerCmpError{
-			Pos:     pass.Fset.Position(e.OpPos),
-			Message: fmt.Sprintf("comparison of two pointers in expression %q", e),
+			Pos:     pass.Fset.Position(e.Pos()),
+			Message: fmt.Sprintf("comparison of two pointers in expression %v", e),
 		})
 	}
 	return ret
 }
 
 func ptrIdent(pass *analysis.Pass, e ast.Expr) bool {
-	if _, ok := e.(*ast.Ident); ok {
-		et := pass.TypesInfo.Types[e].Type
+	switch tp := e.(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+		et := pass.TypesInfo.Types[tp].Type
 		_, isPtr := (et).(*types.Pointer)
 		return isPtr
 	}
