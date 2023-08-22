@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 )
 
@@ -170,7 +171,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				oldHeader = previousHeader
 				blocksTraversed++
 			}
-			if oldHeader == nil || (header != nil && oldHeader.Hash() != header.Hash()) {
+			if headerreader.HeadersEqual(oldHeader, header) {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)
