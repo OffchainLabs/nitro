@@ -184,7 +184,7 @@ func (c *nonceCache) matches(header *types.Header) bool {
 	if c.dirty != nil {
 		// The header is updated as the block is built,
 		// so instead of checking its hash, we do a pointer comparison.
-		return c.dirty == header
+		return headerreader.HeadersEqual(c.dirty, header)
 	}
 	return c.block == header.ParentHash
 }
