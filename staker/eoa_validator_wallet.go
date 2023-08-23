@@ -29,17 +29,19 @@ type EoaValidatorWallet struct {
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
 	txCount                 atomic.Uint64
+	getExtraGas             func() uint64
 }
 
 var _ ValidatorWalletInterface = (*EoaValidatorWallet)(nil)
 
-func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts) (*EoaValidatorWallet, error) {
+func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EoaValidatorWallet, error) {
 	return &EoaValidatorWallet{
 		auth:          auth,
 		client:        l1Client,
 		rollupAddress: rollupAddress,
 		dataPoster:    dataPoster,
 		txCount:       atomic.Uint64{},
+		getExtraGas:   getExtraGas,
 	}, nil
 }
 
@@ -126,7 +128,8 @@ func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *V
 		log.Warn("Precondition failure, dataposter nonce is higher than validator transactio count", "dataposter nonce", nonce, "validator tx count", w.txCount.Load())
 	}
 	tx := builder.transactions[0] // we ignore future txs and only execute the first
-	trans, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *tx.To(), tx.Data(), tx.Gas(), tx.Value())
+	gas := tx.Gas() + w.getExtraGas()
+	trans, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *tx.To(), tx.Data(), gas, tx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}
