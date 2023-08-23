@@ -655,7 +655,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		return queueItems
 	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
-	signer := types.MakeSigner(bc.Config(), nextHeaderNumber)
+	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int

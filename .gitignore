@@ -20,3 +20,5 @@ target/
 yarn-error.log
 local/
 system_tests/test-data/*
+system_tests/testdata/*
+arbos/testdata/*
