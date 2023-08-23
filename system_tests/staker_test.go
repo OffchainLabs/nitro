@@ -134,7 +134,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := staker.NewContractValidatorWallet(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, 10000)
+	valWalletA, err := staker.NewContractValidatorWallet(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return 10000 })
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
@@ -182,7 +182,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := staker.NewEoaValidatorWallet(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
+	valWalletB, err := staker.NewEoaValidatorWallet(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB, func() uint64 { return 0 })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
@@ -221,7 +221,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletC, err := staker.NewContractValidatorWallet(dpC, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {}, 10000)
+	valWalletC, err := staker.NewContractValidatorWallet(dpC, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {}, func() uint64 { return 10000 })
 	Require(t, err)
 	valConfig.Strategy = "Watchtower"
 	stakerC, err := staker.NewStaker(
