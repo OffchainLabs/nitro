@@ -493,7 +493,33 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 	return true
 }
 
+func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
+	dp := s.wallet.DataPoster()
+	if dp == nil {
+		return nil
+	}
+	dataPosterNonce, _, err := dp.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		return err
+	}
+	latestNonce, err := s.l1Reader.Client().NonceAt(ctx, dp.Sender(), nil)
+	if err != nil {
+		return err
+	}
+	if dataPosterNonce > latestNonce {
+		return fmt.Errorf("data poster nonce %v is ahead of on-chain nonce %v -- probably waiting for a pending transaction to be included in a block", dataPosterNonce, latestNonce)
+	}
+	if dataPosterNonce < latestNonce {
+		return fmt.Errorf("data poster nonce %v is behind on-chain nonce %v -- is something else making transactions on this address?", dataPosterNonce, latestNonce)
+	}
+	return nil
+}
+
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
+	err := s.confirmDataPosterIsReady(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if s.config.strategy != WatchtowerStrategy {
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
