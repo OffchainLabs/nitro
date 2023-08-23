@@ -220,7 +220,7 @@
     "parent-chain-id": 11155111,
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
-    "feed-url": "https://sepolia-rollup.arbitrum.io/feed",
+    "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
     "chain-config":
     {
       "chainId": 421614,
