@@ -73,12 +73,12 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 ///
 /// The Go compiler expects the call to take the form
 ///     λ(
-///           mach *Machine, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
+///           hash *common.Hash, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
 ///           gas *u64, root *[32]byte
 ///     ) -> (status byte, out *Vec<u8>)
 ///
 /// These values are placed on the stack as follows
-///     || mach || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
+///     || hash || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
 ///
 pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let sp = &mut GoStack::simple(sp, &env);

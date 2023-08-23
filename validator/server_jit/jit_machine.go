@@ -29,7 +29,7 @@ type JitMachine struct {
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-	invocation := []string{"--binary", binaryPath, "--forks", "--debug"}
+	invocation := []string{"--binary", binaryPath, "--forks"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
 	}

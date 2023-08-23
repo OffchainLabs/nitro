@@ -99,12 +99,12 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 ///
 /// The Go compiler expects the call to take the form
 ///     λ(
-///           module *Module, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
+///           hash *common.Hash, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
 ///           gas *u64, root *[32]byte
 ///     ) -> (status byte, out *Vec<u8>)
 ///
 /// These values are placed on the stack as follows
-///     || module || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
+///     || hash || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
 ///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(

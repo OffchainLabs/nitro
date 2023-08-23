@@ -168,14 +168,6 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
-	program, err := p.deserializeProgram(codeHash)
-	if err != nil {
-		return 0, err
-	}
-	return program.version, nil
-}
-
 func (p Programs) CompileProgram(evm *vm.EVM, address common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(address)
@@ -348,6 +340,14 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 		return err
 	}
 	return p.compiledHashes.Set(codehash, program.compiledHash)
+}
+
+func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
+	program, err := p.deserializeProgram(codeHash)
+	if err != nil {
+		return 0, err
+	}
+	return program.version, nil
 }
 
 type goParams struct {
