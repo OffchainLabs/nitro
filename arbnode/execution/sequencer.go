@@ -182,8 +182,8 @@ func newNonceCache(size int) *nonceCache {
 
 func (c *nonceCache) matches(header *types.Header) bool {
 	if c.dirty != nil {
-		// The header is updated as the block is built,
-		// so instead of checking its hash, we do a pointer comparison.
+		// Note, even though the of the header changes, c.dirty points to the
+		// same header, hence hashes will be the same and this check will pass.
 		return headerreader.HeadersEqual(c.dirty, header)
 	}
 	return c.block == header.ParentHash
