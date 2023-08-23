@@ -189,7 +189,8 @@ func (et *Tracker) Spawn(ctx context.Context) {
 				return
 			}
 			if err := et.Act(ctx); err != nil {
-				srvlog.Error("Could not act with edge tracker", err)
+				fields["err"] = err
+				srvlog.Error("Could not act with edge tracker", fields)
 			}
 		case <-ctx.Done():
 			srvlog.Debug("Edge tracker goroutine exiting", fields)
@@ -211,7 +212,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case edgeStarted:
 		canOsp, err := canOneStepProve(et.edge)
 		if err != nil {
-			srvlog.Error("Could not check if edge can be one step proven", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not check if edge can be one step proven", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if canOsp {
@@ -238,7 +240,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		atOneStepFork, err := et.edge.HasLengthOneRival(ctx)
 		if err != nil {
-			srvlog.Error("Could not check if edge has length one rival", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not check if edge has length one rival", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		if atOneStepFork {
@@ -248,14 +251,16 @@ func (et *Tracker) Act(ctx context.Context) error {
 	// Edge is at a one-step-proof in a small-step challenge.
 	case edgeAtOneStepProof:
 		if err := et.submitOneStepProof(ctx); err != nil {
-			srvlog.Error("Could not submit one step proof", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not submit one step proof", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		return et.fsm.Do(edgeConfirm{})
 	// Edge tracker should add a subchallenge level zero leaf.
 	case edgeAddingSubchallengeLeaf:
 		if err := et.openSubchallengeLeaf(ctx); err != nil {
-			srvlog.Error("Could not open subchallenge leaf", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not open subchallenge leaf", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		layerZeroLeafCounter.Inc(1)
@@ -264,7 +269,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case edgeBisecting:
 		lowerChild, upperChild, err := et.bisect(ctx)
 		if err != nil {
-			srvlog.Error("Could not bisect", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not bisect", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		bisectedCounter.Inc(1)
@@ -283,7 +289,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 			WithFSMOpts(et.fsmOpts...),
 		)
 		if err != nil {
-			srvlog.Error("Could not create new edge tracker", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not create new edge tracker", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		secondTracker, err := New(
@@ -300,7 +307,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 			WithFSMOpts(et.fsmOpts...),
 		)
 		if err != nil {
-			srvlog.Error("Could not create new edge tracker", err, fields)
+			fields["err"] = err
+			srvlog.Error("Could not create new edge tracker", fields)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		go firstTracker.Spawn(ctx)
@@ -309,7 +317,8 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case edgeConfirming:
 		wasConfirmed, err := et.tryToConfirm(ctx)
 		if err != nil {
-			srvlog.Debug("Could not confirm edge yet", err, fields)
+			fields["err"] = err
+			srvlog.Debug("Could not confirm edge yet", fields)
 			return et.fsm.Do(edgeAwaitConfirmation{})
 		}
 		if !wasConfirmed {
