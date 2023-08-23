@@ -543,8 +543,13 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func ValidatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
-	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor) (*dataposter.DataPoster, error) {
+func ValidatorDataposter(
+	db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
+) (*dataposter.DataPoster, error) {
+	if transactOpts == nil {
+		return nil, nil
+	}
 	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 		return nil, nil
