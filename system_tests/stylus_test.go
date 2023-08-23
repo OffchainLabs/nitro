@@ -41,3 +41,8 @@ func TestProgramArbitratorEvmData(t *testing.T) {
 func TestProgramArbitratorMemory(t *testing.T) {
 	testMemory(t, false)
 }
+
+func TestProgramArbitratorCompilationReuse(t *testing.T) {
+	t.Parallel()
+	testCompilationReuse(t, false)
+}
