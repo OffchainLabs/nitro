@@ -648,6 +648,12 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 }
 
+var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
+	config := DefaultDataPosterConfig
+	config.MaxMempoolTransactions = 1 // the validator cannot queue transactions
+	return config
+}()
+
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
 	RedisSigner:            signature.TestSimpleHmacConfig,
@@ -662,3 +668,9 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseLevelDB:             false,
 	UseNoOpStorage:         false,
 }
+
+var TestDataPosterConfigForValidator = func() DataPosterConfig {
+	config := TestDataPosterConfig
+	config.MaxMempoolTransactions = 1 // the validator cannot queue transactions
+	return config
+}()
