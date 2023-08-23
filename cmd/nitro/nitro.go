@@ -158,6 +158,7 @@ func mainImpl() int {
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
+	stackConf.DBEngine = "leveldb"
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
