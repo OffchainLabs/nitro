@@ -299,7 +299,7 @@ type Config struct {
 	BlockValidator      staker.BlockValidatorConfig      `koanf:"block-validator" reload:"hot"`
 	RecordingDatabase   arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
 	Feed                broadcastclient.FeedConfig       `koanf:"feed" reload:"hot"`
-	Staker              staker.L1ValidatorConfig         `koanf:"staker"`
+	Staker              staker.L1ValidatorConfig         `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig             `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig       `koanf:"data-availability"`
 	SyncMonitor         SyncMonitorConfig                `koanf:"sync-monitor"`
@@ -817,6 +817,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
 			var existingWalletAddress *common.Address
@@ -828,7 +829,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, config.BlockValidator.ExtraGas)
+			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 			if err != nil {
 				return nil, err
 			}
@@ -836,7 +837,7 @@ func createNodeImpl(
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator)
+			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
 			if err != nil {
 				return nil, err
 			}
