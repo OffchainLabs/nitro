@@ -11,9 +11,7 @@ use arbutil::{
     format::DebugBytes,
     heapify,
 };
-use prover::{
-    programs::{config::PricingParams, prelude::*},
-};
+use prover::programs::{config::PricingParams, prelude::*};
 use std::mem;
 use stylus::native;
 

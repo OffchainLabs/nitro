@@ -4,7 +4,6 @@
 use crate::{evm_api::ApiCaller, Program, PROGRAMS};
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
-    format::DebugBytes,
     heapify, wavm,
 };
 use go_abi::GoStack;

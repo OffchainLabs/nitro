@@ -9,9 +9,7 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     programs::{
-        config::CompileConfig,
-        meter::MeteredMachine,
-        ModuleMod, StylusData, STYLUS_ENTRY_POINT,
+        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData, STYLUS_ENTRY_POINT,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
@@ -396,10 +394,10 @@ impl Module {
             None => None,
             Some(data) => {
                 let stylus_main = func_exports
-                .iter()
-                .find(|x| x.0 == STYLUS_ENTRY_POINT)
-                .and_then(|x| Some(x.1))
-                .ok_or(eyre::eyre!("stylus program without entry point"))?;
+                    .iter()
+                    .find(|x| x.0 == STYLUS_ENTRY_POINT)
+                    .and_then(|x| Some(x.1))
+                    .ok_or(eyre::eyre!("stylus program without entry point"))?;
                 Some((data, *stylus_main))
             }
         };
