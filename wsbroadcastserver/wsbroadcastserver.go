@@ -83,7 +83,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
 	f.Duration(prefix+".ping", DefaultBroadcasterConfig.Ping, "duration for ping interval")
 	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
-	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
+	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size for HTTP to WS upgrade")
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")

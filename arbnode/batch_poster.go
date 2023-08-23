@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -67,9 +68,12 @@ type BatchPoster struct {
 	building     *buildingBatch
 	daWriter     das.DataAvailabilityServiceWriter
 	dataPoster   *dataposter.DataPoster
-	redisLock    *SimpleRedisLock
+	redisLock    *redislock.Simple
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
-	backlog      uint64    // An estimate of the number of unposted batches
+	// An estimate of the number of batches we want to post but haven't yet.
+	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
+	backlog         uint64
+	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
 	batchReverted atomic.Bool // indicates whether data poster batch was reverted
 }
@@ -87,23 +91,28 @@ const (
 )
 
 type BatchPosterConfig struct {
-	Enable                             bool                        `koanf:"enable"`
-	DisableDasFallbackStoreDataOnChain bool                        `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
-	MaxBatchSize                       int                         `koanf:"max-size" reload:"hot"`
-	MaxBatchPostDelay                  time.Duration               `koanf:"max-delay" reload:"hot"`
-	WaitForMaxBatchPostDelay           bool                        `koanf:"wait-for-max-delay" reload:"hot"`
-	BatchPollDelay                     time.Duration               `koanf:"poll-delay" reload:"hot"`
-	PostingErrorDelay                  time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel                   int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period" reload:"hot"`
-	GasRefunderAddress                 string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                           string                      `koanf:"redis-url"`
-	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	L1Wallet                           genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound                       string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass                 time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
+	Enable                             bool `koanf:"enable"`
+	DisableDasFallbackStoreDataOnChain bool `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
+	// Max batch size.
+	MaxSize int `koanf:"max-size" reload:"hot"`
+	// Max batch post delay.
+	MaxDelay time.Duration `koanf:"max-delay" reload:"hot"`
+	// Wait for max BatchPost delay.
+	WaitForMaxDelay bool `koanf:"wait-for-max-delay" reload:"hot"`
+	// Batch post polling interval.
+	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
+	// Batch posting error delay.
+	ErrorDelay         time.Duration               `koanf:"error-delay" reload:"hot"`
+	CompressionLevel   int                         `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	GasRefunderAddress string                      `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl           string                      `koanf:"redis-url"`
+	RedisLock          redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -114,7 +123,7 @@ func (c *BatchPosterConfig) Validate() error {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
-	if c.MaxBatchSize <= 40 {
+	if c.MaxSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
 	if c.L1BlockBound == "" {
@@ -138,11 +147,11 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
-	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
-	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxBatchPostDelay, "maximum batch posting delay")
-	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxBatchPostDelay, "wait for the max batch delay, even if the batch is full")
-	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
-	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
+	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
+	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
+	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
+	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
@@ -150,52 +159,52 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
-	RedisLockConfigAddOptions(prefix+".redis-lock", f)
+	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
-	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
+	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDasFallbackStoreDataOnChain: false,
-	MaxBatchSize:                       100000,
-	BatchPollDelay:                     time.Second * 10,
-	PostingErrorDelay:                  time.Second * 10,
-	MaxBatchPostDelay:                  time.Hour,
-	WaitForMaxBatchPostDelay:           false,
+	MaxSize:                            100000,
+	PollInterval:                       time.Second * 10,
+	ErrorDelay:                         time.Second * 10,
+	MaxDelay:                           time.Hour,
+	WaitForMaxDelay:                    false,
 	CompressionLevel:                   brotli.BestCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
-	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
+	ParentChainWallet:                  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                       "",
 	L1BlockBoundBypass:                 time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 	Pathname:      "batch-poster-wallet",
-	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	Password:      genericconf.WalletConfigDefault.Password,
 	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
 	Account:       genericconf.WalletConfigDefault.Account,
 	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	Enable:                   true,
-	MaxBatchSize:             100000,
-	BatchPollDelay:           time.Millisecond * 10,
-	PostingErrorDelay:        time.Millisecond * 10,
-	MaxBatchPostDelay:        0,
-	WaitForMaxBatchPostDelay: false,
-	CompressionLevel:         2,
-	DASRetentionPeriod:       time.Hour * 24 * 15,
-	GasRefunderAddress:       "",
-	ExtraBatchGas:            10_000,
-	DataPoster:               dataposter.TestDataPosterConfig,
-	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:             "",
-	L1BlockBoundBypass:       time.Hour,
+	Enable:             true,
+	MaxSize:            100000,
+	PollInterval:       time.Millisecond * 10,
+	ErrorDelay:         time.Millisecond * 10,
+	MaxDelay:           0,
+	WaitForMaxDelay:    false,
+	CompressionLevel:   2,
+	DASRetentionPeriod: time.Hour * 24 * 15,
+	GasRefunderAddress: "",
+	ExtraBatchGas:      10_000,
+	DataPoster:         dataposter.TestDataPosterConfig,
+	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:       "",
+	L1BlockBoundBypass: time.Hour,
 }
 
 func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
@@ -218,10 +227,10 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 	if err != nil {
 		return nil, err
 	}
-	redisLockConfigFetcher := func() *SimpleRedisLockConfig {
+	redisLockConfigFetcher := func() *redislock.SimpleCfg {
 		return &config().RedisLock
 	}
-	redisLock, err := NewSimpleRedisLock(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
+	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
@@ -373,8 +382,8 @@ type buildingBatch struct {
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64) *batchSegments {
-	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
-	if config.MaxBatchSize <= 40 {
+	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxSize*2))
+	if config.MaxSize <= 40 {
 		panic("MaxBatchSize too small")
 	}
 	compressionLevel := config.CompressionLevel
@@ -400,7 +409,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 	return &batchSegments{
 		compressedBuffer:   compressedBuffer,
 		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          config.MaxBatchSize - 40, // TODO
+		sizeLimit:          config.MaxSize - 40, // TODO
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
@@ -716,7 +725,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	config := b.config()
-	forcePostBatch := time.Since(firstMsgTime) >= config.MaxBatchPostDelay
+	forcePostBatch := time.Since(firstMsgTime) >= config.MaxDelay
 
 	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
@@ -797,6 +806,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			l1BoundMaxTimestamp = math.MaxUint64
 		}
 		if msg.Message.Header.BlockNumber > l1BoundMaxBlockNumber || msg.Message.Header.Timestamp > l1BoundMaxTimestamp {
+			b.lastHitL1Bounds = time.Now()
 			log.Info(
 				"not posting more messages because block number or timestamp exceed L1 bounds",
 				"blockNumber", msg.Message.Header.BlockNumber,
@@ -814,7 +824,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if !success {
 			// this batch is full
-			if !config.WaitForMaxBatchPostDelay {
+			if !config.WaitForMaxDelay {
 				forcePostBatch = true
 			}
 			b.building.haveUsefulMessage = true
@@ -871,8 +881,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	err = b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
-	if err != nil {
+	if _, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int)); err != nil {
 		return false, err
 	}
 	log.Info(
@@ -884,22 +893,31 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"current delayed", b.building.segments.delayedMsg,
 		"total segments", len(b.building.segments.rawSegments),
 	)
+	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	unpostedMessages := msgCount - b.building.msgCount
 	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
 	if b.backlog > 10 {
 		logLevel := log.Warn
-		if b.backlog > 30 {
+		if recentlyHitL1Bounds {
+			logLevel = log.Info
+		} else if b.backlog > 30 {
 			logLevel = log.Error
 		}
 		logLevel(
 			"a large batch posting backlog exists",
+			"recentlyHitL1Bounds", recentlyHitL1Bounds,
 			"currentPosition", b.building.msgCount,
 			"messageCount", msgCount,
 			"lastPostedMessages", postedMessages,
 			"unpostedMessages", unpostedMessages,
 			"batchBacklogEstimate", b.backlog,
 		)
+	}
+	if recentlyHitL1Bounds {
+		// This backlog isn't "real" in that we don't want to post any more messages.
+		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
+		b.backlog = 0
 	}
 	b.building = nil
 	return true, nil
@@ -930,7 +948,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		if !b.redisLock.AttemptLock(ctx) {
 			b.building = nil
-			return b.config().BatchPollDelay
+			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
@@ -949,11 +967,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				b.firstAccErr = time.Time{}
 			}
 			logLevel("error posting batch", "err", err)
-			return b.config().PostingErrorDelay
+			return b.config().ErrorDelay
 		} else if posted {
 			return 0
 		} else {
-			return b.config().BatchPollDelay
+			return b.config().PollInterval
 		}
 	})
 }
