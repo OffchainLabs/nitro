@@ -608,7 +608,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
-	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseLevelDB, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
