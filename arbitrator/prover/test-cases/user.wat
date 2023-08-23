@@ -13,7 +13,7 @@
         i32.const 0xFFFFFF
         i32.load
         drop)
-    (func (export "arbitrum_main") (param $args_len i32) (result i32)
+    (func (export "user_entrypoint") (param $args_len i32) (result i32)
         local.get $args_len
         i32.const 1
         i32.eq
