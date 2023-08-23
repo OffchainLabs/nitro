@@ -397,7 +397,7 @@ func HeadersEqual(ha, hb *types.Header) bool {
 	if (ha == nil) != (hb == nil) {
 		return false
 	}
-	return (ha == nil) && (hb == nil) || ha.Hash() == hb.Hash()
+	return (ha == nil && hb == nil) || ha.Hash() == hb.Hash()
 }
 
 func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.Header, error) {

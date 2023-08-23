@@ -171,7 +171,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				oldHeader = previousHeader
 				blocksTraversed++
 			}
-			if headerreader.HeadersEqual(oldHeader, header) {
+			if !headerreader.HeadersEqual(oldHeader, header) {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)

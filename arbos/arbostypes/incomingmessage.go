@@ -131,7 +131,7 @@ func hashesEqual(ha, hb *common.Hash) bool {
 	if (ha == nil) != (hb == nil) {
 		return false
 	}
-	return (ha == nil) && (hb == nil) || *ha == *hb
+	return (ha == nil && hb == nil) || *ha == *hb
 }
 
 func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
