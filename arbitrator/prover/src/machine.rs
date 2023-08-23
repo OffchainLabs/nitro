@@ -392,13 +392,18 @@ impl Module {
             })
             .collect();
 
-        let stylus_main = func_exports
-            .iter()
-            .find(|x| x.0 == STYLUS_ENTRY_POINT)
-            .and_then(|x| Some(x.1));
-        let internals = host::new_internal_funcs(
-            stylus_data.and_then(|x| stylus_main.and_then(|y| Some((x, y.clone())))),
-        );
+        let internals_data = match stylus_data {
+            None => None,
+            Some(data) => {
+                let stylus_main = func_exports
+                .iter()
+                .find(|x| x.0 == STYLUS_ENTRY_POINT)
+                .and_then(|x| Some(x.1))
+                .ok_or(eyre::eyre!("stylus program without entry point"))?;
+                Some((data, *stylus_main))
+            }
+        };
+        let internals = host::new_internal_funcs(internals_data);
         let internals_offset = (code.len() + bin.codes.len()) as u32;
         let internals_types = internals.iter().map(|f| f.ty.clone());
 
