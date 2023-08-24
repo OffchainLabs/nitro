@@ -208,7 +208,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
     }
 
     /**
-     * @notice Refund a staker that is currently staked on or before the latest confirmed assertion
+     * @notice Refund a staker that is currently staked on an assertion that either has a chlid assertion or is the latest confirmed assertion.
      */
     function returnOldDeposit() external override onlyValidator whenNotPaused {
         requireInactiveStaker(msg.sender);
