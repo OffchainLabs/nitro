@@ -74,7 +74,7 @@ jobs:
         id: install-rust-nightly
         with:
           profile: minimal
-          toolchain: "1.73.0-nightly"
+          toolchain: "nightly"
 
       - name: Install grcov
         uses: actions-rs/install@v0.1
@@ -89,7 +89,7 @@ jobs:
       - name: Install nightly wasm targets
         run: |
           rustup component add rust-src --toolchain nightly
-          rustup target add wasm32-unknown-unknown --toolchain 1.73.0-nightly
+          rustup target add wasm32-unknown-unknown --toolchain nightly
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
