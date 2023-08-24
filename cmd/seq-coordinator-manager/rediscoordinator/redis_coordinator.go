@@ -10,18 +10,7 @@ import (
 )
 
 type RedisCoordinator struct {
-	Client redis.UniversalClient
-}
-
-func NewRedisCoordinator(redisURL string) (*RedisCoordinator, error) {
-	redisClient, err := redisutil.RedisClientFromURL(redisURL)
-	if err != nil {
-		return nil, err
-	}
-
-	return &RedisCoordinator{
-		Client: redisClient,
-	}, nil
+	*redisutil.RedisCoordinator
 }
 
 func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, map[string]int, error) {
@@ -62,16 +51,4 @@ func (rc *RedisCoordinator) UpdatePriorities(ctx context.Context, priorities []s
 		}
 	}
 	return err
-}
-
-// CurrentChosenSequencer retrieves the current chosen sequencer holding the lock
-func (c *RedisCoordinator) CurrentChosenSequencer(ctx context.Context) (string, error) {
-	current, err := c.Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
-	if errors.Is(err, redis.Nil) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return current, nil
 }

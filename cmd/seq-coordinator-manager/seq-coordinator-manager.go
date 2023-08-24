@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gdamore/tcell/v2"
 	"github.com/offchainlabs/nitro/cmd/seq-coordinator-manager/rediscoordinator"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/rivo/tview"
 )
 
@@ -45,15 +46,17 @@ func main() {
 		os.Exit(1)
 	}
 	redisURL := args[0]
-	redisCoordinator, err := rediscoordinator.NewRedisCoordinator(redisURL)
+	redisutilCoordinator, err := redisutil.NewRedisCoordinator(redisURL)
 	if err != nil {
 		panic(err)
 	}
 
 	seqManager := &manager{
-		redisCoordinator: redisCoordinator,
-		prioritiesMap:    make(map[string]int),
-		livelinessMap:    make(map[string]int),
+		redisCoordinator: &rediscoordinator.RedisCoordinator{
+			RedisCoordinator: redisutilCoordinator,
+		},
+		prioritiesMap: make(map[string]int),
+		livelinessMap: make(map[string]int),
 	}
 
 	seqManager.refreshAllLists(ctx)
