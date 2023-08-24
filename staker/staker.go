@@ -81,6 +81,7 @@ type L1ValidatorConfig struct {
 	StartValidationFromStaked bool                     `koanf:"start-validation-from-staked"`
 	ContractWalletAddress     string                   `koanf:"contract-wallet-address"`
 	GasRefunderAddress        string                   `koanf:"gas-refunder-address"`
+	ExtraGas                  uint64                   `koanf:"extra-gas" reload:"hot"`
 	Dangerous                 DangerousConfig          `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig `koanf:"parent-chain-wallet"`
 
@@ -144,6 +145,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	StartValidationFromStaked: true,
 	ContractWalletAddress:     "",
 	GasRefunderAddress:        "",
+	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 }
@@ -169,6 +171,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".start-validation-from-staked", DefaultL1ValidatorConfig.StartValidationFromStaked, "assume staked nodes are valid")
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
+	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 }

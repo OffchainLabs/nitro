@@ -92,21 +92,26 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 }
 
 func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
-	replacementTimes, err := parseReplacementTimes(config().ReplacementTimes)
+	initConfig := config()
+	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
+	if headerReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
+		initConfig.UseNoOpStorage = true
+		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
+	}
 	var queue QueueStorage
 	switch {
-	case config().UseLevelDB:
-		queue = leveldb.New(db)
-	case config().UseNoOpStorage:
+	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
+	case initConfig.UseLevelDB:
+		queue = leveldb.New(db)
 	case redisClient == nil:
 		queue = slice.NewStorage()
 	default:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -587,8 +592,8 @@ type DataPosterConfig struct {
 	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64                     `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool                       `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool                       `koanf:"use-leveldb" reload:"hot"`
-	UseNoOpStorage         bool                       `koanf:"use-noop-storage" reload:"hot"`
+	UseLevelDB             bool                       `koanf:"use-leveldb"`
+	UseNoOpStorage         bool                       `koanf:"use-noop-storage"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -608,7 +613,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
-	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseLevelDB, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
