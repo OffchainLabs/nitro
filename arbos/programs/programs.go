@@ -55,7 +55,9 @@ const (
 	callScalarOffset
 )
 
-var ProgramNotCompiledError func() error
+var ErrProgramActivation = errors.New("program activation failed")
+
+var ProgramNotActivatedError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
 
@@ -234,7 +236,7 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	if program.version == 0 {
-		return nil, ProgramNotCompiledError()
+		return nil, ProgramNotActivatedError()
 	}
 	if program.version != stylusVersion {
 		return nil, ProgramOutOfDateError(program.version)

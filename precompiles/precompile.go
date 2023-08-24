@@ -557,7 +557,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
 	ArbWasm.arbosVersion = 10
-	programs.ProgramNotCompiledError = ArbWasmImpl.ProgramNotCompiledError
+	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
 	programs.ProgramOutOfDateError = ArbWasmImpl.ProgramOutOfDateError
 	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
 
@@ -744,6 +744,9 @@ func (p *Precompile) Call(
 				return nil, 0, vm.ErrExecutionReverted
 			}
 			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
+		}
+		if errors.Is(errRet, programs.ErrProgramActivation) {
+			return nil, 0, errRet
 		}
 		if !errors.Is(errRet, vm.ErrOutOfGas) {
 			log.Debug(

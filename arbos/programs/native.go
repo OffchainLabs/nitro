@@ -19,6 +19,8 @@ typedef size_t usize;
 */
 import "C"
 import (
+	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -65,6 +67,9 @@ func compileUserWasm(
 		_, msg, err := status.toResult(output.intoBytes(), debug)
 		if debug {
 			log.Warn("stylus parse failed", "err", err, "msg", msg, "program", program)
+		}
+		if errors.Is(err, vm.ErrExecutionReverted) {
+			return nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
 		return nil, err
 	}

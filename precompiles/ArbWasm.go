@@ -6,16 +6,17 @@ package precompiles
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramNotCompiledError func() error
-	ProgramOutOfDateError   func(version uint16) error
-	ProgramUpToDateError    func() error
+	ProgramNotActivatedError func() error
+	ProgramOutOfDateError    func(version uint16) error
+	ProgramUpToDateError     func() error
 }
 
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
 	version, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
 	if takeAllGas {
-		return version, c.BurnOut()
+		_ = c.BurnOut()
+		return version, err
 	}
 	return version, err
 }
