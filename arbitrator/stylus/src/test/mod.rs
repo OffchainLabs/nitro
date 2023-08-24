@@ -16,6 +16,7 @@ use wasmer_compiler_singlepass::Singlepass;
 mod api;
 mod misc;
 mod native;
+mod sdk;
 mod wavm;
 
 #[cfg(feature = "timings")]
