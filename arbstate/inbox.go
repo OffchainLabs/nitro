@@ -24,7 +24,7 @@ import (
 )
 
 type InboxBackend interface {
-	PeekSequencerInbox() ([]byte, error)
+	PeekSequencerInbox() ([]byte, common.Hash, error)
 
 	GetSequencerInboxPosition() uint64
 	AdvanceSequencerInbox()
@@ -49,7 +49,7 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -77,6 +77,12 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			}
 		}
 	}
+
+	/* TODO
+	if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
+		RecoverPayloadFromBlob(ctx, batchBlockHash)
+	}
+	*/
 
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
@@ -262,13 +268,13 @@ const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 // Note: this does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
-		bytes, realErr := r.backend.PeekSequencerInbox()
+		bytes, batchBlockHash, realErr := r.backend.PeekSequencerInbox()
 		if realErr != nil {
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}

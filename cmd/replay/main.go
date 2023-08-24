@@ -61,11 +61,11 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 
 type WavmInbox struct{}
 
-func (i WavmInbox) PeekSequencerInbox() ([]byte, error) {
+func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	pos := wavmio.GetInboxPosition()
 	res := wavmio.ReadInboxMessage(pos)
 	log.Info("PeekSequencerInbox", "pos", pos, "res[:8]", res[:8])
-	return res, nil
+	return res, common.Hash{} /*TODO is real block hash needed here?*/, nil
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {

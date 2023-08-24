@@ -40,6 +40,9 @@ const L1AuthenticatedMessageHeaderFlag byte = 0x40
 // ZeroheavyMessageHeaderFlag indicates that this message is zeroheavy-encoded.
 const ZeroheavyMessageHeaderFlag byte = 0x20
 
+// BlobHashesHeaderFlag indicates that this message contains EIP 4844 versioned hashes of the committments calculated over the blob data for the batch data.
+const BlobHashesHeaderFlag byte = 0x10
+
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
@@ -53,6 +56,10 @@ func IsTreeDASMessageHeaderByte(header byte) bool {
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
 	return (ZeroheavyMessageHeaderFlag & header) > 0
+}
+
+func IsBlobHashesHeaderByte(header byte) bool {
+	return (BlobHashesHeaderFlag & header) > 0
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {

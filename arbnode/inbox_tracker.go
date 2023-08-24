@@ -496,11 +496,12 @@ type multiplexerBackend struct {
 	inbox  *InboxTracker
 }
 
-func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if len(b.batches) == 0 {
-		return nil, errors.New("read past end of specified sequencer batches")
+		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0].Serialize(b.ctx, b.client)
+	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
+	return bytes, b.batches[0].BlockHash, err
 }
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
