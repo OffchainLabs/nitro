@@ -462,6 +462,10 @@ func (s *HeaderReader) UseFinalityData() bool {
 	return s.config().UseFinalityData
 }
 
+func (s *HeaderReader) IsParentChainArbitrum() bool {
+	return s.isParentChainArbitrum
+}
+
 func (s *HeaderReader) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(s.broadcastLoop)
