@@ -58,7 +58,7 @@ impl Weth {
 
     // calls the sum() method from the interface
     pub fn sum_with_helper(&self, helper: IMath, values: Vec<U256>) -> Result<U256, Vec<u8>> {
-        let (text, sum) = helper.sum((), values)?;
+        let (text, sum) = helper.sum(self, values)?;
         assert_eq!(&text, "sum");
         Ok(sum)
     }
