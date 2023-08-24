@@ -3,7 +3,6 @@
 
 use arbutil::{wavm, Color};
 use go_abi::wavm_guest_call__resume;
-use std::mem;
 
 use crate::value::{DynamicObject, DynamicObjectPool, GoValue, JsValue, STYLUS_ID};
 
