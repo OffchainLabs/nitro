@@ -751,7 +751,7 @@ func (p *Precompile) Call(
 				"precompile", precompileAddress, "input", input, "err", errRet,
 			)
 		}
-		if strings.Contains(errRet.Error(), "program activation failed") {
+		if errors.Is(errRet, programs.ErrProgramActivation) {
 			return nil, 0, errRet
 		}
 		// nolint:errorlint

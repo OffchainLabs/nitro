@@ -69,7 +69,7 @@ func compileUserWasm(
 			log.Warn("stylus parse failed", "err", err, "msg", msg, "program", program)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, fmt.Errorf("program activation failed: %s", msg)
+			return nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
 		return nil, err
 	}

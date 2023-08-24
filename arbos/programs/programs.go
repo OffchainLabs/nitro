@@ -55,6 +55,8 @@ const (
 	callScalarOffset
 )
 
+var ErrProgramActivation = errors.New("program activation failed")
+
 var ProgramNotActivatedError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
