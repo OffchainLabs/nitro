@@ -715,12 +715,12 @@ func testMemory(t *testing.T, jit bool) {
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
-func TestProgramActivationFailes(t *testing.T) {
+func TestProgramActivationFails(t *testing.T) {
 	t.Parallel()
-	testActivationFailes(t, true)
+	testActivationFails(t, true)
 }
 
-func testActivationFailes(t *testing.T, jit bool) {
+func testActivationFails(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("log"), false)
 	defer cleanup()
 

@@ -46,6 +46,6 @@ func TestProgramArbitratorMemory(t *testing.T) {
 	testMemory(t, false)
 }
 
-func TestProgramArbitratorActivationFailes(t *testing.T) {
-	testActivationFailes(t, false)
+func TestProgramArbitratorActivationFails(t *testing.T) {
+	testActivationFails(t, false)
 }
