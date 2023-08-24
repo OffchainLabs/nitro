@@ -165,7 +165,7 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
+func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 
 	version, err := p.StylusVersion()

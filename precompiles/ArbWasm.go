@@ -12,8 +12,8 @@ type ArbWasm struct {
 }
 
 // Compile a wasm program with the latest instrumentation
-func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint16, error) {
-	version, takeAllGas, err := c.State.Programs().CompileProgram(evm, program, evm.ChainConfig().DebugMode())
+func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
+	version, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
 	if takeAllGas {
 		return version, c.BurnOut()
 	}
