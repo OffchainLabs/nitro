@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 alloy-primitives = "0.3.1"
 alloy-sol-types = "0.3.1"
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["debug"] }
+stylus-sdk = { path = "../../../langs/rust/stylus-sdk" }
 hex = "0.4.3"
 wee_alloc = "0.4.5"
 
@@ -18,8 +18,6 @@ codegen-units = 1
 strip = true
 lto = true
 panic = "abort"
-
-# uncomment to optimize for size
-#   opt-level = "z"
+opt-level = "s"
 
 [workspace]
