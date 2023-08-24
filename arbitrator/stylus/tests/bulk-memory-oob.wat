@@ -10,5 +10,8 @@
         (memory.copy (i32.const 0xfffe) (i32.const 0xffff) (i32.const 2)))
     (func (export "copy_same")
         (memory.copy (i32.const 0xffff) (i32.const 0xffff) (i32.const 2)))
+    (func (export "user_entrypoint") (param $args_len i32) (result i32)
+        (i32.const 0)
+    )
     (data (i32.const 0xfffe) "\01\02") ;; last two bytes shouldn't change
     (memory (export "memory") 1 1))

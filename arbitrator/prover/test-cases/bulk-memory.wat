@@ -79,5 +79,10 @@
         local.get 1
         i32.ne
         (if (then (unreachable))))
+    
+    (func (export "user_entrypoint") (param $args_len i32) (result i32)
+        (i32.const 0)
+    )
+
     (start $start)
     (memory (export "mem") 1 1))
