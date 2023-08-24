@@ -751,6 +751,9 @@ func (p *Precompile) Call(
 				"precompile", precompileAddress, "input", input, "err", errRet,
 			)
 		}
+		if strings.Contains(errRet.Error(), "program activation failed") {
+			return nil, 0, errRet
+		}
 		// nolint:errorlint
 		if arbosVersion >= 11 || errRet == vm.ErrExecutionReverted {
 			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted

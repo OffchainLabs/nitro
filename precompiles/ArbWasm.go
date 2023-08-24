@@ -15,7 +15,8 @@ type ArbWasm struct {
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
 	version, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
 	if takeAllGas {
-		return version, c.BurnOut()
+		_ = c.BurnOut()
+		return version, err
 	}
 	return version, err
 }
