@@ -173,6 +173,7 @@ contract BOLDUpgradeAction {
     uint256 public immutable MINI_STAKE_AMOUNT;
     uint256 public immutable CHAIN_ID;
     address public immutable ANY_TRUST_FAST_CONFIRMER;
+    bool public immutable DISABLE_VALIDATOR_WHITELIST;
 
     IOneStepProofEntry public immutable OSP;
     // proxy admins of the contracts to be upgraded
@@ -203,6 +204,7 @@ contract BOLDUpgradeAction {
         uint256 miniStakeAmt;
         uint256 chainId;
         address anyTrustFastConfirmer;
+        bool disableValidatorWhitelist;
     }
 
     // Unfortunately these are not discoverable on-chain, so we need to supply them
@@ -272,6 +274,7 @@ contract BOLDUpgradeAction {
         STAKE_AMOUNT = settings.stakeAmt;
         MINI_STAKE_AMOUNT = settings.miniStakeAmt;
         ANY_TRUST_FAST_CONFIRMER = settings.anyTrustFastConfirmer;
+        DISABLE_VALIDATOR_WHITELIST = settings.disableValidatorWhitelist;
     }
 
     /// @dev    Refund the existing stakers, pause and upgrade the current rollup to
@@ -439,6 +442,9 @@ contract BOLDUpgradeAction {
                 _vals[i] = true;
             }
             IRollupAdmin(address(rollup)).setValidator(validators, _vals);
+        }
+        if (DISABLE_VALIDATOR_WHITELIST) {
+            IRollupAdmin(address(rollup)).setValidatorWhitelistDisabled(DISABLE_VALIDATOR_WHITELIST);
         }
 
         IRollupAdmin(address(rollup)).setOwner(actualOwner);

@@ -53,6 +53,7 @@ export interface Config {
     miniStakeAmt: BigNumber
     chainId: number
     anyTrustFastConfirmer: string
+    disableValidatorWhitelist: boolean
   }
   validators: string[]
 }
