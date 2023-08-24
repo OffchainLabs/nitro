@@ -88,7 +88,7 @@ func main() {
 			app.SetFocus(prioritySeqList)
 		})
 		priorityForm.AddButton("Remove", func() {
-			url := seqManager.priorityList[0]
+			url := seqManager.priorityList[index]
 			delete(seqManager.prioritiesMap, url)
 			seqManager.updatePriorityList(ctx, index, 0)
 			seqManager.priorityList = seqManager.priorityList[1:]
