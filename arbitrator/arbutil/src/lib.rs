@@ -32,20 +32,15 @@ pub fn slice_with_runoff<T>(data: &impl AsRef<[T]>, start: usize, end: usize) ->
     &data[start..end.min(data.len())]
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_limit_vec() {
-        let testvec = vec![0, 1, 2, 3];
-        assert_eq!(slice_with_runoff(&testvec, 4, 4), &testvec[0..0]);
-        assert_eq!(slice_with_runoff(&testvec, 1, 0), &testvec[0..0]);
-        assert_eq!(slice_with_runoff(&testvec, 0, 0), &testvec[0..0]);
-        assert_eq!(slice_with_runoff(&testvec, 0, 1), &testvec[0..1]);
-        assert_eq!(slice_with_runoff(&testvec, 1, 3), &testvec[1..3]);
-        assert_eq!(slice_with_runoff(&testvec, 0, 4), &testvec[0..4]);
-        assert_eq!(slice_with_runoff(&testvec, 0, 5), &testvec[0..4]);
-        assert_eq!(slice_with_runoff(&testvec, 2, usize::MAX), &testvec[2..4]);
-    }
+#[test]
+fn test_limit_vec() {
+    let testvec = vec![0, 1, 2, 3];
+    assert_eq!(slice_with_runoff(&testvec, 4, 4), &testvec[0..0]);
+    assert_eq!(slice_with_runoff(&testvec, 1, 0), &testvec[0..0]);
+    assert_eq!(slice_with_runoff(&testvec, 0, 0), &testvec[0..0]);
+    assert_eq!(slice_with_runoff(&testvec, 0, 1), &testvec[0..1]);
+    assert_eq!(slice_with_runoff(&testvec, 1, 3), &testvec[1..3]);
+    assert_eq!(slice_with_runoff(&testvec, 0, 4), &testvec[0..4]);
+    assert_eq!(slice_with_runoff(&testvec, 0, 5), &testvec[0..4]);
+    assert_eq!(slice_with_runoff(&testvec, 2, usize::MAX), &testvec[2..4]);
 }
