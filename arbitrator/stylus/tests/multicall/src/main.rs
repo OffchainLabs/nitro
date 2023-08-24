@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use stylus_sdk::{contract::Call, alloy_primitives::{Address, B256}};
+use stylus_sdk::{call::RawCall, alloy_primitives::{Address, B256}};
 
 stylus_sdk::entrypoint!(user_main, true);
 
@@ -43,12 +43,14 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             _ => format!("Calling {addr} with {} bytes {kind}", curr.len()),
         });
 
-        let return_data = match kind {
-            0 => Call::new().value(value.unwrap_or_default()),
-            1 => Call::new_delegate(),
-            2 => Call::new_static(),
+        let raw_call = match kind {
+            0 => RawCall::new_with_value(value.unwrap_or_default().into()),
+            1 => RawCall::new_delegate(),
+            2 => RawCall::new_static(),
             x => panic!("unknown call kind {x}"),
-        }.call(addr, data)?;
+        };
+        let return_data = unsafe { raw_call.call(addr, data)? };
+        
         if !return_data.is_empty() {
             println(format!(
                 "Contract {addr} returned {} bytes",
@@ -63,5 +65,5 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 }
 
 fn println(_text: impl AsRef<str>) {
-    // stylus_sdk::debug::println(text)
+    // console!(text)
 }

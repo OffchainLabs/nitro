@@ -1797,7 +1797,7 @@ impl Machine {
             () => {
                 error!("")
             };
-            ($format:expr $(,$message:expr)*) => {{
+            ($format:expr $(, $message:expr)*) => {{
                 flush_module!();
                 let print_debug_info = |machine: &Self| {
                     println!("\n{} {}", "error on line".grey(), line!().pink());

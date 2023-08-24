@@ -27,14 +27,14 @@ sol_storage! {
         bytes bytes_long;
         string chars;
         Maps maps;
-    };
+    }
 
     #[derive(Erase)]
     pub struct Struct {
         uint16 num;
         int32 other;
         bytes32 word;
-    };
+    }
 
     pub struct Maps {
         mapping(uint256 => address) basic;
@@ -42,7 +42,7 @@ sol_storage! {
         mapping(int32 => address)[] array;
         mapping(bytes1 => mapping(bool => uint256)) nested;
         mapping(string => Struct) structs;
-    };
+    }
 }
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {

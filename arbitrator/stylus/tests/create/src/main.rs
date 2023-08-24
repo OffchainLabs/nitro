@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use stylus_sdk::{alloy_primitives::B256, contract::Deploy, evm};
+use stylus_sdk::{alloy_primitives::B256, deploy::RawDeploy, evm};
 
 stylus_sdk::entrypoint!(user_main);
 
@@ -21,7 +21,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     let code = input;
-    let contract = Deploy::new().salt_option(salt).deploy(code, endowment)?;
-    evm::log(&[contract.into_word()], &[]).unwrap();
+    let contract = unsafe { RawDeploy::new().salt_option(salt).deploy(code, endowment)? };
+    evm::raw_log(&[contract.into_word()], &[]).unwrap();
     Ok(contract.to_vec())
 }
