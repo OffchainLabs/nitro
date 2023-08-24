@@ -715,6 +715,7 @@ func testMemory(t *testing.T, jit bool) {
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
+
 func TestProgramActivationFails(t *testing.T) {
 	t.Parallel()
 	testActivationFails(t, true)
