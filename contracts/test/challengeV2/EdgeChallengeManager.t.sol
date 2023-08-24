@@ -1395,16 +1395,26 @@ contract EdgeChallengeManagerTest is Test {
         ei.challengeManager.refundStake(allWinners[16].lowerChildId);
     }
 
-    function testRevertRefundStakeBigStep() external {
+    function testRefundStakeBigStep() external {
         (EdgeInitData memory ei, BisectionChildren[] memory allWinners) = testCanConfirmByOneStep();
-        vm.expectRevert(abi.encodeWithSelector(EdgeTypeNotBlock.selector, EdgeType.BigStep));
+
+        IERC20 stakeToken = ei.challengeManager.stakeToken();
+        uint256 beforeBalance = stakeToken.balanceOf(address(this));
+        vm.prank(nobody); // call refund as nobody
         ei.challengeManager.refundStake(allWinners[11].lowerChildId);
+        uint256 afterBalance = stakeToken.balanceOf(address(this));
+        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmount(), "Stake refunded");
     }
 
-    function testRevertRefundStakeSmallStep() external {
+    function testRefundStakeSmallStep() external {
         (EdgeInitData memory ei, BisectionChildren[] memory allWinners) = testCanConfirmByOneStep();
-        vm.expectRevert(abi.encodeWithSelector(EdgeTypeNotBlock.selector, EdgeType.SmallStep));
+
+        IERC20 stakeToken = ei.challengeManager.stakeToken();
+        uint256 beforeBalance = stakeToken.balanceOf(address(this));
+        vm.prank(nobody); // call refund as nobody
         ei.challengeManager.refundStake(allWinners[5].lowerChildId);
+        uint256 afterBalance = stakeToken.balanceOf(address(this));
+        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmount(), "Stake refunded");
     }
 
     function testRevertRefundStakeNotConfirmed() external {

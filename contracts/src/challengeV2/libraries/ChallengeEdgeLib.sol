@@ -244,13 +244,10 @@ library ChallengeEdgeLib {
     }
 
     /// @notice Set the refunded flag of an edge
-    /// @dev    Checks internally that edge is confirmed, Block type, layer zero edge and hasnt been refunded already
+    /// @dev    Checks internally that edge is confirmed, layer zero edge and hasnt been refunded already
     function setRefunded(ChallengeEdge storage edge) internal {
         if (edge.status != EdgeStatus.Confirmed) {
             revert EdgeNotConfirmed(ChallengeEdgeLib.id(edge), edge.status);
-        }
-        if (edge.eType != EdgeType.Block) {
-            revert EdgeTypeNotBlock(edge.eType);
         }
         if (!isLayerZero(edge)) {
             revert EdgeNotLayerZero(ChallengeEdgeLib.id(edge), edge.staker, edge.claimId);
