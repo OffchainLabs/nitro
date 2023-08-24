@@ -715,6 +715,41 @@ func testMemory(t *testing.T, jit bool) {
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
+func TestProgramActivationFailes(t *testing.T) {
+	t.Parallel()
+	testActivationFailes(t, true)
+}
+
+func testActivationFailes(t *testing.T, jit bool) {
+	ctx, node, _, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("log"), false)
+	defer cleanup()
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	badExportWasm := readWasmFile(t, watFile("bad-export"))
+	auth.GasLimit = 32000000 // skip gas estimation
+	badExportAddr := deployContract(t, ctx, auth, l2client, badExportWasm)
+
+	blockToValidate := uint64(0)
+	timed(t, "activate bad-export", func() {
+		tx, err := arbWasm.ActivateProgram(&auth, badExportAddr)
+		Require(t, err)
+		txRes, err := WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		Require(t, err)
+		if txRes.Status != 0 {
+			Fatal(t, "bad-export transaction did not fail")
+		}
+		gotError := arbutil.DetailTxError(ctx, l2client, tx, txRes)
+		if !strings.Contains(gotError.Error(), "reserved symbol") {
+			Fatal(t, "unexpected error: ", gotError)
+		}
+		Require(t, err)
+		blockToValidate = txRes.BlockNumber.Uint64()
+	})
+
+	validateBlockRange(t, []uint64{blockToValidate}, jit, ctx, node, l2client)
+}
 
 func TestProgramSdkStorage(t *testing.T) {
 	t.Parallel()
