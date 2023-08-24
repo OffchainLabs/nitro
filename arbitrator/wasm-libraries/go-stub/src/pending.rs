@@ -63,8 +63,7 @@ pub unsafe extern "C" fn go_stub__run_stylus_closure(
     };
     set_event(func, this, args);
 
-    #[allow(dropping_references)]
-    mem::drop(pool);
+    // Important: the current reference to the pool shouldn't be used after this resume call
     wavm_guest_call__resume();
 
     let pool = DynamicObjectPool::singleton();
