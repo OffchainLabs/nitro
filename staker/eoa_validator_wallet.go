@@ -6,7 +6,6 @@ package staker
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -27,7 +26,6 @@ type EoaValidatorWallet struct {
 	challengeManager        *challengegen.ChallengeManager
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
-	txCount                 atomic.Uint64
 	getExtraGas             func() uint64
 }
 
@@ -39,7 +37,6 @@ func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress comm
 		client:        l1Client,
 		rollupAddress: rollupAddress,
 		dataPoster:    dataPoster,
-		txCount:       atomic.Uint64{},
 		getExtraGas:   getExtraGas,
 	}, nil
 }
@@ -91,18 +88,21 @@ func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *V
 	if len(builder.transactions) == 0 {
 		return nil, nil
 	}
+	tx := builder.transactions[0] // we ignore future txs and only execute the first
+	return w.postTransaction(ctx, tx)
+}
+
+func (w *EoaValidatorWallet) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
 	nonce, err := w.L1Client().NonceAt(ctx, w.auth.From, nil)
 	if err != nil {
 		return nil, err
 	}
-	tx := builder.transactions[0] // we ignore future txs and only execute the first
-	gas := tx.Gas() + w.getExtraGas()
-	trans, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *tx.To(), tx.Data(), gas, tx.Value())
+	gas := baseTx.Gas() + w.getExtraGas()
+	newTx, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}
-	w.txCount.Store(nonce)
-	return trans, nil
+	return newTx, nil
 }
 
 func (w *EoaValidatorWallet) TimeoutChallenges(ctx context.Context, timeouts []uint64) (*types.Transaction, error) {
@@ -111,7 +111,12 @@ func (w *EoaValidatorWallet) TimeoutChallenges(ctx context.Context, timeouts []u
 	}
 	auth := *w.auth
 	auth.Context = ctx
-	return w.challengeManager.Timeout(&auth, timeouts[0])
+	auth.NoSend = true
+	tx, err := w.challengeManager.Timeout(&auth, timeouts[0])
+	if err != nil {
+		return nil, err
+	}
+	return w.postTransaction(ctx, tx)
 }
 
 func (w *EoaValidatorWallet) CanBatchTxs() bool {
