@@ -12,8 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 type L1Interface interface {
@@ -88,7 +88,7 @@ func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transactio
 	}
 	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
 	if err == nil {
-		return fmt.Errorf("%w for tx hash %v", core.ErrGasLimitReached, tx.Hash())
+		return fmt.Errorf("%w for tx hash %v", vm.ErrOutOfGas, tx.Hash())
 	}
 	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
 }
