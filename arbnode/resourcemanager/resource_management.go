@@ -31,7 +31,7 @@ var (
 //
 // Must be run before the go-ethereum stack is set up (ethereum/go-ethereum/node.New).
 func Init(conf *Config) {
-	if conf.MemoryLimitPercent > 0 {
+	if conf.MemLimitPercent > 0 {
 		node.WrapHTTPHandler = func(srv http.Handler) (http.Handler, error) {
 			return newHttpServer(srv, newLimitChecker(conf)), nil
 		}
@@ -42,18 +42,18 @@ func Init(conf *Config) {
 // Currently only a memory limit is supported, other limits may be added
 // in the future.
 type Config struct {
-	MemoryLimitPercent int `koanf:"mem-limit-percent" reload:"hot"`
+	MemLimitPercent int `koanf:"mem-limit-percent" reload:"hot"`
 }
 
 // DefaultConfig has the defaul resourcemanager configuration,
 // all limits are disabled.
 var DefaultConfig = Config{
-	MemoryLimitPercent: 0,
+	MemLimitPercent: 0,
 }
 
 // ConfigAddOptions adds the configuration options for resourcemanager.
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Int(prefix+".mem-limit-percent", DefaultConfig.MemoryLimitPercent, "RPC calls are throttled if system memory utilization exceeds this percent value, zero (default) is disabled")
+	f.Int(prefix+".mem-limit-percent", DefaultConfig.MemLimitPercent, "RPC calls are throttled if system memory utilization exceeds this percent value, zero (default) is disabled")
 }
 
 // httpServer implements http.Handler and wraps calls to inner with a resource
@@ -96,7 +96,7 @@ type limitChecker interface {
 // mechanism is discovered, it logs an error and fails open, ie
 // it creates a trivialLimitChecker that does no checks.
 func newLimitChecker(conf *Config) limitChecker {
-	c := newCgroupsV1MemoryLimitChecker(DefaultCgroupsV1MemoryDirectory, conf.MemoryLimitPercent)
+	c := newCgroupsV1MemoryLimitChecker(DefaultCgroupsV1MemoryDirectory, conf.MemLimitPercent)
 	if isSupported(c) {
 		log.Info("Cgroups v1 detected, enabling memory limit RPC throttling")
 		return c

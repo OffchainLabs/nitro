@@ -5,6 +5,7 @@
 # have to update an existing file. So - for docker, convert all dependencies
 # to order-only dependencies (timestamps ignored).
 # WARNING: when using this trick, you cannot use the $< automatic variable
+
 ifeq ($(origin NITRO_BUILD_IGNORE_TIMESTAMPS),undefined)
  DEP_PREDICATE:=
  ORDER_ONLY_PREDICATE:=|
@@ -491,8 +492,8 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make
-	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t .
-	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t ..
+	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t ..
 	@touch $@
 
 .make/machines: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

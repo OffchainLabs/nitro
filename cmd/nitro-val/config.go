@@ -27,9 +27,11 @@ type ValidationNodeConfig struct {
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
-	AuthRPC       genericconf.AuthRPCConfig       `koanf:"auth"`
+	Auth          genericconf.AuthRPCConfig       `koanf:"auth"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 	Workdir       string                          `koanf:"workdir" reload:"hot"`
 }
 
@@ -64,9 +66,11 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
-	AuthRPC:       genericconf.AuthRPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 	Workdir:       "",
 }
 
@@ -83,6 +87,8 @@ func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.AuthRPCConfigAddOptions("auth", f)
 	f.Bool("metrics", ValidationNodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.Bool("pprof", ValidationNodeConfigDefault.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
 	f.String("workdir", ValidationNodeConfigDefault.Workdir, "path used for purpose of resolving relative paths (ia. jwt secret file, log files), if empty then current working directory will be used.")
 }
 
