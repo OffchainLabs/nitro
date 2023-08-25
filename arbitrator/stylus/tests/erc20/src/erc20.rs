@@ -3,13 +3,14 @@
 
 // Warning: this code is for testing only and has not been audited
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 use stylus_sdk::{
     alloy_primitives::{Address, U256},
     alloy_sol_types::{sol, SolError},
     evm, msg,
     prelude::*,
 };
+use alloc::{string::String, vec::Vec};
 
 pub trait Erc20Params {
     const NAME: &'static str;
