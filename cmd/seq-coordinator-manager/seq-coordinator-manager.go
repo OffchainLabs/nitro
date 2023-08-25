@@ -265,6 +265,7 @@ func (sm *manager) addSeqPriorityForm(ctx context.Context) *tview.Form {
 	addSeqForm.AddButton("Add", func() {
 		// check if url is valid, i.e it doesnt already exist in the priority list
 		if _, ok := sm.prioritiesMap[URL]; !ok && URL != "" {
+			sm.prioritiesMap[URL]++
 			sm.priorityList = append(sm.priorityList, URL)
 		}
 		sm.populateLists(ctx)
