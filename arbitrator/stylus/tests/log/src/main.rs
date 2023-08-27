@@ -16,6 +16,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         topics.push(B256::try_from(&input[..32]).unwrap());
         input = &input[32..];
     }
-    evm::log(&topics, input).unwrap();
+    evm::raw_log(&topics, input).unwrap();
     Ok(vec![])
 }

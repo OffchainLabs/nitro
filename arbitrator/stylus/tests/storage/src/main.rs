@@ -3,7 +3,11 @@
 
 #![no_main]
 
-use stylus_sdk::{debug, load_bytes32, store_bytes32, alloy_primitives::B256};
+use stylus_sdk::{
+    alloy_primitives::B256,
+    console,
+    storage::{load_bytes32, store_bytes32},
+};
 
 stylus_sdk::entrypoint!(user_main);
 
@@ -12,15 +16,15 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let slot = B256::try_from(&input[1..33]).unwrap();
 
     Ok(if read {
-        debug::println(format!("read  {slot}"));
-        let data = load_bytes32(slot.into());
-        debug::println(format!("value {data}"));
+        console!("read {slot}");
+        let data = unsafe { load_bytes32(slot.into()) };
+        console!("value {data}");
         data.0.into()
     } else {
-        debug::println(format!("write {slot}"));
+        console!("write {slot}");
         let data = B256::try_from(&input[33..]).unwrap();
-        store_bytes32(slot.into(), data);
-        debug::println(format!("value {data}"));
+        unsafe { store_bytes32(slot.into(), data) };
+        console!(("value {data}"));
         vec![]
     })
 }

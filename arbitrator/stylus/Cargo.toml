@@ -23,6 +23,9 @@ fnv = "1.0.7"
 sha3 = "0.10.5"
 hex = "0.4.3"
 
+[dev-dependencies]
+num-bigint = "0.4.4"
+
 [features]
 default = ["rayon", "singlepass_rayon"]
 llvm = ["dep:wasmer-compiler-llvm"]

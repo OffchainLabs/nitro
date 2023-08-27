@@ -3,7 +3,6 @@
 
 use arbutil::{wavm, Color};
 use go_abi::wavm_guest_call__resume;
-use std::mem;
 
 use crate::value::{DynamicObject, DynamicObjectPool, GoValue, JsValue, STYLUS_ID};
 
@@ -63,10 +62,7 @@ pub unsafe extern "C" fn go_stub__run_stylus_closure(
     };
     set_event(func, this, args);
 
-    // replace in Rust 1.71.0
-    // #[allow(dropping_references)]
-    #[allow(clippy::drop_ref)]
-    mem::drop(pool);
+    // Important: the current reference to the pool shouldn't be used after this resume call
     wavm_guest_call__resume();
 
     let pool = DynamicObjectPool::singleton();

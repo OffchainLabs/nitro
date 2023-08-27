@@ -60,7 +60,7 @@ func keccakTest(t *testing.T, jit bool) {
 
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 	timed(t, "compile same code", func() {
-		if _, err := arbWasm.CompileProgram(&auth, otherAddressSameCode); err == nil || !strings.Contains(err.Error(), "ProgramUpToDate") {
+		if _, err := arbWasm.ActivateProgram(&auth, otherAddressSameCode); err == nil || !strings.Contains(err.Error(), "ProgramUpToDate") {
 			Fatal(t, "compile should have failed with ProgramUpToDate")
 		}
 	})
@@ -664,7 +664,7 @@ func testCreate(t *testing.T, jit bool) {
 		// compile the program
 		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 		Require(t, err)
-		tx, err = arbWasm.CompileProgram(&auth, storeAddr)
+		tx, err = arbWasm.ActivateProgram(&auth, storeAddr)
 		if err != nil {
 			if !strings.Contains(err.Error(), "ProgramUpToDate") {
 				Fatal(t, err)
@@ -870,12 +870,12 @@ func testMemory(t *testing.T, jit bool) {
 	colors.PrintGrey("multicall.rs      ", multiAddr)
 	colors.PrintGrey("grow-and-call.wat ", growCallAddr)
 	colors.PrintGrey("grow-120.wat      ", growHugeAddr)
-	compile, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "compileProgram")
+	activate, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
 	}
-	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(compile(growHugeAddr)))
+	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
 	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
 
 	// check that compilation then succeeds
@@ -898,6 +898,42 @@ func testMemory(t *testing.T, jit bool) {
 	}
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
+}
+
+func TestProgramActivationFails(t *testing.T) {
+	t.Parallel()
+	testActivationFails(t, true)
+}
+
+func testActivationFails(t *testing.T, jit bool) {
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, false)
+	defer cleanup()
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	badExportWasm := readWasmFile(t, watFile("bad-export"))
+	auth.GasLimit = 32000000 // skip gas estimation
+	badExportAddr := deployContract(t, ctx, auth, l2client, badExportWasm)
+
+	blockToValidate := uint64(0)
+	timed(t, "activate bad-export", func() {
+		tx, err := arbWasm.ActivateProgram(&auth, badExportAddr)
+		Require(t, err)
+		txRes, err := WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		Require(t, err)
+		if txRes.Status != 0 {
+			Fatal(t, "bad-export transaction did not fail")
+		}
+		gotError := arbutil.DetailTxError(ctx, l2client, tx, txRes)
+		if !strings.Contains(gotError.Error(), "reserved symbol") {
+			Fatal(t, "unexpected error: ", gotError)
+		}
+		Require(t, err)
+		blockToValidate = txRes.BlockNumber.Uint64()
+	})
+
+	validateBlockRange(t, []uint64{blockToValidate}, jit, ctx, node, l2client)
 }
 
 func TestProgramSdkStorage(t *testing.T) {
@@ -1043,10 +1079,10 @@ func deployWasm(
 	auth.GasLimit = 32000000 // skip gas estimation
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey(name, ": deployed to ", programAddress.Hex())
-	return compileWasm(t, ctx, auth, l2client, programAddress, name)
+	return activateWasm(t, ctx, auth, l2client, programAddress, name)
 }
 
-func compileWasm(
+func activateWasm(
 	t *testing.T,
 	ctx context.Context,
 	auth bind.TransactOpts,
@@ -1058,8 +1094,8 @@ func compileWasm(
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	timed(t, "compile "+name, func() {
-		tx, err := arbWasm.CompileProgram(&auth, program)
+	timed(t, "activate "+name, func() {
+		tx, err := arbWasm.ActivateProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)

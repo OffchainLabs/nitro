@@ -54,7 +54,9 @@ const (
 	callScalarOffset
 )
 
-var ProgramNotCompiledError func() error
+var ErrProgramActivation = errors.New("program activation failed")
+
+var ProgramNotActivatedError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
 
@@ -164,7 +166,7 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
+func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(program)
 
@@ -233,7 +235,7 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	if program.version == 0 {
-		return nil, ProgramNotCompiledError()
+		return nil, ProgramNotActivatedError()
 	}
 	if program.version != stylusVersion {
 		return nil, ProgramOutOfDateError(program.version)
