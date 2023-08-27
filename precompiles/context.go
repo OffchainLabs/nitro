@@ -69,6 +69,10 @@ func (c *Context) TracingInfo() *util.TracingInfo {
 	return c.tracingInfo
 }
 
+func (c *Context) GetCodeHash(address common.Address) (common.Hash, error) {
+	return c.State.BackingStorage().GetCodeHash(address)
+}
+
 func testContext(caller addr, evm mech) *Context {
 	tracingInfo := util.NewTracingInfo(evm, common.Address{}, types.ArbosAddress, util.TracingDuringEVM)
 	ctx := &Context{
