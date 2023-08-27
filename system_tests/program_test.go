@@ -767,7 +767,7 @@ func testMemory(t *testing.T, jit bool) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
 
-	ensure(arbOwner.SetInkPrice(&auth, 1e2))
+	ensure(arbOwner.SetInkPrice(&auth, 1e4))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
