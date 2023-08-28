@@ -851,12 +851,12 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
-func TestProgramActivationFails(t *testing.T) {
+func TestProgramActivateFails(t *testing.T) {
 	t.Parallel()
-	testActivationFails(t, true)
+	testActivateFails(t, true)
 }
 
-func testActivationFails(t *testing.T, jit bool) {
+func testActivateFails(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, false)
 	defer cleanup()
 
