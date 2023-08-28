@@ -85,6 +85,7 @@ func compileUserWasm(
 }
 
 func callUserWasm(
+	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
@@ -99,7 +100,7 @@ func callUserWasm(
 	pageLimit := uint16(math.MaxUint16)
 	debug := arbmath.UintToBool(params.debugMode)
 
-	wasm, err := getWasm(db, program.address)
+	wasm, err := getWasm(db, address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
@@ -111,7 +112,7 @@ func callUserWasm(
 		return nil, err
 	}
 
-	root := db.NoncanonicalProgramHash(program.address, uint32(params.version))
+	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, params.version)
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
 

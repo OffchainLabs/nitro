@@ -49,6 +49,7 @@ type Storage struct {
 const StorageReadCost = params.SloadGasEIP2200
 const StorageWriteCost = params.SstoreSetGasEIP2200
 const StorageWriteZeroCost = params.SstoreResetGasEIP2200
+const StorageCodeHashCost = params.ColdAccountAccessCostEIP2929
 
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
@@ -266,6 +267,14 @@ func (store *Storage) ClearBytes() error {
 		}
 	}
 	return store.ClearByUint64(0)
+}
+
+func (store *Storage) GetCodeHash(address common.Address) (common.Hash, error) {
+	err := store.burner.Burn(StorageCodeHashCost)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return store.db.GetCodeHash(address), nil
 }
 
 func (store *Storage) Burner() burn.Burner {

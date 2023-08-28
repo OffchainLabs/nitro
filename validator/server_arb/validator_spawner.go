@@ -111,7 +111,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",
-				"err", err, "address", call.Address, "blockNr", entry.Id,
+				"err", err, "codehash", call.CodeHash, "blockNr", entry.Id,
 			)
 			return fmt.Errorf("error adding user wasm for proving: %w", err)
 		}

@@ -3,10 +3,12 @@
 
 // Warning: this code is for testing only and has not been audited
 
-#![cfg_attr(not(feature = "export-abi"), no_main)]
+#![cfg_attr(not(feature = "export-abi"), no_main, no_std)]
+extern crate alloc;
 
 use crate::erc20::{Erc20, Erc20Params};
 use stylus_sdk::{alloy_primitives::U256, call, msg, prelude::*};
+use alloc::{string::String, vec::Vec};
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

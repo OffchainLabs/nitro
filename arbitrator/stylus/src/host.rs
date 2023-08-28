@@ -308,7 +308,7 @@ pub(crate) fn native_keccak256<E: EvmApi>(
     len: u32,
     output: u32,
 ) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env, PTR_INK)?;
+    let mut env = WasmEnv::start(&mut env, 0)?;
     env.pay_for_keccak(len.into())?;
 
     let preimage = env.read_slice(input, len)?;

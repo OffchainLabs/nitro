@@ -37,7 +37,6 @@ type Program struct {
 	wasmSize  uint16 // Unit is half of a kb
 	footprint uint16
 	version   uint16
-	address   common.Address // not saved in state
 }
 
 type uint24 = arbmath.Uint24
@@ -169,19 +168,20 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 
 func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
+	codeHash := statedb.GetCodeHash(program)
 
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, false, err
 	}
-	latest, err := p.ProgramVersion(program)
+	latest, err := p.ProgramVersion(codeHash)
 	if err != nil {
 		return 0, false, err
 	}
+	// Already compiled and found in the machine versions mapping.
 	if latest >= version {
 		return 0, false, ProgramUpToDateError()
 	}
-
 	wasm, err := getWasm(statedb, program)
 	if err != nil {
 		return 0, false, err
@@ -211,9 +211,8 @@ func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode
 		wasmSize:  wasmSize,
 		footprint: info.footprint,
 		version:   version,
-		address:   program,
 	}
-	return version, false, p.programs.Set(program.Hash(), programData.serialize())
+	return version, false, p.programs.Set(codeHash, programData.serialize())
 }
 
 func (p Programs) CallProgram(
@@ -280,15 +279,19 @@ func (p Programs) CallProgram(
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     l1BlockNumber,
 		blockTimestamp:  evm.Context.Time,
-		contractAddress: contract.Address(), // acting address
-		msgSender:       contract.Caller(),
-		msgValue:        common.BigToHash(contract.Value()),
+		contractAddress: scope.Contract.Address(),
+		msgSender:       scope.Contract.Caller(),
+		msgValue:        common.BigToHash(scope.Contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
 	}
 
-	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	address := contract.Address()
+	if contract.CodeAddr != nil {
+		address = *contract.CodeAddr
+	}
+	return callUserWasm(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -304,20 +307,16 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 }
 
 func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
-	address := contract.Address()
-	if contract.CodeAddr != nil {
-		address = *contract.CodeAddr
-	}
-	return p.deserializeProgram(address)
+
+	return p.deserializeProgram(contract.CodeHash)
 }
 
-func (p Programs) deserializeProgram(address common.Address) (Program, error) {
-	data, err := p.programs.Get(address.Hash())
+func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
+	data, err := p.programs.Get(codeHash)
 	return Program{
 		wasmSize:  arbmath.BytesToUint16(data[26:28]),
 		footprint: arbmath.BytesToUint16(data[28:30]),
 		version:   arbmath.BytesToUint16(data[30:]),
-		address:   address,
 	}, err
 }
 
@@ -329,8 +328,8 @@ func (p Program) serialize() common.Hash {
 	return data
 }
 
-func (p Programs) ProgramVersion(address common.Address) (uint16, error) {
-	program, err := p.deserializeProgram(address)
+func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
+	program, err := p.deserializeProgram(codeHash)
 	return program.version, err
 }
 
