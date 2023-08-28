@@ -6,11 +6,10 @@
 use stylus_sdk::{
     alloy_primitives::B256,
     console,
-    storage::{load_bytes32, store_bytes32},
+    storage::{load_bytes32, store_bytes32}, stylus_proc::entrypoint,
 };
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let read = input[0] == 0;
     let slot = B256::try_from(&input[1..33]).unwrap();

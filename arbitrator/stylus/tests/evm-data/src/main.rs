@@ -8,11 +8,10 @@ use stylus_sdk::{
     block,
     call::RawCall,
     contract, evm, msg, tx,
-    types::AddressVM,
+    prelude::*,
 };
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let balance_check_addr = Address::try_from(&input[..20]).unwrap();
     let eth_precompile_addr = Address::try_from(&input[20..40]).unwrap();

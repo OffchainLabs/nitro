@@ -6,7 +6,7 @@
 use stylus_sdk::{
     alloy_primitives::{b256, Address},
     call::RawCall,
-    console, contract,
+    console, contract, prelude::*,
 };
 
 macro_rules! error {
@@ -16,8 +16,7 @@ macro_rules! error {
     }};
 }
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut call_data = input.as_slice();
     let mut read = || {

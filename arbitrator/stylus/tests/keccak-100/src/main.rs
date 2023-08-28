@@ -4,9 +4,9 @@
 #![no_main]
 
 use sha3::{Digest, Keccak256};
+use stylus_sdk::stylus_proc::entrypoint;
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(_: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut data = [0; 32];
     for _ in 0..100 {

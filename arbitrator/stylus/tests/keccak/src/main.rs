@@ -3,11 +3,10 @@
 
 #![no_main]
 
-use stylus_sdk::{alloy_primitives, crypto};
+use stylus_sdk::{alloy_primitives, crypto, prelude::*};
 use sha3::{Digest, Keccak256};
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut data = keccak(&input[1..]);
     let rounds = input[0];
