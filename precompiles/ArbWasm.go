@@ -57,13 +57,18 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().PageLimit()
 }
 
-// Gets the current program version
+// CodehashVersion returns the stylus version that program with codehash was most recently compiled with
+func (con ArbWasm) CodehashVersion(c ctx, _ mech, codehash bytes32) (uint16, error) {
+	return c.State.Programs().CodehashVersion(codehash)
+}
+
+// ProgramVersion returns the stylus version that program at addr was most recently compiled with
 func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error) {
 	codehash, err := c.GetCodeHash(program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramVersion(codehash)
+	return con.CodehashVersion(c, evm, codehash)
 }
 
 // Gets the added wasm call cost paid per half kb uncompressed wasm
