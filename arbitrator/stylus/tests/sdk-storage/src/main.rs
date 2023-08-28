@@ -6,13 +6,10 @@
 use stylus_sdk::{
     alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
-    stylus_proc::{sol_storage, Erase},
 };
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-stylus_sdk::entrypoint!(user_main);
 
 sol_storage! {
     pub struct Contract {
@@ -45,6 +42,7 @@ sol_storage! {
     }
 }
 
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let contract = unsafe { Contract::new(U256::ZERO, 0) };
     let selector = u32::from_be_bytes(input[0..4].try_into().unwrap());

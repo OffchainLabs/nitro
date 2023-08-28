@@ -3,6 +3,7 @@
 
 // Warning: this code is for testing only and has not been audited
 
+use alloc::{string::String, vec::Vec};
 use core::marker::PhantomData;
 use stylus_sdk::{
     alloy_primitives::{Address, U256},
@@ -10,7 +11,6 @@ use stylus_sdk::{
     evm, msg,
     prelude::*,
 };
-use alloc::{string::String, vec::Vec};
 
 pub trait Erc20Params {
     const NAME: &'static str;
