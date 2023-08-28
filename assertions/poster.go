@@ -40,7 +40,7 @@ func NewPoster(
 
 func (p *Poster) Start(ctx context.Context) {
 	if _, err := p.PostAssertion(ctx); err != nil {
-		srvlog.Error("Could not submit latest assertion to L1", err)
+		srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
 	}
 	ticker := time.NewTicker(p.postInterval)
 	defer ticker.Stop()
@@ -48,7 +48,7 @@ func (p *Poster) Start(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if _, err := p.PostAssertion(ctx); err != nil {
-				srvlog.Error("Could not submit latest assertion to L1", err)
+				srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
 			}
 		case <-ctx.Done():
 			return

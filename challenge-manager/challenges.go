@@ -32,7 +32,11 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		return errors.New("assertion creation info inbox max count was not a uint64")
 	}
 	if verifiedErr := m.watcher.AddVerifiedHonestEdge(ctx, levelZeroEdge); verifiedErr != nil {
-		srvlog.Error("could not add verified honest edge with id %#x to chain watcher: %w", levelZeroEdge.Id(), verifiedErr)
+		fields := log.Ctx{
+			"edgeId": levelZeroEdge.Id(),
+			"err":    verifiedErr,
+		}
+		srvlog.Error("could not add verified honest edge with id %#x to chain watcher: %w", fields)
 	}
 	// Start tracking the challenge.
 	tracker, err := edgetracker.New(

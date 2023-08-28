@@ -79,12 +79,12 @@ func NewScanner(
 func (s *Scanner) Start(ctx context.Context) {
 	latestConfirmed, err := s.chain.LatestConfirmed(ctx)
 	if err != nil {
-		srvlog.Error("Could not get latest confirmed assertion", err)
+		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
 		return
 	}
 	fromBlock, err := latestConfirmed.CreatedAtBlock()
 	if err != nil {
-		srvlog.Error("Could not get creation block", err)
+		srvlog.Error("Could not get creation block", log.Ctx{"err": err})
 		return
 	}
 
@@ -92,7 +92,7 @@ func (s *Scanner) Start(ctx context.Context) {
 		return rollupgen.NewRollupUserLogicFilterer(s.rollupAddr, s.backend)
 	})
 	if err != nil {
-		srvlog.Error("Could not get rollup user logic filterer", err)
+		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
 		return
 	}
 	ticker := time.NewTicker(s.pollInterval)
@@ -102,7 +102,7 @@ func (s *Scanner) Start(ctx context.Context) {
 		case <-ticker.C:
 			latestBlock, err := s.backend.HeaderByNumber(ctx, nil)
 			if err != nil {
-				srvlog.Error("Could not get header by number", err)
+				srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 				continue
 			}
 			if !latestBlock.Number.IsUint64() {
@@ -122,7 +122,7 @@ func (s *Scanner) Start(ctx context.Context) {
 				return true, s.checkForAssertionAdded(ctx, filterer, filterOpts)
 			})
 			if err != nil {
-				srvlog.Error("Could not check for assertion added", err)
+				srvlog.Error("Could not check for assertion added", log.Ctx{"err": err})
 				return
 			}
 			fromBlock = toBlock
@@ -143,7 +143,7 @@ func (s *Scanner) checkForAssertionAdded(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			srvlog.Error("Could not close filter iterator", err)
+			srvlog.Error("Could not close filter iterator", log.Ctx{"err": err})
 		}
 	}()
 	for it.Next() {
