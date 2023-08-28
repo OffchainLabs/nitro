@@ -127,6 +127,7 @@ func createForwardingNode(
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.Sequencer.Enable = false
 	nodeConfig.DelayedSequencer.Enable = false
+	nodeConfig.BatchPoster.Enable = false
 	nodeConfig.Forwarder.RedisUrl = redisUrl
 	nodeConfig.ForwardingTarget = fallbackPath
 	//	nodeConfig.Feed.Output.Enable = false
@@ -148,7 +149,7 @@ func createSequencer(
 	ipcConfig.Path = ipcPath
 	ipcConfig.Apply(stackConfig)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.BatchPoster.Enable = true
+	nodeConfig.BatchPoster.Enable = false
 	nodeConfig.SeqCoordinator.Enable = true
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 	nodeConfig.SeqCoordinator.MyUrl = ipcPath

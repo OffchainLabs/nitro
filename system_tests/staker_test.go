@@ -128,13 +128,13 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, l1client)
 	Require(t, err)
 
-	valConfig := staker.L1ValidatorConfig{}
+	valConfig := staker.TestL1ValidatorConfig
 
 	dpA, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2nodeB.ArbDB, storage.BlockValidatorPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := staker.NewContractValidatorWallet(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return 10000 })
+	valWalletA, err := staker.NewContractValidatorWallet(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
