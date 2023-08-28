@@ -17,8 +17,8 @@ func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
 	defer cancel()
 
 	messagesCount := uint64(2 * 100 * 1024)
-	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, 2*100*1024, 2*100*1024)
-	err := deleteOldMessageFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount, inboxTrackerDb, transactionStreamerDb)
+	inboxTrackerDb, transactionStreamerDb, pruner := setupDatabase(t, 2*100*1024, 2*100*1024)
+	err := pruner.deleteOldMessagesFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount)
 	Require(t, err)
 
 	checkDbKeys(t, messagesCount, transactionStreamerDb, messagePrefix)
@@ -26,22 +26,21 @@ func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
 
 }
 
-func TestMessagePrunerTraverseEachMessageOnlyOnce(t *testing.T) {
+func TestMessagePrunerTwoHalves(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	messagesCount := uint64(10)
-	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, messagesCount, messagesCount)
-	// In first iteration message till messagesCount are tried to be deleted.
-	err := deleteOldMessageFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount, inboxTrackerDb, transactionStreamerDb)
+	_, transactionStreamerDb, pruner := setupDatabase(t, messagesCount, messagesCount)
+	// In first iteration message till messagesCount/2 are tried to be deleted.
+	err := pruner.deleteOldMessagesFromDB(ctx, arbutil.MessageIndex(messagesCount/2), messagesCount/2)
 	Require(t, err)
-	// After first iteration messagesCount/2 is reinserted in inbox db
-	err = inboxTrackerDb.Put(dbKey(messagePrefix, messagesCount/2), []byte{})
+	// In first iteration all the message till messagesCount/2 are deleted.
+	checkDbKeys(t, messagesCount/2, transactionStreamerDb, messagePrefix)
+	// In second iteration message till messagesCount are tried to be deleted.
+	err = pruner.deleteOldMessagesFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount)
 	Require(t, err)
-	// In second iteration message till messagesCount are again tried to be deleted.
-	err = deleteOldMessageFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount, inboxTrackerDb, transactionStreamerDb)
-	Require(t, err)
-	// In second iteration all the message till messagesCount are deleted again.
+	// In second iteration all the message till messagesCount are deleted.
 	checkDbKeys(t, messagesCount, transactionStreamerDb, messagePrefix)
 }
 
@@ -50,10 +49,10 @@ func TestMessagePrunerPruneTillLessThenEqualTo(t *testing.T) {
 	defer cancel()
 
 	messagesCount := uint64(10)
-	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, 2*messagesCount, 20)
+	inboxTrackerDb, transactionStreamerDb, pruner := setupDatabase(t, 2*messagesCount, 20)
 	err := inboxTrackerDb.Delete(dbKey(messagePrefix, 9))
 	Require(t, err)
-	err = deleteOldMessageFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount, inboxTrackerDb, transactionStreamerDb)
+	err = pruner.deleteOldMessagesFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount)
 	Require(t, err)
 	hasKey, err := transactionStreamerDb.Has(dbKey(messagePrefix, messagesCount))
 	Require(t, err)
@@ -67,8 +66,8 @@ func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	defer cancel()
 
 	messagesCount := uint64(10)
-	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, messagesCount, messagesCount)
-	err := deleteOldMessageFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount, inboxTrackerDb, transactionStreamerDb)
+	inboxTrackerDb, transactionStreamerDb, pruner := setupDatabase(t, messagesCount, messagesCount)
+	err := pruner.deleteOldMessagesFromDB(ctx, arbutil.MessageIndex(messagesCount), messagesCount)
 	Require(t, err)
 
 	checkDbKeys(t, uint64(messagesCount), transactionStreamerDb, messagePrefix)
@@ -76,7 +75,7 @@ func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 
 }
 
-func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethdb.Database, ethdb.Database) {
+func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethdb.Database, ethdb.Database, *MessagePruner) {
 
 	transactionStreamerDb := rawdb.NewMemoryDatabase()
 	for i := uint64(0); i < uint64(messageCount); i++ {
@@ -90,7 +89,10 @@ func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethd
 		Require(t, err)
 	}
 
-	return inboxTrackerDb, transactionStreamerDb
+	return inboxTrackerDb, transactionStreamerDb, &MessagePruner{
+		transactionStreamer: &TransactionStreamer{db: transactionStreamerDb},
+		inboxTracker:        &InboxTracker{db: inboxTrackerDb},
+	}
 }
 
 func checkDbKeys(t *testing.T, endCount uint64, db ethdb.Database, prefix []byte) {

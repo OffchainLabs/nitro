@@ -4,10 +4,16 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"math/bits"
 	"net/url"
 
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 
@@ -22,7 +28,7 @@ type BackendConfig struct {
 }
 
 func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggregator, error) {
-	services, err := setUpServices(config)
+	services, err := ParseServices(config.RPCAggregator)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +36,7 @@ func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggr
 }
 
 func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*Aggregator, error) {
-	services, err := setUpServices(config)
+	services, err := ParseServices(config.RPCAggregator)
 	if err != nil {
 		return nil, err
 	}
@@ -38,16 +44,16 @@ func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.
 }
 
 func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*Aggregator, error) {
-	services, err := setUpServices(config)
+	services, err := ParseServices(config.RPCAggregator)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
-func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
+func ParseServices(config AggregatorConfig) ([]ServiceDetails, error) {
 	var cs []BackendConfig
-	err := json.Unmarshal([]byte(config.AggregatorConfig.Backends), &cs)
+	err := json.Unmarshal([]byte(config.Backends), &cs)
 	if err != nil {
 		return nil, err
 	}
@@ -80,4 +86,34 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 	}
 
 	return services, nil
+}
+
+func KeysetHashFromServices(services []ServiceDetails, assumedHonest uint64) ([32]byte, []byte, error) {
+	var aggSignersMask uint64
+	pubKeys := []blsSignatures.PublicKey{}
+	for _, d := range services {
+		if bits.OnesCount64(d.signersMask) != 1 {
+			return [32]byte{}, nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
+		}
+		aggSignersMask |= d.signersMask
+		pubKeys = append(pubKeys, d.pubKey)
+	}
+	if bits.OnesCount64(aggSignersMask) != len(services) {
+		return [32]byte{}, nil, errors.New("at least two signers share a mask")
+	}
+
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: uint64(assumedHonest),
+		PubKeys:       pubKeys,
+	}
+	ksBuf := bytes.NewBuffer([]byte{})
+	if err := keyset.Serialize(ksBuf); err != nil {
+		return [32]byte{}, nil, err
+	}
+	keysetHash, err := keyset.Hash()
+	if err != nil {
+		return [32]byte{}, nil, err
+	}
+
+	return keysetHash, ksBuf.Bytes(), nil
 }
