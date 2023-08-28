@@ -36,7 +36,7 @@ jobs:
           detached: true
 
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
@@ -49,12 +49,12 @@ jobs:
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: 1.20.x
 
       - name: Setup nodejs
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: '16'
           cache: 'yarn'
@@ -144,7 +144,7 @@ jobs:
 
       - name: Setup emsdk
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        uses: mymindstorm/setup-emsdk@v11
+        uses: mymindstorm/setup-emsdk@v12
         with:
           # Make sure to set a version number!
           version: 3.1.6

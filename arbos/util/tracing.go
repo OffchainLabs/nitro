@@ -36,7 +36,7 @@ func (a addressHolder) Address() common.Address {
 }
 
 func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenario) *TracingInfo {
-	if evm.Config.Tracer == nil || !evm.Config.Debug {
+	if evm.Config.Tracer == nil {
 		return nil
 	}
 	return &TracingInfo{

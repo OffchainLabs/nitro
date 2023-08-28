@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -43,6 +45,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -238,6 +241,12 @@ func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
 	return header.BaseFee
 }
 
+func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+	header, err := client.HeaderByNumber(ctx, blockNum)
+	Require(t, err)
+	return header.BaseFee
+}
+
 type lifecycle struct {
 	start func() error
 	stop  func() error
@@ -428,7 +437,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	}})
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining(1))
+	Require(t, l1backend.StartMining())
 
 	rpcClient, err := stack.Attach()
 	Require(t, err)
@@ -488,13 +497,13 @@ func DeployOnTestL1(
 }
 
 func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, cacheConfig *core.CacheConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil)
+	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, cacheConfig)
 }
 
 func createL2BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, cacheConfig *core.CacheConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -525,7 +534,7 @@ func createL2BlockChainWithStackConfig(
 			SerializedChainConfig: serializedChainConfig,
 		}
 	}
-	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -560,7 +569,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil)
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil, nil)
 	return
 }
 
@@ -571,6 +580,7 @@ func createTestNodeOnL1WithConfigImpl(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
+	cacheConfig *core.CacheConfig,
 	l2info_in info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -592,7 +602,7 @@ func createTestNodeOnL1WithConfigImpl(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, cacheConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -638,7 +648,7 @@ func CreateTestL2WithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig(), nil)
 	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
@@ -826,19 +836,19 @@ func setupConfigWithDAS(
 
 	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
-		KeyConfig: das.KeyConfig{
+		Key: das.KeyConfig{
 			KeyDir: dbPath,
 		},
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
+		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorageConfig: das.LocalDBStorageConfig{
+		LocalDBStorage: das.LocalDBStorageConfig{
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
 		RequestTimeout:           5 * time.Second,
-		L1NodeURL:                "none",
+		ParentChainNodeURL:       "none",
 		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
@@ -867,12 +877,12 @@ func setupConfigWithDAS(
 			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
 			SignerMask:          1,
 		}
-		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
+		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
@@ -971,4 +981,19 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 		time.Sleep(delay)
 	}
 	Fatal(t, "failed to complete after ", delay*time.Duration(max))
+}
+
+func TestMain(m *testing.M) {
+	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
+	if logLevelEnv != "" {
+		logLevel, err := strconv.ParseUint(logLevelEnv, 10, 32)
+		if err != nil || logLevel > uint64(log.LvlTrace) {
+			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
+		}
+		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+		glogger.Verbosity(log.Lvl(logLevel))
+		log.Root().SetHandler(glogger)
+	}
+	code := m.Run()
+	os.Exit(code)
 }

@@ -19,6 +19,8 @@ require (
 	github.com/codeclysm/extract/v3 v3.0.2
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/ethereum/go-ethereum v1.10.26
+	github.com/fatih/structtag v1.2.0
+	github.com/google/go-cmp v0.5.9
 	github.com/hashicorp/golang-lru/v2 v2.0.1
 	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-libipfs v0.6.2
@@ -32,7 +34,8 @@ require (
 	github.com/stretchr/testify v1.8.2
 	github.com/wasmerio/wasmer-go v1.0.4
 	github.com/wealdtech/go-merkletree v1.0.0
-	golang.org/x/term v0.5.0
+	golang.org/x/term v0.6.0
+	golang.org/x/tools v0.7.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
@@ -258,8 +261,7 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
 	golang.org/x/exp v0.0.0-20230206171751-46f607a40771 // indirect
-	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/tools v0.3.0 // indirect
+	golang.org/x/mod v0.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto v0.0.0-20211118181313-81c1377c94b1 // indirect
 	google.golang.org/grpc v1.46.0 // indirect
@@ -284,19 +286,18 @@ require (
 	github.com/VictoriaMetrics/fastcache v1.6.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/edsrzf/mmap-go v1.0.0 // indirect
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5 // indirect
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/go-stack/stack v1.8.1 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
+	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/go-bexpr v0.1.10 // indirect
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
-	github.com/holiman/uint256 v1.2.0
+	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c
 	github.com/huin/goupnp v1.0.3 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -313,10 +314,10 @@ require (
 	github.com/tklauser/numcpus v0.2.2 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 	golang.org/x/crypto v0.6.0
-	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.6.0
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/sys v0.7.0
+	golang.org/x/text v0.8.0 // indirect
 	golang.org/x/time v0.0.0-20220922220347-f3bd1da661af // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 )

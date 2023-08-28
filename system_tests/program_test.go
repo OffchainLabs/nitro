@@ -972,9 +972,9 @@ func setupProgramTest(t *testing.T, jit bool) (
 	l2config.BlockValidator.Enable = false
 	l2config.Staker.Enable = true
 	l2config.BatchPoster.Enable = true
-	l2config.L1Reader.Enable = true
+	l2config.ParentChainReader.Enable = true
 	l2config.Sequencer.MaxRevertGasReject = 0
-	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
+	l2config.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 	valConf := valnode.TestValidationConfig
 	valConf.UseJit = jit
 	_, valStack := createTestValidationNode(t, ctx, &valConf)
