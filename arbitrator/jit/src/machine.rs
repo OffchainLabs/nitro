@@ -2,13 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress,
-    gostack::GoRuntimeState,
-    runtime, socket, syscall,
-    syscall::JsRuntimeState,
-    user, wavmio,
-    wavmio::{Bytes20, Bytes32},
-    Opts,
+    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState, user,
+    wavmio, wavmio::Bytes32, Opts,
 };
 use arbutil::Color;
 use eyre::{bail, ErrReport, Result, WrapErr};
@@ -198,7 +193,10 @@ impl From<RuntimeError> for Escape {
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
-pub type UserWasms = HashMap<(Bytes20, u32), (Vec<u8>, Bytes32)>;
+
+/// Represents a mapping of a WASM program codehash and version to the compiled wasm
+/// code itself and its noncanonical program hash.
+pub type UserWasms = HashMap<(Bytes32, u16), (Vec<u8>, Bytes32)>;
 
 #[derive(Default)]
 pub struct WasmEnv {

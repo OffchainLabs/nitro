@@ -90,11 +90,12 @@ func compileUserWasm(
 	if err != nil {
 		log.Crit("compile failed", "err", err, "msg", msg, "program", program)
 	}
-	db.SetCompiledWasmCode(program, data, uint32(version)) // TODO: use u16 in statedb
+	db.SetCompiledWasmCode(program, data, version)
 	return &info, err
 }
 
 func callUserWasm(
+	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
@@ -106,9 +107,9 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program.address, uint32(stylusParams.version)) // TODO: use u16 in statedb
+		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version)
 	}
-	module := db.GetCompiledWasmCode(program.address, uint32(stylusParams.version)) // TODO: use u16 in statedb
+	module := db.GetCompiledWasmCode(address, stylusParams.version)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
@@ -128,7 +129,7 @@ func callUserWasm(
 	debug := stylusParams.debugMode != 0
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if status == userFailure && debug {
-		log.Warn("program failure", "err", err, "msg", msg, "program", program.address)
+		log.Warn("program failure", "err", err, "msg", msg, "program", address)
 	}
 	return data, err
 }
