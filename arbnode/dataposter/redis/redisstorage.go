@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package dataposter
+package redis
 
 import (
 	"bytes"
@@ -11,22 +11,26 @@ import (
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// RedisStorage requires that Item is RLP encodable/decodable
-type RedisStorage[Item any] struct {
+// Storage implements redis sorted set backed storage. It does not support
+// duplicate keys or values. That is, putting the same element on different
+// indexes will not yield expected behavior.
+// More  at: https://redis.io/commands/zadd/.
+type Storage struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac
 	key    string
 }
 
-func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*RedisStorage[Item], error) {
+func NewStorage(client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*Storage, error) {
 	signer, err := signature.NewSimpleHmac(signerConf)
 	if err != nil {
 		return nil, err
 	}
-	return &RedisStorage[Item]{client, signer, key}, nil
+	return &Storage{client, signer, key}, nil
 }
 
 func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
@@ -36,7 +40,7 @@ func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
 	return append(sig, msg...), nil
 }
 
-func (s *RedisStorage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
+func (s *Storage) peelVerifySignature(data []byte) ([]byte, error) {
 	if len(data) < 32 {
 		return nil, errors.New("data is too short to contain message signature")
 	}
@@ -48,7 +52,7 @@ func (s *RedisStorage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	return data[32:], nil
 }
 
-func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage) FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error) {
 	query := redis.ZRangeArgs{
 		Key:     s.key,
 		ByScore: true,
@@ -59,9 +63,9 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	if err != nil {
 		return nil, err
 	}
-	var items []*Item
+	var items []*storage.QueuedTransaction
 	for _, itemString := range itemStrings {
-		var item Item
+		var item storage.QueuedTransaction
 		data, err := s.peelVerifySignature([]byte(itemString))
 		if err != nil {
 			return nil, err
@@ -75,7 +79,7 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	return items, nil
 }
 
-func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
+func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,
 		Start: 0,
@@ -89,9 +93,9 @@ func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	if len(itemStrings) > 1 {
 		return nil, fmt.Errorf("expected only one return value for GetLast but got %v", len(itemStrings))
 	}
-	var ret *Item
+	var ret *storage.QueuedTransaction
 	if len(itemStrings) > 0 {
-		var item Item
+		var item storage.QueuedTransaction
 		data, err := s.peelVerifySignature([]byte(itemStrings[0]))
 		if err != nil {
 			return nil, err
@@ -105,17 +109,15 @@ func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	return ret, nil
 }
 
-func (s *RedisStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
-	if keepStartingAt > 0 {
-		return s.client.ZRemRangeByScore(ctx, s.key, "-inf", fmt.Sprintf("%v", keepStartingAt-1)).Err()
+func (s *Storage) Prune(ctx context.Context, until uint64) error {
+	if until > 0 {
+		return s.client.ZRemRangeByScore(ctx, s.key, "-inf", fmt.Sprintf("%v", until-1)).Err()
 	}
 	return nil
 }
 
-var ErrStorageRace = errors.New("storage race error")
-
-func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
-	if newItem == nil {
+func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.QueuedTransaction) error {
+	if new == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
 	}
 	action := func(tx *redis.Tx) error {
@@ -131,23 +133,23 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		}
 		pipe := tx.TxPipeline()
 		if len(haveItems) == 0 {
-			if prevItem != nil {
-				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", ErrStorageRace, index)
+			if prev != nil {
+				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", storage.ErrStorageRace, index)
 			}
 		} else if len(haveItems) == 1 {
-			if prevItem == nil {
-				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", ErrStorageRace, index)
+			if prev == nil {
+				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", storage.ErrStorageRace, index)
 			}
 			verifiedItem, err := s.peelVerifySignature([]byte(haveItems[0]))
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
 			}
-			prevItemEncoded, err := rlp.EncodeToBytes(prevItem)
+			prevItemEncoded, err := rlp.EncodeToBytes(prev)
 			if err != nil {
 				return err
 			}
 			if !bytes.Equal(verifiedItem, prevItemEncoded) {
-				return fmt.Errorf("%w: replacing different item than expected at index %v", ErrStorageRace, index)
+				return fmt.Errorf("%w: replacing different item than expected at index %v", storage.ErrStorageRace, index)
 			}
 			err = pipe.ZRem(ctx, s.key, haveItems[0]).Err()
 			if err != nil {
@@ -156,7 +158,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		} else {
 			return fmt.Errorf("expected only one return value for Put but got %v", len(haveItems))
 		}
-		newItemEncoded, err := rlp.EncodeToBytes(*newItem)
+		newItemEncoded, err := rlp.EncodeToBytes(*new)
 		if err != nil {
 			return err
 		}
@@ -179,7 +181,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		if errors.Is(err, redis.TxFailedErr) {
 			// Unfortunately, we can't wrap two errors.
 			//nolint:errorlint
-			err = fmt.Errorf("%w: %v", ErrStorageRace, err.Error())
+			err = fmt.Errorf("%w: %v", storage.ErrStorageRace, err.Error())
 		}
 		return err
 	}
@@ -187,7 +189,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 	return s.client.Watch(ctx, action, s.key)
 }
 
-func (s *RedisStorage[Item]) Length(ctx context.Context) (int, error) {
+func (s *Storage) Length(ctx context.Context) (int, error) {
 	count, err := s.client.ZCount(ctx, s.key, "-inf", "+inf").Result()
 	if err != nil {
 		return 0, err
@@ -195,6 +197,6 @@ func (s *RedisStorage[Item]) Length(ctx context.Context) (int, error) {
 	return int(count), nil
 }
 
-func (s *RedisStorage[Item]) IsPersistent() bool {
+func (s *Storage) IsPersistent() bool {
 	return true
 }

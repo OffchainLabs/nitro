@@ -19,6 +19,7 @@ solgen/go/
 target/
 yarn-error.log
 local/
-testdata
 system_tests/test-data/*
 .configs/
+system_tests/testdata/*
+arbos/testdata/*

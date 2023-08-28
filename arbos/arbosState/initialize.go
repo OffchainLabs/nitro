@@ -189,8 +189,8 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 	for _, r := range retryablesList {
 		var to *common.Address
 		if r.To != (common.Address{}) {
-			address := r.To
-			to = &address
+			addr := r.To
+			to = &addr
 		}
 		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
 		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
