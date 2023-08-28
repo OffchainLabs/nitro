@@ -61,6 +61,8 @@ type ValidatorWalletInterface interface {
 	AuthIfEoa() *bind.TransactOpts
 	Start(context.Context)
 	StopAndWait()
+	// May be nil
+	DataPoster() *dataposter.DataPoster
 }
 
 type ContractValidatorWallet struct {
@@ -76,13 +78,13 @@ type ContractValidatorWallet struct {
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
-	extraGas                uint64
+	getExtraGas             func() uint64
 }
 
 var _ ValidatorWalletInterface = (*ContractValidatorWallet)(nil)
 
 func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
-	extraGas uint64) (*ContractValidatorWallet, error) {
+	getExtraGas func() uint64) (*ContractValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -105,7 +107,7 @@ func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Addre
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
 		dataPoster:        dp,
-		extraGas:          extraGas,
+		getExtraGas:       getExtraGas,
 	}
 	// Go complains if we make an address variable before wallet and copy it in
 	wallet.address.Store(address)
@@ -344,7 +346,7 @@ func (v *ContractValidatorWallet) estimateGas(ctx context.Context, value *big.In
 	if err != nil {
 		return 0, fmt.Errorf("estimating gas: %w", err)
 	}
-	return g + v.extraGas, nil
+	return g + v.getExtraGas(), nil
 }
 
 func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
@@ -416,6 +418,10 @@ func (w *ContractValidatorWallet) Start(ctx context.Context) {
 
 func (b *ContractValidatorWallet) StopAndWait() {
 	b.StopWaiter.StopAndWait()
+}
+
+func (b *ContractValidatorWallet) DataPoster() *dataposter.DataPoster {
+	return b.dataPoster
 }
 
 func GetValidatorWalletContract(
