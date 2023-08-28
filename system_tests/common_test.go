@@ -437,7 +437,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	}})
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining(1))
+	Require(t, l1backend.StartMining())
 
 	rpcClient, err := stack.Attach()
 	Require(t, err)

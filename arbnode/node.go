@@ -299,7 +299,7 @@ type Config struct {
 	BlockValidator      staker.BlockValidatorConfig      `koanf:"block-validator" reload:"hot"`
 	RecordingDatabase   arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
 	Feed                broadcastclient.FeedConfig       `koanf:"feed" reload:"hot"`
-	Staker              staker.L1ValidatorConfig         `koanf:"staker"`
+	Staker              staker.L1ValidatorConfig         `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig             `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig       `koanf:"data-availability"`
 	SyncMonitor         SyncMonitorConfig                `koanf:"sync-monitor"`
@@ -434,6 +434,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
 	config.Forwarder = execution.DefaultTestForwarderConfig
@@ -451,6 +452,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
+	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -543,25 +545,30 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func ValidatorDataposter(db ethdb.Database, l1Reader *headerreader.HeaderReader,
-	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor) (*dataposter.DataPoster, error) {
+func ValidatorDataposter(
+	db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
+) (*dataposter.DataPoster, error) {
+	if transactOpts == nil {
+		return nil, nil
+	}
 	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 		return nil, nil
 	}
-	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
+	redisC, err := redisutil.RedisClientFromURL(cfg.Staker.RedisUrl)
 	if err != nil {
 		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
 	lockCfgFetcher := func() *redislock.SimpleCfg {
-		return &cfg.BlockValidator.RedisLock
+		return &cfg.Staker.RedisLock
 	}
 	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
 	dpCfg := func() *dataposter.DataPosterConfig {
-		return &cfg.BlockValidator.DataPoster
+		return &cfg.Staker.DataPoster
 	}
 	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
 }
@@ -812,6 +819,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		var wallet staker.ValidatorWalletInterface
 		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
 			var existingWalletAddress *common.Address
@@ -823,7 +831,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, config.BlockValidator.ExtraGas)
+			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 			if err != nil {
 				return nil, err
 			}
@@ -831,7 +839,7 @@ func createNodeImpl(
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator)
+			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
 			if err != nil {
 				return nil, err
 			}

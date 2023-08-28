@@ -319,7 +319,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usefulGas := params.TxGas
 	excessGasLimit := uint64(808)
 
-	maxSubmissionFee := big.NewInt(1e13)
+	maxSubmissionFee := big.NewInt(1e14)
 	retryableGas := arbmath.UintToBig(usefulGas + excessGasLimit) // will only burn the intrinsic cost
 	retryableL2CallValue := big.NewInt(1e4)
 	retryableCallData := []byte{}
@@ -358,8 +358,10 @@ func TestSubmissionGasCosts(t *testing.T) {
 	if redeemReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "first retry tx failed")
 	}
+	redeemBlock, err := l2client.HeaderByNumber(ctx, redeemReceipt.BlockNumber)
+	Require(t, err)
 
-	l2BaseFee := GetBaseFee(t, l2client, ctx)
+	l2BaseFee := redeemBlock.BaseFee
 	excessGasPrice := arbmath.BigSub(gasFeeCap, l2BaseFee)
 	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
 	excessWei.Add(excessWei, arbmath.BigMul(excessGasPrice, retryableGas))
