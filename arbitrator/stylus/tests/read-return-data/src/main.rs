@@ -6,7 +6,8 @@
 use stylus_sdk::{
     alloy_primitives::{b256, Address},
     call::RawCall,
-    console, contract, prelude::*,
+    console, contract,
+    prelude::*,
 };
 
 macro_rules! error {

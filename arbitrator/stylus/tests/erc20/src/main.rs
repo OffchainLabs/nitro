@@ -7,8 +7,8 @@
 extern crate alloc;
 
 use crate::erc20::{Erc20, Erc20Params};
-use stylus_sdk::{alloy_primitives::U256, call, msg, prelude::*};
 use alloc::{string::String, vec::Vec};
+use stylus_sdk::{alloy_primitives::U256, call, msg, prelude::*};
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

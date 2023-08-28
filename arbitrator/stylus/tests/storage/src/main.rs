@@ -6,7 +6,8 @@
 use stylus_sdk::{
     alloy_primitives::B256,
     console,
-    storage::{load_bytes32, store_bytes32}, stylus_proc::entrypoint,
+    storage::{load_bytes32, store_bytes32},
+    stylus_proc::entrypoint,
 };
 
 #[entrypoint]

@@ -7,8 +7,9 @@ use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},
     block,
     call::RawCall,
-    contract, evm, msg, tx,
+    contract, evm, msg,
     prelude::*,
+    tx,
 };
 
 #[entrypoint]

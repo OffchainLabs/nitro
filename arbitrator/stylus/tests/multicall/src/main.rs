@@ -3,7 +3,12 @@
 
 #![no_main]
 
-use stylus_sdk::{call::RawCall, alloy_primitives::{Address, B256}, prelude::*, console};
+use stylus_sdk::{
+    alloy_primitives::{Address, B256},
+    call::RawCall,
+    console,
+    prelude::*,
+};
 
 #[entrypoint(allow_reentrancy = true)]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
@@ -49,12 +54,9 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             x => panic!("unknown call kind {x}"),
         };
         let return_data = unsafe { raw_call.call(addr, data)? };
-        
+
         if !return_data.is_empty() {
-            console!(
-                "Contract {addr} returned {} bytes",
-                return_data.len()
-            );
+            console!("Contract {addr} returned {} bytes", return_data.len());
         }
         output.extend(return_data);
         input = next;

@@ -3,8 +3,8 @@
 
 #![no_main]
 
-use stylus_sdk::{alloy_primitives, crypto, prelude::*};
 use sha3::{Digest, Keccak256};
+use stylus_sdk::{alloy_primitives, crypto, prelude::*};
 
 #[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
@@ -12,8 +12,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let rounds = input[0];
     for _ in 1..rounds {
         let hash = keccak(&data);
-        assert_eq!(hash, crypto::keccak(&data));
-        assert_eq!(hash, alloy_primitives::keccak256(&data));
+        assert_eq!(hash, crypto::keccak(data));
+        assert_eq!(hash, alloy_primitives::keccak256(data));
         data = hash;
     }
     Ok(data.as_ref().into())
