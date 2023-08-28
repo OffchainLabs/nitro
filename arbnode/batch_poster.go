@@ -259,6 +259,8 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
+// It returns true if it finds batch posting needs to halt, which is true if a batch reverts
+// unless the data poster is configured with noop storage which can tolerate reverts.
 func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, error) {
 	if from > to {
 		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
@@ -280,8 +282,13 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
-					log.Error("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
-					return true, nil
+					shouldHalt := !b.config().DataPoster.UseNoOpStorage
+					logLevel := log.Warn
+					if shouldHalt {
+						logLevel = log.Error
+					}
+					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
+					return shouldHalt, nil
 				}
 			}
 		}
@@ -881,7 +888,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if _, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int)); err != nil {
+	tx, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int))
+	if err != nil {
 		return false, err
 	}
 	log.Info(
@@ -920,6 +928,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.backlog = 0
 	}
 	b.building = nil
+
+	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
+	if config.DataPoster.UseNoOpStorage {
+		receipt, err := b.l1Reader.WaitForTxApproval(ctx, tx)
+		if err != nil {
+			return false, fmt.Errorf("error waiting for tx receipt: %w", err)
+		}
+		log.Info("Got successful receipt from batch poster transaction", "txHash", tx.Hash(), "blockNumber", receipt.BlockNumber, "blockHash", receipt.BlockHash)
+	}
+
 	return true, nil
 }
 
