@@ -26,7 +26,7 @@ impl Erc20Params for WethParams {
 
 // The contract
 sol_storage! {
-    #[derive(Entrypoint)] // Makes Weth the entrypoint
+    #[entrypoint] // Makes Weth the entrypoint
     struct Weth {
         #[borrow] // Allows erc20 to access Weth's storage and make calls
         Erc20<WethParams> erc20;
