@@ -174,7 +174,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode
 	if err != nil {
 		return 0, false, err
 	}
-	latest, err := p.ProgramVersion(codeHash)
+	latest, err := p.CodehashVersion(codeHash)
 	if err != nil {
 		return 0, false, err
 	}
@@ -328,7 +328,7 @@ func (p Program) serialize() common.Hash {
 	return data
 }
 
-func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
+func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {
 	program, err := p.deserializeProgram(codeHash)
 	return program.version, err
 }

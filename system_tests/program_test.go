@@ -67,6 +67,13 @@ func keccakTest(t *testing.T, jit bool) {
 
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
+	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	codehashVersion, err := arbWasm.CodehashVersion(nil, statedb.GetCodeHash(programAddress))
+	Require(t, err)
+	if codehashVersion != stylusVersion || stylusVersion == 0 {
+		Fatal(t, "unexpected versions", stylusVersion, codehashVersion)
+	}
 	programVersion, err := arbWasm.ProgramVersion(nil, programAddress)
 	Require(t, err)
 	if programVersion != stylusVersion || stylusVersion == 0 {
