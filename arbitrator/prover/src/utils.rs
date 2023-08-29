@@ -158,6 +158,10 @@ impl From<&[u8]> for CBytes {
     }
 }
 
+// There's no thread safety concerns for CBytes
+unsafe impl Send for CBytes {}
+unsafe impl Sync for CBytes {}
+
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Type")]
 enum RemoteType {
