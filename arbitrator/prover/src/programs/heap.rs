@@ -8,7 +8,7 @@ use super::{
 };
 use arbutil::Color;
 use eyre::{bail, Result};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use wasmer_types::{FunctionIndex, GlobalIndex, ImportIndex, LocalFunctionIndex, Pages};
 use wasmparser::Operator;
 
@@ -17,17 +17,17 @@ pub struct HeapBound {
     /// Upper bounds the amount of heap memory a module may use
     limit: Pages,
     /// Import called when allocating new pages
-    memory_grow: Mutex<Option<FunctionIndex>>,
+    memory_grow: RwLock<Option<FunctionIndex>>,
     /// Scratch global shared among middlewares
-    scratch: Mutex<Option<GlobalIndex>>,
+    scratch: RwLock<Option<GlobalIndex>>,
 }
 
 impl HeapBound {
     pub fn new(bounds: CompileMemoryParams) -> Self {
         Self {
             limit: bounds.heap_bound,
-            memory_grow: Mutex::new(None),
-            scratch: Mutex::new(None),
+            memory_grow: RwLock::default(),
+            scratch: RwLock::default(),
         }
     }
 }
@@ -37,7 +37,7 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
 
     fn update_module(&self, module: &mut M) -> Result<()> {
         let scratch = module.get_global(SCRATCH_GLOBAL)?;
-        *self.scratch.lock() = Some(scratch);
+        *self.scratch.write() = Some(scratch);
 
         let Some(memory) = module.memory_size()? else {
             return Ok(());
@@ -63,14 +63,14 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
             bail!("wrong type for {}: {}", "memory_grow".red(), ty.red());
         }
 
-        *self.memory_grow.lock() = Some(import);
+        *self.memory_grow.write() = Some(import);
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         Ok(FuncHeapBound {
-            scratch: self.scratch.lock().expect("missing scratch global"),
-            memory_grow: *self.memory_grow.lock(),
+            scratch: self.scratch.read().expect("no scratch global"),
+            memory_grow: *self.memory_grow.read(),
         })
     }
 

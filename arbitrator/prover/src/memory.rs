@@ -224,7 +224,7 @@ impl Memory {
     #[must_use]
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
         let Some(end_idx) = idx.checked_add(bytes.into()) else {
-            return false
+            return false;
         };
         if end_idx > self.buffer.len() as u64 {
             return false;

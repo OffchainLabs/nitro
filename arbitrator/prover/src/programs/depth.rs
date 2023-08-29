@@ -1,13 +1,16 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{config::CompileMemoryParams, FuncMiddleware, Middleware, ModuleMod};
+use super::{
+    config::{CompileMemoryParams, SigMap},
+    FuncMiddleware, Middleware, ModuleMod,
+};
 use crate::{host::InternalFunc, value::FunctionType, Machine};
 
 use arbutil::Color;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use std::sync::Arc;
 use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
@@ -25,27 +28,30 @@ pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 #[derive(Debug)]
 pub struct DepthChecker {
     /// The amount of stack space left
-    global: Mutex<Option<GlobalIndex>>,
+    global: RwLock<Option<GlobalIndex>>,
     /// The maximum size of a stack frame, measured in words
     frame_limit: u32,
+    /// The maximum number of overlapping value lifetimes in a frame
+    frame_contention: u16,
     /// The function types of the module being instrumented
-    funcs: Mutex<Arc<HashMap<FunctionIndex, FunctionType>>>,
+    funcs: RwLock<Option<Arc<HashMap<FunctionIndex, FunctionType>>>>,
     /// The types of the module being instrumented
-    sigs: Mutex<Arc<HashMap<SignatureIndex, FunctionType>>>,
+    sigs: RwLock<Option<Arc<SigMap>>>,
 }
 
 impl DepthChecker {
     pub fn new(params: CompileMemoryParams) -> Self {
         Self {
-            global: Mutex::new(None),
+            global: RwLock::default(),
             frame_limit: params.max_frame_size,
-            funcs: Mutex::new(Arc::new(HashMap::default())),
-            sigs: Mutex::new(Arc::new(HashMap::default())),
+            frame_contention: params.max_frame_contention,
+            funcs: RwLock::default(),
+            sigs: RwLock::default(),
         }
     }
 
     pub fn globals(&self) -> GlobalIndex {
-        self.global.lock().unwrap()
+        self.global.read().unwrap()
     }
 }
 
@@ -55,18 +61,19 @@ impl<M: ModuleMod> Middleware<M> for DepthChecker {
     fn update_module(&self, module: &mut M) -> Result<()> {
         let limit = GlobalInit::I32Const(0);
         let space = module.add_global(STYLUS_STACK_LEFT, Type::I32, limit)?;
-        *self.global.lock() = Some(space);
-        *self.funcs.lock() = Arc::new(module.all_functions()?);
-        *self.sigs.lock() = Arc::new(module.all_signatures()?);
+        *self.global.write() = Some(space);
+        *self.funcs.write() = Some(Arc::new(module.all_functions()?));
+        *self.sigs.write() = Some(Arc::new(module.all_signatures()?));
         Ok(())
     }
 
     fn instrument<'a>(&self, func: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         Ok(FuncDepthChecker::new(
-            self.global.lock().unwrap(),
-            self.funcs.lock().clone(),
-            self.sigs.lock().clone(),
+            self.global.read().expect("no global"),
+            self.funcs.read().clone().expect("no funcs"),
+            self.sigs.read().clone().expect("no sigs"),
             self.frame_limit,
+            self.frame_contention,
             func,
         ))
     }
@@ -90,6 +97,8 @@ pub struct FuncDepthChecker<'a> {
     func: LocalFunctionIndex,
     /// The maximum size of a stack frame, measured in words
     frame_limit: u32,
+    /// The maximum number of overlapping value lifetimes in a frame
+    frame_contention: u16,
     /// The number of open scopes
     scopes: isize,
     /// The entirety of the func's original instructions
@@ -104,6 +113,7 @@ impl<'a> FuncDepthChecker<'a> {
         funcs: Arc<HashMap<FunctionIndex, FunctionType>>,
         sigs: Arc<HashMap<SignatureIndex, FunctionType>>,
         frame_limit: u32,
+        frame_contention: u16,
         func: LocalFunctionIndex,
     ) -> Self {
         Self {
@@ -113,6 +123,7 @@ impl<'a> FuncDepthChecker<'a> {
             locals: None,
             func,
             frame_limit,
+            frame_contention,
             scopes: 1, // a function starts with an open scope
             code: vec![],
             done: false,
@@ -319,7 +330,8 @@ impl<'a> FuncDepthChecker<'a> {
                     let Some(ty) = self.sigs.get(&index) else {
                         bail!("missing type for signature {}", index.as_u32().red())
                     };
-                    ins_and_outs!(ty)
+                    ins_and_outs!(ty);
+                    pop!() // the table index
                 }
 
                 MemoryFill { .. } => ins_and_outs!(InternalFunc::MemoryFill.ty()),
@@ -471,7 +483,17 @@ impl<'a> FuncDepthChecker<'a> {
 
         if self.locals.is_none() {
             bail!("missing locals info for func {}", self.func.as_u32().red())
-        };
+        }
+
+        let contention = worst;
+        if contention > self.frame_contention.into() {
+            bail!(
+                "too many values on the stack at once in func {}: {} > {}",
+                self.func.as_u32().red(),
+                contention.red(),
+                self.frame_contention.red()
+            );
+        }
 
         let locals = self.locals.unwrap_or_default();
         Ok(worst + locals as u32 + 4)
