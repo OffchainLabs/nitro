@@ -393,6 +393,13 @@ func headerIndicatesFinalitySupport(header *types.Header) bool {
 	return false
 }
 
+func HeadersEqual(ha, hb *types.Header) bool {
+	if (ha == nil) != (hb == nil) {
+		return false
+	}
+	return (ha == nil && hb == nil) || ha.Hash() == hb.Hash()
+}
+
 func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.Header, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -400,7 +407,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	if err != nil {
 		return nil, err
 	}
-	if currentHead == c.headWhenCached {
+	if HeadersEqual(currentHead, c.headWhenCached) {
 		return c.header, nil
 	}
 	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
@@ -453,6 +460,10 @@ func (s *HeaderReader) Client() arbutil.L1Interface {
 
 func (s *HeaderReader) UseFinalityData() bool {
 	return s.config().UseFinalityData
+}
+
+func (s *HeaderReader) IsParentChainArbitrum() bool {
+	return s.isParentChainArbitrum
 }
 
 func (s *HeaderReader) Start(ctxIn context.Context) {
