@@ -630,7 +630,6 @@ impl<'a> WasmBinary<'a> {
         for function in &bin.codes {
             limit!(4096, function.locals.len(), "locals")
         }
-        limit!(50_000, bin.globals.len(), "globals");
 
         let max_len = 500;
         macro_rules! too_long {

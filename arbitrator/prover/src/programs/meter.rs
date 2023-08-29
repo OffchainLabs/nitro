@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{Machine, value::FunctionType, programs::{config::PricingParams, FuncMiddleware, Middleware, ModuleMod}};
-use arbutil::{evm, operator::OperatorInfo};
+use arbutil::{evm, operator::{OperatorInfo, OperatorCode}};
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
@@ -346,8 +346,9 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
     let ink = match op {
         op!(Unreachable, Return) => 1,
         op!(Nop, Drop) | dot!(I32Const, I64Const) => 1,
-        dot!(If, Block, Loop) | op!(Else, End) => 1,
-        dot!(Br, BrIf) => 2400,
+        dot!(Block, Loop) | op!(Else, End) => 1,
+        dot!(Br, BrIf, If) => 2400,
+        dot!(Select) => 4000, // TODO: improve wasmer codegen
         dot!(Call) => 13750,
         dot!(LocalGet, LocalTee) => 200,
         dot!(LocalSet) => 375,
@@ -391,12 +392,12 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
         },
 
         // we don't support the following, so return u64::MAX
-        dot!(
+        x @ (dot!(
             Try, Catch, CatchAll, Delegate, Throw, Rethrow,
 
             RefNull, RefIsNull, RefFunc,
 
-            Select, TypedSelect, ReturnCall, ReturnCallIndirect,
+            TypedSelect, ReturnCall, ReturnCallIndirect,
 
             MemoryInit, DataDrop, TableInit, ElemDrop,
             TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize,
@@ -471,7 +472,7 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             I32x4RelaxedTruncSatF64x2UZero, F32x4Fma, F32x4Fms, F64x2Fma, F64x2Fms, I8x16LaneSelect,
             I16x8LaneSelect, I32x4LaneSelect, I64x2LaneSelect, F32x4RelaxedMin, F32x4RelaxedMax,
             F64x2RelaxedMin, F64x2RelaxedMax
-        ) => u64::MAX,
+        )) => u64::MAX,
     };
     ink
 }
