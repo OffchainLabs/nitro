@@ -1,7 +1,10 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{config::{CompileMemoryParams, SigMap}, FuncMiddleware, Middleware, ModuleMod};
+use super::{
+    config::{CompileMemoryParams, SigMap},
+    FuncMiddleware, Middleware, ModuleMod,
+};
 use crate::{host::InternalFunc, value::FunctionType, Machine};
 
 use arbutil::Color;

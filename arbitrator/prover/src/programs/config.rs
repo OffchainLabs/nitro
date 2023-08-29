@@ -3,11 +3,11 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use crate::{value::FunctionType, programs::meter};
+use crate::{programs::meter, value::FunctionType};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
-use wasmer_types::{Pages, WASM_PAGE_SIZE, SignatureIndex};
+use wasmer_types::{Pages, SignatureIndex, WASM_PAGE_SIZE};
 use wasmparser::Operator;
 
 #[cfg(feature = "native")]

@@ -4,7 +4,11 @@
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 use arbutil::{evm::user::UserOutcome, Bytes20, Bytes32, Color};
 use eyre::{bail, Result};
-use prover::{machine::GlobalState, programs::{prelude::*, config::SigMap}, Machine};
+use prover::{
+    machine::GlobalState,
+    programs::{config::SigMap, prelude::*},
+    Machine,
+};
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{

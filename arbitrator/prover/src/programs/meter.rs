@@ -1,14 +1,21 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{Machine, value::FunctionType, programs::{config::PricingParams, FuncMiddleware, Middleware, ModuleMod}};
-use arbutil::{evm, operator::{OperatorInfo, OperatorCode}};
+use crate::{
+    programs::{config::PricingParams, FuncMiddleware, Middleware, ModuleMod},
+    value::FunctionType,
+    Machine,
+};
+use arbutil::{evm, operator::OperatorInfo};
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
-use std::{fmt::{Debug, Display}, sync::Arc};
-use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type, SignatureIndex};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
+use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
 use super::config::SigMap;
@@ -64,7 +71,12 @@ where
         let [ink, status] = self.globals();
         let sigs = self.sigs.read();
         let sigs = sigs.as_ref().expect("no types");
-        Ok(FuncMeter::new(ink, status, self.costs.clone(), sigs.clone()))
+        Ok(FuncMeter::new(
+            ink,
+            status,
+            self.costs.clone(),
+            sigs.clone(),
+        ))
     }
 
     fn name(&self) -> &'static str {
@@ -91,7 +103,12 @@ pub struct FuncMeter<'a, F: OpcodePricer> {
 }
 
 impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
-    fn new(ink_global: GlobalIndex, status_global: GlobalIndex, costs: F, sigs: Arc<SigMap>) -> Self {
+    fn new(
+        ink_global: GlobalIndex,
+        status_global: GlobalIndex,
+        costs: F,
+        sigs: Arc<SigMap>,
+    ) -> Self {
         Self {
             ink_global,
             status_global,
@@ -112,7 +129,8 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
 
         let end = op.ends_basic_block();
 
-        let mut cost = self.block_cost.saturating_add((self.costs)(&op, &self.sigs));
+        let op_cost = (self.costs)(&op, &self.sigs);
+        let mut cost = self.block_cost.saturating_add(op_cost);
         self.block_cost = cost;
         self.block.push(op);
 
@@ -392,7 +410,7 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
         },
 
         // we don't support the following, so return u64::MAX
-        x @ (dot!(
+        dot!(
             Try, Catch, CatchAll, Delegate, Throw, Rethrow,
 
             RefNull, RefIsNull, RefFunc,
@@ -472,7 +490,7 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             I32x4RelaxedTruncSatF64x2UZero, F32x4Fma, F32x4Fms, F64x2Fma, F64x2Fms, I8x16LaneSelect,
             I16x8LaneSelect, I32x4LaneSelect, I64x2LaneSelect, F32x4RelaxedMin, F32x4RelaxedMax,
             F64x2RelaxedMin, F64x2RelaxedMax
-        )) => u64::MAX,
+        ) => u64::MAX,
     };
     ink
 }
