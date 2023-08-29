@@ -13,16 +13,21 @@ type boringStruct struct {
 }
 
 func init() {
-	a := &interestingStruct{
-		x: 1, // Error: only single field is initialized.
+	a := &interestingStruct{ // Error: only single field is initialized.
+		x: 1,
 	}
 	fmt.Println(a)
-	b := interestingStruct{
-		b: nil, // Error: only single field is initialized.
+	b := interestingStruct{ // Error: only single field is initialized.
+		b: nil,
 	}
 	fmt.Println(b)
-	c := &boringStruct{
-		x: 1, // Not an error since it's not annotated for the linter.
+	c := interestingStruct{ // Not an error, all fields are initialized.
+		x: 1,
+		b: nil,
 	}
 	fmt.Println(c)
+	d := &boringStruct{ // Not an error since it's not annotated for the linter.
+		x: 1,
+	}
+	fmt.Println(d)
 }
