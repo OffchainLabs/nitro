@@ -452,12 +452,8 @@ impl Sub for StackState {
     type Output = isize;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let Self::Reachable(s) = self else {
-            return 0
-        };
-        let Self::Reachable(rhs) = rhs else {
-            return 0
-        };
+        let Self::Reachable(s) = self else { return 0 };
+        let Self::Reachable(rhs) = rhs else { return 0 };
         s as isize - rhs as isize
     }
 }
