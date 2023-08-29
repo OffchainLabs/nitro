@@ -176,6 +176,13 @@ RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e
 RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
 RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
 
+RUN mkdir 0x17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33aedb45b4802ffc && \
+    ln -sfT 0x17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33aedb45b4802ffc latest && \
+    cd 0x17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33aedb45b4802ffc && \
+    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33aedb45b4802ffc/module-root.txt && \
+    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33aedb45b4802ffc/replay.wasm && \
+    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33aedb45b4802ffc/machine.wavm.br
+
 FROM golang:1.20-bullseye as node-builder
 WORKDIR /workspace
 ARG version=""
