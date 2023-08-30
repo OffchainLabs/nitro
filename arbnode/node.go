@@ -434,6 +434,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
 	config.Forwarder = execution.DefaultTestForwarderConfig
@@ -451,6 +452,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
+	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -554,19 +556,19 @@ func ValidatorDataposter(
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 		return nil, nil
 	}
-	redisC, err := redisutil.RedisClientFromURL(cfg.BlockValidator.RedisUrl)
+	redisC, err := redisutil.RedisClientFromURL(cfg.Staker.RedisUrl)
 	if err != nil {
 		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
 	lockCfgFetcher := func() *redislock.SimpleCfg {
-		return &cfg.BlockValidator.RedisLock
+		return &cfg.Staker.RedisLock
 	}
 	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
 	dpCfg := func() *dataposter.DataPosterConfig {
-		return &cfg.BlockValidator.DataPoster
+		return &cfg.Staker.DataPoster
 	}
 	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
 }

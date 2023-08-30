@@ -787,7 +787,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if err != nil {
 				return false, err
 			}
-			blockNumberWithPadding := arbmath.SaturatingUAdd(arbmath.BigToUintSaturating(latestHeader.Number), uint64(config.L1BlockBoundBypass/ethPosBlockTime))
+			latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
+			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
 
 			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelayBlocks))
