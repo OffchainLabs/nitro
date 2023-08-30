@@ -101,17 +101,23 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 		initConfig.UseNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
+	encF := func() storage.EncoderDecoderInterface {
+		if config().LegacyStorageEncoding {
+			return &storage.LegacyEncoderDecoder{}
+		}
+		return &storage.EncoderDecoder{}
+	}
 	var queue QueueStorage
 	switch {
 	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
 	case initConfig.UseLevelDB:
-		queue = leveldb.New(db)
+		queue = leveldb.New(db, encF)
 	case redisClient == nil:
-		queue = slice.NewStorage()
+		queue = slice.NewStorage(encF)
 	default:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner)
+		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +180,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 	}
 	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, fmt.Errorf("fetching last element from queue: %w", err)
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.Data.Nonce + 1
@@ -364,7 +370,10 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
 		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
 	}
-	return p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx)
+	if err := p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx); err != nil {
+		return fmt.Errorf("putting new tx in the queue: %w", err)
+	}
+	return nil
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
@@ -546,7 +555,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		// replacing them by fee.
 		queueContents, err := p.queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
-			log.Error("Failed to get tx queue contents", "err", err)
+			log.Error("Failed to fetch tx queue contents", "err", err)
 			return minWait
 		}
 		for index, tx := range queueContents {
@@ -616,6 +625,7 @@ type DataPosterConfig struct {
 	AllocateMempoolBalance bool                       `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseLevelDB             bool                       `koanf:"use-leveldb"`
 	UseNoOpStorage         bool                       `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool                       `koanf:"legacy-storage-encoding" reload:"hot"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -636,6 +646,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -651,6 +662,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseLevelDB:             false,
 	UseNoOpStorage:         false,
+	LegacyStorageEncoding:  true,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {

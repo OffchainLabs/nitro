@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -23,14 +22,15 @@ type Storage struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac
 	key    string
+	encDec storage.EncoderDecoderF
 }
 
-func NewStorage(client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*Storage, error) {
+func NewStorage(client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig, enc storage.EncoderDecoderF) (*Storage, error) {
 	signer, err := signature.NewSimpleHmac(signerConf)
 	if err != nil {
 		return nil, err
 	}
-	return &Storage{client, signer, key}, nil
+	return &Storage{client, signer, key, enc}, nil
 }
 
 func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
@@ -65,16 +65,15 @@ func (s *Storage) FetchContents(ctx context.Context, startingIndex uint64, maxRe
 	}
 	var items []*storage.QueuedTransaction
 	for _, itemString := range itemStrings {
-		var item storage.QueuedTransaction
 		data, err := s.peelVerifySignature([]byte(itemString))
 		if err != nil {
 			return nil, err
 		}
-		err = rlp.DecodeBytes(data, &item)
+		item, err := s.encDec().Decode(data)
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, &item)
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -95,16 +94,15 @@ func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, er
 	}
 	var ret *storage.QueuedTransaction
 	if len(itemStrings) > 0 {
-		var item storage.QueuedTransaction
 		data, err := s.peelVerifySignature([]byte(itemStrings[0]))
 		if err != nil {
 			return nil, err
 		}
-		err = rlp.DecodeBytes(data, &item)
+		item, err := s.encDec().Decode(data)
 		if err != nil {
 			return nil, err
 		}
-		ret = &item
+		ret = item
 	}
 	return ret, nil
 }
@@ -144,21 +142,20 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
 			}
-			prevItemEncoded, err := rlp.EncodeToBytes(prev)
+			prevItemEncoded, err := s.encDec().Encode(prev)
 			if err != nil {
 				return err
 			}
 			if !bytes.Equal(verifiedItem, prevItemEncoded) {
 				return fmt.Errorf("%w: replacing different item than expected at index %v", storage.ErrStorageRace, index)
 			}
-			err = pipe.ZRem(ctx, s.key, haveItems[0]).Err()
-			if err != nil {
+			if err := pipe.ZRem(ctx, s.key, haveItems[0]).Err(); err != nil {
 				return err
 			}
 		} else {
 			return fmt.Errorf("expected only one return value for Put but got %v", len(haveItems))
 		}
-		newItemEncoded, err := rlp.EncodeToBytes(*new)
+		newItemEncoded, err := s.encDec().Encode(new)
 		if err != nil {
 			return err
 		}
@@ -170,11 +167,10 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		if err != nil {
 			return err
 		}
-		err = pipe.ZAdd(ctx, s.key, &redis.Z{
+		if err := pipe.ZAdd(ctx, s.key, &redis.Z{
 			Score:  float64(index),
 			Member: string(signedItem),
-		}).Err()
-		if err != nil {
+		}).Err(); err != nil {
 			return err
 		}
 		_, err = pipe.Exec(ctx)

@@ -2,9 +2,12 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var (
@@ -24,3 +27,117 @@ type QueuedTransaction struct {
 	Created         time.Time // may be earlier than the tx was given to the tx poster
 	NextReplacement time.Time
 }
+
+// LegacyQueuedTransaction is used for backwards compatibility.
+// Before https://github.com/OffchainLabs/nitro/pull/1773: the queuedTransaction
+// looked like this and was rlp encoded directly. After the pr, we are store
+// rlp encoding of Meta into queuedTransaction and rlp encoding it once more
+// to store it.
+type LegacyQueuedTransaction struct {
+	FullTx          *types.Transaction `rlp:"nil"`
+	Data            types.DynamicFeeTx
+	Meta            BatchPosterPosition
+	Sent            bool
+	Created         time.Time // may be earlier than the tx was given to the tx poster
+	NextReplacement time.Time
+}
+
+// This is also for legacy reason. Since Batchposter is in arbnode package,
+// we can't refer to BatchPosterPosition type there even if we export it (that
+// would create cyclic dependency).
+// Ideally we'll factor out Batch Poster from arbnode into separate package
+// and BatchPosterPosition into another separate package as well.
+// For the sake of minimal refactoring, that struct is duplicated here.
+type BatchPosterPosition struct {
+	MessageCount        arbutil.MessageIndex
+	DelayedMessageCount uint64
+	NextSeqNum          uint64
+}
+
+func DecodeLegacyQueuedTransaction(data []byte) (*LegacyQueuedTransaction, error) {
+	var val LegacyQueuedTransaction
+	if err := rlp.DecodeBytes(data, &val); err != nil {
+		return nil, fmt.Errorf("decoding legacy queued transaction: %w", err)
+	}
+	return &val, nil
+}
+
+func LegacyToQueuedTransaction(legacyQT *LegacyQueuedTransaction) (*QueuedTransaction, error) {
+	meta, err := rlp.EncodeToBytes(legacyQT.Meta)
+	if err != nil {
+		return nil, fmt.Errorf("converting legacy to queued transaction: %w", err)
+	}
+	return &QueuedTransaction{
+		FullTx:          legacyQT.FullTx,
+		Data:            legacyQT.Data,
+		Meta:            meta,
+		Sent:            legacyQT.Sent,
+		Created:         legacyQT.Created,
+		NextReplacement: legacyQT.NextReplacement,
+	}, nil
+}
+
+func QueuedTransactionToLegacy(qt *QueuedTransaction) (*LegacyQueuedTransaction, error) {
+	if qt == nil {
+		return nil, nil
+	}
+	var meta BatchPosterPosition
+	if qt.Meta != nil {
+		if err := rlp.DecodeBytes(qt.Meta, &meta); err != nil {
+			return nil, fmt.Errorf("converting queued transaction to legacy: %w", err)
+		}
+	}
+	return &LegacyQueuedTransaction{
+		FullTx:          qt.FullTx,
+		Data:            qt.Data,
+		Meta:            meta,
+		Sent:            qt.Sent,
+		Created:         qt.Created,
+		NextReplacement: qt.NextReplacement,
+	}, nil
+}
+
+type EncoderDecoder struct{}
+
+func (e *EncoderDecoder) Encode(qt *QueuedTransaction) ([]byte, error) {
+	return rlp.EncodeToBytes(qt)
+}
+
+func (e *EncoderDecoder) Decode(data []byte) (*QueuedTransaction, error) {
+	var item QueuedTransaction
+	if err := rlp.DecodeBytes(data, &item); err != nil {
+		return nil, fmt.Errorf("decoding item: %w", err)
+	}
+	return &item, nil
+}
+
+type LegacyEncoderDecoder struct{}
+
+func (e *LegacyEncoderDecoder) Encode(qt *QueuedTransaction) ([]byte, error) {
+	legacyQt, err := QueuedTransactionToLegacy(qt)
+	if err != nil {
+		return nil, fmt.Errorf("encoding legacy item: %w", err)
+	}
+	return rlp.EncodeToBytes(legacyQt)
+}
+
+func (le *LegacyEncoderDecoder) Decode(data []byte) (*QueuedTransaction, error) {
+	val, err := DecodeLegacyQueuedTransaction(data)
+	if err != nil {
+		return nil, fmt.Errorf("decoding legacy item: %w", err)
+	}
+	return LegacyToQueuedTransaction(val)
+}
+
+// Typically interfaces belong to where they are being used, not at implementing
+// site, but this is used in all storages (besides no-op) and all of them
+// require all the functions for this interface.
+type EncoderDecoderInterface interface {
+	Encode(*QueuedTransaction) ([]byte, error)
+	Decode([]byte) (*QueuedTransaction, error)
+}
+
+// EncoderDecoderF is a function type that returns encoder/decoder interface.
+// This is needed to implement hot-reloading flag to switch encoding/decoding
+// strategy on the fly.
+type EncoderDecoderF func() EncoderDecoderInterface
