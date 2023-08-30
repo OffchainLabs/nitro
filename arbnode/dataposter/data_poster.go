@@ -114,7 +114,7 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 	case initConfig.UseLevelDB:
 		queue = leveldb.New(db, encF)
 	case redisClient == nil:
-		queue = slice.NewStorage(encF)
+		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	default:
 		var err error
 		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)

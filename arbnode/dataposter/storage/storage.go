@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -97,6 +98,22 @@ func QueuedTransactionToLegacy(qt *QueuedTransaction) (*LegacyQueuedTransaction,
 	}, nil
 }
 
+// Decode tries to decode QueuedTransaction, if that fails it tries to decode
+// into legacy queued transaction and converts to queued
+func decode(data []byte) (*QueuedTransaction, error) {
+	var item QueuedTransaction
+	if err := rlp.DecodeBytes(data, &item); err != nil {
+		log.Warn("Failed to decode QueuedTransaction, attempting to decide legacy queued transaction", "error", err)
+		val, err := DecodeLegacyQueuedTransaction(data)
+		if err != nil {
+			return nil, fmt.Errorf("decoding legacy item: %w", err)
+		}
+		return LegacyToQueuedTransaction(val)
+	}
+	return &item, nil
+
+}
+
 type EncoderDecoder struct{}
 
 func (e *EncoderDecoder) Encode(qt *QueuedTransaction) ([]byte, error) {
@@ -104,11 +121,7 @@ func (e *EncoderDecoder) Encode(qt *QueuedTransaction) ([]byte, error) {
 }
 
 func (e *EncoderDecoder) Decode(data []byte) (*QueuedTransaction, error) {
-	var item QueuedTransaction
-	if err := rlp.DecodeBytes(data, &item); err != nil {
-		return nil, fmt.Errorf("decoding item: %w", err)
-	}
-	return &item, nil
+	return decode(data)
 }
 
 type LegacyEncoderDecoder struct{}
@@ -122,11 +135,7 @@ func (e *LegacyEncoderDecoder) Encode(qt *QueuedTransaction) ([]byte, error) {
 }
 
 func (le *LegacyEncoderDecoder) Decode(data []byte) (*QueuedTransaction, error) {
-	val, err := DecodeLegacyQueuedTransaction(data)
-	if err != nil {
-		return nil, fmt.Errorf("decoding legacy item: %w", err)
-	}
-	return LegacyToQueuedTransaction(val)
+	return decode(data)
 }
 
 // Typically interfaces belong to where they are being used, not at implementing
