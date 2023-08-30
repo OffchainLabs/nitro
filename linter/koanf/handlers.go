@@ -30,26 +30,28 @@ func handleComposite(pass *analysis.Pass, cl *ast.CompositeLit, cnt map[string]i
 
 // handleSelector handles selector expression recursively, that is an expression:
 // a.B.C.D will update counter for fields: a.B.C.D, a.B.C and a.B.
-func handleSelector(pass *analysis.Pass, se *ast.SelectorExpr, inc int, cnt map[string]int) string {
+// It updates counters map in place, increasing corresponding identifiers by
+// increaseBy amount.
+func handleSelector(pass *analysis.Pass, se *ast.SelectorExpr, increaseBy int, cnt map[string]int) string {
 	if e, ok := se.X.(*ast.SelectorExpr); ok {
 		// Full field identifier, including package name.
 		fi := pass.TypesInfo.Types[e].Type.String() + "." + se.Sel.Name
-		cnt[normalizeID(pass, fi)] += inc
-		prefix := handleSelector(pass, e, inc, cnt)
+		cnt[normalizeID(pass, fi)] += increaseBy
+		prefix := handleSelector(pass, e, increaseBy, cnt)
 		fi = prefix + "." + se.Sel.Name
-		cnt[normalizeID(pass, fi)] += inc
+		cnt[normalizeID(pass, fi)] += increaseBy
 		return fi
 	}
 	// Handle selectors on function calls, e.g. `config().Enabled`.
 	if _, ok := se.X.(*ast.CallExpr); ok {
 		fi := pass.TypesInfo.Types[se.X].Type.String() + "." + se.Sel.Name
-		cnt[normalizeID(pass, fi)] += inc
+		cnt[normalizeID(pass, fi)] += increaseBy
 		return fi
 	}
 	if ident, ok := se.X.(*ast.Ident); ok {
 		if pass.TypesInfo.Types[ident].Type != nil {
 			fi := pass.TypesInfo.Types[ident].Type.String() + "." + se.Sel.Name
-			cnt[normalizeID(pass, fi)] += inc
+			cnt[normalizeID(pass, fi)] += increaseBy
 			return fi
 		}
 	}
