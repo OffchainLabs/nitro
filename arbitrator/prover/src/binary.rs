@@ -647,9 +647,6 @@ impl<'a> WasmBinary<'a> {
         if bin.names.module.len() > max_len {
             too_long!("module name", bin.names.module.len())
         }
-        if !bin.names.functions.is_empty() {
-            bail!("wasm custom names section not allowed")
-        }
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
