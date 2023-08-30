@@ -111,7 +111,6 @@ func decode(data []byte) (*QueuedTransaction, error) {
 		return LegacyToQueuedTransaction(val)
 	}
 	return &item, nil
-
 }
 
 type EncoderDecoder struct{}
