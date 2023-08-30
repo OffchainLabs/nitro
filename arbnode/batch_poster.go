@@ -309,8 +309,8 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 		// - polling is through context, or
 		// - we see a transaction in the block from dataposter that was reverted.
 		select {
-		case h, closed := <-headerCh:
-			if closed {
+		case h, ok := <-headerCh:
+			if !ok {
 				log.Info("L1 headers channel has been closed")
 				return
 			}
