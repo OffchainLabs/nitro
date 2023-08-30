@@ -158,7 +158,10 @@ impl From<&[u8]> for CBytes {
     }
 }
 
-// There's no thread safety concerns for CBytes
+// There's no thread safety concerns for CBytes.
+// This type is basically a Box<[u8]> (which is Send + Sync) with libc as an allocator.
+// Any data races between threads are prevented by Rust borrowing rules,
+// and the data isn't thread-local so there's no concern moving it between threads.
 unsafe impl Send for CBytes {}
 unsafe impl Sync for CBytes {}
 
