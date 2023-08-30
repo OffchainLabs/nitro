@@ -92,21 +92,26 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 }
 
 func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
-	replacementTimes, err := parseReplacementTimes(config().ReplacementTimes)
+	initConfig := config()
+	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
+	if headerReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
+		initConfig.UseNoOpStorage = true
+		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
+	}
 	var queue QueueStorage
 	switch {
-	case config().UseLevelDB:
-		queue = leveldb.New(db)
-	case config().UseNoOpStorage:
+	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
+	case initConfig.UseLevelDB:
+		queue = leveldb.New(db)
 	case redisClient == nil:
 		queue = slice.NewStorage()
 	default:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &config().RedisSigner)
+		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -157,46 +162,59 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 	return nil
 }
 
-// GetNextNonceAndMeta retrieves generates next nonce, validates that a
-// transaction can be posted with that nonce, and fetches "Meta" either last
-// queued iterm (if queue isn't empty) or retrieves with last block.
-func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
+// Requires the caller hold the mutex.
+// Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, and an error.
+// Unlike GetNextNonceAndMeta, this does not call the metadataRetriever if the metadata is not stored in the queue.
+func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []byte, bool, error) {
 	config := p.config()
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
 	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, false, err
 	}
 	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, false, err
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.Data.Nonce + 1
 		if err := p.canPostWithNonce(ctx, nextNonce); err != nil {
-			return 0, nil, err
+			return 0, nil, false, err
 		}
-		return nextNonce, lastQueueItem.Meta, nil
+		return nextNonce, lastQueueItem.Meta, true, nil
 	}
 
 	if err := p.updateNonce(ctx); err != nil {
 		if !p.queue.IsPersistent() && config.WaitForL1Finality {
-			return 0, nil, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
+			return 0, nil, false, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
 		nonce, err := p.client.NonceAt(ctx, p.sender, nonceQueryBlock)
 		if err != nil {
-			return 0, nil, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
+			return 0, nil, false, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
 		p.lastBlock = nonceQueryBlock
 		p.nonce = nonce
 	}
-	meta, err := p.metadataRetriever(ctx, p.lastBlock)
-	return p.nonce, meta, err
+	return p.nonce, nil, false, nil
+}
+
+// GetNextNonceAndMeta retrieves generates next nonce, validates that a
+// transaction can be posted with that nonce, and fetches "Meta" either last
+// queued iterm (if queue isn't empty) or retrieves with last block.
+func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	nonce, meta, hasMeta, err := p.getNextNonceAndMaybeMeta(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	if !hasMeta {
+		meta, err = p.metadataRetriever(ctx, p.lastBlock)
+	}
+	return nonce, meta, err
 }
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
@@ -299,7 +317,16 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	err := p.updateBalance(ctx)
+
+	expectedNonce, _, _, err := p.getNextNonceAndMaybeMeta(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if nonce != expectedNonce {
+		return nil, fmt.Errorf("data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", expectedNonce, nonce)
+	}
+
+	err = p.updateBalance(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
@@ -587,8 +614,8 @@ type DataPosterConfig struct {
 	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64                     `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool                       `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool                       `koanf:"use-leveldb" reload:"hot"`
-	UseNoOpStorage         bool                       `koanf:"use-noop-storage" reload:"hot"`
+	UseLevelDB             bool                       `koanf:"use-leveldb"`
+	UseNoOpStorage         bool                       `koanf:"use-noop-storage"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -626,6 +653,12 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 }
 
+var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
+	config := DefaultDataPosterConfig
+	config.MaxMempoolTransactions = 1 // the validator cannot queue transactions
+	return config
+}()
+
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
 	RedisSigner:            signature.TestSimpleHmacConfig,
@@ -640,3 +673,9 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseLevelDB:             false,
 	UseNoOpStorage:         false,
 }
+
+var TestDataPosterConfigForValidator = func() DataPosterConfig {
+	config := TestDataPosterConfig
+	config.MaxMempoolTransactions = 1 // the validator cannot queue transactions
+	return config
+}()

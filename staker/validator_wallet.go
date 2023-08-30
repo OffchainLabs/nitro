@@ -61,6 +61,8 @@ type ValidatorWalletInterface interface {
 	AuthIfEoa() *bind.TransactOpts
 	Start(context.Context)
 	StopAndWait()
+	// May be nil
+	DataPoster() *dataposter.DataPoster
 }
 
 type ContractValidatorWallet struct {
@@ -416,6 +418,10 @@ func (w *ContractValidatorWallet) Start(ctx context.Context) {
 
 func (b *ContractValidatorWallet) StopAndWait() {
 	b.StopWaiter.StopAndWait()
+}
+
+func (b *ContractValidatorWallet) DataPoster() *dataposter.DataPoster {
+	return b.dataPoster
 }
 
 func GetValidatorWalletContract(
