@@ -604,7 +604,6 @@ impl<'a> WasmBinary<'a> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
         let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
-        let debug = compile.debug.debug_funcs;
 
         // ensure the wasm fits within the remaining amount of memory
         if pages > page_limit.into() {
@@ -648,7 +647,7 @@ impl<'a> WasmBinary<'a> {
         if bin.names.module.len() > max_len {
             too_long!("module name", bin.names.module.len())
         }
-        if !debug && !bin.names.functions.is_empty() {
+        if !bin.names.functions.is_empty() {
             bail!("wasm custom names section not allowed")
         }
         if bin.start.is_some() {
