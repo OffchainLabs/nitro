@@ -1,7 +1,7 @@
 <br />
 <p align="center">
   <a href="https://arbitrum.io/">
-    <img src="https://thereisatoken.com/media/stylus-logo.svg" alt="Logo" width="100%" height="80">
+    <img src="https://arbitrum.io/wp-content/uploads/2023/08/stylus-thumbnail-1000.png" alt="Logo" width="100%">
   </a>
 
   <p align="center">
