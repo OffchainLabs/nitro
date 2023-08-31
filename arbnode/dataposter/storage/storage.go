@@ -103,11 +103,12 @@ func QueuedTransactionToLegacy(qt *QueuedTransaction) (*LegacyQueuedTransaction,
 func decode(data []byte) (*QueuedTransaction, error) {
 	var item QueuedTransaction
 	if err := rlp.DecodeBytes(data, &item); err != nil {
-		log.Warn("Failed to decode QueuedTransaction, attempting to decide legacy queued transaction", "error", err)
+		log.Debug("Failed to decode QueuedTransaction, attempting to decide legacy queued transaction", "error", err)
 		val, err := DecodeLegacyQueuedTransaction(data)
 		if err != nil {
 			return nil, fmt.Errorf("decoding legacy item: %w", err)
 		}
+		log.Debug("Succeeded decoding QueuedTransaction with legacy encoder")
 		return LegacyToQueuedTransaction(val)
 	}
 	return &item, nil
