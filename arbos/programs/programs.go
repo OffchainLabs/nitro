@@ -387,26 +387,21 @@ const (
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
-	details := func() string {
-		if debug {
-			return arbutil.ToStringOrHex(data)
-		}
-		return ""
-	}
+	msg := arbutil.ToStringOrHex(data)
 	switch status {
 	case userSuccess:
 		return data, "", nil
 	case userRevert:
-		return data, details(), vm.ErrExecutionReverted
+		return data, msg, vm.ErrExecutionReverted
 	case userFailure:
-		return nil, details(), vm.ErrExecutionReverted
+		return nil, msg, vm.ErrExecutionReverted
 	case userOutOfInk:
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
 	default:
-		log.Error("program errored with unknown status", "status", status, "data", common.Bytes2Hex(data))
-		return nil, details(), vm.ErrExecutionReverted
+		log.Error("program errored with unknown status", "status", status, "data", msg)
+		return nil, msg, vm.ErrExecutionReverted
 	}
 }
 

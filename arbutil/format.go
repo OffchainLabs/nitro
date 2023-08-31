@@ -6,6 +6,9 @@ import (
 )
 
 func ToStringOrHex(input []byte) string {
+	if input == nil {
+		return ""
+	}
 	if utf8.Valid(input) {
 		return string(input)
 	}
