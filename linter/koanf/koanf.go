@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"reflect"
 	"strings"
-	"unicode"
 
 	"github.com/fatih/structtag"
 	"golang.org/x/tools/go/analysis"
@@ -184,7 +183,7 @@ func checkStruct(pass *analysis.Pass, s *ast.StructType) Result {
 		if err != nil {
 			continue
 		}
-		tagName := normalize(tag.Name)
+		tagName := strings.ReplaceAll(tag.Name, "-", "")
 		fieldName := f.Names[0].Name
 		if !strings.EqualFold(tagName, fieldName) {
 			res.Errors = append(res.Errors, koanfError{
@@ -194,25 +193,6 @@ func checkStruct(pass *analysis.Pass, s *ast.StructType) Result {
 		}
 	}
 	return res
-}
-
-func normalize(s string) string {
-	ans := s[:1]
-	for i := 1; i < len(s); i++ {
-		c := rune(s[i])
-		if !isAlphanumeric(c) {
-			continue
-		}
-		if !isAlphanumeric(rune(s[i-1])) && unicode.IsLower(c) {
-			c = unicode.ToUpper(c)
-		}
-		ans += string(c)
-	}
-	return ans
-}
-
-func isAlphanumeric(c rune) bool {
-	return unicode.IsLetter(c) || unicode.IsDigit(c)
 }
 
 func main() {
