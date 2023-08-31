@@ -608,7 +608,6 @@ func deployRollupCreator(
 		challengeManagerAddr,
 		rollupAdminLogic,
 		rollupUserLogic,
-		common.Address{},
 		validatorWalletCreator,
 	)
 	if err != nil {

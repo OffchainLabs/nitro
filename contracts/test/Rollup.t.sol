@@ -90,7 +90,6 @@ contract RollupTest is Test {
             edgeChallengeManager,
             rollupAdminLogicImpl,
             rollupUserLogicImpl,
-            address(0),
             address(0)
         );
 

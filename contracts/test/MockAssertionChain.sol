@@ -8,7 +8,6 @@ import "../src/bridge/IBridge.sol";
 import "../src/rollup/RollupLib.sol";
 import "./challengeV2/StateTools.sol";
 
-// CHRIS: TODO: we should update this to use the real assertion, not the mock
 struct MockAssertion {
     bytes32 predecessorId;
     uint256 height;

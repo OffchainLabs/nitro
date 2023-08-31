@@ -82,8 +82,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     IOutbox public outbox;
     IRollupEventInbox public rollupEventInbox;
 
-    // misc useful contracts when interacting with the rollup
-    address public validatorUtils;
     address public validatorWalletCreator;
 
     // only 1 child can be confirmed, the excess/loser stake will be sent to this address

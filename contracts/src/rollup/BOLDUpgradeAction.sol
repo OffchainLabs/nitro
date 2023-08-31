@@ -71,6 +71,7 @@ interface IOldRollup {
     function stakerCount() external view returns (uint64);
     function getStaker(address staker) external view returns (OldStaker memory);
     function isValidator(address validator) external view returns (bool);
+    function validatorWalletCreator() external view returns (address);
 }
 
 interface IOldRollupAdmin {
@@ -148,6 +149,10 @@ contract RollupReader is IOldRollup {
     function isValidator(address validator) external view returns (bool) {
         return rollup.isValidator(validator);
     }
+
+    function validatorWalletCreator() external view returns (address) {
+        return rollup.validatorWalletCreator();
+    }
 }
 
 /// @title  Upgrades an Arbitrum rollup to the new challenge protocol
@@ -155,7 +160,7 @@ contract RollupReader is IOldRollup {
 ///         Also requires a lookup contract to be provided that contains the pre-image of the state hash
 ///         that is in the latest confirmed assertion in the current rollup.
 contract BOLDUpgradeAction {
-    uint256 public constant BLOCK_LEAF_SIZE = 2 ** 26; // CHRIS: TODO: get final number for this
+    uint256 public constant BLOCK_LEAF_SIZE = 2 ** 26;
     uint256 public constant BIGSTEP_LEAF_SIZE = 2 ** 23;
     uint256 public constant SMALLSTEP_LEAF_SIZE = 2 ** 20;
 
@@ -401,8 +406,7 @@ contract BOLDUpgradeAction {
             challengeManager: challengeManager,
             rollupAdminLogic: IMPL_NEW_ROLLUP_ADMIN,
             rollupUserLogic: IRollupUser(IMPL_NEW_ROLLUP_USER),
-            validatorUtils: address(0), // CHRIS: TODO: remove this from the admin contract
-            validatorWalletCreator: address(0) // CHRIS: TODO: remove this from the admin contract
+            validatorWalletCreator: ROLLUP_READER.validatorWalletCreator()
         });
 
         // upgrade the surrounding contracts eg bridge, outbox, seq inbox, rollup event inbox

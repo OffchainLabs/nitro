@@ -44,7 +44,5 @@ struct ContractDependencies {
     IEdgeChallengeManager challengeManager;
     address rollupAdminLogic; // this cannot be IRollupAdmin because of circular dependencies
     IRollupUser rollupUserLogic;
-    // misc contracts that are useful when interacting with the rollup
-    address validatorUtils;
     address validatorWalletCreator;
 }
