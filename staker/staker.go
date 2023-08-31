@@ -381,6 +381,13 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
+		switchedToBoldProtocol, err := s.checkAndSwitchToBoldStaker(ctxIn)
+		if err != nil {
+			log.Error("staker: error in checking switch to bold staker", "err", err)
+		}
+		if switchedToBoldProtocol {
+			s.StopAndWait()
+		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
