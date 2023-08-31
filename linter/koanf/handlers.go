@@ -195,7 +195,7 @@ func tagFromField(f *ast.Field) string {
 	if err != nil {
 		return ""
 	}
-	return normalizeTag(tag.Name)
+	return strings.ReplaceAll(tag.Name, "-", "")
 }
 
 // checkStruct returns violations where koanf tag name doesn't match field names.
