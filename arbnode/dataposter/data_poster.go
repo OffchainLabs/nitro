@@ -168,11 +168,14 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 	return nil
 }
 
+func (p *DataPoster) waitForL1Finality() bool {
+	return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
+}
+
 // Requires the caller hold the mutex.
 // Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, and an error.
 // Unlike GetNextNonceAndMeta, this does not call the metadataRetriever if the metadata is not stored in the queue.
 func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []byte, bool, error) {
-	config := p.config()
 	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
@@ -191,7 +194,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 	}
 
 	if err := p.updateNonce(ctx); err != nil {
-		if !p.queue.IsPersistent() && config.WaitForL1Finality {
+		if !p.queue.IsPersistent() && p.waitForL1Finality() {
 			return 0, nil, false, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
@@ -442,7 +445,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 // The mutex must be held by the caller.
 func (p *DataPoster) updateNonce(ctx context.Context) error {
 	var blockNumQuery *big.Int
-	if p.config().WaitForL1Finality {
+	if p.waitForL1Finality() {
 		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
 	}
 	header, err := p.client.HeaderByNumber(ctx, blockNumQuery)
@@ -611,21 +614,23 @@ type QueueStorage interface {
 }
 
 type DataPosterConfig struct {
-	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes       string                     `koanf:"replacement-times"`
-	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int                        `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
-	NonceRbfSoftConfs      uint64                     `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	AllocateMempoolBalance bool                       `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool                       `koanf:"use-leveldb"`
-	UseNoOpStorage         bool                       `koanf:"use-noop-storage"`
-	LegacyStorageEncoding  bool                       `koanf:"legacy-storage-encoding" reload:"hot"`
+	RedisSigner      signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes string                     `koanf:"replacement-times"`
+	// This is forcibly disabled if the parent chain is an Arbitrum chain,
+	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
+	WaitForL1Finality      bool    `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64  `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int     `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64 `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64 `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64 `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64 `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64 `koanf:"max-tip-cap-gwei" reload:"hot"`
+	NonceRbfSoftConfs      uint64  `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool    `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseLevelDB             bool    `koanf:"use-leveldb"`
+	UseNoOpStorage         bool    `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool    `koanf:"legacy-storage-encoding" reload:"hot"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
