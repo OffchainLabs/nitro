@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -103,23 +102,23 @@ func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[c
 }
 
 func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := hexutil.Uint64(timestamp + 30)
-	past := hexutil.Uint64(timestamp - 1)
-	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
-	currentBlockNumber := hexutil.Uint64(blockNumber)
+	future := common.Uint64OrHex(timestamp + 30)
+	past := common.Uint64OrHex(timestamp - 1)
+	futureBlockNumber := common.Uint64OrHex(blockNumber + 1000)
+	currentBlockNumber := common.Uint64OrHex(blockNumber)
 	return getBlockTimeLimits(t, currentBlockNumber, futureBlockNumber, past, future)
 }
 
 func getUnfulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := hexutil.Uint64(timestamp + 30)
-	past := hexutil.Uint64(timestamp - 1)
-	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
-	previousBlockNumber := hexutil.Uint64(blockNumber - 1)
+	future := common.Uint64OrHex(timestamp + 30)
+	past := common.Uint64OrHex(timestamp - 1)
+	futureBlockNumber := common.Uint64OrHex(blockNumber + 1000)
+	previousBlockNumber := common.Uint64OrHex(blockNumber - 1)
 	// skip first empty options
 	return getBlockTimeLimits(t, futureBlockNumber, previousBlockNumber, future, past)[1:]
 }
 
-func getBlockTimeLimits(t *testing.T, blockMin, blockMax hexutil.Uint64, timeMin, timeMax hexutil.Uint64) []*arbitrum_types.ConditionalOptions {
+func getBlockTimeLimits(t *testing.T, blockMin, blockMax common.Uint64OrHex, timeMin, timeMax common.Uint64OrHex) []*arbitrum_types.ConditionalOptions {
 	basic := []*arbitrum_types.ConditionalOptions{
 		{},
 		{TimestampMin: &timeMin},
@@ -157,9 +156,9 @@ func optionsProduct(optionsA, optionsB []*arbitrum_types.ConditionalOptions) []*
 				c.KnownAccounts[k] = v
 			}
 			limitTriples := []struct {
-				a *hexutil.Uint64
-				b *hexutil.Uint64
-				c **hexutil.Uint64
+				a *common.Uint64OrHex
+				b *common.Uint64OrHex
+				c **common.Uint64OrHex
 			}{
 				{a.BlockNumberMin, b.BlockNumberMin, &c.BlockNumberMin},
 				{a.BlockNumberMax, b.BlockNumberMax, &c.BlockNumberMax},
@@ -168,10 +167,10 @@ func optionsProduct(optionsA, optionsB []*arbitrum_types.ConditionalOptions) []*
 			}
 			for _, tripple := range limitTriples {
 				if tripple.b != nil {
-					value := hexutil.Uint64(*tripple.b)
+					value := common.Uint64OrHex(*tripple.b)
 					*tripple.c = &value
 				} else if tripple.a != nil {
-					value := hexutil.Uint64(*tripple.a)
+					value := common.Uint64OrHex(*tripple.a)
 					*tripple.c = &value
 				} else {
 					*tripple.c = nil
