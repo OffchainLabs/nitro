@@ -94,16 +94,18 @@ var TestConfig = Config{
 	UseFinalityData:  false,
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface, usePrecompilesgen bool) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(codeAt) != 0 {
-		isParentChainArbitrum = true
-		if arbSysPrecompile == nil {
-			return nil, errors.New("unable to create ArbSys from precompilesgen")
+	if usePrecompilesgen {
+		codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(codeAt) != 0 {
+			isParentChainArbitrum = true
+			if arbSysPrecompile == nil {
+				return nil, errors.New("unable to create ArbSys from precompilesgen")
+			}
 		}
 	}
 	return &HeaderReader{

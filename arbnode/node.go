@@ -237,7 +237,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 
 func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-	l1Reader, err := headerreader.New(ctx, l1client, readerConfig, arbSys)
+	l1Reader, err := headerreader.New(ctx, l1client, readerConfig, arbSys, true)
 	if err != nil {
 		return nil, err
 	}
@@ -614,7 +614,7 @@ func createNodeImpl(
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys, true)
 		if err != nil {
 			return nil, err
 		}
