@@ -79,7 +79,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 
 	if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
-		RecoverPayloadFromBlob(ctx, batchBlockHash)
+		_, _ = RecoverPayloadFromBlob(ctx, nil, batchBlockHash, payload[1:])
 	}
 
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
