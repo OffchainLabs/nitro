@@ -3,6 +3,8 @@
 
 (module
     (import "test" "noop" (func))
+    (memory 0 0)
+    (export "memory" (memory 0))
     (func (export "void"))
     (func (export "more") (param i32 i64) (result f32)
         unreachable))
