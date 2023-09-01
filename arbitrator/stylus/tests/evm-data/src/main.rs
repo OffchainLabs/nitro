@@ -49,12 +49,12 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut output = vec![];
     output.extend(B256::from(U256::from(block_number)));
     output.extend(B256::from(U256::from(chainid)));
-    output.extend(basefee);
-    output.extend(gas_price);
+    output.extend(B256::from(basefee));
+    output.extend(B256::from(gas_price));
     output.extend(B256::from(U256::from(gas_limit)));
     output.extend(B256::from(value));
     output.extend(B256::from(U256::from(timestamp)));
-    output.extend(address_balance);
+    output.extend(B256::from(address_balance));
 
     output.extend(address.into_word());
     output.extend(sender.into_word());
