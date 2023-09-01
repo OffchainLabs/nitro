@@ -162,15 +162,7 @@ pub unsafe extern "C" fn stylus_call(
     let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => {
-            // TODO: adopt change where we require programs have memories
-            if format!("{error:?}").contains("Missing export memory") {
-                output.write_err(error.wrap_err("call failed"));
-                *gas = 0;
-                return UserOutcomeKind::Failure;
-            }
-            panic!("failed to instantiate program: {error:?}")
-        }
+        Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
 
     let status = match instance.run_main(&calldata, config, ink) {
