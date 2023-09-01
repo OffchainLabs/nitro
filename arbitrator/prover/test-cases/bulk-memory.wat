@@ -80,4 +80,4 @@
         i32.ne
         (if (then (unreachable))))
     (start $start)
-    (memory (export "mem") 1 1))
+    (memory (export "memory") 1 1))
