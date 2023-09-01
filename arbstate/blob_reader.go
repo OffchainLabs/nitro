@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/pkg/errors"
 
@@ -130,9 +131,25 @@ func (b *BlobClient) genesisTime(ctx context.Context) (uint64, error) {
 
 func RecoverPayloadFromBlob(
 	ctx context.Context,
-	ec *ethclient.Client,
+	bc *BlobClient,
 	batchBlockHash common.Hash,
 ) ([]byte, error) {
 
-	return nil, nil
+	blobs, err := bc.Get(ctx, batchBlockHash)
+	if err != nil {
+		return nil, errors.Wrap(err, "error retrieving blobs")
+	}
+
+	rlpEncodedPayload := make([]byte, len(blobs)*len(kzg4844.Blob{}))
+	for i := range blobs {
+		copy(rlpEncodedPayload[i*len(kzg4844.Blob{}):], blobs[i][:])
+	}
+
+	var payload []byte
+	err = rlp.DecodeBytes(rlpEncodedPayload, &payload)
+	if err != nil {
+		return nil, errors.Wrap(err, "error rlp decoding recovered blobs into batch payload")
+	}
+
+	return payload, nil
 }

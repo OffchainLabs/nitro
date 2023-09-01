@@ -78,11 +78,9 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		}
 	}
 
-	/* TODO
 	if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
 		RecoverPayloadFromBlob(ctx, batchBlockHash)
 	}
-	*/
 
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
