@@ -677,7 +677,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	if version != 9 {
 		gasPrice = p.evm.Context.BaseFee
 		if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.Sign() == 0 {
-			gasPrice.SetInt64(0) // gasprice zero behavior
+			gasPrice = common.Big0
 		}
 	}
 	return gasPrice
