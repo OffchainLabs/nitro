@@ -2,10 +2,11 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
+    memory,
     programs::{
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
         heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData,
+        StylusData, STYLUS_ENTRY_POINT,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -583,7 +584,7 @@ impl<'a> WasmBinary<'a> {
         }
 
         // 4GB maximum implies `footprint` fits in a u16
-        let footprint = self.memory_size()?.map(|x| x.min.0).unwrap_or_default() as u16;
+        let footprint = self.memory_info()?.min.0 as u16;
 
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
@@ -603,7 +604,11 @@ impl<'a> WasmBinary<'a> {
     ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
-        let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
+
+        let Some(memory) = bin.memories.first() else {
+            bail!("missing memory with export name \"memory\"")
+        };
+        let pages = memory.initial;
 
         // ensure the wasm fits within the remaining amount of memory
         if pages > page_limit.into() {
@@ -649,6 +654,11 @@ impl<'a> WasmBinary<'a> {
         }
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
+        }
+
+        // check that the necessary exports exist
+        if bin.exports.get("memory") != Some(&(0, ExportKind::Memory)) {
+            bail!("missing memory with export name \"memory\"")
         }
         Ok((bin, stylus_data, pages as u16))
     }

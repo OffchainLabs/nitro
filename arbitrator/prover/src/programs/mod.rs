@@ -47,7 +47,7 @@ pub trait ModuleMod {
     fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>>;
     fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
-    fn memory_size(&self) -> Result<Option<MemoryType>>;
+    fn memory_info(&self) -> Result<MemoryType>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -235,11 +235,11 @@ impl ModuleMod for ModuleInfo {
         Ok(())
     }
 
-    fn memory_size(&self) -> Result<Option<MemoryType>> {
-        if self.memories.len() > 1 {
-            bail!("multi-memory extension not supported");
+    fn memory_info(&self) -> Result<MemoryType> {
+        if self.memories.len() != 1 {
+            bail!("a single memory is required");
         }
-        Ok(self.memories.last().map(|x| x.into()))
+        Ok(self.memories.last().unwrap().into())
     }
 }
 
@@ -341,11 +341,11 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(())
     }
 
-    fn memory_size(&self) -> Result<Option<MemoryType>> {
-        if self.memories.len() > 1 {
-            bail!("multi-memory extension not supported");
+    fn memory_info(&self) -> Result<MemoryType> {
+        if self.memories.len() != 1 {
+            bail!("a single memory is required");
         }
-        self.memories.last().map(|x| x.try_into()).transpose()
+        self.memories.last().unwrap().try_into()
     }
 }
 
