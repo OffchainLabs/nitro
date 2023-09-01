@@ -970,10 +970,14 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
+		ephemeralError := errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace)
+		if !ephemeralError {
+			b.firstAccErr = time.Time{}
+		}
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace) {
+			if ephemeralError {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {
@@ -982,8 +986,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				} else if time.Since(b.firstAccErr) < time.Minute {
 					logLevel = log.Debug
 				}
-			} else {
-				b.firstAccErr = time.Time{}
 			}
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
