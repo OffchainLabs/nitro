@@ -11,4 +11,4 @@
     (func $out_of_bounds (param $args_len i32) (result i32)
         i32.const 0xFFFFFF
         i32.load)
-    (memory 1 1))
+    (memory (export "memory") 1 1))

@@ -39,10 +39,7 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
         let scratch = module.get_global(SCRATCH_GLOBAL)?;
         *self.scratch.write() = Some(scratch);
 
-        let Some(memory) = module.memory_size()? else {
-            return Ok(());
-        };
-
+        let memory = module.memory_info()?;
         let min = memory.min;
         let max = memory.max;
         let lim = self.limit;

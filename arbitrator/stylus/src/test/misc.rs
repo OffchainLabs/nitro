@@ -32,7 +32,7 @@ fn test_bulk_memory() -> Result<()> {
     assert_ne!(native.ink_left(), MachineMeter::Exhausted);
 
     let expected = "0000080808050205000002020500020508000000000000000000000000000000";
-    let data = native.read_slice("mem", 0x1000, 32)?;
+    let data = native.read_slice("memory", 0x1000, 32)?;
     assert_eq!(expected, hex::encode(data));
 
     let mut machine = new_test_machine(filename, &compile)?;

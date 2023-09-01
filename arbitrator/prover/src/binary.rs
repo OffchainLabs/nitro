@@ -5,7 +5,7 @@ use crate::{
     programs::{
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
         heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData,
+        StylusData, STYLUS_ENTRY_POINT,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -20,7 +20,7 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
-use wasmer_types::LocalFunctionIndex;
+use wasmer_types::{entity::EntityRef, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
     Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
     NameSectionReader, Naming, Operator, Parser, Payload, TableType, Type, TypeDef, Validator,
@@ -583,7 +583,7 @@ impl<'a> WasmBinary<'a> {
         }
 
         // 4GB maximum implies `footprint` fits in a u16
-        let footprint = self.memory_size()?.map(|x| x.min.0).unwrap_or_default() as u16;
+        let footprint = self.memory_info()?.min.0 as u16;
 
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
@@ -603,7 +603,11 @@ impl<'a> WasmBinary<'a> {
     ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
-        let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
+
+        let Some(memory) = bin.memories.first() else {
+            bail!("missing memory with export name \"memory\"")
+        };
+        let pages = memory.initial;
 
         // ensure the wasm fits within the remaining amount of memory
         if pages > page_limit.into() {
@@ -650,6 +654,27 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
+
+        // check the entrypoint
+        let Some(&(entrypoint, kind)) = bin.exports.get(STYLUS_ENTRY_POINT) else {
+            bail!("missing export with name {}", STYLUS_ENTRY_POINT.red());
+        };
+        if kind != ExportKind::Func {
+            bail!(
+                "export {} must be a function but is a {}",
+                STYLUS_ENTRY_POINT.red(),
+                kind.debug_red(),
+            );
+        }
+        let entrypoint_ty = bin.get_function(FunctionIndex::new(entrypoint.try_into()?))?;
+        if entrypoint_ty != FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]) {
+            bail!(
+                "wrong type for {}: {}",
+                STYLUS_ENTRY_POINT.red(),
+                entrypoint_ty.red(),
+            );
+        }
+
         Ok((bin, stylus_data, pages as u16))
     }
 }

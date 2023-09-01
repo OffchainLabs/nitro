@@ -23,7 +23,7 @@ use {
     wasmer::{
         ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
     },
-    wasmer_types::ModuleInfo,
+    wasmer_types::{MemoryIndex, ModuleInfo},
 };
 
 pub mod config;
@@ -47,7 +47,7 @@ pub trait ModuleMod {
     fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>>;
     fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
-    fn memory_size(&self) -> Result<Option<MemoryType>>;
+    fn memory_info(&self) -> Result<MemoryType>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -235,11 +235,17 @@ impl ModuleMod for ModuleInfo {
         Ok(())
     }
 
-    fn memory_size(&self) -> Result<Option<MemoryType>> {
-        if self.memories.len() > 1 {
-            bail!("multi-memory extension not supported");
+    fn memory_info(&self) -> Result<MemoryType> {
+        if self.memories.is_empty() {
+            bail!("missing memory export with name {}", "memory".red());
         }
-        Ok(self.memories.last().map(|x| x.into()))
+        if self.memories.len() > 1 {
+            bail!("only one memory is allowed");
+        }
+        if self.exports.get("memory") != Some(&ExportIndex::Memory(MemoryIndex::from_u32(0))) {
+            bail!("missing memory with export name {}", "memory".red());
+        }
+        Ok(self.memories.last().unwrap().into())
     }
 }
 
@@ -341,11 +347,17 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(())
     }
 
-    fn memory_size(&self) -> Result<Option<MemoryType>> {
-        if self.memories.len() > 1 {
-            bail!("multi-memory extension not supported");
+    fn memory_info(&self) -> Result<MemoryType> {
+        if self.memories.is_empty() {
+            bail!("missing memory export with name {}", "memory".red());
         }
-        self.memories.last().map(|x| x.try_into()).transpose()
+        if self.memories.len() > 1 {
+            bail!("only one memory is allowed");
+        }
+        if self.exports.get("memory") != Some(&(0, ExportKind::Memory)) {
+            bail!("missing memory with export name {}", "memory".red());
+        }
+        self.memories.last().unwrap().try_into()
     }
 }
 
