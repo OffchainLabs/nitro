@@ -15,8 +15,8 @@ func TestAll(t *testing.T) {
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	res := analysistest.Run(t, testdata, analyzerForTests, "a")
-	if cnt := countErrors(res); cnt != 1 {
-		t.Errorf("analysistest.Run() got %v errors, expected 1", cnt)
+	if cnt := countErrors(res); cnt != 3 {
+		t.Errorf("analysistest.Run() got %v errors, expected 3", cnt)
 	}
 }
 
