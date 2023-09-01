@@ -116,7 +116,7 @@ func checkFlagDefs(pass *analysis.Pass, f *ast.FuncDecl) Result {
 		if !ok {
 			continue
 		}
-		if normSL := normalize(sl); !strings.EqualFold(normSL, s) {
+		if normSL := strings.ReplaceAll(sl, "-", ""); !strings.EqualFold(normSL, s) {
 			res.Errors = append(res.Errors, koanfError{
 				Pos:     pass.Fset.Position(f.Pos()),
 				Message: fmt.Sprintf("koanf tag name: %q doesn't match the field: %q", sl, s),
