@@ -306,10 +306,10 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
 
 pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let Some(resume) = env.data().exports.resume.clone() else {
-        return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
+        return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
     };
     let Some(get_stack_pointer) = env.data().exports.get_stack_pointer.clone() else {
-        return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
+        return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()));
     };
     let sp = GoStack::simple(sp, &env);
     let data = env.data_mut();

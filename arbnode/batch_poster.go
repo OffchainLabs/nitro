@@ -56,20 +56,20 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader     *headerreader.HeaderReader
-	inbox        *InboxTracker
-	streamer     *TransactionStreamer
-	config       BatchPosterConfigFetcher
-	seqInbox     *bridgegen.SequencerInbox
-	bridge       *bridgegen.Bridge
-	syncMonitor  *SyncMonitor
-	seqInboxABI  *abi.ABI
-	seqInboxAddr common.Address
-	building     *buildingBatch
-	daWriter     das.DataAvailabilityServiceWriter
-	dataPoster   *dataposter.DataPoster
-	redisLock    *redislock.Simple
-	firstAccErr  time.Time // first time a continuous missing accumulator occurred
+	l1Reader            *headerreader.HeaderReader
+	inbox               *InboxTracker
+	streamer            *TransactionStreamer
+	config              BatchPosterConfigFetcher
+	seqInbox            *bridgegen.SequencerInbox
+	bridge              *bridgegen.Bridge
+	syncMonitor         *SyncMonitor
+	seqInboxABI         *abi.ABI
+	seqInboxAddr        common.Address
+	building            *buildingBatch
+	daWriter            das.DataAvailabilityServiceWriter
+	dataPoster          *dataposter.DataPoster
+	redisLock           *redislock.Simple
+	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
 	backlog         uint64
@@ -970,20 +970,22 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
+		ephemeralError := errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace)
+		if !ephemeralError {
+			b.firstEphemeralError = time.Time{}
+		}
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace) {
+			if ephemeralError {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
-				if b.firstAccErr == (time.Time{}) {
-					b.firstAccErr = time.Now()
+				if b.firstEphemeralError == (time.Time{}) {
+					b.firstEphemeralError = time.Now()
 					logLevel = log.Debug
-				} else if time.Since(b.firstAccErr) < time.Minute {
+				} else if time.Since(b.firstEphemeralError) < time.Minute {
 					logLevel = log.Debug
 				}
-			} else {
-				b.firstAccErr = time.Time{}
 			}
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
