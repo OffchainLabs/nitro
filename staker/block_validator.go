@@ -597,7 +597,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	var batchMsgs arbutil.MessageIndex
 	var printedCount int64
 	if validated.GlobalState.Batch > 0 {
-		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch)
+		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch - 1)
 	}
 	if err != nil {
 		printedCount = -1
