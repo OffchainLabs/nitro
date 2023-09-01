@@ -18,17 +18,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
+
+type ArbSysInterface interface {
+	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
+}
 
 type HeaderReader struct {
 	stopwaiter.StopWaiter
 	config                ConfigFetcher
 	client                arbutil.L1Interface
 	isParentChainArbitrum bool
-	arbSys                *precompilesgen.ArbSys
+	arbSys                ArbSysInterface
 
 	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
@@ -91,25 +94,23 @@ var TestConfig = Config{
 	UseFinalityData:  false,
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) (*HeaderReader, error) {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	var arbSys *precompilesgen.ArbSys
 	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(codeAt) != 0 {
 		isParentChainArbitrum = true
-		arbSys, err = precompilesgen.NewArbSys(types.ArbSysAddress, client)
-		if err != nil {
-			return nil, err
+		if arbSysPrecompile == nil {
+			return nil, errors.New("unable to create ArbSys from precompilesgen")
 		}
 	}
 	return &HeaderReader{
 		client:                client,
 		config:                config,
 		isParentChainArbitrum: isParentChainArbitrum,
-		arbSys:                arbSys,
+		arbSys:                arbSysPrecompile,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
 		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
