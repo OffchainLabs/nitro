@@ -114,6 +114,17 @@ func (s *Storage) Prune(ctx context.Context, until uint64) error {
 	return nil
 }
 
+// normalizeDecoding decodes data (regardless of what encoding it used), and
+// encodes it according to current encoding for storage.
+// As a result, encoded data is transformed to currently used encoding.
+func (s *Storage) normalizeDecoding(data []byte) ([]byte, error) {
+	item, err := s.encDec().Decode(data)
+	if err != nil {
+		return nil, err
+	}
+	return s.encDec().Encode(item)
+}
+
 func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.QueuedTransaction) error {
 	if new == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
@@ -141,6 +152,10 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 			verifiedItem, err := s.peelVerifySignature([]byte(haveItems[0]))
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
+			}
+			verifiedItem, err = s.normalizeDecoding(verifiedItem)
+			if err != nil {
+				return fmt.Errorf("error normalizing encoding for verified item: %w", err)
 			}
 			prevItemEncoded, err := s.encDec().Encode(prev)
 			if err != nil {

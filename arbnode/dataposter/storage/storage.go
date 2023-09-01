@@ -21,7 +21,7 @@ var (
 )
 
 type QueuedTransaction struct {
-	FullTx          *types.Transaction `rlp:"nil"`
+	FullTx          *types.Transaction
 	Data            types.DynamicFeeTx
 	Meta            []byte
 	Sent            bool
@@ -35,7 +35,7 @@ type QueuedTransaction struct {
 // rlp encoding of Meta into queuedTransaction and rlp encoding it once more
 // to store it.
 type LegacyQueuedTransaction struct {
-	FullTx          *types.Transaction `rlp:"nil"`
+	FullTx          *types.Transaction
 	Data            types.DynamicFeeTx
 	Meta            BatchPosterPosition
 	Sent            bool
@@ -46,9 +46,7 @@ type LegacyQueuedTransaction struct {
 // This is also for legacy reason. Since Batchposter is in arbnode package,
 // we can't refer to BatchPosterPosition type there even if we export it (that
 // would create cyclic dependency).
-// Ideally we'll factor out Batch Poster from arbnode into separate package
-// and BatchPosterPosition into another separate package as well.
-// For the sake of minimal refactoring, that struct is duplicated here.
+// We'll drop this struct in a few releases when we drop legacy encoding.
 type BatchPosterPosition struct {
 	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64

@@ -6,6 +6,7 @@ import (
 	"path"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -22,6 +23,7 @@ import (
 
 var ignoreData = cmp.Options{
 	cmpopts.IgnoreUnexported(
+		types.Transaction{},
 		types.DynamicFeeTx{},
 		big.Int{},
 	),
@@ -62,6 +64,13 @@ func valueOf(t *testing.T, i int) *storage.QueuedTransaction {
 		t.Fatalf("Encoding batch poster position, error: %v", err)
 	}
 	return &storage.QueuedTransaction{
+		FullTx: types.NewTransaction(
+			uint64(i),
+			common.Address{},
+			big.NewInt(int64(i)),
+			uint64(i),
+			big.NewInt(int64(i)),
+			[]byte{byte(i)}),
 		Meta: meta,
 		Data: types.DynamicFeeTx{
 			ChainID:    big.NewInt(int64(i)),
