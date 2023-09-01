@@ -655,11 +655,7 @@ impl<'a> WasmBinary<'a> {
             bail!("wasm start functions not allowed");
         }
 
-        // check that the necessary exports exist
-        if bin.exports.get("memory") != Some(&(0, ExportKind::Memory)) {
-            bail!("missing memory with export name {}", "memory".red());
-        }
-
+        // check the entrypoint
         let Some(&(entrypoint, kind)) = bin.exports.get(STYLUS_ENTRY_POINT) else {
             bail!("missing export with name {}", STYLUS_ENTRY_POINT.red());
         };

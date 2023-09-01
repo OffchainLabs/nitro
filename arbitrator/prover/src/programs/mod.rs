@@ -23,7 +23,7 @@ use {
     wasmer::{
         ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
     },
-    wasmer_types::ModuleInfo,
+    wasmer_types::{MemoryIndex, ModuleInfo},
 };
 
 pub mod config;
@@ -242,6 +242,9 @@ impl ModuleMod for ModuleInfo {
         if self.memories.len() > 1 {
             bail!("only one memory is allowed");
         }
+        if self.exports.get("memory") != Some(&ExportIndex::Memory(MemoryIndex::from_u32(0))) {
+            bail!("missing memory with export name {}", "memory".red());
+        }
         Ok(self.memories.last().unwrap().into())
     }
 }
@@ -350,6 +353,9 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         }
         if self.memories.len() > 1 {
             bail!("only one memory is allowed");
+        }
+        if self.exports.get("memory") != Some(&(0, ExportKind::Memory)) {
+            bail!("missing memory with export name {}", "memory".red());
         }
         self.memories.last().unwrap().try_into()
     }
