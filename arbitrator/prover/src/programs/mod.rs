@@ -236,8 +236,11 @@ impl ModuleMod for ModuleInfo {
     }
 
     fn memory_info(&self) -> Result<MemoryType> {
-        if self.memories.len() != 1 {
-            bail!("a single memory is required");
+        if self.memories.is_empty() {
+            bail!("missing memory export with name {}", "memory".red());
+        }
+        if self.memories.len() > 1 {
+            bail!("only one memory is allowed");
         }
         Ok(self.memories.last().unwrap().into())
     }
@@ -342,8 +345,11 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 
     fn memory_info(&self) -> Result<MemoryType> {
-        if self.memories.len() != 1 {
-            bail!("a single memory is required");
+        if self.memories.is_empty() {
+            bail!("missing memory export with name {}", "memory".red());
+        }
+        if self.memories.len() > 1 {
+            bail!("only one memory is allowed");
         }
         self.memories.last().unwrap().try_into()
     }

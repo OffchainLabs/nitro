@@ -21,4 +21,4 @@
 )
 
 (start 0)
-
+(memory 0 0)

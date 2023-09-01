@@ -657,25 +657,25 @@ impl<'a> WasmBinary<'a> {
 
         // check that the necessary exports exist
         if bin.exports.get("memory") != Some(&(0, ExportKind::Memory)) {
-            bail!("missing memory with export name \"memory\"");
+            bail!("missing memory with export name {}", "memory".red());
         }
 
         let Some(&(entrypoint, kind)) = bin.exports.get(STYLUS_ENTRY_POINT) else {
-            bail!("missing memory with export name \"{}\"", STYLUS_ENTRY_POINT);
+            bail!("missing export with name {}", STYLUS_ENTRY_POINT.red());
         };
         if kind != ExportKind::Func {
             bail!(
-                "export \"{}\" must be a function but is a {:?}",
-                STYLUS_ENTRY_POINT,
-                kind,
+                "export {} must be a function but is a {}",
+                STYLUS_ENTRY_POINT.red(),
+                kind.debug_red(),
             );
         }
         let entrypoint_ty = bin.get_function(FunctionIndex::new(entrypoint.try_into()?))?;
         if entrypoint_ty != FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]) {
             bail!(
-                "wrong type for \"{}\": {}",
-                STYLUS_ENTRY_POINT,
-                entrypoint_ty,
+                "wrong type for {}: {}",
+                STYLUS_ENTRY_POINT.red(),
+                entrypoint_ty.red(),
             );
         }
 
