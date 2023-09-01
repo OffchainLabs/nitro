@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    memory,
     programs::{
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
         heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
@@ -21,7 +20,7 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
-use wasmer_types::LocalFunctionIndex;
+use wasmer_types::{entity::EntityRef, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
     Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
     NameSectionReader, Naming, Operator, Parser, Payload, TableType, Type, TypeDef, Validator,
@@ -656,10 +655,26 @@ impl<'a> WasmBinary<'a> {
             bail!("wasm start functions not allowed");
         }
 
-        // check that the necessary exports exist
-        if bin.exports.get("memory") != Some(&(0, ExportKind::Memory)) {
-            bail!("missing memory with export name \"memory\"")
+        // check the entrypoint
+        let Some(&(entrypoint, kind)) = bin.exports.get(STYLUS_ENTRY_POINT) else {
+            bail!("missing export with name {}", STYLUS_ENTRY_POINT.red());
+        };
+        if kind != ExportKind::Func {
+            bail!(
+                "export {} must be a function but is a {}",
+                STYLUS_ENTRY_POINT.red(),
+                kind.debug_red(),
+            );
         }
+        let entrypoint_ty = bin.get_function(FunctionIndex::new(entrypoint.try_into()?))?;
+        if entrypoint_ty != FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]) {
+            bail!(
+                "wrong type for {}: {}",
+                STYLUS_ENTRY_POINT.red(),
+                entrypoint_ty.red(),
+            );
+        }
+
         Ok((bin, stylus_data, pages as u16))
     }
 }

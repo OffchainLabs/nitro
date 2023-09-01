@@ -3,6 +3,8 @@
 
 (module
     (import "test" "noop" (func))
+    (memory 0 0)
+    (export "memory" (memory 0))
     (global $depth (export "depth") (mut i32) (i32.const 0))
     (func $recurse (export "recurse") (param $ignored i64) (local f32 f64)
         local.get $ignored  ;; push 1        -- 1 on stack
