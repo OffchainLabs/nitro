@@ -651,7 +651,7 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-pub type PreimageResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes>>;
+pub type PreimageResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes> + Send + Sync>;
 
 /// Wraps a preimage resolver to provide an easier API
 /// and cache the last preimage retrieved.
