@@ -9,6 +9,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -21,19 +22,27 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	mocksgen_bold "github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	challenge_testing "github.com/OffchainLabs/bold/testing"
+	"github.com/OffchainLabs/bold/testing/setup"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -168,7 +177,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
-		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -209,7 +218,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
-		l2nodeB.DeployInfo.Rollup,
+		l2nodeB.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -236,7 +245,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
-		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -412,4 +421,183 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 func TestStakersCooperative(t *testing.T) {
 	stakerTestImpl(t, false, false)
+}
+
+func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+	stakerImpl, l1info, l1client, l2chainConfig, l2node, deployAuth := setupNonBoldStaker(t, ctx)
+	defer l2node.StopAndWait()
+
+	err := stakerImpl.Initialize(ctx)
+	Require(t, err)
+	stakerImpl.Start(ctx)
+	if stakerImpl.Stopped() {
+		t.Fatal("Old protocol staker not started")
+	}
+
+	rollupAddresses := deployBoldContracts(t, ctx, l1info, l1client, l2chainConfig.ChainID, deployAuth)
+
+	bridge, err := bridgegen.NewBridge(l2node.DeployInfo.Bridge, l1client)
+	Require(t, err)
+	tx, err := bridge.UpdateRollupAddress(&deployAuth, rollupAddresses.Rollup)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+
+	time.Sleep(time.Second)
+
+	if !stakerImpl.Stopped() {
+		t.Fatal("Old protocol staker not stopped after rollup upgrade")
+	}
+}
+
+func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, info, *ethclient.Client, *params.ChainConfig, *arbnode.Node, bind.TransactOpts) {
+	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2info := NewBlockChainTestInfo(
+		t,
+		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		transferGas,
+	)
+	_, l2node, l2client, _, l1info, _, l1client, _ := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, l2chainConfig, nil, nil, l2info)
+
+	config := arbnode.ConfigDefaultL1Test()
+	config.Sequencer.Enable = false
+	config.DelayedSequencer.Enable = false
+	config.BatchPoster.Enable = false
+
+	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2client, ctx)
+
+	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+
+	balance := big.NewInt(params.Ether)
+	balance.Mul(balance, big.NewInt(100))
+	l1info.GenerateAccount("Validator")
+	TransferBalance(t, "Faucet", "Validator", balance, l1info, l1client, ctx)
+	l1auth := l1info.GetDefaultTransactOpts("Validator", ctx)
+
+	rollup, err := rollupgen.NewRollupAdminLogic(l2node.DeployInfo.Rollup, l1client)
+	Require(t, err)
+
+	tx, err := rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+	valConfig := staker.DefaultL1ValidatorConfig
+	valConfig.Strategy = "WatchTower"
+	valConfig.EnableBold = true
+	valConfig.StakerInterval = 100 * time.Millisecond
+
+	dp, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2node.ArbDB, storage.BlockValidatorPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	if err != nil {
+		t.Fatalf("Error creating validator dataposter: %v", err)
+	}
+	valWallet, err := staker.NewContractValidatorWallet(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, 10000)
+	Require(t, err)
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	blockValidatorConfig := staker.TestBlockValidatorConfig
+
+	stateless, err := staker.NewStatelessBlockValidator(
+		l2node.InboxReader,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.Execution.Recorder,
+		l2node.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
+	)
+	Require(t, err)
+	err = stateless.Start(ctx)
+	Require(t, err)
+	stakerImpl, err := staker.NewStaker(
+		l2node.L1Reader,
+		valWallet,
+		bind.CallOpts{},
+		valConfig,
+		nil,
+		stateless,
+		nil,
+		nil,
+		l2node.DeployInfo.ValidatorUtils,
+		l2node.DeployInfo.Bridge,
+		nil,
+	)
+	Require(t, err)
+	return stakerImpl, l1info, l1client, l2chainConfig, l2node, deployAuth
+}
+
+func deployBoldContracts(
+	t *testing.T,
+	ctx context.Context,
+	l1info info,
+	backend *ethclient.Client,
+	chainId *big.Int,
+	deployAuth bind.TransactOpts,
+) *chaininfo.RollupAddresses {
+	stakeToken, tx, tokenBindings, err := mocksgen_bold.DeployTestWETH9(
+		&deployAuth,
+		backend,
+		"Weth",
+		"WETH",
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
+	value, _ := new(big.Int).SetString("1000000", 10)
+	deployAuth.Value = value
+	tx, err = tokenBindings.Deposit(&deployAuth)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
+	deployAuth.Value = nil
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
+
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	l1info.GenerateGenesisAccount("deployer", initialBalance)
+	l1info.GenerateGenesisAccount("asserter", initialBalance)
+	l1info.GenerateGenesisAccount("sequencer", initialBalance)
+	SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
+		l1info.PrepareTx("Faucet", "RollupOwner", 30000, initialBalance, nil)})
+	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+
+	cfg := challenge_testing.GenerateRollupConfig(
+		false,
+		locator.LatestWasmModuleRoot(),
+		l1TransactionOpts.From,
+		chainId,
+		common.Address{},
+		big.NewInt(1),
+		stakeToken,
+	)
+	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
+	if err != nil {
+		return nil
+	}
+	cfg.ChainConfig = string(config)
+
+	addresses, err := setup.DeployFullRollupStack(
+		ctx,
+		backend,
+		&l1TransactionOpts,
+		l1info.GetAddress("sequencer"),
+		cfg,
+		false,
+	)
+	Require(t, err)
+
+	return &chaininfo.RollupAddresses{
+		Bridge:                 addresses.Bridge,
+		Inbox:                  addresses.Inbox,
+		SequencerInbox:         addresses.SequencerInbox,
+		Rollup:                 addresses.Rollup,
+		ValidatorUtils:         addresses.ValidatorUtils,
+		ValidatorWalletCreator: addresses.ValidatorWalletCreator,
+		DeployedAt:             addresses.DeployedAt,
+	}
 }
