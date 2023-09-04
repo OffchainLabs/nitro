@@ -87,7 +87,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // only 1 child can be confirmed, the excess/loser stake will be sent to this address
     address public loserStakeEscrow;
     address public stakeToken;
-    uint256 public minimumAssertionPeriod;
 
     mapping(address => bool) public isValidator;
 
@@ -398,34 +397,66 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         {
             uint64 afterInboxPosition = assertion.afterState.globalState.getInboxPosition();
             uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
+
+            // there are 3 kinds of assertions that can be made. Assertions must be made when they fill the maximum number
+            // of blocks, or when they process all messages up to prev.nextInboxPosition. When they fill the max
+            // blocks, but dont manage to process all messages, we call this an "overflow" assertion.
+            // 1. ERRORED assertion
+            //    The machine finished in an ERRORED state. This can happen with processing any
+            //    messages, or moving the position in the message.
+            // 2. FINISHED assertion that did not overflow
+            //    The machine finished as normal, and fully processed all the messages up to prev.nextInboxPosition.
+            //    In this case the inbox position must equal prev.nextInboxPosition and position in message must be 0
+            // 3. FINISHED assertion that did overflow
+            //    The machine finished as normal, but didn't process all messages in the inbox.
+            //    The inbox position can be anything (within valid range) except the prev.nextInboxPosition,
+            //    the position in message can be anything except 0 if the inboxPosition == prev.inboxPosition.
+
+            //    All types of assertion must have inbox position in the range prev.inboxPosition <= x <= prev.nextInboxPosition
             require(afterInboxPosition >= prevInboxPosition, "INBOX_BACKWARDS");
-            if (assertion.afterState.machineStatus == MachineStatus.ERRORED) {
-                // the errored position must still be within the correct message bounds
-                require(
-                    afterInboxPosition <= assertion.beforeStateData.configData.nextInboxPosition,
-                    "ERRORED_INBOX_TOO_FAR"
-                );
+            require(afterInboxPosition <= assertion.beforeStateData.configData.nextInboxPosition, "INBOX_TOO_FAR");
 
-                // and cannot go backwards
-                require(afterInboxPosition >= prevInboxPosition, "ERRORED_INBOX_TOO_FEW");
-            } else if (assertion.afterState.machineStatus == MachineStatus.FINISHED) {
-                // Assertions must consume exactly all inbox messages
-                // that were in the inbox at the time the previous assertion was created
+            // if the position in the message is > 0, then the afterInboxPosition cannot be the nextInboxPosition
+            // as this would be outside the range
+            if (assertion.afterState.globalState.getPositionInMessage() > 0) {
                 require(
-                    afterInboxPosition == assertion.beforeStateData.configData.nextInboxPosition, "INCORRECT_INBOX_POS"
+                    afterInboxPosition != assertion.beforeStateData.configData.nextInboxPosition, "POSITION_TOO_FAR"
                 );
-                // Assertions that finish correctly completely consume the message
-                // Therefore their position in the message is 0
-                require(assertion.afterState.globalState.getPositionInMessage() == 0, "FINISHED_NON_ZERO_POS");
-
-                // We enforce that at least one inbox message is always consumed
-                // so the after inbox position is always strictly greater than previous
-                require(afterInboxPosition > prevInboxPosition, "INBOX_BACKWARDS");
             }
+
+            // check the position has moved appropriately
+            require(
+                // either the inbox position moves forward
+                afterInboxPosition > prevInboxPosition
+                // the inbox position hasnt moved, if the machine is in FINISHED
+                // then the position in the message must have moved by 1
+                || (
+                    assertion.afterState.machineStatus == MachineStatus.FINISHED
+                        && assertion.afterState.globalState.getPositionInMessage()
+                            > assertion.beforeState.globalState.getPositionInMessage()
+                )
+                // the inbox position hasnt moved, if the machine is in ERRORED
+                // then the position in the message must not have gone backwards
+                || (
+                    assertion.afterState.machineStatus == MachineStatus.ERRORED
+                        && assertion.afterState.globalState.getPositionInMessage()
+                            >= assertion.beforeState.globalState.getPositionInMessage()
+                ),
+                "ASSERTION_INVALID_PROGRESS"
+            );
 
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
             // Cannot read more messages than currently exist in the inbox
             require(afterInboxPosition <= currentInboxPosition, "INBOX_PAST_END");
+
+            // under normal circumstances prev.nextInboxPosition is guaranteed to exist
+            // because we populate it from bridge.sequencerMessageCount(). However, when
+            // the inbox message count doesnt change we artificially increase it by 1 as explained below
+            // in this case we need to ensure when the assertion is made the inbox messages are available
+            // to ensure that a valid assertion can actually be made.
+            require(
+                assertion.beforeStateData.configData.nextInboxPosition <= currentInboxPosition, "INBOX_NOT_POPULATED"
+            );
 
             // The next assertion must consume all the messages that are currently found in the inbox
             if (afterInboxPosition == currentInboxPosition) {

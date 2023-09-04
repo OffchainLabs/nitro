@@ -1828,7 +1828,7 @@ func (_ArbFunctionTable *ArbFunctionTableTransactorSession) Upload(buf []byte) (
 
 // ArbGasInfoMetaData contains all meta data concerning the ArbGasInfo contract.
 var ArbGasInfoMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"name\":\"getAmortizedCostCapBips\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getCurrentTxL1GasFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getGasAccountingParams\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getGasBacklog\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getGasBacklogTolerance\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1BaseFeeEstimate\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1BaseFeeEstimateInertia\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1FeesAvailable\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1GasPriceEstimate\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1PricingSurplus\",\"outputs\":[{\"internalType\":\"int256\",\"name\":\"\",\"type\":\"int256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinimumGasPrice\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPerBatchGasCharge\",\"outputs\":[{\"internalType\":\"int64\",\"name\":\"\",\"type\":\"int64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPricesInArbGas\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"aggregator\",\"type\":\"address\"}],\"name\":\"getPricesInArbGasWithAggregator\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPricesInWei\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"aggregator\",\"type\":\"address\"}],\"name\":\"getPricesInWeiWithAggregator\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPricingInertia\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[],\"name\":\"getAmortizedCostCapBips\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getCurrentTxL1GasFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getGasAccountingParams\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getGasBacklog\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getGasBacklogTolerance\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1BaseFeeEstimate\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1BaseFeeEstimateInertia\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1FeesAvailable\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1GasPriceEstimate\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1PricingSurplus\",\"outputs\":[{\"internalType\":\"int256\",\"name\":\"\",\"type\":\"int256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1RewardRate\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getL1RewardRecipient\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinimumGasPrice\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPerBatchGasCharge\",\"outputs\":[{\"internalType\":\"int64\",\"name\":\"\",\"type\":\"int64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPricesInArbGas\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"aggregator\",\"type\":\"address\"}],\"name\":\"getPricesInArbGasWithAggregator\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPricesInWei\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"aggregator\",\"type\":\"address\"}],\"name\":\"getPricesInWeiWithAggregator\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPricingInertia\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // ArbGasInfoABI is the input ABI used to generate the binding from.
@@ -2287,6 +2287,68 @@ func (_ArbGasInfo *ArbGasInfoSession) GetL1PricingSurplus() (*big.Int, error) {
 // Solidity: function getL1PricingSurplus() view returns(int256)
 func (_ArbGasInfo *ArbGasInfoCallerSession) GetL1PricingSurplus() (*big.Int, error) {
 	return _ArbGasInfo.Contract.GetL1PricingSurplus(&_ArbGasInfo.CallOpts)
+}
+
+// GetL1RewardRate is a free data retrieval call binding the contract method 0x8a5b1d28.
+//
+// Solidity: function getL1RewardRate() view returns(uint64)
+func (_ArbGasInfo *ArbGasInfoCaller) GetL1RewardRate(opts *bind.CallOpts) (uint64, error) {
+	var out []interface{}
+	err := _ArbGasInfo.contract.Call(opts, &out, "getL1RewardRate")
+
+	if err != nil {
+		return *new(uint64), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint64)).(*uint64)
+
+	return out0, err
+
+}
+
+// GetL1RewardRate is a free data retrieval call binding the contract method 0x8a5b1d28.
+//
+// Solidity: function getL1RewardRate() view returns(uint64)
+func (_ArbGasInfo *ArbGasInfoSession) GetL1RewardRate() (uint64, error) {
+	return _ArbGasInfo.Contract.GetL1RewardRate(&_ArbGasInfo.CallOpts)
+}
+
+// GetL1RewardRate is a free data retrieval call binding the contract method 0x8a5b1d28.
+//
+// Solidity: function getL1RewardRate() view returns(uint64)
+func (_ArbGasInfo *ArbGasInfoCallerSession) GetL1RewardRate() (uint64, error) {
+	return _ArbGasInfo.Contract.GetL1RewardRate(&_ArbGasInfo.CallOpts)
+}
+
+// GetL1RewardRecipient is a free data retrieval call binding the contract method 0x9e6d7e31.
+//
+// Solidity: function getL1RewardRecipient() view returns(address)
+func (_ArbGasInfo *ArbGasInfoCaller) GetL1RewardRecipient(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _ArbGasInfo.contract.Call(opts, &out, "getL1RewardRecipient")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// GetL1RewardRecipient is a free data retrieval call binding the contract method 0x9e6d7e31.
+//
+// Solidity: function getL1RewardRecipient() view returns(address)
+func (_ArbGasInfo *ArbGasInfoSession) GetL1RewardRecipient() (common.Address, error) {
+	return _ArbGasInfo.Contract.GetL1RewardRecipient(&_ArbGasInfo.CallOpts)
+}
+
+// GetL1RewardRecipient is a free data retrieval call binding the contract method 0x9e6d7e31.
+//
+// Solidity: function getL1RewardRecipient() view returns(address)
+func (_ArbGasInfo *ArbGasInfoCallerSession) GetL1RewardRecipient() (common.Address, error) {
+	return _ArbGasInfo.Contract.GetL1RewardRecipient(&_ArbGasInfo.CallOpts)
 }
 
 // GetMinimumGasPrice is a free data retrieval call binding the contract method 0xf918379a.
@@ -3605,7 +3667,7 @@ func (_ArbOwner *ArbOwnerFilterer) ParseOwnerActs(log types.Log) (*ArbOwnerOwner
 
 // ArbOwnerPublicMetaData contains all meta data concerning the ArbOwnerPublic contract.
 var ArbOwnerPublicMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"name\":\"getAllChainOwners\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getInfraFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getNetworkFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"isChainOwner\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"rectifiedOwner\",\"type\":\"address\"}],\"name\":\"ChainOwnerRectified\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"getAllChainOwners\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getInfraFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getNetworkFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"isChainOwner\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"ownerToRectify\",\"type\":\"address\"}],\"name\":\"rectifyChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // ArbOwnerPublicABI is the input ABI used to generate the binding from.
@@ -3876,6 +3938,161 @@ func (_ArbOwnerPublic *ArbOwnerPublicSession) IsChainOwner(addr common.Address) 
 // Solidity: function isChainOwner(address addr) view returns(bool)
 func (_ArbOwnerPublic *ArbOwnerPublicCallerSession) IsChainOwner(addr common.Address) (bool, error) {
 	return _ArbOwnerPublic.Contract.IsChainOwner(&_ArbOwnerPublic.CallOpts, addr)
+}
+
+// RectifyChainOwner is a paid mutator transaction binding the contract method 0x6fe86373.
+//
+// Solidity: function rectifyChainOwner(address ownerToRectify) returns()
+func (_ArbOwnerPublic *ArbOwnerPublicTransactor) RectifyChainOwner(opts *bind.TransactOpts, ownerToRectify common.Address) (*types.Transaction, error) {
+	return _ArbOwnerPublic.contract.Transact(opts, "rectifyChainOwner", ownerToRectify)
+}
+
+// RectifyChainOwner is a paid mutator transaction binding the contract method 0x6fe86373.
+//
+// Solidity: function rectifyChainOwner(address ownerToRectify) returns()
+func (_ArbOwnerPublic *ArbOwnerPublicSession) RectifyChainOwner(ownerToRectify common.Address) (*types.Transaction, error) {
+	return _ArbOwnerPublic.Contract.RectifyChainOwner(&_ArbOwnerPublic.TransactOpts, ownerToRectify)
+}
+
+// RectifyChainOwner is a paid mutator transaction binding the contract method 0x6fe86373.
+//
+// Solidity: function rectifyChainOwner(address ownerToRectify) returns()
+func (_ArbOwnerPublic *ArbOwnerPublicTransactorSession) RectifyChainOwner(ownerToRectify common.Address) (*types.Transaction, error) {
+	return _ArbOwnerPublic.Contract.RectifyChainOwner(&_ArbOwnerPublic.TransactOpts, ownerToRectify)
+}
+
+// ArbOwnerPublicChainOwnerRectifiedIterator is returned from FilterChainOwnerRectified and is used to iterate over the raw logs and unpacked data for ChainOwnerRectified events raised by the ArbOwnerPublic contract.
+type ArbOwnerPublicChainOwnerRectifiedIterator struct {
+	Event *ArbOwnerPublicChainOwnerRectified // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ArbOwnerPublicChainOwnerRectifiedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ArbOwnerPublicChainOwnerRectified)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ArbOwnerPublicChainOwnerRectified)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ArbOwnerPublicChainOwnerRectifiedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ArbOwnerPublicChainOwnerRectifiedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ArbOwnerPublicChainOwnerRectified represents a ChainOwnerRectified event raised by the ArbOwnerPublic contract.
+type ArbOwnerPublicChainOwnerRectified struct {
+	RectifiedOwner common.Address
+	Raw            types.Log // Blockchain specific contextual infos
+}
+
+// FilterChainOwnerRectified is a free log retrieval operation binding the contract event 0x14c7c9cb05f84448a0f2fc5775a4048a7210cb040a35fd84cd45b2b863d04d82.
+//
+// Solidity: event ChainOwnerRectified(address rectifiedOwner)
+func (_ArbOwnerPublic *ArbOwnerPublicFilterer) FilterChainOwnerRectified(opts *bind.FilterOpts) (*ArbOwnerPublicChainOwnerRectifiedIterator, error) {
+
+	logs, sub, err := _ArbOwnerPublic.contract.FilterLogs(opts, "ChainOwnerRectified")
+	if err != nil {
+		return nil, err
+	}
+	return &ArbOwnerPublicChainOwnerRectifiedIterator{contract: _ArbOwnerPublic.contract, event: "ChainOwnerRectified", logs: logs, sub: sub}, nil
+}
+
+// WatchChainOwnerRectified is a free log subscription operation binding the contract event 0x14c7c9cb05f84448a0f2fc5775a4048a7210cb040a35fd84cd45b2b863d04d82.
+//
+// Solidity: event ChainOwnerRectified(address rectifiedOwner)
+func (_ArbOwnerPublic *ArbOwnerPublicFilterer) WatchChainOwnerRectified(opts *bind.WatchOpts, sink chan<- *ArbOwnerPublicChainOwnerRectified) (event.Subscription, error) {
+
+	logs, sub, err := _ArbOwnerPublic.contract.WatchLogs(opts, "ChainOwnerRectified")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ArbOwnerPublicChainOwnerRectified)
+				if err := _ArbOwnerPublic.contract.UnpackLog(event, "ChainOwnerRectified", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseChainOwnerRectified is a log parse operation binding the contract event 0x14c7c9cb05f84448a0f2fc5775a4048a7210cb040a35fd84cd45b2b863d04d82.
+//
+// Solidity: event ChainOwnerRectified(address rectifiedOwner)
+func (_ArbOwnerPublic *ArbOwnerPublicFilterer) ParseChainOwnerRectified(log types.Log) (*ArbOwnerPublicChainOwnerRectified, error) {
+	event := new(ArbOwnerPublicChainOwnerRectified)
+	if err := _ArbOwnerPublic.contract.UnpackLog(event, "ChainOwnerRectified", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
 }
 
 // ArbRetryableTxMetaData contains all meta data concerning the ArbRetryableTx contract.
