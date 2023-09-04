@@ -9,25 +9,17 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 )
 
 type Storage struct {
 	firstNonce uint64
 	queue      [][]byte
+	encDec     func() storage.EncoderDecoderInterface
 }
 
-func NewStorage() *Storage {
-	return &Storage{}
-}
-
-func (s *Storage) decodeItem(data []byte) (*storage.QueuedTransaction, error) {
-	var item storage.QueuedTransaction
-	if err := rlp.DecodeBytes(data, &item); err != nil {
-		return nil, fmt.Errorf("decoding item: %w", err)
-	}
-	return &item, nil
+func NewStorage(encDec func() storage.EncoderDecoderInterface) *Storage {
+	return &Storage{encDec: encDec}
 }
 
 func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error) {
@@ -43,7 +35,7 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 	}
 	var res []*storage.QueuedTransaction
 	for _, r := range txs {
-		item, err := s.decodeItem(r)
+		item, err := s.encDec().Decode(r)
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +48,7 @@ func (s *Storage) FetchLast(context.Context) (*storage.QueuedTransaction, error)
 	if len(s.queue) == 0 {
 		return nil, nil
 	}
-	return s.decodeItem(s.queue[len(s.queue)-1])
+	return s.encDec().Decode(s.queue[len(s.queue)-1])
 }
 
 func (s *Storage) Prune(_ context.Context, until uint64) error {
@@ -73,7 +65,7 @@ func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.Queued
 	if new == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
 	}
-	newEnc, err := rlp.EncodeToBytes(new)
+	newEnc, err := s.encDec().Encode(new)
 	if err != nil {
 		return fmt.Errorf("encoding new item: %w", err)
 	}
@@ -93,7 +85,7 @@ func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.Queued
 		if queueIdx > len(s.queue) {
 			return fmt.Errorf("attempted to set out-of-bounds index %v in queue starting at %v of length %v", index, s.firstNonce, len(s.queue))
 		}
-		prevEnc, err := rlp.EncodeToBytes(prev)
+		prevEnc, err := s.encDec().Encode(prev)
 		if err != nil {
 			return fmt.Errorf("encoding previous item: %w", err)
 		}
