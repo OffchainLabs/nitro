@@ -29,6 +29,8 @@ contracts/out
 contracts/formatter.sh
 contracts/build
 contracts/test/storage/*-old.dot
+contracts/coverage
+contracts/lcov.info
 
 .DS_Store
 .env
