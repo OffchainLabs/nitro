@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
-	"unicode"
 
 	"github.com/fatih/structtag"
 	"golang.org/x/tools/go/analysis"
@@ -219,22 +218,7 @@ func checkStruct(pass *analysis.Pass, s *ast.StructType) Result {
 }
 
 func normalizeTag(s string) string {
-	ans := s[:1]
-	for i := 1; i < len(s); i++ {
-		c := rune(s[i])
-		if !isAlphanumeric(c) {
-			continue
-		}
-		if !isAlphanumeric(rune(s[i-1])) && unicode.IsLower(c) {
-			c = unicode.ToUpper(c)
-		}
-		ans += string(c)
-	}
-	return ans
-}
-
-func isAlphanumeric(c rune) bool {
-	return unicode.IsLetter(c) || unicode.IsDigit(c)
+	return strings.ReplaceAll(s, "-", "")
 }
 
 func normalizeID(pass *analysis.Pass, id string) string {

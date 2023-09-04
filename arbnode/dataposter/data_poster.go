@@ -101,17 +101,23 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 		initConfig.UseNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
+	encF := func() storage.EncoderDecoderInterface {
+		if config().LegacyStorageEncoding {
+			return &storage.LegacyEncoderDecoder{}
+		}
+		return &storage.EncoderDecoder{}
+	}
 	var queue QueueStorage
 	switch {
 	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
 	case initConfig.UseLevelDB:
-		queue = leveldb.New(db)
+		queue = leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	case redisClient == nil:
-		queue = slice.NewStorage()
+		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	default:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner)
+		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
@@ -162,11 +168,14 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 	return nil
 }
 
+func (p *DataPoster) waitForL1Finality() bool {
+	return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
+}
+
 // Requires the caller hold the mutex.
 // Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, and an error.
 // Unlike GetNextNonceAndMeta, this does not call the metadataRetriever if the metadata is not stored in the queue.
 func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []byte, bool, error) {
-	config := p.config()
 	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
@@ -174,7 +183,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 	}
 	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, fmt.Errorf("fetching last element from queue: %w", err)
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.Data.Nonce + 1
@@ -185,7 +194,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 	}
 
 	if err := p.updateNonce(ctx); err != nil {
-		if !p.queue.IsPersistent() && config.WaitForL1Finality {
+		if !p.queue.IsPersistent() && p.waitForL1Finality() {
 			return 0, nil, false, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
@@ -364,7 +373,10 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
 		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
 	}
-	return p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx)
+	if err := p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx); err != nil {
+		return fmt.Errorf("putting new tx in the queue: %w", err)
+	}
+	return nil
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
@@ -433,7 +445,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 // The mutex must be held by the caller.
 func (p *DataPoster) updateNonce(ctx context.Context) error {
 	var blockNumQuery *big.Int
-	if p.config().WaitForL1Finality {
+	if p.waitForL1Finality() {
 		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
 	}
 	header, err := p.client.HeaderByNumber(ctx, blockNumQuery)
@@ -546,7 +558,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		// replacing them by fee.
 		queueContents, err := p.queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
-			log.Error("Failed to get tx queue contents", "err", err)
+			log.Error("Failed to fetch tx queue contents", "err", err)
 			return minWait
 		}
 		for index, tx := range queueContents {
@@ -602,20 +614,23 @@ type QueueStorage interface {
 }
 
 type DataPosterConfig struct {
-	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes       string                     `koanf:"replacement-times"`
-	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int                        `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64                    `koanf:"max-tip-cap-gwei" reload:"hot"`
-	NonceRbfSoftConfs      uint64                     `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	AllocateMempoolBalance bool                       `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool                       `koanf:"use-leveldb"`
-	UseNoOpStorage         bool                       `koanf:"use-noop-storage"`
+	RedisSigner      signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes string                     `koanf:"replacement-times"`
+	// This is forcibly disabled if the parent chain is an Arbitrum chain,
+	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
+	WaitForL1Finality      bool    `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64  `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int     `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64 `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64 `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64 `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64 `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64 `koanf:"max-tip-cap-gwei" reload:"hot"`
+	NonceRbfSoftConfs      uint64  `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool    `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseLevelDB             bool    `koanf:"use-leveldb"`
+	UseNoOpStorage         bool    `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool    `koanf:"legacy-storage-encoding" reload:"hot"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -636,6 +651,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -651,6 +667,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseLevelDB:             false,
 	UseNoOpStorage:         false,
+	LegacyStorageEncoding:  true,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
