@@ -92,10 +92,6 @@ library AssertionNodeLib {
         }
     }
 
-    function requireMoreThanOneChild(AssertionNode memory self) internal pure {
-        require(self.secondChildBlock > 0, "TOO_FEW_CHILD");
-    }
-
     function requireExists(AssertionNode memory self) internal pure {
         require(self.status != AssertionStatus.NoAssertion, "ASSERTION_NOT_EXIST");
     }

@@ -141,7 +141,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
      * @param inboxAcc The inbox batch accumulator
      */
     function computeAssertionHash(bytes32 prevAssertionHash, ExecutionState calldata state, bytes32 inboxAcc)
-        public
+        external
         pure
         returns (bytes32)
     {
