@@ -42,6 +42,7 @@ func main() {
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
+	l1privatekey := flag.String("l1privatekey", "", "l1 private key")
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
@@ -63,9 +64,10 @@ func main() {
 	}
 
 	wallet := genericconf.WalletConfig{
-		Pathname:     *l1keystore,
-		Account:      *deployAccount,
-		PasswordImpl: *l1passphrase,
+		Pathname:   *l1keystore,
+		Account:    *deployAccount,
+		Password:   *l1passphrase,
+		PrivateKey: *l1privatekey,
 	}
 	l1TransactionOpts, _, err := util.OpenWallet("l1", &wallet, l1ChainId)
 	if err != nil {
@@ -148,7 +150,6 @@ func main() {
 	}
 	chainsInfo := []chaininfo.ChainInfo{
 		{
-			ChainId:         chainConfig.ChainID.Uint64(),
 			ChainName:       *l2ChainName,
 			ParentChainId:   l1ChainId.Uint64(),
 			ChainConfig:     &chainConfig,

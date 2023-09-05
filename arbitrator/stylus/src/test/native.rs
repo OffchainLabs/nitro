@@ -242,7 +242,7 @@ fn test_heap() -> Result<()> {
 
     let (mut compile, config, _) = test_configs();
     compile.bounds.heap_bound = Pages(128);
-    compile.pricing.costs = |_| 0;
+    compile.pricing.costs = |_, _| 0;
 
     let extra: u8 = rand::random::<u8>() % 128;
 

@@ -33,4 +33,4 @@
             (then (call $out_of_bounds))
         )
         i32.const 100)
-    (memory 1 1))
+    (memory (export "memory") 1 1))

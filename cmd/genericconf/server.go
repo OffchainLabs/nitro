@@ -188,20 +188,32 @@ func AuthRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
 type MetricsServerConfig struct {
 	Addr           string        `koanf:"addr"`
 	Port           int           `koanf:"port"`
-	Pprof          bool          `koanf:"pprof"`
 	UpdateInterval time.Duration `koanf:"update-interval"`
 }
 
 var MetricsServerConfigDefault = MetricsServerConfig{
 	Addr:           "127.0.0.1",
 	Port:           6070,
-	Pprof:          false,
 	UpdateInterval: 3 * time.Second,
+}
+
+type PProf struct {
+	Addr string `koanf:"addr"`
+	Port int    `koanf:"port"`
+}
+
+var PProfDefault = PProf{
+	Addr: "127.0.0.1",
+	Port: 6071,
 }
 
 func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
 	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
-	f.Bool(prefix+".pprof", MetricsServerConfigDefault.Pprof, "enable profiling for Go")
 	f.Duration(prefix+".update-interval", MetricsServerConfigDefault.UpdateInterval, "metrics server update interval")
+}
+
+func PProfAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".addr", PProfDefault.Addr, "pprof server address")
+	f.Int(prefix+".port", PProfDefault.Port, "pprof server port")
 }

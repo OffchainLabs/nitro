@@ -71,3 +71,4 @@
 )
 
 (start 0)
+(memory (export "memory") 0 0)

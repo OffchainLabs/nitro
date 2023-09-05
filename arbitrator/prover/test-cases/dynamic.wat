@@ -7,7 +7,7 @@
     (import "hostio" "program_ink_status" (func $ink_status (param i32)     (result i32)))
     (import "hostio" "program_call_main"  (func $user_func  (param i32 i32) (result i32)))
     (data (i32.const 0x0)
-         "\80\d3\d5\e6\1a\9a\9d\58\9a\e8\42\d5\69\2f\c2\38\16\47\44\b1\5b\66\c5\d6\dc\8f\f5\b3\66\91\4a\ee")
+        "\10\a4\b0\c7\91\26\6b\fb\f7\92\f5\e5\67\e0\03\d7\ee\7f\cf\7e\0a\52\6e\b3\92\46\c3\94\6f\21\b8\f8") ;; user
     (func $start (local $user i32) (local $internals i32)
         ;; link in user.wat
         i32.const 0

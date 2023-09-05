@@ -66,7 +66,7 @@ impl EvmApi for TestEvmApi {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
-        let value = storage.get(&key).unwrap().to_owned();
+        let value = storage.get(&key).cloned().unwrap_or_default();
         (value, 2100) // pretend worst case
     }
 
@@ -110,7 +110,7 @@ impl EvmApi for TestEvmApi {
     fn delegate_call(
         &mut self,
         _contract: Bytes20,
-        _input: Vec<u8>,
+        _calldata: Vec<u8>,
         _gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!("delegate call not yet supported")
@@ -118,11 +118,12 @@ impl EvmApi for TestEvmApi {
 
     fn static_call(
         &mut self,
-        _contract: Bytes20,
-        _input: Vec<u8>,
-        _gas: u64,
+        contract: Bytes20,
+        calldata: Vec<u8>,
+        gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
-        todo!("static call not yet supported")
+        println!("note: overriding static call with call");
+        self.contract_call(contract, calldata, gas, Bytes32::default())
     }
 
     fn create1(

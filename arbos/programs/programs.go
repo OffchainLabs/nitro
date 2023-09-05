@@ -57,7 +57,9 @@ const (
 	callScalarOffset
 )
 
-var ProgramNotCompiledError func() error
+var ErrProgramActivation = errors.New("program activation failed")
+
+var ProgramNotActivatedError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
 
@@ -168,7 +170,7 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) CompileProgram(evm *vm.EVM, address common.Address, debugMode bool) (uint16, bool, error) {
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(address)
 
@@ -176,7 +178,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, address common.Address, debugMode 
 	if err != nil {
 		return 0, false, err
 	}
-	latest, err := p.ProgramVersion(codeHash)
+	latest, err := p.CodehashVersion(codeHash)
 	if err != nil {
 		return 0, false, err
 	}
@@ -238,7 +240,7 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	if program.version == 0 {
-		return nil, ProgramNotCompiledError()
+		return nil, ProgramNotActivatedError()
 	}
 	if program.version != stylusVersion {
 		return nil, ProgramOutOfDateError(program.version)
@@ -342,7 +344,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	return p.compiledHashes.Set(codehash, program.compiledHash)
 }
 
-func (p Programs) ProgramVersion(codeHash common.Hash) (uint16, error) {
+func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {
 	program, err := p.deserializeProgram(codeHash)
 	if err != nil {
 		return 0, err
@@ -404,26 +406,21 @@ const (
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
-	details := func() string {
-		if debug {
-			return arbutil.ToStringOrHex(data)
-		}
-		return ""
-	}
+	msg := arbutil.ToStringOrHex(data)
 	switch status {
 	case userSuccess:
 		return data, "", nil
 	case userRevert:
-		return data, details(), vm.ErrExecutionReverted
+		return data, msg, vm.ErrExecutionReverted
 	case userFailure:
-		return nil, details(), vm.ErrExecutionReverted
+		return nil, msg, vm.ErrExecutionReverted
 	case userOutOfInk:
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
 	default:
-		log.Error("program errored with unknown status", "status", status, "data", common.Bytes2Hex(data))
-		return nil, details(), vm.ErrExecutionReverted
+		log.Error("program errored with unknown status", "status", status, "data", msg)
+		return nil, msg, vm.ErrExecutionReverted
 	}
 }
 

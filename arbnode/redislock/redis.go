@@ -1,4 +1,4 @@
-package arbnode
+package redislock
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -16,10 +17,10 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type SimpleRedisLock struct {
+type Simple struct {
 	stopwaiter.StopWaiter
 	client      redis.UniversalClient
-	config      SimpleRedisLockConfigFetcher
+	config      SimpleCfgFetcher
 	lockedUntil int64
 	mutex       sync.Mutex
 	stopping    bool
@@ -27,7 +28,7 @@ type SimpleRedisLock struct {
 	myId        string
 }
 
-type SimpleRedisLockConfig struct {
+type SimpleCfg struct {
 	MyId            string        `koanf:"my-id"`
 	LockoutDuration time.Duration `koanf:"lockout-duration" reload:"hot"`
 	RefreshDuration time.Duration `koanf:"refresh-duration" reload:"hot"`
@@ -35,22 +36,22 @@ type SimpleRedisLockConfig struct {
 	BackgroundLock  bool          `koanf:"background-lock"`
 }
 
-type SimpleRedisLockConfigFetcher func() *SimpleRedisLockConfig
+type SimpleCfgFetcher func() *SimpleCfg
 
-func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
+func AddConfigOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
-	f.Duration(prefix+".lockout-duration", DefaultRedisLockConfig.LockoutDuration, "how long lock is held")
-	f.Duration(prefix+".refresh-duration", DefaultRedisLockConfig.RefreshDuration, "how long between consecutive calls to redis")
+	f.Duration(prefix+".lockout-duration", DefaultCfg.LockoutDuration, "how long lock is held")
+	f.Duration(prefix+".refresh-duration", DefaultCfg.RefreshDuration, "how long between consecutive calls to redis")
 	f.String(prefix+".key", prefix+".simple-lock-key", "key for lock")
-	f.Bool(prefix+".background-lock", DefaultRedisLockConfig.BackgroundLock, "should node always try grabing lock in background")
+	f.Bool(prefix+".background-lock", DefaultCfg.BackgroundLock, "should node always try grabing lock in background")
 }
 
-func NewSimpleRedisLock(client redis.UniversalClient, config SimpleRedisLockConfigFetcher, readyToLock func() bool) (*SimpleRedisLock, error) {
+func NewSimple(client redis.UniversalClient, config SimpleCfgFetcher, readyToLock func() bool) (*Simple, error) {
 	randBig, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
 	if err != nil {
 		return nil, err
 	}
-	return &SimpleRedisLock{
+	return &Simple{
 		myId:        config().MyId + "-" + strconv.FormatInt(randBig.Int64(), 16), // unique even if config is not
 		client:      client,
 		config:      config,
@@ -58,14 +59,14 @@ func NewSimpleRedisLock(client redis.UniversalClient, config SimpleRedisLockConf
 	}, nil
 }
 
-var DefaultRedisLockConfig = SimpleRedisLockConfig{
+var DefaultCfg = SimpleCfg{
 	LockoutDuration: time.Minute,
 	RefreshDuration: time.Second * 10,
 	Key:             "",
 	BackgroundLock:  false,
 }
 
-func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
+func (l *Simple) attemptLock(ctx context.Context) (bool, error) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 	if l.stopping || l.client == nil {
@@ -120,7 +121,7 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 	return gotLock, nil
 }
 
-func (l *SimpleRedisLock) AttemptLock(ctx context.Context) bool {
+func (l *Simple) AttemptLock(ctx context.Context) bool {
 	if l.Locked() {
 		return true
 	}
@@ -135,14 +136,14 @@ func (l *SimpleRedisLock) AttemptLock(ctx context.Context) bool {
 	return res
 }
 
-func (l *SimpleRedisLock) Locked() bool {
+func (l *Simple) Locked() bool {
 	if l.client == nil {
 		return true
 	}
 	return time.Now().Before(atomicTimeRead(&l.lockedUntil))
 }
 
-func (l *SimpleRedisLock) Release(ctx context.Context) {
+func (l *Simple) Release(ctx context.Context) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -179,7 +180,7 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 	}
 }
 
-func (l *SimpleRedisLock) Start(ctxin context.Context) {
+func (l *Simple) Start(ctxin context.Context) {
 	l.StopWaiter.Start(ctxin, l)
 	if l.config().BackgroundLock && l.client != nil {
 		l.CallIteratively(func(ctx context.Context) time.Duration {
@@ -192,10 +193,34 @@ func (l *SimpleRedisLock) Start(ctxin context.Context) {
 	}
 }
 
-func (l *SimpleRedisLock) StopAndWait() {
+func (l *Simple) StopAndWait() {
 	l.mutex.Lock()
 	l.stopping = true
 	l.mutex.Unlock()
 	l.Release(l.GetContext())
 	l.StopWaiter.StopAndWait()
+}
+
+func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
+	cmders, err := pipe.Exec(ctx)
+	if err != nil {
+		return err
+	}
+	for _, cmder := range cmders {
+		if err := cmder.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// notice: It is possible for two consecutive reads to get decreasing values. That shouldn't matter.
+func atomicTimeRead(addr *int64) time.Time {
+	asint64 := atomic.LoadInt64(addr)
+	return time.UnixMilli(asint64)
+}
+
+func atomicTimeWrite(addr *int64, t time.Time) {
+	asint64 := t.UnixMilli()
+	atomic.StoreInt64(addr, asint64)
 }

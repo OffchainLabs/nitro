@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 )
 
@@ -115,7 +116,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
-	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number), tx)
+	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time), tx)
 	if err != nil {
 		return err
 	}
@@ -134,7 +135,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Time, extraInfo.ArbOSFormatVersion))
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
@@ -170,7 +171,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				oldHeader = previousHeader
 				blocksTraversed++
 			}
-			if oldHeader != header {
+			if !headerreader.HeadersEqual(oldHeader, header) {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)

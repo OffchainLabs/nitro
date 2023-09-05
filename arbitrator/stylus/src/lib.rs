@@ -17,7 +17,7 @@ use std::mem;
 
 pub use prover;
 
-mod env;
+pub mod env;
 mod evm_api;
 pub mod host;
 pub mod native;

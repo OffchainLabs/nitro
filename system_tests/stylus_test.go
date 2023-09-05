@@ -42,7 +42,12 @@ func TestProgramArbitratorMemory(t *testing.T) {
 	testMemory(t, false)
 }
 
-func TestProgramArbitratorCompilationReuse(t *testing.T) {
+func TestProgramArbitratorActivateTwice(t *testing.T) {
 	t.Parallel()
-	testCompilationReuse(t, false)
+	testActivateTwice(t, false)
+}
+
+func TestProgramArbitratorActivateFails(t *testing.T) {
+	t.Parallel()
+	testActivateFails(t, false)
 }
