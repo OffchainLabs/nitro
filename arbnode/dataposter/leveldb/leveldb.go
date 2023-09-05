@@ -12,14 +12,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // Storage implements leveldb based storage for batch poster.
 type Storage struct {
-	db ethdb.Database
+	db     ethdb.Database
+	encDec storage.EncoderDecoderF
 }
 
 var (
@@ -31,16 +31,8 @@ var (
 	countKey       = []byte(".count_key")
 )
 
-func New(db ethdb.Database) *Storage {
-	return &Storage{db: db}
-}
-
-func (s *Storage) decodeItem(data []byte) (*storage.QueuedTransaction, error) {
-	var item storage.QueuedTransaction
-	if err := rlp.DecodeBytes(data, &item); err != nil {
-		return nil, fmt.Errorf("decoding item: %w", err)
-	}
-	return &item, nil
+func New(db ethdb.Database, enc storage.EncoderDecoderF) *Storage {
+	return &Storage{db: db, encDec: enc}
 }
 
 func idxToKey(idx uint64) []byte {
@@ -55,7 +47,7 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 		if !it.Next() {
 			break
 		}
-		item, err := s.decodeItem(it.Value())
+		item, err := s.encDec().Decode(it.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +76,7 @@ func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, er
 	if err != nil {
 		return nil, err
 	}
-	return s.decodeItem(val)
+	return s.encDec().Decode(val)
 }
 
 func (s *Storage) Prune(ctx context.Context, until uint64) error {
@@ -117,7 +109,7 @@ func (s *Storage) valueAt(_ context.Context, key []byte) ([]byte, error) {
 	val, err := s.db.Get(key)
 	if err != nil {
 		if isErrNotFound(err) {
-			return rlp.EncodeToBytes((*storage.QueuedTransaction)(nil))
+			return s.encDec().Encode((*storage.QueuedTransaction)(nil))
 		}
 		return nil, err
 	}
@@ -130,14 +122,14 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 	if err != nil {
 		return err
 	}
-	prevEnc, err := rlp.EncodeToBytes(prev)
+	prevEnc, err := s.encDec().Encode(prev)
 	if err != nil {
 		return fmt.Errorf("encoding previous item: %w", err)
 	}
 	if !bytes.Equal(stored, prevEnc) {
 		return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, stored, prevEnc)
 	}
-	newEnc, err := rlp.EncodeToBytes(new)
+	newEnc, err := s.encDec().Encode(new)
 	if err != nil {
 		return fmt.Errorf("encoding new item: %w", err)
 	}
