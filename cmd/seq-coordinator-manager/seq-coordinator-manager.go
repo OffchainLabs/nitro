@@ -30,8 +30,8 @@ var nonPriorityForm = tview.NewForm()
 // Sequencer coordinator managment UI data store
 type manager struct {
 	redisCoordinator *rediscoordinator.RedisCoordinator
-	prioritiesMap    map[string]int
-	livelinessMap    map[string]int
+	prioritiesSet    map[string]bool
+	livelinessSet    map[string]bool
 	priorityList     []string
 	nonPriorityList  []string
 }
@@ -55,8 +55,8 @@ func main() {
 		redisCoordinator: &rediscoordinator.RedisCoordinator{
 			RedisCoordinator: redisutilCoordinator,
 		},
-		prioritiesMap: make(map[string]int),
-		livelinessMap: make(map[string]int),
+		prioritiesSet: make(map[string]bool),
+		livelinessSet: make(map[string]bool),
 	}
 
 	seqManager.refreshAllLists(ctx)
@@ -92,7 +92,7 @@ func main() {
 		})
 		priorityForm.AddButton("Remove", func() {
 			url := seqManager.priorityList[index]
-			delete(seqManager.prioritiesMap, url)
+			delete(seqManager.prioritiesSet, url)
 			seqManager.updatePriorityList(ctx, index, 0)
 			seqManager.priorityList = seqManager.priorityList[1:]
 
@@ -122,7 +122,7 @@ func main() {
 		nonPriorityForm.AddButton("Update", func() {
 			key := seqManager.nonPriorityList[index]
 			seqManager.priorityList = append(seqManager.priorityList, key)
-			seqManager.prioritiesMap[key]++
+			seqManager.prioritiesSet[key] = true
 
 			index = len(seqManager.priorityList) - 1
 			seqManager.updatePriorityList(ctx, index, target)
@@ -188,9 +188,11 @@ func main() {
 			seqManager.addSeqPriorityForm(ctx)
 			pages.SwitchToPage("Add Sequencer")
 		} else if event.Rune() == 99 {
-			if prioritySeqList.HasFocus() {
+			if prioritySeqList.HasFocus() || priorityForm.HasFocus() {
+				priorityForm.Clear(true)
 				app.SetFocus(nonPrioritySeqList)
 			} else {
+				nonPriorityForm.Clear(true)
 				app.SetFocus(prioritySeqList)
 			}
 		} else if event.Rune() == 113 {
@@ -217,8 +219,8 @@ func (sm *manager) updatePriorityList(ctx context.Context, index int, target int
 	}
 
 	urlList := []string{}
-	for url := range sm.livelinessMap {
-		if _, ok := sm.prioritiesMap[url]; !ok {
+	for url := range sm.livelinessSet {
+		if _, ok := sm.prioritiesSet[url]; !ok {
 			urlList = append(urlList, url)
 		}
 	}
@@ -238,7 +240,7 @@ func (sm *manager) populateLists(ctx context.Context) {
 			sec = fmt.Sprintf(" %vchosen", emoji.LeftArrow)
 		}
 		status := fmt.Sprintf("(%d) %v ", index, emoji.RedCircle)
-		if _, ok := sm.livelinessMap[seqURL]; ok {
+		if _, ok := sm.livelinessSet[seqURL]; ok {
 			status = fmt.Sprintf("(%d) %v ", index, emoji.GreenCircle)
 		}
 		prioritySeqList.AddItem(status+seqURL+sec, "", rune(0), nil).SetSecondaryTextColor(tcell.ColorPurple)
@@ -264,8 +266,8 @@ func (sm *manager) addSeqPriorityForm(ctx context.Context) *tview.Form {
 	})
 	addSeqForm.AddButton("Add", func() {
 		// check if url is valid, i.e it doesnt already exist in the priority list
-		if _, ok := sm.prioritiesMap[URL]; !ok && URL != "" {
-			sm.prioritiesMap[URL]++
+		if _, ok := sm.prioritiesSet[URL]; !ok && URL != "" {
+			sm.prioritiesSet[URL] = true
 			sm.priorityList = append(sm.priorityList, URL)
 		}
 		sm.populateLists(ctx)
@@ -285,24 +287,32 @@ func (sm *manager) pushUpdates(ctx context.Context) {
 
 // refreshAllLists gets the current status of all the lists displayed in the UI
 func (sm *manager) refreshAllLists(ctx context.Context) {
-	sequencerURLList, mapping, err := sm.redisCoordinator.GetPriorities(ctx)
+	priorityList, err := sm.redisCoordinator.GetPriorities(ctx)
 	if err != nil {
 		panic(err)
 	}
-	sm.priorityList = sequencerURLList
-	sm.prioritiesMap = mapping
+	sm.priorityList = priorityList
+	sm.prioritiesSet = getMapfromlist(priorityList)
 
-	mapping, err = sm.redisCoordinator.GetLivelinessMap(ctx)
+	livelinessList, err := sm.redisCoordinator.GetLiveliness(ctx)
 	if err != nil {
 		panic(err)
 	}
-	sm.livelinessMap = mapping
+	sm.livelinessSet = getMapfromlist(livelinessList)
 
 	urlList := []string{}
-	for url := range sm.livelinessMap {
-		if _, ok := sm.prioritiesMap[url]; !ok {
+	for url := range sm.livelinessSet {
+		if _, ok := sm.prioritiesSet[url]; !ok {
 			urlList = append(urlList, url)
 		}
 	}
 	sm.nonPriorityList = urlList
+}
+
+func getMapfromlist(list []string) map[string]bool {
+	mapping := make(map[string]bool)
+	for _, url := range list {
+		mapping[url] = true
+	}
+	return mapping
 }
