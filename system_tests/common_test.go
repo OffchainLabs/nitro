@@ -938,7 +938,7 @@ func deployContract(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
 ) common.Address {
 	deploy := deployContractInitCode(code, false)
-	basefee := GetBaseFee(t, client, ctx)
+	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
 	Require(t, err)
 	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
