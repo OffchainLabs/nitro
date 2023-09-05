@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/httpbroadcastserver"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -23,6 +24,7 @@ type Broadcaster struct {
 	catchupBuffer *SequenceNumberCatchupBuffer
 	chainId       uint64
 	dataSigner    signature.DataSignerFunc
+	httpServer    *httpbroadcastserver.HTTPBroadcastServer
 }
 
 // BroadcastMessage is the base message type for messages to send over the network.
@@ -67,6 +69,7 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 		catchupBuffer: catchupBuffer,
 		chainId:       chainId,
 		dataSigner:    dataSigner,
+		httpServer:    httpbroadcastserver.NewHTTPBroadcastServer(catchupBuffer),
 	}
 }
 
@@ -147,6 +150,7 @@ func (b *Broadcaster) Initialize() error {
 }
 
 func (b *Broadcaster) Start(ctx context.Context) error {
+	b.httpServer.Start()
 	return b.server.Start(ctx)
 }
 
@@ -156,6 +160,11 @@ func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHe
 
 func (b *Broadcaster) StopAndWait() {
 	b.server.StopAndWait()
+	err := b.httpServer.StopAndWait()
+	if err != nil {
+		// Need to handle these errors better, should probably return errors up the stack
+		log.Error(err.Error())
+	}
 }
 
 func (b *Broadcaster) Started() bool {

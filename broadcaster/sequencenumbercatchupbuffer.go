@@ -4,7 +4,10 @@
 package broadcaster
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"sync/atomic"
 	"time"
 
@@ -77,6 +80,35 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	}
 
 	return nil
+}
+
+func (b *SequenceNumberCatchupBuffer) getCacheMessagesBefore(requestedSeqNum arbutil.MessageIndex) (*BroadcastMessage, error) {
+	bm := BroadcastMessage{Version: 1}
+	if len(b.messages) == 0 {
+		return &bm, nil
+	}
+
+	firstCachedSeqNum := b.messages[0].SequenceNumber
+	requestedIndex := -1
+
+	if firstCachedSeqNum <= requestedSeqNum {
+		requestedIndex = int(requestedSeqNum - firstCachedSeqNum)
+		cacheLength := len(b.messages)
+		if requestedIndex < 0 || requestedIndex >= cacheLength {
+			msg := fmt.Sprintf("unexpected requestedIndex requestedSeqNum=%d firstCachedSeqNum=%d requestedIndex=%d cacheLength=%d", requestedSeqNum, firstCachedSeqNum, requestedIndex, cacheLength)
+			log.Error(msg)
+			return nil, errors.New(msg)
+		}
+
+		if b.messages[requestedIndex].SequenceNumber != requestedSeqNum {
+			msg := fmt.Sprintf("requestedSeqNum not found where expected requestedSeqNum=%d firstCachedSeqNum=%d requestedIndex=%d cacheLength=%d foundSeqNum=%d", requestedSeqNum, firstCachedSeqNum, requestedIndex, cacheLength, b.messages[requestedIndex].SequenceNumber)
+			log.Error(msg)
+			return nil, errors.New(msg)
+		}
+	}
+
+	bm.Messages = b.messages[:requestedIndex+1]
+	return &bm, nil
 }
 
 func (b *SequenceNumberCatchupBuffer) OnRegisterClient(clientConnection *wsbroadcastserver.ClientConnection) (error, int, time.Duration) {
@@ -186,6 +218,25 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 
 	return nil
 
+}
+
+// This feels very weird, follows same pattern of OnRegisterClient but it feels like we are splitting a lot of the HTTP logic away from the HTTP server. It might be better to move objects like BroadcastMessage to a different lib. Or changing the object that is returned by getCacheMessagesBefore.
+func (b *SequenceNumberCatchupBuffer) OnHTTPRequest(w http.ResponseWriter, requestedSeqNum arbutil.MessageIndex) {
+	bm, err := b.getCacheMessagesBefore(requestedSeqNum)
+	if err != nil {
+		msg := fmt.Sprintf("error getting cached messages: %s", err)
+		log.Error(msg)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	m, err := json.Marshal(bm)
+	if err != nil {
+		msg := fmt.Sprintf("error serializing message: %s", err)
+		log.Error(msg)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(m)
 }
 
 func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {
