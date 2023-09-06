@@ -398,52 +398,36 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             uint64 afterInboxPosition = assertion.afterState.globalState.getInboxPosition();
             uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
 
-            // there are 3 kinds of assertions that can be made. Assertions must be made when they fill the maximum number
-            // of blocks, or when they process all messages up to prev.nextInboxPosition. When they fill the max
-            // blocks, but dont manage to process all messages, we call this an "overflow" assertion.
-            // 1. ERRORED assertion
-            //    The machine finished in an ERRORED state. This can happen with processing any
-            //    messages, or moving the position in the message.
-            // 2. FINISHED assertion that did not overflow
-            //    The machine finished as normal, and fully processed all the messages up to prev.nextInboxPosition.
-            //    In this case the inbox position must equal prev.nextInboxPosition and position in message must be 0
-            // 3. FINISHED assertion that did overflow
-            //    The machine finished as normal, but didn't process all messages in the inbox.
-            //    The inbox position can be anything (within valid range) except the prev.nextInboxPosition,
-            //    the position in message can be anything except 0 if the inboxPosition == prev.inboxPosition.
+            // there are 2 kinds of assertions that can be made.
+            // ERRORED: this is an unexpected state and an upgrade is required to continue from this state
+            // FINISHED: A normal assertion is made when all messages up to the prev.nextInboxPosition have been processed
+            //           This assertion MUST process all of those messages, therefore we expect it to have inbox position equal
+            //           to the prev.nextInboxPosition, and positionInMessage == 0.
 
             //    All types of assertion must have inbox position in the range prev.inboxPosition <= x <= prev.nextInboxPosition
             require(afterInboxPosition >= prevInboxPosition, "INBOX_BACKWARDS");
             require(afterInboxPosition <= assertion.beforeStateData.configData.nextInboxPosition, "INBOX_TOO_FAR");
 
             // if the position in the message is > 0, then the afterInboxPosition cannot be the nextInboxPosition
-            // as this would be outside the range
-            if (assertion.afterState.globalState.getPositionInMessage() > 0) {
+            // as this would be outside the range - this can only occur for ERRORED states
+            if (assertion.afterState.machineStatus == MachineStatus.ERRORED) {
+                if (assertion.afterState.globalState.getPositionInMessage() > 0) {
+                    require(
+                        afterInboxPosition != assertion.beforeStateData.configData.nextInboxPosition, "POSITION_TOO_FAR"
+                    );
+                }
+            } else if (assertion.afterState.machineStatus == MachineStatus.FINISHED) {
+                // if the machine is FINISHED, then it should consume all messages in the inbox as seen at the time of prev
                 require(
-                    afterInboxPosition != assertion.beforeStateData.configData.nextInboxPosition, "POSITION_TOO_FAR"
+                    afterInboxPosition == assertion.beforeStateData.configData.nextInboxPosition,
+                    "INVALID_FINISHED_INBOX"
                 );
+                // and it should have position in message == 0, ready to start reading the next message
+                require(assertion.afterState.globalState.getPositionInMessage() == 0, "NON_ZERO_FINISHED_POS_IN_MSG");
+            } else {
+                // we checked this above, but include a safety check here in case of refactoring
+                revert("Unexpected machine status");
             }
-
-            // check the position has moved appropriately
-            require(
-                // either the inbox position moves forward
-                afterInboxPosition > prevInboxPosition
-                // the inbox position hasnt moved, if the machine is in FINISHED
-                // then the position in the message must have moved by 1
-                || (
-                    assertion.afterState.machineStatus == MachineStatus.FINISHED
-                        && assertion.afterState.globalState.getPositionInMessage()
-                            > assertion.beforeState.globalState.getPositionInMessage()
-                )
-                // the inbox position hasnt moved, if the machine is in ERRORED
-                // then the position in the message must not have gone backwards
-                || (
-                    assertion.afterState.machineStatus == MachineStatus.ERRORED
-                        && assertion.afterState.globalState.getPositionInMessage()
-                            >= assertion.beforeState.globalState.getPositionInMessage()
-                ),
-                "ASSERTION_INVALID_PROGRESS"
-            );
 
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
             // Cannot read more messages than currently exist in the inbox
