@@ -847,13 +847,6 @@ func testMemory(t *testing.T, jit bool) {
 	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
 	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
 
-	// check huge memory footprint
-	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, growHugeAddr)
-	Require(t, err)
-	if programMemoryFootprint != 120 {
-		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
-	}
-
 	// check that compilation then succeeds
 	args[0] = 0x00
 	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, nil, args)
@@ -871,6 +864,13 @@ func testMemory(t *testing.T, jit bool) {
 	memCost = model.GasCost(127, 0, 0)
 	if !arbmath.WithinRange(gasCost, memCost, memCost+1e5) {
 		Fatal(t, "unexpected cost", gasCost, memCost)
+	}
+
+	// check huge memory footprint
+	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, growHugeAddr)
+	Require(t, err)
+	if programMemoryFootprint != 120 {
+		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
 	}
 
 	validateBlocks(t, 2, jit, ctx, node, l2client)
