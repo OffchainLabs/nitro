@@ -23,30 +23,33 @@ import (
 
 type MessagePruner struct {
 	stopwaiter.StopWaiter
-	transactionStreamer *TransactionStreamer
-	inboxTracker        *InboxTracker
-	config              MessagePrunerConfigFetcher
-	pruningLock         sync.Mutex
-	lastPruneDone       time.Time
+	transactionStreamer         *TransactionStreamer
+	inboxTracker                *InboxTracker
+	config                      MessagePrunerConfigFetcher
+	pruningLock                 sync.Mutex
+	lastPruneDone               time.Time
+	cachedPrunedMessages        uint64
+	cachedPrunedDelayedMessages uint64
 }
 
 type MessagePrunerConfig struct {
-	Enable               bool          `koanf:"enable"`
-	MessagePruneInterval time.Duration `koanf:"prune-interval" reload:"hot"`
-	MinBatchesLeft       uint64        `koanf:"min-batches-left" reload:"hot"`
+	Enable bool `koanf:"enable"`
+	// Message pruning interval.
+	PruneInterval  time.Duration `koanf:"prune-interval" reload:"hot"`
+	MinBatchesLeft uint64        `koanf:"min-batches-left" reload:"hot"`
 }
 
 type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 
 var DefaultMessagePrunerConfig = MessagePrunerConfig{
-	Enable:               true,
-	MessagePruneInterval: time.Minute,
-	MinBatchesLeft:       2,
+	Enable:         true,
+	PruneInterval:  time.Minute,
+	MinBatchesLeft: 2,
 }
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
-	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
+	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.PruneInterval, "interval for running message pruner")
 	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
@@ -62,13 +65,13 @@ func (m *MessagePruner) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
 }
 
-func (m *MessagePruner) UpdateLatestStaked(count arbutil.MessageIndex, globalState validator.GoGlobalState) {
+func (m *MessagePruner) UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState) {
 	locked := m.pruningLock.TryLock()
 	if !locked {
 		return
 	}
 
-	if m.lastPruneDone.Add(m.config().MessagePruneInterval).After(time.Now()) {
+	if m.lastPruneDone.Add(m.config().PruneInterval).After(time.Now()) {
 		m.pruningLock.Unlock()
 		return
 	}
@@ -108,11 +111,11 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	msgCount := endBatchMetadata.MessageCount
 	delayedCount := endBatchMetadata.DelayedMessageCount
 
-	return deleteOldMessageFromDB(ctx, msgCount, delayedCount, m.inboxTracker.db, m.transactionStreamer.db)
+	return m.deleteOldMessagesFromDB(ctx, msgCount, delayedCount)
 }
 
-func deleteOldMessageFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) error {
-	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, transactionStreamerDb, messagePrefix, uint64(messageCount))
+func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
+	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messagePrefix, &m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting last batch messages: %w", err)
 	}
@@ -120,7 +123,7 @@ func deleteOldMessageFromDB(ctx context.Context, messageCount arbutil.MessageInd
 		log.Info("Pruned last batch messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, inboxTrackerDb, rlpDelayedMessagePrefix, delayedMessageCount)
+	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, m.inboxTracker.db, rlpDelayedMessagePrefix, &m.cachedPrunedDelayedMessages, delayedMessageCount)
 	if err != nil {
 		return fmt.Errorf("error deleting last batch delayed messages: %w", err)
 	}
@@ -130,15 +133,25 @@ func deleteOldMessageFromDB(ctx context.Context, messageCount arbutil.MessageInd
 	return nil
 }
 
-func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, prefix []byte, endMinKey uint64) ([]uint64, error) {
-	startIter := db.NewIterator(prefix, uint64ToKey(1))
-	if !startIter.Next() {
+// deleteFromLastPrunedUptoEndKey is similar to deleteFromRange but automatically populates the start key
+// cachedStartMinKey must not be nil. It's set to the new start key at the end of this function if successful.
+func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, prefix []byte, cachedStartMinKey *uint64, endMinKey uint64) ([]uint64, error) {
+	startMinKey := *cachedStartMinKey
+	if startMinKey == 0 {
+		startIter := db.NewIterator(prefix, uint64ToKey(1))
+		if !startIter.Next() {
+			return nil, nil
+		}
+		startMinKey = binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+		startIter.Release()
+	}
+	if endMinKey <= startMinKey {
+		*cachedStartMinKey = startMinKey
 		return nil, nil
 	}
-	startMinKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
-	startIter.Release()
-	if endMinKey > startMinKey {
-		return deleteFromRange(ctx, db, prefix, startMinKey, endMinKey-1)
+	keys, err := deleteFromRange(ctx, db, prefix, startMinKey, endMinKey-1)
+	if err == nil {
+		*cachedStartMinKey = endMinKey - 1
 	}
-	return nil, nil
+	return keys, err
 }

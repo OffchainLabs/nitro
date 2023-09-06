@@ -639,12 +639,6 @@ pub unsafe extern "C" fn wavm__go_after_run() {
     while let Some(info) = state.times.pop() {
         while state.pending_ids.contains(&info.id) {
             TIME = std::cmp::max(TIME, info.time);
-
-            // replace in Rust 1.71.0
-            // #[allow(dropping_references)]
-            #[allow(clippy::drop_ref)]
-            drop(state); // wavm_guest_call__resume is re-entrant, so cut the ref's lifetime
-
             // Important: the current reference to state shouldn't be used after this resume call,
             // as it might during the resume call the reference might be invalidated.
             // That's why immediately after this resume call, we replace the reference

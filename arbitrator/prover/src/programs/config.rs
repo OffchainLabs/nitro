@@ -3,9 +3,11 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
+use crate::{programs::meter, value::FunctionType};
 use derivative::Derivative;
+use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
-use wasmer_types::{Pages, WASM_PAGE_SIZE};
+use wasmer_types::{Pages, SignatureIndex, WASM_PAGE_SIZE};
 use wasmparser::Operator;
 
 #[cfg(feature = "native")]
@@ -79,7 +81,8 @@ impl PricingParams {
     }
 }
 
-pub type OpCosts = fn(&Operator) -> u64;
+pub type SigMap = HashMap<SignatureIndex, FunctionType>;
+pub type OpCosts = fn(&Operator, &SigMap) -> u64;
 
 #[derive(Clone, Debug, Default)]
 pub struct CompileConfig {
@@ -99,6 +102,8 @@ pub struct CompileMemoryParams {
     pub heap_bound: Pages,
     /// The maximum size of a stack frame, measured in words
     pub max_frame_size: u32,
+    /// The maximum number of overlapping value lifetimes in a frame
+    pub max_frame_contention: u16,
 }
 
 #[derive(Clone, Derivative)]
@@ -126,7 +131,7 @@ pub struct CompileDebugParams {
 impl Default for CompilePricingParams {
     fn default() -> Self {
         Self {
-            costs: |_| 0,
+            costs: |_, _| 0,
             memory_fill_ink: 0,
             memory_copy_ink: 0,
         }
@@ -138,6 +143,7 @@ impl Default for CompileMemoryParams {
         Self {
             heap_bound: Pages(u32::MAX / WASM_PAGE_SIZE as u32),
             max_frame_size: u32::MAX,
+            max_frame_contention: u16::MAX,
         }
     }
 }
@@ -153,11 +159,12 @@ impl CompileConfig {
             1 => {
                 // TODO: settle on reasonable values for the v1 release
                 config.bounds.heap_bound = Pages(128); // 8 mb
-                config.bounds.max_frame_size = 1024 * 1024;
+                config.bounds.max_frame_size = 10 * 1024;
+                config.bounds.max_frame_contention = 4096;
                 config.pricing = CompilePricingParams {
-                    costs: |_| 50,
-                    memory_fill_ink: 50,
-                    memory_copy_ink: 50,
+                    costs: meter::pricing_v1,
+                    memory_fill_ink: 1000 / 8,
+                    memory_copy_ink: 1000 / 8,
                 };
             }
             _ => panic!("no config exists for Stylus version {version}"),

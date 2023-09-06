@@ -6,13 +6,10 @@
 use stylus_sdk::{
     alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
-    stylus_proc::{sol_storage, Erase},
 };
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-stylus_sdk::entrypoint!(user_main);
 
 sol_storage! {
     pub struct Contract {
@@ -27,14 +24,14 @@ sol_storage! {
         bytes bytes_long;
         string chars;
         Maps maps;
-    };
+    }
 
     #[derive(Erase)]
     pub struct Struct {
         uint16 num;
         int32 other;
         bytes32 word;
-    };
+    }
 
     pub struct Maps {
         mapping(uint256 => address) basic;
@@ -42,9 +39,10 @@ sol_storage! {
         mapping(int32 => address)[] array;
         mapping(bytes1 => mapping(bool => uint256)) nested;
         mapping(string => Struct) structs;
-    };
+    }
 }
 
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let contract = unsafe { Contract::new(U256::ZERO, 0) };
     let selector = u32::from_be_bytes(input[0..4].try_into().unwrap());

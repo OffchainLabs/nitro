@@ -7,7 +7,7 @@ use std::{
     net::TcpStream,
 };
 
-use crate::wavmio::{Bytes20, Bytes32};
+use crate::wavmio::Bytes32;
 
 pub const SUCCESS: u8 = 0x0;
 pub const FAILURE: u8 = 0x1;
@@ -20,6 +20,11 @@ pub fn read_u8<T: Read>(reader: &mut BufReader<T>) -> Result<u8, io::Error> {
     reader.read_exact(&mut buf).map(|_| u8::from_be_bytes(buf))
 }
 
+pub fn read_u16<T: Read>(reader: &mut BufReader<T>) -> Result<u16, io::Error> {
+    let mut buf = [0; 2];
+    reader.read_exact(&mut buf).map(|_| u16::from_be_bytes(buf))
+}
+
 pub fn read_u32<T: Read>(reader: &mut BufReader<T>) -> Result<u32, io::Error> {
     let mut buf = [0; 4];
     reader.read_exact(&mut buf).map(|_| u32::from_be_bytes(buf))
@@ -28,11 +33,6 @@ pub fn read_u32<T: Read>(reader: &mut BufReader<T>) -> Result<u32, io::Error> {
 pub fn read_u64<T: Read>(reader: &mut BufReader<T>) -> Result<u64, io::Error> {
     let mut buf = [0; 8];
     reader.read_exact(&mut buf).map(|_| u64::from_be_bytes(buf))
-}
-
-pub fn read_bytes20<T: Read>(reader: &mut BufReader<T>) -> Result<Bytes20, io::Error> {
-    let mut buf = Bytes20::default();
-    reader.read_exact(&mut buf).map(|_| buf)
 }
 
 pub fn read_bytes32<T: Read>(reader: &mut BufReader<T>) -> Result<Bytes32, io::Error> {

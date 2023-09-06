@@ -9,20 +9,17 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-
-	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/util/testhelpers"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestArbOwner(t *testing.T) {
@@ -99,7 +96,7 @@ func TestArbOwner(t *testing.T) {
 
 	costCap, err := gasInfo.GetAmortizedCostCapBips(callCtx, evm)
 	Require(t, err)
-	if costCap != math.MaxUint64 {
+	if costCap != 0 {
 		Fail(t, costCap)
 	}
 	newCostCap := uint64(77734)

@@ -52,7 +52,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 
 	clients, err := broadcastclients.NewBroadcastClients(
 		func() *broadcastclient.Config { return &config.Node.Feed.Input },
-		config.L2.ChainId,
+		config.Chain.ID,
 		0,
 		&q,
 		confirmedSequenceNumberListener,
@@ -70,7 +70,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 		return nil, errors.New("relay attempted to sign feed message")
 	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.L2.ChainId, feedErrChan, dataSignerErr),
+		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.Chain.ID, feedErrChan, dataSignerErr),
 		broadcastClients:            clients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
@@ -141,22 +141,26 @@ func (r *Relay) StopAndWait() {
 
 type Config struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	L2            L2Config                        `koanf:"chain"`
+	Chain         L2Config                        `koanf:"chain"`
 	LogLevel      int                             `koanf:"log-level"`
 	LogType       string                          `koanf:"log-type"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 	Node          NodeConfig                      `koanf:"node"`
 	Queue         int                             `koanf:"queue"`
 }
 
 var ConfigDefault = Config{
 	Conf:          genericconf.ConfConfigDefault,
-	L2:            L2ConfigDefault,
+	Chain:         L2ConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 	Node:          NodeConfigDefault,
 	Queue:         1024,
 }
@@ -168,8 +172,10 @@ func ConfigAddOptions(f *flag.FlagSet) {
 	f.String("log-type", ConfigDefault.LogType, "log type")
 	f.Bool("metrics", ConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.Bool("pprof", ConfigDefault.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
 	NodeConfigAddOptions("node", f)
-	f.Int("queue", ConfigDefault.Queue, "size of relay queue")
+	f.Int("queue", ConfigDefault.Queue, "queue for incoming messages from sequencer")
 }
 
 type NodeConfig struct {
@@ -185,15 +191,15 @@ func NodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L2Config struct {
-	ChainId uint64 `koanf:"id"`
+	ID uint64 `koanf:"id"`
 }
 
 var L2ConfigDefault = L2Config{
-	ChainId: 0,
+	ID: 0,
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".id", L2ConfigDefault.ChainId, "L2 chain ID")
+	f.Uint64(prefix+".id", L2ConfigDefault.ID, "L2 chain ID")
 }
 
 func ParseRelay(_ context.Context, args []string) (*Config, error) {

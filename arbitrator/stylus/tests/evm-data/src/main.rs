@@ -6,13 +6,13 @@
 use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},
     block,
-    contract::{self, Call},
-    evm, msg, tx,
-    types::AddressVM,
+    call::RawCall,
+    contract, evm, msg,
+    prelude::*,
+    tx,
 };
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let balance_check_addr = Address::try_from(&input[..20]).unwrap();
     let eth_precompile_addr = Address::try_from(&input[20..40]).unwrap();
@@ -42,19 +42,19 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     // Call burnArbGas
     let gas_left_before = evm::gas_left();
     let ink_left_before = evm::ink_left();
-    Call::new().call(arb_test_addr, burn_call_data)?;
+    unsafe { RawCall::new().call(arb_test_addr, burn_call_data)? };
     let gas_left_after = evm::gas_left();
     let ink_left_after = evm::ink_left();
 
     let mut output = vec![];
     output.extend(B256::from(U256::from(block_number)));
     output.extend(B256::from(U256::from(chainid)));
-    output.extend(basefee);
-    output.extend(gas_price);
+    output.extend(B256::from(basefee));
+    output.extend(B256::from(gas_price));
     output.extend(B256::from(U256::from(gas_limit)));
     output.extend(B256::from(value));
     output.extend(B256::from(U256::from(timestamp)));
-    output.extend(address_balance);
+    output.extend(B256::from(address_balance));
 
     output.extend(address.into_word());
     output.extend(sender.into_word());

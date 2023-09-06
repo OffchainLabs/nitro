@@ -8,3 +8,4 @@ members = [
         "user-host",
         "user-test",
 ]
+resolver = "2"

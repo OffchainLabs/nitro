@@ -45,3 +45,13 @@ func TestProgramArbitratorEvmData(t *testing.T) {
 func TestProgramArbitratorMemory(t *testing.T) {
 	testMemory(t, false)
 }
+
+func TestProgramArbitratorActivateTwice(t *testing.T) {
+	t.Parallel()
+	testActivateTwice(t, false)
+}
+
+func TestProgramArbitratorActivateFails(t *testing.T) {
+	t.Parallel()
+	testActivateFails(t, false)
+}

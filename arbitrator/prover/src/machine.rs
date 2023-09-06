@@ -1637,7 +1637,11 @@ impl Machine {
             bail!("no module at offest {}", module.red())
         };
         let Some(source_func) = source_module.funcs.get(func as usize) else {
-            bail!("no func at offset {} in module {}", func.red(), source_module.name().red())
+            bail!(
+                "no func at offset {} in module {}",
+                func.red(),
+                source_module.name().red()
+            )
         };
         let ty = &source_func.ty;
         if ty.inputs.len() != args.len() {
@@ -1797,7 +1801,7 @@ impl Machine {
             () => {
                 error!("")
             };
-            ($format:expr $(,$message:expr)*) => {{
+            ($format:expr $(, $message:expr)*) => {{
                 flush_module!();
                 let print_debug_info = |machine: &Self| {
                     println!("\n{} {}", "error on line".grey(), line!().pink());
@@ -2375,7 +2379,11 @@ impl Machine {
                     };
                     let Some(module) = self.stylus_modules.get(&hash) else {
                         let keys: Vec<_> = self.stylus_modules.keys().map(hex::encode).collect();
-                        bail!("no program for {} in {{{}}}", hex::encode(hash), keys.join(", "))
+                        bail!(
+                            "no program for {} in {{{}}}",
+                            hex::encode(hash),
+                            keys.join(", ")
+                        )
                     };
                     flush_module!();
                     let index = self.modules.len() as u32;
@@ -2814,7 +2822,8 @@ impl Machine {
                     out!(mem_merkle.prove(idx).unwrap_or_default());
                     if op == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let Some(preimage) = self.preimage_resolver.get_const(self.context, hash) else {
+                        let Some(preimage) = self.preimage_resolver.get_const(self.context, hash)
+                        else {
                             fail!("Missing requested preimage for hash {}", hash)
                         };
                         data.push(0); // preimage proof type

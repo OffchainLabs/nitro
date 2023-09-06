@@ -3,10 +3,9 @@
 
 #![no_main]
 
-use stylus_sdk::{alloy_primitives::B256, evm};
+use stylus_sdk::{alloy_primitives::B256, evm, prelude::*};
 
-stylus_sdk::entrypoint!(user_main);
-
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let num_topics = input[0];
     let mut input = &input[1..];
@@ -16,6 +15,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         topics.push(B256::try_from(&input[..32]).unwrap());
         input = &input[32..];
     }
-    evm::log(&topics, input).unwrap();
+    evm::raw_log(&topics, input).unwrap();
     Ok(vec![])
 }

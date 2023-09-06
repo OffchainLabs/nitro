@@ -172,9 +172,16 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
 #RUN ./download-machine.sh consensus-v7.1 0x2b20e1490d1b06299b222f3239b0ae07e750d8f3b4dedd19f500a815c1548bbc
 #RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
-RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
-RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
-RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
+#RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
+#RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
+#RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
+
+RUN mkdir 0x0c1f5ada18eb9fb37ca9953b64c83cd825ab500fd36392c8471f008cfe3f3b54 && \
+    ln -sfT 0x0c1f5ada18eb9fb37ca9953b64c83cd825ab500fd36392c8471f008cfe3f3b54 latest && \
+    cd 0x0c1f5ada18eb9fb37ca9953b64c83cd825ab500fd36392c8471f008cfe3f3b54 && \
+    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x0c1f5ada18eb9fb37ca9953b64c83cd825ab500fd36392c8471f008cfe3f3b54/module-root.txt && \
+    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x0c1f5ada18eb9fb37ca9953b64c83cd825ab500fd36392c8471f008cfe3f3b54/replay.wasm && \
+    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x0c1f5ada18eb9fb37ca9953b64c83cd825ab500fd36392c8471f008cfe3f3b54/machine.wavm.br
 
 FROM golang:1.20-bullseye as node-builder
 WORKDIR /workspace

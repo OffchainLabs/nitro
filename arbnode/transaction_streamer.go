@@ -69,7 +69,7 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcastQueueSize   int           `koanf:"max-broadcaster-queue-size"`
+	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 }
@@ -77,19 +77,19 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   1024,
+	MaxBroadcasterQueueSize: 1024,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   10_000,
+	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
+	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 }
@@ -483,7 +483,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
-			maxQueueSize := s.config().MaxBroadcastQueueSize
+			maxQueueSize := s.config().MaxBroadcasterQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
@@ -862,8 +862,8 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	return nil
 }
 
-func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
+func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
+	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
@@ -944,7 +944,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	s.execLastMsgCount = prevMessageCount
+	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)

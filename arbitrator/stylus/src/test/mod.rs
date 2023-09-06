@@ -4,7 +4,11 @@
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 use arbutil::{evm::user::UserOutcome, Bytes20, Bytes32, Color};
 use eyre::{bail, Result};
-use prover::{machine::GlobalState, programs::prelude::*, Machine};
+use prover::{
+    machine::GlobalState,
+    programs::{config::SigMap, prelude::*},
+    Machine,
+};
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
@@ -16,6 +20,7 @@ use wasmer_compiler_singlepass::Singlepass;
 mod api;
 mod misc;
 mod native;
+mod sdk;
 mod wavm;
 
 #[cfg(feature = "timings")]
@@ -85,7 +90,7 @@ impl TestInstance {
     }
 }
 
-fn expensive_add(op: &Operator) -> u64 {
+fn expensive_add(op: &Operator, _tys: &SigMap) -> u64 {
     match op {
         Operator::I32Add => 100,
         _ => 0,

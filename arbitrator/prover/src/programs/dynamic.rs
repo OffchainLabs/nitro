@@ -7,7 +7,7 @@ use super::{
     FuncMiddleware, Middleware, ModuleMod,
 };
 use eyre::{bail, Result};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
@@ -17,7 +17,7 @@ pub const SCRATCH_GLOBAL: &str = "stylus_scratch_global";
 pub struct DynamicMeter {
     memory_fill: u64,
     memory_copy: u64,
-    globals: Mutex<Option<[GlobalIndex; 3]>>,
+    globals: RwLock<Option<[GlobalIndex; 3]>>,
 }
 
 impl DynamicMeter {
@@ -25,7 +25,7 @@ impl DynamicMeter {
         Self {
             memory_fill: pricing.memory_fill_ink,
             memory_copy: pricing.memory_copy_ink,
-            globals: Mutex::new(None),
+            globals: RwLock::default(),
         }
     }
 }
@@ -37,12 +37,12 @@ impl<M: ModuleMod> Middleware<M> for DynamicMeter {
         let ink = module.get_global(STYLUS_INK_LEFT)?;
         let status = module.get_global(STYLUS_INK_STATUS)?;
         let scratch = module.add_global(SCRATCH_GLOBAL, Type::I32, GlobalInit::I32Const(0))?;
-        *self.globals.lock() = Some([ink, status, scratch]);
+        *self.globals.write() = Some([ink, status, scratch]);
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
-        let globals = self.globals.lock().expect("missing globals");
+        let globals = self.globals.read().expect("no globals");
         Ok(FuncDynamicMeter::new(
             self.memory_fill,
             self.memory_copy,
