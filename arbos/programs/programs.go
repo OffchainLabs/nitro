@@ -333,13 +333,13 @@ func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {
 	return program.version, err
 }
 
-func (p Programs) CodehashSize(codeHash common.Hash) (uint32, error) {
+func (p Programs) ProgramSize(codeHash common.Hash) (uint32, error) {
 	program, err := p.deserializeProgram(codeHash)
 	// wasmSize represents the number of half kb units, return as bytes
 	return uint32(program.wasmSize) * 512, err
 }
 
-func (p Programs) CodehashMemoryFootprint(codeHash common.Hash) (uint16, error) {
+func (p Programs) ProgramMemoryFootprint(codeHash common.Hash) (uint16, error) {
 	program, err := p.deserializeProgram(codeHash)
 	return program.footprint, err
 }

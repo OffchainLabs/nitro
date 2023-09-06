@@ -86,13 +86,12 @@ func keccakTest(t *testing.T, jit bool) {
 	}
 	programSize, err := arbWasm.ProgramSize(nil, programAddress)
 	Require(t, err)
-	if programSize < 5000 || programSize > 20000 {
-		Fatal(t, "unexpected size", programSize)
-	}
-	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, programAddress)
+	source, err := os.ReadFile(rustFile("keccak"))
 	Require(t, err)
-	if programMemoryFootprint != 1 {
-		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
+	wasmSize := len(source)
+	expectedWasmSize := ((wasmSize + 511) / 512) * 512
+	if int(programSize) != expectedWasmSize {
+		Fatal(t, "found size", programSize, "expected size", wasmSize)
 	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -783,6 +782,8 @@ func testMemory(t *testing.T, jit bool) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
 
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
@@ -845,6 +846,13 @@ func testMemory(t *testing.T, jit bool) {
 	}
 	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
 	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
+
+	// check huge memory footprint
+	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, growHugeAddr)
+	Require(t, err)
+	if programMemoryFootprint != 120 {
+		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
+	}
 
 	// check that compilation then succeeds
 	args[0] = 0x00
