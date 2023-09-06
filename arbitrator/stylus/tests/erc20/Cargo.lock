@@ -646,7 +646,7 @@ dependencies = [
 
 [[package]]
 name = "stylus-proc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "stylus-sdk"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
