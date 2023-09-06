@@ -73,12 +73,20 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 
 // ProgramSize returns the uncompressed size of program at addr
 func (con ArbWasm) ProgramSize(c ctx, _ mech, program addr) (uint32, error) {
-	return c.State.Programs().ProgramSize(program)
+	codehash, err := c.GetCodeHash(program)
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().CodehashSize(codehash)
 }
 
 // ProgramMemoryFootprint returns the footprint of program at addr
 func (con ArbWasm) ProgramMemoryFootprint(c ctx, _ mech, program addr) (uint16, error) {
-	return c.State.Programs().ProgramMemoryFootprint(program)
+	codehash, err := c.GetCodeHash(program)
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().CodehashMemoryFootprint(codehash)
 }
 
 // Gets the added wasm call cost paid per half kb uncompressed wasm

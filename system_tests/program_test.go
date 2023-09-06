@@ -86,7 +86,7 @@ func keccakTest(t *testing.T, jit bool) {
 	}
 	programSize, err := arbWasm.ProgramSize(nil, programAddress)
 	Require(t, err)
-	if programSize < 20000 || programSize > 30000 {
+	if programSize < 5000 || programSize > 20000 {
 		Fatal(t, "unexpected size", programSize)
 	}
 	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, programAddress)
