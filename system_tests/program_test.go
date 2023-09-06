@@ -49,7 +49,7 @@ func keccakTest(t *testing.T, jit bool) {
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
-	wasm := readWasmFile(t, rustFile("keccak"))
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
@@ -152,7 +152,7 @@ func testActivateTwice(t *testing.T, jit bool) {
 	Require(t, err)
 	ensure(arbOwner.SetInkPrice(&auth, 1))
 
-	wasm := readWasmFile(t, rustFile("keccak"))
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	keccakA := deployContract(t, ctx, auth, l2client, wasm)
 	keccakB := deployContract(t, ctx, auth, l2client, wasm)
 
@@ -600,7 +600,7 @@ func testCreate(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	deployWasm := readWasmFile(t, rustFile("storage"))
+	deployWasm, _ := readWasmFile(t, rustFile("storage"))
 	deployCode := deployContractInitCode(deployWasm, false)
 	startValue := testhelpers.RandomCallValue(1e12)
 	salt := testhelpers.RandomHash()
@@ -773,6 +773,8 @@ func testMemory(t *testing.T, jit bool) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
 
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
@@ -822,7 +824,7 @@ func testMemory(t *testing.T, jit bool) {
 	expectFailure(multiAddr, args)
 
 	// check that compilation fails when out of memory
-	wasm := readWasmFile(t, watFile("grow-120"))
+	wasm, _ := readWasmFile(t, watFile("grow-120"))
 	growHugeAddr := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey("memory.wat        ", memoryAddr)
 	colors.PrintGrey("multicall.rs      ", multiAddr)
@@ -855,6 +857,13 @@ func testMemory(t *testing.T, jit bool) {
 		Fatal(t, "unexpected cost", gasCost, memCost)
 	}
 
+	// check huge memory footprint
+	programMemoryFootprint, err := arbWasm.ProgramMemoryFootprint(nil, growHugeAddr)
+	Require(t, err)
+	if programMemoryFootprint != 120 {
+		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
+	}
+
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
@@ -870,7 +879,7 @@ func testActivateFails(t *testing.T, jit bool) {
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	badExportWasm := readWasmFile(t, watFile("bad-export"))
+	badExportWasm, _ := readWasmFile(t, watFile("bad-export"))
 	auth.GasLimit = 32000000 // skip gas estimation
 	badExportAddr := deployContract(t, ctx, auth, l2client, badExportWasm)
 
@@ -1012,7 +1021,7 @@ func setupProgramTest(t *testing.T, jit bool) (
 	return ctx, node, l2info, l2client, auth, cleanup
 }
 
-func readWasmFile(t *testing.T, file string) []byte {
+func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	source, err := os.ReadFile(file)
 	Require(t, err)
@@ -1026,18 +1035,30 @@ func readWasmFile(t *testing.T, file string) []byte {
 	colors.PrintGrey(fmt.Sprintf("%v: len %.2fK vs %.2fK", name, toKb(wasm), toKb(wasmSource)))
 
 	wasm = append(state.StylusPrefix, wasm...)
-	return wasm
+	return wasm, wasmSource
 }
 
 func deployWasm(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
 ) common.Address {
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
-	wasm := readWasmFile(t, file)
+	wasm, uncompressed := readWasmFile(t, file)
 	auth.GasLimit = 32000000 // skip gas estimation
-	programAddress := deployContract(t, ctx, auth, l2client, wasm)
-	colors.PrintGrey(name, ": deployed to ", programAddress.Hex())
-	return activateWasm(t, ctx, auth, l2client, programAddress, name)
+	program := deployContract(t, ctx, auth, l2client, wasm)
+	colors.PrintGrey(name, ": deployed to ", program.Hex())
+	activateWasm(t, ctx, auth, l2client, program, name)
+
+	// check that program size matches
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+	programSize, err := arbWasm.ProgramSize(nil, program)
+	Require(t, err)
+	expected := (len(uncompressed) + 511) / 512 * 512
+	if int(programSize) != expected {
+		Fatal(t, "unexpected program size", name, programSize, expected, len(wasm))
+	}
+
+	return program
 }
 
 func activateWasm(
@@ -1047,8 +1068,7 @@ func activateWasm(
 	l2client *ethclient.Client,
 	program common.Address,
 	name string,
-) common.Address {
-
+) {
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
@@ -1058,7 +1078,6 @@ func activateWasm(
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	})
-	return program
 }
 
 func argsForStorageRead(key common.Hash) []byte {
