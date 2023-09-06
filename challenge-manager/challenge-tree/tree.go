@@ -41,6 +41,8 @@ type HonestChallengeTree struct {
 	metadataReader                MetadataReader
 	histChecker                   l2stateprovider.HistoryChecker
 	validatorName                 string
+	totalChallengeLevels          uint8
+	honestRootEdgesByLevel        *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]]
 }
 
 func New(
@@ -59,6 +61,8 @@ func New(
 		metadataReader:                metadataReader,
 		histChecker:                   histChecker,
 		validatorName:                 validatorName,
+		totalChallengeLevels:          3,
+		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
 	}
 }
 

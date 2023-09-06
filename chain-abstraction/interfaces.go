@@ -258,6 +258,8 @@ type OriginHeights struct {
 	BigStepChallengeOriginHeight Height `json:"bigStepChallengeOriginHeight"`
 }
 
+type ChallengeLevel uint8
+
 // ReadOnlyEdge defines methods that only retrieve data from the chain
 // regarding for a given edge.
 type ReadOnlyEdge interface {
@@ -265,6 +267,7 @@ type ReadOnlyEdge interface {
 	Id() EdgeId
 	// The type of challenge the edge is a part of.
 	GetType() EdgeType
+	GetChallengeLevel() (ChallengeLevel, error)
 	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.

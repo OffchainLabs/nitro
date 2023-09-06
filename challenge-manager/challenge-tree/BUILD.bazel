@@ -4,6 +4,7 @@ go_library(
     name = "challenge-tree",
     srcs = [
         "ancestors.go",
+        "generalized_path_timer.go",
         "path_timer.go",
         "tree.go",
     ],
@@ -24,6 +25,7 @@ go_test(
     name = "challenge-tree_test",
     srcs = [
         "ancestors_test.go",
+        "generalized_path_timer_test.go",
         "path_timer_test.go",
         "tree_test.go",
     ],

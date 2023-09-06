@@ -40,6 +40,19 @@ func (e *Edge) GetType() protocol.EdgeType {
 	return e.EdgeType
 }
 
+func (e *Edge) GetChallengeLevel() (protocol.ChallengeLevel, error) {
+	switch e.EdgeType {
+	case protocol.BlockChallengeEdge:
+		return 2, nil
+	case protocol.BigStepChallengeEdge:
+		return 1, nil
+	case protocol.SmallStepChallengeEdge:
+		return 0, nil
+	default:
+		return 0, errors.New("unknown challenge level")
+	}
+}
+
 func (e *Edge) StartCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.StartHeight), common.BytesToHash([]byte(e.StartCommit))
 }
