@@ -87,6 +87,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // only 1 child can be confirmed, the excess/loser stake will be sent to this address
     address public loserStakeEscrow;
     address public stakeToken;
+    uint256 public minimumAssertionPeriod;
 
     mapping(address => bool) public isValidator;
 

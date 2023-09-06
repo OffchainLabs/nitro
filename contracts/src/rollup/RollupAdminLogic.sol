@@ -46,6 +46,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         chainId = config.chainId;
         baseStake = config.baseStake;
         wasmModuleRoot = config.wasmModuleRoot;
+        // A little over 15 minutes
+        minimumAssertionPeriod = 75;
 
         // the owner can't access the rollup user facet where escrow is redeemable
         require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
@@ -193,6 +195,15 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     function setOwner(address newOwner) external override {
         _changeAdmin(newOwner);
         emit OwnerFunctionCalled(7);
+    }
+
+    /**
+     * @notice Set minimum assertion period for the rollup
+     * @param newPeriod new minimum period for assertions
+     */
+    function setMinimumAssertionPeriod(uint256 newPeriod) external override {
+        minimumAssertionPeriod = newPeriod;
+        emit OwnerFunctionCalled(8);
     }
 
     /**

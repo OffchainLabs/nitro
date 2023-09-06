@@ -60,6 +60,12 @@ interface IRollupAdmin {
     function setOwner(address newOwner) external;
 
     /**
+     * @notice Set minimum assertion period for the rollup
+     * @param newPeriod new minimum period for assertions
+     */
+    function setMinimumAssertionPeriod(uint256 newPeriod) external;
+
+    /**
      * @notice Set number of blocks until a assertion is considered confirmed
      * @param newConfirmPeriod new number of blocks until a assertion is confirmed
      */

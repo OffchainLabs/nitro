@@ -63,6 +63,8 @@ interface IRollupCore is IAssertionChain {
 
     function stakeToken() external view returns (address);
 
+    function minimumAssertionPeriod() external view returns (uint256);
+
     function isValidator(address) external view returns (bool);
 
     function validatorWhitelistDisabled() external view returns (bool);

@@ -190,6 +190,10 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
             "STAKED_ON_ANOTHER_BRANCH"
         );
 
+        uint256 timeSincePrev = block.number - getAssertionStorage(prevAssertion).createdAtBlock;
+        // Verify that assertion meets the minimum Delta time requirement
+        require(timeSincePrev >= minimumAssertionPeriod, "TIME_DELTA");
+
         bytes32 newAssertionHash = createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
         _stakerMap[msg.sender].latestStakedAssertion = newAssertionHash;
 
