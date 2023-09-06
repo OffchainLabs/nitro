@@ -313,4 +313,10 @@ fn remove(mut contract: Contract) {
 
     // erase a struct
     contract.structs.erase_last();
+
+    // erase fixed arrays
+    contract.arrays.matrix.erase();
+    contract.arrays.vector.erase();
+    contract.arrays.vectors.erase();
+    contract.arrays.structs.erase();
 }
