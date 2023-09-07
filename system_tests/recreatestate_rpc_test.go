@@ -273,7 +273,6 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 }
 
 func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks uint32, skipGas uint64, txCount int) {
-	t.Helper()
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -311,14 +310,6 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	Require(t, err)
 	Require(t, node.Start(ctx1))
 	client := ClientForStack(t, stack)
-	debugAuth := l2info.GetDefaultTransactOpts("Owner", ctx1)
-	// make auth a chain owner
-	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
-	Require(t, err, "failed to deploy ArbDebug")
-	tx, err := arbdebug.BecomeChainOwner(&debugAuth)
-	Require(t, err, "failed to deploy ArbDebug")
-	_, err = EnsureTxSucceeded(ctx1, client, tx)
-	Require(t, err)
 
 	StartWatchChanErr(t, ctx, feedErrChan, node)
 	dataDir := node.Stack.DataDir()
@@ -330,13 +321,13 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 		txs = append(txs, tx)
 		err := client.SendTransaction(ctx, tx)
 		Require(t, err)
-	}
-	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, client, tx)
+		receipt, err := EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
+		if have, want := receipt.BlockNumber.Uint64(), uint64(i)+1; have != want {
+			Fatal(t, "internal test error - tx got included in unexpected block number, have:", have, "want:", want)
+		}
 	}
-	bc := node.Execution.Backend.ArbInterface().BlockChain()
-	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
+	genesis := uint64(0)
 	lastBlock, err := client.BlockNumber(ctx)
 	Require(t, err)
 	if want := genesis + uint64(txCount); lastBlock < want {
@@ -356,7 +347,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	Require(t, node.Start(ctx))
 	client = ClientForStack(t, stack)
 	defer node.StopAndWait()
-	bc = node.Execution.Backend.ArbInterface().BlockChain()
+	bc := node.Execution.Backend.ArbInterface().BlockChain()
 	gas := skipGas
 	blocks := skipBlocks
 	for i := genesis + 1; i <= genesis+uint64(txCount); i++ {
