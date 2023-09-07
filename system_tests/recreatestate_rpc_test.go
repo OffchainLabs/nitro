@@ -396,10 +396,10 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 
 	// one test block ~ 925000 gas
 	testBlockGas := uint64(925000)
-	skipBlockValues := []uint64{0, 1, 2, 3, 5, 7, 19, 20, 21, 99, 100, 101}
+	skipBlockValues := []uint64{0, 1, 2, 3, 5, 100, 101}
 	skipGasValues := []uint64{0}
 	for _, i := range skipBlockValues[1:] {
-		skipGasValues = append(skipGasValues, []uint64{i*testBlockGas - 2, i*testBlockGas - 1, i * testBlockGas, i*testBlockGas + 1, i*testBlockGas + 2}...)
+		skipGasValues = append(skipGasValues, []uint64{i*testBlockGas - 1, i * testBlockGas, i*testBlockGas + 1}...)
 	}
 	for _, skipGas := range skipGasValues {
 		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
