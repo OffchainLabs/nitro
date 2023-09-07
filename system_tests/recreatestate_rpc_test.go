@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 )
 
@@ -391,31 +390,20 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	// test defaults
-	testSkippingSavingStateAndRecreatingAfterRestart(t, 0, 0, 512)
 	testSkippingSavingStateAndRecreatingAfterRestart(t, 127, 0, 512)
 	testSkippingSavingStateAndRecreatingAfterRestart(t, 0, 15*1000*1000, 512)
 	testSkippingSavingStateAndRecreatingAfterRestart(t, 127, 15*1000*1000, 512)
 
 	// one test block ~ 925000 gas
 	testBlockGas := uint64(925000)
-	skipGasValues := []uint64{testBlockGas, 2 * testBlockGas, 3 * testBlockGas, 5 * testBlockGas, 21 * testBlockGas}
-	skipBlockValues := []uint32{1, 2, 3, 5, 21}
+	skipBlockValues := []uint64{0, 1, 2, 3, 5, 7, 19, 20, 21, 99, 100, 101}
+	skipGasValues := []uint64{0}
+	for _, i := range skipBlockValues[1:] {
+		skipGasValues = append(skipGasValues, []uint64{i*testBlockGas - 2, i*testBlockGas - 1, i * testBlockGas, i*testBlockGas + 1, i*testBlockGas + 2}...)
+	}
 	for _, skipGas := range skipGasValues {
 		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
-			testSkippingSavingStateAndRecreatingAfterRestart(t, skipBlocks, skipGas, 21)
+			testSkippingSavingStateAndRecreatingAfterRestart(t, uint32(skipBlocks), skipGas, 100)
 		}
-	}
-	skipBlockValues = []uint32{1, 2, 3, 7, 19, 20, 21, 22}
-	for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
-		testSkippingSavingStateAndRecreatingAfterRestart(t, skipBlocks, 0, 21)
-		testSkippingSavingStateAndRecreatingAfterRestart(t, skipBlocks, testBlockGas*100, 21)
-	}
-	skipGasValues = []uint64{1,
-		testBlockGas - 2, testBlockGas - 1, testBlockGas, testBlockGas + 1, testBlockGas + 2,
-		2*testBlockGas - 2, 2*testBlockGas - 1, 2 * testBlockGas, 2*testBlockGas + 1,
-		7 * testBlockGas, 21 * testBlockGas}
-	for _, skipGas := range skipGasValues {
-		testSkippingSavingStateAndRecreatingAfterRestart(t, 0, skipGas, 21)
-		testSkippingSavingStateAndRecreatingAfterRestart(t, 100, skipGas, 21)
 	}
 }
