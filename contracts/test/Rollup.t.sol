@@ -38,6 +38,7 @@ contract RollupTest is Test {
     uint256 constant BASE_STAKE = 10;
     uint256 constant MINI_STAKE_VALUE = 2;
     uint64 constant CONFIRM_PERIOD_BLOCKS = 100;
+    uint256 constant MAX_DATA_SIZE = 117964;
 
     bytes32 constant FIRST_ASSERTION_BLOCKHASH = keccak256("FIRST_ASSERTION_BLOCKHASH");
     bytes32 constant FIRST_ASSERTION_SENDROOT = keccak256("FIRST_ASSERTION_SENDROOT");
@@ -79,7 +80,7 @@ contract RollupTest is Test {
             oneStepProverHostIo
         );
         EdgeChallengeManager edgeChallengeManager = new EdgeChallengeManager();
-        BridgeCreator bridgeCreator = new BridgeCreator();
+        BridgeCreator bridgeCreator = new BridgeCreator(MAX_DATA_SIZE);
         RollupCreator rollupCreator = new RollupCreator();
         RollupAdminLogic rollupAdminLogicImpl = new RollupAdminLogic();
         RollupUserLogic rollupUserLogicImpl = new RollupUserLogic();
@@ -124,11 +125,16 @@ contract RollupTest is Test {
 
         vm.expectEmit(false, false, false, false);
         emit RollupCreated(address(0), address(0), address(0), address(0), address(0));
-        address rollupAddr = rollupCreator.createRollup(config);
+        address rollupAddr = rollupCreator.createRollup(
+            config, address(0), new address[](0), false, MAX_DATA_SIZE
+        );
 
         userRollup = RollupUserLogic(address(rollupAddr));
         adminRollup = RollupAdminLogic(address(rollupAddr));
         challengeManager = EdgeChallengeManager(address(userRollup.challengeManager()));
+
+        assertEq(userRollup.sequencerInbox().maxDataSize(), MAX_DATA_SIZE);
+        assertFalse(userRollup.validatorWhitelistDisabled());
 
         vm.startPrank(owner);
         validators.push(validator1);

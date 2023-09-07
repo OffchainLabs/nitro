@@ -14,6 +14,7 @@ const (
 	LevelZeroBlockEdgeHeight     = 1 << 5
 	LevelZeroBigStepEdgeHeight   = 1 << 5
 	LevelZeroSmallStepEdgeHeight = 1 << 5
+	MaxDataSize                  = 117964
 )
 
 type LevelZeroHeights struct {

@@ -357,6 +357,10 @@ func DeployFullRollupStack(
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
+		common.Address{},
+		[]common.Address{},
+		false,
+		big.NewInt(challenge_testing.MaxDataSize),
 	)
 
 	if err != nil {
@@ -463,7 +467,9 @@ func deployBridgeCreator(
 		return common.Address{}, errors.Wrap(err, "bridgegen.DeployBridge")
 	}
 
-	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, backend)
+	maxDataSize := big.NewInt(challenge_testing.MaxDataSize)
+
+	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize)
 	if err != nil {
 		return common.Address{}, err
 	}
@@ -472,7 +478,7 @@ func deployBridgeCreator(
 		return common.Address{}, errors.Wrap(err, "bridgegen.DeploySequencerInbox")
 	}
 
-	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, backend)
+	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, backend, maxDataSize)
 	if err != nil {
 		return common.Address{}, err
 	}
@@ -499,7 +505,7 @@ func deployBridgeCreator(
 		return common.Address{}, errors.Wrap(err, "bridgegen.DeployOutbox")
 	}
 
-	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, backend)
+	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, backend, maxDataSize)
 	if err != nil {
 		return common.Address{}, err
 	}

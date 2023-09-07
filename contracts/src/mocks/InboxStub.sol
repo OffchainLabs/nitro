@@ -22,6 +22,11 @@ contract InboxStub is IInbox {
     ISequencerInbox public override sequencerInbox;
 
     bool public paused;
+    uint256 public immutable maxDataSize;
+
+    constructor() {
+        maxDataSize = 117964;
+    }
 
     function pause() external pure {
         revert("NOT IMPLEMENTED");

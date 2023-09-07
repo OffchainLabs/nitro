@@ -21,7 +21,8 @@ import {
 
 export const deployDependencies = async (
   signer: Signer,
-  log: boolean = false
+  maxDataSize: number,
+  log: boolean = false,
 ): Promise<
   Omit<DeployedContracts, 'boldAction' | 'preImageHashLookup' | 'rollupReader'>
 > => {
@@ -32,7 +33,7 @@ export const deployDependencies = async (
   }
 
   const seqInboxFac = new SequencerInbox__factory(signer)
-  const seqInbox = await seqInboxFac.deploy()
+  const seqInbox = await seqInboxFac.deploy(maxDataSize)
   if (log) {
     console.log(
       `Sequencer inbox implementation deployed at: ${seqInbox.address}`
@@ -96,7 +97,7 @@ export const deployBoldUpgrade = async (
   config: Config,
   log: boolean = false
 ): Promise<DeployedContracts> => {
-  const deployed = await deployDependencies(wallet, log)
+  const deployed = await deployDependencies(wallet, config.settings.maxDataSize, log)
 
   const fac = new BOLDUpgradeAction__factory(wallet)
   const boldUpgradeAction = await fac.deploy(

@@ -14,6 +14,8 @@ interface IInbox is IDelayedMessageProvider {
 
     function sequencerInbox() external view returns (ISequencerInbox);
 
+    function maxDataSize() external view returns (uint256);
+
     /**
      * @notice Send a generic L2 message to the chain
      * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input

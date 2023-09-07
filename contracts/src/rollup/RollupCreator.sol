@@ -76,8 +76,15 @@ contract RollupCreator is Ownable {
         return challengeManager;
     }
 
-    function createRollup(Config memory config) external returns (address) {
-        return createRollup(config, address(0), new address[](0), false);
+    struct DeployedContracts {
+        RollupProxy rollup;
+        IInbox inbox;
+        ISequencerInbox sequencerInbox;
+        IBridge bridge;
+        IRollupEventInbox rollupEventInbox;
+        ProxyAdmin proxyAdmin;
+        IEdgeChallengeManager challengeManager;
+        IOutbox outbox;
     }
 
     /**
@@ -97,38 +104,42 @@ contract RollupCreator is Ownable {
         Config memory config,
         address _batchPoster,
         address[] memory _validators,
-        bool disableValidatorWhitelist
-    ) public returns (address) {        
-        ProxyAdmin proxyAdmin = new ProxyAdmin();
-        proxyAdmin.transferOwnership(config.owner);
+        bool disableValidatorWhitelist,
+        uint256 maxDataSize
+    ) public returns (address) {
+        // Make sure the immutable maxDataSize is as expected
+        require(maxDataSize == bridgeCreator.sequencerInboxTemplate().maxDataSize(), "SI_MAX_DATA_SIZE_MISMATCH");
+        require(maxDataSize == bridgeCreator.inboxTemplate().maxDataSize(), "I_MAX_DATA_SIZE_MISMATCH");
+        DeployedContracts memory deployed;
+
+        deployed.proxyAdmin = new ProxyAdmin();
+        deployed.proxyAdmin.transferOwnership(config.owner);
 
         // Create the rollup proxy to figure out the address and initialize it later
-        RollupProxy rollup = new RollupProxy{salt: keccak256(abi.encode(config))}();
+        deployed.rollup = new RollupProxy{salt: keccak256(abi.encode(config))}();
 
-        (
-            IBridge bridge,
-            ISequencerInbox sequencerInbox,
-            IInbox inbox,
-            IRollupEventInbox rollupEventInbox,
-            IOutbox outbox
-        ) = bridgeCreator.createBridge(address(proxyAdmin), address(rollup), config.sequencerInboxMaxTimeVariation);
+        (deployed.bridge, deployed.sequencerInbox, deployed.inbox, deployed.rollupEventInbox, deployed.outbox) =
+        bridgeCreator.createBridge(
+            address(deployed.proxyAdmin), address(deployed.rollup), config.sequencerInboxMaxTimeVariation
+        );
 
-        IEdgeChallengeManager challengeManager = createChallengeManager(address(rollup), address(proxyAdmin), config);
+        deployed.challengeManager =
+            createChallengeManager(address(deployed.rollup), address(deployed.proxyAdmin), config);
 
         // initialize the rollup with this contract as owner to set batch poster and validators
         // it will transfer the ownership back to the actual owner later
         address actualOwner = config.owner;
         config.owner = address(this);
 
-        rollup.initializeProxy(
+        deployed.rollup.initializeProxy(
             config,
             ContractDependencies({
-                bridge: bridge,
-                sequencerInbox: sequencerInbox,
-                inbox: inbox,
-                outbox: outbox,
-                rollupEventInbox: rollupEventInbox,
-                challengeManager: challengeManager,
+                bridge: deployed.bridge,
+                sequencerInbox: deployed.sequencerInbox,
+                inbox: deployed.inbox,
+                outbox: deployed.outbox,
+                rollupEventInbox: deployed.rollupEventInbox,
+                challengeManager: deployed.challengeManager,
                 rollupAdminLogic: address(rollupAdminLogic),
                 rollupUserLogic: rollupUserLogic,
                 validatorWalletCreator: validatorWalletCreator
@@ -137,7 +148,7 @@ contract RollupCreator is Ownable {
 
         // setting batch poster, if the address provided is not zero address
         if (_batchPoster != address(0)) {
-            sequencerInbox.setIsBatchPoster(_batchPoster, true);
+            deployed.sequencerInbox.setIsBatchPoster(_batchPoster, true);
         }
         // Call setValidator on the newly created rollup contract just if validator set is not empty
         if (_validators.length != 0) {
@@ -145,16 +156,20 @@ contract RollupCreator is Ownable {
             for (uint256 i = 0; i < _validators.length; i++) {
                 _vals[i] = true;
             }
-            IRollupAdmin(address(rollup)).setValidator(_validators, _vals);
+            IRollupAdmin(address(deployed.rollup)).setValidator(_validators, _vals);
         }
-        if(disableValidatorWhitelist == true) {
-            IRollupAdmin(address(rollup)).setValidatorWhitelistDisabled(disableValidatorWhitelist);
+        if (disableValidatorWhitelist == true) {
+            IRollupAdmin(address(deployed.rollup)).setValidatorWhitelistDisabled(disableValidatorWhitelist);
         }
-        IRollupAdmin(address(rollup)).setOwner(actualOwner);
+        IRollupAdmin(address(deployed.rollup)).setOwner(actualOwner);
 
         emit RollupCreated(
-            address(rollup), address(inbox), address(proxyAdmin), address(sequencerInbox), address(bridge)
+            address(deployed.rollup),
+            address(deployed.inbox),
+            address(deployed.proxyAdmin),
+            address(deployed.sequencerInbox),
+            address(deployed.bridge)
         );
-        return address(rollup);
+        return address(deployed.rollup);
     }
 }

@@ -11,8 +11,9 @@ contract SequencerInboxStub is SequencerInbox {
     constructor(
         IBridge bridge_,
         address sequencer_,
-        ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
-    ) {
+        ISequencerInbox.MaxTimeVariation memory maxTimeVariation_,
+        uint256 maxDataSize_
+    ) SequencerInbox(maxDataSize_) {
         bridge = bridge_;
         rollup = IOwnable(msg.sender);
         maxTimeVariation = maxTimeVariation_;

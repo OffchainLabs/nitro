@@ -24,10 +24,10 @@ contract BridgeCreator is Ownable {
 
     event TemplatesUpdated();
 
-    constructor() Ownable() {
+    constructor(uint256 maxDataSize) Ownable() {
         bridgeTemplate = new Bridge();
-        sequencerInboxTemplate = new SequencerInbox();
-        inboxTemplate = new Inbox();
+        sequencerInboxTemplate = new SequencerInbox(maxDataSize);
+        inboxTemplate = new Inbox(maxDataSize);
         rollupEventInboxTemplate = new RollupEventInbox();
         outboxTemplate = new Outbox();
     }

@@ -54,6 +54,7 @@ export interface Config {
     chainId: number
     anyTrustFastConfirmer: string
     disableValidatorWhitelist: boolean
+    maxDataSize: number
   }
   validators: string[]
 }
