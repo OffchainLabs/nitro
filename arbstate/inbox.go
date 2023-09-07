@@ -79,7 +79,14 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 
 	if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
-		_, _ = RecoverPayloadFromBlob(ctx, nil, batchBlockHash, payload[1:])
+		var err error
+		payload, err = RecoverPayloadFromBlob(ctx, nil, batchBlockHash, payload[1:])
+		if err != nil {
+			return nil, err
+		}
+		if payload == nil {
+			return parsedMsg, nil
+		}
 	}
 
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
@@ -238,6 +245,7 @@ type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
 	dasReader                 DataAvailabilityReader
+	blobClient                *BlobClient
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -247,11 +255,12 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, blobClient *BlobClient, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
 		dasReader:            dasReader,
+		blobClient:           blobClient,
 		keysetValidationMode: keysetValidationMode,
 	}
 }

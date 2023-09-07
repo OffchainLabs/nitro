@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
 
 	"github.com/prysmaticlabs/prysm/v4/api/client"
 )
@@ -26,6 +27,22 @@ type BlobClient struct {
 
 	// The genesis time time won't change so only request it once.
 	cachedGenesisTime uint64
+}
+
+type BlobClientConfig struct {
+	BeaconChainUrl string `koanf:"beacon-chain-url"`
+}
+
+var DefaultBlobClientConfig = BlobClientConfig{
+	BeaconChainUrl: "",
+}
+
+func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs")
+}
+
+func NewBlobClient(bc *client.Client, ec *ethclient.Client) *BlobClient {
+	return &BlobClient{bc: bc, ec: ec}
 }
 
 // Get all the blobs associated with a particular block.
@@ -159,6 +176,10 @@ func RecoverPayloadFromBlob(
 	batchBlockHash common.Hash,
 	versionedHashBytes []byte,
 ) ([]byte, error) {
+	if bc == nil {
+		return nil, errors.New("blob batch payload was encountered but no BlobClient was configured")
+	}
+
 	if len(versionedHashBytes)%len(common.Hash{}) != 0 {
 		return nil, fmt.Errorf("error in RecoverPayloadFromBlob, remaining batch calldata payload was not only kzg versioned hashes")
 	}

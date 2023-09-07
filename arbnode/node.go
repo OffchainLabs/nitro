@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -28,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -43,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
+	beaconclient "github.com/prysmaticlabs/prysm/v4/api/client"
 )
 
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
@@ -298,6 +301,7 @@ type Config struct {
 	Staker               staker.L1ValidatorConfig         `koanf:"staker"`
 	SeqCoordinator       SeqCoordinatorConfig             `koanf:"seq-coordinator"`
 	DataAvailability     das.DataAvailabilityConfig       `koanf:"data-availability"`
+	BlobClient           arbstate.BlobClientConfig        `koanf:"blob-client"`
 	SyncMonitor          SyncMonitorConfig                `koanf:"sync-monitor"`
 	Dangerous            DangerousConfig                  `koanf:"dangerous"`
 	Caching              execution.CachingConfig          `koanf:"caching"`
@@ -374,6 +378,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	arbstate.BlobClientAddOptions(prefix+".blob-client", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	execution.CachingConfigAddOptions(prefix+".caching", f)
@@ -724,7 +729,22 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader)
+	var blobClient *arbstate.BlobClient
+	if config.BlobClient.BeaconChainUrl != "" {
+		ethClient, ok := l1client.(*ethclient.Client)
+		if !ok {
+			return nil, errors.New("unexpected type in client")
+		}
+
+		bc, err := beaconclient.NewClient(config.BlobClient.BeaconChainUrl)
+		if err != nil {
+			return nil, err
+		}
+
+		blobClient = arbstate.NewBlobClient(bc, ethClient)
+	}
+
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobClient)
 	if err != nil {
 		return nil, err
 	}
