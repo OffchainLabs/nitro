@@ -9,13 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
-	"os"
 	"time"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -32,13 +30,11 @@ type AggregatorConfig struct {
 	Enable        bool   `koanf:"enable"`
 	AssumedHonest int    `koanf:"assumed-honest"`
 	Backends      string `koanf:"backends"`
-	DumpKeyset    bool   `koanf:"dump-keyset"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      "",
-	DumpKeyset:    false,
 }
 
 var BatchToDasFailed = errors.New("unable to batch to DAS")
@@ -47,7 +43,6 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
-	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
 }
 
 type Aggregator struct {
@@ -87,10 +82,10 @@ func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatur
 }
 
 func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
-	if config.L1NodeURL == "none" {
+	if config.ParentChainNodeURL == "none" {
 		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -122,35 +117,10 @@ func NewAggregatorWithSeqInboxCaller(
 	services []ServiceDetails,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 ) (*Aggregator, error) {
-	var aggSignersMask uint64
-	pubKeys := []blsSignatures.PublicKey{}
-	for _, d := range services {
-		if bits.OnesCount64(d.signersMask) != 1 {
-			return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
-		}
-		aggSignersMask |= d.signersMask
-		pubKeys = append(pubKeys, d.pubKey)
-	}
-	if bits.OnesCount64(aggSignersMask) != len(services) {
-		return nil, errors.New("at least two signers share a mask")
-	}
 
-	keyset := &arbstate.DataAvailabilityKeyset{
-		AssumedHonest: uint64(config.AggregatorConfig.AssumedHonest),
-		PubKeys:       pubKeys,
-	}
-	ksBuf := bytes.NewBuffer([]byte{})
-	if err := keyset.Serialize(ksBuf); err != nil {
-		return nil, err
-	}
-	keysetHash, err := keyset.Hash()
+	keysetHash, keysetBytes, err := KeysetHashFromServices(services, uint64(config.RPCAggregator.AssumedHonest))
 	if err != nil {
 		return nil, err
-	}
-	if config.AggregatorConfig.DumpKeyset {
-		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
-		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
-		os.Exit(0)
 	}
 
 	var bpVerifier *contracts.BatchPosterVerifier
@@ -159,13 +129,13 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 
 	return &Aggregator{
-		config:                         config.AggregatorConfig,
+		config:                         config.RPCAggregator,
 		services:                       services,
 		requestTimeout:                 config.RequestTimeout,
-		requiredServicesForStore:       len(services) + 1 - config.AggregatorConfig.AssumedHonest,
-		maxAllowedServiceStoreFailures: config.AggregatorConfig.AssumedHonest - 1,
+		requiredServicesForStore:       len(services) + 1 - config.RPCAggregator.AssumedHonest,
+		maxAllowedServiceStoreFailures: config.RPCAggregator.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
-		keysetBytes:                    ksBuf.Bytes(),
+		keysetBytes:                    keysetBytes,
 		bpVerifier:                     bpVerifier,
 	}, nil
 }

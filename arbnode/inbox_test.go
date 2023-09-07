@@ -6,7 +6,6 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -33,10 +32,6 @@ import (
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*execution.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		Fail(t, err)
-	}
 
 	initData := statetransfer.ArbosInitializationInfo{
 		Accounts: []statetransfer.AccountInitializationInfo{
@@ -51,7 +46,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, serializedChainConfig, ConfigDefaultL2Test().TxLookupLimit, 0)
+	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, ConfigDefaultL2Test().TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
@@ -204,10 +199,17 @@ func TestTransactionStreamer(t *testing.T) {
 		}
 
 		// Check that state balances are consistent with blockchain's balances
-		lastBlockNumber := bc.CurrentHeader().Number.Uint64()
 		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
-		if lastBlockNumber != expectedLastBlockNumber {
-			Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+		for i := 0; ; i++ {
+			lastBlockNumber := bc.CurrentHeader().Number.Uint64()
+			if lastBlockNumber == expectedLastBlockNumber {
+				break
+			} else if lastBlockNumber > expectedLastBlockNumber {
+				Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+			} else if i == 10 {
+				Fail(t, "timeout waiting for block number", expectedLastBlockNumber, "current", lastBlockNumber)
+			}
+			time.Sleep(time.Millisecond * 100)
 		}
 
 		for _, state := range blockStates {

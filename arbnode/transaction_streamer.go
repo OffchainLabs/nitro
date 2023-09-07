@@ -46,6 +46,7 @@ type TransactionStreamer struct {
 	chainConfig      *params.ChainConfig
 	exec             *execution.ExecutionEngine
 	execLastMsgCount arbutil.MessageIndex
+	validator        *staker.BlockValidator
 
 	db           ethdb.Database
 	fatalErrChan chan<- error
@@ -68,7 +69,7 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcastQueueSize   int           `koanf:"max-broadcaster-queue-size"`
+	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 }
@@ -76,19 +77,19 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   1024,
+	MaxBroadcasterQueueSize: 1024,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   10_000,
+	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
+	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 }
@@ -128,7 +129,13 @@ func uint64ToKey(x uint64) []byte {
 }
 
 func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
-	s.exec.SetBlockValidator(validator)
+	if s.Started() {
+		panic("trying to set coordinator after start")
+	}
+	if s.validator != nil {
+		panic("trying to set coordinator when already set")
+	}
+	s.validator = validator
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
@@ -199,19 +206,24 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 }
 
 // deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
-func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([][]byte, error) {
+// might have deleted some keys even if returning an error
+func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, error) {
 	batch := db.NewBatch()
 	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
 	defer startIter.Release()
-	var prunedKeysRange [][]byte
+	var prunedKeysRange []uint64
 	for startIter.Next() {
-		if binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix)) >= endMinKey {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		currentKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+		if currentKey >= endMinKey {
 			break
 		}
 		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
-			prunedKeysRange = append(prunedKeysRange, startIter.Key())
+			prunedKeysRange = append(prunedKeysRange, currentKey)
 		} else {
-			prunedKeysRange[1] = startIter.Key()
+			prunedKeysRange[1] = currentKey
 		}
 		err := batch.Delete(startIter.Key())
 		if err != nil {
@@ -328,6 +340,13 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 
+	if s.validator != nil {
+		err = s.validator.Reorg(s.GetContext(), count)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
@@ -385,6 +404,21 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 		return 0, err
 	}
 	return arbutil.MessageIndex(pos), nil
+}
+
+func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	digestedHead, err := s.exec.HeadMessageNumber()
+	if err != nil {
+		return 0, err
+	}
+	if msgCount > digestedHead+1 {
+		return digestedHead + 1, nil
+	}
+	return msgCount, nil
 }
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
@@ -445,7 +479,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
-			maxQueueSize := s.config().MaxBroadcastQueueSize
+			maxQueueSize := s.config().MaxBroadcasterQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
@@ -824,8 +858,8 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	return nil
 }
 
-func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
+func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
+	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
@@ -883,6 +917,14 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
+// TODO: eventually there will be a table maintained by txStreamer itself
+func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
+	if count == 0 {
+		return &execution.MessageResult{}, nil
+	}
+	return s.exec.ResultAtPos(count - 1)
+}
+
 // return value: true if should be called again immediately
 func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *execution.ExecutionEngine) bool {
 	if ctx.Err() != nil {
@@ -898,7 +940,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	s.execLastMsgCount = prevMessageCount
+	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)

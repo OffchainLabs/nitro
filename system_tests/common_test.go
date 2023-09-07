@@ -11,13 +11,13 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/offchainlabs/nitro/validator/valnode"
-
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -27,7 +27,9 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -39,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -234,6 +237,12 @@ func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
 	return header.BaseFee
 }
 
+func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+	header, err := client.HeaderByNumber(ctx, blockNum)
+	Require(t, err)
+	return header.BaseFee
+}
+
 type lifecycle struct {
 	start func() error
 	stop  func() error
@@ -323,6 +332,8 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 
 	stack, err := node.New(&stackConf)
 	Require(t, err)
@@ -426,7 +437,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	}})
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining(1))
+	Require(t, l1backend.StartMining())
 
 	rpcClient, err := stack.Attach()
 	Require(t, err)
@@ -436,9 +447,24 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	return l1info, l1Client, l1backend, stack
 }
 
+func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+	bridge, err := arbnode.NewDelayedBridge(l1client, addresses.Bridge, addresses.DeployedAt)
+	Require(t, err)
+	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
+	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
+	Require(t, err)
+	if len(messages) == 0 {
+		Fatal(t, "No delayed messages found at rollup creation block")
+	}
+	initMessage, err := messages[0].Message.ParseInitMessage()
+	Require(t, err, "Failed to parse rollup init message")
+
+	return initMessage
+}
+
 func DeployOnTestL1(
 	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig,
-) *chaininfo.RollupAddresses {
+) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -466,17 +492,18 @@ func DeployOnTestL1(
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
-	return addresses
+	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	return addresses, initMessage
 }
 
 func createL2BlockChain(
 	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, cacheConfig *core.CacheConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, cacheConfig)
+	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, cacheConfig)
 }
 
 func createL2BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, stackConfig *node.Config, cacheConfig *core.CacheConfig,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, cacheConfig *core.CacheConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -497,9 +524,17 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	Require(t, err)
-	blockchain, err := execution.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	if initMessage == nil {
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		Require(t, err)
+		initMessage = &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
+	}
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -566,8 +601,8 @@ func createTestNodeOnL1WithConfigImpl(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, stackConfig, cacheConfig)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, cacheConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -717,11 +752,8 @@ func Create2ndNodeWithConfig(
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		Fatal(t, err)
-	}
-	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
@@ -804,19 +836,19 @@ func setupConfigWithDAS(
 
 	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
-		KeyConfig: das.KeyConfig{
+		Key: das.KeyConfig{
 			KeyDir: dbPath,
 		},
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
+		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorageConfig: das.LocalDBStorageConfig{
+		LocalDBStorage: das.LocalDBStorageConfig{
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
 		RequestTimeout:           5 * time.Second,
-		L1NodeURL:                "none",
+		ParentChainNodeURL:       "none",
 		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
@@ -845,12 +877,12 @@ func setupConfigWithDAS(
 			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
 			SignerMask:          1,
 		}
-		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
+		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
@@ -879,4 +911,19 @@ func deploySimple(
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return addr, simple
+}
+
+func TestMain(m *testing.M) {
+	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
+	if logLevelEnv != "" {
+		logLevel, err := strconv.ParseUint(logLevelEnv, 10, 32)
+		if err != nil || logLevel > uint64(log.LvlTrace) {
+			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
+		}
+		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+		glogger.Verbosity(log.Lvl(logLevel))
+		log.Root().SetHandler(glogger)
+	}
+	code := m.Run()
+	os.Exit(code)
 }

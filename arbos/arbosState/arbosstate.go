@@ -4,7 +4,6 @@
 package arbosState
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/addressTable"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -112,11 +112,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		log.Crit("failed to serialize chain config", "error", err)
-	}
-	newState, err := InitializeArbosState(statedb, burner, chainConfig, serializedChainConfig)
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
@@ -183,7 +179,7 @@ func getArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, serializedChainConfig []byte) (*ArbosState, error) {
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -217,14 +213,14 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
-	_ = chainConfigStorage.Set(serializedChainConfig)
+	_ = chainConfigStorage.Set(initMessage.SerializedChainConfig)
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 
 	initialRewardsRecipient := l1pricing.BatchPosterAddress
 	if desiredArbosVersion >= 2 {
 		initialRewardsRecipient = initialChainOwner
 	}
-	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), initialRewardsRecipient)
+	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
@@ -307,7 +303,21 @@ func (state *ArbosState) UpgradeArbosVersion(
 					ErrFatalNodeOutOfDate,
 				)
 			}
-			// no state changes needed
+			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
+			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
+
+			// We had mistakenly initialized AmortizedCostCapBips to math.MaxUint64 in older versions,
+			// but the correct value to disable the amortization cap is 0.
+			oldAmortizationCap, err := state.l1PricingState.AmortizedCostCapBips()
+			ensure(err)
+			if oldAmortizationCap == math.MaxUint64 {
+				ensure(state.l1PricingState.SetAmortizedCostCapBips(0))
+			}
+
+			// Clear chainOwners list to allow rectification of the mapping.
+			if !firstTime {
+				ensure(state.chainOwners.ClearList())
+			}
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -319,7 +329,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 	}
 
 	if firstTime && upgradeTo >= 6 {
-		state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		if upgradeTo < 11 {
+			state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		}
 		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))
 		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV6))
 		state.Restrict(state.l2PricingState.SetMaxPerBlockGasLimit(l2pricing.InitialPerBlockGasLimitV6))

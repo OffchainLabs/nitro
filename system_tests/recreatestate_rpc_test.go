@@ -70,6 +70,7 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
+	t.Helper()
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
 		if header == nil {
@@ -79,6 +80,7 @@ func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
 }
 
 func fillBlockCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
+	t.Helper()
 	for i := from; i <= to; i++ {
 		block := bc.GetBlockByNumber(i)
 		if block == nil {
@@ -88,6 +90,7 @@ func fillBlockCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
 }
 
 func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, from, to uint64) {
+	t.Helper()
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
 		if header == nil {

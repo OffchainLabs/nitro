@@ -14,9 +14,9 @@
 	path = contracts
 	url = https://github.com/OffchainLabs/nitro-contracts.git
 	branch = develop
-[submodule "blockscout"]
-	path = blockscout
-        url = https://github.com/OffchainLabs/blockscout.git
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
+[submodule "nitro-testnode"]
+	path = nitro-testnode
+	url = https://github.com/OffchainLabs/nitro-testnode.git

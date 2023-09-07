@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -39,6 +40,7 @@ var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
+var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
 type L1Info struct {
 	poster        common.Address
@@ -78,7 +80,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		copy(extra, prevHeader.Extra)
 		mixDigest = prevHeader.MixDigest
 	}
-	return &types.Header{
+	header := &types.Header{
 		ParentHash:  lastBlockHash,
 		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
@@ -96,6 +98,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Nonce:       [8]byte{}, // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
+	return header
 }
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
@@ -189,7 +192,7 @@ func ProduceBlockAdvanced(
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number)
+	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
@@ -323,6 +326,18 @@ func ProduceBlockAdvanced(
 			return receipt, result, nil
 		})()
 
+		if tx.Type() == types.ArbitrumInternalTxType {
+			// ArbOS might have upgraded to a new version, so we need to refresh our state
+			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Update the ArbOS version in the header (if it changed)
+			extraInfo := types.DeserializeHeaderExtraInformation(header)
+			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
+			extraInfo.UpdateHeaderWithInfo(header)
+		}
+
 		// append the err, even if it is nil
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
@@ -330,11 +345,7 @@ func ProduceBlockAdvanced(
 			log.Debug("error applying transaction", "tx", tx, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
-				if blockGasLeft > params.TxGas {
-					blockGasLeft -= params.TxGas
-				} else {
-					blockGasLeft = 0
-				}
+				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
 				}
@@ -403,11 +414,11 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		if blockGasLeft > computeUsed {
-			blockGasLeft -= computeUsed
-		} else {
-			blockGasLeft = 0
-		}
+		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
+
+		// Add gas used since startup to prometheus metric.
+		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
+		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
