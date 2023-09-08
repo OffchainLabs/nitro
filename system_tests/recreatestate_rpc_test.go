@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -18,33 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/util"
 )
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64, skipBlocks uint32, skipGas uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, cancel func()) {
+func prepareNodeWithHistory(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, txCount uint64) (node *arbnode.Node, executionNode *execution.ExecutionNode, l2client *ethclient.Client, cancel func()) {
 	t.Helper()
-	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	nodeConfig.Sequencer.MaxBlockSpeed = 0
-	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	cacheConfig := &core.CacheConfig{
-		// Arbitrum Config Options
-		TriesInMemory:                      128,
-		TrieRetention:                      30 * time.Minute,
-		MaxNumberOfBlocksToSkipStateSaving: skipBlocks,
-		MaxAmountOfGasToSkipStateSaving:    skipGas,
-
-		// disable caching of states in BlockChain.stateCache
-		TrieCleanLimit: 0,
-		TrieDirtyLimit: 0,
-
-		TrieDirtyDisabled: true,
-
-		TrieTimeLimit: 5 * time.Minute,
-		SnapshotLimit: 256,
-		SnapshotWait:  true,
-	}
-	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig, nil)
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
@@ -61,9 +40,7 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		_, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	}
-	bc = node.Execution.Backend.ArbInterface().BlockChain()
-	db = node.Execution.Backend.ChainDb()
-	return node, bc, db, l2client, cancel
+	return node, node.Execution, l2client, cancel
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
@@ -113,8 +90,20 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32, 0, 0)
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
+	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	nodeConfig.Caching.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	nodeConfig.Caching.TrieCleanCache = 0
+	nodeConfig.Caching.TrieDirtyCache = 0
+	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
 	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	db := execNode.Backend.ChainDb()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -137,8 +126,20 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
-	_, bc, db, l2client, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32, 0, 0)
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.RPC.MaxRecreateStateDepth = depthGasLimit
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
+	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	nodeConfig.Caching.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	nodeConfig.Caching.TrieCleanCache = 0
+	nodeConfig.Caching.TrieDirtyCache = 0
+	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
 	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	db := execNode.Backend.ChainDb()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -160,9 +161,20 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	depthGasLimit := int64(200)
-	_, bc, db, l2client, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32, 0, 0)
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.RPC.MaxRecreateStateDepth = int64(200)
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
+	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	nodeConfig.Caching.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	nodeConfig.Caching.TrieCleanCache = 0
+	nodeConfig.Caching.TrieDirtyCache = 0
+	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
 	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	db := execNode.Backend.ChainDb()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -184,8 +196,20 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, headerCacheLimit+5, 0, 0)
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
+	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	nodeConfig.Caching.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	nodeConfig.Caching.TrieCleanCache = 0
+	nodeConfig.Caching.TrieDirtyCache = 0
+	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, headerCacheLimit+5)
 	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	db := execNode.Backend.ChainDb()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -217,8 +241,21 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32, 0, 0)
+
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
+	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	nodeConfig.Caching.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	nodeConfig.Caching.TrieCleanCache = 0
+	nodeConfig.Caching.TrieDirtyCache = 0
+	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
 	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	db := execNode.Backend.ChainDb()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -241,8 +278,20 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, blockCacheLimit+4, 0, 0)
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
+	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	nodeConfig.Caching.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	nodeConfig.Caching.TrieCleanCache = 0
+	nodeConfig.Caching.TrieDirtyCache = 0
+	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, blockCacheLimit+4)
 	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	db := execNode.Backend.ChainDb()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -269,7 +318,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	}
 }
 
-func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks uint32, skipGas uint64, txCount int) {
+func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *execution.CachingConfig, txCount int) {
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -279,27 +328,14 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	cacheConfig := &core.CacheConfig{
-		// Arbitrum Config Options
-		TriesInMemory:                      128,
-		TrieRetention:                      30 * time.Minute,
-		MaxNumberOfBlocksToSkipStateSaving: skipBlocks,
-		MaxAmountOfGasToSkipStateSaving:    skipGas,
+	nodeConfig.Caching = *cacheConfig
 
-		// disable caching of states in BlockChain.stateCache
-		TrieCleanLimit: 0,
-		TrieDirtyLimit: 0,
-
-		TrieDirtyDisabled: true,
-
-		TrieTimeLimit: 5 * time.Minute,
-		SnapshotLimit: 256,
-		SnapshotWait:  true,
-	}
+	skipBlocks := nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving
+	skipGas := nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving
 
 	feedErrChan := make(chan error, 10)
 	AddDefaultValNode(t, ctx1, nodeConfig, true)
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, nil, t.TempDir(), params.ArbitrumDevTestChainConfig(), cacheConfig)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, nil, t.TempDir(), params.ArbitrumDevTestChainConfig(), &nodeConfig.Caching)
 
 	node, err := arbnode.CreateNode(ctx1, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
@@ -338,7 +374,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	t.Log("stopped first node")
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
-	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t, l2info, dataDir, params.ArbitrumDevTestChainConfig(), cacheConfig)
+	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t, l2info, dataDir, params.ArbitrumDevTestChainConfig(), &nodeConfig.Caching)
 	node, err = arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, node.DeployInfo, nil, nil, nil, feedErrChan)
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -387,21 +423,38 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 }
 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
+	cacheConfig := execution.DefaultCachingConfig
+	cacheConfig.Archive = true
+	// disable caching of states in BlockChain.stateCache
+	cacheConfig.TrieCleanCache = 0
+	cacheConfig.TrieDirtyCache = 0
 	// test defaults
-	testSkippingSavingStateAndRecreatingAfterRestart(t, 127, 0, 512)
-	testSkippingSavingStateAndRecreatingAfterRestart(t, 0, 15*1000*1000, 512)
-	testSkippingSavingStateAndRecreatingAfterRestart(t, 127, 15*1000*1000, 512)
+	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+
+	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
+	cacheConfig.MaxAmountOfGasToSkipStateSaving = 0
+	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+
+	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 0
+	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
+	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+
+	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
+	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
+	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
 
 	// one test block ~ 925000 gas
 	testBlockGas := uint64(925000)
-	skipBlockValues := []uint64{0, 1, 2, 3, 5, 100, 101}
-	skipGasValues := []uint64{0}
-	for _, i := range skipBlockValues[1:] {
-		skipGasValues = append(skipGasValues, []uint64{i*testBlockGas - 1, i * testBlockGas, i*testBlockGas + 1}...)
+	skipBlockValues := []uint64{0, 1, 2, 3, 5, 21, 51, 100, 101}
+	var skipGasValues []uint64
+	for _, i := range skipBlockValues {
+		skipGasValues = append(skipGasValues, i*testBlockGas)
 	}
 	for _, skipGas := range skipGasValues {
 		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
-			testSkippingSavingStateAndRecreatingAfterRestart(t, uint32(skipBlocks), skipGas, 100)
+			cacheConfig.MaxAmountOfGasToSkipStateSaving = skipGas
+			cacheConfig.MaxNumberOfBlocksToSkipStateSaving = uint32(skipBlocks)
+			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 100)
 		}
 	}
 }
