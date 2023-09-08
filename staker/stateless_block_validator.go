@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 	"testing"
 
@@ -455,8 +456,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			}
 			v.pendingWasmModuleRoot = latest
 		} else {
+			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", v.config.PendingUpgradeModuleRoot)
 			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
-			if (v.pendingWasmModuleRoot == common.Hash{}) {
+			if (!valid || v.pendingWasmModuleRoot == common.Hash{}) {
 				return errors.New("pending-upgrade-module-root config value illegal")
 			}
 		}
