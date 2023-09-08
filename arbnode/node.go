@@ -538,7 +538,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func ValidatorDataposter(
+func StakerDataposter(
 	db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
 ) (*dataposter.DataPoster, error) {
@@ -802,8 +802,8 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		dp, err := ValidatorDataposter(
-			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
+		dp, err := StakerDataposter(
+			rawdb.NewTable(arbDb, storage.StakerPrefix),
 			l1Reader,
 			txOptsValidator,
 			configFetcher,
