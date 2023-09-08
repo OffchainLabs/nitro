@@ -1,4 +1,4 @@
-package httpbroadcastserver
+package server
 
 import (
 	"errors"

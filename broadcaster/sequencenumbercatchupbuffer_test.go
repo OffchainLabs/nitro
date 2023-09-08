@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	m "github.com/offchain/com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -40,13 +41,13 @@ func TestGetEmptyCacheMessages(t *testing.T) {
 	}
 }
 
-func createDummyBroadcastMessages(seqNums []arbutil.MessageIndex) []*BroadcastFeedMessage {
+func createDummyBroadcastMessages(seqNums []arbutil.MessageIndex) []*m.BroadcastFeedMessage {
 	return createDummyBroadcastMessagesImpl(seqNums, len(seqNums))
 }
-func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int) []*BroadcastFeedMessage {
-	broadcastMessages := make([]*BroadcastFeedMessage, 0, length)
+func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int) []*m.BroadcastFeedMessage {
+	broadcastMessages := make([]*m.BroadcastFeedMessage, 0, length)
 	for _, seqNum := range seqNums {
-		broadcastMessage := &BroadcastFeedMessage{
+		broadcastMessage := &m.BroadcastFeedMessage{
 			SequenceNumber: seqNum,
 			Message:        arbostypes.EmptyTestMessageWithMetadata,
 		}
@@ -273,8 +274,8 @@ func TestBroadcastPastSeqNum(t *testing.T) {
 		maxCatchup:   func() int { return -1 },
 	}
 
-	bm := BroadcastMessage{
-		Messages: []*BroadcastFeedMessage{
+	bm := m.BroadcastMessage{
+		Messages: []*m.BroadcastFeedMessage{
 			{
 				SequenceNumber: 39,
 			},
@@ -296,8 +297,8 @@ func TestBroadcastFutureSeqNum(t *testing.T) {
 		maxCatchup:   func() int { return -1 },
 	}
 
-	bm := BroadcastMessage{
-		Messages: []*BroadcastFeedMessage{
+	bm := m.BroadcastMessage{
+		Messages: []*m.BroadcastFeedMessage{
 			{
 				SequenceNumber: 42,
 			},

@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -29,7 +30,7 @@ var (
 )
 
 type SequenceNumberCatchupBuffer struct {
-	messages     []*BroadcastFeedMessage
+	messages     []*m.BroadcastFeedMessage
 	messageCount int32
 	limitCatchup func() bool
 	maxCatchup   func() int
@@ -42,7 +43,7 @@ func NewSequenceNumberCatchupBuffer(limitCatchup func() bool, maxCatchup func() 
 	}
 }
 
-func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
+func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *m.BroadcastMessage {
 	if len(b.messages) == 0 {
 		return nil
 	}
@@ -71,7 +72,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 
 	messagesToSend := b.messages[startingIndex:]
 	if len(messagesToSend) > 0 {
-		bm := BroadcastMessage{
+		bm := m.BroadcastMessage{
 			Version:  1,
 			Messages: messagesToSend,
 		}
@@ -82,8 +83,8 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	return nil
 }
 
-func (b *SequenceNumberCatchupBuffer) getCacheMessagesBefore(requestedSeqNum arbutil.MessageIndex) (*BroadcastMessage, error) {
-	bm := BroadcastMessage{Version: 1}
+func (b *SequenceNumberCatchupBuffer) getCacheMessagesBefore(requestedSeqNum arbutil.MessageIndex) (*m.BroadcastMessage, error) {
+	bm := m.BroadcastMessage{Version: 1}
 	if len(b.messages) == 0 {
 		return &bm, nil
 	}
@@ -173,7 +174,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 }
 
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
-	broadcastMessage, ok := bmi.(BroadcastMessage)
+	broadcastMessage, ok := bmi.(m.BroadcastMessage)
 	if !ok {
 		msg := "requested to broadcast message of unknown type"
 		log.Error(msg)
@@ -220,7 +221,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 
 }
 
-// This feels very weird, follows same pattern of OnRegisterClient but it feels like we are splitting a lot of the HTTP logic away from the HTTP server. It might be better to move objects like BroadcastMessage to a different lib. Or changing the object that is returned by getCacheMessagesBefore.
+// This feels very weird, follows same pattern of OnRegisterClient but it feels like we are splitting a lot of the HTTP logic away from the HTTP server. It might be better to move objects like m.BroadcastMessage to a different lib. Or changing the object that is returned by getCacheMessagesBefore.
 func (b *SequenceNumberCatchupBuffer) OnHTTPRequest(w http.ResponseWriter, requestedSeqNum arbutil.MessageIndex) {
 	bm, err := b.getCacheMessagesBefore(requestedSeqNum)
 	if err != nil {
