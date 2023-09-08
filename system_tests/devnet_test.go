@@ -4,8 +4,22 @@
 package arbtest
 
 import (
+	"context"
+	"encoding/json"
+	"io/ioutil"
+	"math/big"
 	"os"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 func shouldSkip(t *testing.T) {
@@ -15,19 +29,16 @@ func shouldSkip(t *testing.T) {
 	}
 }
 
-/*
 func fileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
 		return false
 	}
 	return err == nil
-    }
-*/
+}
 
 func TestNitroDevnet(t *testing.T) {
 	shouldSkip(t)
-	/* TODO FIX BUILD AND UNCOMMENT
 	if os.Getenv("FAUCET_KEY") == "" {
 		t.Fatal("No FAUCET_KEY was specified")
 	}
@@ -67,9 +78,10 @@ func TestNitroDevnet(t *testing.T) {
 	l1info.SetFullAccountInfo("Faucet", &faucetAccount)
 
 	rollupAddresses := &chaininfo.RollupAddresses{}
+	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	if rollupAddressesPath == "" || !fileExists(rollupAddressesPath) || !fileExists(l1AccountsPath) {
-		rollupAddresses, _ = DeployOnTestL1(t, ctx, l1info, l1client, big.NewInt(412346))
+		rollupAddresses, _ = DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 		if rollupAddressesPath != "" {
 			rollupAddressesJson, err := json.MarshalIndent(*rollupAddresses, "", "  ")
@@ -110,14 +122,13 @@ func TestNitroDevnet(t *testing.T) {
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.BatchPoster.EIP4844 = true
 	nodeConfig.Forwarder.RedisUrl = ""
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, nil)
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, nil, nil)
 	_ = l2info
 
 	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
-		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
-		rollupAddresses, &sequencerTxOpts, dataSigner, fatalErrChan,
+		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
+		rollupAddresses, &sequencerTxOpts, &sequencerTxOpts, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
@@ -132,19 +143,18 @@ func TestNitroDevnet(t *testing.T) {
 	nodeConfigB.Forwarder.RedisUrl = ""
 	l2clientB, nodeB := Create2ndNodeWithConfigAndClient(t, ctx, currentNode, l1client, l1info, &l2info.ArbInitData, nodeConfigB, nil)
 	defer nodeB.StopAndWait()
-	*/
 
 	// Start test
-	/*
-		seqInbox, err := bridgegen.NewSequencerInbox(l1info.GetAddress("SequencerInbox"), l1client)
-		Require(t, err)
-		seqOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-		_ = seqOpts
+	seqInbox, err := bridgegen.NewSequencerInbox(l1info.GetAddress("SequencerInbox"), l1client)
+	Require(t, err)
+	seqOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+	_ = seqOpts
 
-		seqInbox.AddSequencerL2BatchWithBlobs(&seqOpts, nil, nil, common.Address{}, nil, nil)
-	*/
+	batchTx, err := seqInbox.AddSequencerL2BatchWithBlobs(&seqOpts, nil, nil, common.Address{}, nil, nil)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, batchTx)
+	Require(t, err)
 
-	/* TODO FIX BUILD AND UNCOMMENT
 	l2info.GenerateAccount("User1")
 
 	tx := l2info.PrepareTx("Owner", "User1", l2info.TransferGas, big.NewInt(1e12), nil)
@@ -157,5 +167,4 @@ func TestNitroDevnet(t *testing.T) {
 
 	_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
 	Require(t, err)
-	*/
 }
