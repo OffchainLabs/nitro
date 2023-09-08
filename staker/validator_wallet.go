@@ -24,7 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var validatorABI abi.ABI
@@ -66,7 +65,6 @@ type ValidatorWalletInterface interface {
 }
 
 type ContractValidatorWallet struct {
-	stopwaiter.StopWaiter
 	con                     *rollupgen.ValidatorWallet
 	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
@@ -413,11 +411,11 @@ func (v *ContractValidatorWallet) AuthIfEoa() *bind.TransactOpts {
 }
 
 func (w *ContractValidatorWallet) Start(ctx context.Context) {
-	w.StopWaiter.Start(ctx, w)
+	w.dataPoster.Start(ctx)
 }
 
 func (b *ContractValidatorWallet) StopAndWait() {
-	b.StopWaiter.StopAndWait()
+	b.dataPoster.StopAndWait()
 }
 
 func (b *ContractValidatorWallet) DataPoster() *dataposter.DataPoster {
