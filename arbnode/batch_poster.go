@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -262,12 +263,13 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
 // unless the data poster is configured with noop storage which can tolerate reverts.
-func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, error) {
-	if from > to {
-		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
+// From must be a pointer to the starting block, which is updated after each block is checked for reverts
+func (b *BatchPoster) checkReverts(ctx context.Context, from *int64, to int64) (bool, error) {
+	if *from > to {
+		return false, fmt.Errorf("wrong range, from: %d > to: %d", from, to)
 	}
-	for idx := from; idx <= to; idx++ {
-		number := big.NewInt(idx)
+	for ; *from <= to; *from++ {
+		number := big.NewInt(*from)
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
 			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
@@ -277,7 +279,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 			if err != nil {
 				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
 			}
-			if bytes.Equal(from.Bytes(), b.dataPoster.Sender().Bytes()) {
+			if from == b.dataPoster.Sender() {
 				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 				if err != nil {
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
@@ -303,7 +305,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	last := int64(0) // number of last seen block
+	nextToCheck := int64(0) // the first unchecked block
 	for {
 		// Poll until:
 		// - L1 headers reader channel is closed, or
@@ -312,31 +314,37 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 		select {
 		case h, ok := <-headerCh:
 			if !ok {
-				log.Info("L1 headers channel has been closed")
+				log.Info("L1 headers channel checking for batch poster reverts has been closed")
 				return
 			}
 			// If this is the first block header, set last seen as number-1.
 			// We may see same block number again if there is L1 reorg, in that
 			// case we check the block again.
-			if last == 0 || last == h.Number.Int64() {
-				last = h.Number.Int64() - 1
+			if nextToCheck == 0 || nextToCheck == h.Number.Int64() {
+				nextToCheck = h.Number.Int64()
 			}
-			if h.Number.Int64()-last > 100 {
-				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", last, "current", h.Number)
-				last = h.Number.Int64()
+			if h.Number.Int64()-nextToCheck > 100 {
+				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", nextToCheck, "current", h.Number)
+				nextToCheck = h.Number.Int64()
 				continue
 			}
 
-			reverted, err := b.checkReverts(ctx, last+1, h.Number.Int64())
+			reverted, err := b.checkReverts(ctx, &nextToCheck, h.Number.Int64())
 			if err != nil {
-				log.Error("Checking batch reverts", "error", err)
+				logLevel := log.Error
+				if strings.Contains(err.Error(), "not found") {
+					// Just parent chain node inconsistency
+					// One node sent us a block, but another didn't have it
+					// We'll try to check this block again next loop
+					logLevel = log.Debug
+				}
+				logLevel("Error checking batch reverts", "err", err)
 				continue
 			}
 			if reverted {
 				b.batchReverted.Store(true)
 				return
 			}
-			last = h.Number.Int64()
 		case <-ctx.Done():
 			return
 		}
