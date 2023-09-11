@@ -24,6 +24,58 @@ type AncestorsQueryResponse struct {
 	AncestorEdgeIds     HonestAncestors
 }
 
+// HasConfirmableAncestor checks if any of an edge's honest ancestors have a cumulative path timer
+// that is greater than or equal to a challenge period worth of blocks. It takes in a list of
+// local timers for an edge's ancestors and a block number to compute each entry's cumulative
+// timer from this list.
+//
+// IMPORTANT: The list of ancestors must be ordered from child to root edge, where the root edge timer is
+// the last element in the list of local timers.
+func (ht *HonestChallengeTree) HasConfirmableAncestor(
+	ctx context.Context,
+	honestAncestorLocalTimers []EdgeLocalTimer,
+	challengePeriodBlocks uint64,
+) (bool, error) {
+	if len(honestAncestorLocalTimers) == 0 {
+		return false, nil
+	}
+	assertionUnrivaledNumBlocks, err := ht.metadataReader.AssertionUnrivaledBlocks(
+		ctx, ht.topLevelAssertionHash,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	// Computes the cumulative sum for each element in the list.
+	cumulativeTimers := make([]PathTimer, 0)
+	lastAncestorTimer := honestAncestorLocalTimers[len(honestAncestorLocalTimers)-1] + EdgeLocalTimer(assertionUnrivaledNumBlocks)
+
+	// If we only have a single honest ancestor, check if it plus the assertion unrivaled
+	// timer is enough to be confirmable and return.
+	if len(honestAncestorLocalTimers) == 1 {
+		return uint64(lastAncestorTimer) >= challengePeriodBlocks, nil
+	}
+
+	// We start with the last ancestor, which should also include the top-level assertion's unrivaled timer.
+	cumulativeTimers = append(cumulativeTimers, PathTimer(lastAncestorTimer))
+
+	// Loop over everything except the last element, which is the root edge as we already
+	// appended it in the lines above.
+	for i, ancestorTimer := range honestAncestorLocalTimers[:len(honestAncestorLocalTimers)-1] {
+		cumulativeTimers = append(cumulativeTimers, cumulativeTimers[i]+PathTimer(ancestorTimer))
+	}
+
+	// Then checks if any of them has a cumulative timer greater than
+	// or equal to a challenge period worth of blocks. We loop in reverse because the cumulative timers slice is monotonically
+	// increasing and this could help us exit the loop earlier in case we find an ancestor that is confirmable.
+	for i := len(cumulativeTimers) - 1; i >= 0; i-- {
+		if uint64(cumulativeTimers[i]) >= challengePeriodBlocks {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ComputeHonestPathTimer for an honest edge at a block number given its ancestors'
 // local timers. It adds up all their values including the assertion
 // unrivaled timer and the edge's local timer.

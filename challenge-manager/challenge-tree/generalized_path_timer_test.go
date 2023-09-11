@@ -177,6 +177,133 @@ func TestComputeAncestorsWithTimers(t *testing.T) {
 	})
 }
 
+func TestHasConfirmableAncestor(t *testing.T) {
+	ctx := context.Background()
+	challengePeriodBlocks := uint64(10)
+	t.Run("empty ancestor timers", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{},
+		}
+		has, err := ht.HasConfirmableAncestor(ctx, nil, challengePeriodBlocks)
+		require.NoError(t, err)
+		require.Equal(t, false, has)
+	})
+	t.Run("single ancestor not enough timer", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{},
+		}
+		has, err := ht.HasConfirmableAncestor(
+			ctx,
+			[]EdgeLocalTimer{
+				EdgeLocalTimer(challengePeriodBlocks) - 1,
+			},
+			challengePeriodBlocks,
+		)
+		require.NoError(t, err)
+		require.Equal(t, false, has)
+	})
+	t.Run("single ancestor timer plus assertion unrivaled blocks is enough to be confirmable", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{
+				unrivaledAssertionBlocks: 1,
+			},
+		}
+		has, err := ht.HasConfirmableAncestor(
+			ctx,
+			[]EdgeLocalTimer{
+				EdgeLocalTimer(challengePeriodBlocks) - 1,
+			},
+			challengePeriodBlocks,
+		)
+		require.NoError(t, err)
+		require.Equal(t, true, has)
+	})
+	t.Run("multiple ancestor timers not enough", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{
+				unrivaledAssertionBlocks: 0,
+			},
+		}
+		has, err := ht.HasConfirmableAncestor(
+			ctx,
+			[]EdgeLocalTimer{
+				1,
+				2,
+				3,
+				3,
+			}, // Total of 9, just shy of 10.
+			challengePeriodBlocks,
+		)
+		require.NoError(t, err)
+		require.Equal(t, false, has)
+	})
+	t.Run("multiple ancestor timers plus assertion unrivaled blocks enough to be confirmable", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{
+				unrivaledAssertionBlocks: 1,
+			},
+		}
+		has, err := ht.HasConfirmableAncestor(
+			ctx,
+			[]EdgeLocalTimer{
+				1,
+				2,
+				3,
+				3,
+			}, // Total of 10 including the unrivaled assertion blocks.
+			challengePeriodBlocks,
+		)
+		require.NoError(t, err)
+		require.Equal(t, true, has)
+	})
+	t.Run("many ancestor timers is not enough", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{
+				unrivaledAssertionBlocks: 0,
+			},
+		}
+		has, err := ht.HasConfirmableAncestor(
+			ctx,
+			[]EdgeLocalTimer{
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8,
+				9,
+				10, // Sum of 55, not enough.
+			},
+			56, /* challenge period blocks */
+		)
+		require.NoError(t, err)
+		require.Equal(t, false, has)
+	})
+	t.Run("all ancestors are confirmable", func(t *testing.T) {
+		ht := &HonestChallengeTree{
+			metadataReader: &mockMetadataReader{
+				unrivaledAssertionBlocks: 0,
+			},
+		}
+		has, err := ht.HasConfirmableAncestor(
+			ctx,
+			[]EdgeLocalTimer{
+				10,
+				20,
+				30,
+				40,
+				50,
+				60,
+			},
+			challengePeriodBlocks,
+		)
+		require.NoError(t, err)
+		require.Equal(t, true, has)
+	})
+}
+
 // The following tests checks a scenario where the honest
 // and dishonest parties take turns making challenge moves,
 // and as a result, their edges will be unrivaled for some time,
