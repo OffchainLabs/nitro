@@ -5,12 +5,14 @@ go_library(
     testonly = 1,
     srcs = [
         "execution_engine.go",
+        "history_provider.go",
         "layer2_state_provider.go",
     ],
     importpath = "github.com/OffchainLabs/bold/testing/mocks/state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
+        "//containers/option",
         "//layer2-state-provider",
         "//solgen/go/rollupgen",
         "//state-commitments/history",
@@ -25,11 +27,13 @@ go_test(
     name = "state-provider_test",
     srcs = [
         "execution_engine_test.go",
+        "history_provider_test.go",
         "layer2_state_provider_test.go",
     ],
     embed = [":state-provider"],
     deps = [
         "//chain-abstraction:protocol",
+        "//containers/option",
         "//layer2-state-provider",
         "//state-commitments/prefix-proofs",
         "//testing",

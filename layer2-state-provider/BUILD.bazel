@@ -1,14 +1,28 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "layer2-state-provider",
-    srcs = ["provider.go"],
+    srcs = [
+        "history_commitment_provider.go",
+        "provider.go",
+    ],
     importpath = "github.com/OffchainLabs/bold/layer2-state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
+        "//containers/option",
         "//solgen/go/rollupgen",
         "//state-commitments/history",
         "@com_github_ethereum_go_ethereum//common",
+    ],
+)
+
+go_test(
+    name = "layer2-state-provider_test",
+    srcs = ["history_commitment_provider_test.go"],
+    embed = [":layer2-state-provider"],
+    deps = [
+        "//containers/option",
+        "@com_github_stretchr_testify//require",
     ],
 )

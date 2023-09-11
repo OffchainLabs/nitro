@@ -47,6 +47,7 @@ type L2StateBackend struct {
 	levelZeroBigStepEdgeHeight   uint64
 	levelZeroSmallStepEdgeHeight uint64
 	maliciousMachineIndex        uint64
+	challengeLeafHeights         []l2stateprovider.Height
 }
 
 // NewWithMockedStateRoots initialize with a list of predefined state roots, useful for tests and simulations.
