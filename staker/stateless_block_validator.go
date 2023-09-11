@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 	"testing"
 
@@ -84,6 +85,7 @@ type L1ReaderInterface interface {
 	Client() arbutil.L1Interface
 	Subscribe(bool) (<-chan *types.Header, func())
 	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+	UseFinalityData() bool
 }
 
 type GlobalStatePosition struct {
@@ -454,8 +456,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			}
 			v.pendingWasmModuleRoot = latest
 		} else {
+			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", v.config.PendingUpgradeModuleRoot)
 			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
-			if (v.pendingWasmModuleRoot == common.Hash{}) {
+			if (!valid || v.pendingWasmModuleRoot == common.Hash{}) {
 				return errors.New("pending-upgrade-module-root config value illegal")
 			}
 		}

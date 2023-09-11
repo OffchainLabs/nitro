@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,7 +35,7 @@ import (
 func main() {
 	args := os.Args
 	if len(args) < 2 {
-		panic("Usage: datool [client|keygen|generatehash] ...")
+		panic("Usage: datool [client|keygen|generatehash|dumpkeyset] ...")
 	}
 
 	var err error
@@ -45,6 +46,8 @@ func main() {
 		err = startKeyGen(args[2:])
 	case "generatehash":
 		err = generateHash(args[2])
+	case "dumpkeyset":
+		err = dumpKeyset(args[2:])
 	default:
 		panic(fmt.Sprintf("Unknown tool '%s' specified, valid tools are 'client', 'keygen', 'generatehash'", args[1]))
 	}
@@ -81,14 +84,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                   string                 `koanf:"url"`
-	Message               string                 `koanf:"message"`
-	RandomMessageSize     int                    `koanf:"random-message-size"`
-	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
-	SigningKey            string                 `koanf:"signing-key"`
-	SigningWallet         string                 `koanf:"signing-wallet"`
-	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
-	ConfConfig            genericconf.ConfConfig `koanf:"conf"`
+	URL                   string        `koanf:"url"`
+	Message               string        `koanf:"message"`
+	RandomMessageSize     int           `koanf:"random-message-size"`
+	DASRetentionPeriod    time.Duration `koanf:"das-retention-period"`
+	SigningKey            string        `koanf:"signing-key"`
+	SigningWallet         string        `koanf:"signing-wallet"`
+	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -148,7 +150,7 @@ func startClientStore(args []string) error {
 	} else if config.SigningWallet != "" {
 		walletConf := &genericconf.WalletConfig{
 			Pathname:      config.SigningWallet,
-			PasswordImpl:  config.SigningWalletPassword,
+			Password:      config.SigningWalletPassword,
 			PrivateKey:    "",
 			Account:       "",
 			OnlyCreateKey: false,
@@ -193,9 +195,8 @@ func startClientStore(args []string) error {
 // datool client rest getbyhash
 
 type RESTClientGetByHashConfig struct {
-	URL        string                 `koanf:"url"`
-	DataHash   string                 `koanf:"data-hash"`
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	URL      string `koanf:"url"`
+	DataHash string `koanf:"data-hash"`
 }
 
 func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
@@ -254,10 +255,11 @@ func startRESTClientGetByHash(args []string) error {
 // das keygen
 
 type KeyGenConfig struct {
-	Dir        string
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
-	ECDSAMode  bool                   `koanf:"ecdsa"`
-	WalletMode bool                   `koanf:"wallet"`
+	Dir string
+	// ECDSA mode.
+	ECDSA bool `koanf:"ecdsa"`
+	// Wallet mode.
+	Wallet bool `koanf:"wallet"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
@@ -285,18 +287,18 @@ func startKeyGen(args []string) error {
 		return err
 	}
 
-	if !config.ECDSAMode {
+	if !config.ECDSA {
 		_, _, err = das.GenerateAndStoreKeys(config.Dir)
 		if err != nil {
 			return err
 		}
 		return nil
-	} else if !config.WalletMode {
+	} else if !config.Wallet {
 		return das.GenerateAndStoreECDSAKeys(config.Dir)
 	} else {
 		walletConf := &genericconf.WalletConfig{
 			Pathname:      config.Dir,
-			PasswordImpl:  genericconf.PASSWORD_NOT_SET, // This causes a prompt for the password
+			Password:      genericconf.PASSWORD_NOT_SET, // This causes a prompt for the password
 			PrivateKey:    "",
 			Account:       "",
 			OnlyCreateKey: true,
@@ -312,4 +314,69 @@ func startKeyGen(args []string) error {
 func generateHash(message string) error {
 	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.HashBytes([]byte(message))))
 	return nil
+}
+
+func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
+	f := flag.NewFlagSet("dump keyset", flag.ContinueOnError)
+
+	das.AggregatorConfigAddOptions("keyset", f)
+	genericconf.ConfConfigAddOptions("conf", f)
+
+	k, err := confighelpers.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var config DumpKeysetConfig
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+
+	if config.Conf.Dump {
+		c, err := k.Marshal(koanfjson.Parser())
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
+	if config.Keyset.AssumedHonest == 0 {
+		return nil, errors.New("--keyset.assumed-honest must be set")
+	}
+	if config.Keyset.Backends == "" {
+		return nil, errors.New("--keyset.backends must be set")
+	}
+
+	return &config, nil
+}
+
+// das keygen
+
+type DumpKeysetConfig struct {
+	Keyset das.AggregatorConfig   `koanf:"keyset"`
+	Conf   genericconf.ConfConfig `koanf:"conf"`
+}
+
+func dumpKeyset(args []string) error {
+	config, err := parseDumpKeyset(args)
+	if err != nil {
+		return err
+	}
+
+	services, err := das.ParseServices(config.Keyset)
+	if err != nil {
+		return err
+	}
+
+	keysetHash, keysetBytes, err := das.KeysetHashFromServices(services, uint64(config.Keyset.AssumedHonest))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Keyset: %s\n", hexutil.Encode(keysetBytes))
+	fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
+
+	return err
 }

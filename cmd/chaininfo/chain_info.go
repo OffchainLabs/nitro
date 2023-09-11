@@ -18,9 +18,9 @@ import (
 var DefaultChainInfo []byte
 
 type ChainInfo struct {
-	ChainId       uint64 `json:"chain-id"`
-	ChainName     string `json:"chain-name"`
-	ParentChainId uint64 `json:"parent-chain-id"`
+	ChainName             string `json:"chain-name"`
+	ParentChainId         uint64 `json:"parent-chain-id"`
+	ParentChainIsArbitrum *bool  `json:"parent-chain-is-arbitrum"`
 	// This is the forwarding target to submit transactions to, called the sequencer URL for clarity
 	SequencerUrl    string              `json:"sequencer-url"`
 	FeedUrl         string              `json:"feed-url"`
@@ -94,7 +94,7 @@ func findChainInfo(chainId uint64, chainName string, chainsInfoBytes []byte) (*C
 		return nil, err
 	}
 	for _, chainInfo := range chainsInfo {
-		if (chainId == 0 || chainInfo.ChainId == chainId) && (chainName == "" || chainInfo.ChainName == chainName) {
+		if (chainId == 0 || chainInfo.ChainConfig.ChainID.Uint64() == chainId) && (chainName == "" || chainInfo.ChainName == chainName) {
 			return &chainInfo, nil
 		}
 	}

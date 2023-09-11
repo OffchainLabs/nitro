@@ -79,7 +79,7 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
 	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
+	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
@@ -101,7 +101,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
-	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
+	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
@@ -597,7 +597,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	var batchMsgs arbutil.MessageIndex
 	var printedCount int64
 	if validated.GlobalState.Batch > 0 {
-		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch)
+		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch - 1)
 	}
 	if err != nil {
 		printedCount = -1
@@ -808,7 +808,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 
 	v.legacyValidInfo = nil
 
-	err := v.writeLastValidated(v.lastValidGS, nil)
+	err := v.writeLastValidated(globalState, nil)
 	if err != nil {
 		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
 	}
@@ -868,7 +868,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	v.validatedA = countUint64
 	v.valLoopPos = count
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
-	err = v.writeLastValidated(v.lastValidGS, nil) // we don't know which wasm roots were validated
+	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
@@ -932,7 +932,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	if v.validatedA > countUint64 {
 		v.validatedA = countUint64
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
-		err := v.writeLastValidated(v.lastValidGS, nil) // we don't know which wasm roots were validated
+		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
@@ -984,9 +984,12 @@ func (v *BlockValidator) checkLegacyValid() error {
 		log.Warn("legacy valid batch ahead of db", "current", batchCount, "required", requiredBatchCount)
 		return nil
 	}
-	msgCount, err := v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber)
-	if err != nil {
-		return err
+	var msgCount arbutil.MessageIndex
+	if v.legacyValidInfo.AfterPosition.BatchNumber > 0 {
+		msgCount, err = v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber - 1)
+		if err != nil {
+			return err
+		}
 	}
 	msgCount += arbutil.MessageIndex(v.legacyValidInfo.AfterPosition.PosInBatch)
 	processedCount, err := v.streamer.GetProcessedMessageCount()
