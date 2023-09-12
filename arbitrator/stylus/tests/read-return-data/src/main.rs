@@ -40,21 +40,17 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let safe_offset = offset.min(call_data.len());
 
     if call_type == 2 {
-        unsafe {
-            RawCall::new()
-                .limit_return_data(offset, size)
-                .call(precompile, call_data)?
-        };
+        RawCall::new()
+            .limit_return_data(offset, size)
+            .call(precompile, call_data)?;
     }
 
     for _ in 0..count {
         let data = match call_type {
-            0 => unsafe { RawCall::new().call(precompile, call_data)? },
-            1 => unsafe {
-                RawCall::new()
-                    .limit_return_data(offset, size)
-                    .call(precompile, call_data)?
-            },
+            0 => RawCall::new().call(precompile, call_data)?,
+            1 => RawCall::new()
+                .limit_return_data(offset, size)
+                .call(precompile, call_data)?,
             2 => contract::read_return_data(offset, Some(size)),
             _ => error!("unknown call_type {call_type}"),
         };

@@ -42,7 +42,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     // Call burnArbGas
     let gas_left_before = evm::gas_left();
     let ink_left_before = evm::ink_left();
-    unsafe { RawCall::new().call(arb_test_addr, burn_call_data)? };
+    RawCall::new().call(arb_test_addr, burn_call_data)?;
     let gas_left_after = evm::gas_left();
     let ink_left_after = evm::ink_left();
 
