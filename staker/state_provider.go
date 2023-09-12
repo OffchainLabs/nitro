@@ -710,6 +710,29 @@ func (s *StateManager) CollectMachineMashes(
 	)
 }
 
+// CollectProof Collects osp of at a message number and OpcodeIndex .
+func (s *StateManager) CollectProof(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	messageNumber l2stateprovider.Height,
+	machineIndex l2stateprovider.OpcodeIndex,
+) ([]byte, error) {
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
+	return oneStepProofPromise.Await(ctx)
+}
+
 func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, startHeight []l2stateprovider.Height, fromStep uint64, toStep uint64, stepSize uint64) ([]common.Hash, error) {
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: wasmModuleRoot,
