@@ -10,7 +10,7 @@ use stylus_sdk::{
     prelude::*,
 };
 
-#[entrypoint(allow_reentrancy = true)]
+#[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();
     let count = input[0];
