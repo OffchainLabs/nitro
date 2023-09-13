@@ -14,10 +14,12 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -127,7 +129,8 @@ func main() {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
-	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerReaderConfig })
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerReaderConfig }, arbSys, true)
 	if err != nil {
 		panic(fmt.Errorf("failed to create header reader: %w", err))
 	}

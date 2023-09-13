@@ -476,7 +476,8 @@ func DeployOnTestL1(
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
 
-	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig })
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys, true)
 	Require(t, err)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
