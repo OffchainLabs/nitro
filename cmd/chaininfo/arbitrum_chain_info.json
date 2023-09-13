@@ -2,6 +2,7 @@
   {
     "chain-name": "arb1",
     "parent-chain-id": 1,
+    "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://arb1-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://arb1.arbitrum.io/feed",
     "has-genesis-state": true,
@@ -51,6 +52,7 @@
   {
     "chain-name": "nova",
     "parent-chain-id": 1,
+    "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://nova.arbitrum.io/rpc",
     "feed-url": "wss://nova.arbitrum.io/feed",
     "das-index-url": "https://nova.arbitrum.io/das-servers",
@@ -100,6 +102,7 @@
   {
     "chain-name": "goerli-rollup",
     "parent-chain-id": 5,
+    "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://goerli-rollup.arbitrum.io/rpc",
     "feed-url": "wss://goerli-rollup.arbitrum.io/feed",
     "chain-config":
@@ -215,9 +218,10 @@
       }
     }
   },
-    {
+  {
     "chain-id": 421614,
     "parent-chain-id": 11155111,
+    "parent-chain-is-arbitrum": false,
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",

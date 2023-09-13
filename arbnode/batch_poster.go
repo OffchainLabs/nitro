@@ -167,19 +167,20 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDasFallbackStoreDataOnChain: false,
-	MaxSize:                            100000,
-	PollInterval:                       time.Second * 10,
-	ErrorDelay:                         time.Second * 10,
-	MaxDelay:                           time.Hour,
-	WaitForMaxDelay:                    false,
-	CompressionLevel:                   brotli.BestCompression,
-	DASRetentionPeriod:                 time.Hour * 24 * 15,
-	GasRefunderAddress:                 "",
-	ExtraBatchGas:                      50_000,
-	DataPoster:                         dataposter.DefaultDataPosterConfig,
-	ParentChainWallet:                  DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:                       "",
-	L1BlockBoundBypass:                 time.Hour,
+	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
+	MaxSize:            100000,
+	PollInterval:       time.Second * 10,
+	ErrorDelay:         time.Second * 10,
+	MaxDelay:           time.Hour,
+	WaitForMaxDelay:    false,
+	CompressionLevel:   brotli.BestCompression,
+	DASRetentionPeriod: time.Hour * 24 * 15,
+	GasRefunderAddress: "",
+	ExtraBatchGas:      50_000,
+	DataPoster:         dataposter.DefaultDataPosterConfig,
+	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:       "",
+	L1BlockBoundBypass: time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
