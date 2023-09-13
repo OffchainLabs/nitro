@@ -145,11 +145,6 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if config.Strictness < TxPreCheckerStrictnessLikelyCompatible {
 		return nil
 	}
-	balance := statedb.GetBalance(sender)
-	cost := tx.Cost()
-	if arbmath.BigLessThan(balance, cost) {
-		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
-	}
 	if options != nil {
 		if err := options.Check(extraInfo.L1BlockNumber, header.Time, statedb); err != nil {
 			conditionalTxRejectedByTxPreCheckerCurrentStateCounter.Inc(1)
@@ -184,6 +179,11 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			}
 			conditionalTxAcceptedByTxPreCheckerOldStateCounter.Inc(1)
 		}
+	}
+	balance := statedb.GetBalance(sender)
+	cost := tx.Cost()
+	if arbmath.BigLessThan(balance, cost) {
+		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
