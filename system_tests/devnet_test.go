@@ -11,14 +11,13 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -39,6 +38,11 @@ func fileExists(filePath string) bool {
 
 func TestNitroDevnet(t *testing.T) {
 	shouldSkip(t)
+
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(glogger)
+
 	if os.Getenv("FAUCET_KEY") == "" {
 		t.Fatal("No FAUCET_KEY was specified")
 	}
@@ -118,12 +122,14 @@ func TestNitroDevnet(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	_, _ = sequencerTxOpts, dataSigner
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.BatchPoster.EIP4844 = true
 	nodeConfig.Forwarder.RedisUrl = ""
+	nodeConfig.L1Reader.UseFinalityData = true
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, nil, nil)
-	_ = l2info
+	_, _, _, _, _ = l2info, l2stack, l2chainDb, l2arbDb, l2blockchain
 
 	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
@@ -131,29 +137,23 @@ func TestNitroDevnet(t *testing.T) {
 		rollupAddresses, &sequencerTxOpts, &sequencerTxOpts, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
+	_ = currentNode
 
 	Require(t, currentNode.Start(ctx))
 
 	l2client := ClientForStack(t, l2stack)
+	_ = l2client
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
 	/// Second node
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigB.BatchPoster.EIP4844 = true
 	nodeConfigB.Forwarder.RedisUrl = ""
+	nodeConfigB.L1Reader.UseFinalityData = true
+	nodeConfigB.BlobClient.BeaconChainUrl = "http://localhost:3500/"
 	l2clientB, nodeB := Create2ndNodeWithConfigAndClient(t, ctx, currentNode, l1client, l1info, &l2info.ArbInitData, nodeConfigB, nil)
 	defer nodeB.StopAndWait()
-
-	// Start test
-	seqInbox, err := bridgegen.NewSequencerInbox(l1info.GetAddress("SequencerInbox"), l1client)
-	Require(t, err)
-	seqOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-	_ = seqOpts
-
-	batchTx, err := seqInbox.AddSequencerL2BatchWithBlobs(&seqOpts, nil, nil, common.Address{}, nil, nil)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, batchTx)
-	Require(t, err)
 
 	l2info.GenerateAccount("User1")
 

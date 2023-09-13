@@ -49,7 +49,7 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, bc *BlobClient, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -80,7 +80,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
 		var err error
-		payload, err = RecoverPayloadFromBlob(ctx, nil, batchBlockHash, payload[1:])
+		payload, err = RecoverPayloadFromBlob(ctx, bc, batchBlockHash, payload[1:])
 		if err != nil {
 			return nil, err
 		}
@@ -281,7 +281,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.blobClient, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}
