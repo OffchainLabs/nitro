@@ -19,6 +19,7 @@ import (
 
 	"errors"
 
+	"github.com/cockroachdb/pebble"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
@@ -508,7 +509,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 	if broadcastStartPos > 0 {
 		_, err := s.GetMessage(broadcastStartPos - 1)
 		if err != nil {
-			if !errors.Is(err, leveldb.ErrNotFound) {
+			if !errors.Is(err, leveldb.ErrNotFound) && !errors.Is(err, pebble.ErrNotFound) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet

@@ -36,7 +36,16 @@ func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *leveldb.Stor
 	if err != nil {
 		t.Fatalf("NewLevelDBDatabase() unexpected error: %v", err)
 	}
-	return leveldb.New(db, encF)
+	return leveldb.New(db, encF) // TODO rename leveldb package
+}
+
+func newPebbleDBStorage(t *testing.T, encF storage.EncoderDecoderF) *leveldb.Storage {
+	t.Helper()
+	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false)
+	if err != nil {
+		t.Fatalf("NewPebbleDBDatabase() unexpected error: %v", err)
+	}
+	return leveldb.New(db, encF) // TODO rename leveldb package
 }
 
 func newSliceStorage(encF storage.EncoderDecoderF) *slice.Storage {
@@ -120,6 +129,7 @@ func storages(t *testing.T) map[string]QueueStorage {
 		"sliceLegacy":   newSliceStorage(f(&storage.LegacyEncoderDecoder{})),
 		"redisLegacy":   newRedisStorage(context.Background(), t, f(&storage.LegacyEncoderDecoder{})),
 		"levelDB":       newLevelDBStorage(t, f(&storage.EncoderDecoder{})),
+		"pebbleDB":      newPebbleDBStorage(t, f(&storage.EncoderDecoder{})),
 		"slice":         newSliceStorage(f(&storage.EncoderDecoder{})),
 		"redis":         newRedisStorage(context.Background(), t, f(&storage.EncoderDecoder{})),
 	}

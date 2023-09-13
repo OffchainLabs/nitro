@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
 	flag "github.com/spf13/pflag"
@@ -114,7 +115,7 @@ func closeDb(db io.Closer, name string) {
 	if db != nil {
 		err := db.Close()
 		// unfortunately the freezer db means we can't just use errors.Is
-		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) {
+		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) && !strings.Contains(err.Error(), pebble.ErrClosed.Error()) {
 			log.Warn("failed to close database on shutdown", "db", name, "err", err)
 		}
 	}
@@ -158,7 +159,9 @@ func mainImpl() int {
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
-	stackConf.DBEngine = "leveldb"
+	// TODO add config option to choose DBEngine
+	// stackConf.DBEngine = "leveldb"
+	stackConf.DBEngine = "pebble"
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
