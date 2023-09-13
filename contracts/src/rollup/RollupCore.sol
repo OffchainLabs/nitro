@@ -250,8 +250,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             "CONFIRM_DATA"
         );
 
-        bytes32 blockHash = confirmState.globalState.bytes32Vals[0];
-        bytes32 sendRoot = confirmState.globalState.bytes32Vals[1];
+        bytes32 blockHash = confirmState.globalState.getBlockHash();
+        bytes32 sendRoot = confirmState.globalState.getSendRoot();
 
         // trusted external call to outbox
         outbox.updateSendRoot(sendRoot, blockHash);

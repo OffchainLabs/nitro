@@ -160,9 +160,10 @@ contract RollupReader is IOldRollup {
 ///         Also requires a lookup contract to be provided that contains the pre-image of the state hash
 ///         that is in the latest confirmed assertion in the current rollup.
 contract BOLDUpgradeAction {
-    uint256 public constant BLOCK_LEAF_SIZE = 2 ** 26;
-    uint256 public constant BIGSTEP_LEAF_SIZE = 2 ** 23;
-    uint256 public constant SMALLSTEP_LEAF_SIZE = 2 ** 20;
+    uint256 public immutable BLOCK_LEAF_SIZE;
+    uint256 public immutable BIGSTEP_LEAF_SIZE;
+    uint256 public immutable SMALLSTEP_LEAF_SIZE;
+    uint256 public immutable NUM_BIGSTEP_LEVEL;
 
     address public immutable L1_TIMELOCK;
     IOldRollup public immutable OLD_ROLLUP;
@@ -210,6 +211,10 @@ contract BOLDUpgradeAction {
         uint256 chainId;
         address anyTrustFastConfirmer;
         bool disableValidatorWhitelist;
+        uint256 blockLeafSize;
+        uint256 bigStepLeafSize;
+        uint256 smallStepLeafSize;
+        uint256 numBigStepLevel;
     }
 
     // Unfortunately these are not discoverable on-chain, so we need to supply them
@@ -280,6 +285,10 @@ contract BOLDUpgradeAction {
         MINI_STAKE_AMOUNT = settings.miniStakeAmt;
         ANY_TRUST_FAST_CONFIRMER = settings.anyTrustFastConfirmer;
         DISABLE_VALIDATOR_WHITELIST = settings.disableValidatorWhitelist;
+        BLOCK_LEAF_SIZE = settings.blockLeafSize;
+        BIGSTEP_LEAF_SIZE = settings.bigStepLeafSize;
+        SMALLSTEP_LEAF_SIZE = settings.smallStepLeafSize;
+        NUM_BIGSTEP_LEVEL = settings.numBigStepLevel;
     }
 
     /// @dev    Refund the existing stakers, pause and upgrade the current rollup to
@@ -339,7 +348,8 @@ contract BOLDUpgradeAction {
             layerZeroSmallStepEdgeHeight: SMALLSTEP_LEAF_SIZE,
             genesisExecutionState: genesisExecState,
             genesisInboxCount: inboxMaxCount,
-            anyTrustFastConfirmer: ANY_TRUST_FAST_CONFIRMER
+            anyTrustFastConfirmer: ANY_TRUST_FAST_CONFIRMER,
+            numBigStepLevel: NUM_BIGSTEP_LEVEL
         });
     }
 
@@ -426,7 +436,8 @@ contract BOLDUpgradeAction {
             layerZeroSmallStepEdgeHeight: config.layerZeroSmallStepEdgeHeight,
             _stakeToken: IERC20(config.stakeToken),
             _stakeAmount: config.miniStakeValue,
-            _excessStakeReceiver: L1_TIMELOCK
+            _excessStakeReceiver: L1_TIMELOCK,
+            _numBigStepLevel: config.numBigStepLevel
         });
 
         RollupProxy rollup = new RollupProxy{ salt: rollupSalt}();

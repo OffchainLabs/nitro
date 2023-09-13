@@ -27,6 +27,7 @@ interface IEdgeChallengeManager {
     /// @param _stakeToken                  The token that stake will be provided in when creating zero layer block edges
     /// @param _stakeAmount                 The amount of stake (in units of stake token) required to create a block edge
     /// @param _excessStakeReceiver         The address that excess stake will be sent to when 2nd+ block edge is created
+    /// @param _numBigStepLevel             The number of bigstep levels
     function initialize(
         IAssertionChain _assertionChain,
         uint256 _challengePeriodBlocks,
@@ -36,7 +37,8 @@ interface IEdgeChallengeManager {
         uint256 layerZeroSmallStepEdgeHeight,
         IERC20 _stakeToken,
         uint256 _stakeAmount,
-        address _excessStakeReceiver
+        address _excessStakeReceiver,
+        uint256 _numBigStepLevel
     ) external;
 
     function challengePeriodBlocks() external view returns (uint256);
@@ -72,7 +74,7 @@ interface IEdgeChallengeManager {
     /// @dev    Edges inherit time from their parents, so the sum of unrivaled timers is compared against the threshold.
     ///         Given that an edge cannot become unrivaled after becoming rivaled, once the threshold is passed
     ///         it will always remain passed. The direct ancestors of an edge are linked by parent-child links for edges
-    ///         of the same edgeType, and claimId-edgeId links for zero layer edges that claim an edge in the level above.
+    ///         of the same level, and claimId-edgeId links for zero layer edges that claim an edge in the level below.
     ///         This method also includes the amount of time the assertion being claimed spent without a sibling
     /// @param edgeId                   The id of the edge to confirm
     /// @param ancestorEdgeIds          The ids of the direct ancestors of an edge. These are ordered from the parent first, then going to grand-parent,
@@ -84,7 +86,7 @@ interface IEdgeChallengeManager {
     ) external;
 
     /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
-    /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level above. If a zero layer
+    /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level below. If a zero layer
     ///         edge is confirmed, it becomes possible to also confirm the edge that it claims
     /// @param edgeId           The id of the edge to confirm
     /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
@@ -114,14 +116,14 @@ interface IEdgeChallengeManager {
     function getLayerZeroEndHeight(EdgeType eType) external view returns (uint256);
 
     /// @notice Calculate the unique id of an edge
-    /// @param edgeType         The type of edge
+    /// @param level            The level of the edge
     /// @param originId         The origin id of the edge
     /// @param startHeight      The start height of the edge
     /// @param startHistoryRoot The start history root of the edge
     /// @param endHeight        The end height of the edge
     /// @param endHistoryRoot   The end history root of the edge
     function calculateEdgeId(
-        EdgeType edgeType,
+        uint256 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -131,13 +133,13 @@ interface IEdgeChallengeManager {
 
     /// @notice Calculate the mutual id of the edge
     ///         Edges that are rivals share the same mutual id
-    /// @param edgeType         The type of the edge
+    /// @param level            The level of the edge
     /// @param originId         The origin id of the edge
     /// @param startHeight      The start height of the edge
     /// @param startHistoryRoot The start history root of the edge
     /// @param endHeight        The end height of the edge
     function calculateMutualId(
-        EdgeType edgeType,
+        uint256 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -194,10 +196,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @notice A new edge has been added to the challenge manager
     /// @param edgeId       The id of the newly added edge
     /// @param mutualId     The mutual id of the added edge - all rivals share the same mutual id
-    /// @param originId     The origin id of the added edge - origin ids link an edge to the level above
+    /// @param originId     The origin id of the added edge - origin ids link an edge to the level below
     /// @param hasRival     Does the newly added edge have a rival upon creation
     /// @param length       The length of the new edge
-    /// @param eType        The type of the new edge
+    /// @param level        The level of the new edge
     /// @param isLayerZero  Whether the new edge was added at layer zero - has a claim and a staker
     event EdgeAdded(
         bytes32 indexed edgeId,
@@ -205,7 +207,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32 indexed originId,
         bytes32 claimId,
         uint256 length,
-        EdgeType eType,
+        uint256 level,
         bool hasRival,
         bool isLayerZero
     );
@@ -282,6 +284,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     uint256 public LAYERZERO_BIGSTEPEDGE_HEIGHT;
     /// @notice The end height of layer zero SmallStep edges
     uint256 public LAYERZERO_SMALLSTEPEDGE_HEIGHT;
+    /// @notice The number of big step levels configured for this challenge manager
+    ///         There is 1 block level, 1 small step level and N big step levels
+    uint256 public NUM_BIGSTEP_LEVEL;
 
     constructor() {
         _disableInitializers();
@@ -297,7 +302,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         uint256 layerZeroSmallStepEdgeHeight,
         IERC20 _stakeToken,
         uint256 _stakeAmount,
-        address _excessStakeReceiver
+        address _excessStakeReceiver,
+        uint256 _numBigStepLevel
     ) public initializer {
         if (address(_assertionChain) == address(0)) {
             revert EmptyAssertionChain();
@@ -331,6 +337,12 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             revert NotPowerOfTwo(layerZeroSmallStepEdgeHeight);
         }
         LAYERZERO_SMALLSTEPEDGE_HEIGHT = layerZeroSmallStepEdgeHeight;
+
+        // ensure that there is at least on of each type of level
+        if (_numBigStepLevel == 0) {
+            revert ZeroBigStepLevels();
+        }
+        NUM_BIGSTEP_LEVEL = _numBigStepLevel;
     }
 
     /////////////////////////////
@@ -340,9 +352,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @inheritdoc IEdgeChallengeManager
     function createLayerZeroEdge(CreateEdgeArgs calldata args) external returns (bytes32) {
         EdgeAddedData memory edgeAdded;
-        uint256 expectedEndHeight = getLayerZeroEndHeight(args.edgeType);
+        EdgeType eType = ChallengeEdgeLib.levelToType(args.level, NUM_BIGSTEP_LEVEL);
+        uint256 expectedEndHeight = getLayerZeroEndHeight(eType);
         AssertionReferenceData memory ard;
-        if (args.edgeType == EdgeType.Block) {
+
+        if (eType == EdgeType.Block) {
             // for block type edges we need to provide some extra assertion data context
             if (args.proof.length == 0) {
                 revert EmptyEdgeSpecificProof();
@@ -370,9 +384,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
                 claimStateData.executionState
             );
 
-            edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
+            edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, NUM_BIGSTEP_LEVEL);
         } else {
-            edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
+            edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, NUM_BIGSTEP_LEVEL);
         }
 
         IERC20 st = stakeToken;
@@ -397,7 +411,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             edgeAdded.originId,
             edgeAdded.claimId,
             edgeAdded.length,
-            edgeAdded.eType,
+            edgeAdded.level,
             edgeAdded.hasRival,
             edgeAdded.isLayerZero
         );
@@ -422,7 +436,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
                 lowerChildAdded.originId,
                 lowerChildAdded.claimId,
                 lowerChildAdded.length,
-                lowerChildAdded.eType,
+                lowerChildAdded.level,
                 lowerChildAdded.hasRival,
                 lowerChildAdded.isLayerZero
             );
@@ -434,7 +448,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             upperChildAdded.originId,
             upperChildAdded.claimId,
             upperChildAdded.length,
-            upperChildAdded.eType,
+            upperChildAdded.level,
             upperChildAdded.hasRival,
             upperChildAdded.isLayerZero
         );
@@ -453,7 +467,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function confirmEdgeByClaim(bytes32 edgeId, bytes32 claimingEdgeId) public {
-        store.confirmEdgeByClaim(edgeId, claimingEdgeId);
+        store.confirmEdgeByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
 
         emit EdgeConfirmedByClaim(edgeId, store.edges[edgeId].mutualId(), claimingEdgeId);
     }
@@ -467,9 +481,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         // if there are no ancestors provided, then the top edge is the edge we're confirming itself
         bytes32 lastEdgeId = ancestorEdges.length > 0 ? ancestorEdges[ancestorEdges.length - 1] : edgeId;
         ChallengeEdge storage topEdge = store.get(lastEdgeId);
+        EdgeType topLevelType = ChallengeEdgeLib.levelToType(topEdge.level, NUM_BIGSTEP_LEVEL);
 
-        if (topEdge.eType != EdgeType.Block) {
-            revert EdgeTypeNotBlock(topEdge.eType);
+        if (topLevelType != EdgeType.Block) {
+            revert EdgeTypeNotBlock(topEdge.level);
         }
         if (!topEdge.isLayerZero()) {
             revert EdgeNotLayerZero(topEdge.id(), topEdge.staker, topEdge.claimId);
@@ -496,7 +511,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         }
 
         uint256 totalTimeUnrivaled =
-            store.confirmEdgeByTime(edgeId, ancestorEdges, assertionBlocks, challengePeriodBlocks);
+            store.confirmEdgeByTime(edgeId, ancestorEdges, assertionBlocks, challengePeriodBlocks, NUM_BIGSTEP_LEVEL);
 
         emit EdgeConfirmedByTime(edgeId, store.edges[edgeId].mutualId(), totalTimeUnrivaled);
     }
@@ -509,7 +524,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public {
-        bytes32 prevAssertionHash = store.getPrevAssertionHash(edgeId);
+        bytes32 prevAssertionHash = store.getPrevAssertionHash(edgeId, NUM_BIGSTEP_LEVEL);
 
         assertionChain.validateConfig(prevAssertionHash, prevConfig);
 
@@ -520,7 +535,13 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         });
 
         store.confirmEdgeByOneStepProof(
-            edgeId, oneStepProofEntry, oneStepData, execCtx, beforeHistoryInclusionProof, afterHistoryInclusionProof
+            edgeId,
+            oneStepProofEntry,
+            oneStepData,
+            execCtx,
+            beforeHistoryInclusionProof,
+            afterHistoryInclusionProof,
+            NUM_BIGSTEP_LEVEL
         );
 
         emit EdgeConfirmedByOneStepProof(edgeId, store.edges[edgeId].mutualId());
@@ -561,26 +582,25 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function calculateEdgeId(
-        EdgeType edgeType,
+        uint256 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
         uint256 endHeight,
         bytes32 endHistoryRoot
     ) public pure returns (bytes32) {
-        return
-            ChallengeEdgeLib.idComponent(edgeType, originId, startHeight, startHistoryRoot, endHeight, endHistoryRoot);
+        return ChallengeEdgeLib.idComponent(level, originId, startHeight, startHistoryRoot, endHeight, endHistoryRoot);
     }
 
     /// @inheritdoc IEdgeChallengeManager
     function calculateMutualId(
-        EdgeType edgeType,
+        uint256 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
         uint256 endHeight
     ) public pure returns (bytes32) {
-        return ChallengeEdgeLib.mutualIdComponent(edgeType, originId, startHeight, startHistoryRoot, endHeight);
+        return ChallengeEdgeLib.mutualIdComponent(level, originId, startHeight, startHistoryRoot, endHeight);
     }
 
     /// @inheritdoc IEdgeChallengeManager
@@ -615,7 +635,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function getPrevAssertionHash(bytes32 edgeId) public view returns (bytes32) {
-        return store.getPrevAssertionHash(edgeId);
+        return store.getPrevAssertionHash(edgeId, NUM_BIGSTEP_LEVEL);
     }
 
     /// @inheritdoc IEdgeChallengeManager

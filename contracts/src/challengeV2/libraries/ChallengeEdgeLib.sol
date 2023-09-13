@@ -9,11 +9,10 @@ import "./ChallengeErrors.sol";
 
 /// @notice An edge committing to a range of states. These edges will be bisected, slowly
 ///         reducing them in length until they reach length one. At that point new edges of a different
-///         type will be added that claim the result of this edge, or a one step proof will be calculated
-///         if the edge type is already SmallStep.
+///         level will be added that claim the result of this edge, or a one step proof will be calculated
+///         if the edge level is already of type SmallStep.
 struct ChallengeEdge {
-    /// @notice The origin id is a link from the edge to an edge or assertion at a higher type. The types
-    ///         of edge are Block, BigStep and SmallStep.
+    /// @notice The origin id is a link from the edge to an edge or assertion at a lower level.
     ///         Intuitively all edges with the same origin id agree on the information committed to in the origin id
     ///         For a SmallStep edge the origin id is the 'mutual' id of the length one BigStep edge being claimed by the zero layer ancestors of this edge
     ///         For a BigStep edge the origin id is the 'mutual' id of the length one Block edge being claimed by the zero layer ancestors of this edge
@@ -50,8 +49,11 @@ struct ChallengeEdge {
     /// @notice Current status of this edge. All edges are created Pending, and may be updated to Confirmed
     ///         Once Confirmed they cannot transition back to Pending
     EdgeStatus status;
-    /// @notice The type of edge Block, BigStep or SmallStep that this edge is.
-    EdgeType eType;
+    /// @notice The level of this edge.
+    ///         Level 0 is type Block
+    ///         Last level (defined by NUM_BIGSTEP_LEVEL + 1) is type SmallStep
+    ///         All levels in between are of type BigStep
+    uint256 level;
     /// @notice Set to true when the staker has been refunded. Can only be set to true if the status is Confirmed
     ///         and the staker is non zero.
     bool refunded;
@@ -81,7 +83,7 @@ library ChallengeEdgeLib {
     }
 
     /// @notice Create a new layer zero edge. These edges make claims about length one edges in the level
-    ///         (edge type) above. Creating a layer zero edge also requires placing a mini stake, so information
+    ///         below. Creating a layer zero edge also requires placing a mini stake, so information
     ///         about that staker is also stored on this edge.
     function newLayerZeroEdge(
         bytes32 originId,
@@ -91,7 +93,7 @@ library ChallengeEdgeLib {
         uint256 endHeight,
         bytes32 claimId,
         address staker,
-        EdgeType eType
+        uint256 level
     ) internal view returns (ChallengeEdge memory) {
         if (staker == address(0)) {
             revert EmptyStaker();
@@ -114,7 +116,7 @@ library ChallengeEdgeLib {
             claimId: claimId,
             staker: staker,
             status: EdgeStatus.Pending,
-            eType: eType,
+            level: level,
             refunded: false
         });
     }
@@ -127,7 +129,7 @@ library ChallengeEdgeLib {
         uint256 startHeight,
         bytes32 endHistoryRoot,
         uint256 endHeight,
-        EdgeType eType
+        uint256 level
     ) internal view returns (ChallengeEdge memory) {
         newEdgeChecks(originId, startHistoryRoot, startHeight, endHistoryRoot, endHeight);
 
@@ -143,36 +145,40 @@ library ChallengeEdgeLib {
             claimId: 0,
             staker: address(0),
             status: EdgeStatus.Pending,
-            eType: eType,
+            level: level,
             refunded: false
         });
     }
 
     /// @notice The "mutualId" of an edge. A mutual id is a hash of all the data that is shared by rivals.
-    ///         Rivals have the same start height, start history root and end height. They also have the same origin id and type.
+    ///         Rivals have the same start height, start history root and end height. They also have the same origin id and level.
     ///         The difference between rivals is that they have a different endHistoryRoot, so that information
     ///         is not included in this hash.
     function mutualIdComponent(
-        EdgeType eType,
+        uint256 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
         uint256 endHeight
     ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(eType, originId, startHeight, startHistoryRoot, endHeight));
+        return keccak256(abi.encodePacked(level, originId, startHeight, startHistoryRoot, endHeight));
     }
 
     /// @notice The "mutualId" of an edge. A mutual id is a hash of all the data that is shared by rivals.
-    ///         Rivals have the same start height, start history root and end height. They also have the same origin id and type.
+    ///         Rivals have the same start height, start history root and end height. They also have the same origin id and level.
     ///         The difference between rivals is that they have a different endHistoryRoot, so that information
     ///         is not included in this hash.
     function mutualId(ChallengeEdge storage ce) internal view returns (bytes32) {
-        return mutualIdComponent(ce.eType, ce.originId, ce.startHeight, ce.startHistoryRoot, ce.endHeight);
+        return mutualIdComponent(ce.level, ce.originId, ce.startHeight, ce.startHistoryRoot, ce.endHeight);
+    }
+
+    function mutualIdMem(ChallengeEdge memory ce) internal pure returns (bytes32) {
+        return mutualIdComponent(ce.level, ce.originId, ce.startHeight, ce.startHistoryRoot, ce.endHeight);
     }
 
     /// @notice The id of an edge. Edges are uniquely identified by their id, and commit to the same information
     function idComponent(
-        EdgeType eType,
+        uint256 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -181,7 +187,7 @@ library ChallengeEdgeLib {
     ) internal pure returns (bytes32) {
         return keccak256(
             abi.encodePacked(
-                mutualIdComponent(eType, originId, startHeight, startHistoryRoot, endHeight), endHistoryRoot
+                mutualIdComponent(level, originId, startHeight, startHistoryRoot, endHeight), endHistoryRoot
             )
         );
     }
@@ -192,14 +198,14 @@ library ChallengeEdgeLib {
     ///         the whole struct into memory, so we're explicit here that this should be used for edges already in memory.
     function idMem(ChallengeEdge memory edge) internal pure returns (bytes32) {
         return idComponent(
-            edge.eType, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight, edge.endHistoryRoot
+            edge.level, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight, edge.endHistoryRoot
         );
     }
 
     /// @notice The id of an edge. Edges are uniquely identified by their id, and commit to the same information
     function id(ChallengeEdge storage edge) internal view returns (bytes32) {
         return idComponent(
-            edge.eType, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight, edge.endHistoryRoot
+            edge.level, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight, edge.endHistoryRoot
         );
     }
 
@@ -249,6 +255,9 @@ library ChallengeEdgeLib {
         if (edge.status != EdgeStatus.Confirmed) {
             revert EdgeNotConfirmed(ChallengeEdgeLib.id(edge), edge.status);
         }
+        if (edge.level != 0) {
+            revert EdgeTypeNotBlock(edge.level);
+        }
         if (!isLayerZero(edge)) {
             revert EdgeNotLayerZero(ChallengeEdgeLib.id(edge), edge.staker, edge.claimId);
         }
@@ -257,5 +266,18 @@ library ChallengeEdgeLib {
         }
 
         edge.refunded = true;
+    }
+
+    /// @notice Returns the edge type for a given level, given the total number of big step levels
+    function levelToType(uint256 level, uint256 numBigStepLevels) internal pure returns (EdgeType eType) {
+        if (level == 0) {
+            return EdgeType.Block;
+        } else if (level <= numBigStepLevels) {
+            return EdgeType.BigStep;
+        } else if (level == numBigStepLevels + 1) {
+            return EdgeType.SmallStep;
+        } else {
+            revert LevelTooHigh(level, numBigStepLevels);
+        }
     }
 }

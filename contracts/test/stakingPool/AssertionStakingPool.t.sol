@@ -36,6 +36,7 @@ contract AssertinPoolTest is Test {
     uint256 constant BASE_STAKE = 10 ether;
     uint256 constant MINI_STAKE_VALUE = 2;
     uint64 constant CONFIRM_PERIOD_BLOCKS = 100;
+    uint256 constant MAX_DATA_SIZE = 117964;
 
     bytes32 constant FIRST_ASSERTION_BLOCKHASH = keccak256("FIRST_ASSERTION_BLOCKHASH");
     bytes32 constant FIRST_ASSERTION_SENDROOT = keccak256("FIRST_ASSERTION_SENDROOT");
@@ -96,7 +97,7 @@ contract AssertinPoolTest is Test {
             oneStepProverHostIo
         );
         EdgeChallengeManager edgeChallengeManager = new EdgeChallengeManager();
-        BridgeCreator bridgeCreator = new BridgeCreator();
+        BridgeCreator bridgeCreator = new BridgeCreator(MAX_DATA_SIZE);
         RollupCreator rollupCreator = new RollupCreator();
         RollupAdminLogic rollupAdminLogicImpl = new RollupAdminLogic();
         RollupUserLogic rollupUserLogicImpl = new RollupUserLogic();
@@ -137,12 +138,15 @@ contract AssertinPoolTest is Test {
             layerZeroBlockEdgeHeight: 2 ** 5,
             layerZeroBigStepEdgeHeight: 2 ** 5,
             layerZeroSmallStepEdgeHeight: 2 ** 5,
+            numBigStepLevel: 2,
             anyTrustFastConfirmer: address(300001)
         });
 
         vm.expectEmit(false, false, false, false);
         emit RollupCreated(address(0), address(0), address(0), address(0), address(0));
-        rollupAddr = rollupCreator.createRollup(config);
+        rollupAddr = rollupCreator.createRollup(
+            config, address(0), new address[](0), false, MAX_DATA_SIZE
+        );
 
         userRollup = RollupUserLogic(address(rollupAddr));
         adminRollup = RollupAdminLogic(address(rollupAddr));

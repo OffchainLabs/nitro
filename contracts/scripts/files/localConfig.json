@@ -6,8 +6,7 @@
     "sequencerInbox": "0xe7362d0787b51d8c72d504803e5b1d6dcda89540",
     "rollupEventInbox": "0x4cF5Bfb6AA68ea514e5CEa5420809cd9f79dB9E0",
     "outbox": "0x49940929c7cA9b50Ff57a01d3a92817A414E6B9B",
-    "inbox": "0xff4a24b22f94979e9ba5f3eb35838aa814bad6f1",
-    "osp": "0x031F5f29Ad9D0695B83b5dDC214B7017BCE79Abd"
+    "inbox": "0xff4a24b22f94979e9ba5f3eb35838aa814bad6f1"
   },
   "proxyAdmins": {
     "outbox": "0xa4884de60AEef09b1b35fa255F56ee37198A80B3",
@@ -18,12 +17,16 @@
   "settings": {
     "confirmPeriodBlocks": 100,
     "stakeToken": "0x408Da76E87511429485C32E4Ad647DD14823Fdc4",
-    "stakeAmt": "10000000000000000000",
-    "miniStakeAmt": "5000000000000000000",
-    "chainId": 1337,
+    "stakeAmt": "100000000000000000000",
+    "miniStakeAmt": "2000000000000000000",
+    "chainId": 412346,
     "anyTrustFastConfirmer": "0x6d903f6003cca6255D85CcA4D3B5E5146dC33925",
     "disableValidatorWhitelist": true,
-    "maxDataSize": 117964
+    "maxDataSize": 117964,
+    "blockLeafSize": 1048576,
+    "bigStepLeafSize": 2048,
+    "smallStepLeafSize": 1024,
+    "numBigStepLevel": 3
   },
   "validators": [
     "0xf10EF80c6eF4930A62C5F9661c91339Df4dBB173"

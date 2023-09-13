@@ -120,7 +120,8 @@ contract RollupTest is Test {
             layerZeroBlockEdgeHeight: 2 ** 5,
             layerZeroBigStepEdgeHeight: 2 ** 5,
             layerZeroSmallStepEdgeHeight: 2 ** 5,
-            anyTrustFastConfirmer: anyTrustFastConfirmer
+            anyTrustFastConfirmer: anyTrustFastConfirmer,
+            numBigStepLevel: 3
         });
 
         vm.expectEmit(false, false, false, false);
@@ -684,7 +685,7 @@ contract RollupTest is Test {
 
         data.e1Id = challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeType: EdgeType.Block,
+                level: 0,
                 endHistoryRoot: root,
                 endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
                 claimId: data.assertionHash,
@@ -718,7 +719,7 @@ contract RollupTest is Test {
 
         bytes32 e2Id = challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeType: EdgeType.Block,
+                level: 0,
                 endHistoryRoot: root,
                 endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
                 claimId: data.assertionHash2,

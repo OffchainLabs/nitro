@@ -13,6 +13,11 @@ export interface DeployedContracts {
   boldAction: string
   rollupReader: string
   preImageHashLookup: string
+  prover0: string
+  proverMem: string
+  proverMath: string
+  proverHostIo: string
+  osp: string
   upgradeExecutor?: string
   newEdgeChallengeManager?: string
 }
@@ -38,7 +43,6 @@ export interface Config {
     rollupEventInbox: string
     outbox: string
     inbox: string
-    osp: string
   }
   proxyAdmins: {
     outbox: string
@@ -55,6 +59,10 @@ export interface Config {
     anyTrustFastConfirmer: string
     disableValidatorWhitelist: boolean
     maxDataSize: number
+    blockLeafSize: number
+    bigStepLeafSize: number
+    smallStepLeafSize: number
+    numBigStepLevel: number
   }
   validators: string[]
 }
@@ -92,9 +100,7 @@ export const validateConfig = async (
   if ((await l1Rpc.getCode(config.contracts.inbox)).length <= 2) {
     throw new Error('inbox address is not a contract')
   }
-  if ((await l1Rpc.getCode(config.contracts.osp)).length <= 2) {
-    throw new Error('osp address is not a contract')
-  }
+
   // check all the config.proxyAdmins exist
   if ((await l1Rpc.getCode(config.proxyAdmins.outbox)).length <= 2) {
     throw new Error('outbox proxy admin address is not a contract')
@@ -119,8 +125,17 @@ export const validateConfig = async (
   if (config.settings.chainId == 0) {
     throw new Error('chainId is 0')
   }
-  if (config.settings.anyTrustFastConfirmer.length == 0) {
-    throw new Error('anyTrustFastConfirmer address is empty')
+  if (config.settings.blockLeafSize == 0) {
+    throw new Error('blockLeafSize is 0')
+  }
+  if (config.settings.bigStepLeafSize == 0) {
+    throw new Error('bigStepLeafSize is 0')
+  }
+  if (config.settings.smallStepLeafSize == 0) {
+    throw new Error('smallStepLeafSize is 0')
+  }
+  if (config.settings.numBigStepLevel == 0) {
+    throw new Error('numBigStepLevel is 0')
   }
 
   const stakeAmount = BigNumber.from(config.settings.stakeAmt)
