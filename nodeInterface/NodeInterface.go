@@ -590,3 +590,83 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 	calldataForL1 = data
 	return
 }
+
+func (n NodeInterface) getL1BlockNum(l2BlockNum uint64) (uint64, error) {
+	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
+	if err != nil {
+		return 0, err
+	}
+	l1BlockNum := types.DeserializeHeaderExtraInformation(blockHeader).L1BlockNumber
+	return l1BlockNum, nil
+}
+
+func (n NodeInterface) GetL2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) ([]uint64, error) {
+	currentBlockNum := n.backend.CurrentBlock().Number.Uint64()
+	genesis := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
+
+	checkCorrectness := func(blockNum uint64, target uint64) error {
+		blockL1Num, err := n.getL1BlockNum(blockNum)
+		if err != nil {
+			return err
+		}
+		if blockL1Num != target {
+			return errors.New("no L2 block was found with the given L1 block number")
+		}
+		return nil
+	}
+
+	lowFirstBlock := genesis
+	highFirstBlock := currentBlockNum
+	lowLastBlock := genesis
+	highLastBlock := currentBlockNum
+	var storedMid uint64
+	var storedMidBlockL1Num uint64
+	for lowFirstBlock < highFirstBlock || lowLastBlock < highLastBlock {
+		if lowFirstBlock < highFirstBlock {
+			mid := (lowFirstBlock + highFirstBlock) / 2
+			midBlockL1Num, err := n.getL1BlockNum(mid)
+			if err != nil {
+				return nil, err
+			}
+			storedMid = mid
+			storedMidBlockL1Num = midBlockL1Num
+			if midBlockL1Num < l1BlockNum {
+				lowFirstBlock = mid + 1
+			} else {
+				highFirstBlock = mid
+			}
+		}
+		if lowLastBlock < highLastBlock {
+			// dont fetch midBlockL1Num if its already fetched above
+			mid := (lowLastBlock + highLastBlock) / 2
+			var midBlockL1Num uint64
+			var err error
+			if mid == storedMid {
+				midBlockL1Num = storedMidBlockL1Num
+			} else {
+				midBlockL1Num, err = n.getL1BlockNum(mid)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if midBlockL1Num < l1BlockNum+1 {
+				lowLastBlock = mid + 1
+			} else {
+				highLastBlock = mid
+			}
+		}
+	}
+	err := checkCorrectness(highFirstBlock, l1BlockNum)
+	if err != nil {
+		return nil, err
+	}
+	err = checkCorrectness(highLastBlock, l1BlockNum)
+	if err != nil {
+		highLastBlock -= 1
+		err = checkCorrectness(highLastBlock, l1BlockNum)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return []uint64{highFirstBlock, highLastBlock}, nil
+}
