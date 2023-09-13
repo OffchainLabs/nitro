@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -117,8 +117,8 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 		if err != nil {
 			return nil, err
 		}
-	case initConfig.UseLevelDB:
-		queue = leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} }) // TODO rename leveldb package
+	case initConfig.UseDBStorage:
+		queue = dbstorage.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
@@ -628,7 +628,7 @@ type DataPosterConfig struct {
 	MaxTipCapGwei          float64 `koanf:"max-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64  `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool    `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool    `koanf:"use-leveldb"`
+	UseDBStorage           bool    `koanf:"use-db-storage"`
 	UseNoOpStorage         bool    `koanf:"use-noop-storage"`
 	LegacyStorageEncoding  bool    `koanf:"legacy-storage-encoding" reload:"hot"`
 }
@@ -649,8 +649,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".max-tip-cap-gwei", DefaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
-	// TODO rename use-leveldb to take pebble into account
-	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-db-storage", DefaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
@@ -666,7 +665,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             true,
+	UseDBStorage:           true,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
 }
@@ -688,7 +687,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             false,
+	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 }
 
