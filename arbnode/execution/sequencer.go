@@ -110,6 +110,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
+	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,

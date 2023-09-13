@@ -372,11 +372,15 @@ func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address
 
 func (s *Staker) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	s.wallet.StopAndWait()
+	if s.Strategy() != WatchtowerStrategy {
+		s.wallet.StopAndWait()
+	}
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	s.wallet.Start(ctxIn)
+	if s.Strategy() != WatchtowerStrategy {
+		s.wallet.Start(ctxIn)
+	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
@@ -548,11 +552,11 @@ func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
-	err := s.confirmDataPosterIsReady(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if s.config.strategy != WatchtowerStrategy {
+		err := s.confirmDataPosterIsReady(ctx)
+		if err != nil {
+			return nil, err
+		}
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)

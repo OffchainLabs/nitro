@@ -15,11 +15,9 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type EoaValidatorWallet struct {
-	stopwaiter.StopWaiter
 	auth                    *bind.TransactOpts
 	client                  arbutil.L1Interface
 	rollupAddress           common.Address
@@ -129,11 +127,9 @@ func (w *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
 
 func (w *EoaValidatorWallet) Start(ctx context.Context) {
 	w.dataPoster.Start(ctx)
-	w.StopWaiter.Start(ctx, w)
 }
 
 func (b *EoaValidatorWallet) StopAndWait() {
-	b.StopWaiter.StopAndWait()
 	b.dataPoster.StopAndWait()
 }
 
