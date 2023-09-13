@@ -18,6 +18,7 @@ type PersistentConfig struct {
 	LogDir       string `koanf:"log-dir"`
 	Handles      int    `koanf:"handles"`
 	Ancient      string `koanf:"ancient"`
+	DBEngine     string `koanf:"db-engine"`
 }
 
 var PersistentConfigDefault = PersistentConfig{
@@ -26,6 +27,7 @@ var PersistentConfigDefault = PersistentConfig{
 	LogDir:       "",
 	Handles:      512,
 	Ancient:      "",
+	DBEngine:     "leveldb",
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -34,6 +36,7 @@ func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".log-dir", PersistentConfigDefault.LogDir, "directory to store log file")
 	f.Int(prefix+".handles", PersistentConfigDefault.Handles, "number of file descriptor handles to use for the database")
 	f.String(prefix+".ancient", PersistentConfigDefault.Ancient, "directory of ancient where the chain freezer can be opened")
+	f.String(prefix+".db-engine", PersistentConfigDefault.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
 }
 
 func (c *PersistentConfig) ResolveDirectoryNames() error {
@@ -84,4 +87,12 @@ func DatabaseInDirectory(path string) bool {
 	_, err := os.Stat(path + "/CURRENT")
 
 	return err == nil
+}
+
+func (c *PersistentConfig) Validate() error {
+	// we are validating .db-engine here to avoid unintended behaviour as empty string value also has meaning in geth's node.Config.DBEngine
+	if c.DBEngine != "leveldb" && c.DBEngine != "pebble" {
+		return fmt.Errorf("Invalid .db-engine choice: \"%v\", allowed \"leveldb\" or \"pebble\"", c.DBEngine)
+	}
+	return nil
 }

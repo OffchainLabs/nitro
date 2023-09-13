@@ -159,9 +159,7 @@ func mainImpl() int {
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
-	// TODO add config option to choose DBEngine
-	// stackConf.DBEngine = "leveldb"
-	stackConf.DBEngine = "pebble"
+	stackConf.DBEngine = nodeConfig.Persistent.DBEngine
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -673,7 +671,10 @@ func (c *NodeConfig) Validate() error {
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
-	return c.Node.Validate()
+	if err := c.Node.Validate(); err != nil {
+		return err
+	}
+	return c.Persistent.Validate()
 }
 
 func (c *NodeConfig) GetReloadInterval() time.Duration {
