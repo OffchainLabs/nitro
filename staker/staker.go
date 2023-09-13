@@ -552,11 +552,11 @@ func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
-	err := s.confirmDataPosterIsReady(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if s.config.strategy != WatchtowerStrategy {
+		err := s.confirmDataPosterIsReady(ctx)
+		if err != nil {
+			return nil, err
+		}
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)
