@@ -62,7 +62,7 @@ pub trait EvmApi: Send + 'static {
     fn contract_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind);
@@ -73,7 +73,7 @@ pub trait EvmApi: Send + 'static {
     fn delegate_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind);
 
@@ -83,7 +83,7 @@ pub trait EvmApi: Send + 'static {
     fn static_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind);
 
@@ -133,4 +133,7 @@ pub trait EvmApi: Send + 'static {
     /// Note: has the side effect of updating Geth's memory usage tracker.
     /// Not analogous to any EVM opcode.
     fn add_pages(&mut self, pages: u16) -> u64;
+
+    /// Captures tracing information for hostio invocations during native execution.
+    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], ink: u64);
 }

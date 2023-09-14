@@ -82,7 +82,7 @@ impl EvmApi for TestEvmApi {
     fn contract_call(
         &mut self,
         contract: Bytes20,
-        input: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
         _value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
@@ -97,7 +97,7 @@ impl EvmApi for TestEvmApi {
         };
 
         let ink = config.pricing.gas_to_ink(gas);
-        let outcome = native.run_main(&input, config, ink).unwrap();
+        let outcome = native.run_main(calldata, config, ink).unwrap();
         let (status, outs) = outcome.into_data();
         let outs_len = outs.len() as u32;
 
@@ -110,7 +110,7 @@ impl EvmApi for TestEvmApi {
     fn delegate_call(
         &mut self,
         _contract: Bytes20,
-        _calldata: Vec<u8>,
+        _calldata: &[u8],
         _gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!("delegate call not yet supported")
@@ -119,7 +119,7 @@ impl EvmApi for TestEvmApi {
     fn static_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         println!("note: overriding static call with call");
@@ -174,5 +174,9 @@ impl EvmApi for TestEvmApi {
         pages.0 = pages.0.saturating_add(new);
         pages.1 = pages.1.max(pages.0);
         model.gas_cost(new, open, ever)
+    }
+
+    fn capture_hostio(&self, _name: &str, _args: &[u8], _outs: &[u8], _ink: u64) {
+        unimplemented!()
     }
 }

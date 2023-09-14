@@ -41,6 +41,7 @@ type cbool = C._Bool
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustVec = C.RustVec
+type rustSlice = C.RustSlice
 
 func compileUserWasm(
 	db vm.StateDB,
@@ -161,10 +162,8 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) a
 }
 
 //export contractCallImpl
-func contractCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, value bytes32, len *u32) apiStatus {
+func contractCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, value bytes32, len *u32) apiStatus {
 	closures := getApi(api)
-	defer data.drop()
-
 	ret_len, cost, err := closures.contractCall(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
@@ -175,10 +174,8 @@ func contractCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, v
 }
 
 //export delegateCallImpl
-func delegateCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len *u32) apiStatus {
+func delegateCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, len *u32) apiStatus {
 	closures := getApi(api)
-	defer data.drop()
-
 	ret_len, cost, err := closures.delegateCall(contract.toAddress(), data.read(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
@@ -189,10 +186,8 @@ func delegateCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, l
 }
 
 //export staticCallImpl
-func staticCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len *u32) apiStatus {
+func staticCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, len *u32) apiStatus {
 	closures := getApi(api)
-	defer data.drop()
-
 	ret_len, cost, err := closures.staticCall(contract.toAddress(), data.read(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
@@ -271,6 +266,12 @@ func addPagesImpl(api usize, pages u16) u64 {
 	return u64(cost)
 }
 
+//export captureHostioImpl
+func captureHostioImpl(api usize, name *rustSlice, data *rustSlice, ink u64) {
+	closures := getApi(api)
+	closures.captureHostio(string(name.read()), data.read(), uint64(ink))
+}
+
 func (value bytes20) toAddress() common.Address {
 	addr := common.Address{}
 	for index, b := range value.bytes {
@@ -307,13 +308,17 @@ func addressToBytes20(addr common.Address) bytes20 {
 	return value
 }
 
+func (slice *rustSlice) read() []byte {
+	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
+}
+
 func (vec *rustVec) read() []byte {
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
 func (vec *rustVec) intoBytes() []byte {
 	slice := vec.read()
-	C.stylus_drop_vec(*vec)
+	vec.drop()
 	return slice
 }
 

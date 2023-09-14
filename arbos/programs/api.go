@@ -44,6 +44,7 @@ type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type addPagesType func(pages uint16) (cost uint64)
+type captureHostioType func(name string, data []byte, ink uint64)
 
 type goClosures struct {
 	getBytes32      getBytes32Type
@@ -58,6 +59,7 @@ type goClosures struct {
 	accountBalance  accountBalanceType
 	accountCodeHash accountCodehashType
 	addPages        addPagesType
+	captureHostio   captureHostioType
 }
 
 func newApiClosures(
@@ -269,6 +271,9 @@ func newApiClosures(
 		open, ever := db.AddStylusPages(pages)
 		return memoryModel.GasCost(pages, open, ever)
 	}
+	captureHostio := func(name string, data []byte, ink uint64) {
+		tracingInfo.Tracer.CaptureStylusHostio(name, data, ink)
+	}
 
 	return &goClosures{
 		getBytes32:      getBytes32,
@@ -283,5 +288,6 @@ func newApiClosures(
 		accountBalance:  accountBalance,
 		accountCodeHash: accountCodehash,
 		addPages:        addPages,
+		captureHostio:   captureHostio,
 	}
 }

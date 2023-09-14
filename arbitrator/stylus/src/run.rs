@@ -1,6 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::redundant_closure_call)]
+
 use crate::{env::Escape, native::NativeInstance};
 use arbutil::evm::api::EvmApi;
 use arbutil::evm::user::UserOutcome;

@@ -59,7 +59,7 @@ pub unsafe extern "C" fn user_host__call_contract(
     ret_len: usize,
 ) -> u8 {
     let value = Some(value);
-    let call = |api: EvmCaller, contract, input, gas, value: Option<_>| {
+    let call = |api: EvmCaller, contract, input: &_, gas, value: Option<_>| {
         api.contract_call(contract, input, gas, value.unwrap())
     };
     do_call(contract, calldata, calldata_len, value, gas, ret_len, call)
@@ -73,7 +73,8 @@ pub unsafe extern "C" fn user_host__delegate_call_contract(
     gas: u64,
     ret_len: usize,
 ) -> u8 {
-    let call = |api: EvmCaller, contract, input, gas, _| api.delegate_call(contract, input, gas);
+    let call =
+        |api: EvmCaller, contract, input: &_, gas, _| api.delegate_call(contract, input, gas);
     do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
 }
 
@@ -85,7 +86,7 @@ pub unsafe extern "C" fn user_host__static_call_contract(
     gas: u64,
     ret_len: usize,
 ) -> u8 {
-    let call = |api: EvmCaller, contract, input, gas, _| api.static_call(contract, input, gas);
+    let call = |api: EvmCaller, contract, input: &_, gas, _| api.static_call(contract, input, gas);
     do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
 }
 
@@ -99,7 +100,7 @@ unsafe fn do_call<F>(
     call: F,
 ) -> u8
 where
-    F: FnOnce(EvmCaller, Bytes20, Vec<u8>, u64, Option<Bytes32>) -> (u32, u64, UserOutcomeKind),
+    F: FnOnce(EvmCaller, Bytes20, &[u8], u64, Option<Bytes32>) -> (u32, u64, UserOutcomeKind),
 {
     let program = Program::start(3 * PTR_INK + EVM_API_INK);
     program.pay_for_read(calldata_len as u64).unwrap();
@@ -110,7 +111,7 @@ where
     let value = value.map(|x| wavm::read_bytes32(x));
     let api = &mut program.evm_api;
 
-    let (outs_len, gas_cost, status) = call(api, contract, input, gas, value);
+    let (outs_len, gas_cost, status) = call(api, contract, &input, gas, value);
     program.buy_gas(gas_cost).unwrap();
     program.evm_data.return_data_len = outs_len;
     wavm::caller_store32(return_data_len, outs_len);
