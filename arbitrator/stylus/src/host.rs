@@ -10,6 +10,7 @@ use arbutil::{
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
 };
+use eyre::Result;
 use prover::{programs::prelude::*, value::Value};
 
 macro_rules! be {
@@ -95,7 +96,7 @@ pub(crate) fn storage_store_bytes32<E: EvmApi>(
 
     let gas_cost = env.evm_api.set_bytes32(key, value)?;
     env.buy_gas(gas_cost)?;
-    trace!("storage_load_bytes32", env, [key, value], [])
+    trace!("storage_store_bytes32", env, [key, value], [])
 }
 
 pub(crate) fn call_contract<E: EvmApi>(
@@ -187,30 +188,30 @@ where
 }
 
 pub(crate) fn create1<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+    env: WasmEnvMut<E>,
     code: u32,
     code_len: u32,
     endowment: u32,
     contract: u32,
     revert_data_len: u32,
 ) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env, 3 * PTR_INK + EVM_API_INK)?;
-    env.pay_for_read(code_len.into())?;
-
-    let code = env.read_slice(code, code_len)?;
-    let endowment = env.read_bytes32(endowment)?;
-    let gas = env.gas_left()?;
-
-    let (result, ret_len, gas_cost) = env.evm_api.create1(code, endowment, gas);
-    env.buy_gas(gas_cost)?;
-    env.evm_data.return_data_len = ret_len;
-    env.write_u32(revert_data_len, ret_len)?;
-    env.write_bytes20(contract, result?)?;
-    Ok(())
+    let call = |api: &mut E, code, value, _, gas| api.create1(code, value, gas);
+    do_create(
+        env,
+        code,
+        code_len,
+        endowment,
+        None,
+        contract,
+        revert_data_len,
+        3 * PTR_INK + EVM_API_INK,
+        call,
+        "create1",
+    )
 }
 
 pub(crate) fn create2<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+    env: WasmEnvMut<E>,
     code: u32,
     code_len: u32,
     endowment: u32,
@@ -218,20 +219,66 @@ pub(crate) fn create2<E: EvmApi>(
     contract: u32,
     revert_data_len: u32,
 ) -> MaybeEscape {
-    let mut env = WasmEnv::start(&mut env, 4 * PTR_INK + EVM_API_INK)?;
+    let call = |api: &mut E, code, value, salt: Option<_>, gas| {
+        api.create2(code, value, salt.unwrap(), gas)
+    };
+    do_create(
+        env,
+        code,
+        code_len,
+        endowment,
+        Some(salt),
+        contract,
+        revert_data_len,
+        4 * PTR_INK + EVM_API_INK,
+        call,
+        "create2",
+    )
+}
+
+pub(crate) fn do_create<F, E>(
+    mut env: WasmEnvMut<E>,
+    code: u32,
+    code_len: u32,
+    endowment: u32,
+    salt: Option<u32>,
+    contract: u32,
+    revert_data_len: u32,
+    cost: u64,
+    call: F,
+    name: &str,
+) -> MaybeEscape
+where
+    E: EvmApi,
+    F: FnOnce(&mut E, Vec<u8>, Bytes32, Option<Bytes32>, u64) -> (Result<Bytes20>, u32, u64),
+{
+    let mut env = WasmEnv::start(&mut env, cost)?;
     env.pay_for_read(code_len.into())?;
 
     let code = env.read_slice(code, code_len)?;
-    let endowment = env.read_bytes32(endowment)?;
-    let salt = env.read_bytes32(salt)?;
-    let gas = env.gas_left()?;
+    let code_copy = env.evm_data.tracing.then(|| code.clone());
 
-    let (result, ret_len, gas_cost) = env.evm_api.create2(code, endowment, salt, gas);
+    let endowment = env.read_bytes32(endowment)?;
+    let salt = salt.map(|x| env.read_bytes32(x)).transpose()?;
+    let gas = env.gas_left()?;
+    let api = &mut env.evm_api;
+
+    let (result, ret_len, gas_cost) = call(api, code, endowment, salt, gas);
+    let result = result?;
+
     env.buy_gas(gas_cost)?;
     env.evm_data.return_data_len = ret_len;
     env.write_u32(revert_data_len, ret_len)?;
-    env.write_bytes20(contract, result?)?;
-    Ok(())
+    env.write_bytes20(contract, result)?;
+
+    let salt = salt.unwrap_or_default();
+    trace!(
+        name,
+        env,
+        [code_copy.unwrap(), endowment, salt, be!(gas)],
+        [result, be!(ret_len), be!(gas_cost)],
+        ()
+    )
 }
 
 pub(crate) fn read_return_data<E: EvmApi>(
