@@ -285,6 +285,7 @@ func (p Programs) CallProgram(
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
+		tracing:         tracingInfo != nil,
 	}
 
 	address := contract.Address()
@@ -385,6 +386,7 @@ type evmData struct {
 	txGasPrice      common.Hash
 	txOrigin        common.Address
 	reentrant       uint32
+	tracing         bool
 }
 
 type userStatus uint8

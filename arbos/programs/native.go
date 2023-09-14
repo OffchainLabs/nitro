@@ -267,9 +267,9 @@ func addPagesImpl(api usize, pages u16) u64 {
 }
 
 //export captureHostioImpl
-func captureHostioImpl(api usize, name *rustSlice, data *rustSlice, ink u64) {
+func captureHostioImpl(api usize, name *rustSlice, args *rustSlice, outs *rustSlice, ink u64) {
 	closures := getApi(api)
-	closures.captureHostio(string(name.read()), data.read(), uint64(ink))
+	closures.captureHostio(string(name.read()), args.read(), outs.read(), uint64(ink))
 }
 
 func (value bytes20) toAddress() common.Address {
@@ -367,6 +367,7 @@ func (data *evmData) encode() C.EvmData {
 		tx_origin:        addressToBytes20(data.txOrigin),
 		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
+		tracing:          cbool(data.tracing),
 	}
 }
 
