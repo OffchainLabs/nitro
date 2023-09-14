@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -48,6 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -354,10 +356,10 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
-		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader })
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
 		if err != nil {
 			log.Crit("failed to get L1 headerreader", "error", err)
-
 		}
 
 		// Just create validator smart wallet if needed then exit
@@ -768,6 +770,16 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if err != nil {
 		return false, err
 	}
+	var parentChainIsArbitrum bool
+	if chainInfo.ParentChainIsArbitrum != nil {
+		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
+	} else {
+		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainId, "parentChainId", chainInfo.ParentChainId)
+		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
+		if err == nil {
+			parentChainIsArbitrum = true
+		}
+	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
@@ -786,6 +798,16 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	if !chainInfo.HasGenesisState {
 		chainDefaults["init.empty"] = true
+	}
+	if parentChainIsArbitrum {
+		l2MaxTxSize := execution.DefaultSequencerConfig.MaxTxDataSize
+		bufferSpace := 5000
+		if l2MaxTxSize < bufferSpace*2 {
+			return false, fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
+		}
+		safeBatchSize := l2MaxTxSize - bufferSpace
+		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
+		chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
