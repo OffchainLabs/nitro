@@ -762,19 +762,20 @@ func testEvmData(t *testing.T, jit bool) {
             "fault":  function() { return this.names; },
             names: []
         }`
-	var traceResult json.RawMessage
+	var trace json.RawMessage
 	traceConfig := &tracers.TraceConfig{
 		Tracer: &js,
 	}
-
 	rpc := l2client.Client()
-	err = rpc.CallContext(ctx, &traceResult, "debug_traceTransaction", tx.Hash(), traceConfig)
+	err = rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
 	Require(t, err)
-	trace := string(traceResult)
-	if !strings.Contains(trace, "read_args") || !strings.Contains(trace, "write_result") {
-		Fatal(t, "tracer missing hostios", trace)
+
+	for _, item := range []string{"user_entrypoint", "read_args", "write_result", "user_returned"} {
+		if !strings.Contains(string(trace), item) {
+			Fatal(t, "tracer missing hostio ", item, " ", trace)
+		}
 	}
-	colors.PrintGrey("trace: ", trace)
+	colors.PrintGrey("trace: ", string(trace))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }

@@ -77,6 +77,11 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
         env.outs.clear();
         env.config = Some(config);
 
+        if env.evm_data.tracing {
+            env.evm_api
+                .capture_hostio(STYLUS_ENTRY_POINT, &args.len().to_be_bytes(), &[], ink);
+        }
+
         let exports = &self.instance.exports;
         let main = exports.get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)?;
         let status = match main.call(store, args.len() as u32) {
@@ -100,6 +105,12 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
                 });
             }
         };
+
+        let env = self.env();
+        if env.evm_data.tracing {
+            env.evm_api
+                .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink);
+        }
 
         let outs = self.env().outs.clone();
         Ok(match status {
