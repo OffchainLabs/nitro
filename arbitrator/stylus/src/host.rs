@@ -271,7 +271,7 @@ where
     env.write_u32(revert_data_len, ret_len)?;
     env.write_bytes20(contract, result)?;
 
-    let salt = salt.unwrap_or_default();
+    let salt = salt.into_iter().flat_map(|x| x);
     trace!(
         name,
         env,
