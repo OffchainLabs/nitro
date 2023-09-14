@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -23,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -37,6 +39,8 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	"github.com/wasmerio/wasmer-go/wasmer"
+
+	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 )
 
 func TestProgramKeccak(t *testing.T) {
@@ -750,6 +754,28 @@ func testEvmData(t *testing.T, jit bool) {
 
 	tx = l2info.PrepareTxTo("Owner", &evmDataAddr, evmDataGas, nil, evmDataData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	// test hostio tracing
+	js := `{
+            "hostio": function(info) { this.names.push(info.name); },
+            "result": function() { return this.names; },
+            "fault":  function() { return this.names; },
+            names: []
+        }`
+	var trace json.RawMessage
+	traceConfig := &tracers.TraceConfig{
+		Tracer: &js,
+	}
+	rpc := l2client.Client()
+	err = rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
+	Require(t, err)
+
+	for _, item := range []string{"user_entrypoint", "read_args", "write_result", "user_returned"} {
+		if !strings.Contains(string(trace), item) {
+			Fatal(t, "tracer missing hostio ", item, " ", trace)
+		}
+	}
+	colors.PrintGrey("trace: ", string(trace))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }

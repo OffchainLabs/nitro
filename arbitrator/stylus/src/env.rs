@@ -198,6 +198,10 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         self.write_slice(ptr, &src.0)?;
         Ok(())
     }
+
+    pub fn trace(&self, name: &str, args: &[u8], outs: &[u8], ink: u64) {
+        self.evm_api.capture_hostio(name, args, outs, ink);
+    }
 }
 
 impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
