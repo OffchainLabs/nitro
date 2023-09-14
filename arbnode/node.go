@@ -606,7 +606,7 @@ func createNodeImpl(
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys, true)
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}

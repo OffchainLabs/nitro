@@ -130,7 +130,7 @@ func main() {
 	}
 
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerReaderConfig }, arbSys, true)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerReaderConfig }, arbSys)
 	if err != nil {
 		panic(fmt.Errorf("failed to create header reader: %w", err))
 	}

@@ -199,7 +199,7 @@ func startup() error {
 			return err
 		}
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys, true) // TODO: config
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
 		if err != nil {
 			return err
 		}

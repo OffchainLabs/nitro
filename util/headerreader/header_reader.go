@@ -94,25 +94,24 @@ var TestConfig = Config{
 	UseFinalityData:  false,
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface, usePrecompilesgen bool) (*HeaderReader, error) {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	if usePrecompilesgen {
+	var arbSys ArbSysInterface
+	if arbSysPrecompile != nil {
 		codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 		if err != nil {
 			return nil, err
 		}
 		if len(codeAt) != 0 {
 			isParentChainArbitrum = true
-			if arbSysPrecompile == nil {
-				return nil, errors.New("unable to create ArbSys from precompilesgen")
-			}
+			arbSys = arbSysPrecompile
 		}
 	}
 	return &HeaderReader{
 		client:                client,
 		config:                config,
 		isParentChainArbitrum: isParentChainArbitrum,
-		arbSys:                arbSysPrecompile,
+		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
 		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
