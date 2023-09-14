@@ -20,12 +20,6 @@ macro_rules! be {
 }
 
 macro_rules! trace {
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr) => {{
-        trace!($name, $env, [$($args),+], $outs, ())
-    }};
-    ($name:expr, $env:expr, $args:expr, $outs:expr) => {{
-        trace!($name, $env, $args, $outs, ())
-    }};
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data.tracing {
             let ink = $env.ink_ready()?;
@@ -37,29 +31,25 @@ macro_rules! trace {
         }
         Ok($ret)
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr, $ret:expr) => {{
-        if $env.evm_data.tracing {
-            let ink = $env.ink_ready()?;
-            let mut args = vec![];
-            $(args.extend($args);)*
-            $env.trace($name, &args, $outs.as_slice(), ink);
-        }
-        Ok($ret)
+    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr) => {{
+        trace!($name, $env, [$($args),+], $outs, ())
     }};
-    ($name:expr, $env:expr, $args:expr, $outs:expr, $ret:expr) => {{
-        if $env.evm_data.tracing {
-            let ink = $env.ink_ready()?;
-            $env.trace($name, $args.as_slice(), $outs.as_slice(), ink);
-        }
-        Ok($ret)
+    ($name:expr, $env:expr, $args:expr, $outs:expr) => {{
+        trace!($name, $env, $args, $outs, ())
     }};
+    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr, $ret:expr) => {
+        trace!($name, $env, [$($args),+], [$outs], $ret)
+    };
+    ($name:expr, $env:expr, $args:expr, $outs:expr, $ret:expr) => {
+        trace!($name, $env, [$args], [$outs], $ret)
+    };
 }
 
 pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, 0)?;
     env.pay_for_write(env.args.len() as u64)?;
     env.write_slice(ptr, &env.args)?;
-    trace!("read_args", env, env.args, &[])
+    trace!("read_args", env, &env.args, &[])
 }
 
 pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
@@ -96,7 +86,7 @@ pub(crate) fn storage_store_bytes32<E: EvmApi>(
 
     let gas_cost = env.evm_api.set_bytes32(key, value)?;
     env.buy_gas(gas_cost)?;
-    trace!("storage_store_bytes32", env, [key, value], [])
+    trace!("storage_store_bytes32", env, [key, value], &[])
 }
 
 pub(crate) fn call_contract<E: EvmApi>(
@@ -301,7 +291,7 @@ pub(crate) fn read_return_data<E: EvmApi>(
 pub(crate) fn return_data_size<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let len = env.evm_data.return_data_len;
-    trace!("return_data_size", env, be!(len), [], len)
+    trace!("return_data_size", env, be!(len), &[], len)
 }
 
 pub(crate) fn emit_log<E: EvmApi>(
@@ -319,7 +309,7 @@ pub(crate) fn emit_log<E: EvmApi>(
 
     let data = env.read_slice(data, len)?;
     env.evm_api.emit_log(data.clone(), topics)?;
-    trace!("emit_log", env, [data, be!(topics)], [])
+    trace!("emit_log", env, [data, be!(topics)], &[])
 }
 
 pub(crate) fn account_balance<E: EvmApi>(
@@ -333,7 +323,7 @@ pub(crate) fn account_balance<E: EvmApi>(
     let (balance, gas_cost) = env.evm_api.account_balance(address);
     env.buy_gas(gas_cost)?;
     env.write_bytes32(ptr, balance)?;
-    trace!("account_balance", env, [], balance)
+    trace!("account_balance", env, &[], balance)
 }
 
 pub(crate) fn account_codehash<E: EvmApi>(
@@ -347,79 +337,79 @@ pub(crate) fn account_codehash<E: EvmApi>(
     let (hash, gas_cost) = env.evm_api.account_codehash(address);
     env.buy_gas(gas_cost)?;
     env.write_bytes32(ptr, hash)?;
-    trace!("account_codehash", env, [], hash)
+    trace!("account_codehash", env, &[], hash)
 }
 
 pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let gas = env.gas_left()?;
-    trace!("evm_gas_left", env, be!(gas), [], gas)
+    trace!("evm_gas_left", env, be!(gas), &[], gas)
 }
 
 pub(crate) fn evm_ink_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let ink = env.ink_ready()?;
-    trace!("evm_ink_left", env, be!(ink), [], ink)
+    trace!("evm_ink_left", env, be!(ink), &[], ink)
 }
 
 pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes32(ptr, env.evm_data.block_basefee)?;
-    trace!("block_basefee", env, [], env.evm_data.block_basefee)
+    trace!("block_basefee", env, &[], env.evm_data.block_basefee)
 }
 
 pub(crate) fn block_coinbase<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes20(ptr, env.evm_data.block_coinbase)?;
-    trace!("block_coinbase", env, [], env.evm_data.block_coinbase)
+    trace!("block_coinbase", env, &[], env.evm_data.block_coinbase)
 }
 
 pub(crate) fn block_gas_limit<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let limit = env.evm_data.block_gas_limit;
-    trace!("block_gas_limit", env, [], be!(limit), limit)
+    trace!("block_gas_limit", env, &[], be!(limit), limit)
 }
 
 pub(crate) fn block_number<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let number = env.evm_data.block_number;
-    trace!("block_number", env, [], be!(number), number)
+    trace!("block_number", env, &[], be!(number), number)
 }
 
 pub(crate) fn block_timestamp<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let timestamp = env.evm_data.block_timestamp;
-    trace!("block_timestamp", env, [], be!(timestamp), timestamp)
+    trace!("block_timestamp", env, &[], be!(timestamp), timestamp)
 }
 
 pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let chainid = env.evm_data.chainid;
-    trace!("chainid", env, [], be!(chainid), chainid)
+    trace!("chainid", env, &[], be!(chainid), chainid)
 }
 
 pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes20(ptr, env.evm_data.contract_address)?;
-    trace!("contract_address", env, [], env.evm_data.contract_address)
+    trace!("contract_address", env, &[], env.evm_data.contract_address)
 }
 
 pub(crate) fn msg_reentrant<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let reentrant = env.evm_data.reentrant;
-    trace!("msg_reentrant", env, [], be!(reentrant), reentrant)
+    trace!("msg_reentrant", env, &[], be!(reentrant), reentrant)
 }
 
 pub(crate) fn msg_sender<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes20(ptr, env.evm_data.msg_sender)?;
-    trace!("msg_sender", env, [], env.evm_data.msg_sender)
+    trace!("msg_sender", env, &[], env.evm_data.msg_sender)
 }
 
 pub(crate) fn msg_value<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes32(ptr, env.evm_data.msg_value)?;
-    trace!("msg_value", env, [], env.evm_data.msg_value)
+    trace!("msg_value", env, &[], env.evm_data.msg_value)
 }
 
 pub(crate) fn native_keccak256<E: EvmApi>(
@@ -440,19 +430,19 @@ pub(crate) fn native_keccak256<E: EvmApi>(
 pub(crate) fn tx_gas_price<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes32(ptr, env.evm_data.tx_gas_price)?;
-    trace!("tx_gas_price", env, [], env.evm_data.tx_gas_price)
+    trace!("tx_gas_price", env, &[], env.evm_data.tx_gas_price)
 }
 
 pub(crate) fn tx_ink_price<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
     let mut env = WasmEnv::start(&mut env, 0)?;
     let ink_price = env.pricing().ink_price;
-    trace!("tx_ink_price", env, [], be!(ink_price), ink_price)
+    trace!("tx_ink_price", env, &[], be!(ink_price), ink_price)
 }
 
 pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes20(ptr, env.evm_data.tx_origin)?;
-    trace!("tx_origin", env, [], env.evm_data.tx_origin)
+    trace!("tx_origin", env, &[], env.evm_data.tx_origin)
 }
 
 pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
@@ -463,7 +453,7 @@ pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> Mayb
     }
     let gas_cost = env.evm_api.add_pages(pages);
     env.buy_gas(gas_cost)?;
-    trace!("memory_grow", env, be!(pages), [])
+    trace!("memory_grow", env, be!(pages), &[])
 }
 
 pub(crate) fn console_log_text<E: EvmApi>(
@@ -474,7 +464,7 @@ pub(crate) fn console_log_text<E: EvmApi>(
     let mut env = WasmEnv::start_free(&mut env);
     let text = env.read_slice(ptr, len)?;
     env.say(String::from_utf8_lossy(&text));
-    trace!("console_log_text", env, text, [])
+    trace!("console_log_text", env, text, &[])
 }
 
 pub(crate) fn console_log<E: EvmApi, T: Into<Value>>(
@@ -484,7 +474,7 @@ pub(crate) fn console_log<E: EvmApi, T: Into<Value>>(
     let mut env = WasmEnv::start_free(&mut env);
     let value = value.into();
     env.say(value);
-    trace!("console_log", env, [format!("{value}").as_bytes()], [])
+    trace!("console_log", env, [format!("{value}").as_bytes()], &[])
 }
 
 pub(crate) fn console_tee<E: EvmApi, T: Into<Value> + Copy>(
