@@ -115,7 +115,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	if err := pricePerUnit.SetSaturatingWithWarning(initialL1BaseFee, "initial L1 base fee (storing in price per unit)"); err != nil {
 		return err
 	}
-	brotliCompressionLevel := sto.OpenStorageBackedInt64(brotliCompressionLevelOffset)
+	brotliCompressionLevel := sto.OpenStorageBackedUint64(brotliCompressionLevelOffset)
 	if err := brotliCompressionLevel.Set(InitialBrotliCompressionLevel); err != nil {
 		return err
 	}
