@@ -564,7 +564,17 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
-	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
+	return dataposter.NewDataPoster(
+		&dataposter.DataPosterOpts{
+			Database:          db,
+			HeaderReader:      l1Reader,
+			Auth:              transactOpts,
+			RedisClient:       redisC,
+			RedisLock:         redisLock,
+			Config:            dpCfg,
+			MetadataRetriever: mdRetriever,
+			RedisKey:          "staker-data-poster.queue",
+		})
 }
 
 func createNodeImpl(
