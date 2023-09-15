@@ -142,6 +142,10 @@ func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 	return c.State.L1PricingState().SetAmortizedCostCapBips(cap)
 }
 
+func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
+	return c.State.L1PricingState().SetBrotliCompressionLevel(level)
+}
+
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
 	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()

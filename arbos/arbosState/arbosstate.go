@@ -318,6 +318,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if !firstTime {
 				ensure(state.chainOwners.ClearList())
 			}
+		case 11:
+			// Update Brotli compression level for fast compression from 0 to 1
+			ensure(state.l1PricingState.SetBrotliCompressionLevel(1))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

@@ -27,7 +27,7 @@ func testCompressDecompress(t *testing.T, data []byte) {
 	}
 	testDecompress(t, compressedWell, data)
 
-	compressedFast, err := CompressFast(data)
+	compressedFast, err := CompressFast(data, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
