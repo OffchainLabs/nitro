@@ -9,8 +9,8 @@ import (
 func TestUint64SetSplitKeyValue(t *testing.T) {
 	set := Uint64Set{}
 	k, v := set.splitKeyValue(uint64(0x123456789abcdef0))
-	if k != uint64(0x123456789abcde00) {
-		Fatal(t, "invalid key, want:", uint64(0x123456789abcde00), "have:", k)
+	if k != uint64(0x00123456789abcde) {
+		Fatal(t, "invalid key, want:", uint64(0x00123456789abcde), "have:", k)
 	}
 	if v != int(0xf0) {
 		Fatal(t, "invalid value, want:", uint64(0xf0), "have:", v)

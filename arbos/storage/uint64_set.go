@@ -68,5 +68,5 @@ func (s *Uint64Set) IsMember(element uint64) (bool, error) {
 }
 
 func (s *Uint64Set) splitKeyValue(element uint64) (uint64, int) {
-	return element & (^uint64(0xff)), int(element & 0xff)
+	return element >> 8, int(element & 0xff)
 }
