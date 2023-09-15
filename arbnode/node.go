@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -234,19 +235,12 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
-	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
-	if err != nil {
-		return nil, err
-	}
-	l1Reader.Start(ctx)
-	defer l1Reader.StopAndWait()
-
+func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -265,7 +259,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+	receipt, err := parentChainReader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -545,7 +539,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
-func ValidatorDataposter(
+func StakerDataposter(
 	db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
 ) (*dataposter.DataPoster, error) {
@@ -611,7 +605,8 @@ func createNodeImpl(
 
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
-		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader })
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
@@ -809,8 +804,8 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		dp, err := ValidatorDataposter(
-			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
+		dp, err := StakerDataposter(
+			rawdb.NewTable(arbDb, storage.StakerPrefix),
 			l1Reader,
 			txOptsValidator,
 			configFetcher,
