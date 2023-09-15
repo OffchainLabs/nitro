@@ -623,7 +623,7 @@ func (n NodeInterface) GetL2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) 
 	var storedMidBlockL1Num uint64
 	for lowFirstBlock < highFirstBlock || lowLastBlock < highLastBlock {
 		if lowFirstBlock < highFirstBlock {
-			mid := (lowFirstBlock + highFirstBlock) / 2
+			mid := arbmath.SaturatingUAdd(lowFirstBlock, highFirstBlock) / 2
 			midBlockL1Num, err := n.getL1BlockNum(mid)
 			if err != nil {
 				return nil, err
@@ -638,7 +638,7 @@ func (n NodeInterface) GetL2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) 
 		}
 		if lowLastBlock < highLastBlock {
 			// dont fetch midBlockL1Num if its already fetched above
-			mid := (lowLastBlock + highLastBlock) / 2
+			mid := arbmath.SaturatingUAdd(lowLastBlock, highLastBlock) / 2
 			var midBlockL1Num uint64
 			var err error
 			if mid == storedMid {
