@@ -14,10 +14,12 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -127,13 +129,20 @@ func main() {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerReaderConfig }, arbSys)
+	if err != nil {
+		panic(fmt.Errorf("failed to create header reader: %w", err))
+	}
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
 	deployedAddresses, err := arbnode.DeployOnL1(
 		ctx,
-		l1client,
+		l1Reader,
 		l1TransactionOpts,
 		sequencerAddress,
 		*authorizevalidators,
-		func() *headerreader.Config { return &headerReaderConfig },
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 	)
 	if err != nil {
@@ -148,12 +157,14 @@ func main() {
 	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
 		panic(err)
 	}
+	parentChainIsArbitrum := l1Reader.IsParentChainArbitrum()
 	chainsInfo := []chaininfo.ChainInfo{
 		{
-			ChainName:       *l2ChainName,
-			ParentChainId:   l1ChainId.Uint64(),
-			ChainConfig:     &chainConfig,
-			RollupAddresses: deployedAddresses,
+			ChainName:             *l2ChainName,
+			ParentChainId:         l1ChainId.Uint64(),
+			ParentChainIsArbitrum: &parentChainIsArbitrum,
+			ChainConfig:           &chainConfig,
+			RollupAddresses:       deployedAddresses,
 		},
 	}
 	chainsInfoJson, err := json.Marshal(chainsInfo)

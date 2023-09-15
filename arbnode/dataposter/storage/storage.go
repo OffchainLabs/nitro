@@ -15,6 +15,7 @@ var (
 	ErrStorageRace = errors.New("storage race error")
 
 	BlockValidatorPrefix string = "v" // the prefix for all block validator keys
+	StakerPrefix         string = "S" // the prefix for all staker keys
 	BatchPosterPrefix    string = "b" // the prefix for all batch poster keys
 	// TODO(anodar): move everything else from schema.go file to here once
 	// execution split is complete.
