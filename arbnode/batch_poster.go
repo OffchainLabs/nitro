@@ -76,7 +76,8 @@ type BatchPoster struct {
 	backlog         uint64
 	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
-	batchReverted atomic.Bool // indicates whether data poster batch was reverted
+	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
+	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 }
 
 type l1BlockBound int
@@ -263,13 +264,12 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
 // unless the data poster is configured with noop storage which can tolerate reverts.
-// From must be a pointer to the starting block, which is updated after each block is checked for reverts
-func (b *BatchPoster) checkReverts(ctx context.Context, from *int64, to int64) (bool, error) {
-	if *from > to {
-		return false, fmt.Errorf("wrong range, from: %d > to: %d", from, to)
+func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) {
+	if b.nextRevertCheckBlock > to {
+		return false, fmt.Errorf("wrong range, from: %d > to: %d", b.nextRevertCheckBlock, to)
 	}
-	for ; *from <= to; *from++ {
-		number := big.NewInt(*from)
+	for ; b.nextRevertCheckBlock <= to; b.nextRevertCheckBlock++ {
+		number := big.NewInt(b.nextRevertCheckBlock)
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
 			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
@@ -305,7 +305,6 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	nextToCheck := int64(0) // the first unchecked block
 	for {
 		// Poll until:
 		// - L1 headers reader channel is closed, or
@@ -317,19 +316,20 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 				log.Info("L1 headers channel checking for batch poster reverts has been closed")
 				return
 			}
+			blockNum := h.Number.Int64()
 			// If this is the first block header, set last seen as number-1.
 			// We may see same block number again if there is L1 reorg, in that
 			// case we check the block again.
-			if nextToCheck == 0 || nextToCheck == h.Number.Int64() {
-				nextToCheck = h.Number.Int64()
+			if b.nextRevertCheckBlock == 0 || b.nextRevertCheckBlock > blockNum {
+				b.nextRevertCheckBlock = blockNum
 			}
-			if h.Number.Int64()-nextToCheck > 100 {
-				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", nextToCheck, "current", h.Number)
-				nextToCheck = h.Number.Int64()
+			if blockNum-b.nextRevertCheckBlock > 100 {
+				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", b.nextRevertCheckBlock, "current", blockNum)
+				b.nextRevertCheckBlock = blockNum
 				continue
 			}
 
-			reverted, err := b.checkReverts(ctx, &nextToCheck, h.Number.Int64())
+			reverted, err := b.checkReverts(ctx, blockNum)
 			if err != nil {
 				logLevel := log.Error
 				if strings.Contains(err.Error(), "not found") {
