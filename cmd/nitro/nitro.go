@@ -774,7 +774,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.ParentChainIsArbitrum != nil {
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
-		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainId, "parentChainId", chainInfo.ParentChainId)
+		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
 		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
