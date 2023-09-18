@@ -5,6 +5,7 @@ package validatorwallet
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -15,10 +16,12 @@ import (
 )
 
 // NoOp validator wallet is used for watchtower mode.
-type NoOp struct{}
+type NoOp struct {
+	l1Client arbutil.L1Interface
+}
 
-func NewNoOp() *NoOp {
-	return &NoOp{}
+func NewNoOp(l1Client arbutil.L1Interface) *NoOp {
+	return &NoOp{l1Client: l1Client}
 }
 
 func (*NoOp) Initialize(context.Context) error { return nil }
@@ -32,14 +35,14 @@ func (*NoOp) TxSenderAddress() *common.Address { return nil }
 func (*NoOp) From() common.Address { return common.Address{} }
 
 func (*NoOp) ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error) {
-	return nil, nil
+	return nil, errors.New("no op validator wallet cannot execute transactions")
 }
 
 func (*NoOp) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
-	return nil, nil
+	return nil, errors.New("no op validator wallet cannot timeout challenges")
 }
 
-func (*NoOp) L1Client() arbutil.L1Interface { return nil }
+func (n *NoOp) L1Client() arbutil.L1Interface { return n.l1Client }
 
 func (*NoOp) RollupAddress() common.Address { return common.Address{} }
 
