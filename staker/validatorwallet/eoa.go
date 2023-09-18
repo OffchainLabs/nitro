@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 )
 
-type EoaValidatorWallet struct {
+type EOA struct {
 	auth                    *bind.TransactOpts
 	client                  arbutil.L1Interface
 	rollupAddress           common.Address
@@ -28,8 +28,8 @@ type EoaValidatorWallet struct {
 	getExtraGas             func() uint64
 }
 
-func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EoaValidatorWallet, error) {
-	return &EoaValidatorWallet{
+func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EOA, error) {
+	return &EOA{
 		auth:          auth,
 		client:        l1Client,
 		rollupAddress: rollupAddress,
@@ -38,7 +38,7 @@ func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress comm
 	}, nil
 }
 
-func (w *EoaValidatorWallet) Initialize(ctx context.Context) error {
+func (w *EOA) Initialize(ctx context.Context) error {
 	rollup, err := rollupgen.NewRollupUserLogic(w.rollupAddress, w.client)
 	if err != nil {
 		return err
@@ -52,36 +52,36 @@ func (w *EoaValidatorWallet) Initialize(ctx context.Context) error {
 	return err
 }
 
-func (w *EoaValidatorWallet) Address() *common.Address {
+func (w *EOA) Address() *common.Address {
 	return &w.auth.From
 }
 
-func (w *EoaValidatorWallet) AddressOrZero() common.Address {
+func (w *EOA) AddressOrZero() common.Address {
 	return w.auth.From
 }
 
-func (w *EoaValidatorWallet) TxSenderAddress() *common.Address {
+func (w *EOA) TxSenderAddress() *common.Address {
 	return &w.auth.From
 }
 
-func (w *EoaValidatorWallet) L1Client() arbutil.L1Interface {
+func (w *EOA) L1Client() arbutil.L1Interface {
 	return w.client
 }
 
-func (w *EoaValidatorWallet) RollupAddress() common.Address {
+func (w *EOA) RollupAddress() common.Address {
 	return w.rollupAddress
 }
 
-func (w *EoaValidatorWallet) ChallengeManagerAddress() common.Address {
+func (w *EOA) ChallengeManagerAddress() common.Address {
 	return w.challengeManagerAddress
 }
 
-func (w *EoaValidatorWallet) TestTransactions(context.Context, []*types.Transaction) error {
+func (w *EOA) TestTransactions(context.Context, []*types.Transaction) error {
 	// We only use the first tx which is checked implicitly by gas estimation
 	return nil
 }
 
-func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *txbuilder.ValidatorTxBuilder, _ common.Address) (*types.Transaction, error) {
+func (w *EOA) ExecuteTransactions(ctx context.Context, builder *txbuilder.Builder, _ common.Address) (*types.Transaction, error) {
 	if len(builder.Transactions()) == 0 {
 		return nil, nil
 	}
@@ -89,7 +89,7 @@ func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *t
 	return w.postTransaction(ctx, tx)
 }
 
-func (w *EoaValidatorWallet) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
+func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
 	nonce, err := w.L1Client().NonceAt(ctx, w.auth.From, nil)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (w *EoaValidatorWallet) postTransaction(ctx context.Context, baseTx *types.
 	return newTx, nil
 }
 
-func (w *EoaValidatorWallet) TimeoutChallenges(ctx context.Context, timeouts []uint64) (*types.Transaction, error) {
+func (w *EOA) TimeoutChallenges(ctx context.Context, timeouts []uint64) (*types.Transaction, error) {
 	if len(timeouts) == 0 {
 		return nil, nil
 	}
@@ -116,22 +116,22 @@ func (w *EoaValidatorWallet) TimeoutChallenges(ctx context.Context, timeouts []u
 	return w.postTransaction(ctx, tx)
 }
 
-func (w *EoaValidatorWallet) CanBatchTxs() bool {
+func (w *EOA) CanBatchTxs() bool {
 	return false
 }
 
-func (w *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
+func (w *EOA) AuthIfEoa() *bind.TransactOpts {
 	return w.auth
 }
 
-func (w *EoaValidatorWallet) Start(ctx context.Context) {
+func (w *EOA) Start(ctx context.Context) {
 	w.dataPoster.Start(ctx)
 }
 
-func (b *EoaValidatorWallet) StopAndWait() {
+func (b *EOA) StopAndWait() {
 	b.dataPoster.StopAndWait()
 }
 
-func (b *EoaValidatorWallet) DataPoster() *dataposter.DataPoster {
+func (b *EOA) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }

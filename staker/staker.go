@@ -266,7 +266,7 @@ type ValidatorWalletInterface interface {
 	ChallengeManagerAddress() common.Address
 	L1Client() arbutil.L1Interface
 	TestTransactions(context.Context, []*types.Transaction) error
-	ExecuteTransactions(context.Context, *txbuilder.ValidatorTxBuilder, common.Address) (*types.Transaction, error)
+	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
 	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts

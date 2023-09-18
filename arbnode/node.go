@@ -827,7 +827,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = validatorwallet.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
+			wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 			if err != nil {
 				return nil, err
 			}
@@ -835,7 +835,7 @@ func createNodeImpl(
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = validatorwallet.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
+			wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
 			if err != nil {
 				return nil, err
 			}

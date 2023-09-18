@@ -46,7 +46,7 @@ type L1Validator struct {
 	rollupAddress  common.Address
 	validatorUtils *rollupgen.ValidatorUtils
 	client         arbutil.L1Interface
-	builder        *txbuilder.ValidatorTxBuilder
+	builder        *txbuilder.Builder
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
 
@@ -67,7 +67,7 @@ func NewL1Validator(
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
 ) (*L1Validator, error) {
-	builder, err := txbuilder.NewValidatorTxBuilder(wallet)
+	builder, err := txbuilder.NewBuilder(wallet)
 	if err != nil {
 		return nil, err
 	}
