@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package txbuilder
 
 import (
 	"context"
@@ -14,6 +14,15 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
 )
+
+type ValidatorWalletInterface interface {
+	// Address must be able to be called concurrently with other functions
+	Address() *common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *ValidatorTxBuilder, common.Address) (*types.Transaction, error)
+	AuthIfEoa() *bind.TransactOpts
+}
 
 // ValidatorTxBuilder combines any transactions sent to it via SendTransaction into one batch,
 // which is then sent to the validator wallet.
@@ -100,4 +109,18 @@ func (b *ValidatorTxBuilder) AuthWithAmount(ctx context.Context, amount *big.Int
 // See AuthWithAmount docs for important details.
 func (b *ValidatorTxBuilder) Auth(ctx context.Context) (*bind.TransactOpts, error) {
 	return b.AuthWithAmount(ctx, common.Big0)
+}
+
+func (b *ValidatorTxBuilder) Transactions() []*types.Transaction {
+	return b.transactions
+}
+
+// Auth is the same as AuthWithAmount with a 0 amount specified.
+// See AuthWithAmount docs for important details.
+func (b *ValidatorTxBuilder) BuilderAuth() *bind.TransactOpts {
+	return b.builderAuth
+}
+
+func (b *ValidatorTxBuilder) WalletAddress() *common.Address {
+	return b.wallet.Address()
 }

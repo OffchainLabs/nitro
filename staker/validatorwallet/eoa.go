@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package validatorwallet
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 )
 
 type EoaValidatorWallet struct {
@@ -26,8 +27,6 @@ type EoaValidatorWallet struct {
 	dataPoster              *dataposter.DataPoster
 	getExtraGas             func() uint64
 }
-
-var _ ValidatorWalletInterface = (*EoaValidatorWallet)(nil)
 
 func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EoaValidatorWallet, error) {
 	return &EoaValidatorWallet{
@@ -82,11 +81,11 @@ func (w *EoaValidatorWallet) TestTransactions(context.Context, []*types.Transact
 	return nil
 }
 
-func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder, _ common.Address) (*types.Transaction, error) {
-	if len(builder.transactions) == 0 {
+func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *txbuilder.ValidatorTxBuilder, _ common.Address) (*types.Transaction, error) {
+	if len(builder.Transactions()) == 0 {
 		return nil, nil
 	}
-	tx := builder.transactions[0] // we ignore future txs and only execute the first
+	tx := builder.Transactions()[0] // we ignore future txs and only execute the first
 	return w.postTransaction(ctx, tx)
 }
 

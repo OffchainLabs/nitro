@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package validatorwallet
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -43,27 +44,6 @@ func init() {
 	walletCreatedID = parsedValidatorWalletCreator.Events["WalletCreated"].ID
 }
 
-type ValidatorWalletInterface interface {
-	Initialize(context.Context) error
-	// Address must be able to be called concurrently with other functions
-	Address() *common.Address
-	// Address must be able to be called concurrently with other functions
-	AddressOrZero() common.Address
-	TxSenderAddress() *common.Address
-	RollupAddress() common.Address
-	ChallengeManagerAddress() common.Address
-	L1Client() arbutil.L1Interface
-	TestTransactions(context.Context, []*types.Transaction) error
-	ExecuteTransactions(context.Context, *ValidatorTxBuilder, common.Address) (*types.Transaction, error)
-	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
-	CanBatchTxs() bool
-	AuthIfEoa() *bind.TransactOpts
-	Start(context.Context)
-	StopAndWait()
-	// May be nil
-	DataPoster() *dataposter.DataPoster
-}
-
 type ContractValidatorWallet struct {
 	con                     *rollupgen.ValidatorWallet
 	address                 atomic.Pointer[common.Address]
@@ -78,8 +58,6 @@ type ContractValidatorWallet struct {
 	dataPoster              *dataposter.DataPoster
 	getExtraGas             func() uint64
 }
-
-var _ ValidatorWalletInterface = (*ContractValidatorWallet)(nil)
 
 func NewContractValidatorWallet(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
 	getExtraGas func() uint64) (*ContractValidatorWallet, error) {
@@ -257,8 +235,8 @@ func combineTxes(txes []*types.Transaction) ([][]byte, []common.Address, []*big.
 }
 
 // Not thread safe! Don't call this from multiple threads at the same time.
-func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder, gasRefunder common.Address) (*types.Transaction, error) {
-	txes := builder.transactions
+func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, builder *txbuilder.ValidatorTxBuilder, gasRefunder common.Address) (*types.Transaction, error) {
+	txes := builder.Transactions()
 	if len(txes) == 0 {
 		return nil, nil
 	}
@@ -273,7 +251,7 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 		if err != nil {
 			return nil, err
 		}
-		builder.transactions = nil
+		builder.ClearTransactions()
 		return arbTx, nil
 	}
 
@@ -314,7 +292,7 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	if err != nil {
 		return nil, err
 	}
-	builder.transactions = nil
+	builder.ClearTransactions()
 	return arbTx, nil
 }
 
@@ -420,6 +398,13 @@ func (b *ContractValidatorWallet) StopAndWait() {
 
 func (b *ContractValidatorWallet) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
+}
+
+type L1ReaderInterface interface {
+	Client() arbutil.L1Interface
+	Subscribe(bool) (<-chan *types.Header, func())
+	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+	UseFinalityData() bool
 }
 
 func GetValidatorWalletContract(
