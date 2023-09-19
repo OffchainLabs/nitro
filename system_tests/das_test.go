@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -233,7 +234,8 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
-	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig })
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
 	Require(t, err)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
