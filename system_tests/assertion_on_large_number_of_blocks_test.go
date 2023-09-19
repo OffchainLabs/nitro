@@ -17,6 +17,7 @@ import (
 	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -67,12 +68,23 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	err = stateless.Start(ctx)
 	Require(t, err)
 
+	challengeLeafHeights := []l2stateprovider.Height{
+		l2stateprovider.Height(blockChallengeLeafHeight),
+		l2stateprovider.Height(bigStepChallengeLeafHeight),
+		l2stateprovider.Height(smallStepChallengeLeafHeight),
+	}
 	manager, err := staker.NewStateManager(stateless, t.TempDir(), nil)
 	Require(t, err)
-
+	provider := l2stateprovider.NewHistoryCommitmentProvider(
+		manager,
+		manager,
+		manager,
+		challengeLeafHeights,
+		manager,
+	)
 	poster := assertions.NewPoster(
 		assertionChain,
-		manager,
+		provider,
 		"test",
 		time.Second,
 	)
@@ -205,11 +217,12 @@ func deployBoldContracts(
 		common.Address{},
 		big.NewInt(1),
 		stakeToken,
-		challenge_testing.WithLevelZeroHeights(&challenge_testing.LevelZeroHeights{
-			BlockChallengeHeight:     blockChallengeLeafHeight,
-			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
-			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
-		}),
+		rollupgen.ExecutionState{
+			GlobalState:   rollupgen.GlobalState{},
+			MachineStatus: 1,
+		},
+		big.NewInt(0),
+		common.Address{},
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	if err != nil {
