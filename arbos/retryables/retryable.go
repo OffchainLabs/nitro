@@ -34,47 +34,50 @@ type MerkleRootSnapshots struct {
 }
 
 func InitializeMerkleRootSnapshots(sto *storage.Storage, capacity uint64) error {
-	// RingBuffer of size 2 * capacity, holds sequence of tree sizes and root hashes, tree size inserted before corresponding root hash
-	return storage.InitializeRingBuffer(sto, 2*capacity)
+	// RingBuffer holds pairs of root hashes and tree sizes
+	return storage.InitializeRingBuffer(sto, capacity, 2)
 }
 
-func OpenMerkleRoootSnapshots(sto *storage.Storage) *MerkleRootSnapshots {
+func OpenMerkleRoootSnapshots(sto *storage.Storage, capacity uint64) *MerkleRootSnapshots {
 	return &MerkleRootSnapshots{
-		ring: storage.OpenRingBuffer(sto),
+		ring: storage.OpenRingBuffer(sto, capacity, 2),
 	}
 }
 
 func (s *MerkleRootSnapshots) Rotate(root common.Hash, treeSize uint64) error {
-	return s.ring.RotateN([]common.Hash{util.UintToHash(treeSize), root})
+	return s.ring.Rotate([]common.Hash{root, util.UintToHash(treeSize)})
 }
 
 func (s *MerkleRootSnapshots) LastRoot() (common.Hash, error) {
-	return s.ring.Peek()
+	return s.ring.PeekSlot(0)
 }
 
 func (s *MerkleRootSnapshots) LastSnapshot() (common.Hash, uint64, error) {
-	values, err := s.ring.PeekN(2)
+	values, err := s.ring.Peek()
 	if err != nil {
 		return common.Hash{}, 0, err
+	}
+	if len(values) != 2 {
+		return common.Hash{}, 0, errors.New("unexpected length of element read from snapshot ring buffer")
 	}
 	return values[0], values[1].Big().Uint64(), nil
 }
 
 func (s *MerkleRootSnapshots) HasRoot(root common.Hash) (bool, error) {
 	var found bool
-	err := s.ring.ForSome(func(_ uint64, previousRoot common.Hash) (bool, error) {
+	err := s.ring.ForEachWithSlotIdx(func(previousRoot common.Hash) (bool, error) {
 		found = bytes.Equal(root.Bytes(), previousRoot.Bytes())
 		return found, nil
-	}, 1, 2)
+	}, 0)
 	return found, err
 }
 
 func (s *MerkleRootSnapshots) LastRotation() (uint64, error) {
-	return s.ring.Extra()
+	return s.ring.ExtraUint64()
 }
 
 func (s *MerkleRootSnapshots) SetLastRotation(timestamp uint64) error {
-	return s.ring.SetExtra(timestamp)
+	return s.ring.SetExtraUint64(timestamp)
 }
 
 type RetryableState struct {
@@ -107,7 +110,7 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
 		merkleAccumulator.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
-		OpenMerkleRoootSnapshots(sto.OpenSubStorage(expiredSnapshotsKey)),
+		OpenMerkleRoootSnapshots(sto.OpenSubStorage(expiredSnapshotsKey), ExpiredSnapshotsCapacity),
 		storage.OpenUint64Set(sto.OpenSubStorage(revivedKey)),
 	}
 }
