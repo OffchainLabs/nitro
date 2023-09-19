@@ -244,7 +244,8 @@ func TestMaxCatchupBufferSize(t *testing.T) {
 		maxCatchup:   func() int { return limit },
 	}
 
-	for i := 10; i <= 20; i += 2 {
+	firstMessage := 10
+	for i := firstMessage; i <= 20; i += 2 {
 		bm := BroadcastMessage{
 			Messages: []*BroadcastFeedMessage{
 				{
@@ -256,15 +257,13 @@ func TestMaxCatchupBufferSize(t *testing.T) {
 			},
 		}
 		err := buffer.OnDoBroadcast(bm)
-		if err != nil {
-			t.Error("expected error")
-		}
+		Require(t, err)
 		haveMessages := buffer.getCacheMessages(0)
-		expectedCount := arbmath.MinInt(i+2-10, limit)
+		expectedCount := arbmath.MinInt(i+len(bm.Messages)-firstMessage, limit)
 		if len(haveMessages.Messages) != expectedCount {
 			t.Errorf("after broadcasting messages %v and %v, expected to have %v messages but got %v", i, i+1, expectedCount, len(haveMessages.Messages))
 		}
-		expectedFirstMessage := arbutil.MessageIndex(arbmath.MaxInt(10, i+2-limit))
+		expectedFirstMessage := arbutil.MessageIndex(arbmath.MaxInt(firstMessage, i+len(bm.Messages)-limit))
 		if haveMessages.Messages[0].SequenceNumber != expectedFirstMessage {
 			t.Errorf("after broadcasting messages %v and %v, expected the first message to be %v but got %v", i, i+1, expectedFirstMessage, haveMessages.Messages[0].SequenceNumber)
 		}
