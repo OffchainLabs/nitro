@@ -23,15 +23,15 @@ func (e Engine) Author(header *types.Header) (common.Address, error) {
 	return header.Coinbase, nil
 }
 
-func (e Engine) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
+func (e Engine) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header) error {
 	// TODO what verification should be done here?
 	return nil
 }
 
-func (e Engine) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
+func (e Engine) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header) (chan<- struct{}, <-chan error) {
 	errors := make(chan error, len(headers))
 	for i := range headers {
-		errors <- e.VerifyHeader(chain, headers[i], seals[i])
+		errors <- e.VerifyHeader(chain, headers[i])
 	}
 	return make(chan struct{}), errors
 }

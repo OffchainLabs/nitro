@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -56,23 +57,27 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader     *headerreader.HeaderReader
-	inbox        *InboxTracker
-	streamer     *TransactionStreamer
-	config       BatchPosterConfigFetcher
-	seqInbox     *bridgegen.SequencerInbox
-	bridge       *bridgegen.Bridge
-	syncMonitor  *SyncMonitor
-	seqInboxABI  *abi.ABI
-	seqInboxAddr common.Address
-	building     *buildingBatch
-	daWriter     das.DataAvailabilityServiceWriter
-	dataPoster   *dataposter.DataPoster
-	redisLock    *redislock.Simple
-	firstAccErr  time.Time // first time a continuous missing accumulator occurred
-	backlog      uint64    // An estimate of the number of unposted batches
+	l1Reader            *headerreader.HeaderReader
+	inbox               *InboxTracker
+	streamer            *TransactionStreamer
+	config              BatchPosterConfigFetcher
+	seqInbox            *bridgegen.SequencerInbox
+	bridge              *bridgegen.Bridge
+	syncMonitor         *SyncMonitor
+	seqInboxABI         *abi.ABI
+	seqInboxAddr        common.Address
+	building            *buildingBatch
+	daWriter            das.DataAvailabilityServiceWriter
+	dataPoster          *dataposter.DataPoster
+	redisLock           *redislock.Simple
+	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
+	// An estimate of the number of batches we want to post but haven't yet.
+	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
+	backlog         uint64
+	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
-	batchReverted atomic.Bool // indicates whether data poster batch was reverted
+	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
+	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 }
 
 type l1BlockBound int
@@ -96,8 +101,8 @@ type BatchPosterConfig struct {
 	MaxDelay time.Duration `koanf:"max-delay" reload:"hot"`
 	// Wait for max BatchPost delay.
 	WaitForMaxDelay bool `koanf:"wait-for-max-delay" reload:"hot"`
-	// Batch post polling delay.
-	PollDelay time.Duration `koanf:"poll-delay" reload:"hot"`
+	// Batch post polling interval.
+	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
 	ErrorDelay         time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel   int                         `koanf:"compression-level" reload:"hot"`
@@ -147,7 +152,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
-	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.PollDelay, "how long to delay after successfully posting batch")
+	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
@@ -164,19 +169,20 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDasFallbackStoreDataOnChain: false,
-	MaxSize:                            100000,
-	PollDelay:                          time.Second * 10,
-	ErrorDelay:                         time.Second * 10,
-	MaxDelay:                           time.Hour,
-	WaitForMaxDelay:                    false,
-	CompressionLevel:                   brotli.BestCompression,
-	DASRetentionPeriod:                 time.Hour * 24 * 15,
-	GasRefunderAddress:                 "",
-	ExtraBatchGas:                      50_000,
-	DataPoster:                         dataposter.DefaultDataPosterConfig,
-	ParentChainWallet:                  DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:                       "",
-	L1BlockBoundBypass:                 time.Hour,
+	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
+	MaxSize:            100000,
+	PollInterval:       time.Second * 10,
+	ErrorDelay:         time.Second * 10,
+	MaxDelay:           time.Hour,
+	WaitForMaxDelay:    false,
+	CompressionLevel:   brotli.BestCompression,
+	DASRetentionPeriod: time.Hour * 24 * 15,
+	GasRefunderAddress: "",
+	ExtraBatchGas:      50_000,
+	DataPoster:         dataposter.DefaultDataPosterConfig,
+	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:       "",
+	L1BlockBoundBypass: time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -190,7 +196,7 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:             true,
 	MaxSize:            100000,
-	PollDelay:          time.Millisecond * 10,
+	PollInterval:       time.Millisecond * 10,
 	ErrorDelay:         time.Millisecond * 10,
 	MaxDelay:           0,
 	WaitForMaxDelay:    false,
@@ -256,12 +262,14 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
-func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, error) {
-	if from > to {
-		return false, fmt.Errorf("wrong range, from: %d is more to: %d", from, to)
+// It returns true if it finds batch posting needs to halt, which is true if a batch reverts
+// unless the data poster is configured with noop storage which can tolerate reverts.
+func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) {
+	if b.nextRevertCheckBlock > to {
+		return false, fmt.Errorf("wrong range, from: %d > to: %d", b.nextRevertCheckBlock, to)
 	}
-	for idx := from; idx <= to; idx++ {
-		number := big.NewInt(idx)
+	for ; b.nextRevertCheckBlock <= to; b.nextRevertCheckBlock++ {
+		number := big.NewInt(b.nextRevertCheckBlock)
 		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
 		if err != nil {
 			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
@@ -271,14 +279,19 @@ func (b *BatchPoster) checkReverts(ctx context.Context, from, to int64) (bool, e
 			if err != nil {
 				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
 			}
-			if bytes.Equal(from.Bytes(), b.dataPoster.Sender().Bytes()) {
+			if from == b.dataPoster.Sender() {
 				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 				if err != nil {
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
-					log.Error("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
-					return true, nil
+					shouldHalt := !b.config().DataPoster.UseNoOpStorage
+					logLevel := log.Warn
+					if shouldHalt {
+						logLevel = log.Error
+					}
+					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
+					return shouldHalt, nil
 				}
 			}
 		}
@@ -292,40 +305,46 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	last := int64(0) // number of last seen block
 	for {
 		// Poll until:
 		// - L1 headers reader channel is closed, or
 		// - polling is through context, or
 		// - we see a transaction in the block from dataposter that was reverted.
 		select {
-		case h, closed := <-headerCh:
-			if closed {
-				log.Info("L1 headers channel has been closed")
+		case h, ok := <-headerCh:
+			if !ok {
+				log.Info("L1 headers channel checking for batch poster reverts has been closed")
 				return
 			}
+			blockNum := h.Number.Int64()
 			// If this is the first block header, set last seen as number-1.
 			// We may see same block number again if there is L1 reorg, in that
 			// case we check the block again.
-			if last == 0 || last == h.Number.Int64() {
-				last = h.Number.Int64() - 1
+			if b.nextRevertCheckBlock == 0 || b.nextRevertCheckBlock > blockNum {
+				b.nextRevertCheckBlock = blockNum
 			}
-			if h.Number.Int64()-last > 100 {
-				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", last, "current", h.Number)
-				last = h.Number.Int64()
+			if blockNum-b.nextRevertCheckBlock > 100 {
+				log.Warn("Large gap between last seen and current block number, skipping check for reverts", "last", b.nextRevertCheckBlock, "current", blockNum)
+				b.nextRevertCheckBlock = blockNum
 				continue
 			}
 
-			reverted, err := b.checkReverts(ctx, last+1, h.Number.Int64())
+			reverted, err := b.checkReverts(ctx, blockNum)
 			if err != nil {
-				log.Error("Checking batch reverts", "error", err)
+				logLevel := log.Error
+				if strings.Contains(err.Error(), "not found") {
+					// Just parent chain node inconsistency
+					// One node sent us a block, but another didn't have it
+					// We'll try to check this block again next loop
+					logLevel = log.Debug
+				}
+				logLevel("Error checking batch reverts", "err", err)
 				continue
 			}
 			if reverted {
 				b.batchReverted.Store(true)
 				return
 			}
-			last = h.Number.Int64()
 		case <-ctx.Done():
 			return
 		}
@@ -777,7 +796,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if err != nil {
 				return false, err
 			}
-			blockNumberWithPadding := arbmath.SaturatingUAdd(arbmath.BigToUintSaturating(latestHeader.Number), uint64(config.L1BlockBoundBypass/ethPosBlockTime))
+			latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
+			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
 
 			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelayBlocks))
@@ -803,6 +823,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			l1BoundMaxTimestamp = math.MaxUint64
 		}
 		if msg.Message.Header.BlockNumber > l1BoundMaxBlockNumber || msg.Message.Header.Timestamp > l1BoundMaxTimestamp {
+			b.lastHitL1Bounds = time.Now()
 			log.Info(
 				"not posting more messages because block number or timestamp exceed L1 bounds",
 				"blockNumber", msg.Message.Header.BlockNumber,
@@ -877,7 +898,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if _, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int)); err != nil {
+	tx, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int))
+	if err != nil {
 		return false, err
 	}
 	log.Info(
@@ -889,16 +911,20 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"current delayed", b.building.segments.delayedMsg,
 		"total segments", len(b.building.segments.rawSegments),
 	)
+	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	unpostedMessages := msgCount - b.building.msgCount
 	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
 	if b.backlog > 10 {
 		logLevel := log.Warn
-		if b.backlog > 30 {
+		if recentlyHitL1Bounds {
+			logLevel = log.Info
+		} else if b.backlog > 30 {
 			logLevel = log.Error
 		}
 		logLevel(
 			"a large batch posting backlog exists",
+			"recentlyHitL1Bounds", recentlyHitL1Bounds,
 			"currentPosition", b.building.msgCount,
 			"messageCount", msgCount,
 			"lastPostedMessages", postedMessages,
@@ -906,7 +932,22 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			"batchBacklogEstimate", b.backlog,
 		)
 	}
+	if recentlyHitL1Bounds {
+		// This backlog isn't "real" in that we don't want to post any more messages.
+		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
+		b.backlog = 0
+	}
 	b.building = nil
+
+	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
+	if config.DataPoster.UseNoOpStorage {
+		receipt, err := b.l1Reader.WaitForTxApproval(ctx, tx)
+		if err != nil {
+			return false, fmt.Errorf("error waiting for tx receipt: %w", err)
+		}
+		log.Info("Got successful receipt from batch poster transaction", "txHash", tx.Hash(), "blockNumber", receipt.BlockNumber, "blockHash", receipt.BlockHash)
+	}
+
 	return true, nil
 }
 
@@ -935,30 +976,32 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		if !b.redisLock.AttemptLock(ctx) {
 			b.building = nil
-			return b.config().PollDelay
+			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
+		ephemeralError := errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace)
+		if !ephemeralError {
+			b.firstEphemeralError = time.Time{}
+		}
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace) {
+			if ephemeralError {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
-				if b.firstAccErr == (time.Time{}) {
-					b.firstAccErr = time.Now()
+				if b.firstEphemeralError == (time.Time{}) {
+					b.firstEphemeralError = time.Now()
 					logLevel = log.Debug
-				} else if time.Since(b.firstAccErr) < time.Minute {
+				} else if time.Since(b.firstEphemeralError) < time.Minute {
 					logLevel = log.Debug
 				}
-			} else {
-				b.firstAccErr = time.Time{}
 			}
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
 			return 0
 		} else {
-			return b.config().PollDelay
+			return b.config().PollInterval
 		}
 	})
 }
