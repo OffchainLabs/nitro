@@ -111,16 +111,16 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 	switch {
 	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
-	case initConfig.UseLevelDB:
-		queue = leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	case redisClient == nil:
-		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	default:
+	case redisClient != nil:
 		var err error
 		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
+	case initConfig.UseLevelDB:
+		queue = leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	default:
+		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
 	return &DataPoster{
 		headerReader:      headerReader,
@@ -665,7 +665,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             false,
+	UseLevelDB:             true,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
 }
