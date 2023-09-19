@@ -11,10 +11,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	m "github.com/offchain/com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	httpServer "github.com/offchainlabs/nitro/broadcaster/http/server"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
