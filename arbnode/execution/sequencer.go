@@ -110,6 +110,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
+	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,
@@ -182,9 +183,9 @@ func newNonceCache(size int) *nonceCache {
 
 func (c *nonceCache) matches(header *types.Header) bool {
 	if c.dirty != nil {
-		// The header is updated as the block is built,
-		// so instead of checking its hash, we do a pointer comparison.
-		return c.dirty == header
+		// Note, even though the of the header changes, c.dirty points to the
+		// same header, hence hashes will be the same and this check will pass.
+		return headerreader.HeadersEqual(c.dirty, header)
 	}
 	return c.block == header.ParentHash
 }
@@ -655,7 +656,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		return queueItems
 	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
-	signer := types.MakeSigner(bc.Config(), nextHeaderNumber)
+	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int

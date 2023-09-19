@@ -27,7 +27,7 @@ type ValidationNodeConfig struct {
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
-	AuthRPC       genericconf.AuthRPCConfig       `koanf:"auth"`
+	Auth          genericconf.AuthRPCConfig       `koanf:"auth"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf         bool                            `koanf:"pprof"`
@@ -66,7 +66,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
-	AuthRPC:       genericconf.AuthRPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	PProf:         false,

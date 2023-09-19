@@ -33,22 +33,23 @@ type MessagePruner struct {
 }
 
 type MessagePrunerConfig struct {
-	Enable               bool          `koanf:"enable"`
-	MessagePruneInterval time.Duration `koanf:"prune-interval" reload:"hot"`
-	MinBatchesLeft       uint64        `koanf:"min-batches-left" reload:"hot"`
+	Enable bool `koanf:"enable"`
+	// Message pruning interval.
+	PruneInterval  time.Duration `koanf:"prune-interval" reload:"hot"`
+	MinBatchesLeft uint64        `koanf:"min-batches-left" reload:"hot"`
 }
 
 type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 
 var DefaultMessagePrunerConfig = MessagePrunerConfig{
-	Enable:               true,
-	MessagePruneInterval: time.Minute,
-	MinBatchesLeft:       2,
+	Enable:         true,
+	PruneInterval:  time.Minute,
+	MinBatchesLeft: 2,
 }
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
-	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
+	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.PruneInterval, "interval for running message pruner")
 	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
@@ -70,7 +71,7 @@ func (m *MessagePruner) UpdateLatestConfirmed(count arbutil.MessageIndex, global
 		return
 	}
 
-	if m.lastPruneDone.Add(m.config().MessagePruneInterval).After(time.Now()) {
+	if m.lastPruneDone.Add(m.config().PruneInterval).After(time.Now()) {
 		m.pruningLock.Unlock()
 		return
 	}

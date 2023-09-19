@@ -199,6 +199,17 @@ func (r *ExecutionClientRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep 
 	})
 }
 
+func (r *ExecutionClientRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
+		var resJson []common.Hash
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesInRangeWithStepSize", r.id, fromStep, toStep, stepSize)
+		if err != nil {
+			return nil, err
+		}
+		return resJson, err
+	})
+}
+
 func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
 	return stopwaiter.LaunchPromiseThread[[]byte](r, func(ctx context.Context) ([]byte, error) {
 		var resString string

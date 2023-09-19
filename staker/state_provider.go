@@ -15,16 +15,17 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	commitments "github.com/OffchainLabs/bold/state-commitments/history"
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
 )
 
-var _ l2stateprovider.Provider = (*StateManager)(nil)
+var (
+	_ l2stateprovider.ProofCollector          = (*StateManager)(nil)
+	_ l2stateprovider.L2MessageStateCollector = (*StateManager)(nil)
+	_ l2stateprovider.MachineHashCollector    = (*StateManager)(nil)
+	_ l2stateprovider.ExecutionProvider       = (*StateManager)(nil)
+)
 
 // Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
 var (
@@ -36,24 +37,22 @@ var (
 	}
 )
 
-var ErrChainCatchingUp = errors.New("chain catching up")
+var (
+	ErrChainCatchingUp = errors.New("chain catching up")
+)
 
 type StateManager struct {
 	validator            *StatelessBlockValidator
-	blockValidator       *BlockValidator
-	numOpcodesPerBigStep uint64
-	maxWavmOpcodes       uint64
 	historyCache         challengecache.HistoryCommitmentCacher
+	challengeLeafHeights []l2stateprovider.Height
 }
 
-func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64, cacheBaseDir string) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challengeLeafHeights []l2stateprovider.Height) (*StateManager, error) {
 	historyCache := challengecache.New(cacheBaseDir)
 	return &StateManager{
 		validator:            val,
-		blockValidator:       blockValidator,
-		numOpcodesPerBigStep: numOpcodesPerBigStep,
-		maxWavmOpcodes:       maxWavmOpcodes,
 		historyCache:         historyCache,
+		challengeLeafHeights: challengeLeafHeights,
 	}, nil
 }
 
@@ -104,7 +103,7 @@ func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messag
 	return executionState, nil
 }
 
-func (s *StateManager) executionStateAtMessageNumberImpl(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
+func (s *StateManager) executionStateAtMessageNumberImpl(_ context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
 	if err != nil {
 		return &protocol.ExecutionState{}, err
@@ -124,415 +123,6 @@ func (s *StateManager) executionStateAtMessageNumberImpl(ctx context.Context, me
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished, // TODO: Why hardcode?
 	}, nil
-}
-
-// HistoryCommitmentAtMessage Produces a block history commitment of messageCount.
-func (s *StateManager) HistoryCommitmentAtMessage(ctx context.Context, messageNumber uint64) (commitments.History, error) {
-	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
-	if err != nil {
-		return commitments.History{}, err
-	}
-	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(messageNumber)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	if batchMsgCount <= arbutil.MessageIndex(messageNumber) {
-		batch++
-	}
-	stateRoot, err := s.getHashAtMessageCountAndBatch(ctx, arbutil.MessageIndex(messageNumber), batch)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	return commitments.New([]common.Hash{stateRoot})
-}
-
-func (s *StateManager) HistoryCommitmentAtBatch(ctx context.Context, batchNumber uint64) (commitments.History, error) {
-	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchNumber)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	res, err := s.validator.streamer.ResultAtCount(batchMsgCount - 1)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	state := validator.GoGlobalState{
-		BlockHash:  res.BlockHash,
-		SendRoot:   res.SendRoot,
-		Batch:      batchNumber,
-		PosInBatch: 0,
-	}
-	machineHash := crypto.Keccak256Hash([]byte("Machine finished:"), state.Hash().Bytes())
-	return commitments.New([]common.Hash{machineHash})
-}
-
-// BigStepCommitmentUpTo Produces a big step history commitment from big step 0 to toBigStep within block
-// challenge heights blockHeight and blockHeight+1.
-func (s *StateManager) BigStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, toBigStep uint64) (commitments.History, error) {
-	result, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	return commitments.New(result)
-}
-
-// SmallStepCommitmentUpTo Produces a small step history commitment from small step 0 to N between
-// big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepCommitmentUpTo(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, bigStep uint64, toSmallStep uint64) (commitments.History, error) {
-	result, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, messageNumber, bigStep, toSmallStep)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	return commitments.New(result)
-}
-
-// HistoryCommitmentUpToBatch Produces a block challenge history commitment in a certain inclusive block range,
-// but padding states with duplicates after the first state with a batch count of at least the specified max.
-func (s *StateManager) HistoryCommitmentUpToBatch(ctx context.Context, messageNumberStart uint64, messageNumberEnd uint64, nextBatchCount uint64) (commitments.History, error) {
-	stateRoots, err := s.statesUpTo(messageNumberStart, messageNumberEnd, nextBatchCount)
-	if err != nil {
-		return commitments.History{}, err
-	}
-	return commitments.New(stateRoots)
-}
-
-// BigStepLeafCommitment Produces a big step history commitment for all big steps within block
-// challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) BigStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64) (commitments.History, error) {
-	// Number of big steps between assertion heights A and B will be
-	// fixed. It is simply the max number of opcodes
-	// per block divided by the size of a big step.
-	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
-	return s.BigStepCommitmentUpTo(ctx, wasmModuleRoot, messageNumber, numBigSteps)
-}
-
-// SmallStepLeafCommitment Produces a small step history commitment for all small steps between
-// big steps bigStep to bigStep+1 within block challenge heights blockHeight to blockHeight+1.
-func (s *StateManager) SmallStepLeafCommitment(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, bigStep uint64) (commitments.History, error) {
-	return s.SmallStepCommitmentUpTo(
-		ctx,
-		wasmModuleRoot,
-		messageNumber,
-		bigStep,
-		s.numOpcodesPerBigStep,
-	)
-}
-
-// PrefixProofUpToBatch Produces a prefix proof in a block challenge from height A to B,
-// but padding states with duplicates after the first state with a batch count of at least the specified max.
-func (s *StateManager) PrefixProofUpToBatch(
-	ctx context.Context,
-	startHeight,
-	fromMessageNumber,
-	toMessageNumber,
-	batchCount uint64,
-) ([]byte, error) {
-	if toMessageNumber > batchCount {
-		return nil, errors.New("toMessageNumber should not be greater than batchCount")
-	}
-	states, err := s.statesUpTo(startHeight, toMessageNumber, batchCount)
-	if err != nil {
-		return nil, err
-	}
-	loSize := fromMessageNumber + 1 - startHeight
-	hiSize := toMessageNumber + 1 - startHeight
-	return s.getPrefixProof(loSize, hiSize, states)
-}
-
-// BigStepPrefixProof Produces a big step prefix proof from height A to B for heights fromBlockChallengeHeight to H+1
-// within a block challenge.
-func (s *StateManager) BigStepPrefixProof(
-	ctx context.Context,
-	wasmModuleRoot common.Hash,
-	messageNumber uint64,
-	fromBigStep uint64,
-	toBigStep uint64,
-) ([]byte, error) {
-	prefixLeaves, err := s.intermediateBigStepLeaves(ctx, wasmModuleRoot, messageNumber, toBigStep)
-	if err != nil {
-		return nil, err
-	}
-	loSize := fromBigStep + 1
-	hiSize := toBigStep + 1
-	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
-}
-
-// SmallStepPrefixProof Produces a small step prefix proof from height A to B for big step S to S+1 and
-// block challenge height heights H to H+1.
-func (s *StateManager) SmallStepPrefixProof(ctx context.Context, wasmModuleRoot common.Hash, messageNumber uint64, bigStep uint64, fromSmallStep uint64, toSmallStep uint64) ([]byte, error) {
-	prefixLeaves, err := s.intermediateSmallStepLeaves(ctx, wasmModuleRoot, messageNumber, bigStep, toSmallStep)
-	if err != nil {
-		return nil, err
-	}
-	loSize := fromSmallStep + 1
-	hiSize := toSmallStep + 1
-	return s.getPrefixProof(loSize, hiSize, prefixLeaves)
-}
-
-// Like abi.NewType but panics if it fails for use in constants
-func newStaticType(t string, internalType string, components []abi.ArgumentMarshaling) abi.Type {
-	ty, err := abi.NewType(t, internalType, components)
-	if err != nil {
-		panic(err)
-	}
-	return ty
-}
-
-var bytes32Type = newStaticType("bytes32", "", nil)
-var uint64Type = newStaticType("uint64", "", nil)
-var uint8Type = newStaticType("uint8", "", nil)
-
-var WasmModuleProofAbi = abi.Arguments{
-	{
-		Name: "lastHash",
-		Type: bytes32Type,
-	},
-	{
-		Name: "assertionExecHash",
-		Type: bytes32Type,
-	},
-	{
-		Name: "inboxAcc",
-		Type: bytes32Type,
-	},
-}
-
-var ExecutionStateAbi = abi.Arguments{
-	{
-		Name: "b1",
-		Type: bytes32Type,
-	},
-	{
-		Name: "b2",
-		Type: bytes32Type,
-	},
-	{
-		Name: "u1",
-		Type: uint64Type,
-	},
-	{
-		Name: "u2",
-		Type: uint64Type,
-	},
-	{
-		Name: "status",
-		Type: uint8Type,
-	},
-}
-
-func (s *StateManager) OneStepProofData(
-	ctx context.Context,
-	wasmModuleRoot common.Hash,
-	postState rollupgen.ExecutionState,
-	messageNumber,
-	bigStep,
-	smallStep uint64,
-) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
-	endCommit, err := s.SmallStepCommitmentUpTo(
-		ctx,
-		wasmModuleRoot,
-		messageNumber,
-		bigStep,
-		smallStep+1,
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	startCommit, err := s.SmallStepCommitmentUpTo(
-		ctx,
-		wasmModuleRoot,
-		messageNumber,
-		bigStep,
-		smallStep,
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	step := bigStep*s.numOpcodesPerBigStep + smallStep
-
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(messageNumber))
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	oneStepProofPromise := execRun.GetProofAt(step)
-	oneStepProof, err := oneStepProofPromise.Await(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	machineStepPromise := execRun.GetStepAt(step)
-	machineStep, err := machineStepPromise.Await(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	beforeHash := machineStep.Hash
-	if beforeHash != startCommit.LastLeaf {
-		return nil, nil, nil, fmt.Errorf("machine executed to start step %v hash %v but expected %v", step, beforeHash, startCommit.LastLeaf)
-	}
-
-	machineStepPromise = execRun.GetStepAt(step + 1)
-	machineStep, err = machineStepPromise.Await(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	afterHash := machineStep.Hash
-	if afterHash != endCommit.LastLeaf {
-		return nil, nil, nil, fmt.Errorf("machine executed to end step %v hash %v but expected %v", step+1, beforeHash, endCommit.LastLeaf)
-	}
-
-	data := &protocol.OneStepData{
-		BeforeHash: startCommit.LastLeaf,
-		Proof:      oneStepProof,
-	}
-	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil
-}
-
-func (s *StateManager) AgreesWithHistoryCommitment(
-	ctx context.Context,
-	wasmModuleRoot common.Hash,
-	assertionInboxMaxCount uint64,
-	parentAssertionAfterStateBatch uint64,
-	edgeType protocol.EdgeType,
-	heights protocol.OriginHeights,
-	history l2stateprovider.History,
-) (bool, error) {
-	var localCommit commitments.History
-	var err error
-	switch edgeType {
-	case protocol.BlockChallengeEdge:
-		localCommit, err = s.HistoryCommitmentUpToBatch(ctx, parentAssertionAfterStateBatch, parentAssertionAfterStateBatch+history.Height, assertionInboxMaxCount)
-		if err != nil {
-			return false, err
-		}
-	case protocol.BigStepChallengeEdge:
-		localCommit, err = s.BigStepCommitmentUpTo(
-			ctx,
-			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
-			history.Height,
-		)
-		if err != nil {
-			return false, err
-		}
-	case protocol.SmallStepChallengeEdge:
-		localCommit, err = s.SmallStepCommitmentUpTo(
-			ctx,
-			wasmModuleRoot,
-			uint64(heights.BlockChallengeOriginHeight),
-			uint64(heights.BigStepChallengeOriginHeight),
-			history.Height,
-		)
-		if err != nil {
-			return false, err
-		}
-	default:
-		return false, errors.New("unsupported edge type")
-	}
-	return localCommit.Height == history.Height && localCommit.Merkle == history.MerkleRoot, nil
-}
-
-func (s *StateManager) getPrefixProof(loSize uint64, hiSize uint64, leaves []common.Hash) ([]byte, error) {
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(leaves[:loSize])
-	if err != nil {
-		return nil, err
-	}
-	prefixProof, err := prefixproofs.GeneratePrefixProof(
-		loSize,
-		prefixExpansion,
-		leaves[loSize:hiSize],
-		prefixproofs.RootFetcherFromExpansion,
-	)
-	if err != nil {
-		return nil, err
-	}
-	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
-	onlyProof := prefixProof[numRead:]
-	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
-}
-
-func (s *StateManager) intermediateBigStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, toBigStep uint64) ([]common.Hash, error) {
-	cacheKey := &challengecache.Key{
-		WavmModuleRoot: wasmModuleRoot,
-		MessageHeight:  protocol.Height(blockHeight),
-		BigStepHeight:  option.None[protocol.Height](),
-	}
-	cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toBigStep))
-	if err == nil {
-		return cachedRoots, nil
-	}
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
-	if err != nil {
-		return nil, err
-	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return nil, err
-	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bigStepLeaves := execRun.GetBigStepLeavesUpTo(toBigStep, s.numOpcodesPerBigStep)
-	result, err := bigStepLeaves.Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
-	if len(result) > 1 {
-		if err := s.historyCache.Put(cacheKey, result); err != nil {
-			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
-				return nil, err
-			}
-		}
-	}
-	return result, nil
-}
-
-func (s *StateManager) intermediateSmallStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, bigStep uint64, toSmallStep uint64) ([]common.Hash, error) {
-	cacheKey := &challengecache.Key{
-		WavmModuleRoot: wasmModuleRoot,
-		MessageHeight:  protocol.Height(blockHeight),
-		BigStepHeight:  option.Some[protocol.Height](protocol.Height(bigStep)),
-	}
-	cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toSmallStep))
-	if err == nil {
-		return cachedRoots, nil
-	}
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
-	if err != nil {
-		return nil, err
-	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return nil, err
-	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	smallStepLeaves := execRun.GetSmallStepLeavesUpTo(bigStep, toSmallStep, s.numOpcodesPerBigStep)
-	result, err := smallStepLeaves.Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
-	if len(result) > 1 {
-		if err := s.historyCache.Put(cacheKey, result); err != nil {
-			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
-				return nil, err
-			}
-		}
-	}
-	return result, nil
 }
 
 // TODO: Rename block to message.
@@ -627,14 +217,6 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 	}
 }
 
-func (s *StateManager) getHashAtMessageCountAndBatch(_ context.Context, messageCount arbutil.MessageIndex, batch uint64) (common.Hash, error) {
-	gs, err := s.getInfoAtMessageCountAndBatch(messageCount, batch)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()), nil
-}
-
 func (s *StateManager) getInfoAtMessageCountAndBatch(messageCount arbutil.MessageIndex, batch uint64) (validator.GoGlobalState, error) {
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, batch)
 	if err != nil {
@@ -665,4 +247,105 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 		Batch:      batch,
 		PosInBatch: uint64(count - prevBatchMsgCount),
 	}, nil
+}
+
+// L2MessageStatesUpTo Computes a block history commitment from a start L2 message to an end L2 message index
+// and up to a required batch index. The hashes used for this commitment are the machine hashes
+// at each message number.
+func (s *StateManager) L2MessageStatesUpTo(
+	_ context.Context,
+	from l2stateprovider.Height,
+	upTo option.Option[l2stateprovider.Height],
+	batch l2stateprovider.Batch,
+) ([]common.Hash, error) {
+	var to l2stateprovider.Height
+	if !upTo.IsNone() {
+		to = upTo.Unwrap()
+	} else {
+		blockChallengeLeafHeight := s.challengeLeafHeights[0]
+		to = blockChallengeLeafHeight
+	}
+	return s.statesUpTo(uint64(from), uint64(to), uint64(batch))
+}
+
+// CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
+func (s *StateManager) CollectMachineHashes(
+	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
+) ([]common.Hash, error) {
+	return s.intermediateStepLeaves(
+		ctx,
+		cfg.WasmModuleRoot,
+		uint64(cfg.MessageNumber),
+		cfg.StepHeights,
+		uint64(cfg.MachineStartIndex),
+		uint64(cfg.MachineStartIndex)+uint64(cfg.StepSize)*cfg.NumDesiredHashes,
+		uint64(cfg.StepSize),
+	)
+}
+
+// CollectProof Collects osp of at a message number and OpcodeIndex .
+func (s *StateManager) CollectProof(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	messageNumber l2stateprovider.Height,
+	machineIndex l2stateprovider.OpcodeIndex,
+) ([]byte, error) {
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(messageNumber))
+	if err != nil {
+		return nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
+	return oneStepProofPromise.Await(ctx)
+}
+
+func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, startHeight []l2stateprovider.Height, fromStep uint64, toStep uint64, stepSize uint64) ([]common.Hash, error) {
+	cacheKey := &challengecache.Key{
+		WavmModuleRoot: wasmModuleRoot,
+		MessageHeight:  protocol.Height(blockHeight),
+		StepHeights:    startHeight,
+	}
+	// Make sure that the last level starts with 0
+	if startHeight[len(startHeight)-1] == 0 {
+		cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toStep))
+		if err == nil {
+			return cachedRoots, nil
+		}
+	}
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
+	if err != nil {
+		return nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stepLeaves := execRun.GetLeavesInRangeWithStepSize(fromStep, toStep, stepSize)
+	result, err := stepLeaves.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
+	if len(result) > 1 {
+		// Make sure that the last level starts with 0
+		if startHeight[len(startHeight)-1] == 0 {
+			if err := s.historyCache.Put(cacheKey, result); err != nil {
+				if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
+					return nil, err
+				}
+			}
+		}
+	}
+	return result, nil
 }

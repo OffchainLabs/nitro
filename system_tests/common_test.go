@@ -433,7 +433,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	}})
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining(1))
+	Require(t, l1backend.StartMining())
 
 	rpcClient, err := stack.Attach()
 	Require(t, err)
@@ -475,13 +475,19 @@ func DeployOnTestL1(
 	Require(t, err)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	Require(t, err)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
-		l1client,
+		l1Reader,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		0,
-		func() *headerreader.Config { return &headerreader.TestConfig },
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 	)
 	Require(t, err)
@@ -832,19 +838,19 @@ func setupConfigWithDAS(
 
 	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
-		KeyConfig: das.KeyConfig{
+		Key: das.KeyConfig{
 			KeyDir: dbPath,
 		},
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
+		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorageConfig: das.LocalDBStorageConfig{
+		LocalDBStorage: das.LocalDBStorageConfig{
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
 		RequestTimeout:           5 * time.Second,
-		L1NodeURL:                "none",
+		ParentChainNodeURL:       "none",
 		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
@@ -873,12 +879,12 @@ func setupConfigWithDAS(
 			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
 			SignerMask:          1,
 		}
-		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
+		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey

@@ -67,7 +67,7 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	err = stateless.Start(ctx)
 	Require(t, err)
 
-	manager, err := staker.NewStateManager(stateless, nil, numOpcodesPerBigStepTest, maxWavmOpcodesTest, t.TempDir())
+	manager, err := staker.NewStateManager(stateless, t.TempDir(), nil)
 	Require(t, err)
 
 	poster := assertions.NewPoster(

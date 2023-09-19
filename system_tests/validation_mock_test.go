@@ -125,6 +125,11 @@ func (r *mockExecRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64,
 	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
+func (r *mockExecRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetLeavesInRangeWithStepSize
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
+}
+
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
@@ -335,7 +340,7 @@ func TestExecutionKeepAlive(t *testing.T) {
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
-	shortTimeoutConfig.ExecRunTimeout = time.Second
+	shortTimeoutConfig.ExecutionRunTimeout = time.Second
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
