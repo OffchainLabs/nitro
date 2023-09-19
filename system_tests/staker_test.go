@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	mocksgen_bold "github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	rollupgen_bold "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
 
@@ -489,11 +490,11 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, info
 	valConfig.EnableBold = true
 	valConfig.StakerInterval = 100 * time.Millisecond
 
-	dp, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2node.ArbDB, storage.BlockValidatorPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	dp, err := arbnode.StakerDataposter(rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWallet, err := staker.NewContractValidatorWallet(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, 10000)
+	valWallet, err := staker.NewContractValidatorWallet(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
 	Require(t, err)
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
@@ -574,6 +575,12 @@ func deployBoldContracts(
 		common.Address{},
 		big.NewInt(1),
 		stakeToken,
+		rollupgen_bold.ExecutionState{
+			GlobalState:   rollupgen_bold.GlobalState{},
+			MachineStatus: 1,
+		},
+		big.NewInt(0),
+		common.Address{},
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	if err != nil {
