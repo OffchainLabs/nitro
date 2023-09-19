@@ -540,7 +540,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 }
 
 func StakerDataposter(
-	db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
 ) (*dataposter.DataPoster, error) {
 	if transactOpts == nil {
@@ -564,7 +564,7 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
-	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
+	return dataposter.NewDataPoster(ctx, db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
 }
 
 func createNodeImpl(
@@ -805,6 +805,7 @@ func createNodeImpl(
 
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
+			ctx,
 			rawdb.NewTable(arbDb, storage.StakerPrefix),
 			l1Reader,
 			txOptsValidator,
