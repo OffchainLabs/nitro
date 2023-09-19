@@ -433,7 +433,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	}})
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining(1))
+	Require(t, l1backend.StartMining())
 
 	rpcClient, err := stack.Attach()
 	Require(t, err)
@@ -475,13 +475,19 @@ func DeployOnTestL1(
 	Require(t, err)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	Require(t, err)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
-		l1client,
+		l1Reader,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		0,
-		func() *headerreader.Config { return &headerreader.TestConfig },
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 	)
 	Require(t, err)
