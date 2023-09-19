@@ -70,6 +70,8 @@ type Config struct {
 	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
 	URL                     []string                 `koanf:"url"`
 	Verify                  signature.VerifierConfig `koanf:"verify"`
+	CertFile                string                   `koanf:"cert-file"`
+	KeyFile                 string                   `koanf:"key-file"`
 	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
 }
 
@@ -87,6 +89,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URL, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
+	f.String(prefix+".cert-file", DefaultConfig.CertFile, "X509 client public certificate file")
+	f.String(prefix+".key-file", DefaultConfig.KeyFile, "X509 client private key file")
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
 
@@ -232,6 +236,16 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	if config.EnableCompression {
 		extensions = []httphead.Option{deflateExt}
 	}
+	tlsConfig := tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+	if config.CertFile != "" && config.KeyFile != "" {
+		clientCert, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
+		if err != nil {
+			return nil, err
+		}
+		tlsConfig.Certificates = []tls.Certificate{clientCert}
+	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
 		OnHeader: func(key, value []byte) (err error) {
@@ -272,10 +286,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 			}
 			return nil
 		},
-		Timeout: 10 * time.Second,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
+		Timeout:    10 * time.Second,
+		TLSConfig:  &tlsConfig,
 		Extensions: extensions,
 	}
 
