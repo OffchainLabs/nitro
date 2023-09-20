@@ -591,7 +591,7 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 	return
 }
 
-func (n NodeInterface) blockL1Num(l2BlockNum uint64) (uint64, error) {
+func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
 	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
 	if err != nil {
 		return 0, err
@@ -600,8 +600,8 @@ func (n NodeInterface) blockL1Num(l2BlockNum uint64) (uint64, error) {
 	return blockL1Num, nil
 }
 
-func (n NodeInterface) matchL2BlockNumWithL1(l2BlockNum uint64, l1BlockNum uint64) error {
-	blockL1Num, err := n.blockL1Num(l2BlockNum)
+func (n NodeInterface) matchL2BlockNumWithL1(c ctx, evm mech, l2BlockNum uint64, l1BlockNum uint64) error {
+	blockL1Num, err := n.BlockL1Num(c, evm, l2BlockNum)
 	if err != nil {
 		return fmt.Errorf("failed to get the L1 block number of the L2 block: %v. Error: %w", l2BlockNum, err)
 	}
@@ -616,57 +616,44 @@ func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (ui
 	currentBlockNum := n.backend.CurrentBlock().Number.Uint64()
 	genesis := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
 
-	type helperStruct struct {
-		low  uint64
-		high uint64
+	storedMids := map[uint64]uint64{}
+	firstL2BlockForL1 := func(target uint64) (uint64, error) {
+		low, high := genesis, currentBlockNum
+		for low < high {
+			mid := arbmath.SaturatingUAdd(low, high) / 2
+			if _, ok := storedMids[mid]; !ok {
+				midBlockL1Num, err := n.BlockL1Num(c, evm, mid)
+				if err != nil {
+					return 0, err
+				}
+				storedMids[mid] = midBlockL1Num
+			}
+			if storedMids[mid] < target {
+				low = mid + 1
+			} else {
+				high = mid
+			}
+		}
+		return high, nil
 	}
 
-	searchHelper := func(currentBlock *helperStruct, fetchedMid *helperStruct, target uint64) error {
-		if currentBlock.low < currentBlock.high {
-			// dont fetch midBlockL1Num if its already fetched above
-			mid := arbmath.SaturatingUAdd(currentBlock.low, currentBlock.high) / 2
-			var midBlockL1Num uint64
-			var err error
-			if mid == fetchedMid.low {
-				midBlockL1Num = fetchedMid.high
-			} else {
-				midBlockL1Num, err = n.blockL1Num(mid)
-				if err != nil {
-					return err
-				}
-				fetchedMid.low = mid
-				fetchedMid.high = midBlockL1Num
-			}
-			if midBlockL1Num < target {
-				currentBlock.low = mid + 1
-			} else {
-				currentBlock.high = mid
-			}
-			return nil
-		}
-		return nil
-	}
-	firstBlock := &helperStruct{low: genesis, high: currentBlockNum}
-	lastBlock := &helperStruct{low: genesis, high: currentBlockNum}
-	// in storedMid low corresponds to value mid and high corresponds to midBlockL1Num inside searchHelper
-	storedMid := &helperStruct{low: currentBlockNum + 1}
-	var err error
-	for firstBlock.low < firstBlock.high || lastBlock.low < lastBlock.high {
-		if err = searchHelper(firstBlock, storedMid, l1BlockNum); err != nil {
-			return 0, 0, err
-		}
-		if err = searchHelper(lastBlock, storedMid, l1BlockNum+1); err != nil {
-			return 0, 0, err
-		}
-	}
-	if err := n.matchL2BlockNumWithL1(firstBlock.high, l1BlockNum); err != nil {
+	firstBlock, err := firstL2BlockForL1(l1BlockNum)
+	if err != nil {
 		return 0, 0, err
 	}
-	if err := n.matchL2BlockNumWithL1(lastBlock.high, l1BlockNum); err != nil {
-		lastBlock.high -= 1
-		if err = n.matchL2BlockNumWithL1(lastBlock.high, l1BlockNum); err != nil {
+	lastBlock, err := firstL2BlockForL1(l1BlockNum + 1)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if err := n.matchL2BlockNumWithL1(c, evm, firstBlock, l1BlockNum); err != nil {
+		return 0, 0, err
+	}
+	if err := n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
+		lastBlock -= 1
+		if err = n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
 			return 0, 0, err
 		}
 	}
-	return firstBlock.high, lastBlock.high, nil
+	return firstBlock, lastBlock, nil
 }
