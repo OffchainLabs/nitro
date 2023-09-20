@@ -91,8 +91,9 @@ jobs:
         run: |
           go get -v -t -d ./...
 
-      - name: AbiGen
-        run: go run ./solgen/main.go
+      # TODO: Remove, temporary fix
+      # - name: AbiGen
+      #   run: go run ./solgen/main.go
 
       - name: Build
         run: go build -v ./...

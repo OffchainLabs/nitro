@@ -9,9 +9,26 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
 	bisection "github.com/OffchainLabs/bold/math"
 	"github.com/pkg/errors"
 )
+
+var (
+	ErrNoHonestTopLevelEdge = errors.New("no honest block challenge edge being tracked")
+	ErrNotFound             = errors.New("not found in honest challenge tree")
+	ErrNoLevelZero          = errors.New("no level zero edge with origin id found")
+)
+
+// PathTimer for an honest edge defined as the cumulative unrivaled time
+// of it and its honest ancestors all the way up to the assertion chain level.
+// This also includes the time the assertion, which the challenge corresponds to,
+// has been unrivaled.
+type PathTimer uint64
+
+// HonestAncestors of an edge id all the way up to and including the
+// block challenge level zero edge.
+type HonestAncestors []protocol.EdgeId
 
 // EdgeLocalTimer is the local, unrivaled timer of a specific edge.
 type EdgeLocalTimer uint64
@@ -314,4 +331,39 @@ func (ht *HonestChallengeTree) honestRootAncestorAtChallengeLevel(
 		return nil, fmt.Errorf("no honest root edge with origin id %#x found at challenge level %d", originId, challengeLevel)
 	}
 	return rootAncestor, nil
+}
+
+// Gets the edge a specified edge claims, if any.
+func (ht *HonestChallengeTree) getClaimedEdge(edge protocol.ReadOnlyEdge) (protocol.SpecEdge, error) {
+	if edge.ClaimId().IsNone() {
+		return nil, errors.New("does not claim any edge")
+	}
+	claimId := edge.ClaimId().Unwrap()
+	claimIdHash := [32]byte(claimId)
+	claimedBlockEdge, ok := ht.edges.TryGet(protocol.EdgeId{Hash: claimIdHash})
+	if !ok {
+		return nil, errors.New("claimed edge not found")
+	}
+	return claimedBlockEdge, nil
+}
+
+// Finds an edge in a list with a specified origin id.
+func findOriginEdge(originId protocol.OriginId, edges *threadsafe.Slice[protocol.ReadOnlyEdge]) (protocol.ReadOnlyEdge, bool) {
+	var originEdge protocol.ReadOnlyEdge
+	found := edges.Find(func(_ int, e protocol.ReadOnlyEdge) bool {
+		if e.OriginId() == originId {
+			originEdge = e
+			return true
+		}
+		return false
+	})
+	return originEdge, found
+}
+
+func errNotFound(id protocol.EdgeId) error {
+	return errors.Wrapf(ErrNotFound, "id=%#x", id)
+}
+
+func errNoLevelZero(originId protocol.OriginId) error {
+	return errors.Wrapf(ErrNoLevelZero, "originId=%#x", originId)
 }
