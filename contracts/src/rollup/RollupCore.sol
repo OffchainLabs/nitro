@@ -427,7 +427,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 require(assertion.afterState.globalState.getPositionInMessage() == 0, "NON_ZERO_FINISHED_POS_IN_MSG");
             } else {
                 // we checked this above, but include a safety check here in case of refactoring
-                revert("Unexpected machine status");
+                revert("INVALID_STATUS");
             }
 
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
