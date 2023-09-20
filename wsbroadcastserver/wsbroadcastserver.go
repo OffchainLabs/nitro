@@ -60,6 +60,7 @@ type BroadcasterConfig struct {
 	EnableCompression  bool                    `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
+	MaxCatchup         int                     `koanf:"max-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
 	ClientDelay        time.Duration           `koanf:"client-delay" reload:"hot"`
 }
@@ -93,6 +94,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
+	f.Int(prefix+".max-catchup", DefaultBroadcasterConfig.MaxCatchup, "the maximum size of the catchup buffer (-1 means unlimited)")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
 	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay the first messages sent to each client by this amount")
 }
@@ -117,6 +119,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	EnableCompression:  true,
 	RequireCompression: false,
 	LimitCatchup:       false,
+	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
 }
@@ -141,6 +144,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	EnableCompression:  true,
 	RequireCompression: false,
 	LimitCatchup:       false,
+	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
 }
