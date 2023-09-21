@@ -9,7 +9,7 @@ import (
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 )
 
-func validateBacklog(t *testing.T, b *Backlog, count int, start, end arbutil.MessageIndex, lookupKeys []arbutil.MessageIndex) {
+func validateBacklog(t *testing.T, b *backlog, count int, start, end arbutil.MessageIndex, lookupKeys []arbutil.MessageIndex) {
 	if b.MessageCount() != count {
 		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.MessageCount(), count)
 	}
@@ -31,8 +31,8 @@ func validateBacklog(t *testing.T, b *Backlog, count int, start, end arbutil.Mes
 	}
 }
 
-func createDummyBacklog(indexes []arbutil.MessageIndex, segmentLimit int) (*Backlog, error) {
-	b := &Backlog{
+func createDummyBacklog(indexes []arbutil.MessageIndex, segmentLimit int) (*backlog, error) {
+	b := &backlog{
 		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
 		segmentLimit:  func() int { return segmentLimit },
 	}
@@ -140,7 +140,7 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	p := atomic.Pointer[backlogSegment]{}
 	p.Store(s)
 
-	b := &Backlog{
+	b := &backlog{
 		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{40: p},
 		segmentLimit:  func() int { return 3 },
 	}
