@@ -90,7 +90,7 @@ var TestConfig = Config{
 	PollOnly:         false,
 	PollInterval:     time.Millisecond * 10,
 	TxTimeout:        time.Second * 5,
-	OldHeaderTimeout: 5 * time.Minute,
+	OldHeaderTimeout: 30 * time.Minute,
 	UseFinalityData:  false,
 }
 

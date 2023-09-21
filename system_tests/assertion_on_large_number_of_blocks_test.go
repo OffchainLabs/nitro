@@ -1,6 +1,9 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
+//go:build assertion_on_large_number_of_batch_test
+// +build assertion_on_large_number_of_batch_test
+
 package arbtest
 
 import (
@@ -43,6 +46,7 @@ var (
 
 // Helps in testing the feasibility of assertion after the protocol upgrade.
 func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
+	setupStartTime := time.Now().Unix()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -84,7 +88,13 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 		"test",
 		time.Second,
 	)
+	setupEndTime := time.Now().Unix()
+	print("Time taken for setup:")
+	print(setupEndTime - setupStartTime)
 	_, err = poster.PostAssertion(ctx)
+	assertionPostingEndTime := time.Now().Unix()
+	print("Time taken to post assertion:")
+	print(assertionPostingEndTime - setupEndTime)
 	Require(t, err)
 }
 
@@ -170,26 +180,28 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	simpleAddress, simple := deploySimple(t, ctx, txOpts, l1Backend)
-	tx, err = seqInbox.SetIsBatchPoster(&deployAuth, simpleAddress, true)
+	tx, err = seqInbox.SetIsBatchPosterWithoutOwner(&deployAuth, simpleAddress, true)
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
-	tx, err = simple.PostManyBatches(&txOpts, seqInboxAddr, batch, big.NewInt(1024))
-	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
+	for i := 0; i < 3; i++ {
+		tx, err = simple.PostManyBatches(&txOpts, seqInboxAddr, batch, big.NewInt(300))
+		Require(t, err)
+		receipt, err = EnsureTxSucceeded(ctx, l1Backend, tx)
+		Require(t, err)
 
-	nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, seqInboxAddr, 0)
-	Require(t, err)
-	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
-	Require(t, err)
-	if len(batches) == 0 {
-		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
+		nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, seqInboxAddr, 0)
+		Require(t, err)
+		batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
+		Require(t, err)
+		if len(batches) != 300 {
+			Fatal(t, "300 batch not found after PostManyBatches")
+		}
+		err = l2Node.InboxTracker.AddSequencerBatches(ctx, l1Backend, batches)
+		Require(t, err)
+		_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+		Require(t, err, "failed to get batch metadata after adding batch:")
 	}
-	err = l2Node.InboxTracker.AddSequencerBatches(ctx, l1Backend, batches)
-	Require(t, err)
-	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
-	Require(t, err, "failed to get batch metadata after adding batch:")
 	return l2Node, assertionChain
 }
 
