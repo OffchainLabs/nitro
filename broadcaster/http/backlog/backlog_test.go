@@ -9,48 +9,101 @@ import (
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 )
 
+func validateBacklog(t *testing.T, b *Backlog, count int, start, end arbutil.MessageIndex, lookupKeys []arbutil.MessageIndex) {
+	if b.MessageCount() != count {
+		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.MessageCount(), count)
+	}
+
+	head := b.head.Load()
+	if start != 0 && head.start != start {
+		t.Errorf("head of backlog (%d) does not equal expected head (%d)", head.start, start)
+	}
+
+	tail := b.tail.Load()
+	if end != 0 && tail.end != end {
+		t.Errorf("tail of backlog (%d) does not equal expected tail (%d)", tail.end, end)
+	}
+
+	for _, k := range lookupKeys {
+		if _, ok := b.lookupByIndex[k]; !ok {
+			t.Errorf("failed to find message (%d) in lookup", k)
+		}
+	}
+}
+
+func createDummyBacklog(indexes []arbutil.MessageIndex, segmentLimit int) (*Backlog, error) {
+	b := &Backlog{
+		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
+		segmentLimit:  func() int { return segmentLimit },
+	}
+	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
+	err := b.Append(bm)
+	return b, err
+}
+
 func TestAppend(t *testing.T) {
 	testcases := []struct {
-		name           string
-		backlogIndexes []arbutil.MessageIndex
-		newIndexes     []arbutil.MessageIndex
-		expectedCount  int
+		name               string
+		backlogIndexes     []arbutil.MessageIndex
+		newIndexes         []arbutil.MessageIndex
+		expectedCount      int
+		expectedStart      arbutil.MessageIndex
+		expectedEnd        arbutil.MessageIndex
+		expectedLookupKeys []arbutil.MessageIndex
 	}{
 		{
 			"EmptyBacklog",
 			[]arbutil.MessageIndex{},
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 			7,
+			40,
+			46,
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
 			"NonEmptyBacklog",
 			[]arbutil.MessageIndex{40, 41},
 			[]arbutil.MessageIndex{42, 43, 44, 45, 46},
 			7,
+			40,
+			46,
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
 			"NonSequential",
 			[]arbutil.MessageIndex{40, 41},
 			[]arbutil.MessageIndex{42, 43, 45, 46},
 			2, // Message 45 is non sequential, the previous messages will be dropped from the backlog
+			45,
+			46,
+			[]arbutil.MessageIndex{45, 46},
 		},
 		{
 			"MessageSeen",
 			[]arbutil.MessageIndex{40, 41},
 			[]arbutil.MessageIndex{42, 43, 44, 45, 46, 41},
 			7, // Message 41 is already present in the backlog, it will be ignored
+			40,
+			46,
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
 			"NonSequentialFirstSegmentMessage",
 			[]arbutil.MessageIndex{40, 41},
 			[]arbutil.MessageIndex{42, 44, 45, 46},
 			3, // Message 44 is non sequential and the first message in a new segment, the previous messages will be dropped from the backlog
+			44,
+			46,
+			[]arbutil.MessageIndex{45, 46},
 		},
 		{
 			"MessageSeenFirstSegmentMessage",
 			[]arbutil.MessageIndex{40, 41},
 			[]arbutil.MessageIndex{42, 43, 44, 45, 41, 46},
 			7, // Message 41 is already present in the backlog and the first message in a new segment, it will be ignored
+			40,
+			46,
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 	}
 
@@ -70,9 +123,7 @@ func TestAppend(t *testing.T) {
 				t.Fatalf("error appending BroadcastMessage: %s", err)
 			}
 
-			if b.MessageCount() != tc.expectedCount {
-				t.Fatalf("backlog message count (%d) does not equal expected message count (%d)", b.MessageCount(), tc.expectedCount)
-			}
+			validateBacklog(t, b, tc.expectedCount, tc.expectedStart, tc.expectedEnd, tc.expectedLookupKeys)
 		})
 	}
 }
@@ -107,52 +158,63 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 		t.Fatalf("error appending BroadcastMessage: %s", err)
 	}
 
-	if b.MessageCount() != 0 {
-		t.Fatalf("backlog message count (%d) does not equal expected message count (0)", b.MessageCount())
-	}
+	validateBacklog(t, b, 0, 0, 0, []arbutil.MessageIndex{})
 }
 
-// TestDelete
 func TestDelete(t *testing.T) {
 	testcases := []struct {
-		name           string
-		backlogIndexes []arbutil.MessageIndex
-		confirmed      arbutil.MessageIndex
-		expectedCount  int
+		name               string
+		backlogIndexes     []arbutil.MessageIndex
+		confirmed          arbutil.MessageIndex
+		expectedCount      int
+		expectedStart      arbutil.MessageIndex
+		expectedEnd        arbutil.MessageIndex
+		expectedLookupKeys []arbutil.MessageIndex
 	}{
-		// empty backlog, delete should do nothing and just leave it the same
 		{
 			"EmptyBacklog",
 			[]arbutil.MessageIndex{},
+			0, // no segements in backlog so nothing to delete
 			0,
 			0,
+			0,
+			[]arbutil.MessageIndex{},
 		},
-		// delete message that appears before backlog, do nothing, leave backlog the same
 		{
 			"MsgBeforeBacklog",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			39,
+			39, // no segments will be deleted
 			7,
+			40,
+			46,
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
-		// delete message that appears in backlog, deletes everything before that message in the backlog
 		{
 			"MsgInBacklog",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 			43, // only the first segment will be deleted
 			4,
+			43,
+			46,
+			[]arbutil.MessageIndex{43, 44, 45, 46},
 		},
 		{
 			"MsgInFirstSegmentInBacklog",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			42,
+			42, // first segment will not be deleted as confirmed message is there
 			7,
+			40,
+			46,
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
-		// delete message that appears after backlog, deletes everything in the backlog, no error
 		{
 			"MsgAfterBacklog",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			47,
+			47, // all segments will be deleted
 			0,
+			0,
+			0,
+			[]arbutil.MessageIndex{},
 		},
 	}
 
@@ -173,9 +235,7 @@ func TestDelete(t *testing.T) {
 				t.Fatalf("error appending BroadcastMessage: %s", err)
 			}
 
-			if b.MessageCount() != tc.expectedCount {
-				t.Fatalf("backlog message count (%d) does not equal expected message count (%d)", b.MessageCount(), tc.expectedCount)
-			}
+			validateBacklog(t, b, tc.expectedCount, tc.expectedStart, tc.expectedEnd, tc.expectedLookupKeys)
 		})
 	}
 }
@@ -297,14 +357,4 @@ func TestGet(t *testing.T) {
 			}
 		})
 	}
-}
-
-func createDummyBacklog(indexes []arbutil.MessageIndex, segmentLimit int) (*Backlog, error) {
-	b := &Backlog{
-		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
-		segmentLimit:  func() int { return segmentLimit },
-	}
-	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
-	err := b.Append(bm)
-	return b, err
 }

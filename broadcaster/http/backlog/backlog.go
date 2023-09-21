@@ -34,6 +34,7 @@ func NewBacklog(segmentLimit func() int) *Backlog {
 	}
 }
 
+// Get reads messages from the given start to end MessageIndex
 func (b *Backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, error) {
 	head := b.head.Load()
 	tail := b.tail.Load()
@@ -67,7 +68,6 @@ func (b *Backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 		if len(bm.Messages) == required {
 			break
 		} else if s == nil {
-			fmt.Println("out of bounds :(")
 			return nil, errOutOfBounds
 		}
 	}
@@ -131,12 +131,10 @@ func (b *Backlog) delete(confirmed arbutil.MessageIndex) {
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
-		fmt.Println("no head or tail")
 		return
 	}
 
 	if confirmed < head.start {
-		fmt.Println("before backlog")
 		return
 	}
 
@@ -144,7 +142,6 @@ func (b *Backlog) delete(confirmed arbutil.MessageIndex) {
 		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.end)
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
-		fmt.Println("after backlog")
 		return
 	}
 
@@ -154,7 +151,6 @@ func (b *Backlog) delete(confirmed arbutil.MessageIndex) {
 		log.Error(fmt.Sprintf("%s: clearing backlog", err.Error()))
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
-		fmt.Println("segment find issue")
 		return
 	}
 
@@ -163,24 +159,22 @@ func (b *Backlog) delete(confirmed arbutil.MessageIndex) {
 		log.Error("error message not found in backlog segment, clearing backlog", "confirmed sequence number", confirmed)
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
-		fmt.Println("sequence order issue")
 		return
 	}
 
 	// remove all previous segments
 	previous := s.previousSegment.Load()
 	if previous == nil {
-		fmt.Println("failed to find previous segment")
 		return
 	}
 	b.removeFromLookup(head.start, previous.end)
 	b.head.Store(s)
 	count := b.messageCount.Load() - uint64(previous.end-head.start) - uint64(1)
-	fmt.Println("count:", count)
 	b.messageCount.Store(count)
 }
 
-// removeFromLookup removes all entries from the head segment's start index to the given confirmed index
+// removeFromLookup removes all entries from the head segment's start index to
+// the given confirmed index
 func (b *Backlog) removeFromLookup(start arbutil.MessageIndex, end arbutil.MessageIndex) {
 	for i := start; i == end; i++ {
 		delete(b.lookupByIndex, i)
@@ -222,6 +216,7 @@ type backlogSegment struct {
 	previousSegment atomic.Pointer[backlogSegment]
 }
 
+// get reads messages from the given start to end MessageIndex
 func (s *backlogSegment) get(start, end arbutil.MessageIndex) ([]*m.BroadcastFeedMessage, error) {
 	noMsgs := []*m.BroadcastFeedMessage{}
 	if start < s.start {
@@ -272,7 +267,6 @@ func (s *backlogSegment) contains(i arbutil.MessageIndex) bool {
 	}
 
 	return false
-	//return false, fmt.Errorf("%w: found sequence number (%d) does not equal expected sequence number (%d)", errSequenceOrder, msg.SequenceNumber, i)
 }
 
 // updateSegment updates the messageCount, start and end indices of the segment
@@ -287,6 +281,7 @@ func (s *backlogSegment) updateSegment(seen *bool) {
 	}
 }
 
+// MessageCount returns the number of messages stored in the backlog
 func (s *backlogSegment) MessageCount() int {
 	return int(s.messageCount.Load())
 }
