@@ -4,7 +4,6 @@
 package broadcaster
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -223,21 +222,6 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 
 // This feels very weird, follows same pattern of OnRegisterClient but it feels like we are splitting a lot of the HTTP logic away from the HTTP server. It might be better to move objects like m.BroadcastMessage to a different lib. Or changing the object that is returned by getCacheMessagesBefore.
 func (b *SequenceNumberCatchupBuffer) OnHTTPRequest(w http.ResponseWriter, requestedSeqNum arbutil.MessageIndex) {
-	bm, err := b.getCacheMessagesBefore(requestedSeqNum)
-	if err != nil {
-		msg := fmt.Sprintf("error getting cached messages: %s", err)
-		log.Error(msg)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-
-	m, err := json.Marshal(bm)
-	if err != nil {
-		msg := fmt.Sprintf("error serializing message: %s", err)
-		log.Error(msg)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-
-	w.Write(m)
 }
 
 func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {

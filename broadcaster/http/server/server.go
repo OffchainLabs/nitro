@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path"
 	"strconv"
@@ -9,12 +11,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/http/backlog"
 )
-
-// CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
-type CatchupBuffer interface {
-	OnHTTPRequest(http.ResponseWriter, arbutil.MessageIndex)
-}
 
 type HTTPBroadcastServer struct {
 	server           *http.Server
@@ -22,9 +20,9 @@ type HTTPBroadcastServer struct {
 	serverError      error
 }
 
-func NewHTTPBroadcastServer(catchupBuffer CatchupBuffer) *HTTPBroadcastServer {
+func NewHTTPBroadcastServer(httpBacklog backlog.Backlog) *HTTPBroadcastServer {
 	handler := &BroadcastHandler{
-		catchupBuffer: catchupBuffer,
+		httpBacklog: httpBacklog,
 	}
 
 	server := &http.Server{
@@ -66,7 +64,7 @@ func (s *HTTPBroadcastServer) StopAndWait() error {
 }
 
 type BroadcastHandler struct {
-	catchupBuffer CatchupBuffer
+	httpBacklog backlog.Backlog
 }
 
 func (h *BroadcastHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -91,20 +89,47 @@ func (h *BroadcastHandler) bufferMessagesHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	val := r.FormValue("sequence_number")
-	if val == "" {
+	s := r.FormValue("start")
+	if s == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	requestedSeqNum, err := strconv.ParseUint(val, 10, 64)
+	start, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		log.Error("error converting sequence number to uint64", "error", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	h.catchupBuffer.OnHTTPRequest(w, arbutil.MessageIndex(requestedSeqNum))
+	e := r.FormValue("end")
+	if e == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	end, err := strconv.ParseUint(e, 10, 64)
+	if err != nil {
+		log.Error("error converting sequence number to uint64", "error", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	bm, err := h.httpBacklog.Get(arbutil.MessageIndex(start), arbutil.MessageIndex(end))
+	if err != nil {
+		msg := fmt.Sprintf("error getting cached messages: %s", err)
+		log.Error(msg)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	m, err := json.Marshal(bm)
+	if err != nil {
+		msg := fmt.Sprintf("error serializing message: %s", err)
+		log.Error(msg)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(m)
 }
 
 //func serializeMessage(bm interface{}) (bytes.Buffer, error) {

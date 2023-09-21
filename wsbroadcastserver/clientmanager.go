@@ -8,6 +8,7 @@ import (
 	"compress/flate"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -25,6 +26,8 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/http/backlog"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -58,6 +61,7 @@ type ClientManager struct {
 	clientAction  chan ClientConnectionAction
 	config        BroadcasterConfigFetcher
 	catchupBuffer CatchupBuffer
+	httpBacklog   backlog.Backlog
 	flateWriter   *flate.Writer
 
 	connectionLimiter *ConnectionLimiter
@@ -68,7 +72,7 @@ type ClientConnectionAction struct {
 	create bool
 }
 
-func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, catchupBuffer CatchupBuffer) *ClientManager {
+func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, httpBacklog backlog.Backlog) *ClientManager {
 	config := configFetcher()
 	return &ClientManager{
 		poller:            poller,
@@ -78,6 +82,7 @@ func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetc
 		clientAction:      make(chan ClientConnectionAction, 128),
 		config:            configFetcher,
 		catchupBuffer:     catchupBuffer,
+		httpBacklog:       httpBacklog,
 		connectionLimiter: NewConnectionLimiter(func() *ConnectionLimiterConfig { return &configFetcher().ConnectionLimits }),
 	}
 }
@@ -193,6 +198,13 @@ func (cm *ClientManager) Broadcast(bm interface{}) {
 
 func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error) {
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
+		return nil, err
+	}
+	broadcastMessage, ok := bm.(m.BroadcastMessage)
+	if !ok {
+		return nil, errors.New("requested to broadcast message of unknown type")
+	}
+	if err := cm.httpBacklog.Append(&broadcastMessage); err != nil {
 		return nil, err
 	}
 	config := cm.config()

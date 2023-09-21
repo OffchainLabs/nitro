@@ -13,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/http/backlog"
 	httpServer "github.com/offchainlabs/nitro/broadcaster/http/server"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -22,6 +23,7 @@ import (
 type Broadcaster struct {
 	server        *wsbroadcastserver.WSBroadcastServer
 	catchupBuffer *SequenceNumberCatchupBuffer
+	httpBacklog   backlog.Backlog
 	chainId       uint64
 	dataSigner    signature.DataSignerFunc
 	httpServer    *httpServer.HTTPBroadcastServer
@@ -29,12 +31,14 @@ type Broadcaster struct {
 
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup }, func() int { return config().MaxCatchup })
+	httpBacklog := backlog.NewBacklog(func() int { return 240 })
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
+		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, httpBacklog, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
+		httpBacklog:   httpBacklog,
 		chainId:       chainId,
 		dataSigner:    dataSigner,
-		httpServer:    httpServer.NewHTTPBroadcastServer(catchupBuffer),
+		httpServer:    httpServer.NewHTTPBroadcastServer(httpBacklog),
 	}
 }
 
