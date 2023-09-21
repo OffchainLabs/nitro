@@ -32,16 +32,16 @@ func TestL2BlockRangeForL1(t *testing.T) {
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
 	Require(t, err)
 
-	l1BlockNums := map[uint64][2]uint64{}
+	l1BlockNums := map[uint64]*[2]uint64{}
 	latestL2, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 	for l2BlockNum := uint64(0); l2BlockNum <= latestL2; l2BlockNum++ {
 		l1BlockNum, err := nodeInterface.BlockL1Num(&bind.CallOpts{}, l2BlockNum)
 		Require(t, err)
 		if _, ok := l1BlockNums[l1BlockNum]; !ok {
-			l1BlockNums[l1BlockNum] = [2]uint64{l2BlockNum, l2BlockNum}
+			l1BlockNums[l1BlockNum] = &[2]uint64{l2BlockNum, l2BlockNum}
 		} else {
-			l1BlockNums[l1BlockNum] = [2]uint64{l1BlockNums[l1BlockNum][0], l2BlockNum}
+			l1BlockNums[l1BlockNum][1] = l2BlockNum
 		}
 	}
 

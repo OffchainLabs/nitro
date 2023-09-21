@@ -639,11 +639,11 @@ func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (ui
 
 	firstBlock, err := firstL2BlockForL1(l1BlockNum)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("failed to get the first L2 block with the L1 block: %v. Error: %w", l1BlockNum, err)
 	}
 	lastBlock, err := firstL2BlockForL1(l1BlockNum + 1)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("failed to get the last L2 block with the L1 block: %v. Error: %w", l1BlockNum, err)
 	}
 
 	if err := n.matchL2BlockNumWithL1(c, evm, firstBlock, l1BlockNum); err != nil {
