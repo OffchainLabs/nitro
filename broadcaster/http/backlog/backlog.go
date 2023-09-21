@@ -38,8 +38,7 @@ func (b *Backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
-		// should this be an empty BM?
-		return nil, nil
+		return nil, errOutOfBounds
 	}
 
 	if start < head.start {
@@ -56,7 +55,8 @@ func (b *Backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 	}
 
 	bm := &m.BroadcastMessage{Version: 1}
-	for len(bm.Messages) < (int(end-start) + 1) {
+	required := int(end-start) + 1
+	for {
 		segMsgs, err := s.get(arbmath.MaxInt(start, s.start), arbmath.MinInt(end, s.end))
 		if err != nil {
 			return nil, err
@@ -64,7 +64,10 @@ func (b *Backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 
 		bm.Messages = append(bm.Messages, segMsgs...)
 		s = s.nextSegment.Load()
-		if s == nil {
+		if len(bm.Messages) == required {
+			break
+		} else if s == nil {
+			fmt.Println("out of bounds :(")
 			return nil, errOutOfBounds
 		}
 	}
@@ -105,7 +108,7 @@ func (b *Backlog) Append(bm *m.BroadcastMessage) error {
 			b.removeFromLookup(head.start, msg.SequenceNumber)
 			b.head.Store(s)
 			b.tail.Store(s)
-			b.messageCount.Store(uint64(0))
+			b.messageCount.Store(0)
 			log.Warn(err.Error())
 		} else if errors.Is(err, errSequenceNumberSeen) {
 			log.Info("ignoring message sequence number (%s), already in backlog", msg.SequenceNumber)
@@ -116,7 +119,7 @@ func (b *Backlog) Append(bm *m.BroadcastMessage) error {
 		p := atomic.Pointer[backlogSegment]{}
 		p.Store(s)
 		b.lookupByIndex[msg.SequenceNumber] = p
-		b.messageCount.Add(uint64(1))
+		b.messageCount.Add(1)
 	}
 
 	return nil
@@ -125,51 +128,56 @@ func (b *Backlog) Append(bm *m.BroadcastMessage) error {
 // delete removes segments before the confirmed sequence number given. It will
 // not remove the segment containing the confirmed sequence number.
 func (b *Backlog) delete(confirmed arbutil.MessageIndex) {
-	// add delete logic
-
-	// if there are no messages then do nothing and return
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
+		fmt.Println("no head or tail")
 		return
 	}
 
-	// if confirmed is lower than first seq number of first seq then do nothing and return
 	if confirmed < head.start {
+		fmt.Println("before backlog")
 		return
 	}
 
-	// if confirmed is greater than end of stored messages remove all messages, potentially log an error, should we return one?
 	if confirmed > tail.end {
 		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.end)
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
+		fmt.Println("after backlog")
 		return
 	}
 
-	// weird sequence number found, not expected, drop all messages and log error, might need to be checked in the segment
+	// find the segment containing the confirmed message
 	s, err := b.lookup(confirmed)
 	if err != nil {
 		log.Error(fmt.Sprintf("%s: clearing backlog", err.Error()))
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
+		fmt.Println("segment find issue")
 		return
 	}
 
+	// check the segment actually contains that message
 	if found := s.contains(confirmed); !found {
 		log.Error("error message not found in backlog segment, clearing backlog", "confirmed sequence number", confirmed)
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
+		fmt.Println("sequence order issue")
 		return
 	}
 
-	// remove segments up to the one that contains the confirmed message
+	// remove all previous segments
 	previous := s.previousSegment.Load()
 	if previous == nil {
+		fmt.Println("failed to find previous segment")
 		return
 	}
 	b.removeFromLookup(head.start, previous.end)
 	b.head.Store(s)
+	count := b.messageCount.Load() - uint64(previous.end-head.start) - uint64(1)
+	fmt.Println("count:", count)
+	b.messageCount.Store(count)
 }
 
 // removeFromLookup removes all entries from the head segment's start index to the given confirmed index
@@ -202,6 +210,7 @@ func (b *Backlog) reset() {
 	b.head = atomic.Pointer[backlogSegment]{}
 	b.tail = atomic.Pointer[backlogSegment]{}
 	b.lookupByIndex = map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{}
+	b.messageCount.Store(0)
 }
 
 type backlogSegment struct {
