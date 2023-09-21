@@ -28,7 +28,7 @@ type BackendConfig struct {
 }
 
 func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggregator, error) {
-	services, err := ParseServices(config.AggregatorConfig)
+	services, err := ParseServices(config.RPCAggregator)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggr
 }
 
 func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*Aggregator, error) {
-	services, err := ParseServices(config.AggregatorConfig)
+	services, err := ParseServices(config.RPCAggregator)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.
 }
 
 func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*Aggregator, error) {
-	services, err := ParseServices(config.AggregatorConfig)
+	services, err := ParseServices(config.RPCAggregator)
 	if err != nil {
 		return nil, err
 	}
