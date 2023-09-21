@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	errDropSegments       = errors.New("drop previous segments")
+	errDropSegments       = errors.New("remove previous segments from backlog")
 	errSequenceNumberSeen = errors.New("sequence number already present in backlog")
 	errSequenceOrder      = errors.New("error found in sequence order")
 	errOutOfBounds        = errors.New("message not found in backlog")
@@ -28,7 +28,10 @@ type Backlog struct {
 
 func NewBacklog(segmentLimit func() int) *Backlog {
 	// TODO: add some config stuff
-	return &Backlog{segmentLimit: segmentLimit}
+	return &Backlog{
+		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
+		segmentLimit:  segmentLimit,
+	}
 }
 
 func (b *Backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, error) {
@@ -86,33 +89,34 @@ func (b *Backlog) Append(bm *m.BroadcastMessage) error {
 			b.tail.Store(s)
 		}
 
-		// check if limit has been reached on segment? perhaps the segment object does not need to know about the limit
+		prevMsgIdx := s.end
 		if s.MessageCount() >= b.segmentLimit() {
 			nextS := &backlogSegment{}
 			s.nextSegment.Store(nextS)
+			prevMsgIdx = s.end
 			nextS.previousSegment.Store(s)
 			s = nextS
 			b.tail.Store(s)
 		}
 
-		err := s.append(msg)
+		err := s.append(prevMsgIdx, msg)
 		if errors.Is(err, errDropSegments) {
 			head := b.head.Load()
 			b.removeFromLookup(head.start, msg.SequenceNumber)
 			b.head.Store(s)
 			b.tail.Store(s)
-			b.messageCount.Store(0)
-			// remove entries within lookupByIndex up to this latest sequence number
-			//b.lookupByIndex = map[uint64]*backlogSegment{msg.SequenceNumber: s}
+			b.messageCount.Store(uint64(0))
+			log.Warn(err.Error())
 		} else if errors.Is(err, errSequenceNumberSeen) {
-			// message is already in the backlog, do not increase count or add to lookup again
+			log.Info("ignoring message sequence number (%s), already in backlog", msg.SequenceNumber)
 			continue
 		} else if err != nil {
 			return err
 		}
-		p := b.lookupByIndex[msg.SequenceNumber]
+		p := atomic.Pointer[backlogSegment]{}
 		p.Store(s)
-		b.messageCount.Add(1)
+		b.lookupByIndex[msg.SequenceNumber] = p
+		b.messageCount.Add(uint64(1))
 	}
 
 	return nil
@@ -229,24 +233,20 @@ func (s *backlogSegment) get(start, end arbutil.MessageIndex) ([]*m.BroadcastFee
 // message is ahead of the given message append will do nothing. If the given
 // message is ahead of the segment's end message append will return
 // errDropSegments to ensure any messages before the given message are dropped.
-func (s *backlogSegment) append(msg *m.BroadcastFeedMessage) error {
-	defer s.updateSegment()
+func (s *backlogSegment) append(prevMsgIdx arbutil.MessageIndex, msg *m.BroadcastFeedMessage) error {
+	seen := false
+	defer s.updateSegment(&seen)
 
-	if int(s.messageCount.Load()) == 0 {
-		s.messages = append(s.messages, msg)
-	} else if expSeqNum := s.end + 1; msg.SequenceNumber == expSeqNum {
+	if expSeqNum := prevMsgIdx + 1; prevMsgIdx == 0 || msg.SequenceNumber == expSeqNum {
 		s.messages = append(s.messages, msg)
 	} else if msg.SequenceNumber > expSeqNum {
-		err := fmt.Errorf("message to broadcast has sequence number (%d) greater than the expected sequence number (%d), discarding messages from backlog up to new sequence number: %w", msg.SequenceNumber, expSeqNum, errDropSegments)
-		log.Warn(err.Error())
 		s.messages = nil
 		s.messages = append(s.messages, msg)
-		return err
+		return fmt.Errorf("new message sequence number (%d) is greater than the expected sequence number (%d): %w", msg.SequenceNumber, expSeqNum, errDropSegments)
 	} else {
-		log.Info("skipping already seen message sequence number (%s)", msg.SequenceNumber)
+		seen = true
 		return errSequenceNumberSeen
 	}
-
 	return nil
 }
 
@@ -267,12 +267,15 @@ func (s *backlogSegment) contains(i arbutil.MessageIndex) bool {
 }
 
 // updateSegment updates the messageCount, start and end indices of the segment
-// this should be called using defer whenever a method updates the messages
-func (s *backlogSegment) updateSegment() {
-	c := len(s.messages)
-	s.messageCount.Store(uint64(c))
-	s.start = s.messages[0].SequenceNumber
-	s.end = s.messages[c-1].SequenceNumber
+// this should be called using defer whenever a method updates the messages. It
+// will do nothing if the message has already been seen by the backlog.
+func (s *backlogSegment) updateSegment(seen *bool) {
+	if !*seen {
+		c := len(s.messages)
+		s.messageCount.Store(uint64(c))
+		s.start = s.messages[0].SequenceNumber
+		s.end = s.messages[c-1].SequenceNumber
+	}
 }
 
 func (s *backlogSegment) MessageCount() int {
