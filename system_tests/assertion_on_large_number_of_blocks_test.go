@@ -1,14 +1,14 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build assertion_on_large_number_of_batch_test
-// +build assertion_on_large_number_of_batch_test
-
 package arbtest
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"os"
 	"testing"
@@ -28,11 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
-
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -97,7 +93,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
 
-	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 250)
 	l1Info := NewL1TestInfo(t)
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)
 	l1Info.GenerateGenesisAccount("asserter", initialBalance)
@@ -141,9 +137,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	l1Info.SetContract("Inbox", rollupAddresses.Inbox)
 	initMessage := getInitMessage(ctx, t, l1Backend, rollupAddresses)
 
-	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
-
-	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
+	bridgeAddr, _, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
 	l2Info, l2Stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
 	rollupAddresses.Bridge = bridgeAddr
@@ -163,37 +157,35 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	_, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
 
-	for i := 0; i < 1024; i++ {
-		emptyArray, err := rlp.EncodeToBytes([]uint8{0})
-		Require(t, err)
-		var out []byte
-		for i := 0; i < arbstate.MaxSegmentsPerSequencerMessage-1; i++ {
-			out = append(out, emptyArray...)
-		}
-		batch := []uint8{0}
-		compressed, err := arbcompress.CompressWell(out)
-		Require(t, err)
-		batch = append(batch, compressed...)
-
-		seqNum := new(big.Int).Lsh(common.Big1, 256)
-		seqNum.Sub(seqNum, common.Big1)
-		tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(&sequencerTxOpts, seqNum, batch, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l1Backend, tx)
-		Require(t, err)
-
-		nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, seqInboxAddr, 0)
-		Require(t, err)
-		batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
-		Require(t, err)
-		if len(batches) == 0 {
-			Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
-		}
-		err = l2Node.InboxTracker.AddSequencerBatches(ctx, l1Backend, batches)
-		Require(t, err)
-		_, err = l2Node.InboxTracker.GetBatchMetadata(0)
-		Require(t, err, "failed to get batch metadata after adding batch:")
+	emptyArray, err := rlp.EncodeToBytes([]uint8{0})
+	Require(t, err)
+	var out []byte
+	for i := 0; i < arbstate.MaxSegmentsPerSequencerMessage-1; i++ {
+		out = append(out, emptyArray...)
 	}
+	batch := []uint8{0}
+	compressed, err := arbcompress.CompressWell(out)
+	Require(t, err)
+	batch = append(batch, compressed...)
+
+	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
+	_, simple := deploySimple(t, ctx, txOpts, l1Backend)
+	tx, err = simple.PostManyBatches(&txOpts, seqInboxAddr, batch, big.NewInt(1024))
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l1Backend, tx)
+	Require(t, err)
+
+	nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, seqInboxAddr, 0)
+	Require(t, err)
+	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
+	Require(t, err)
+	if len(batches) == 0 {
+		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
+	}
+	err = l2Node.InboxTracker.AddSequencerBatches(ctx, l1Backend, batches)
+	Require(t, err)
+	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	Require(t, err, "failed to get batch metadata after adding batch:")
 	return l2Node, assertionChain
 }
 
