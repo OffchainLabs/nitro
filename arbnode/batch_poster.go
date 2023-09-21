@@ -39,6 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/ephemeralerror"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -57,20 +58,20 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader            *headerreader.HeaderReader
-	inbox               *InboxTracker
-	streamer            *TransactionStreamer
-	config              BatchPosterConfigFetcher
-	seqInbox            *bridgegen.SequencerInbox
-	bridge              *bridgegen.Bridge
-	syncMonitor         *SyncMonitor
-	seqInboxABI         *abi.ABI
-	seqInboxAddr        common.Address
-	building            *buildingBatch
-	daWriter            das.DataAvailabilityServiceWriter
-	dataPoster          *dataposter.DataPoster
-	redisLock           *redislock.Simple
-	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
+	l1Reader             *headerreader.HeaderReader
+	inbox                *InboxTracker
+	streamer             *TransactionStreamer
+	config               BatchPosterConfigFetcher
+	seqInbox             *bridgegen.SequencerInbox
+	bridge               *bridgegen.Bridge
+	syncMonitor          *SyncMonitor
+	seqInboxABI          *abi.ABI
+	seqInboxAddr         common.Address
+	building             *buildingBatch
+	daWriter             das.DataAvailabilityServiceWriter
+	dataPoster           *dataposter.DataPoster
+	redisLock            *redislock.Simple
+	batchPostErrorLogger ephemeralerror.Logger
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
 	backlog         uint64
@@ -238,17 +239,18 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:     l1Reader,
-		inbox:        inbox,
-		streamer:     streamer,
-		syncMonitor:  syncMonitor,
-		config:       config,
-		bridge:       bridge,
-		seqInbox:     seqInbox,
-		seqInboxABI:  seqInboxABI,
-		seqInboxAddr: deployInfo.SequencerInbox,
-		daWriter:     daWriter,
-		redisLock:    redisLock,
+		l1Reader:             l1Reader,
+		inbox:                inbox,
+		streamer:             streamer,
+		syncMonitor:          syncMonitor,
+		config:               config,
+		bridge:               bridge,
+		seqInbox:             seqInbox,
+		seqInboxABI:          seqInboxABI,
+		seqInboxAddr:         deployInfo.SequencerInbox,
+		daWriter:             daWriter,
+		redisLock:            redisLock,
+		batchPostErrorLogger: ephemeralerror.NewTimeEphemeralErrorLogger(log.Debug, log.Error, time.Minute),
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
@@ -981,22 +983,17 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		posted, err := b.maybePostSequencerBatch(ctx)
 		ephemeralError := errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, storage.ErrStorageRace)
 		if !ephemeralError {
-			b.firstEphemeralError = time.Time{}
+			b.batchPostErrorLogger.Reset()
 		}
 		if err != nil {
 			b.building = nil
-			logLevel := log.Error
 			if ephemeralError {
-				// Likely the inbox tracker just isn't caught up.
-				// Let's see if this error disappears naturally.
-				if b.firstEphemeralError == (time.Time{}) {
-					b.firstEphemeralError = time.Now()
-					logLevel = log.Debug
-				} else if time.Since(b.firstEphemeralError) < time.Minute {
-					logLevel = log.Debug
-				}
+				// The inbox tracker may just not be caught up.
+				// Use an ephemeral logger in case this error disappears naturally.
+				b.batchPostErrorLogger.Error("error posting batch", "err", err)
+			} else {
+				log.Error("error posting batch", "err", err)
 			}
-			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
 			return 0

@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/ephemeralerror"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -370,25 +371,23 @@ func (s *l1SyncService) readMore(ctx context.Context) error {
 func (s *l1SyncService) mainThread(ctx context.Context) {
 	headerChan, unsubscribe := s.l1Reader.Subscribe(false)
 	defer unsubscribe()
-	errCount := 0
+	syncErrorLogger := ephemeralerror.NewCountEphemeralErrorLogger(ephemeralerror.NoLog, log.Error, 5)
 	for {
 		err := s.readMore(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			errCount++
-			if errCount > 5 {
-				log.Error("error trying to sync from L1", "err", err)
-			}
+			syncErrorLogger.Error("error trying to sync from L1", "err", err)
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(s.config.DelayOnError * time.Duration(errCount)):
+			case <-time.After(s.config.DelayOnError):
 			}
 			continue
 		}
-		errCount = 0
+		syncErrorLogger.Reset()
+
 		if s.catchingUp {
 			// we're behind. Don't wait.
 			continue
