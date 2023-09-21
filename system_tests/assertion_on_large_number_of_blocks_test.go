@@ -137,7 +137,6 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	l1Info.SetContract("Inbox", rollupAddresses.Inbox)
 	initMessage := getInitMessage(ctx, t, l1Backend, rollupAddresses)
 
-	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
 	l2Info, l2Stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
@@ -171,7 +170,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	simpleAddress, simple := deploySimple(t, ctx, txOpts, l1Backend)
-	tx, err = seqInbox.SetIsBatchPoster(&sequencerTxOpts, simpleAddress, true)
+	tx, err = seqInbox.SetIsBatchPoster(&deployAuth, simpleAddress, true)
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
