@@ -33,7 +33,7 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup }, func() int { return config().MaxCatchup })
 	httpBacklog := backlog.NewBacklog(func() int { return 240 })
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, httpBacklog, chainId, feedErrChan),
+		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
 		httpBacklog:   httpBacklog,
 		chainId:       chainId,
@@ -93,6 +93,9 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 	}
 
 	b.server.Broadcast(bm)
+	if err := b.httpBacklog.Append(&bm); err != nil {
+		log.Error("error whilst appending to HTTP backlog", "err", err)
+	}
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {

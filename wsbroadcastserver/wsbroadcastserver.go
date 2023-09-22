@@ -24,7 +24,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/broadcaster/http/backlog"
 )
 
 var (
@@ -162,17 +161,15 @@ type WSBroadcastServer struct {
 	started       bool
 	clientManager *ClientManager
 	catchupBuffer CatchupBuffer
-	httpBacklog   backlog.Backlog
 	chainId       uint64
 	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, httpBacklog backlog.Backlog, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
 		config:        config,
 		started:       false,
 		catchupBuffer: catchupBuffer,
-		httpBacklog:   httpBacklog,
 		chainId:       chainId,
 		fatalErrChan:  fatalErrChan,
 	}
@@ -192,7 +189,7 @@ func (s *WSBroadcastServer) Initialize() error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	s.clientManager = NewClientManager(s.poller, s.config, s.catchupBuffer, s.httpBacklog)
+	s.clientManager = NewClientManager(s.poller, s.config, s.catchupBuffer)
 
 	return nil
 }
