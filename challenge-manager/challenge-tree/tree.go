@@ -10,7 +10,6 @@ import (
 	"context"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/pkg/errors"
@@ -32,37 +31,33 @@ type creationTime uint64
 // HonestChallengeTree keeps track of edges the honest node agrees with in a particular challenge.
 // All edges tracked in this data structure are part of the same, top-level assertion challenge.
 type HonestChallengeTree struct {
-	edges                         *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
-	mutualIds                     *threadsafe.Map[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
-	topLevelAssertionHash         protocol.AssertionHash
-	honestBlockChalLevelZeroEdge  option.Option[protocol.ReadOnlyEdge]
-	honestBigStepLevelZeroEdges   *threadsafe.Slice[protocol.ReadOnlyEdge]
-	honestSmallStepLevelZeroEdges *threadsafe.Slice[protocol.ReadOnlyEdge]
-	metadataReader                MetadataReader
-	histChecker                   l2stateprovider.HistoryChecker
-	validatorName                 string
-	totalChallengeLevels          uint8
-	honestRootEdgesByLevel        *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]]
+	edges                  *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
+	mutualIds              *threadsafe.Map[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
+	topLevelAssertionHash  protocol.AssertionHash
+	metadataReader         MetadataReader
+	histChecker            l2stateprovider.HistoryChecker
+	validatorName          string
+	totalChallengeLevels   uint8
+	honestRootEdgesByLevel *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]]
 }
 
 func New(
 	assertionHash protocol.AssertionHash,
 	metadataReader MetadataReader,
 	histChecker l2stateprovider.HistoryChecker,
+	numBigStepLevels uint8,
 	validatorName string,
 ) *HonestChallengeTree {
 	return &HonestChallengeTree{
-		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		topLevelAssertionHash:         assertionHash,
-		honestBlockChalLevelZeroEdge:  option.None[protocol.ReadOnlyEdge](),
-		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		metadataReader:                metadataReader,
-		histChecker:                   histChecker,
-		validatorName:                 validatorName,
-		totalChallengeLevels:          3,
-		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		edges:                 threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		mutualIds:             threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+		topLevelAssertionHash: assertionHash,
+		metadataReader:        metadataReader,
+		histChecker:           histChecker,
+		validatorName:         validatorName,
+		// The total number of challenge levels include block challenges, small step challenges, and N big step challenges.
+		totalChallengeLevels:   numBigStepLevels + 2,
+		honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
 	}
 }
 
@@ -153,33 +148,18 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		id := eg.Id()
 		ht.edges.Put(id, eg)
 		if !eg.ClaimId().IsNone() {
-			switch challengeLevel {
-			case protocol.NewBlockChallengeLevel():
-				ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(eg))
-			default:
-				reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
-				if err != nil {
-					return protocol.Agreement{}, err
-				}
-				rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
-				if !ok || rootEdgesAtLevel == nil {
-					honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
-					honestRootEdges.Push(eg)
-					ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
-				} else {
-					rootEdgesAtLevel.Push(eg)
-					ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, rootEdgesAtLevel)
-				}
-			}
-			level, err := eg.GetChallengeLevel()
+			reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
 			if err != nil {
 				return protocol.Agreement{}, err
 			}
-			rootEdges, ok := ht.honestRootEdgesByLevel.TryGet(level)
-			if !ok {
-				ht.honestRootEdgesByLevel.Put(level, threadsafe.NewSlice[protocol.ReadOnlyEdge]())
+			rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
+			if !ok || rootEdgesAtLevel == nil {
+				honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+				honestRootEdges.Push(eg)
+				ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
 			} else {
-				rootEdges.Push(eg)
+				rootEdgesAtLevel.Push(eg)
+				ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, rootEdgesAtLevel)
 			}
 		}
 	}
@@ -216,27 +196,18 @@ func (ht *HonestChallengeTree) AddHonestEdge(eg protocol.VerifiedHonestEdge) err
 	ht.edges.Put(id, eg)
 	// If the edge has a claim id, it means it is a level zero edge and we keep track of it.
 	if !eg.ClaimId().IsNone() {
-		challengeLevel, err := eg.GetChallengeLevel()
+		reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
 		if err != nil {
 			return err
 		}
-		switch challengeLevel {
-		case protocol.NewBlockChallengeLevel():
-			ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(eg))
-		default:
-			reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
-			if err != nil {
-				return err
-			}
-			rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
-			if !ok || rootEdgesAtLevel == nil {
-				honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
-				honestRootEdges.Push(eg)
-				ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
-			} else {
-				rootEdgesAtLevel.Push(eg)
-				ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, rootEdgesAtLevel)
-			}
+		rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
+		if !ok || rootEdgesAtLevel == nil {
+			honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+			honestRootEdges.Push(eg)
+			ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
+		} else {
+			rootEdgesAtLevel.Push(eg)
+			ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, rootEdgesAtLevel)
 		}
 	}
 	// We add the edge id to the list of mutual ids we are tracking.

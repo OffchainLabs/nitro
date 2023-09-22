@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -86,9 +87,12 @@ func newTestingMachine(
 		machineAtBlock: func(context.Context, uint64) (Machine, error) {
 			return nil, errors.New("state manager created with NewWithAssertionStates() cannot provide machines")
 		},
-		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
-		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
-		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
+		numBigSteps: 1,
+		challengeLeafHeights: []l2stateprovider.Height{
+			challenge_testing.LevelZeroBlockEdgeHeight,
+			challenge_testing.LevelZeroBigStepEdgeHeight,
+			challenge_testing.LevelZeroSmallStepEdgeHeight,
+		},
 	}
 	for _, o := range opts {
 		o(s)

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	"github.com/stretchr/testify/require"
 )
@@ -39,13 +38,11 @@ import (
 func TestComputeAncestorsWithTimers(t *testing.T) {
 	ctx := context.Background()
 	tree := &HonestChallengeTree{
-		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		metadataReader:                &mockMetadataReader{},
-		totalChallengeLevels:          3,
-		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		edges:                  threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		mutualIds:              threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+		metadataReader:         &mockMetadataReader{},
+		totalChallengeLevels:   3,
+		honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
 	}
 	tree.honestRootEdgesByLevel.Put(2, threadsafe.NewSlice[protocol.ReadOnlyEdge]())
 	tree.honestRootEdgesByLevel.Put(1, threadsafe.NewSlice[protocol.ReadOnlyEdge]())
@@ -54,7 +51,8 @@ func TestComputeAncestorsWithTimers(t *testing.T) {
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
 	setupBlockChallengeTreeSnapshot(t, tree)
-	tree.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(tree.edges.Get(id("blk-0.a-16.a"))))
+	blockRootEdges := tree.honestRootEdgesByLevel.Get(2 /* big step level */)
+	blockRootEdges.Push(tree.edges.Get(id("blk-0.a-16.a")))
 	claimId := "blk-4.a-5.a"
 	setupBigStepChallengeSnapshot(t, tree, claimId)
 	bigStepRootEdges := tree.honestRootEdgesByLevel.Get(1 /* big step level */)
@@ -362,13 +360,11 @@ func TestComputeHonestPathTimer(t *testing.T) {
 	}
 	allEdges := threadsafe.NewMapFromItems(transformedEdges)
 	ht := &HonestChallengeTree{
-		edges:                         allEdges,
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		metadataReader:                &mockMetadataReader{},
-		totalChallengeLevels:          3,
-		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		edges:                  allEdges,
+		mutualIds:              threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+		metadataReader:         &mockMetadataReader{},
+		totalChallengeLevels:   3,
+		honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
 	}
 	ht.honestRootEdgesByLevel.Put(2, threadsafe.NewSlice[protocol.ReadOnlyEdge]())
 	ht.honestRootEdgesByLevel.Put(1, threadsafe.NewSlice[protocol.ReadOnlyEdge]())
@@ -414,7 +410,8 @@ func TestComputeHonestPathTimer(t *testing.T) {
 	require.NoError(t, err)
 	mutuals.Put(idd, creationTime(iddCreation))
 
-	ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(ht.edges.Get(id("blk-0.a-16.a"))))
+	blockRootEdges := ht.honestRootEdgesByLevel.Get(2 /* big step level */)
+	blockRootEdges.Push(ht.edges.Get(id("blk-0.a-16.a")))
 	ctx := context.Background()
 
 	t.Run("querying path timer before creation should return zero", func(t *testing.T) {
@@ -582,10 +579,8 @@ func TestComputeHonestPathTimer(t *testing.T) {
 func TestComputePathTimer_AllChallengeLevels(t *testing.T) {
 	unrivaledAssertionBlocks := uint64(10) // Should incorporate the assertion's unrivaled blocks into the total timer.
 	ht := &HonestChallengeTree{
-		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
+		edges:     threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		mutualIds: threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 		metadataReader: &mockMetadataReader{
 			unrivaledAssertionBlocks: unrivaledAssertionBlocks,
 		},
@@ -599,7 +594,8 @@ func TestComputePathTimer_AllChallengeLevels(t *testing.T) {
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
 	setupBlockChallengeTreeSnapshot(t, ht)
-	ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(ht.edges.Get(id("blk-0.a-16.a"))))
+	blockRootEdges := ht.honestRootEdgesByLevel.Get(2 /* big step level */)
+	blockRootEdges.Push(ht.edges.Get(id("blk-0.a-16.a")))
 	claimId := "blk-4.a-5.a"
 	setupBigStepChallengeSnapshot(t, ht, claimId)
 	bigStepRootEdges := ht.honestRootEdgesByLevel.Get(1 /* big step level */)

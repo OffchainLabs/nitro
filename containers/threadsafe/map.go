@@ -18,6 +18,12 @@ func NewMapFromItems[K comparable, V any](m map[K]V) *Map[K, V] {
 	return &Map[K, V]{items: m}
 }
 
+func (s *Map[K, V]) IsEmpty() bool {
+	s.RLock()
+	defer s.RUnlock()
+	return len(s.items) == 0
+}
+
 func (s *Map[K, V]) Put(k K, v V) {
 	s.Lock()
 	defer s.Unlock()

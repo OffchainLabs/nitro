@@ -89,6 +89,7 @@ type Watcher struct {
 	challenges           *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
 	backend              bind.ContractBackend
 	validatorName        string
+	numBigStepLevels     uint8
 	initialSyncCompleted atomic.Bool
 }
 
@@ -100,6 +101,7 @@ func New(
 	histChecker l2stateprovider.HistoryChecker,
 	backend bind.ContractBackend,
 	interval time.Duration,
+	numBigStepLevels uint8,
 	validatorName string,
 ) *Watcher {
 	return &Watcher{
@@ -109,6 +111,7 @@ func New(
 		challenges:         threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
 		backend:            backend,
 		histChecker:        histChecker,
+		numBigStepLevels:   numBigStepLevels,
 		validatorName:      validatorName,
 	}
 }
@@ -335,6 +338,7 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 			assertionHash,
 			w.chain,
 			w.histChecker,
+			w.numBigStepLevels,
 			w.validatorName,
 		)
 		chal = &trackedChallenge{
@@ -414,6 +418,7 @@ func (w *Watcher) processEdgeAddedEvent(
 			protocol.AssertionHash{Hash: event.OriginId},
 			w.chain,
 			w.histChecker,
+			w.numBigStepLevels,
 			w.validatorName,
 		)
 		chal = &trackedChallenge{

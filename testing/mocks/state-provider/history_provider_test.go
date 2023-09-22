@@ -28,7 +28,6 @@ func TestHistoryCommitment(t *testing.T) {
 	stateBackend, err := newTestingMachine(
 		states,
 		WithMaxWavmOpcodesPerBlock(uint64(challengeLeafHeights[1]*challengeLeafHeights[2])),
-		WithNumOpcodesPerBigStep(uint64(challengeLeafHeights[2])),
 		WithMachineAtBlockProvider(mockMachineAtBlock),
 		WithForceMachineBlockCompat(),
 	)

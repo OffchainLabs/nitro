@@ -132,10 +132,6 @@ func (ht *HonestChallengeTree) ComputeAncestorsWithTimers(
 	edgeId protocol.EdgeId,
 	blockNumber uint64,
 ) (*AncestorsQueryResponse, error) {
-	// Checks if we have a block challenge root edge.
-	if ht.honestBlockChalLevelZeroEdge.IsNone() {
-		return nil, ErrNoHonestTopLevelEdge
-	}
 	// Checks if the edge exists before performing any computation.
 	startEdge, ok := ht.edges.TryGet(edgeId)
 	if !ok {
@@ -211,23 +207,6 @@ func (ht *HonestChallengeTree) ComputeAncestorsWithTimers(
 		}, nil
 	}
 
-	// If the ancestry list is non-empty, the last edge in the ancestry should
-	// be the honest block challenge level root edge we agree with. We perform this
-	// safety check at the end of this function to ensure we are returning
-	// a proper ancestry list.
-	if ht.honestBlockChalLevelZeroEdge.IsNone() {
-		// Should never happen, but is just an extra check against panics.
-		return nil, errors.New("no honest block challenge root edge found")
-	}
-	rootChallengeEdgeId := ht.honestBlockChalLevelZeroEdge.Unwrap().Id()
-	lastAncestryEdgeId := ancestry[len(ancestry)-1]
-	if rootChallengeEdgeId != lastAncestryEdgeId {
-		return nil, fmt.Errorf(
-			"last edge in ancestry %#x is not the top-level, root honest edge %#x",
-			lastAncestryEdgeId,
-			rootChallengeEdgeId,
-		)
-	}
 	return &AncestorsQueryResponse{
 		AncestorLocalTimers: localTimers,
 		AncestorEdgeIds:     ancestry,
@@ -313,15 +292,7 @@ func (ht *HonestChallengeTree) honestRootAncestorAtChallengeLevel(
 	challengeLevel protocol.ChallengeLevel,
 ) (protocol.ReadOnlyEdge, error) {
 	originId := childEdge.OriginId()
-	// If the challenge level is the block challenge level (the highest), then there
-	// is only a single, honest block challenge edge.
-	if challengeLevel == protocol.ChallengeLevel(ht.totalChallengeLevels)-1 {
-		if ht.honestBlockChalLevelZeroEdge.IsNone() {
-			return nil, errNoLevelZero(originId)
-		}
-		return ht.honestBlockChalLevelZeroEdge.Unwrap(), nil
-	}
-	// Otherwise, finds the honest root edge at the appropriate challenge level.
+	// // Otherwise, finds the honest root edge at the appropriate challenge level.
 	rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(challengeLevel)
 	if !ok || rootEdgesAtLevel == nil {
 		return nil, fmt.Errorf("no honest edges found at challenge level %d", challengeLevel)
@@ -362,8 +333,4 @@ func findOriginEdge(originId protocol.OriginId, edges *threadsafe.Slice[protocol
 
 func errNotFound(id protocol.EdgeId) error {
 	return errors.Wrapf(ErrNotFound, "id=%#x", id)
-}
-
-func errNoLevelZero(originId protocol.OriginId) error {
-	return errors.Wrapf(ErrNoLevelZero, "originId=%#x", originId)
 }

@@ -32,20 +32,17 @@ var (
 // state roots. It can produce state and history commitments from those roots.
 type L2StateBackend struct {
 	l2stateprovider.HistoryCommitmentProvider
-	stateRoots                   []common.Hash
-	executionStates              []*protocol.ExecutionState
-	machineAtBlock               func(context.Context, uint64) (Machine, error)
-	maxWavmOpcodes               uint64
-	numOpcodesPerBigStep         uint64
-	blockDivergenceHeight        uint64
-	posInBatchDivergence         int64
-	machineDivergenceStep        uint64
-	forceMachineBlockCompat      bool
-	levelZeroBlockEdgeHeight     uint64
-	levelZeroBigStepEdgeHeight   uint64
-	levelZeroSmallStepEdgeHeight uint64
-	maliciousMachineIndex        uint64
-	challengeLeafHeights         []l2stateprovider.Height
+	stateRoots              []common.Hash
+	executionStates         []*protocol.ExecutionState
+	machineAtBlock          func(context.Context, uint64) (Machine, error)
+	maxWavmOpcodes          uint64
+	blockDivergenceHeight   uint64
+	posInBatchDivergence    int64
+	machineDivergenceStep   uint64
+	forceMachineBlockCompat bool
+	maliciousMachineIndex   uint64
+	numBigSteps             uint64
+	challengeLeafHeights    []l2stateprovider.Height
 }
 
 // NewWithMockedStateRoots initialize with a list of predefined state roots, useful for tests and simulations.
@@ -58,6 +55,7 @@ func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBac
 		machineAtBlock: func(context.Context, uint64) (Machine, error) {
 			return nil, errors.New("state manager created with New() cannot provide machines")
 		},
+		numBigSteps: 1,
 		challengeLeafHeights: []l2stateprovider.Height{
 			challenge_testing.LevelZeroBlockEdgeHeight,
 			challenge_testing.LevelZeroBigStepEdgeHeight,
@@ -77,12 +75,6 @@ type Opt func(*L2StateBackend)
 func WithMaxWavmOpcodesPerBlock(maxOpcodes uint64) Opt {
 	return func(s *L2StateBackend) {
 		s.maxWavmOpcodes = maxOpcodes
-	}
-}
-
-func WithNumOpcodesPerBigStep(numOpcodes uint64) Opt {
-	return func(s *L2StateBackend) {
-		s.numOpcodesPerBigStep = numOpcodes
 	}
 }
 
@@ -117,11 +109,15 @@ func WithForceMachineBlockCompat() Opt {
 	}
 }
 
-func WithLevelZeroEdgeHeights(heights *challenge_testing.LevelZeroHeights) Opt {
+func WithLayerZeroHeights(heights *protocol.LayerZeroHeights, numBigSteps uint64) Opt {
 	return func(s *L2StateBackend) {
-		s.levelZeroBlockEdgeHeight = heights.BlockChallengeHeight
-		s.levelZeroBigStepEdgeHeight = heights.BigStepChallengeHeight
-		s.levelZeroSmallStepEdgeHeight = heights.SmallStepChallengeHeight
+		challengeLeafHeights := make([]l2stateprovider.Height, 0)
+		challengeLeafHeights = append(challengeLeafHeights, l2stateprovider.Height(heights.BlockChallengeHeight))
+		for i := uint64(0); i < numBigSteps; i++ {
+			challengeLeafHeights = append(challengeLeafHeights, l2stateprovider.Height(heights.BigStepChallengeHeight))
+		}
+		challengeLeafHeights = append(challengeLeafHeights, l2stateprovider.Height(heights.SmallStepChallengeHeight))
+		s.challengeLeafHeights = challengeLeafHeights
 	}
 }
 
@@ -135,10 +131,7 @@ func NewForSimpleMachine(
 	opts ...Opt,
 ) (*L2StateBackend, error) {
 	s := &L2StateBackend{
-		levelZeroBlockEdgeHeight:     challenge_testing.LevelZeroBlockEdgeHeight,
-		levelZeroBigStepEdgeHeight:   challenge_testing.LevelZeroBigStepEdgeHeight,
-		levelZeroSmallStepEdgeHeight: challenge_testing.LevelZeroSmallStepEdgeHeight,
-		maliciousMachineIndex:        0,
+		maliciousMachineIndex: 0,
 		challengeLeafHeights: []l2stateprovider.Height{
 			challenge_testing.LevelZeroBlockEdgeHeight,
 			challenge_testing.LevelZeroBigStepEdgeHeight,
@@ -150,8 +143,11 @@ func NewForSimpleMachine(
 	for _, o := range opts {
 		o(s)
 	}
-	s.maxWavmOpcodes = s.levelZeroSmallStepEdgeHeight * s.levelZeroBigStepEdgeHeight
-	s.numOpcodesPerBigStep = s.levelZeroSmallStepEdgeHeight
+	totalWavmOpcodes := uint64(1)
+	for _, h := range s.challengeLeafHeights[1:] {
+		totalWavmOpcodes *= uint64(h)
+	}
+	s.maxWavmOpcodes = totalWavmOpcodes
 	if s.maxWavmOpcodes == 0 {
 		return nil, errors.New("maxWavmOpcodes cannot be zero")
 	}

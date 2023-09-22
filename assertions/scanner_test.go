@@ -39,7 +39,8 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		}
 
 		p := &mocks.MockProtocol{}
-		p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
+		cm := &mocks.MockSpecChallengeManager{}
+		p.On("SpecChallengeManager", ctx).Return(cm, nil)
 		p.On("ReadAssertionCreationInfo", ctx, mockId(2)).Return(&protocol.AssertionCreatedInfo{
 			ParentAssertionHash: mockId(1).Hash,
 			AfterState:          rollupgen.ExecutionState{},
@@ -150,8 +151,10 @@ func setupChallengeManager(t *testing.T) (*challengemanager.Manager, *mocks.Mock
 	t.Helper()
 	p := &mocks.MockProtocol{}
 	ctx := context.Background()
-	p.On("CurrentChallengeManager", ctx).Return(&mocks.MockChallengeManager{}, nil)
-	p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
+	cm := &mocks.MockSpecChallengeManager{}
+	cm.On("NumBigSteps", ctx).Return(uint8(1), nil)
+	p.On("CurrentChallengeManager", ctx).Return(cm, nil)
+	p.On("SpecChallengeManager", ctx).Return(cm, nil)
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)

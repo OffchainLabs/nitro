@@ -171,12 +171,15 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-
+	numBigStepLevels, err := chalManager.NumBigSteps(ctx)
+	if err != nil {
+		return nil, err
+	}
 	m.rollup = rollup
 	m.rollupFilterer = rollupFilterer
 	m.chalManagerAddr = chalManagerAddr
 	m.chalManager = chalManagerFilterer
-	m.watcher = watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, m.name)
+	m.watcher = watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name)
 	m.poster = assertions.NewPoster(
 		m.chain,
 		m.stateManager,

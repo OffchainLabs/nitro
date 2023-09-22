@@ -22,12 +22,10 @@ import (
 
 func TestAddEdge(t *testing.T) {
 	ht := &HonestChallengeTree{
-		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
-		totalChallengeLevels:          3,
+		edges:                  threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		mutualIds:              threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+		honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		totalChallengeLevels:   3,
 	}
 	ht.topLevelAssertionHash = protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
 	ctx := context.Background()
@@ -207,9 +205,7 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, true, ok)
 
 		// However, we should not have a level zero edge being tracked yet.
-		require.Equal(t, true, ht.honestBlockChalLevelZeroEdge.IsNone())
-		require.Equal(t, true, ht.honestBigStepLevelZeroEdges.Len() == 0)
-		require.Equal(t, true, ht.honestSmallStepLevelZeroEdges.Len() == 0)
+		require.Equal(t, true, ht.honestRootEdgesByLevel.IsEmpty())
 	})
 	t.Run("agrees with edge and is a level zero edge", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
@@ -262,7 +258,9 @@ func TestAddEdge(t *testing.T) {
 		require.Equal(t, true, ok)
 
 		// We should have a level zero edge being tracked.
-		require.Equal(t, false, ht.honestBlockChalLevelZeroEdge.IsNone())
+		require.Equal(t, false, ht.honestRootEdgesByLevel.IsEmpty())
+		_, ok = ht.honestRootEdgesByLevel.TryGet(protocol.ChallengeLevel(2))
+		require.Equal(t, true, ok)
 	})
 	t.Run("edge is not honest but we agree with start commit and keep it as a rival", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
@@ -332,11 +330,9 @@ func TestAddHonestEdge(t *testing.T) {
 	createdAt := uint64(1)
 	edge := newEdge(&newCfg{t: t, edgeId: "big-0.a-32.a", createdAt: createdAt, claimId: "bar"})
 	ht := &HonestChallengeTree{
-		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
-		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		edges:                  threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		mutualIds:              threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+		honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
 	}
 	ht.topLevelAssertionHash = protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
 	honest := &mockHonestEdge{edge}

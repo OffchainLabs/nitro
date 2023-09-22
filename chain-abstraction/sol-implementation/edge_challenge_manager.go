@@ -409,6 +409,49 @@ func (cm *specChallengeManager) Address() common.Address {
 	return cm.addr
 }
 
+func (cm *specChallengeManager) LayerZeroHeights(ctx context.Context) (*protocol.LayerZeroHeights, error) {
+	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return nil, err
+	}
+	if !h.IsUint64() {
+		return nil, errors.New("layer zero block edge height was not a uint64")
+	}
+	bs, err := cm.caller.LAYERZEROBIGSTEPEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return nil, err
+	}
+	if !bs.IsUint64() {
+		return nil, errors.New("layer zero big step edge height was not a uint64")
+	}
+	ss, err := cm.caller.LAYERZEROSMALLSTEPEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return nil, err
+	}
+	if !ss.IsUint64() {
+		return nil, errors.New("layer zero small step height was not a uint64")
+	}
+	return &protocol.LayerZeroHeights{
+		BlockChallengeHeight:     h.Uint64(),
+		BigStepChallengeHeight:   bs.Uint64(),
+		SmallStepChallengeHeight: ss.Uint64(),
+	}, nil
+}
+
+func (cm *specChallengeManager) NumBigSteps(ctx context.Context) (uint8, error) {
+	n, err := cm.caller.NUMBIGSTEPLEVEL(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return 0, err
+	}
+	if !n.IsUint64() {
+		return 0, errors.New("num big step levels was not a uint64")
+	}
+	if n.Uint64() > 255 {
+		return 0, errors.New("number of big steps was greater than 255")
+	}
+	return uint8(n.Uint64()), nil
+}
+
 func (cm *specChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error) {
 	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
 	if err != nil {

@@ -102,7 +102,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, nil, err
 	}
-	levelZeroBlockEdgeHeight, err := manager.LevelZeroBlockEdgeHeight(ctx)
+	layerZeroHeights, err := manager.LayerZeroHeights(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,7 +111,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
 		FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
-		UpToHeight:                  option.Some(l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch + levelZeroBlockEdgeHeight)),
+		UpToHeight:                  option.Some(l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch + layerZeroHeights.BlockChallengeHeight)),
 	}
 	endCommit, err := m.stateManager.HistoryCommitment(
 		ctx,

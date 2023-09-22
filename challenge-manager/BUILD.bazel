@@ -40,9 +40,11 @@ go_test(
         "//challenge-manager/chain-watcher",
         "//challenge-manager/edge-tracker",
         "//challenge-manager/types",
+        "//solgen/go/challengeV2gen",
         "//testing/mocks",
         "//testing/setup:setup_lib",
         "//time",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_stretchr_testify//require",
     ],
 )

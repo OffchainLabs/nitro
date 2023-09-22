@@ -17,6 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+// LayerZeroHeights for edges configured as parameters in the challenge manager contract.
+type LayerZeroHeights struct {
+	BlockChallengeHeight     uint64
+	BigStepChallengeHeight   uint64
+	SmallStepChallengeHeight uint64
+}
+
 // AssertionHash represents a unique identifier for an assertion
 // constructed as a keccak256 hash of some of its internals.
 type AssertionHash struct {
@@ -189,8 +196,10 @@ type OneStepData struct {
 type SpecChallengeManager interface {
 	// Address of the challenge manager contract.
 	Address() common.Address
-	// Heights for level zero edge creation.
-	LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error)
+	// Layer zero edge heights defined the challenge manager contract.
+	LayerZeroHeights(ctx context.Context) (*LayerZeroHeights, error)
+	// Number of big step challenge levels defined in the challenge manager contract.
+	NumBigSteps(ctx context.Context) (uint8, error)
 	// Duration of the challenge period in blocks.
 	ChallengePeriodBlocks(ctx context.Context) (uint64, error)
 	// Gets an edge by its id.

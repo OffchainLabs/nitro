@@ -13,9 +13,11 @@ import (
 	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/OffchainLabs/bold/testing/setup"
 	customTime "github.com/OffchainLabs/bold/time"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,7 +94,15 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 	require.NoError(t, err)
 	require.Equal(t, false, !hasRival)
 
-	honestWatcher := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, "alice")
+	chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	managerBindings, err := challengeV2gen.NewEdgeChallengeManagerCaller(chalManager.Address(), createdData.Backend)
+	require.NoError(t, err)
+	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(&bind.CallOpts{Context: ctx})
+	require.NoError(t, err)
+	numBigStepLevels := uint8(numBigStepLevelsRaw.Uint64())
+
+	honestWatcher := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice")
 	honestValidator.watcher = honestWatcher
 	tracker1, err := edgetracker.New(
 		ctx,
@@ -118,7 +128,7 @@ func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgetracker.Tracker,
 		time.Sleep(time.Millisecond * 10)
 	}
 
-	evilWatcher := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, "alice")
+	evilWatcher := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice")
 	evilValidator.watcher = evilWatcher
 	tracker2, err := edgetracker.New(
 		ctx,
@@ -150,8 +160,10 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	t.Helper()
 	p := &mocks.MockProtocol{}
 	ctx := context.Background()
-	p.On("CurrentChallengeManager", ctx).Return(&mocks.MockChallengeManager{}, nil)
-	p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
+	cm := &mocks.MockSpecChallengeManager{}
+	p.On("CurrentChallengeManager", ctx).Return(cm, nil)
+	p.On("SpecChallengeManager", ctx).Return(cm, nil)
+	cm.On("NumBigSteps", ctx).Return(uint8(1), nil)
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)

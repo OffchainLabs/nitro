@@ -6,6 +6,7 @@ package challenge_testing
 import (
 	"math/big"
 
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -17,17 +18,19 @@ const (
 	MaxDataSize                  = 117964
 )
 
-type LevelZeroHeights struct {
-	BlockChallengeHeight     uint64
-	BigStepChallengeHeight   uint64
-	SmallStepChallengeHeight uint64
-}
-
 type Opt func(c *rollupgen.Config)
 
 func WithNumBigStepLevels(num *big.Int) Opt {
 	return func(c *rollupgen.Config) {
 		c.NumBigStepLevel = num
+	}
+}
+
+func WithLayerZeroHeights(h *protocol.LayerZeroHeights) Opt {
+	return func(c *rollupgen.Config) {
+		c.LayerZeroBlockEdgeHeight = new(big.Int).SetUint64(h.BlockChallengeHeight)
+		c.LayerZeroBigStepEdgeHeight = new(big.Int).SetUint64(h.BigStepChallengeHeight)
+		c.LayerZeroSmallStepEdgeHeight = new(big.Int).SetUint64(h.SmallStepChallengeHeight)
 	}
 }
 
