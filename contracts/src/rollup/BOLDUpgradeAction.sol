@@ -174,6 +174,7 @@ contract BOLDUpgradeAction {
     address public immutable INBOX;
 
     uint64 public immutable CONFIRM_PERIOD_BLOCKS;
+    uint64 public immutable CHALLENGE_PERIOD_BLOCKS;
     address public immutable STAKE_TOKEN;
     uint256 public immutable STAKE_AMOUNT;
     uint256 public immutable MINI_STAKE_AMOUNT;
@@ -205,6 +206,7 @@ contract BOLDUpgradeAction {
 
     struct Settings {
         uint64 confirmPeriodBlocks;
+        uint64 challengePeriodBlocks;
         address stakeToken;
         uint256 stakeAmt;
         uint256 miniStakeAmt;
@@ -280,6 +282,7 @@ contract BOLDUpgradeAction {
 
         CHAIN_ID = settings.chainId;
         CONFIRM_PERIOD_BLOCKS = settings.confirmPeriodBlocks;
+        CHALLENGE_PERIOD_BLOCKS = settings.challengePeriodBlocks;
         STAKE_TOKEN = settings.stakeToken;
         STAKE_AMOUNT = settings.stakeAmt;
         MINI_STAKE_AMOUNT = settings.miniStakeAmt;
@@ -428,8 +431,7 @@ contract BOLDUpgradeAction {
 
         challengeManager.initialize({
             _assertionChain: IAssertionChain(expectedRollupAddress),
-            // confirm period and challenge period are the same atm
-            _challengePeriodBlocks: config.confirmPeriodBlocks,
+            _challengePeriodBlocks: CHALLENGE_PERIOD_BLOCKS,
             _oneStepProofEntry: OSP,
             layerZeroBlockEdgeHeight: config.layerZeroBlockEdgeHeight,
             layerZeroBigStepEdgeHeight: config.layerZeroBigStepEdgeHeight,

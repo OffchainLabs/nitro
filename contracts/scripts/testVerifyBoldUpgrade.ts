@@ -54,7 +54,7 @@ async function main() {
 
   if (
     !(await edgeChallengeManager.challengePeriodBlocks()).eq(
-      config.settings.confirmPeriodBlocks
+      config.settings.challengePeriodBlocks
     )
   ) {
     throw new Error('Challenge period blocks does not match')

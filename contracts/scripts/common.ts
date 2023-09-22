@@ -52,6 +52,7 @@ export interface Config {
   }
   settings: {
     confirmPeriodBlocks: number
+    challengePeriodBlocks: number
     stakeToken: string
     stakeAmt: BigNumber
     miniStakeAmt: BigNumber

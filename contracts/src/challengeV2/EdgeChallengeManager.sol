@@ -20,6 +20,9 @@ interface IEdgeChallengeManager {
     ///         so use the initializer paradigm
     /// @param _assertionChain              The assertion chain contract
     /// @param _challengePeriodBlocks       The amount of cumulative time an edge must spend unrivaled before it can be confirmed
+    ///                                     This should be the censorship period + the cumulative amount of time needed to do any
+    ///                                     offchain calculation. We currently estimate around 10 mins for each layer zero edge and 1
+    ///                                     one minute for each other edge.
     /// @param _oneStepProofEntry           The one step proof logic
     /// @param layerZeroBlockEdgeHeight     The end height of layer zero edges of type Block
     /// @param layerZeroBigStepEdgeHeight   The end height of layer zero edges of type BigStep

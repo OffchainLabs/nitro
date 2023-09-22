@@ -16,6 +16,7 @@
   },
   "settings": {
     "confirmPeriodBlocks": 100,
+    "challengePeriodBlocks": 110,
     "stakeToken": "0x408Da76E87511429485C32E4Ad647DD14823Fdc4",
     "stakeAmt": "100000000000000000000",
     "miniStakeAmt": "2000000000000000000",
