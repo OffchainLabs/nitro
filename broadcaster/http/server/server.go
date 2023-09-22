@@ -72,8 +72,8 @@ func (h *BroadcastHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Debug("received HTTP request", "requestPath", requestPath)
 
 	switch {
-	case requestPath == "/":
-		h.bufferMessagesHandler(w, r)
+	case r.Method == http.MethodGet && requestPath == "/":
+		h.getMessagesHandler(w, r)
 	default:
 		log.Warn("unknown request path sent to HTTP server", "requestPath", requestPath)
 		w.WriteHeader(http.StatusBadRequest)
@@ -81,7 +81,7 @@ func (h *BroadcastHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *BroadcastHandler) bufferMessagesHandler(w http.ResponseWriter, r *http.Request) {
+func (h *BroadcastHandler) getMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
 		log.Error("error parsing http request", "error", err)
@@ -131,19 +131,3 @@ func (h *BroadcastHandler) bufferMessagesHandler(w http.ResponseWriter, r *http.
 
 	w.Write(m)
 }
-
-//func serializeMessage(bm interface{}) (bytes.Buffer, error) {
-//	var notCompressed bytes.Buffer
-//	notCompressedWriter := wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
-//	encoder := json.NewEncoder(notCompressedWriter)
-//
-//	if err := encoder.Encode(bm); err != nil {
-//		return bytes.Buffer{}, fmt.Errorf("unable to encode message: %w", err)
-//	}
-//
-//	if err := notCompressedWriter.Flush(); err != nil {
-//		return bytes.Buffer{}, fmt.Errorf("unable to flush message: %w", err)
-//	}
-//
-//	return notCompressed, nil
-//}

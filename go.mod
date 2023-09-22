@@ -22,6 +22,7 @@ require (
 	github.com/ethereum/go-ethereum v1.10.26
 	github.com/fatih/structtag v1.2.0
 	github.com/gdamore/tcell/v2 v2.6.0
+	github.com/golang/mock v1.6.0
 	github.com/google/go-cmp v0.5.9
 	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/ipfs/go-cid v0.4.1
@@ -34,7 +35,9 @@ require (
 	github.com/multiformats/go-multihash v0.2.1
 	github.com/rivo/tview v0.0.0-20230814110005-ccc2c8119703
 	github.com/spf13/pflag v1.0.5
+	github.com/stretchr/testify v1.8.2
 	github.com/wealdtech/go-merkletree v1.0.0
+	golang.org/x/exp v0.0.0-20230206171751-46f607a40771
 	golang.org/x/term v0.6.0
 	golang.org/x/tools v0.7.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
@@ -219,6 +222,7 @@ require (
 	github.com/openzipkin/zipkin-go v0.4.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/prometheus/client_golang v1.14.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
@@ -269,6 +273,7 @@ require (
 	google.golang.org/grpc v1.53.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.1.7 // indirect
 	nhooyr.io/websocket v1.8.7 // indirect
 )

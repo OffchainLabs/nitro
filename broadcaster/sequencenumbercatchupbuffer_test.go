@@ -20,8 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	m "github.com/offchain/com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/arbutil"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 

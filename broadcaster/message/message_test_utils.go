@@ -5,6 +5,12 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
+func CreateDummyBroadcastMessage(seqNums []arbutil.MessageIndex) *BroadcastMessage {
+	return &BroadcastMessage{
+		Messages: CreateDummyBroadcastMessages(seqNums),
+	}
+}
+
 func CreateDummyBroadcastMessages(seqNums []arbutil.MessageIndex) []*BroadcastFeedMessage {
 	return CreateDummyBroadcastMessagesImpl(seqNums, len(seqNums))
 }
