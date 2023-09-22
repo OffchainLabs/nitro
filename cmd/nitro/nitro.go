@@ -380,7 +380,11 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
-	resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
+	err = resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
+	if err != nil {
+		flag.Usage()
+		log.Crit("failed to start resource management module")
+	}
 
 	var sameProcessValidationNodeEnabled bool
 	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
