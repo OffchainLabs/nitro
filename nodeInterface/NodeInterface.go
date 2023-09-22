@@ -591,6 +591,7 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 	return
 }
 
+// L2BlockRangeForL1 fetches the L1 block number of a given l2 block number.
 func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
 	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
 	if err != nil {
@@ -619,6 +620,13 @@ func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (ui
 	storedMids := map[uint64]uint64{}
 	firstL2BlockForL1 := func(target uint64) (uint64, error) {
 		low, high := genesis, currentBlockNum
+		highBlockL1Num, err := n.BlockL1Num(c, evm, high)
+		if err != nil {
+			return 0, err
+		}
+		if highBlockL1Num < target {
+			return high + 1, nil
+		}
 		for low < high {
 			mid := arbmath.SaturatingUAdd(low, high) / 2
 			if _, ok := storedMids[mid]; !ok {
@@ -649,11 +657,9 @@ func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (ui
 	if err := n.matchL2BlockNumWithL1(c, evm, firstBlock, l1BlockNum); err != nil {
 		return 0, 0, err
 	}
-	if err := n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
-		lastBlock -= 1
-		if err = n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
-			return 0, 0, err
-		}
+	lastBlock -= 1
+	if err = n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
+		return 0, 0, err
 	}
 	return firstBlock, lastBlock, nil
 }
