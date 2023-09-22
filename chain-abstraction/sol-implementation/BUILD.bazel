@@ -36,6 +36,7 @@ go_test(
     embed = [":sol-implementation"],
     deps = [
         "//chain-abstraction:protocol",
+        "//containers/option",
         "//layer2-state-provider",
         "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",

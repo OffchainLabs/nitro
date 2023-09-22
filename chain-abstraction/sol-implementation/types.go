@@ -95,11 +95,12 @@ type honestEdge struct {
 func (h *honestEdge) Honest() {}
 
 type specEdge struct {
-	id          [32]byte
-	mutualId    [32]byte
-	manager     *specChallengeManager
-	miniStaker  option.Option[common.Address]
-	inner       challengeV2gen.ChallengeEdge
-	startHeight uint64
-	endHeight   uint64
+	id                   [32]byte
+	mutualId             [32]byte
+	manager              *specChallengeManager
+	miniStaker           option.Option[common.Address]
+	inner                challengeV2gen.ChallengeEdge
+	startHeight          uint64
+	endHeight            uint64
+	totalChallengeLevels uint64
 }

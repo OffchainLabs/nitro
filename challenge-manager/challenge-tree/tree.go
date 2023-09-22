@@ -102,13 +102,25 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	}
 	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
 
+	challengeLevel, err := eg.GetChallengeLevel()
+	if err != nil {
+		return protocol.Agreement{}, err
+	}
+
+	startHeights := make([]l2stateprovider.Height, len(heights.ChallengeOriginHeights))
+	for i, h := range heights.ChallengeOriginHeights {
+		startHeights[i] = l2stateprovider.Height(h)
+	}
+
 	isHonestEdge, err := ht.histChecker.AgreesWithHistoryCommitment(
 		ctx,
-		creationInfo.WasmModuleRoot,
-		creationInfo.InboxMaxCount.Uint64(),
-		parentAssertionAfterState.GlobalState.Batch,
-		eg.GetType(),
-		heights,
+		challengeLevel,
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              creationInfo.WasmModuleRoot,
+			Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
+			UpperChallengeOriginHeights: startHeights,
+		},
 		l2stateprovider.History{
 			Height:     uint64(endHeight),
 			MerkleRoot: endCommit,
@@ -119,11 +131,13 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	}
 	agreesWithStart, err := ht.histChecker.AgreesWithHistoryCommitment(
 		ctx,
-		creationInfo.WasmModuleRoot,
-		creationInfo.InboxMaxCount.Uint64(),
-		parentAssertionAfterState.GlobalState.Batch,
-		eg.GetType(),
-		heights,
+		challengeLevel,
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              creationInfo.WasmModuleRoot,
+			Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
+			UpperChallengeOriginHeights: startHeights,
+		},
 		l2stateprovider.History{
 			Height:     uint64(startHeight),
 			MerkleRoot: startCommit,
@@ -139,14 +153,23 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		id := eg.Id()
 		ht.edges.Put(id, eg)
 		if !eg.ClaimId().IsNone() {
-			switch eg.GetType() {
-			case protocol.BlockChallengeEdge:
+			switch challengeLevel {
+			case protocol.NewBlockChallengeLevel():
 				ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(eg))
-			case protocol.BigStepChallengeEdge:
-				ht.honestBigStepLevelZeroEdges.Push(eg)
-			case protocol.SmallStepChallengeEdge:
-				ht.honestSmallStepLevelZeroEdges.Push(eg)
 			default:
+				reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
+				if err != nil {
+					return protocol.Agreement{}, err
+				}
+				rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
+				if !ok || rootEdgesAtLevel == nil {
+					honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+					honestRootEdges.Push(eg)
+					ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
+				} else {
+					rootEdgesAtLevel.Push(eg)
+					ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, rootEdgesAtLevel)
+				}
 			}
 			level, err := eg.GetChallengeLevel()
 			if err != nil {
@@ -193,14 +216,27 @@ func (ht *HonestChallengeTree) AddHonestEdge(eg protocol.VerifiedHonestEdge) err
 	ht.edges.Put(id, eg)
 	// If the edge has a claim id, it means it is a level zero edge and we keep track of it.
 	if !eg.ClaimId().IsNone() {
-		switch eg.GetType() {
-		case protocol.BlockChallengeEdge:
+		challengeLevel, err := eg.GetChallengeLevel()
+		if err != nil {
+			return err
+		}
+		switch challengeLevel {
+		case protocol.NewBlockChallengeLevel():
 			ht.honestBlockChalLevelZeroEdge = option.Some(protocol.ReadOnlyEdge(eg))
-		case protocol.BigStepChallengeEdge:
-			ht.honestBigStepLevelZeroEdges.Push(eg)
-		case protocol.SmallStepChallengeEdge:
-			ht.honestSmallStepLevelZeroEdges.Push(eg)
 		default:
+			reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
+			if err != nil {
+				return err
+			}
+			rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
+			if !ok || rootEdgesAtLevel == nil {
+				honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+				honestRootEdges.Push(eg)
+				ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
+			} else {
+				rootEdgesAtLevel.Push(eg)
+				ht.honestRootEdgesByLevel.Put(reversedChallengeLevel, rootEdgesAtLevel)
+			}
 		}
 	}
 	// We add the edge id to the list of mutual ids we are tracking.

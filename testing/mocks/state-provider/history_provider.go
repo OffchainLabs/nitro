@@ -2,7 +2,6 @@ package stateprovider
 
 import (
 	"context"
-
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/common"
@@ -31,6 +30,24 @@ func (s *L2StateBackend) CollectMachineHashes(
 		hashes = append(hashes, s.getMachineHash(machine, uint64(cfg.MessageNumber)))
 	}
 	return hashes, nil
+}
+
+// CollectProof Collects osp of at a message number and OpcodeIndex .
+func (s *L2StateBackend) CollectProof(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	messageNumber l2stateprovider.Height,
+	machineIndex l2stateprovider.OpcodeIndex,
+) ([]byte, error) {
+	machine, err := s.machineAtBlock(ctx, uint64(messageNumber))
+	if err != nil {
+		return nil, err
+	}
+	err = machine.Step(uint64(machineIndex))
+	if err != nil {
+		return nil, err
+	}
+	return machine.OneStepProof()
 }
 
 // Computes a block history commitment from a start L2 message to an end L2 message index

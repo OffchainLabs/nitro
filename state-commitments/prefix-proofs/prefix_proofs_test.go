@@ -10,6 +10,8 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
@@ -56,11 +58,25 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	manager, err := statemanager.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
 
-	loCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 3, 10)
+	wasmModuleRoot := common.Hash{}
+	startMessageNumber := l2stateprovider.Height(0)
+	fromMessageNumber := l2stateprovider.Height(3)
+	toMessageNumber := l2stateprovider.Height(7)
+	req := &l2stateprovider.HistoryCommitmentRequest{
+		WasmModuleRoot:              wasmModuleRoot,
+		Batch:                       10,
+		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		FromHeight:                  startMessageNumber,
+		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
+	}
+	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
-	hiCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 7, 10)
+
+	req.UpToHeight = option.Some(l2stateprovider.Height(toMessageNumber))
+	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
-	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, 3, 7, 1)
+
+	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(t, err)
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
@@ -109,11 +125,25 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	manager, err := statemanager.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
 
-	loCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 3, 10)
+	wasmModuleRoot := common.Hash{}
+	startMessageNumber := l2stateprovider.Height(0)
+	fromMessageNumber := l2stateprovider.Height(3)
+	toMessageNumber := l2stateprovider.Height(6)
+	req := &l2stateprovider.HistoryCommitmentRequest{
+		WasmModuleRoot:              wasmModuleRoot,
+		Batch:                       10,
+		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		FromHeight:                  startMessageNumber,
+		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
+	}
+	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
-	hiCommit, err := manager.HistoryCommitmentUpToBatch(ctx, 0, 6, 10)
+
+	req.UpToHeight = option.Some(l2stateprovider.Height(toMessageNumber))
+	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
-	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, 3, 6, 1)
+
+	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(t, err)
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
@@ -172,11 +202,27 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	manager, err := statemanager.NewWithMockedStateRoots(hashes)
 	require.NoError(f, err)
 
-	loCommit, err := manager.HistoryCommitmentAtMessage(ctx, 3)
+	wasmModuleRoot := common.Hash{}
+	batch := l2stateprovider.Batch(1)
+	req := &l2stateprovider.HistoryCommitmentRequest{
+		WasmModuleRoot:              wasmModuleRoot,
+		Batch:                       batch,
+		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		FromHeight:                  3,
+		UpToHeight:                  option.None[l2stateprovider.Height](),
+	}
+	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(f, err)
-	hiCommit, err := manager.HistoryCommitmentAtMessage(ctx, 7)
+	req.FromHeight = 7
+	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(f, err)
-	packedProof, err := manager.PrefixProofUpToBatch(ctx, 0, 3, 7, 1)
+
+	fromMessageNumber := l2stateprovider.Height(3)
+	toMessageNumber := l2stateprovider.Height(7)
+
+	req.FromHeight = 0
+	req.UpToHeight = option.Some(toMessageNumber)
+	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(f, err)
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)

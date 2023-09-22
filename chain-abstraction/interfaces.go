@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"regexp"
+	"strconv"
 
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -104,44 +106,44 @@ type AssertionChain interface {
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
 }
 
-// EdgeType corresponds to the three different challenge
-// levels in the protocol: block challenges, big step challenges,
-// and small step challenges.
-type EdgeType uint8
+// ChallengeLevel corresponds to the different challenge levels in the protocol.
+// 0 is for block challenges and the last level is for small step challenges.
+// Everything else is a big step challenge of level i where 0 < i < last.
+type ChallengeLevel uint64
 
-const (
-	BlockChallengeEdge EdgeType = iota
-	BigStepChallengeEdge
-	SmallStepChallengeEdge
-)
-
-func (et EdgeType) IsSubChallenge() bool {
-	return et == BigStepChallengeEdge || et == SmallStepChallengeEdge
+func NewBlockChallengeLevel() ChallengeLevel {
+	return 0
 }
 
-func (et EdgeType) String() string {
-	switch et {
-	case BlockChallengeEdge:
+func (et ChallengeLevel) Big() *big.Int {
+	return new(big.Int).SetUint64(uint64(et))
+}
+func (et ChallengeLevel) IsBlockChallengeLevel() bool {
+	return et == 0
+}
+
+func (et ChallengeLevel) Next() ChallengeLevel {
+	return et + 1
+}
+
+func (et ChallengeLevel) String() string {
+	if et == 0 {
 		return "block_challenge_edge"
-	case BigStepChallengeEdge:
-		return "big_step_challenge_edge"
-	case SmallStepChallengeEdge:
-		return "small_step_challenge_edge"
-	default:
-		return "unknown"
 	}
+	return fmt.Sprintf("challenge_level_%d_edge", et)
 }
 
-func EdgeTypeFromString(s string) (EdgeType, error) {
+func ChallengeLevelFromString(s string) (ChallengeLevel, error) {
 	switch s {
 	case "block_challenge_edge":
-		return BlockChallengeEdge, nil
-	case "big_step_challenge_edge":
-		return BigStepChallengeEdge, nil
-	case "small_step_challenge_edge":
-		return SmallStepChallengeEdge, nil
+		return 0, nil
 	default:
-		return 0, fmt.Errorf("unknown edge type string: %s", s)
+		re := regexp.MustCompile("[0-9]+")
+		challengeLevel, err := strconv.Atoi(re.FindString(s))
+		if err != nil {
+			return 0, err
+		}
+		return ChallengeLevel(challengeLevel), nil
 	}
 }
 
@@ -196,7 +198,7 @@ type SpecChallengeManager interface {
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(
 		ctx context.Context,
-		edgeType EdgeType,
+		edgeType ChallengeLevel,
 		originId OriginId,
 		startHeight Height,
 		startHistoryRoot common.Hash,
@@ -254,20 +256,23 @@ func (e EdgeStatus) String() string {
 }
 
 type OriginHeights struct {
-	BlockChallengeOriginHeight   Height `json:"blockChallengeOriginHeight"`
-	BigStepChallengeOriginHeight Height `json:"bigStepChallengeOriginHeight"`
+	ChallengeOriginHeights []Height `json:"challengeOriginHeights"`
 }
-
-type ChallengeLevel uint8
 
 // ReadOnlyEdge defines methods that only retrieve data from the chain
 // regarding for a given edge.
 type ReadOnlyEdge interface {
 	// The unique identifier for an edge.
 	Id() EdgeId
-	// The type of challenge the edge is a part of.
-	GetType() EdgeType
+	// The challenge level the edge is a part of.
 	GetChallengeLevel() (ChallengeLevel, error)
+	// GetReversedChallengeLevel obtains the challenge level for the edge. The lowest level starts at 0, and goes all way
+	// up to the max number of levels. The reason we go from the lowest challenge level being 0 instead of 2
+	// is to make our code a lot more readable. If we flipped the order, we would need to do
+	// a lot of backwards for loops instead of simple range loops over slices.
+	GetReversedChallengeLevel() (ChallengeLevel, error)
+	// Total number possible challenge levels.
+	GetTotalChallengeLevels(ctx context.Context) (uint64, error)
 	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.

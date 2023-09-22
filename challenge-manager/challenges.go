@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/containers"
@@ -82,7 +85,16 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		return nil, nil, err
 	}
 	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
-	startCommit, err := m.stateManager.HistoryCommitmentAtMessage(ctx, parentAssertionAfterState.GlobalState.Batch)
+	startCommit, err := m.stateManager.HistoryCommitment(
+		ctx,
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              creationInfo.WasmModuleRoot,
+			Batch:                       l2stateprovider.Batch(parentAssertionAfterState.GlobalState.Batch),
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  0,
+			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
+		},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -94,21 +106,24 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, nil, err
 	}
-	endCommit, err := m.stateManager.HistoryCommitmentUpToBatch(
+	req := &l2stateprovider.HistoryCommitmentRequest{
+		WasmModuleRoot:              creationInfo.WasmModuleRoot,
+		Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
+		UpToHeight:                  option.Some(l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch + levelZeroBlockEdgeHeight)),
+	}
+	endCommit, err := m.stateManager.HistoryCommitment(
 		ctx,
-		parentAssertionAfterState.GlobalState.Batch,
-		parentAssertionAfterState.GlobalState.Batch+levelZeroBlockEdgeHeight,
-		creationInfo.InboxMaxCount.Uint64(),
+		req,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
-	startEndPrefixProof, err := m.stateManager.PrefixProofUpToBatch(
+	startEndPrefixProof, err := m.stateManager.PrefixProof(
 		ctx,
-		parentAssertionAfterState.GlobalState.Batch,
-		parentAssertionAfterState.GlobalState.Batch,
-		parentAssertionAfterState.GlobalState.Batch+levelZeroBlockEdgeHeight,
-		creationInfo.InboxMaxCount.Uint64(),
+		req,
+		l2stateprovider.Height(0),
 	)
 	if err != nil {
 		return nil, nil, err

@@ -150,15 +150,15 @@ func (w *Watcher) ComputeHonestPathTimer(
 			topLevelAssertionHash,
 		)
 	}
-	resp, err := chal.honestEdgeTree.ComputeAncestorsWithTimers(ctx, edgeId, blockNumber)
+	response, err := chal.honestEdgeTree.ComputeAncestorsWithTimers(ctx, edgeId, blockNumber)
 	if err != nil {
 		return 0, nil, err
 	}
-	pathTimer, err := chal.honestEdgeTree.ComputeHonestPathTimer(ctx, edgeId, resp.AncestorLocalTimers, blockNumber)
+	pathTimer, err := chal.honestEdgeTree.ComputeHonestPathTimer(ctx, edgeId, response.AncestorLocalTimers, blockNumber)
 	if err != nil {
 		return 0, nil, err
 	}
-	return pathTimer, resp.AncestorEdgeIds, nil
+	return pathTimer, response.AncestorEdgeIds, nil
 }
 
 func (w *Watcher) IsSynced() bool {
@@ -623,7 +623,11 @@ func (w *Watcher) processEdgeConfirmation(
 	}
 
 	// Check if we should confirm the assertion by challenge winner.
-	if edge.GetType() == protocol.BlockChallengeEdge {
+	challengeLevel, err := edge.GetChallengeLevel()
+	if err != nil {
+		return err
+	}
+	if challengeLevel == protocol.NewBlockChallengeLevel() {
 		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash{Hash: common.Hash(claimId)}, edgeId); confirmAssertionErr != nil {
 			return confirmAssertionErr
 		}

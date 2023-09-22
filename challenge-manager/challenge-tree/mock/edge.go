@@ -19,38 +19,34 @@ type OriginId string
 
 // Edge for challenge tree specific tests, making it easier for test ergonomics.
 type Edge struct {
-	ID            EdgeId
-	EdgeType      protocol.EdgeType
-	StartHeight   uint64
-	StartCommit   Commit
-	EndHeight     uint64
-	EndCommit     Commit
-	OriginID      OriginId
-	ClaimID       string
-	LowerChildID  EdgeId
-	UpperChildID  EdgeId
-	CreationBlock uint64
+	ID                   EdgeId
+	EdgeType             protocol.ChallengeLevel
+	StartHeight          uint64
+	StartCommit          Commit
+	EndHeight            uint64
+	EndCommit            Commit
+	OriginID             OriginId
+	ClaimID              string
+	LowerChildID         EdgeId
+	UpperChildID         EdgeId
+	CreationBlock        uint64
+	TotalChallengeLevels uint64
 }
 
 func (e *Edge) Id() protocol.EdgeId {
 	return protocol.EdgeId{Hash: common.BytesToHash([]byte(e.ID))}
 }
 
-func (e *Edge) GetType() protocol.EdgeType {
-	return e.EdgeType
+func (e *Edge) GetChallengeLevel() (protocol.ChallengeLevel, error) {
+	return e.EdgeType, nil
 }
 
-func (e *Edge) GetChallengeLevel() (protocol.ChallengeLevel, error) {
-	switch e.EdgeType {
-	case protocol.BlockChallengeEdge:
-		return 2, nil
-	case protocol.BigStepChallengeEdge:
-		return 1, nil
-	case protocol.SmallStepChallengeEdge:
-		return 0, nil
-	default:
-		return 0, errors.New("unknown challenge level")
-	}
+func (e *Edge) GetReversedChallengeLevel() (protocol.ChallengeLevel, error) {
+	return protocol.ChallengeLevel(e.TotalChallengeLevels) - 1 - e.EdgeType, nil
+}
+
+func (e *Edge) GetTotalChallengeLevels(ctx context.Context) (uint64, error) {
+	return e.TotalChallengeLevels, nil
 }
 
 func (e *Edge) StartCommitment() (protocol.Height, common.Hash) {

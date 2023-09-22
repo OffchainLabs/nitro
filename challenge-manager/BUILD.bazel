@@ -16,6 +16,7 @@ go_library(
         "//challenge-manager/edge-tracker",
         "//challenge-manager/types",
         "//containers",
+        "//containers/option",
         "//containers/threadsafe",
         "//layer2-state-provider",
         "//runtime",

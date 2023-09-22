@@ -35,7 +35,7 @@ type Edge struct {
 }
 
 func (e *Edge) IsRootChallenge() bool {
-	return e.Type == protocol.BlockChallengeEdge.String() && e.ClaimID == common.Hash{}
+	return e.Type == protocol.NewBlockChallengeLevel().String() && e.ClaimID == common.Hash{}
 }
 
 type Commitment struct {
@@ -61,9 +61,13 @@ func convertSpecEdgeEdgesToEdges(ctx context.Context, e []protocol.SpecEdge) ([]
 }
 
 func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge, error) {
+	challengeLevel, err := e.GetChallengeLevel()
+	if err != nil {
+		return nil, err
+	}
 	edge := &Edge{
 		ID:              e.Id().Hash,
-		Type:            e.GetType().String(),
+		Type:            challengeLevel.String(),
 		StartCommitment: toCommitment(e.StartCommitment),
 		EndCommitment:   toCommitment(e.EndCommitment),
 		MutualID:        common.Hash(e.MutualId()),

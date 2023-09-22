@@ -2,17 +2,16 @@ package l2stateprovider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
+
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 
 	"github.com/OffchainLabs/bold/containers/option"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
-)
-
-var (
-	emptyCommit = commitments.History{}
 )
 
 // MachineHashCollector defines an interface which can collect hashes from an Arbitrator machine
@@ -22,6 +21,17 @@ var (
 // that is best performed if machine hashes are cached after runs.
 type MachineHashCollector interface {
 	CollectMachineHashes(ctx context.Context, cfg *HashCollectorConfig) ([]common.Hash, error)
+}
+
+// ProofCollector defines an interface which can collect proof from an Arbitrator machine
+// at a block height, at a specific opcode index.
+type ProofCollector interface {
+	CollectProof(
+		ctx context.Context,
+		wasmModuleRoot common.Hash,
+		messageNumber Height,
+		machineIndex OpcodeIndex,
+	) ([]byte, error)
 }
 
 // HashCollectorConfig defines configuration options for a machine hash collector to
@@ -61,7 +71,9 @@ type L2MessageStateCollector interface {
 type HistoryCommitmentProvider struct {
 	l2MessageStateCollector L2MessageStateCollector
 	machineHashCollector    MachineHashCollector
+	proofCollector          ProofCollector
 	challengeLeafHeights    []Height
+	ExecutionProvider
 }
 
 // NewHistoryCommitmentProvider creates an instance of a struct which can compute history commitments
@@ -69,12 +81,16 @@ type HistoryCommitmentProvider struct {
 func NewHistoryCommitmentProvider(
 	l2MessageStateCollector L2MessageStateCollector,
 	machineHashCollector MachineHashCollector,
+	proofCollector ProofCollector,
 	challengeLeafHeights []Height,
+	executionProvider ExecutionProvider,
 ) *HistoryCommitmentProvider {
 	return &HistoryCommitmentProvider{
 		l2MessageStateCollector: l2MessageStateCollector,
 		machineHashCollector:    machineHashCollector,
+		proofCollector:          proofCollector,
 		challengeLeafHeights:    challengeLeafHeights,
+		ExecutionProvider:       executionProvider,
 	}
 }
 
@@ -87,25 +103,36 @@ type validatedStartHeights []Height
 // of machine hashes corresponding each message in a range N to M.
 func (p *HistoryCommitmentProvider) HistoryCommitment(
 	ctx context.Context,
-	wasmModuleRoot common.Hash,
-	batch Batch,
-	startHeights []Height,
-	upToHeight option.Option[Height],
+	req *HistoryCommitmentRequest,
 ) (commitments.History, error) {
-	// Validate the input heights for correctness.
-	validatedHeights, err := p.validateStartHeights(startHeights)
+	hashes, err := p.historyCommitmentImpl(ctx, req)
 	if err != nil {
-		return emptyCommit, err
+		return commitments.History{}, err
+	}
+	return commitments.New(hashes)
+}
+
+func (p *HistoryCommitmentProvider) historyCommitmentImpl(
+	ctx context.Context,
+	req *HistoryCommitmentRequest,
+) ([]common.Hash, error) {
+	// Validate the input heights for correctness.
+	validatedHeights, err := p.validateOriginHeights(req.UpperChallengeOriginHeights)
+	if err != nil {
+		return nil, err
 	}
 	// If the call is for message number ranges only, we get the hashes for
 	// those states and return a commitment for them.
-	fromMessageNumber := uint64(validatedHeights[0])
-	if len(validatedHeights) == 1 {
-		hashes, hashesErr := p.l2MessageStateCollector.L2MessageStatesUpTo(ctx, Height(fromMessageNumber), upToHeight, batch)
+	var fromMessageNumber Height
+	if len(validatedHeights) == 0 {
+		fromMessageNumber = req.FromHeight
+		hashes, hashesErr := p.l2MessageStateCollector.L2MessageStatesUpTo(ctx, Height(fromMessageNumber), req.UpToHeight, req.Batch)
 		if hashesErr != nil {
-			return emptyCommit, hashesErr
+			return nil, hashesErr
 		}
-		return commitments.New(hashes)
+		return hashes, nil
+	} else {
+		fromMessageNumber = validatedHeights[0]
 	}
 
 	// Computes the desired challenge level this history commitment is for.
@@ -113,28 +140,28 @@ func (p *HistoryCommitmentProvider) HistoryCommitment(
 
 	// Compute the exact start point of where we need to execute
 	// the machine from the inputs, and figure out, in what increments, we need to do so.
-	machineStartIndex, err := p.computeMachineStartIndex(validatedHeights)
+	machineStartIndex, err := p.computeMachineStartIndex(validatedHeights, req.FromHeight)
 	if err != nil {
-		return emptyCommit, err
+		return nil, err
 	}
 
 	// We compute the stepwise increments we need for stepping through the machine.
 	stepSize, err := p.computeStepSize(desiredChallengeLevel)
 	if err != nil {
-		return emptyCommit, err
+		return nil, err
 	}
 
 	// Compute how many machine hashes we need to collect at the desired challenge level.
-	numHashes, err := p.computeRequiredNumberOfHashes(desiredChallengeLevel, startHeights[desiredChallengeLevel], upToHeight)
+	numHashes, err := p.computeRequiredNumberOfHashes(desiredChallengeLevel, req.FromHeight, req.UpToHeight)
 	if err != nil {
-		return emptyCommit, err
+		return nil, err
 	}
 
 	// Collect the machine hashes at the specified challenge level based on the values we computed.
 	hashes, err := p.machineHashCollector.CollectMachineHashes(
 		ctx,
 		&HashCollectorConfig{
-			WasmModuleRoot: wasmModuleRoot,
+			WasmModuleRoot: req.WasmModuleRoot,
 			MessageNumber:  Height(fromMessageNumber),
 			// We drop the first index of the validated heights, because the first index is for the block challenge level,
 			// which is over blocks and not over individual machine WASM opcodes. Starting from the second index, we are now
@@ -146,9 +173,203 @@ func (p *HistoryCommitmentProvider) HistoryCommitment(
 		},
 	)
 	if err != nil {
-		return emptyCommit, err
+		return nil, err
 	}
-	return commitments.New(hashes)
+	return hashes, nil
+}
+
+// AgreesWithHistoryCommitment checks if the l2 state provider agrees with a specified start and end
+// history commitment for a type of edge under a specified assertion challenge. It returns an agreement struct
+// which informs the caller whether (a) we agree with the start commitment, and whether (b) the edge is honest, meaning
+// that we also agree with the end commitment.
+func (p *HistoryCommitmentProvider) AgreesWithHistoryCommitment(
+	ctx context.Context,
+	challengeLevel protocol.ChallengeLevel,
+	historyCommitMetadata *HistoryCommitmentRequest,
+	commit History,
+) (bool, error) {
+	var localCommit commitments.History
+	var err error
+	switch challengeLevel {
+	case protocol.NewBlockChallengeLevel():
+		localCommit, err = p.HistoryCommitment(
+			ctx,
+			&HistoryCommitmentRequest{
+				WasmModuleRoot:              historyCommitMetadata.WasmModuleRoot,
+				Batch:                       historyCommitMetadata.Batch,
+				UpperChallengeOriginHeights: []Height{},
+				FromHeight:                  historyCommitMetadata.FromHeight,
+				UpToHeight:                  option.Some[Height](historyCommitMetadata.FromHeight + Height(commit.Height)),
+			},
+		)
+		if err != nil {
+			return false, err
+		}
+	default:
+		localCommit, err = p.HistoryCommitment(
+			ctx,
+			&HistoryCommitmentRequest{
+				WasmModuleRoot:              historyCommitMetadata.WasmModuleRoot,
+				Batch:                       historyCommitMetadata.Batch,
+				UpperChallengeOriginHeights: historyCommitMetadata.UpperChallengeOriginHeights,
+				FromHeight:                  0,
+				UpToHeight:                  option.Some(Height(commit.Height)),
+			},
+		)
+		if err != nil {
+			return false, err
+		}
+	}
+	return localCommit.Height == commit.Height && localCommit.Merkle == commit.MerkleRoot, nil
+}
+
+var (
+	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
+	// ProofArgs for submission to the protocol.
+	ProofArgs = abi.Arguments{
+		{Type: b32Arr, Name: "prefixExpansion"},
+		{Type: b32Arr, Name: "prefixProof"},
+	}
+)
+
+// PrefixProof allows a caller to provide a proof that, given heights N < M,
+// that the history commitment for height N is a Merkle prefix of the commitment at height M.
+// Here's how one would use it:
+//
+//	fromMessageNumber := 1000
+//
+//	PrefixProof(
+//	  wasmModuleRoot,
+//	  batch,
+//	  []Height{16},
+//	  fromMessageNumber,
+//	  upToHeight(Height(24)),
+//	)
+//
+// This means that we want a proof that the history commitment at height 16
+// is a prefix of the history commitment at height 24. Each index in the []Height{} slice
+// represents a challenge level. For example, this call wants us to use the history commitment
+// at the very first challenge level, over blocks.
+func (p *HistoryCommitmentProvider) PrefixProof(
+	ctx context.Context,
+	req *HistoryCommitmentRequest,
+	prefixHeight Height,
+) ([]byte, error) {
+	// Obtain the leaves we need to produce our Merkle expansion.
+	prefixLeaves, err := p.historyCommitmentImpl(
+		ctx,
+		req,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// The low commitment height.
+	lowCommitmentNumLeaves := uint64(prefixHeight + 1)
+	highCommitmentNumLeaves := uint64(req.UpToHeight.Unwrap() + 1)
+
+	// Validate we are within bounds of the leaves slice.
+	if highCommitmentNumLeaves > uint64(len(prefixLeaves)) {
+		return nil, fmt.Errorf("high prefix size out of bounds, got %d, leaves length %d", highCommitmentNumLeaves, len(prefixLeaves))
+	}
+
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(prefixLeaves[:lowCommitmentNumLeaves])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
+		lowCommitmentNumLeaves,
+		prefixExpansion,
+		prefixLeaves[lowCommitmentNumLeaves:highCommitmentNumLeaves],
+		prefixproofs.RootFetcherFromExpansion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, lowCommitmentNumLeaves)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+}
+
+func (p *HistoryCommitmentProvider) OneStepProofData(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	startHeights []Height,
+	fromHeight,
+	upToHeight Height,
+) (*protocol.OneStepData, []common.Hash, []common.Hash, error) {
+	// Start heights must reflect at least two challenge levels to produce one step proofs.
+	if len(startHeights) < 1 {
+		return nil, nil, nil, fmt.Errorf("upper challenge origin heights must have at least length 1, got %d", len(startHeights))
+	}
+	endCommit, err := p.HistoryCommitment(
+		ctx,
+		&HistoryCommitmentRequest{
+			WasmModuleRoot:              wasmModuleRoot,
+			Batch:                       0,
+			UpperChallengeOriginHeights: startHeights,
+			FromHeight:                  fromHeight,
+			UpToHeight:                  option.Some(upToHeight + 1),
+		},
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	startCommit, err := p.HistoryCommitment(
+		ctx,
+		&HistoryCommitmentRequest{
+			WasmModuleRoot:              wasmModuleRoot,
+			Batch:                       0,
+			UpperChallengeOriginHeights: startHeights,
+			FromHeight:                  fromHeight,
+			UpToHeight:                  option.Some(upToHeight),
+		},
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Compute the exact start point of where we need to execute
+	// the machine from the inputs, and figure out, in what increments, we need to do so.
+	machineIndex, err := p.computeMachineStartIndex(startHeights, fromHeight)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	machineIndex += OpcodeIndex(upToHeight)
+	hashes, err := p.machineHashCollector.CollectMachineHashes(
+		ctx,
+		&HashCollectorConfig{
+			WasmModuleRoot:    wasmModuleRoot,
+			MessageNumber:     startHeights[0],
+			StepHeights:       startHeights[1:],
+			NumDesiredHashes:  2,
+			MachineStartIndex: machineIndex,
+			StepSize:          1,
+		})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(hashes) != 2 {
+		return nil, nil, nil, fmt.Errorf("expected 2 hashes, got %d", len(hashes))
+	}
+
+	if hashes[0] != startCommit.LastLeaf {
+		return nil, nil, nil, fmt.Errorf("machine executed to start step %v hash %v but expected %v", machineIndex, hashes[0], startCommit.LastLeaf)
+	}
+	if hashes[1] != endCommit.LastLeaf {
+		return nil, nil, nil, fmt.Errorf("machine executed to end step %v hash %v but expected %v", machineIndex+1, hashes[1], endCommit.LastLeaf)
+	}
+
+	osp, err := p.proofCollector.CollectProof(ctx, wasmModuleRoot, startHeights[0], machineIndex)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	data := &protocol.OneStepData{
+		BeforeHash: startCommit.LastLeaf,
+		Proof:      osp,
+	}
+	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil
 }
 
 // Computes the required number of hashes for a history commitment
@@ -158,7 +379,7 @@ func (p *HistoryCommitmentProvider) HistoryCommitment(
 // from there.
 func (p *HistoryCommitmentProvider) computeRequiredNumberOfHashes(
 	challengeLevel uint64,
-	startHeight Height,
+	fromHeight Height,
 	upToHeight option.Option[Height],
 ) (uint64, error) {
 	maxHeightForLevel, err := p.leafHeightAtChallengeLevel(challengeLevel)
@@ -185,12 +406,12 @@ func (p *HistoryCommitmentProvider) computeRequiredNumberOfHashes(
 			)
 		}
 	}
-	if end < startHeight {
-		return 0, fmt.Errorf("invalid range: end %d was < start %d", end, startHeight)
+	if end < fromHeight {
+		return 0, fmt.Errorf("invalid range: end %d was < start %d", end, fromHeight)
 	}
 	// The number of hashes is the difference between the start and end
 	// requested heights, plus 1.
-	return uint64(end-startHeight) + 1, nil
+	return uint64(end-fromHeight) + 1, nil
 }
 
 // Figures out the actual opcode index we should move the machine to
@@ -222,16 +443,18 @@ func (p *HistoryCommitmentProvider) computeRequiredNumberOfHashes(
 // It works by taking the sum of (each input * product of all challenge level height constants beneath its level).
 // This means we need to start executing our machine exactly at opcode index 4,199,434.
 func (p *HistoryCommitmentProvider) computeMachineStartIndex(
-	startHeights validatedStartHeights,
+	upperChallengeOriginHeights validatedStartHeights,
+	fromHeight Height,
 ) (OpcodeIndex, error) {
 	// For the block challenge level, the machine start opcode index is always 0.
-	if len(startHeights) == 1 {
+	if len(upperChallengeOriginHeights) == 0 {
 		return 0, nil
 	}
 	// The first position in the start heights slice is the block challenge level, which is over ranges of L2 messages
 	// and not over individual opcodes. We ignore this level and start at the next level when it comes to dealing with
 	// machines.
-	heights := startHeights[1:]
+	heights := upperChallengeOriginHeights[1:]
+	heights = append(heights, fromHeight)
 	leafHeights := p.challengeLeafHeights[1:]
 
 	// Next, we compute the opcode index. We use big ints to make sure we do not overflow uint64
@@ -274,24 +497,18 @@ func (p *HistoryCommitmentProvider) computeStepSize(challengeLevel uint64) (Step
 	return StepSize(total), nil
 }
 
-// Validates a user input must be non-empty and have a size less than the number of challenge levels.
-func (p *HistoryCommitmentProvider) validateStartHeights(
-	startHeights []Height,
+func (p *HistoryCommitmentProvider) validateOriginHeights(
+	upperChallengeOriginHeights []Height,
 ) (validatedStartHeights, error) {
-	if len(startHeights) == 0 {
-		return nil, errors.New("must provide start heights to compute number of hashes")
-	}
-	// A caller specifies a request for history commitments at the first N challenge levels.
-	// This N cannot be greater than the total number of challenge levels in the protocol.
-	deepestRequestedChallengeLevel := len(startHeights) - 1
-	if deepestRequestedChallengeLevel >= len(p.challengeLeafHeights) {
+	// Length cannot be greater than the total number of challenge levels in the protocol - 1.
+	if len(upperChallengeOriginHeights) > len(p.challengeLeafHeights)-1 {
 		return nil, fmt.Errorf(
 			"challenge level %d is out of range for challenge leaf heights %v",
-			deepestRequestedChallengeLevel,
+			len(upperChallengeOriginHeights),
 			p.challengeLeafHeights,
 		)
 	}
-	return validatedStartHeights(startHeights), nil
+	return validatedStartHeights(upperChallengeOriginHeights), nil
 }
 
 // A caller specifies a request for a history commitment at challenge level N. It specifies a list of
@@ -300,7 +517,7 @@ func (p *HistoryCommitmentProvider) validateStartHeights(
 // The length of this list cannot be greater than the total number of challenge levels in the protocol.
 // Takes in an input type that has already been validated for correctness.
 func deepestRequestedChallengeLevel(requestedHeights validatedStartHeights) uint64 {
-	return uint64(len(requestedHeights) - 1)
+	return uint64(len(requestedHeights))
 }
 
 // Gets the required leaf height at a specified challenge level. This is a protocol constant.

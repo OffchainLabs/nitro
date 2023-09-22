@@ -87,7 +87,7 @@ func Test_computeMachineStartIndex(t *testing.T) {
 				1 << 10,
 			},
 		}
-		machineStartIdx, err := provider.computeMachineStartIndex(validatedStartHeights{1})
+		machineStartIdx, err := provider.computeMachineStartIndex(validatedStartHeights{}, 1)
 		require.NoError(t, err)
 		require.Equal(t, OpcodeIndex(0), machineStartIdx)
 	})
@@ -104,7 +104,6 @@ func Test_computeMachineStartIndex(t *testing.T) {
 			0,
 			3,
 			4,
-			5,
 		}
 		// The first height is ignored, as it is for block challenges and not over machine opcodes.
 		//
@@ -112,7 +111,7 @@ func Test_computeMachineStartIndex(t *testing.T) {
 		//	+ 4 * (32)
 		//	+ 5
 		//  = 3205
-		got, err := provider.computeMachineStartIndex(validatedStartHeights(heights))
+		got, err := provider.computeMachineStartIndex(validatedStartHeights(heights), 5)
 		require.NoError(t, err)
 		require.Equal(t, OpcodeIndex(3205), got)
 	})
@@ -149,9 +148,8 @@ func Test_computeMachineStartIndex(t *testing.T) {
 			0,
 			4,
 			5,
-			10,
 		}
-		got, err := provider.computeMachineStartIndex(validatedStartHeights(heights))
+		got, err := provider.computeMachineStartIndex(validatedStartHeights(heights), 10)
 		require.NoError(t, err)
 		require.Equal(t, OpcodeIndex(4199434), got)
 	})

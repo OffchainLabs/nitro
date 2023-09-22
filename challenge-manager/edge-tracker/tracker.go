@@ -9,12 +9,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/fsm"
+	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/math"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
@@ -210,7 +212,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	switch current.State {
 	// Start state.
 	case edgeStarted:
-		canOsp, err := canOneStepProve(et.edge)
+		canOsp, err := canOneStepProve(ctx, et.edge)
 		if err != nil {
 			fields["err"] = err
 			srvlog.Error("Could not check if edge can be one step proven", fields)
@@ -223,7 +225,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		if err != nil {
 			fields["err"] = err
 			if errors.Is(err, errNotYetConfirmable) {
-				srvlog.Debug("Edge not yet confirmable", fields)
+				//srvlog.Debug("Edge not yet confirmable", fields)
 			} else {
 				srvlog.Error("Could not check if edge can be confirmed", fields)
 			}
@@ -251,8 +253,10 @@ func (et *Tracker) Act(ctx context.Context) error {
 	// Edge is at a one-step-proof in a small-step challenge.
 	case edgeAtOneStepProof:
 		if err := et.submitOneStepProof(ctx); err != nil {
-			fields["err"] = err
-			srvlog.Error("Could not submit one step proof", fields)
+			if !strings.Contains(err.Error(), "Invalid inclusion proof") {
+				fields["err"] = err
+				srvlog.Error("Could not submit one step proof", fields)
+			}
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		return et.fsm.Do(edgeConfirm{})
@@ -318,7 +322,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		wasConfirmed, err := et.tryToConfirm(ctx)
 		if err != nil {
 			fields["err"] = err
-			srvlog.Debug("Could not confirm edge yet", fields)
+			//srvlog.Debug("Could not confirm edge yet", fields)
 			return et.fsm.Do(edgeAwaitConfirmation{})
 		}
 		if !wasConfirmed {
@@ -341,6 +345,10 @@ func (et *Tracker) uniqueTrackerLogFields() log.Ctx {
 	startHeight, startCommit := et.edge.StartCommitment()
 	endHeight, endCommit := et.edge.EndCommitment()
 	id := et.edge.Id()
+	chalLevel, err := et.edge.GetChallengeLevel()
+	if err != nil {
+		panic(err) // TODO: Remove
+	}
 	return log.Ctx{
 		"id":            id.Hash,
 		"startHeight":   startHeight,
@@ -348,7 +356,7 @@ func (et *Tracker) uniqueTrackerLogFields() log.Ctx {
 		"endHeight":     endHeight,
 		"endCommit":     containers.Trunc(endCommit.Bytes()),
 		"validatorName": et.validatorName,
-		"challengeType": et.edge.GetType(),
+		"challengeType": chalLevel.String(),
 	}
 }
 
@@ -445,7 +453,7 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	}
 	if timer >= challengetree.PathTimer(chalPeriod) {
 		if err := et.edge.ConfirmByTimer(ctx, ancestors); err != nil {
-			return false, errors.Wrap(err, "could not confirm by timer")
+			return false, errors.Wrapf(err, "could not confirm by timer: got timer %d, chal period %d", timer, chalPeriod)
 		}
 		srvlog.Info("Confirmed by time", et.uniqueTrackerLogFields())
 		confirmedCounter.Inc(1)
@@ -465,12 +473,35 @@ func (et *Tracker) determineBisectionHistoryWithProof(
 	if err != nil {
 		return commitments.History{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", startHeight, endHeight)
 	}
-	if et.edge.GetType() == protocol.BlockChallengeEdge {
-		historyCommit, commitErr := et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, et.heightConfig.StartBlockHeight+bisectTo, et.heightConfig.TopLevelClaimEndBatchCount)
+	challengeLevel, err := et.edge.GetChallengeLevel()
+	if err != nil {
+		return commitments.History{}, nil, err
+	}
+	if challengeLevel == protocol.NewBlockChallengeLevel() {
+		historyCommit, commitErr := et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  l2stateprovider.Height(et.heightConfig.StartBlockHeight),
+				UpToHeight:                  option.Some(l2stateprovider.Height(et.heightConfig.StartBlockHeight + bisectTo)),
+			},
+		)
 		if commitErr != nil {
 			return commitments.History{}, nil, commitErr
 		}
-		proof, proofErr := et.stateProvider.PrefixProofUpToBatch(ctx, et.heightConfig.StartBlockHeight, bisectTo, uint64(endHeight), et.heightConfig.TopLevelClaimEndBatchCount)
+		proof, proofErr := et.stateProvider.PrefixProof(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  l2stateprovider.Height(et.heightConfig.StartBlockHeight),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
+			},
+			l2stateprovider.Height(bisectTo),
+		)
 		if proofErr != nil {
 			return commitments.History{}, nil, proofErr
 		}
@@ -485,25 +516,38 @@ func (et *Tracker) determineBisectionHistoryWithProof(
 	if err != nil {
 		return commitments.History{}, nil, err
 	}
-
-	fromAssertionHeight := uint64(originHeights.BlockChallengeOriginHeight)
-
-	switch et.edge.GetType() {
-	case protocol.BigStepChallengeEdge:
-		proof, proofErr = et.stateProvider.BigStepPrefixProof(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo, uint64(endHeight))
-		historyCommit, commitErr = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, bisectTo)
-	case protocol.SmallStepChallengeEdge:
-		fromBigStep := uint64(originHeights.BigStepChallengeOriginHeight)
-		proof, proofErr = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo, uint64(endHeight))
-		historyCommit, commitErr = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromAssertionHeight, fromBigStep, bisectTo)
-	default:
-		return commitments.History{}, nil, fmt.Errorf("unsupported challenge type: %s", et.edge.GetType())
+	challengeOriginHeights := make([]l2stateprovider.Height, len(originHeights.ChallengeOriginHeights))
+	for index, height := range originHeights.ChallengeOriginHeights {
+		challengeOriginHeights[index] = l2stateprovider.Height(height)
 	}
-	if commitErr != nil {
-		return commitments.History{}, nil, errors.Wrap(commitErr, "could not produce history commitment")
-	}
+
+	proof, proofErr = et.stateProvider.PrefixProof(
+		ctx,
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.wasmModuleRoot,
+			Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+			UpperChallengeOriginHeights: challengeOriginHeights,
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
+		},
+		l2stateprovider.Height(bisectTo),
+	)
 	if proofErr != nil {
 		return commitments.History{}, nil, errors.Wrap(proofErr, "could not produce prefix proof")
+	}
+
+	historyCommit, commitErr = et.stateProvider.HistoryCommitment(
+		ctx,
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.wasmModuleRoot,
+			Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+			UpperChallengeOriginHeights: challengeOriginHeights,
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(bisectTo)),
+		},
+	)
+	if commitErr != nil {
+		return commitments.History{}, nil, errors.Wrap(commitErr, "could not produce history commitment")
 	}
 	return historyCommit, proof, nil
 }
@@ -527,9 +571,13 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 			containers.Trunc(endCommit.Bytes()),
 		)
 	}
+	challengeLevel, err := et.edge.GetChallengeLevel()
+	if err != nil {
+		return nil, nil, err
+	}
 	srvlog.Info("Successfully bisected edge", log.Ctx{
 		"name":               et.validatorName,
-		"challengeType":      et.edge.GetType(),
+		"challengeType":      challengeLevel,
 		"bisectedFrom":       endHeight,
 		"bisectedFromMerkle": containers.Trunc(endCommit.Bytes()),
 		"bisectedTo":         bisectTo,
@@ -552,8 +600,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 		return errors.Wrap(err, "could not get top level claim height")
 	}
 
-	fromAssertionHeight := uint64(originHeights.BlockChallengeOriginHeight)
-	toAssertionHeight := fromAssertionHeight + 1
+	fromAssertionHeight := uint64(originHeights.ChallengeOriginHeights[0])
 
 	startHeight, _ := et.edge.StartCommitment()
 	endHeight, _ := et.edge.EndCommitment()
@@ -570,54 +617,151 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	var startParentCommitment commitments.History
 	var endParentCommitment commitments.History
 	var startEndPrefixProof []byte
-	switch et.edge.GetType() {
-	case protocol.BlockChallengeEdge:
+	challengeLevel, err := et.edge.GetChallengeLevel()
+	if err != nil {
+		return err
+	}
+	switch challengeLevel {
+	case protocol.NewBlockChallengeLevel():
 		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
-		toBlock := toAssertionHeight + et.heightConfig.StartBlockHeight
-		endHistory, err = et.stateProvider.BigStepLeafCommitment(ctx, et.wasmModuleRoot, fromBlock)
+		endHistory, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{l2stateprovider.Height(fromBlock)},
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.None[l2stateprovider.Height](),
+			},
+		)
 		if err != nil {
 			return err
 		}
-		startEndPrefixProof, err = et.stateProvider.BigStepPrefixProof(ctx, et.wasmModuleRoot, fromBlock, 0, endHistory.Height)
+		startEndPrefixProof, err = et.stateProvider.PrefixProof(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{l2stateprovider.Height(fromBlock)},
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHistory.Height)),
+			},
+			l2stateprovider.Height(0),
+		)
 		if err != nil {
 			return err
 		}
-		startHistory, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, 0)
+		startHistory, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{l2stateprovider.Height(fromBlock)},
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
+			},
+		)
 		if err != nil {
 			return err
 		}
-		endParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, toBlock, et.heightConfig.TopLevelClaimEndBatchCount)
+		endParentCommitment, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  l2stateprovider.Height(et.heightConfig.StartBlockHeight),
+				UpToHeight:                  option.Some(l2stateprovider.Height(fromBlock + 1)),
+			},
+		)
 		if err != nil {
 			return err
 		}
-		startParentCommitment, err = et.stateProvider.HistoryCommitmentUpToBatch(ctx, et.heightConfig.StartBlockHeight, fromBlock, et.heightConfig.TopLevelClaimEndBatchCount)
-		if err != nil {
-			return err
-		}
-	case protocol.BigStepChallengeEdge:
-		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
-		endHistory, err = et.stateProvider.SmallStepLeafCommitment(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
-		if err != nil {
-			return err
-		}
-		startEndPrefixProof, err = et.stateProvider.SmallStepPrefixProof(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0, endHistory.Height)
-		if err != nil {
-			return err
-		}
-		startHistory, err = et.stateProvider.SmallStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight), 0)
-		if err != nil {
-			return err
-		}
-		endParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(endHeight))
-		if err != nil {
-			return err
-		}
-		startParentCommitment, err = et.stateProvider.BigStepCommitmentUpTo(ctx, et.wasmModuleRoot, fromBlock, uint64(startHeight))
+		startParentCommitment, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  l2stateprovider.Height(et.heightConfig.StartBlockHeight),
+				UpToHeight:                  option.Some(l2stateprovider.Height(fromBlock)),
+			},
+		)
 		if err != nil {
 			return err
 		}
 	default:
-		return errors.New("unsupported subchallenge type for creating leaf commitment")
+		heights := make([]l2stateprovider.Height, 0)
+		for _, h := range originHeights.ChallengeOriginHeights {
+			heights = append(heights, l2stateprovider.Height(h))
+		}
+		heights = append(heights, l2stateprovider.Height(startHeight))
+		endHistory, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: heights,
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.None[l2stateprovider.Height](),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		startEndPrefixProof, err = et.stateProvider.PrefixProof(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: heights,
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHistory.Height)),
+			},
+			l2stateprovider.Height(0),
+		)
+		if err != nil {
+			return err
+		}
+		startHistory, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: heights,
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		endParentCommitment, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: heights[:len(heights)-1],
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		startParentCommitment, err = et.stateProvider.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              et.wasmModuleRoot,
+				Batch:                       l2stateprovider.Batch(et.heightConfig.TopLevelClaimEndBatchCount),
+				UpperChallengeOriginHeights: heights[:len(heights)-1],
+				FromHeight:                  l2stateprovider.Height(0),
+				UpToHeight:                  option.Some(l2stateprovider.Height(startHeight)),
+			},
+		)
+		if err != nil {
+			return err
+		}
 	}
 	manager, err := et.chain.SpecChallengeManager(ctx)
 	if err != nil {
@@ -637,7 +781,11 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	}
 	fields["firstLeaf"] = containers.Trunc(startHistory.FirstLeaf.Bytes())
 	fields["startCommitment"] = containers.Trunc(startHistory.Merkle.Bytes())
-	fields["subChallengeType"] = addedLeaf.GetType()
+	addedLeafChallengeLevel, err := addedLeaf.GetChallengeLevel()
+	if err != nil {
+		return err
+	}
+	fields["subChallengeType"] = addedLeafChallengeLevel
 	srvlog.Info("Created subchallenge edge", fields)
 
 	if addVerifiedErr := et.chainWatcher.AddVerifiedHonestEdge(ctx, addedLeaf); addVerifiedErr != nil {
@@ -673,8 +821,6 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "could not get top level claim height")
 	}
-	fromAssertionHeight := uint64(originHeights.BlockChallengeOriginHeight)
-	fromBigStep := uint64(originHeights.BigStepChallengeOriginHeight)
 	pc, _ := et.edge.StartCommitment()
 
 	assertionHash, err := et.edge.AssertionHash(ctx)
@@ -685,13 +831,16 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	challengeOriginHeights := make([]l2stateprovider.Height, len(originHeights.ChallengeOriginHeights))
+	for index, height := range originHeights.ChallengeOriginHeights {
+		challengeOriginHeights[index] = l2stateprovider.Height(height)
+	}
 	data, beforeStateInclusionProof, afterStateInclusionProof, err := et.stateProvider.OneStepProofData(
 		ctx,
 		parentAssertionCreationInfo.WasmModuleRoot,
-		parentAssertionCreationInfo.AfterState,
-		fromAssertionHeight,
-		fromBigStep,
-		uint64(pc),
+		challengeOriginHeights,
+		0,
+		l2stateprovider.Height(pc),
 	)
 	if err != nil {
 		return errors.Wrapf(errBadOneStepProof, "could not get one step data: %v", err)
@@ -713,12 +862,20 @@ func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	return nil
 }
 
-func canOneStepProve(edge protocol.SpecEdge) (bool, error) {
+func canOneStepProve(ctx context.Context, edge protocol.SpecEdge) (bool, error) {
 	start, _ := edge.StartCommitment()
 	end, _ := edge.EndCommitment()
 	// Can never happen in the protocol, but added as an additional defensive check.
 	if start >= end {
 		return false, fmt.Errorf("start height %d cannot be >= end height %d", start, end)
 	}
-	return end-start == 1 && edge.GetType() == protocol.SmallStepChallengeEdge, nil
+	challengeLevel, err := edge.GetChallengeLevel()
+	if err != nil {
+		return false, err
+	}
+	totalChallengeLevels, err := edge.GetTotalChallengeLevels(ctx)
+	if err != nil {
+		return false, err
+	}
+	return end-start == 1 && uint64(challengeLevel) == totalChallengeLevels-1, nil
 }

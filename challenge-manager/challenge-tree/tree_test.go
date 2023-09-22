@@ -68,12 +68,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(start),
@@ -83,12 +83,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(end),
@@ -111,12 +111,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -126,12 +126,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -164,12 +164,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -179,12 +179,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -223,12 +223,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -238,12 +238,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -276,12 +276,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -291,12 +291,12 @@ func TestAddEdge(t *testing.T) {
 		mockStateManager.On(
 			"AgreesWithHistoryCommitment",
 			ctx,
-			common.Hash{},
-			uint64(1),
-			uint64(0),
-			protocol.BlockChallengeEdge,
-			protocol.OriginHeights{
-				BlockChallengeOriginHeight: 0,
+			protocol.NewBlockChallengeLevel(),
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -336,6 +336,7 @@ func TestAddHonestEdge(t *testing.T) {
 		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
+		honestRootEdgesByLevel:        threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
 	}
 	ht.topLevelAssertionHash = protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
 	honest := &mockHonestEdge{edge}
@@ -343,9 +344,9 @@ func TestAddHonestEdge(t *testing.T) {
 	err := ht.AddHonestEdge(honest)
 	require.NoError(t, err)
 
-	// We now check if the the challenge tree has a populated
+	// We now check if the challenge tree has a populated
 	// block challenge level zero edge.
-	require.Equal(t, 1, ht.honestBigStepLevelZeroEdges.Len())
+	require.Equal(t, 1, ht.honestRootEdgesByLevel.Get(protocol.ChallengeLevel(1)).Len())
 
 	// Check if it exists in the mutual ids mapping.
 	mutualId := edge.MutualId()
@@ -359,7 +360,7 @@ func TestAddHonestEdge(t *testing.T) {
 	err = ht.AddHonestEdge(honest)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, ht.honestBigStepLevelZeroEdges.Len())
+	require.Equal(t, 1, ht.honestRootEdgesByLevel.Get(protocol.ChallengeLevel(1)).Len())
 }
 
 type mockMetadataReader struct {
@@ -408,14 +409,14 @@ type newCfg struct {
 func newEdge(cfg *newCfg) *mock.Edge {
 	cfg.t.Helper()
 	items := strings.Split(string(cfg.edgeId), "-")
-	var typ protocol.EdgeType
+	var typ protocol.ChallengeLevel
 	switch items[0] {
 	case "blk":
-		typ = protocol.BlockChallengeEdge
+		typ = 0
 	case "big":
-		typ = protocol.BigStepChallengeEdge
+		typ = 1
 	case "smol":
-		typ = protocol.SmallStepChallengeEdge
+		typ = 2
 	}
 	startData := strings.Split(items[1], ".")
 	startHeight, err := strconv.ParseUint(startData[0], 10, 64)
@@ -428,16 +429,17 @@ func newEdge(cfg *newCfg) *mock.Edge {
 	endCommit := endData[1]
 
 	return &mock.Edge{
-		EdgeType:      typ,
-		OriginID:      cfg.originId,
-		ID:            cfg.edgeId,
-		StartHeight:   startHeight,
-		ClaimID:       cfg.claimId,
-		StartCommit:   mock.Commit(startCommit),
-		EndHeight:     endHeight,
-		EndCommit:     mock.Commit(endCommit),
-		LowerChildID:  "",
-		UpperChildID:  "",
-		CreationBlock: cfg.createdAt,
+		EdgeType:             typ,
+		OriginID:             cfg.originId,
+		ID:                   cfg.edgeId,
+		StartHeight:          startHeight,
+		ClaimID:              cfg.claimId,
+		StartCommit:          mock.Commit(startCommit),
+		EndHeight:            endHeight,
+		EndCommit:            mock.Commit(endCommit),
+		LowerChildID:         "",
+		UpperChildID:         "",
+		CreationBlock:        cfg.createdAt,
+		TotalChallengeLevels: 3,
 	}
 }

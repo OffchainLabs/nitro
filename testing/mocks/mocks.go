@@ -10,7 +10,6 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -64,6 +63,22 @@ type MockStateManager struct {
 	AgreeErr bool
 }
 
+func (m *MockStateManager) HistoryCommitment(
+	ctx context.Context,
+	req *l2stateprovider.HistoryCommitmentRequest,
+) (commitments.History, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(commitments.History), args.Error(1)
+}
+
+func (m *MockStateManager) PrefixProof(
+	ctx context.Context,
+	req *l2stateprovider.HistoryCommitmentRequest,
+	prefixHeight l2stateprovider.Height,
+) ([]byte, error) {
+	args := m.Called(ctx, req, prefixHeight)
+	return args.Get(0).([]byte), args.Error(1)
+}
 func (m *MockStateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
 	args := m.Called(ctx, messageNumber)
 	return args.Get(0).(*protocol.ExecutionState), args.Error(1)
@@ -76,14 +91,11 @@ func (m *MockStateManager) HistoryCommitmentAtMessage(ctx context.Context, heigh
 
 func (m *MockStateManager) AgreesWithHistoryCommitment(
 	ctx context.Context,
-	wasmModuleRoot common.Hash,
-	inboxMaxCount uint64,
-	parentAssertionAfterStateBatch uint64,
-	edgeType protocol.EdgeType,
-	originHeights protocol.OriginHeights,
-	history l2stateprovider.History,
+	challengeLevel protocol.ChallengeLevel,
+	historyCommitMetadata *l2stateprovider.HistoryCommitmentRequest,
+	commit l2stateprovider.History,
 ) (bool, error) {
-	args := m.Called(ctx, wasmModuleRoot, inboxMaxCount, parentAssertionAfterStateBatch, edgeType, originHeights, history)
+	args := m.Called(ctx, challengeLevel, historyCommitMetadata, commit)
 	return args.Get(0).(bool), args.Error(1)
 }
 
@@ -168,12 +180,11 @@ func (m *MockStateManager) SmallStepCommitmentUpTo(
 func (m *MockStateManager) OneStepProofData(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	postState rollupgen.ExecutionState,
-	blockHeight,
-	bigStep,
-	smallStep uint64,
+	startHeights []l2stateprovider.Height,
+	fromHeight,
+	upToHeight l2stateprovider.Height,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
-	args := m.Called(ctx, wasmModuleRoot, postState, blockHeight, bigStep, smallStep)
+	args := m.Called(ctx, wasmModuleRoot, startHeights, fromHeight, upToHeight)
 	return args.Get(0).(*protocol.OneStepData), args.Get(1).([]common.Hash), args.Get(2).([]common.Hash), args.Error(3)
 }
 
@@ -226,7 +237,7 @@ func (m *MockSpecChallengeManager) GetEdge(
 
 func (m *MockSpecChallengeManager) CalculateMutualId(
 	ctx context.Context,
-	edgeType protocol.EdgeType,
+	edgeType protocol.ChallengeLevel,
 	originId protocol.OriginId,
 	startHeight protocol.Height,
 	startHistoryRoot common.Hash,
@@ -238,7 +249,7 @@ func (m *MockSpecChallengeManager) CalculateMutualId(
 
 func (m *MockSpecChallengeManager) CalculateEdgeId(
 	ctx context.Context,
-	edgeType protocol.EdgeType,
+	edgeType protocol.ChallengeLevel,
 	originId protocol.OriginId,
 	startHeight protocol.Height,
 	startHistoryRoot common.Hash,
@@ -292,13 +303,19 @@ func (m *MockSpecEdge) Id() protocol.EdgeId {
 	args := m.Called()
 	return args.Get(0).(protocol.EdgeId)
 }
-func (m *MockSpecEdge) GetType() protocol.EdgeType {
-	args := m.Called()
-	return args.Get(0).(protocol.EdgeType)
-}
 func (m *MockSpecEdge) GetChallengeLevel() (protocol.ChallengeLevel, error) {
 	args := m.Called()
 	return args.Get(0).(protocol.ChallengeLevel), args.Error(1)
+}
+
+func (m *MockSpecEdge) GetReversedChallengeLevel() (protocol.ChallengeLevel, error) {
+	args := m.Called()
+	return args.Get(0).(protocol.ChallengeLevel), args.Error(1)
+}
+
+func (m *MockSpecEdge) GetTotalChallengeLevels(ctx context.Context) (uint64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(uint64), args.Get(1).(error)
 }
 
 func (m *MockSpecEdge) MiniStaker() option.Option[common.Address] {

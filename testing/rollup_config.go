@@ -25,6 +25,12 @@ type LevelZeroHeights struct {
 
 type Opt func(c *rollupgen.Config)
 
+func WithNumBigStepLevels(num *big.Int) Opt {
+	return func(c *rollupgen.Config) {
+		c.NumBigStepLevel = num
+	}
+}
+
 func GenerateRollupConfig(
 	prod bool,
 	wasmModuleRoot common.Hash,
@@ -67,6 +73,7 @@ func GenerateRollupConfig(
 		GenesisExecutionState:        genesisExecutionState,
 		GenesisInboxCount:            genesisInboxCount,
 		AnyTrustFastConfirmer:        anyTrustFastConfirmer,
+		NumBigStepLevel:              new(big.Int).SetUint64(1),
 	}
 	for _, o := range opts {
 		o(&cfg)

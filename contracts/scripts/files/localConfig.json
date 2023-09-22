@@ -22,11 +22,11 @@
     "chainId": 412346,
     "anyTrustFastConfirmer": "0x6d903f6003cca6255D85CcA4D3B5E5146dC33925",
     "disableValidatorWhitelist": true,
-    "maxDataSize": 117964,
     "blockLeafSize": 1048576,
     "bigStepLeafSize": 2048,
     "smallStepLeafSize": 1024,
-    "numBigStepLevel": 3
+    "numBigStepLevel": 3,
+    "maxDataSize": 117964
   },
   "validators": [
     "0xf10EF80c6eF4930A62C5F9661c91339Df4dBB173"

@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/OffchainLabs/bold/containers/option"
+
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
@@ -253,11 +255,30 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 
 	// Honest assertion being added.
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
-		startCommit, startErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
+		startCommit, startErr := stateManager.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				Batch:                       1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
+				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
+			},
+		)
 		require.NoError(t, startErr)
-		endCommit, endErr := stateManager.HistoryCommitmentUpToBatch(ctx, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
+		req := &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              common.Hash{},
+			Batch:                       1,
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  0,
+			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
+		}
+		endCommit, endErr := stateManager.HistoryCommitment(
+			ctx,
+			req,
+		)
 		require.NoError(t, endErr)
-		prefixProof, proofErr := stateManager.PrefixProofUpToBatch(ctx, 0, 0, challenge_testing.LevelZeroBlockEdgeHeight, 1)
+		prefixProof, proofErr := stateManager.PrefixProof(ctx, req, l2stateprovider.Height(0))
 		require.NoError(t, proofErr)
 
 		edge, edgeErr := challengeManager.AddBlockChallengeLevelZeroEdge(

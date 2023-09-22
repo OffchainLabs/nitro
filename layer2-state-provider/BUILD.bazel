@@ -11,8 +11,9 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//containers/option",
-        "//solgen/go/rollupgen",
         "//state-commitments/history",
+        "//state-commitments/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",
     ],
 )

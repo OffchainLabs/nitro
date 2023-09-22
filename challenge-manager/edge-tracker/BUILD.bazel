@@ -14,6 +14,7 @@ go_library(
         "//challenge-manager/challenge-tree",
         "//containers",
         "//containers/fsm",
+        "//containers/option",
         "//layer2-state-provider",
         "//math",
         "//state-commitments/history",
