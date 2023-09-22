@@ -88,7 +88,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".url", DefaultConfig.URL, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
-	wsbroadcastserver.TlsConfigAddOptions(prefix, f, "client", false)
+	wsbroadcastserver.TlsConfigAddOptions(prefix+".tls", f, "client", false)
 }
 
 var DefaultConfig = Config{
