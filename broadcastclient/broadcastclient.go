@@ -5,7 +5,6 @@ package broadcastclient
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,16 +62,15 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff" reload:"hot"`
-	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff" reload:"hot"`
-	RequireChainId          bool                     `koanf:"require-chain-id" reload:"hot"`
-	RequireFeedVersion      bool                     `koanf:"require-feed-version" reload:"hot"`
-	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
-	URL                     []string                 `koanf:"url"`
-	Verify                  signature.VerifierConfig `koanf:"verify"`
-	CertFile                string                   `koanf:"cert-file"`
-	KeyFile                 string                   `koanf:"key-file"`
-	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
+	ReconnectInitialBackoff time.Duration               `koanf:"reconnect-initial-backoff" reload:"hot"`
+	ReconnectMaximumBackoff time.Duration               `koanf:"reconnect-maximum-backoff" reload:"hot"`
+	RequireChainId          bool                        `koanf:"require-chain-id" reload:"hot"`
+	RequireFeedVersion      bool                        `koanf:"require-feed-version" reload:"hot"`
+	Timeout                 time.Duration               `koanf:"timeout" reload:"hot"`
+	URL                     []string                    `koanf:"url"`
+	Verify                  signature.VerifierConfig    `koanf:"verify"`
+	EnableCompression       bool                        `koanf:"enable-compression" reload:"hot"`
+	Tls                     wsbroadcastserver.TlsConfig `koanf:"tls"`
 }
 
 func (c *Config) Enable() bool {
@@ -89,9 +87,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URL, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
-	f.String(prefix+".cert-file", DefaultConfig.CertFile, "X509 client public certificate file")
-	f.String(prefix+".key-file", DefaultConfig.KeyFile, "X509 client private key file")
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
+	wsbroadcastserver.TlsConfigAddOptions(prefix, f, "client", false)
 }
 
 var DefaultConfig = Config{
@@ -103,6 +100,7 @@ var DefaultConfig = Config{
 	URL:                     []string{""},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
+	Tls:                     wsbroadcastserver.DefaultTlsConfig,
 }
 
 var DefaultTestConfig = Config{
@@ -114,6 +112,7 @@ var DefaultTestConfig = Config{
 	URL:                     []string{""},
 	Timeout:                 200 * time.Millisecond,
 	EnableCompression:       true,
+	Tls:                     wsbroadcastserver.DefaultTlsConfig,
 }
 
 type TransactionStreamerInterface interface {
@@ -236,15 +235,9 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	if config.EnableCompression {
 		extensions = []httphead.Option{deflateExt}
 	}
-	tlsConfig := tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-	if config.CertFile != "" && config.KeyFile != "" {
-		clientCert, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
-		if err != nil {
-			return nil, err
-		}
-		tlsConfig.Certificates = []tls.Certificate{clientCert}
+	tlsConfig, err := config.Tls.GetConfig()
+	if err != nil {
+		return nil, err
 	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
@@ -287,7 +280,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 			return nil
 		},
 		Timeout:    10 * time.Second,
-		TLSConfig:  &tlsConfig,
+		TLSConfig:  tlsConfig,
 		Extensions: extensions,
 	}
 
