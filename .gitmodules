@@ -20,3 +20,4 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
+	branch = fee-token-support

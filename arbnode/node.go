@@ -104,8 +104,8 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 }
 
 func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
-	fmt.Println("Deploying bridge creator...")
-	auth.GasLimit = uint64(14183487)
+	// deploying bridge creator takes ~14.2 million gas
+	auth.GasLimit = uint64(15000000)
 	bridgeCreator, tx, _, err := rollupgen.DeployBridgeCreator(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
