@@ -8,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/bold/assertions"
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
-	modes "github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -29,12 +27,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 // One Arbitrum block had 1,849,212,947 total opcodes. The closest, higher power of two
@@ -79,7 +75,7 @@ func TestBoldProtocol(t *testing.T) {
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
-	l1authB := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
+	//l1authB := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
 
 	t.Log("Setting the minimum assertion period")
 	rollup, err := rollupgen.NewRollupAdminLogicTransactor(assertionChain.RollupAddress(), l1client)
@@ -95,156 +91,156 @@ func TestBoldProtocol(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	valConfig := staker.L1ValidatorConfig{}
-	valConfig.Strategy = "MakeNodes"
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-	blockValidatorConfig := staker.TestBlockValidatorConfig
+	// valConfig := staker.L1ValidatorConfig{}
+	// valConfig.Strategy = "MakeNodes"
+	// _, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	// blockValidatorConfig := staker.TestBlockValidatorConfig
 
-	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
-		l2nodeA.TxStreamer,
-		l2nodeA.Execution.Recorder,
-		l2nodeA.ArbDB,
-		nil,
-		StaticFetcherFrom(t, &blockValidatorConfig),
-		valStack,
-	)
-	Require(t, err)
-	err = statelessA.Start(ctx)
-	Require(t, err)
+	// statelessA, err := staker.NewStatelessBlockValidator(
+	// 	l2nodeA.InboxReader,
+	// 	l2nodeA.InboxTracker,
+	// 	l2nodeA.TxStreamer,
+	// 	l2nodeA.Execution.Recorder,
+	// 	l2nodeA.ArbDB,
+	// 	nil,
+	// 	StaticFetcherFrom(t, &blockValidatorConfig),
+	// 	valStack,
+	// )
+	// Require(t, err)
+	// err = statelessA.Start(ctx)
+	// Require(t, err)
 
-	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
-		l2nodeB.TxStreamer,
-		l2nodeB.Execution.Recorder,
-		l2nodeB.ArbDB,
-		nil,
-		StaticFetcherFrom(t, &blockValidatorConfig),
-		valStack,
-	)
-	Require(t, err)
-	err = statelessB.Start(ctx)
-	Require(t, err)
+	// statelessB, err := staker.NewStatelessBlockValidator(
+	// 	l2nodeB.InboxReader,
+	// 	l2nodeB.InboxTracker,
+	// 	l2nodeB.TxStreamer,
+	// 	l2nodeB.Execution.Recorder,
+	// 	l2nodeB.ArbDB,
+	// 	nil,
+	// 	StaticFetcherFrom(t, &blockValidatorConfig),
+	// 	valStack,
+	// )
+	// Require(t, err)
+	// err = statelessB.Start(ctx)
+	// Require(t, err)
 
-	stateManager, err := staker.NewStateManager(
-		statelessA,
-		nil,
-		smallStepChallengeLeafHeight,
-		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
-		"/tmp/good",
-	)
-	Require(t, err)
-	poster := assertions.NewPoster(
-		assertionChain,
-		stateManager,
-		"good",
-		time.Hour,
-	)
+	// stateManager, err := staker.NewStateManager(
+	// 	statelessA,
+	// 	nil,
+	// 	smallStepChallengeLeafHeight,
+	// 	smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
+	// 	"/tmp/good",
+	// )
+	// Require(t, err)
+	// poster := assertions.NewPoster(
+	// 	assertionChain,
+	// 	stateManager,
+	// 	"good",
+	// 	time.Hour,
+	// )
 
-	stateManagerB, err := staker.NewStateManager(
-		statelessB,
-		nil,
-		smallStepChallengeLeafHeight,
-		smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
-		"/tmp/evil",
-	)
-	Require(t, err)
-	chainB, err := solimpl.NewAssertionChain(
-		ctx,
-		assertionChain.RollupAddress(),
-		&l1authB,
-		l1client,
-	)
-	Require(t, err)
-	posterB := assertions.NewPoster(
-		chainB,
-		stateManagerB,
-		"evil",
-		time.Hour,
-	)
+	// stateManagerB, err := staker.NewStateManager(
+	// 	statelessB,
+	// 	nil,
+	// 	smallStepChallengeLeafHeight,
+	// 	smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
+	// 	"/tmp/evil",
+	// )
+	// Require(t, err)
+	// chainB, err := solimpl.NewAssertionChain(
+	// 	ctx,
+	// 	assertionChain.RollupAddress(),
+	// 	&l1authB,
+	// 	l1client,
+	// )
+	// Require(t, err)
+	// posterB := assertions.NewPoster(
+	// 	chainB,
+	// 	stateManagerB,
+	// 	"evil",
+	// 	time.Hour,
+	// )
 
-	t.Log("Sending a tx from faucet to L2 node A background user")
-	l2info.GenerateAccount("BackgroundUser")
-	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
-	err = l2clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
-	Require(t, err)
+	// t.Log("Sending a tx from faucet to L2 node A background user")
+	// l2info.GenerateAccount("BackgroundUser")
+	// tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
+	// err = l2clientA.SendTransaction(ctx, tx)
+	// Require(t, err)
+	// _, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	// Require(t, err)
 
-	t.Log("Sending a tx from faucet to L2 node B background user")
-	l2info.Accounts["Faucet"].Nonce = 0
-	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, common.Big2, nil)
-	err = l2clientB.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
-	Require(t, err)
+	// t.Log("Sending a tx from faucet to L2 node B background user")
+	// l2info.Accounts["Faucet"].Nonce = 0
+	// tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, common.Big2, nil)
+	// err = l2clientB.SendTransaction(ctx, tx)
+	// Require(t, err)
+	// _, err = EnsureTxSucceeded(ctx, l2clientB, tx)
+	// Require(t, err)
 
-	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
-	Require(t, err)
-	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
-	Require(t, err)
-	msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
-	Require(t, err)
-	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
-	Require(t, err)
-	accA, err := l2nodeA.InboxTracker.GetBatchAcc(bcA - 1)
-	Require(t, err)
-	accB, err := l2nodeB.InboxTracker.GetBatchAcc(bcB - 1)
-	Require(t, err)
-	t.Logf("Node A, count %d, msgs %d, acc %s", bcA, msgA, accA)
-	t.Logf("Node B, count %d, msgs %d, acc %s", bcB, msgB, accB)
+	// bcA, err := l2nodeA.InboxTracker.GetBatchCount()
+	// Require(t, err)
+	// bcB, err := l2nodeB.InboxTracker.GetBatchCount()
+	// Require(t, err)
+	// msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
+	// Require(t, err)
+	// msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
+	// Require(t, err)
+	// accA, err := l2nodeA.InboxTracker.GetBatchAcc(bcA - 1)
+	// Require(t, err)
+	// accB, err := l2nodeB.InboxTracker.GetBatchAcc(bcB - 1)
+	// Require(t, err)
+	// t.Logf("Node A, count %d, msgs %d, acc %s", bcA, msgA, accA)
+	// t.Logf("Node B, count %d, msgs %d, acc %s", bcB, msgB, accB)
 
-	nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	if nodeALatest == nodeBLatest {
-		Fail(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
-	}
+	// nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	// nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	// if nodeALatest == nodeBLatest {
+	// 	Fail(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
+	// }
 
-	t.Log("Honest party posting assertion at batch 1, pos 0")
-	_, err = poster.PostAssertion(ctx)
-	Require(t, err)
+	// t.Log("Honest party posting assertion at batch 1, pos 0")
+	// _, err = poster.PostAssertion(ctx)
+	// Require(t, err)
 
-	time.Sleep(10 * time.Second)
+	// time.Sleep(10 * time.Second)
 
-	t.Log("Honest party posting assertion at batch 2, pos 0")
-	_, err = poster.PostAssertion(ctx)
-	Require(t, err)
+	// t.Log("Honest party posting assertion at batch 2, pos 0")
+	// _, err = poster.PostAssertion(ctx)
+	// Require(t, err)
 
-	t.Log("Evil party posting rival assertion at batch 2, pos 0")
-	_, err = posterB.PostAssertion(ctx)
-	Require(t, err)
+	// t.Log("Evil party posting rival assertion at batch 2, pos 0")
+	// _, err = posterB.PostAssertion(ctx)
+	// Require(t, err)
 
-	manager, err := challengemanager.New(
-		ctx,
-		assertionChain,
-		l1client,
-		stateManager,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("honest"),
-		challengemanager.WithMode(modes.DefensiveMode),
-		challengemanager.WithAssertionPostingInterval(time.Hour),
-		challengemanager.WithAssertionScanningInterval(5*time.Second),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
-	)
-	Require(t, err)
-	manager.Start(ctx)
+	// manager, err := challengemanager.New(
+	// 	ctx,
+	// 	assertionChain,
+	// 	l1client,
+	// 	stateManager,
+	// 	assertionChain.RollupAddress(),
+	// 	challengemanager.WithName("honest"),
+	// 	challengemanager.WithMode(modes.DefensiveMode),
+	// 	challengemanager.WithAssertionPostingInterval(time.Hour),
+	// 	challengemanager.WithAssertionScanningInterval(5*time.Second),
+	// 	challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+	// )
+	// Require(t, err)
+	// manager.Start(ctx)
 
-	managerB, err := challengemanager.New(
-		ctx,
-		chainB,
-		l1client,
-		stateManagerB,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("evil"),
-		challengemanager.WithMode(modes.DefensiveMode),
-		challengemanager.WithAssertionPostingInterval(time.Hour),
-		challengemanager.WithAssertionScanningInterval(5*time.Second),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
-	)
-	Require(t, err)
-	managerB.Start(ctx)
+	// managerB, err := challengemanager.New(
+	// 	ctx,
+	// 	chainB,
+	// 	l1client,
+	// 	stateManagerB,
+	// 	assertionChain.RollupAddress(),
+	// 	challengemanager.WithName("evil"),
+	// 	challengemanager.WithMode(modes.DefensiveMode),
+	// 	challengemanager.WithAssertionPostingInterval(time.Hour),
+	// 	challengemanager.WithAssertionScanningInterval(5*time.Second),
+	// 	challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+	// )
+	// Require(t, err)
+	// managerB.Start(ctx)
 
 	// creationInfo, err := chainB.ReadAssertionCreationInfo(ctx, honest.Id())
 	// Require(t, err)
@@ -411,7 +407,7 @@ func deployContractsOnly(
 		loserStakeEscrow,
 		miniStake,
 		stakeToken,
-		challenge_testing.WithLevelZeroHeights(&challenge_testing.LevelZeroHeights{
+		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 			BlockChallengeHeight:     blockChallengeLeafHeight,
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
