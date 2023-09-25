@@ -380,10 +380,9 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
-	err = resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
-	if err != nil {
+	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
 		flag.Usage()
-		log.Crit("failed to start resource management module")
+		log.Crit("Failed to start resource management module", "err", err)
 	}
 
 	var sameProcessValidationNodeEnabled bool

@@ -11,8 +11,8 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
-	"unicode"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -55,42 +55,31 @@ func Init(conf *Config) error {
 	return nil
 }
 
-func parseMemLimit(limitStr_ string) (int, error) {
-	limitStr := limitStr_
-	limitAccumulator := 1
-	done := false
-	for !done {
-		switch unicode.ToUpper(rune(limitStr[len(limitStr)-1])) {
-		case 'B':
-			limitStr = limitStr[:len(limitStr)-1]
-			continue
-		case 'K':
-			limitStr = limitStr[:len(limitStr)-1]
-			limitAccumulator *= 1024
-			done = true
-		case 'M':
-			limitStr = limitStr[:len(limitStr)-1]
-			limitAccumulator *= 1024 * 1024
-			done = true
-		case 'G':
-			limitStr = limitStr[:len(limitStr)-1]
-			limitAccumulator *= 1024 * 1024 * 1024
-			done = true
-		case 'T':
-			limitStr = limitStr[:len(limitStr)-1]
-			limitAccumulator *= 1024 * 1024 * 1024 * 1024
-			done = true
-		default:
-			done = true
-		}
-	}
-
-	limitInUnits, err := strconv.Atoi(limitStr)
+func parseMemLimit(limitStr string) (int, error) {
+	var (
+		limit int = 1
+		s     string
+	)
+	_, err := fmt.Sscanf(limitStr, "%d%s", &limit, &s)
 	if err != nil {
 		return 0, err
 	}
 
-	return limitAccumulator * limitInUnits, nil
+	switch strings.ToUpper(s) {
+	case "K", "KB":
+		limit <<= 10
+	case "M", "MB":
+		limit <<= 20
+	case "G", "GB":
+		limit <<= 30
+	case "T", "TB":
+		limit <<= 40
+	case "B":
+	default:
+		return 0, fmt.Errorf("Unsupported memory limit suffix string %s", s)
+	}
+
+	return limit, nil
 }
 
 // Config contains the configuration for resourcemanager functionality.
