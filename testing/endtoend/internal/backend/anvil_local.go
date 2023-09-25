@@ -217,7 +217,7 @@ func (a *AnvilLocal) Charlie() *bind.TransactOpts {
 	return a.charlie
 }
 
-func (a *AnvilLocal) DeployRollup() (common.Address, error) {
+func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address, error) {
 	prod := false
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := a.deployer.From
@@ -267,6 +267,7 @@ func (a *AnvilLocal) DeployRollup() (common.Address, error) {
 			genesisExecutionState,
 			genesisInboxCount,
 			anyTrustFastConfirmer,
+			opts...,
 		),
 		false, // Do not use a mock bridge.
 	)

@@ -20,9 +20,9 @@ const (
 
 type Opt func(c *rollupgen.Config)
 
-func WithNumBigStepLevels(num *big.Int) Opt {
+func WithNumBigStepLevels(num uint64) Opt {
 	return func(c *rollupgen.Config) {
-		c.NumBigStepLevel = num
+		c.NumBigStepLevel = new(big.Int).SetUint64(num)
 	}
 }
 

@@ -52,8 +52,9 @@ type CreateForkConfig struct {
 func CreateTwoValidatorFork(
 	ctx context.Context,
 	cfg *CreateForkConfig,
+	opts ...Opt,
 ) (*CreatedValidatorFork, error) {
-	setup, err := ChainsWithEdgeChallengeManager()
+	setup, err := ChainsWithEdgeChallengeManager(opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +74,7 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	honestStateManager, err := statemanager.NewForSimpleMachine()
+	honestStateManager, err := statemanager.NewForSimpleMachine(setup.stateManagerOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -86,11 +87,14 @@ func CreateTwoValidatorFork(
 		cfg.DivergeMachineHeight = 1
 	}
 
-	evilStateManager, err := statemanager.NewForSimpleMachine(
+	stateManagerOpts := setup.stateManagerOpts
+	stateManagerOpts = append(
+		stateManagerOpts,
 		statemanager.WithBlockDivergenceHeight(cfg.DivergeBlockHeight),
 		statemanager.WithDivergentBlockHeightOffset(cfg.BlockHeightDifference),
 		statemanager.WithMachineDivergenceStep(cfg.DivergeMachineHeight),
 	)
+	evilStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -133,12 +137,14 @@ func CreateTwoValidatorFork(
 }
 
 type ChainSetup struct {
-	Chains        []*solimpl.AssertionChain
-	Accounts      []*TestAccount
-	Addrs         *RollupAddresses
-	Backend       *backends.SimulatedBackend
-	RollupConfig  rollupgen.Config
-	useMockBridge bool
+	Chains               []*solimpl.AssertionChain
+	Accounts             []*TestAccount
+	Addrs                *RollupAddresses
+	Backend              *backends.SimulatedBackend
+	RollupConfig         rollupgen.Config
+	useMockBridge        bool
+	challengeTestingOpts []challenge_testing.Opt
+	stateManagerOpts     []statemanager.Opt
 }
 
 type Opt func(setup *ChainSetup)
@@ -146,6 +152,18 @@ type Opt func(setup *ChainSetup)
 func WithMockBridge() Opt {
 	return func(setup *ChainSetup) {
 		setup.useMockBridge = true
+	}
+}
+
+func WithChallengeTestingOpts(opts ...challenge_testing.Opt) Opt {
+	return func(setup *ChainSetup) {
+		setup.challengeTestingOpts = opts
+	}
+}
+
+func WithStateManagerOpts(opts ...statemanager.Opt) Opt {
+	return func(setup *ChainSetup) {
+		setup.stateManagerOpts = opts
 	}
 }
 
@@ -223,6 +241,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		genesisExecutionState,
 		genesisInboxCount,
 		anyTrustFastConfirmer,
+		setp.challengeTestingOpts...,
 	)
 	addresses, err := DeployFullRollupStack(
 		ctx,

@@ -42,6 +42,7 @@ go_test(
         "//solgen/go/rollupgen",
         "//state-commitments/history",
         "//testing",
+        "//testing/mocks/state-provider",
         "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//:go-ethereum",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
