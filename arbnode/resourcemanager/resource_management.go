@@ -23,6 +23,7 @@ var (
 	limitCheckDurationHistogram = metrics.NewRegisteredHistogram("arb/rpc/limitcheck/duration", nil, metrics.NewBoundedHistogramSample())
 	limitCheckSuccessCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/success", nil)
 	limitCheckFailureCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/failure", nil)
+	errNotSupported             = errors.New("not supported")
 )
 
 // Init adds the resource manager's httpServer to a custom hook in geth.
@@ -33,7 +34,14 @@ var (
 func Init(conf *Config) {
 	if conf.MemLimitPercent > 0 {
 		node.WrapHTTPHandler = func(srv http.Handler) (http.Handler, error) {
-			return newHttpServer(srv, newLimitChecker(conf)), nil
+			var c limitChecker
+			c, err := newCgroupsMemoryLimitCheckerIfSupported(conf)
+			if errors.Is(err, errNotSupported) {
+				log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
+				c = &trivialLimitChecker{}
+			}
+
+			return newHttpServer(srv, c), nil
 		}
 	}
 }
@@ -90,20 +98,27 @@ type limitChecker interface {
 	String() string
 }
 
-// newLimitChecker attempts to auto-discover the mechanism by which it
-// can check system limits. Currently Cgroups V1 is supported,
-// with Cgroups V2 likely to be implmemented next. If no supported
-// mechanism is discovered, it logs an error and fails open, ie
-// it creates a trivialLimitChecker that does no checks.
-func newLimitChecker(conf *Config) limitChecker {
-	c := newCgroupsV1MemoryLimitChecker(DefaultCgroupsV1MemoryDirectory, conf.MemLimitPercent)
+func isSupported(c limitChecker) bool {
+	_, err := c.isLimitExceeded()
+	return err == nil
+}
+
+// newCgroupsMemoryLimitCheckerIfSupported attempts to auto-discover whether
+// Cgroups V1 or V2 is supported for checking system memory limits.
+func newCgroupsMemoryLimitCheckerIfSupported(conf *Config) (*cgroupsMemoryLimitChecker, error) {
+	c := newCgroupsMemoryLimitChecker(cgroupsV1MemoryFiles, conf.MemLimitPercent)
 	if isSupported(c) {
 		log.Info("Cgroups v1 detected, enabling memory limit RPC throttling")
-		return c
+		return c, nil
 	}
 
-	log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
-	return &trivialLimitChecker{}
+	c = newCgroupsMemoryLimitChecker(cgroupsV2MemoryFiles, conf.MemLimitPercent)
+	if isSupported(c) {
+		log.Info("Cgroups v2 detected, enabling memory limit RPC throttling")
+		return c, nil
+	}
+
+	return nil, errNotSupported
 }
 
 // trivialLimitChecker checks no limits, so its limits are never exceeded.
@@ -115,28 +130,37 @@ func (_ trivialLimitChecker) isLimitExceeded() (bool, error) {
 
 func (_ trivialLimitChecker) String() string { return "trivial" }
 
-const DefaultCgroupsV1MemoryDirectory = "/sys/fs/cgroup/memory/"
-
-type cgroupsV1MemoryLimitChecker struct {
-	cgroupDir          string
-	memoryLimitPercent int
-
+type cgroupsMemoryFiles struct {
 	limitFile, usageFile, statsFile string
+	inactiveRe                      *regexp.Regexp
 }
 
-func newCgroupsV1MemoryLimitChecker(cgroupDir string, memoryLimitPercent int) *cgroupsV1MemoryLimitChecker {
-	return &cgroupsV1MemoryLimitChecker{
-		cgroupDir:          cgroupDir,
+const defaultCgroupsV1MemoryDirectory = "/sys/fs/cgroup/memory/"
+const defaultCgroupsV2MemoryDirectory = "/sys/fs/cgroup/"
+
+var cgroupsV1MemoryFiles = cgroupsMemoryFiles{
+	limitFile:  defaultCgroupsV1MemoryDirectory + "/memory.limit_in_bytes",
+	usageFile:  defaultCgroupsV1MemoryDirectory + "/memory.usage_in_bytes",
+	statsFile:  defaultCgroupsV1MemoryDirectory + "/memory.stat",
+	inactiveRe: regexp.MustCompile(`total_inactive_file (\d+)`),
+}
+var cgroupsV2MemoryFiles = cgroupsMemoryFiles{
+	limitFile:  defaultCgroupsV2MemoryDirectory + "/memory.max",
+	usageFile:  defaultCgroupsV2MemoryDirectory + "/memory.current",
+	statsFile:  defaultCgroupsV2MemoryDirectory + "/memory.stat",
+	inactiveRe: regexp.MustCompile(`inactive_file (\d+)`),
+}
+
+type cgroupsMemoryLimitChecker struct {
+	files              cgroupsMemoryFiles
+	memoryLimitPercent int
+}
+
+func newCgroupsMemoryLimitChecker(files cgroupsMemoryFiles, memoryLimitPercent int) *cgroupsMemoryLimitChecker {
+	return &cgroupsMemoryLimitChecker{
+		files:              files,
 		memoryLimitPercent: memoryLimitPercent,
-		limitFile:          cgroupDir + "/memory.limit_in_bytes",
-		usageFile:          cgroupDir + "/memory.usage_in_bytes",
-		statsFile:          cgroupDir + "/memory.stat",
 	}
-}
-
-func isSupported(c limitChecker) bool {
-	_, err := c.isLimitExceeded()
-	return err == nil
 }
 
 // isLimitExceeded checks if the system memory used exceeds the limit
@@ -145,22 +169,23 @@ func isSupported(c limitChecker) bool {
 // See the following page for details of calculating the memory used,
 // which is reported as container_memory_working_set_bytes in prometheus:
 // https://mihai-albert.com/2022/02/13/out-of-memory-oom-in-kubernetes-part-3-memory-metrics-sources-and-tools-to-collect-them/
-func (c *cgroupsV1MemoryLimitChecker) isLimitExceeded() (bool, error) {
+func (c *cgroupsMemoryLimitChecker) isLimitExceeded() (bool, error) {
 	var limit, usage, inactive int
 	var err error
-	limit, err = readIntFromFile(c.limitFile)
-	if err != nil {
+	if limit, err = readIntFromFile(c.files.limitFile); err != nil {
 		return false, err
 	}
-	usage, err = readIntFromFile(c.usageFile)
-	if err != nil {
+	if usage, err = readIntFromFile(c.files.usageFile); err != nil {
 		return false, err
 	}
-	inactive, err = readInactive(c.statsFile)
-	if err != nil {
+	if inactive, err = readInactive(c.files.statsFile, c.files.inactiveRe); err != nil {
 		return false, err
 	}
 	return usage-inactive >= ((limit * c.memoryLimitPercent) / 100), nil
+}
+
+func (c cgroupsMemoryLimitChecker) String() string {
+	return "CgroupsMemoryLimitChecker"
 }
 
 func readIntFromFile(fileName string) (int, error) {
@@ -176,9 +201,7 @@ func readIntFromFile(fileName string) (int, error) {
 	return limit, nil
 }
 
-var re = regexp.MustCompile(`total_inactive_file (\d+)`)
-
-func readInactive(fileName string) (int, error) {
+func readInactive(fileName string, re *regexp.Regexp) (int, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
 		return 0, err
@@ -200,8 +223,4 @@ func readInactive(fileName string) (int, error) {
 	}
 
 	return 0, errors.New("total_inactive_file not found in " + fileName)
-}
-
-func (c cgroupsV1MemoryLimitChecker) String() string {
-	return "CgroupsV1MemoryLimitChecker"
 }
