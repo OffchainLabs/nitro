@@ -224,35 +224,57 @@ func TestBoldProtocol(t *testing.T) {
 	_, err = posterB.PostAssertion(ctx)
 	Require(t, err)
 
+	provider := l2stateprovider.NewHistoryCommitmentProvider(
+		stateManager,
+		stateManager,
+		stateManager,
+		[]l2stateprovider.Height{
+			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		},
+		stateManager,
+	)
 	manager, err := challengemanager.New(
 		ctx,
 		assertionChain,
 		l1client,
-		stateManager,
+		provider,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("honest"),
 		challengemanager.WithMode(modes.DefensiveMode),
-		// challengemanager.WithAssertionPostingInterval(time.Hour),
-		// challengemanager.WithAssertionScanningInterval(5*time.Second),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(time.Hour),
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 	)
 	Require(t, err)
 	manager.Start(ctx)
 
-	// managerB, err := challengemanager.New(
-	// 	ctx,
-	// 	chainB,
-	// 	l1client,
-	// 	stateManagerB,
-	// 	assertionChain.RollupAddress(),
-	// 	challengemanager.WithName("evil"),
-	// 	challengemanager.WithMode(modes.DefensiveMode),
-	// 	challengemanager.WithAssertionPostingInterval(time.Hour),
-	// 	challengemanager.WithAssertionScanningInterval(5*time.Second),
-	// 	challengemanager.WithEdgeTrackerWakeInterval(time.Second),
-	// )
-	// Require(t, err)
-	// managerB.Start(ctx)
+	evilProvider := l2stateprovider.NewHistoryCommitmentProvider(
+		stateManagerB,
+		stateManagerB,
+		stateManagerB,
+		[]l2stateprovider.Height{
+			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		},
+		stateManagerB,
+	)
+	managerB, err := challengemanager.New(
+		ctx,
+		chainB,
+		l1client,
+		evilProvider,
+		assertionChain.RollupAddress(),
+		challengemanager.WithName("evil"),
+		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(time.Hour),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+	)
+	Require(t, err)
+	managerB.Start(ctx)
 
 	// creationInfo, err := chainB.ReadAssertionCreationInfo(ctx, honest.Id())
 	// Require(t, err)
