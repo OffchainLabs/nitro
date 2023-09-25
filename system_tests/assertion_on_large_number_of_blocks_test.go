@@ -9,7 +9,6 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"os"
 	"testing"
@@ -104,14 +103,21 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	levelZeroEdgeEndTime := time.Now().Unix()
 	print("Time taken Calculating BlockChallenge LevelZeroEdge:")
 	print(levelZeroEdgeEndTime - assertionPostingEndTime)
-	testCalculatingBisection(t, ctx, provider, startHeight, endHeight, wasmModuleRoot, topLevelClaimEndBatchCount)
+	testCalculatingBlockChallengeLevelZeroEdgeBisection(t, ctx, provider, startHeight, endHeight, wasmModuleRoot, topLevelClaimEndBatchCount)
 	bisectionOfLevelZeroEdgeEndTime := time.Now().Unix()
 	print("Time taken Calculating BlockChallenge LevelZeroEdge Bisection:")
 	print(bisectionOfLevelZeroEdgeEndTime - levelZeroEdgeEndTime)
 
 }
-func testCalculatingBisection(t *testing.T,
-	ctx context.Context, provider *l2stateprovider.HistoryCommitmentProvider, startHeight uint64, endHeight uint64, wasmModuleRoot common.Hash, topLevelClaimEndBatchCount uint64) {
+func testCalculatingBlockChallengeLevelZeroEdgeBisection(
+	t *testing.T,
+	ctx context.Context,
+	provider *l2stateprovider.HistoryCommitmentProvider,
+	startHeight uint64,
+	endHeight uint64,
+	wasmModuleRoot common.Hash,
+	topLevelClaimEndBatchCount uint64,
+) {
 	bisectTo, err := math.Bisect(startHeight, endHeight)
 	Require(t, err)
 	_, err = provider.HistoryCommitment(
@@ -143,39 +149,33 @@ func testCalculatingBlockChallengeLevelZeroEdge(
 
 	creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	Require(t, err)
-	parentAssertionInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
-	Require(t, err)
-	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
 	startCommit, err := provider.HistoryCommitment(
 		ctx,
 		creationInfo.WasmModuleRoot,
-		l2stateprovider.Batch(parentAssertionAfterState.GlobalState.Batch),
+		l2stateprovider.Batch(0),
 		[]l2stateprovider.Height{0},
 		option.Some(l2stateprovider.Height(0)),
 	)
 	Require(t, err)
-	specChallengeManager, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
-	levelZeroBlockEdgeHeight, err := specChallengeManager.LevelZeroBlockEdgeHeight(ctx)
+	levelZeroBlockEdgeHeight := uint64(1 << 26)
 	Require(t, err)
 	endCommit, err := provider.HistoryCommitment(
 		ctx,
 		creationInfo.WasmModuleRoot,
 		l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-		[]l2stateprovider.Height{l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch)},
-		option.Some[l2stateprovider.Height](l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch+levelZeroBlockEdgeHeight)),
+		[]l2stateprovider.Height{l2stateprovider.Height(0)},
+		option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
 	)
 	Require(t, err)
-	fmt.Printf("Start %+v and end %+v\n", startCommit, endCommit)
 	_, err = provider.PrefixProof(
 		ctx,
 		creationInfo.WasmModuleRoot,
 		l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-		[]l2stateprovider.Height{l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch)},
-		l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
-		option.Some[l2stateprovider.Height](l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch+levelZeroBlockEdgeHeight)))
+		[]l2stateprovider.Height{l2stateprovider.Height(0)},
+		l2stateprovider.Height(0),
+		option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)))
 	Require(t, err)
-	return startCommit.Height, endCommit.Height, parentAssertionInfo.WasmModuleRoot, creationInfo.InboxMaxCount.Uint64()
+	return startCommit.Height, endCommit.Height, creationInfo.WasmModuleRoot, creationInfo.InboxMaxCount.Uint64()
 }
 func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, protocol.Protocol) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
