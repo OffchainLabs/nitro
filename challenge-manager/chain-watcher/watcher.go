@@ -61,7 +61,13 @@ type ConfirmationMetadataChecker interface {
 		ctx context.Context,
 		topLevelAssertionHash protocol.AssertionHash,
 		edgeId protocol.EdgeId,
-	) (challengetree.PathTimer, challengetree.HonestAncestors, error)
+	) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error)
+	HasConfirmableAncestor(
+		ctx context.Context,
+		topLevelAssertionHash protocol.AssertionHash,
+		ancestorLocalTimers []challengetree.EdgeLocalTimer,
+		challengePeriodBlocks uint64,
+	) (bool, error)
 }
 
 // Represents a set of honest edges being tracked in a top-level challenge and all the
@@ -137,31 +143,47 @@ func (w *Watcher) ComputeHonestPathTimer(
 	ctx context.Context,
 	topLevelAssertionHash protocol.AssertionHash,
 	edgeId protocol.EdgeId,
-) (challengetree.PathTimer, challengetree.HonestAncestors, error) {
+) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error) {
 	header, err := w.backend.HeaderByNumber(ctx, nil)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if !header.Number.IsUint64() {
-		return 0, nil, errors.New("latest block header number is not a uint64")
+		return 0, nil, nil, errors.New("latest block header number is not a uint64")
 	}
 	blockNumber := header.Number.Uint64()
 	chal, ok := w.challenges.TryGet(topLevelAssertionHash)
 	if !ok {
-		return 0, nil, fmt.Errorf(
+		return 0, nil, nil, fmt.Errorf(
 			"could not get challenge for top level assertion %#x",
 			topLevelAssertionHash,
 		)
 	}
 	response, err := chal.honestEdgeTree.ComputeAncestorsWithTimers(ctx, edgeId, blockNumber)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	pathTimer, err := chal.honestEdgeTree.ComputeHonestPathTimer(ctx, edgeId, response.AncestorLocalTimers, blockNumber)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
-	return pathTimer, response.AncestorEdgeIds, nil
+	return pathTimer, response.AncestorEdgeIds, response.AncestorLocalTimers, nil
+}
+
+func (w *Watcher) HasConfirmableAncestor(
+	ctx context.Context,
+	topLevelAssertionHash protocol.AssertionHash,
+	ancestorLocalTimers []challengetree.EdgeLocalTimer,
+	challengePeriodBlocks uint64,
+) (bool, error) {
+	chal, ok := w.challenges.TryGet(topLevelAssertionHash)
+	if !ok {
+		return false, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			topLevelAssertionHash,
+		)
+	}
+	return chal.honestEdgeTree.HasConfirmableAncestor(ctx, ancestorLocalTimers, challengePeriodBlocks)
 }
 
 func (w *Watcher) IsSynced() bool {

@@ -15,34 +15,34 @@ const (
 	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
 	_ State = iota
 	// The start state of the tracker.
-	edgeStarted
+	EdgeStarted
 	// The edge being tracked is at a one step proof.
-	edgeAtOneStepProof
+	EdgeAtOneStepProof
 	// The tracker is adding a subchallenge leaf on the edge's subchallenge.
-	edgeAddingSubchallengeLeaf
+	EdgeAddingSubchallengeLeaf
 	// The tracker is attempting a bisection move.
-	edgeBisecting
+	EdgeBisecting
 	// Intermediary state in which an edge is doing nothing else but awaiting confirmation
 	// whenever it is possible.
-	edgeConfirming
+	EdgeConfirming
 	// Terminal state
-	edgeConfirmed
+	EdgeConfirmed
 )
 
 // String turns an edge tracker state into a readable string.
 func (s State) String() string {
 	switch s {
-	case edgeStarted:
+	case EdgeStarted:
 		return "started"
-	case edgeAtOneStepProof:
+	case EdgeAtOneStepProof:
 		return "one_step_proof"
-	case edgeAddingSubchallengeLeaf:
+	case EdgeAddingSubchallengeLeaf:
 		return "adding_subchallenge_leaf"
-	case edgeBisecting:
+	case EdgeBisecting:
 		return "bisecting"
-	case edgeConfirming:
+	case EdgeConfirming:
 		return "confirming"
-	case edgeConfirmed:
+	case EdgeConfirmed:
 		return "confirmed"
 	default:
 		return "invalid"
