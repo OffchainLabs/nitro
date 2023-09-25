@@ -592,6 +592,7 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 }
 
 // L2BlockRangeForL1 fetches the L1 block number of a given l2 block number.
+// c ctx and evm mech arguments are not used but supplied to match the precompile function type in NodeInterface contract
 func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
 	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
 	if err != nil {
