@@ -9,9 +9,7 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbstate"
+	"fmt"
 	"math/big"
 	"os"
 	"testing"
@@ -20,6 +18,7 @@ import (
 	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -31,7 +30,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -91,13 +94,60 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	setupEndTime := time.Now().Unix()
 	print("Time taken for setup:")
 	print(setupEndTime - setupStartTime)
-	_, err = poster.PostAssertion(ctx)
+	assertion, err := poster.PostAssertion(ctx)
+	Require(t, err)
 	assertionPostingEndTime := time.Now().Unix()
 	print("Time taken to post assertion:")
 	print(assertionPostingEndTime - setupEndTime)
-	Require(t, err)
+	testCalculatingBlockChallengeLevelZeroEdge(t, ctx, assertionChain, assertion, provider)
+	levelZeroEdgeEndTime := time.Now().Unix()
+	print("Time taken Calculating BlockChallenge LevelZeroEdge:")
+	print(levelZeroEdgeEndTime - assertionPostingEndTime)
 }
 
+func testCalculatingBlockChallengeLevelZeroEdge(
+	t *testing.T,
+	ctx context.Context,
+	assertionChain protocol.Protocol,
+	assertion protocol.Assertion,
+	provider *l2stateprovider.HistoryCommitmentProvider,
+) {
+
+	creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
+	Require(t, err)
+	parentAssertionInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	Require(t, err)
+	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
+	startCommit, err := provider.HistoryCommitment(
+		ctx,
+		creationInfo.WasmModuleRoot,
+		l2stateprovider.Batch(parentAssertionAfterState.GlobalState.Batch),
+		[]l2stateprovider.Height{0},
+		option.Some(l2stateprovider.Height(0)),
+	)
+	Require(t, err)
+	specChallengeManager, err := assertionChain.SpecChallengeManager(ctx)
+	Require(t, err)
+	levelZeroBlockEdgeHeight, err := specChallengeManager.LevelZeroBlockEdgeHeight(ctx)
+	Require(t, err)
+	endCommit, err := provider.HistoryCommitment(
+		ctx,
+		creationInfo.WasmModuleRoot,
+		l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+		[]l2stateprovider.Height{l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch)},
+		option.Some[l2stateprovider.Height](l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch+levelZeroBlockEdgeHeight)),
+	)
+	Require(t, err)
+	fmt.Printf("Start %+v and end %+v\n", startCommit, endCommit)
+	_, err = provider.PrefixProof(
+		ctx,
+		creationInfo.WasmModuleRoot,
+		l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+		[]l2stateprovider.Height{l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch)},
+		l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
+		option.Some[l2stateprovider.Height](l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch+levelZeroBlockEdgeHeight)))
+	Require(t, err)
+}
 func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, protocol.Protocol) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
