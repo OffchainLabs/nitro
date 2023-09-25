@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -26,11 +29,12 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 // One Arbitrum block had 1,849,212,947 total opcodes. The closest, higher power of two
@@ -91,62 +95,68 @@ func TestBoldProtocol(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	// valConfig := staker.L1ValidatorConfig{}
-	// valConfig.Strategy = "MakeNodes"
-	// _, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-	// blockValidatorConfig := staker.TestBlockValidatorConfig
+	valConfig := staker.L1ValidatorConfig{}
+	valConfig.Strategy = "MakeNodes"
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	blockValidatorConfig := staker.TestBlockValidatorConfig
 
-	// statelessA, err := staker.NewStatelessBlockValidator(
-	// 	l2nodeA.InboxReader,
-	// 	l2nodeA.InboxTracker,
-	// 	l2nodeA.TxStreamer,
-	// 	l2nodeA.Execution.Recorder,
-	// 	l2nodeA.ArbDB,
-	// 	nil,
-	// 	StaticFetcherFrom(t, &blockValidatorConfig),
-	// 	valStack,
-	// )
-	// Require(t, err)
-	// err = statelessA.Start(ctx)
-	// Require(t, err)
+	statelessA, err := staker.NewStatelessBlockValidator(
+		l2nodeA.InboxReader,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.Execution.Recorder,
+		l2nodeA.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
+	)
+	Require(t, err)
+	err = statelessA.Start(ctx)
+	Require(t, err)
 
-	// statelessB, err := staker.NewStatelessBlockValidator(
-	// 	l2nodeB.InboxReader,
-	// 	l2nodeB.InboxTracker,
-	// 	l2nodeB.TxStreamer,
-	// 	l2nodeB.Execution.Recorder,
-	// 	l2nodeB.ArbDB,
-	// 	nil,
-	// 	StaticFetcherFrom(t, &blockValidatorConfig),
-	// 	valStack,
-	// )
-	// Require(t, err)
-	// err = statelessB.Start(ctx)
-	// Require(t, err)
+	statelessB, err := staker.NewStatelessBlockValidator(
+		l2nodeB.InboxReader,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.Execution.Recorder,
+		l2nodeB.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStack,
+	)
+	Require(t, err)
+	err = statelessB.Start(ctx)
+	Require(t, err)
 
-	// stateManager, err := staker.NewStateManager(
-	// 	statelessA,
-	// 	nil,
-	// 	smallStepChallengeLeafHeight,
-	// 	smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
-	// 	"/tmp/good",
-	// )
-	// Require(t, err)
-	// poster := assertions.NewPoster(
-	// 	assertionChain,
-	// 	stateManager,
-	// 	"good",
-	// 	time.Hour,
-	// )
+	stateManager, err := staker.NewStateManager(
+		statelessA,
+		"/tmp/good",
+		[]l2stateprovider.Height{
+			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		},
+	)
+	Require(t, err)
 
-	// stateManagerB, err := staker.NewStateManager(
-	// 	statelessB,
-	// 	nil,
-	// 	smallStepChallengeLeafHeight,
-	// 	smallStepChallengeLeafHeight*bigStepChallengeLeafHeight,
-	// 	"/tmp/evil",
-	// )
-	// Require(t, err)
+	poster := assertions.NewPoster(
+		assertionChain,
+		stateManager,
+		"good",
+		time.Hour,
+	)
+
+	stateManagerB, err := staker.NewStateManager(
+		statelessB,
+		"/tmp/evil",
+		[]l2stateprovider.Height{
+			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		},
+	)
+	Require(t, err)
+
 	// chainB, err := solimpl.NewAssertionChain(
 	// 	ctx,
 	// 	assertionChain.RollupAddress(),
@@ -351,7 +361,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, nil)
 	assertionChain = assertionChainBindings
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -399,6 +409,12 @@ func deployContractsOnly(
 	prod := false
 	loserStakeEscrow := common.Address{}
 	miniStake := big.NewInt(1)
+	genesisExecutionState := rollupgen.ExecutionState{
+		GlobalState:   rollupgen.GlobalState{},
+		MachineStatus: 1,
+	}
+	genesisInboxCount := big.NewInt(0)
+	anyTrustFastConfirmer := common.Address{}
 	cfg := challenge_testing.GenerateRollupConfig(
 		prod,
 		wasmModuleRoot,
@@ -407,6 +423,9 @@ func deployContractsOnly(
 		loserStakeEscrow,
 		miniStake,
 		stakeToken,
+		genesisExecutionState,
+		genesisInboxCount,
+		anyTrustFastConfirmer,
 		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 			BlockChallengeHeight:     blockChallengeLeafHeight,
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
