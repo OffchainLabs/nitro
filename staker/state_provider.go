@@ -265,7 +265,12 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	return s.statesUpTo(uint64(from), uint64(to), uint64(batch))
+	items, err := s.statesUpTo(uint64(from), uint64(to), uint64(batch))
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("In nitro, states from %d to %d, batch %d got num hashes %d\n", from, to, batch, len(items))
+	return items, nil
 }
 
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.

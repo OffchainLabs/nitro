@@ -455,6 +455,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
+		challenge_testing.WithNumBigStepLevels(new(big.Int).SetUint64(1)),
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
