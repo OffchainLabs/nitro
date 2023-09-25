@@ -564,6 +564,10 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
+	addr := common.Address{}.String()
+	if transactOpts != nil {
+		addr = transactOpts.From.String()
+	}
 	return dataposter.NewDataPoster(
 		&dataposter.DataPosterOpts{
 			Database:          db,
@@ -573,7 +577,7 @@ func StakerDataposter(
 			RedisLock:         redisLock,
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
-			RedisKey:          "staker-data-poster.queue",
+			RedisKey:          addr + ".staker-data-poster.queue",
 		})
 }
 
