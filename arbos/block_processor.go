@@ -36,10 +36,16 @@ var ArbSysAddress common.Address
 var InternalTxStartBlockMethodID [4]byte
 var InternalTxBatchPostingReportMethodID [4]byte
 var RedeemScheduledEventID common.Hash
+var ExpiredMerkleUpdateEventID common.Hash
+var ExpiredMerkleRootSnapshotEventID common.Hash
+var RetryableExpiredEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
+var EmitExpiredMerkleUpdateEvent func(*vm.EVM, [32]byte, *big.Int) error
+var EmitExpiredMerkleRootSnapshotEvent func(*vm.EVM, [32]byte, uint64) error
+var EmitRetryableExpiredEvent func(*vm.EVM, [32]byte, *big.Int, [32]byte, uint64) error
 var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
 type L1Info struct {
@@ -230,7 +236,7 @@ func ProduceBlockAdvanced(
 			}
 			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
-				// retryable was already deleted
+				// retryable expired or was canceled
 				continue
 			}
 		} else {

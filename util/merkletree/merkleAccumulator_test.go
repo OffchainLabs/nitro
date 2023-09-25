@@ -172,7 +172,7 @@ func pseudorandomForTesting(x uint64) common.Hash {
 
 func accAppend(t *testing.T, acc *merkleAccumulator.MerkleAccumulator, itemHash common.Hash) {
 	t.Helper()
-	_, err := acc.Append(itemHash)
+	_, _, err := acc.Append(itemHash)
 	Require(t, err)
 }
 

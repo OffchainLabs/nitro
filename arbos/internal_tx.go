@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/merkletree"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -82,9 +83,43 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		currentTime := evm.Context.Time
 
-		// Try to reap 2 retryables
-		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
-		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		// Try to reap 2 retryables, revert the state on failure
+		snapshot := evm.StateDB.Snapshot()
+	reapingLoop:
+		for i := 0; i < 2; i++ {
+			merkleUpdateEvents, leaf, err := state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+			if err != nil {
+				log.Error("Failed to try reaping one retryable", "err", err)
+				break
+			}
+			if leaf != nil {
+				position := merkletree.LevelAndLeaf{Level: 0, Leaf: leaf.Index}
+				if err = EmitRetryableExpiredEvent(evm, leaf.Hash, position.ToBigInt(), leaf.TicketId, leaf.NumTries); err != nil {
+					log.Error("Failed to emit RetryableExpired event", "err", err)
+					break
+				}
+			}
+			for _, event := range merkleUpdateEvents {
+				position := merkletree.LevelAndLeaf{Level: event.Level, Leaf: event.NumLeaves}
+				if err = EmitExpiredMerkleUpdateEvent(evm, event.Hash, position.ToBigInt()); err != nil {
+					log.Error("Failed to emit ExpiredMerkleUpdate event", "err", err)
+					break reapingLoop
+				}
+			}
+			// we succeeded reaping, so take new snapshot
+			snapshot = evm.StateDB.Snapshot()
+		}
+		if err == nil {
+			err := state.RetryableState().TryRotatingExpiredRootSnapshots(currentTime)
+			if err != nil {
+				log.Error("Failed to try rotating expired root snapshots", "err", err)
+			}
+		}
+
+		if err != nil {
+			evm.StateDB.RevertToSnapshot(snapshot)
+			log.Warn("Reverting ticket handling because of an error (fully or partially)")
+		}
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 

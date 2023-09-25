@@ -18,22 +18,32 @@ import (
 )
 
 type ArbRetryableTx struct {
-	Address                 addr
-	TicketCreated           func(ctx, mech, bytes32) error
-	LifetimeExtended        func(ctx, mech, bytes32, huge) error
-	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
-	Canceled                func(ctx, mech, bytes32) error
-	TicketCreatedGasCost    func(bytes32) (uint64, error)
-	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
-	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
-	CanceledGasCost         func(bytes32) (uint64, error)
+	Address                          addr
+	TicketCreated                    func(ctx, mech, bytes32) error
+	LifetimeExtended                 func(ctx, mech, bytes32, huge) error
+	RedeemScheduled                  func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
+	Canceled                         func(ctx, mech, bytes32) error
+	ExpiredMerkleUpdate              func(ctx, mech, bytes32, huge) error
+	ExpiredMerkleRootSnapshot        func(ctx, mech, bytes32, uint64) error
+	RetryableExpired                 func(ctx, mech, bytes32, huge, bytes32, uint64) error
+	TicketCreatedGasCost             func(bytes32) (uint64, error)
+	LifetimeExtendedGasCost          func(bytes32, huge) (uint64, error)
+	RedeemScheduledGasCost           func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
+	CanceledGasCost                  func(bytes32) (uint64, error)
+	ExpiredMerkleUpdateGasCost       func(bytes32, huge) (uint64, error)
+	ExpiredMerkleRootSnapshotGasCost func(bytes32, uint64) (uint64, error)
+	RetryableExpiredGasCost          func(bytes32, huge, bytes32, uint64) (uint64, error)
 
 	// deprecated event
 	Redeemed        func(ctx, mech, bytes32) error
 	RedeemedGasCost func(bytes32) (uint64, error)
 
-	NoTicketWithIDError func() error
-	NotCallableError    func() error
+	NoTicketWithIDError  func() error
+	NotCallableError     func() error
+	AlreadyRevivedError  func() error
+	InvalidRootHashError func() error
+	WrongProofError      func() error
+	AlreadyExistsError   func() error
 }
 
 var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
@@ -51,12 +61,11 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return bytes32{}, ErrSelfModifyingRetryable
 	}
 	retryableState := c.State.RetryableState()
-	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)
+	writeWords, err := retryableState.RetryableSizeWords(ticketId, evm.Context.Time)
 	if err != nil {
 		return hash{}, err
 	}
-	writeBytes := arbmath.WordsForBytes(byteCount)
-	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
+	if err := c.Burn(params.SloadGas * writeWords); err != nil {
 		return hash{}, err
 	}
 
@@ -88,7 +97,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err != nil {
 		return hash{}, err
 	}
-
 	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
 	//     by that much, so that we'll donate the correct amount of gas
 	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0)
@@ -124,7 +132,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err := c.Burn(gasToDonate); err != nil {
 		return hash{}, err
 	}
-
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
@@ -157,14 +164,14 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 
 	// charge for the expiry update
 	retryableState := c.State.RetryableState()
-	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)
+	nwords, err := retryableState.RetryableSizeWords(ticketId, evm.Context.Time)
 	if err != nil {
 		return nil, err
 	}
-	if nbytes == 0 {
+	if nwords == 0 {
 		return nil, con.oldNotFoundError(c)
 	}
-	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
+	updateCost := nwords * params.SstoreSetGas / 100
 	if err := c.Burn(updateCost); err != nil {
 		return big.NewInt(0), err
 	}
@@ -178,6 +185,35 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 
 	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
 	return big.NewInt(int64(newTimeout)), err
+}
+
+func (con ArbRetryableTx) Revive(c ctx, evm mech,
+	ticketId bytes32,
+	numTries uint64,
+	from, to addr,
+	callvalue huge,
+	beneficiary addr,
+	calldata []byte,
+	rootHash bytes32,
+	leafIndex uint64,
+	proof []bytes32,
+) (huge, error) {
+	proofHashes := make([]common.Hash, len(proof))
+	for i, proofBytes := range proof {
+		proofHashes[i] = proofBytes
+	}
+	retryableState := c.State.RetryableState()
+	newTimeout, err := retryableState.Revive(ticketId, numTries, from, to, callvalue, beneficiary, calldata, common.BytesToHash(rootHash[:]), leafIndex, proofHashes, evm.Context.Time, retryables.RetryableLifetimeSeconds)
+	if err != nil {
+		return big.NewInt(0), con.toSolidityError(err)
+	}
+	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
+	return big.NewInt(int64(newTimeout)), err
+}
+
+func (con ArbRetryableTx) GetLastExpiredRootSnapshot(c ctx, evm mech) (hash, uint64, error) {
+	retryableState := c.State.RetryableState()
+	return retryableState.LastExpiredRootSnapshot()
 }
 
 // GetBeneficiary gets the beneficiary of the ticket
@@ -230,10 +266,27 @@ func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, e
 }
 
 func (con ArbRetryableTx) SubmitRetryable(
-	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
+	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callValue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
 	feeRefundAddress, beneficiary, retryTo addr,
 	retryData []byte,
 ) error {
 	return con.NotCallableError()
+}
+
+func (con ArbRetryableTx) toSolidityError(err error) error {
+	if errors.Is(err, retryables.ErrTicketNotFound) {
+		return con.NoTicketWithIDError()
+	}
+	if errors.Is(err, retryables.ErrAlreadyRevived) {
+		return con.AlreadyRevivedError()
+	}
+	if errors.Is(err, retryables.ErrInvalidRoot) {
+		return con.InvalidRootHashError()
+	}
+	if errors.Is(err, retryables.ErrWrongProof) {
+		return con.WrongProofError()
+	}
+	// retryables.ErrTimeoutTooFar is an internal error
+	return err
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -308,13 +309,13 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node, client := CreateTestL2(t, ctx)
+	l2info, node, l2client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	contractAddress, simple := deploySimple(t, ctx, auth, client)
+	contractAddress, simple := deploySimple(t, ctx, auth, l2client)
 
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	Require(t, err)
@@ -327,9 +328,9 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		account := fmt.Sprintf("User%v", i)
 		l2info.GenerateAccount(account)
 		tx := l2info.PrepareTx("Owner", account, l2info.TransferGas, big.NewInt(1e16), nil)
-		err := client.SendTransaction(ctx, tx)
+		err := l2client.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, client, tx)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	}
 	for i := numTxes - 1; i >= 0; i-- {
@@ -381,16 +382,20 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		header = bc.GetHeaderByNumber(i)
 	}
 
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+	logs, err := l2client.FilterLogs(ctx, ethereum.FilterQuery{
+		Topics: [][]common.Hash{{simpleABI.Events["LogAndIncrementCalled"].ID}},
+	})
+	Require(t, err)
 	succeeded := 0
-	for _, receipt := range receipts {
-		if receipt.Status == types.ReceiptStatusSuccessful && len(receipt.Logs) == 1 {
-			parsed, err := simple.ParseLogAndIncrementCalled(*receipt.Logs[0])
-			Require(t, err)
-			if parsed.Expected.Int64() != parsed.Have.Int64() {
-				Fatal(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
-			} else {
-				succeeded++
-			}
+	for _, log := range logs {
+		parsed, err := simple.ParseLogAndIncrementCalled(log)
+		Require(t, err)
+		if parsed.Expected.Int64() != parsed.Have.Int64() {
+			Fatal(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
+		} else {
+			succeeded++
 		}
 	}
 	if succeeded != expectedSuccesses {
