@@ -598,6 +598,9 @@ func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, e
 	if err != nil {
 		return 0, err
 	}
+	if blockHeader == nil {
+		return 0, fmt.Errorf("nil header for l2 block: %d", l2BlockNum)
+	}
 	blockL1Num := types.DeserializeHeaderExtraInformation(blockHeader).L1BlockNumber
 	return blockL1Num, nil
 }
