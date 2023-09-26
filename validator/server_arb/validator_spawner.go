@@ -24,24 +24,24 @@ import (
 )
 
 type ArbitratorSpawnerConfig struct {
-	Workers        int                `koanf:"workers" reload:"hot"`
-	OutputPath     string             `koanf:"output-path" reload:"hot"`
-	Execution      MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
-	ExecRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
+	Workers             int                `koanf:"workers" reload:"hot"`
+	OutputPath          string             `koanf:"output-path" reload:"hot"`
+	Execution           MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	ExecutionRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	Workers:        0,
-	OutputPath:     "./target/output",
-	Execution:      DefaultMachineCacheConfig,
-	ExecRunTimeout: time.Minute * 15,
+	Workers:             0,
+	OutputPath:          "./target/output",
+	Execution:           DefaultMachineCacheConfig,
+	ExecutionRunTimeout: time.Minute * 15,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
-	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecRunTimeout, "timeout before discarding execution run")
+	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 }

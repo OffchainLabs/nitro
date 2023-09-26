@@ -127,14 +127,21 @@ func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 	return msg.Header.Equals(other.Header) && bytes.Equal(msg.L2msg, other.L2msg)
 }
 
+func hashesEqual(ha, hb *common.Hash) bool {
+	if (ha == nil) != (hb == nil) {
+		return false
+	}
+	return (ha == nil && hb == nil) || *ha == *hb
+}
+
 func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 	// These are all non-pointer types so it's safe to use the == operator
 	return h.Kind == other.Kind &&
 		h.Poster == other.Poster &&
 		h.BlockNumber == other.BlockNumber &&
 		h.Timestamp == other.Timestamp &&
-		h.RequestId == other.RequestId &&
-		h.L1BaseFee == other.L1BaseFee
+		hashesEqual(h.RequestId, other.RequestId) &&
+		arbmath.BigEquals(h.L1BaseFee, other.L1BaseFee)
 }
 
 func ComputeBatchGasCost(data []byte) uint64 {

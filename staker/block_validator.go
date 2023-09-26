@@ -19,8 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -81,17 +79,13 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
 	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
+	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
-	DataPoster               dataposter.DataPosterConfig   `koanf:"data-poster" reload:"hot"`
-	RedisUrl                 string                        `koanf:"redis-url"`
-	RedisLock                redislock.SimpleCfg           `koanf:"redis-lock" reload:"hot"`
-	ExtraGas                 uint64                        `koanf:"extra-gas" reload:"hot"`
 }
 
 func (c *BlockValidatorConfig) Validate() error {
@@ -107,17 +101,13 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
-	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
+	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
-	f.Uint64(prefix+".extra-gas", DefaultBlockValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
-	f.String(prefix+".redis-url", DefaultBlockValidatorConfig.RedisUrl, "redis url for block validator")
-	redislock.AddConfigOptions(prefix+".redis-lock", f)
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -134,10 +124,6 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	DataPoster:               dataposter.DefaultDataPosterConfig,
-	RedisUrl:                 "",
-	RedisLock:                redislock.DefaultCfg,
-	ExtraGas:                 50000,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -150,10 +136,6 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	DataPoster:               dataposter.TestDataPosterConfig,
-	RedisUrl:                 "",
-	RedisLock:                redislock.DefaultCfg,
-	ExtraGas:                 50000,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -615,7 +597,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	var batchMsgs arbutil.MessageIndex
 	var printedCount int64
 	if validated.GlobalState.Batch > 0 {
-		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch)
+		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch - 1)
 	}
 	if err != nil {
 		printedCount = -1

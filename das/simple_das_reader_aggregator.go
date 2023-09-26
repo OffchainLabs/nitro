@@ -25,28 +25,28 @@ import (
 // RestfulDasClients, so the configuration and factory function are given more
 // specific names.
 type RestfulClientAggregatorConfig struct {
-	Enable                             bool                               `koanf:"enable"`
-	Urls                               []string                           `koanf:"urls"`
-	OnlineUrlList                      string                             `koanf:"online-url-list"`
-	OnlineUrlListFetchInterval         time.Duration                      `koanf:"online-url-list-fetch-interval"`
-	Strategy                           string                             `koanf:"strategy"`
-	StrategyUpdateInterval             time.Duration                      `koanf:"strategy-update-interval"`
-	WaitBeforeTryNext                  time.Duration                      `koanf:"wait-before-try-next"`
-	MaxPerEndpointStats                int                                `koanf:"max-per-endpoint-stats"`
-	SimpleExploreExploitStrategyConfig SimpleExploreExploitStrategyConfig `koanf:"simple-explore-exploit-strategy"`
-	SyncToStorageConfig                SyncToStorageConfig                `koanf:"sync-to-storage"`
+	Enable                       bool                               `koanf:"enable"`
+	Urls                         []string                           `koanf:"urls"`
+	OnlineUrlList                string                             `koanf:"online-url-list"`
+	OnlineUrlListFetchInterval   time.Duration                      `koanf:"online-url-list-fetch-interval"`
+	Strategy                     string                             `koanf:"strategy"`
+	StrategyUpdateInterval       time.Duration                      `koanf:"strategy-update-interval"`
+	WaitBeforeTryNext            time.Duration                      `koanf:"wait-before-try-next"`
+	MaxPerEndpointStats          int                                `koanf:"max-per-endpoint-stats"`
+	SimpleExploreExploitStrategy SimpleExploreExploitStrategyConfig `koanf:"simple-explore-exploit-strategy"`
+	SyncToStorage                SyncToStorageConfig                `koanf:"sync-to-storage"`
 }
 
 var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
-	Urls:                               []string{},
-	OnlineUrlList:                      "",
-	OnlineUrlListFetchInterval:         1 * time.Hour,
-	Strategy:                           "simple-explore-exploit",
-	StrategyUpdateInterval:             10 * time.Second,
-	WaitBeforeTryNext:                  2 * time.Second,
-	MaxPerEndpointStats:                20,
-	SimpleExploreExploitStrategyConfig: DefaultSimpleExploreExploitStrategyConfig,
-	SyncToStorageConfig:                DefaultSyncToStorageConfig,
+	Urls:                         []string{},
+	OnlineUrlList:                "",
+	OnlineUrlListFetchInterval:   1 * time.Hour,
+	Strategy:                     "simple-explore-exploit",
+	StrategyUpdateInterval:       10 * time.Second,
+	WaitBeforeTryNext:            2 * time.Second,
+	MaxPerEndpointStats:          20,
+	SimpleExploreExploitStrategy: DefaultSimpleExploreExploitStrategyConfig,
+	SyncToStorage:                DefaultSyncToStorageConfig,
 }
 
 type SimpleExploreExploitStrategyConfig struct {
@@ -120,8 +120,8 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 	switch strings.ToLower(config.Strategy) {
 	case "simple-explore-exploit":
 		a.strategy = &simpleExploreExploitStrategy{
-			exploreIterations: uint32(config.SimpleExploreExploitStrategyConfig.ExploreIterations),
-			exploitIterations: uint32(config.SimpleExploreExploitStrategyConfig.ExploitIterations),
+			exploreIterations: uint32(config.SimpleExploreExploitStrategy.ExploreIterations),
+			exploitIterations: uint32(config.SimpleExploreExploitStrategy.ExploitIterations),
 		}
 	case "testing-sequential":
 		a.strategy = &testingSequentialStrategy{}
