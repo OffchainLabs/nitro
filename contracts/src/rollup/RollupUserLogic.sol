@@ -114,10 +114,17 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
 
         if (prevAssertion.secondChildBlock > 0) {
             // if the prev has more than 1 child, check if this assertion is the challenge winner
-            RollupLib.validateConfigHash(prevConfig, prevAssertion.configHash);
-            ChallengeEdge memory winningEdge = challengeManager.getEdge(winningEdgeId);
+            ChallengeEdge memory winningEdge = IEdgeChallengeManager(prevConfig.challengeManager).getEdge(winningEdgeId);
             require(winningEdge.claimId == assertionHash, "NOT_WINNER");
             require(winningEdge.status == EdgeStatus.Confirmed, "EDGE_NOT_CONFIRMED");
+            require(winningEdge.confirmedAtBlock != 0, "ZERO_CONFIRMED_AT_BLOCK");
+            // an additional number of blocks is added to ensure that the result of the challenge is widely
+            // observable before it causes an assertion to be confirmed. After a winning edge is found, it will
+            // always be challengeGracePeriodBlocks before an assertion can be confirmed
+            require(
+                block.number >= winningEdge.confirmedAtBlock + challengeGracePeriodBlocks,
+                "CHALLENGE_GRACE_PERIOD_NOT_PASSED"
+            );
         }
 
         confirmAssertionInternal(assertionHash, prevAssertionHash, confirmState, inboxAcc);

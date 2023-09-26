@@ -194,8 +194,11 @@ contract ChallengeEdgeLibTest is Test {
         (bytes32 originId, bytes32 startRoot, bytes32 endRoot) = randCheckArgs();
         child = ChallengeEdgeLib.newChildEdge(originId, startRoot, 10, endRoot, 17, NUM_BIGSTEP_LEVEL + 1);
 
+        vm.roll(137);
+
         ChallengeEdgeLib.setConfirmed(child);
         assertTrue(child.status == EdgeStatus.Confirmed, "Status confirmed");
+        assertTrue(child.confirmedAtBlock == 137, "Confirmed at block");
     }
 
     function testSetConfirmedTwice() public {

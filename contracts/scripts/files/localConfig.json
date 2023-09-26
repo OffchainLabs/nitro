@@ -15,6 +15,7 @@
     "seqInbox": "0xa4884de60AEef09b1b35fa255F56ee37198A80B3"
   },
   "settings": {
+    "challengeGracePeriodBlocks": 10,
     "confirmPeriodBlocks": 100,
     "challengePeriodBlocks": 110,
     "stakeToken": "0x408Da76E87511429485C32E4Ad647DD14823Fdc4",

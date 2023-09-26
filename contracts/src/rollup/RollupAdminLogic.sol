@@ -48,6 +48,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         wasmModuleRoot = config.wasmModuleRoot;
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
+        challengeGracePeriodBlocks = config.challengeGracePeriodBlocks;
 
         // the owner can't access the rollup user facet where escrow is redeemable
         require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");

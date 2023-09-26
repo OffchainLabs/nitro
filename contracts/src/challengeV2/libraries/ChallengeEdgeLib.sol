@@ -57,6 +57,9 @@ struct ChallengeEdge {
     /// @notice Set to true when the staker has been refunded. Can only be set to true if the status is Confirmed
     ///         and the staker is non zero.
     bool refunded;
+    /// @notice The block number at which this edge was confirmed
+    ///         Zero if not confirmed
+    uint256 confirmedAtBlock;
 }
 
 library ChallengeEdgeLib {
@@ -117,7 +120,8 @@ library ChallengeEdgeLib {
             staker: staker,
             status: EdgeStatus.Pending,
             level: level,
-            refunded: false
+            refunded: false,
+            confirmedAtBlock: 0
         });
     }
 
@@ -146,7 +150,8 @@ library ChallengeEdgeLib {
             staker: address(0),
             status: EdgeStatus.Pending,
             level: level,
-            refunded: false
+            refunded: false,
+            confirmedAtBlock: 0
         });
     }
 
@@ -242,6 +247,7 @@ library ChallengeEdgeLib {
             revert EdgeNotPending(ChallengeEdgeLib.id(edge), edge.status);
         }
         edge.status = EdgeStatus.Confirmed;
+        edge.confirmedAtBlock = block.number;
     }
 
     /// @notice Is the edge a layer zero edge.

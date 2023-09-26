@@ -37,6 +37,7 @@ contract AssertinPoolTest is Test {
     uint256 constant MINI_STAKE_VALUE = 2;
     uint64 constant CONFIRM_PERIOD_BLOCKS = 100;
     uint256 constant MAX_DATA_SIZE = 117964;
+    uint64 constant CHALLENGE_GRACE_PERIOD_BLOCKS = 10;
 
     bytes32 constant FIRST_ASSERTION_BLOCKHASH = keccak256("FIRST_ASSERTION_BLOCKHASH");
     bytes32 constant FIRST_ASSERTION_SENDROOT = keccak256("FIRST_ASSERTION_SENDROOT");
@@ -48,12 +49,11 @@ contract AssertinPoolTest is Test {
 
     GlobalState emptyGlobalState;
     ExecutionState emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
-    bytes32 genesisHash =
-        RollupLib.assertionHash({
-            parentAssertionHash: bytes32(0),
-            afterState: emptyExecutionState,
-            inboxAcc: bytes32(0)
-        });
+    bytes32 genesisHash = RollupLib.assertionHash({
+        parentAssertionHash: bytes32(0),
+        afterState: emptyExecutionState,
+        inboxAcc: bytes32(0)
+    });
     ExecutionState firstState;
 
     AssertionStakingPool pool;
@@ -78,11 +78,7 @@ contract AssertinPoolTest is Test {
     uint64 inboxcount;
 
     event RollupCreated(
-        address indexed rollupAddress,
-        address inboxAddress,
-        address adminProxy,
-        address sequencerInbox,
-        address bridge
+        address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address bridge
     );
 
     function setUp() public {
@@ -110,10 +106,8 @@ contract AssertinPoolTest is Test {
             rollupUserLogicImpl,
             address(0)
         );
-        ExecutionState memory emptyState = ExecutionState(
-            GlobalState([bytes32(0), bytes32(0)], [uint64(0), uint64(0)]),
-            MachineStatus.FINISHED
-        );
+        ExecutionState memory emptyState =
+            ExecutionState(GlobalState([bytes32(0), bytes32(0)], [uint64(0), uint64(0)]), MachineStatus.FINISHED);
         token = new TestWETH9("Test", "TEST");
         IWETH9(address(token)).deposit{value: 21 ether}();
 
@@ -139,14 +133,13 @@ contract AssertinPoolTest is Test {
             layerZeroBigStepEdgeHeight: 2 ** 5,
             layerZeroSmallStepEdgeHeight: 2 ** 5,
             numBigStepLevel: 2,
-            anyTrustFastConfirmer: address(300001)
+            anyTrustFastConfirmer: address(300001),
+            challengeGracePeriodBlocks: CHALLENGE_GRACE_PERIOD_BLOCKS
         });
 
         vm.expectEmit(false, false, false, false);
         emit RollupCreated(address(0), address(0), address(0), address(0), address(0));
-        rollupAddr = rollupCreator.createRollup(
-            config, address(0), new address[](0), false, MAX_DATA_SIZE
-        );
+        rollupAddr = rollupCreator.createRollup(config, address(0), new address[](0), false, MAX_DATA_SIZE);
 
         userRollup = RollupUserLogic(address(rollupAddr));
         adminRollup = RollupAdminLogic(address(rollupAddr));
@@ -195,9 +188,8 @@ contract AssertinPoolTest is Test {
             afterState: afterState
         });
         aspcreator = new AssertionStakingPoolCreator();
-        pool = AssertionStakingPool(
-            aspcreator.createPoolForAssertion(address(rollupAddr), assertionInputs, assertionHash)
-        );
+        pool =
+            AssertionStakingPool(aspcreator.createPoolForAssertion(address(rollupAddr), assertionInputs, assertionHash));
 
         token.transfer(staker1, staker1Bal);
         token.transfer(staker2, staker2Bal);
@@ -268,11 +260,7 @@ contract AssertinPoolTest is Test {
         vm.prank(staker2);
         pool.depositIntoPool(staker2Bal);
 
-        assertEq(
-            token.balanceOf(address(pool)),
-            staker1Bal + staker2Bal,
-            "tokens depositted into pool"
-        );
+        assertEq(token.balanceOf(address(pool)), staker1Bal + staker2Bal, "tokens depositted into pool");
         assertEq(token.balanceOf(address(staker1)), uint256(0), "tokens depositted into pool");
         assertEq(token.balanceOf(address(staker2)), uint256(0), "tokens depositted into pool");
 

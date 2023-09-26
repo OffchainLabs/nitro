@@ -5,6 +5,7 @@ package solimpl_test
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -31,17 +32,21 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 	backend := cfg.Backend
+	fmt.Println("a")
 
 	genesisHash, err := chain.GenesisAssertionHash(ctx)
 	require.NoError(t, err)
 	genesisInfo, err := chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
+	fmt.Println("b")
 
 	t.Run("OK", func(t *testing.T) {
 		latestBlockHash := common.Hash{}
+		fmt.Println("c")
 		for i := uint64(0); i < 100; i++ {
 			latestBlockHash = backend.Commit()
 		}
+		fmt.Println("d")
 
 		postState := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
@@ -52,12 +57,16 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
+		fmt.Println("e")
 		assertion, err := chain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
 		require.NoError(t, err)
+
+		fmt.Println("f")
 
 		existingAssertion, err := chain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
 		require.NoError(t, err)
 		require.Equal(t, assertion.Id(), existingAssertion.Id())
+		fmt.Println("g")
 	})
 	t.Run("can create fork", func(t *testing.T) {
 		assertionChain := cfg.Chains[1]
@@ -325,6 +334,11 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 	t.Run("level zero block edge confirmed allows assertion confirmation", func(t *testing.T) {
 		err = honestEdge.ConfirmByTimer(ctx, make([]protocol.EdgeId, 0))
 		require.NoError(t, err)
+
+		// Adjust beyond the grace period.
+		for i := 0; i < 10; i++ {
+			createdData.Backend.Commit()
+		}
 
 		err = chain.ConfirmAssertionByChallengeWinner(
 			ctx, createdData.Leaf1.Id(), honestEdge.Id(),

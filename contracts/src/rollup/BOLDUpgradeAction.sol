@@ -181,6 +181,7 @@ contract BOLDUpgradeAction {
     uint256 public immutable CHAIN_ID;
     address public immutable ANY_TRUST_FAST_CONFIRMER;
     bool public immutable DISABLE_VALIDATOR_WHITELIST;
+    uint64 public immutable CHALLENGE_GRACE_PERIOD_BLOCKS;
 
     IOneStepProofEntry public immutable OSP;
     // proxy admins of the contracts to be upgraded
@@ -217,6 +218,7 @@ contract BOLDUpgradeAction {
         uint256 bigStepLeafSize;
         uint256 smallStepLeafSize;
         uint256 numBigStepLevel;
+        uint64 challengeGracePeriodBlocks;
     }
 
     // Unfortunately these are not discoverable on-chain, so we need to supply them
@@ -292,6 +294,7 @@ contract BOLDUpgradeAction {
         BIGSTEP_LEAF_SIZE = settings.bigStepLeafSize;
         SMALLSTEP_LEAF_SIZE = settings.smallStepLeafSize;
         NUM_BIGSTEP_LEVEL = settings.numBigStepLevel;
+        CHALLENGE_GRACE_PERIOD_BLOCKS = settings.challengeGracePeriodBlocks;
     }
 
     /// @dev    Refund the existing stakers, pause and upgrade the current rollup to
@@ -352,7 +355,8 @@ contract BOLDUpgradeAction {
             genesisExecutionState: genesisExecState,
             genesisInboxCount: inboxMaxCount,
             anyTrustFastConfirmer: ANY_TRUST_FAST_CONFIRMER,
-            numBigStepLevel: NUM_BIGSTEP_LEVEL
+            numBigStepLevel: NUM_BIGSTEP_LEVEL,
+            challengeGracePeriodBlocks: CHALLENGE_GRACE_PERIOD_BLOCKS
         });
     }
 

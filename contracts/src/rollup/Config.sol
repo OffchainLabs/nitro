@@ -34,6 +34,7 @@ struct Config {
     uint256 genesisInboxCount;
     address anyTrustFastConfirmer;
     uint256 numBigStepLevel;
+    uint64 challengeGracePeriodBlocks;
 }
 
 struct ContractDependencies {

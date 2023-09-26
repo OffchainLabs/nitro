@@ -77,6 +77,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // When there is a challenge, we trust the challenge manager to determine the winner
     IEdgeChallengeManager public challengeManager;
 
+    // If an assertion was challenged we leave an additional period after it could have completed
+    // so that the result of a challenge is observable widely before it causes an assertion to be confirmed
+    uint64 public challengeGracePeriodBlocks;
+
     IInbox public inbox;
     IBridge public bridge;
     IOutbox public outbox;
