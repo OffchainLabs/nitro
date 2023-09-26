@@ -26,19 +26,18 @@ func TestContractTxDeploy(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeconfig := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, false)
+	defer testNode.L2Node.StopAndWait()
 
 	from := common.HexToAddress("0x123412341234")
-	TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), l2info, client, ctx)
+	TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
 
 	for stateNonce := uint64(0); stateNonce < 2; stateNonce++ {
-		pos, err := node.TxStreamer.GetMessageCount()
+		pos, err := testNode.L2Node.TxStreamer.GetMessageCount()
 		Require(t, err)
 		var delayedMessagesRead uint64
 		if pos > 0 {
-			lastMessage, err := node.TxStreamer.GetMessage(pos - 1)
+			lastMessage, err := testNode.L2Node.TxStreamer.GetMessage(pos - 1)
 			Require(t, err)
 			delayedMessagesRead = lastMessage.DelayedMessagesRead
 		}
@@ -70,7 +69,7 @@ func TestContractTxDeploy(t *testing.T) {
 		l2Msg = append(l2Msg, math.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = node.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
+		err = testNode.L2Node.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
 			{
 				Message: &arbostypes.L1IncomingMessage{
 					Header: &arbostypes.L1IncomingMessageHeader{
@@ -91,7 +90,7 @@ func TestContractTxDeploy(t *testing.T) {
 
 		txHash := types.NewTx(contractTx).Hash()
 		t.Log("made contract tx", contractTx, "with hash", txHash)
-		receipt, err := WaitForTx(ctx, client, txHash, time.Second*10)
+		receipt, err := WaitForTx(ctx, testNode.L2Client, txHash, time.Second*10)
 		Require(t, err)
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			Fatal(t, "Receipt has non-successful status", receipt.Status)
@@ -104,7 +103,7 @@ func TestContractTxDeploy(t *testing.T) {
 		t.Log("deployed contract", receipt.ContractAddress, "from address", from, "with nonce", stateNonce)
 		stateNonce++
 
-		code, err := client.CodeAt(ctx, receipt.ContractAddress, nil)
+		code, err := testNode.L2Client.CodeAt(ctx, receipt.ContractAddress, nil)
 		Require(t, err)
 		if !bytes.Equal(code, []byte{0xFE}) {
 			Fatal(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))

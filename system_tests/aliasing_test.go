@@ -22,20 +22,20 @@ func TestAliasing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1stack)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNode.L1Stack)
+	defer testNode.L2Node.StopAndWait()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	user := l1info.GetDefaultTransactOpts("User", ctx)
-	TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), l2info, l2client, ctx)
+	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	user := testNode.L1Info.GetDefaultTransactOpts("User", ctx)
+	TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
 
-	simpleAddr, simple := deploySimple(t, ctx, auth, l2client)
+	simpleAddr, simple := testNode.DeploySimple(t, auth)
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	Require(t, err)
 
 	// Test direct calls
-	arbsys, err := precompilesgen.NewArbSys(types.ArbSysAddress, l2client)
+	arbsys, err := precompilesgen.NewArbSys(types.ArbSysAddress, testNode.L2Client)
 	Require(t, err)
 	top, err := arbsys.IsTopLevelCall(nil)
 	Require(t, err)
@@ -56,14 +56,14 @@ func TestAliasing(t *testing.T) {
 		// check via L2
 		tx, err := simple.CheckCalls(&auth, top, direct, static, delegate, callcode, call)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 		Require(t, err)
 
 		// check signed txes via L1
 		data, err := simpleContract.Pack("checkCalls", top, direct, static, delegate, callcode, call)
 		Require(t, err)
-		tx = l2info.PrepareTxTo("Owner", &simpleAddr, 500000, big.NewInt(0), data)
-		SendSignedTxViaL1(t, ctx, l1info, l1client, l2client, tx)
+		tx = testNode.L2Info.PrepareTxTo("Owner", &simpleAddr, 500000, big.NewInt(0), data)
+		SendSignedTxViaL1(t, ctx, testNode.L1Info, testNode.L1Client, testNode.L2Client, tx)
 	}
 
 	testUnsigned := func(top, direct, static, delegate, callcode, call bool) {
@@ -72,8 +72,8 @@ func TestAliasing(t *testing.T) {
 		// check unsigned txes via L1
 		data, err := simpleContract.Pack("checkCalls", top, direct, static, delegate, callcode, call)
 		Require(t, err)
-		tx := l2info.PrepareTxTo("Owner", &simpleAddr, 500000, big.NewInt(0), data)
-		SendUnsignedTxViaL1(t, ctx, l1info, l1client, l2client, tx)
+		tx := testNode.L2Info.PrepareTxTo("Owner", &simpleAddr, 500000, big.NewInt(0), data)
+		SendUnsignedTxViaL1(t, ctx, testNode.L1Info, testNode.L1Client, testNode.L2Client, tx)
 	}
 
 	testL2Signed(true, true, false, false, false, false)

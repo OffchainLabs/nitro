@@ -32,25 +32,22 @@ import (
 )
 
 func retryableSetup(t *testing.T) (
-	*BlockchainTestInfo,
-	*BlockchainTestInfo,
-	*ethclient.Client,
-	*ethclient.Client,
+	*NodeBuilder,
 	*bridgegen.Inbox,
 	func(*types.Receipt) *types.Transaction,
 	context.Context,
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, l2node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
 
-	l2info.GenerateAccount("User2")
-	l2info.GenerateAccount("Beneficiary")
-	l2info.GenerateAccount("Burn")
+	testNode.L2Info.GenerateAccount("User2")
+	testNode.L2Info.GenerateAccount("Beneficiary")
+	testNode.L2Info.GenerateAccount("Burn")
 
-	delayedInbox, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	delayedInbox, err := bridgegen.NewInbox(testNode.L1Info.GetAddress("Inbox"), testNode.L1Client)
 	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(l1client, l1info.GetAddress("Bridge"), 0)
+	delayedBridge, err := arbnode.NewDelayedBridge(testNode.L1Client, testNode.L1Info.GetAddress("Bridge"), 0)
 	Require(t, err)
 
 	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
@@ -90,15 +87,15 @@ func retryableSetup(t *testing.T) (
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	TransferBalance(t, "Faucet", "Burn", discard, l2info, l2client, ctx)
+	TransferBalance(t, "Faucet", "Burn", discard, testNode.L2Info, testNode.L2Client, ctx)
 
 	teardown := func() {
 
 		// check the integrity of the RPC
-		blockNum, err := l2client.BlockNumber(ctx)
+		blockNum, err := testNode.L2Client.BlockNumber(ctx)
 		Require(t, err, "failed to get L2 block number")
 		for number := uint64(0); number < blockNum; number++ {
-			block, err := l2client.BlockByNumber(ctx, arbmath.UintToBig(number))
+			block, err := testNode.L2Client.BlockByNumber(ctx, arbmath.UintToBig(number))
 			Require(t, err, "failed to get L2 block", number, "of", blockNum)
 			if block.Number().Uint64() != number {
 				Fatal(t, "block number mismatch", number, block.Number().Uint64())
@@ -107,19 +104,20 @@ func retryableSetup(t *testing.T) (
 
 		cancel()
 
-		l2node.StopAndWait()
-		requireClose(t, l1stack)
+		testNode.L2Node.StopAndWait()
+		requireClose(t, testNode.L1Stack)
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown
+	return testNode, delayedInbox, lookupL2Tx, ctx, teardown
 }
 
 func TestRetryableNoExist(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, node, l2client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
 
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), testNode.L2Client)
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
 	if err.Error() != "execution reverted: error NoTicketWithID()" {
@@ -129,20 +127,20 @@ func TestRetryableNoExist(t *testing.T) {
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	user2Address := l2info.GetAddress("User2")
-	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	user2Address := testNode.L2Info.GetAddress("User2")
+	beneficiaryAddress := testNode.L2Info.GetAddress("Beneficiary")
 
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	callValue := big.NewInt(1e6)
 
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, testNode.L2Client)
 	Require(t, err, "failed to deploy NodeInterface")
 
 	// estimate the gas needed to auto redeem the retryable
-	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL2 := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL2.NoSend = true
 	usertxoptsL2.GasMargin = 0
 	tx, err := nodeInterface.EstimateRetryableTicket(
@@ -160,7 +158,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	colors.PrintBlue("estimate: ", estimate)
 
 	// submit & auto redeem the retryable using the gas estimate
-	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1 := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL1.Value = deposit
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxoptsL1,
@@ -175,21 +173,21 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	Require(t, err)
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
 
-	receipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, lookupL2Tx(l1Receipt))
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
 	}
 
-	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	l2balance, err := testNode.L2Client.BalanceAt(ctx, testNode.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
 	if !arbmath.BigEquals(l2balance, big.NewInt(1e6)) {
@@ -199,18 +197,18 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	ownerTxOpts := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	usertxopts := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
-	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
+	simpleAddr, simple := testNode.DeploySimple(t, ownerTxOpts)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
-	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	beneficiaryAddress := testNode.L2Info.GetAddress("Beneficiary")
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		simpleAddr,
@@ -225,15 +223,15 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	Require(t, err)
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
 
-	receipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, lookupL2Tx(l1Receipt))
 	Require(t, err)
 	if len(receipt.Logs) != 2 {
 		Fatal(t, len(receipt.Logs))
@@ -242,23 +240,23 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 
 	// get receipt for the auto redeem, make sure it failed
-	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	receipt, err = WaitForTx(ctx, testNode.L2Client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
 		Fatal(t, receipt.GasUsed)
 	}
 
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), testNode.L2Client)
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
 	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
+	receipt, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry
-	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	receipt, err = WaitForTx(ctx, testNode.L2Client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, receipt.Status)
@@ -288,32 +286,32 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 func TestSubmissionGasCosts(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
-	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, l2client, l2info)
-	elevateL2Basefee(t, ctx, l2client, l2info)
+	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, testNode.L2Client, testNode.L2Info)
+	elevateL2Basefee(t, ctx, testNode.L2Client, testNode.L2Info)
 
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxopts := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
-	l2info.GenerateAccount("Refund")
-	l2info.GenerateAccount("Receive")
-	faucetAddress := util.RemapL1Address(l1info.GetAddress("Faucet"))
-	beneficiaryAddress := l2info.GetAddress("Beneficiary")
-	feeRefundAddress := l2info.GetAddress("Refund")
-	receiveAddress := l2info.GetAddress("Receive")
+	testNode.L2Info.GenerateAccount("Refund")
+	testNode.L2Info.GenerateAccount("Receive")
+	faucetAddress := util.RemapL1Address(testNode.L1Info.GetAddress("Faucet"))
+	beneficiaryAddress := testNode.L2Info.GetAddress("Beneficiary")
+	feeRefundAddress := testNode.L2Info.GetAddress("Refund")
+	receiveAddress := testNode.L2Info.GetAddress("Receive")
 
 	colors.PrintBlue("Faucet      ", faucetAddress)
 	colors.PrintBlue("Receive     ", receiveAddress)
 	colors.PrintBlue("Beneficiary ", beneficiaryAddress)
 	colors.PrintBlue("Fee Refund  ", feeRefundAddress)
 
-	fundsBeforeSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
+	fundsBeforeSubmit, err := testNode.L2Client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 
-	infraBalanceBefore, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
-	networkBalanceBefore, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	networkBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
 
 	usefulGas := params.TxGas
@@ -337,28 +335,28 @@ func TestSubmissionGasCosts(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	Require(t, err)
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
-	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, submissionTxOuter)
+	submissionReceipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, submissionTxOuter)
 	Require(t, err)
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, "Unexpected number of logs:", len(submissionReceipt.Logs))
 	}
 	firstRetryTxId := submissionReceipt.Logs[1].Topics[2]
 	// get receipt for the auto redeem
-	redeemReceipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	redeemReceipt, err := WaitForTx(ctx, testNode.L2Client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if redeemReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "first retry tx failed")
 	}
-	redeemBlock, err := l2client.HeaderByNumber(ctx, redeemReceipt.BlockNumber)
+	redeemBlock, err := testNode.L2Client.HeaderByNumber(ctx, redeemReceipt.BlockNumber)
 	Require(t, err)
 
 	l2BaseFee := redeemBlock.BaseFee
@@ -366,18 +364,18 @@ func TestSubmissionGasCosts(t *testing.T) {
 	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
 	excessWei.Add(excessWei, arbmath.BigMul(excessGasPrice, retryableGas))
 
-	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
+	fundsAfterSubmit, err := testNode.L2Client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
-	beneficiaryFunds, err := l2client.BalanceAt(ctx, beneficiaryAddress, nil)
+	beneficiaryFunds, err := testNode.L2Client.BalanceAt(ctx, beneficiaryAddress, nil)
 	Require(t, err)
-	refundFunds, err := l2client.BalanceAt(ctx, feeRefundAddress, nil)
+	refundFunds, err := testNode.L2Client.BalanceAt(ctx, feeRefundAddress, nil)
 	Require(t, err)
-	receiveFunds, err := l2client.BalanceAt(ctx, receiveAddress, nil)
+	receiveFunds, err := testNode.L2Client.BalanceAt(ctx, receiveAddress, nil)
 	Require(t, err)
 
-	infraBalanceAfter, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraBalanceAfter, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
-	networkBalanceAfter, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	networkBalanceAfter, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
 
 	colors.PrintBlue("CallGas    ", retryableGas)
@@ -424,7 +422,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
 	}
 
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), testNode.L2Client)
 	Require(t, err)
 	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
 	Require(t, err)
@@ -460,17 +458,17 @@ func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient
 
 func TestDepositETH(t *testing.T) {
 	t.Parallel()
-	_, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	faucetAddr := l1info.GetAddress("Faucet")
+	faucetAddr := testNode.L1Info.GetAddress("Faucet")
 
-	oldBalance, err := l2client.BalanceAt(ctx, faucetAddr, nil)
+	oldBalance, err := testNode.L2Client.BalanceAt(ctx, faucetAddr, nil)
 	if err != nil {
 		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
 	}
 
-	txOpts := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	txOpts := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	txOpts.Value = big.NewInt(13)
 
 	l1tx, err := delayedInbox.DepositEth0(&txOpts)
@@ -478,20 +476,20 @@ func TestDepositETH(t *testing.T) {
 		t.Fatalf("DepositEth0() unexected error: %v", err)
 	}
 
-	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded() unexpected error: %v", err)
 	}
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("Got transaction status: %v, want: %v", l1Receipt.Status, types.ReceiptStatusSuccessful)
 	}
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
 
-	l2Receipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
+	l2Receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, lookupL2Tx(l1Receipt))
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded unexpected error: %v", err)
 	}
-	newBalance, err := l2client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
+	newBalance, err := testNode.L2Client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
 	if err != nil {
 		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
 	}
@@ -501,13 +499,13 @@ func TestDepositETH(t *testing.T) {
 }
 
 func TestArbitrumContractTx(t *testing.T) {
-	l2Info, l1Info, l2Client, l1Client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
-	faucetL2Addr := util.RemapL1Address(l1Info.GetAddress("Faucet"))
-	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), l2Info, l2Client, ctx)
+	faucetL2Addr := util.RemapL1Address(testNode.L1Info.GetAddress("Faucet"))
+	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
 
-	l2TxOpts := l2Info.GetDefaultTransactOpts("Faucet", ctx)
-	l2ContractAddr, _ := deploySimple(t, ctx, l2TxOpts, l2Client)
+	l2TxOpts := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	l2ContractAddr, _ := testNode.DeploySimple(t, l2TxOpts)
 	l2ContractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	if err != nil {
 		t.Fatalf("Error parsing contract ABI: %v", err)
@@ -517,15 +515,15 @@ func TestArbitrumContractTx(t *testing.T) {
 		t.Fatalf("Error packing method's call data: %v", err)
 	}
 	unsignedTx := types.NewTx(&types.ArbitrumContractTx{
-		ChainId:   l2Info.Signer.ChainID(),
+		ChainId:   testNode.L2Info.Signer.ChainID(),
 		From:      faucetL2Addr,
-		GasFeeCap: l2Info.GasPrice.Mul(l2Info.GasPrice, big.NewInt(2)),
+		GasFeeCap: testNode.L2Info.GasPrice.Mul(testNode.L2Info.GasPrice, big.NewInt(2)),
 		Gas:       1e6,
 		To:        &l2ContractAddr,
 		Value:     common.Big0,
 		Data:      data,
 	})
-	txOpts := l1Info.GetDefaultTransactOpts("Faucet", ctx)
+	txOpts := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	l1tx, err := delayedInbox.SendContractTransaction(
 		&txOpts,
 		arbmath.UintToBig(unsignedTx.Gas()),
@@ -537,15 +535,15 @@ func TestArbitrumContractTx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error sending unsigned transaction: %v", err)
 	}
-	receipt, err := EnsureTxSucceeded(ctx, l1Client, l1tx)
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", l1tx.Hash(), err)
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
-	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
-	receipt, err = EnsureTxSucceeded(ctx, l2Client, lookupL2Tx(receipt))
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
+	receipt, err = EnsureTxSucceeded(ctx, testNode.L2Client, lookupL2Tx(receipt))
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
@@ -554,17 +552,17 @@ func TestArbitrumContractTx(t *testing.T) {
 func TestL1FundedUnsignedTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	l2Info, node, l2Client, l1Info, _, l1Client, l1Stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1Stack)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNode.L1Stack)
+	defer testNode.L2Node.StopAndWait()
 
-	faucetL2Addr := util.RemapL1Address(l1Info.GetAddress("Faucet"))
+	faucetL2Addr := util.RemapL1Address(testNode.L1Info.GetAddress("Faucet"))
 	// Transfer balance to Faucet's corresponding L2 address, so that there is
 	// enough balance on its' account for executing L2 transaction.
-	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), l2Info, l2Client, ctx)
+	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
 
-	l2TxOpts := l2Info.GetDefaultTransactOpts("Faucet", ctx)
-	contractAddr, _ := deploySimple(t, ctx, l2TxOpts, l2Client)
+	l2TxOpts := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	contractAddr, _ := testNode.DeploySimple(t, l2TxOpts)
 	contractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	if err != nil {
 		t.Fatalf("Error parsing contract ABI: %v", err)
@@ -573,27 +571,27 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error packing method's call data: %v", err)
 	}
-	nonce, err := l2Client.NonceAt(ctx, faucetL2Addr, nil)
+	nonce, err := testNode.L2Client.NonceAt(ctx, faucetL2Addr, nil)
 	if err != nil {
 		t.Fatalf("Error getting nonce at address: %v, error: %v", faucetL2Addr, err)
 	}
 	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
-		ChainId:   l2Info.Signer.ChainID(),
+		ChainId:   testNode.L2Info.Signer.ChainID(),
 		From:      faucetL2Addr,
 		Nonce:     nonce,
-		GasFeeCap: l2Info.GasPrice,
+		GasFeeCap: testNode.L2Info.GasPrice,
 		Gas:       1e6,
 		To:        &contractAddr,
 		Value:     common.Big0,
 		Data:      data,
 	})
 
-	delayedInbox, err := bridgegen.NewInbox(l1Info.GetAddress("Inbox"), l1Client)
+	delayedInbox, err := bridgegen.NewInbox(testNode.L1Info.GetAddress("Inbox"), testNode.L1Client)
 	if err != nil {
 		t.Fatalf("Error getting Go binding of L1 Inbox contract: %v", err)
 	}
 
-	txOpts := l1Info.GetDefaultTransactOpts("Faucet", ctx)
+	txOpts := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	l1tx, err := delayedInbox.SendUnsignedTransaction(
 		&txOpts,
 		arbmath.UintToBig(unsignedTx.Gas()),
@@ -606,15 +604,15 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error sending unsigned transaction: %v", err)
 	}
-	receipt, err := EnsureTxSucceeded(ctx, l1Client, l1tx)
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", l1tx.Hash(), err)
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
-	waitForL1DelayBlocks(t, ctx, l1Client, l1Info)
-	receipt, err = EnsureTxSucceeded(ctx, l2Client, unsignedTx)
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
+	receipt, err = EnsureTxSucceeded(ctx, testNode.L2Client, unsignedTx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
@@ -624,28 +622,28 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	l2info, l1info, l2client, l1client, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
-	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, l2client, l2info)
+	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, testNode.L2Client, testNode.L2Info)
 
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
-	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
+	ownerTxOpts := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	simpleAddr, simple := testNode.DeploySimple(t, ownerTxOpts)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
-	elevateL2Basefee(t, ctx, l2client, l2info)
+	elevateL2Basefee(t, ctx, testNode.L2Client, testNode.L2Info)
 
-	infraBalanceBefore, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
-	networkBalanceBefore, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	networkBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
 
-	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	beneficiaryAddress := testNode.L2Info.GetAddress("Beneficiary")
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	callValue := common.Big0
-	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1 := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL1.Value = deposit
-	baseFee := GetBaseFee(t, l2client, ctx)
+	baseFee := GetBaseFee(t, testNode.L2Client, ctx)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxoptsL1,
 		simpleAddr,
@@ -659,16 +657,16 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
 	Require(t, err)
-	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1Receipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1tx)
 	Require(t, err)
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, testNode.L1Client, testNode.L1Info)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
-	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, submissionTxOuter)
+	submissionReceipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, submissionTxOuter)
 	Require(t, err)
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, len(submissionReceipt.Logs))
@@ -676,36 +674,36 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	ticketId := submissionReceipt.Logs[0].Topics[1]
 	firstRetryTxId := submissionReceipt.Logs[1].Topics[2]
 	// get receipt for the auto redeem, make sure it failed
-	autoRedeemReceipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	autoRedeemReceipt, err := WaitForTx(ctx, testNode.L2Client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
 		Fatal(t, "first retry tx shouldn't have succeeded")
 	}
 
-	infraBalanceAfterSubmission, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraBalanceAfterSubmission, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
-	networkBalanceAfterSubmission, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	networkBalanceAfterSubmission, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
 
-	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	usertxoptsL2 := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), testNode.L2Client)
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(&usertxoptsL2, ticketId)
 	Require(t, err)
-	redeemReceipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	redeemReceipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 	retryTxId := redeemReceipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry
-	retryReceipt, err := WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	retryReceipt, err := WaitForTx(ctx, testNode.L2Client, retryTxId, time.Second*1)
 	Require(t, err)
 	if retryReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "retry failed")
 	}
 
-	infraBalanceAfterRedeem, err := l2client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraBalanceAfterRedeem, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
-	networkBalanceAfterRedeem, err := l2client.BalanceAt(ctx, networkFeeAddr, nil)
+	networkBalanceAfterRedeem, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
 
 	// verify that the increment happened, so we know the retry succeeded
@@ -734,11 +732,11 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	infraRedeemFee := arbmath.BigSub(infraBalanceAfterRedeem, infraBalanceAfterSubmission)
 	networkRedeemFee := arbmath.BigSub(networkBalanceAfterRedeem, networkBalanceAfterSubmission)
 
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), testNode.L2Client)
 	Require(t, err)
 	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	submissionBaseFee := GetBaseFeeAt(t, l2client, ctx, submissionReceipt.BlockNumber)
+	submissionBaseFee := GetBaseFeeAt(t, testNode.L2Client, ctx, submissionReceipt.BlockNumber)
 	submissionTx, ok := submissionTxOuter.GetInner().(*types.ArbitrumSubmitRetryableTx)
 	if !ok {
 		Fatal(t, "inner tx isn't ArbitrumSubmitRetryableTx")
@@ -752,13 +750,13 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		retryableSubmissionFee,
 	)
 
-	retryTxOuter, _, err := l2client.TransactionByHash(ctx, retryTxId)
+	retryTxOuter, _, err := testNode.L2Client.TransactionByHash(ctx, retryTxId)
 	Require(t, err)
 	retryTx, ok := retryTxOuter.GetInner().(*types.ArbitrumRetryTx)
 	if !ok {
 		Fatal(t, "inner tx isn't ArbitrumRetryTx")
 	}
-	redeemBaseFee := GetBaseFeeAt(t, l2client, ctx, redeemReceipt.BlockNumber)
+	redeemBaseFee := GetBaseFeeAt(t, testNode.L2Client, ctx, redeemReceipt.BlockNumber)
 
 	t.Log("redeem base fee:", redeemBaseFee)
 	// redeem & retry expected fees

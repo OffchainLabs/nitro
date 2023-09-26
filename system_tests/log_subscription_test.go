@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -19,21 +20,21 @@ func TestLogSubscription(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, testNode.L2Client)
 	Require(t, err)
 
 	logChan := make(chan types.Log, 128)
-	subscription, err := client.SubscribeFilterLogs(ctx, ethereum.FilterQuery{}, logChan)
+	subscription, err := testNode.L2Client.SubscribeFilterLogs(ctx, ethereum.FilterQuery{}, logChan)
 	Require(t, err)
 	defer subscription.Unsubscribe()
 
 	tx, err := arbSys.WithdrawEth(&auth, common.Address{})
 	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
 	if len(receipt.Logs) != 1 {
@@ -52,6 +53,6 @@ func TestLogSubscription(t *testing.T) {
 	if !reflect.DeepEqual(receiptLog, subscriptionLog) {
 		Fatal(t, "Receipt log", receiptLog, "is different than subscription log", subscriptionLog)
 	}
-	_, err = client.BlockByHash(ctx, subscriptionLog.BlockHash)
+	_, err = testNode.L2Client.BlockByHash(ctx, subscriptionLog.BlockHash)
 	Require(t, err)
 }

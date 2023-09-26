@@ -25,45 +25,45 @@ func TestInfraFee(t *testing.T) {
 	defer cancel()
 	nodeconfig := arbnode.ConfigDefaultL2Test()
 
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, true)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeconfig).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
-	l2info.GenerateAccount("User2")
+	testNode.L2Info.GenerateAccount("User2")
 
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	ownerTxOpts := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
-	ownerCallOpts := l2info.GetDefaultCallOpts("Owner", ctx)
+	ownerCallOpts := testNode.L2Info.GetDefaultCallOpts("Owner", ctx)
 
-	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), client)
+	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), testNode.L2Client)
 	Require(t, err)
-	arbownerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("6b"), client)
+	arbownerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("6b"), testNode.L2Client)
 	Require(t, err)
 	networkFeeAddr, err := arbownerPublic.GetNetworkFeeAccount(ownerCallOpts)
 	Require(t, err)
 	infraFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{3, 2, 6}))
 	tx, err := arbowner.SetInfraFeeAccount(&ownerTxOpts, infraFeeAddr)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
-	_, simple := deploySimple(t, ctx, ownerTxOpts, client)
+	_, simple := testNode.DeploySimple(t, ownerTxOpts)
 
-	netFeeBalanceBefore, err := client.BalanceAt(ctx, networkFeeAddr, nil)
+	netFeeBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
-	infraFeeBalanceBefore, err := client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraFeeBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
 
 	tx, err = simple.Increment(&ownerTxOpts)
 	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 	l2GasUsed := receipt.GasUsed - receipt.GasUsedForL1
 	expectedFunds := arbmath.BigMulByUint(arbmath.UintToBig(l2pricing.InitialBaseFeeWei), l2GasUsed)
 	expectedBalanceAfter := arbmath.BigAdd(infraFeeBalanceBefore, expectedFunds)
 
-	netFeeBalanceAfter, err := client.BalanceAt(ctx, networkFeeAddr, nil)
+	netFeeBalanceAfter, err := testNode.L2Client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
-	infraFeeBalanceAfter, err := client.BalanceAt(ctx, infraFeeAddr, nil)
+	infraFeeBalanceAfter, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
 
 	if !arbmath.BigEquals(netFeeBalanceBefore, netFeeBalanceAfter) {

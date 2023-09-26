@@ -31,18 +31,18 @@ func TestSequencerRejection(t *testing.T) {
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	feedErrChan := make(chan error, 10)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
-	defer nodeA.StopAndWait()
+	testNode1 := NewNodeBuilder(ctx).SetNodeConfig(seqNodeConfig).CreateTestNodeOnL2Only(t, true)
+	defer testNode1.L2Node.StopAndWait()
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
-	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testNode1.L2Node.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
-	defer nodeB.StopAndWait()
+	testNode2 := NewNodeBuilder(ctx).SetNodeConfig(clientNodeConfig).CreateTestNodeOnL2Only(t, false)
+	defer testNode2.L2Node.StopAndWait()
 
-	auth := l2info1.GetDefaultTransactOpts("Owner", ctx)
-	simpleAddr, _ := deploySimple(t, ctx, auth, client1)
+	auth := testNode1.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	simpleAddr, _ := testNode1.DeploySimple(t, auth)
 	simpleAbi, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 	noopId := simpleAbi.Methods["noop"].ID
@@ -51,7 +51,7 @@ func TestSequencerRejection(t *testing.T) {
 	// Generate the accounts before hand to avoid races
 	for user := 0; user < 9; user++ {
 		name := fmt.Sprintf("User%v", user)
-		l2info1.GenerateAccount(name)
+		testNode1.L2Info.GenerateAccount(name)
 	}
 
 	wg := sync.WaitGroup{}
@@ -59,24 +59,24 @@ func TestSequencerRejection(t *testing.T) {
 	for user := 0; user < 9; user++ {
 		user := user
 		name := fmt.Sprintf("User%v", user)
-		tx := l2info1.PrepareTx("Owner", name, l2info1.TransferGas, big.NewInt(params.Ether), nil)
+		tx := testNode1.L2Info.PrepareTx("Owner", name, testNode1.L2Info.TransferGas, big.NewInt(params.Ether), nil)
 
-		err := client1.SendTransaction(ctx, tx)
+		err := testNode1.L2Client.SendTransaction(ctx, tx)
 		Require(t, err)
 
-		_, err = EnsureTxSucceeded(ctx, client1, tx)
+		_, err = EnsureTxSucceeded(ctx, testNode1.L2Client, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, client2, tx)
+		_, err = EnsureTxSucceeded(ctx, testNode2.L2Client, tx)
 		Require(t, err)
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			info := l2info1.GetInfoWithPrivKey(name)
+			info := testNode1.L2Info.GetInfoWithPrivKey(name)
 			txData := &types.DynamicFeeTx{
 				To:        &simpleAddr,
-				Gas:       l2info1.TransferGas + 10000,
-				GasFeeCap: arbmath.BigMulByUint(l2info1.GasPrice, 100),
+				Gas:       testNode1.L2Info.TransferGas + 10000,
+				GasFeeCap: arbmath.BigMulByUint(testNode1.L2Info.GasPrice, 100),
 				Value:     common.Big0,
 			}
 			for atomic.LoadInt32(&stopBackground) == 0 {
@@ -92,8 +92,8 @@ func TestSequencerRejection(t *testing.T) {
 					txData.Nonce = 1 << 32
 					expectedErr = "nonce too high"
 				}
-				tx = l2info1.SignTxAs(name, txData)
-				err = client1.SendTransaction(ctx, tx)
+				tx = testNode1.L2Info.SignTxAs(name, txData)
+				err = testNode1.L2Client.SendTransaction(ctx, tx)
 				if err != nil && (expectedErr == "" || !strings.Contains(err.Error(), expectedErr)) {
 					Require(t, err, "failed to send tx for user", user)
 				}
@@ -102,7 +102,7 @@ func TestSequencerRejection(t *testing.T) {
 	}
 
 	for i := 100; i >= 0; i-- {
-		block, err := client1.BlockNumber(ctx)
+		block, err := testNode1.L2Client.BlockNumber(ctx)
 		Require(t, err)
 		if block >= 200 {
 			break
@@ -120,11 +120,11 @@ func TestSequencerRejection(t *testing.T) {
 	atomic.StoreInt32(&stopBackground, 1)
 	wg.Wait()
 
-	header1, err := client1.HeaderByNumber(ctx, nil)
+	header1, err := testNode1.L2Client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 
 	for i := 100; i >= 0; i-- {
-		header2, err := client2.HeaderByNumber(ctx, header1.Number)
+		header2, err := testNode2.L2Client.HeaderByNumber(ctx, header1.Number)
 		if err != nil {
 			select {
 			case err := <-feedErrChan:
@@ -132,8 +132,8 @@ func TestSequencerRejection(t *testing.T) {
 			case <-time.After(time.Millisecond * 100):
 			}
 			if i == 0 {
-				client2Block, _ := client2.BlockNumber(ctx)
-				Fatal(t, "client2 failed to reach client1 block ", header1.Number, ", only reached block", client2Block)
+				client2Block, _ := testNode2.L2Client.BlockNumber(ctx)
+				Fatal(t, "Client2 failed to reach client1 block ", header1.Number, ", only reached block", client2Block)
 			}
 			continue
 		}

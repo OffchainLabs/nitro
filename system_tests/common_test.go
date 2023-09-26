@@ -57,6 +57,91 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+type NodeBuilder struct {
+	// Nodebuilder configuration
+	ctx           context.Context
+	chainConfig   *params.ChainConfig
+	cacheConfig   *core.CacheConfig
+	nodeConfig    *arbnode.Config
+	l1StackConfig *node.Config
+	l2StackConfig *node.Config
+	isSequencer   bool
+
+	// L1 Nodebuilder fields
+	L1Info    info
+	L1Client  *ethclient.Client
+	L1Backend *eth.Ethereum
+	L1Stack   *node.Node
+
+	// L2 Nodebuilder fields
+	L2Info       info
+	L2Client     *ethclient.Client
+	L2Backend    *eth.Ethereum
+	L2Node       *arbnode.Node
+	L2Stack      *node.Node
+	L2ChainDB    ethdb.Database
+	L2NodeDB     ethdb.Database
+	L2Blockchain *core.BlockChain
+}
+
+func NewNodeBuilder(ctx context.Context) *NodeBuilder {
+	return &NodeBuilder{ctx: ctx}
+}
+
+func (b *NodeBuilder) SetChainConfig(c *params.ChainConfig) *NodeBuilder {
+	b.chainConfig = c
+	return b
+}
+
+func (b *NodeBuilder) SetNodeConfig(c *arbnode.Config) *NodeBuilder {
+	b.nodeConfig = c
+	return b
+}
+
+func (b *NodeBuilder) SetCacheConfig(c *core.CacheConfig) *NodeBuilder {
+	b.cacheConfig = c
+	return b
+}
+
+func (b *NodeBuilder) SetL1StackConfig(c *node.Config) *NodeBuilder {
+	b.l1StackConfig = c
+	return b
+}
+
+func (b *NodeBuilder) SetL2StackConfig(c *node.Config) *NodeBuilder {
+	b.l2StackConfig = c
+	return b
+}
+
+func (b *NodeBuilder) SetL1Info(l1Info info) *NodeBuilder {
+	b.L1Info = l1Info
+	return b
+}
+
+func (b *NodeBuilder) SetL2Info(l2Info info) *NodeBuilder {
+	b.L2Info = l2Info
+	return b
+}
+
+func (b *NodeBuilder) SetIsSequencer(v bool) *NodeBuilder {
+	b.isSequencer = v
+	return b
+}
+
+func (b *NodeBuilder) CreateTestNodeOnL1AndL2(t *testing.T) *NodeBuilder {
+	b.L2Info, b.L2Node, b.L2Client, b.L2Stack, b.L1Info, b.L1Backend, b.L1Client, b.L1Stack =
+		createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.l2StackConfig, b.cacheConfig, b.L2Info)
+	return b
+}
+
+func (b *NodeBuilder) CreateTestNodeOnL2Only(t *testing.T, takeOwnership bool) *NodeBuilder {
+	b.L2Info, b.L2Node, b.L2Client = CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, takeOwnership)
+	return b
+}
+func (b *NodeBuilder) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
+	return deploySimple(t, b.ctx, auth, b.L2Client)
+}
+
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
@@ -639,12 +724,12 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true)
-}
-
 func CreateTestL2WithConfig(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
+	t *testing.T,
+	ctx context.Context,
+	l2Info *BlockchainTestInfo,
+	nodeConfig *arbnode.Config,
+	takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
 

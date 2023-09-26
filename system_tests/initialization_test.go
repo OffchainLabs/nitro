@@ -63,14 +63,14 @@ func TestInitContract(t *testing.T) {
 		l2info.ArbInitData.Accounts = append(l2info.ArbInitData.Accounts, accountInfo)
 		expectedSums[accountAddress] = sum
 	}
-	_, node, client := CreateTestL2WithConfig(t, ctx, l2info, arbnode.ConfigDefaultL2Test(), true)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).SetL2Info(l2info).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
 	for accountAddress, sum := range expectedSums {
 		msg := ethereum.CallMsg{
 			To: &accountAddress,
 		}
-		res, err := client.CallContract(ctx, msg, big.NewInt(0))
+		res, err := testNode.L2Client.CallContract(ctx, msg, big.NewInt(0))
 		Require(t, err)
 		resBig := new(big.Int).SetBytes(res)
 		if resBig.Cmp(sum) != 0 {

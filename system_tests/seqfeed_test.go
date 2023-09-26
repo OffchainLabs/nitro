@@ -44,28 +44,28 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
-	defer nodeA.StopAndWait()
+	testNode1 := NewNodeBuilder(ctx).SetNodeConfig(seqNodeConfig).CreateTestNodeOnL2Only(t, true)
+	defer testNode1.L2Node.StopAndWait()
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
-	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testNode1.L2Node.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
-	defer nodeB.StopAndWait()
+	testNode2 := NewNodeBuilder(ctx).SetNodeConfig(clientNodeConfig).CreateTestNodeOnL2Only(t, false)
+	defer testNode2.L2Node.StopAndWait()
 
-	l2info1.GenerateAccount("User2")
+	testNode1.L2Info.GenerateAccount("User2")
 
-	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
+	tx := testNode1.L2Info.PrepareTx("Owner", "User2", testNode1.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	err := client1.SendTransaction(ctx, tx)
+	err := testNode1.L2Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx)
+	_, err = EnsureTxSucceeded(ctx, testNode1.L2Client, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, testNode2.L2Client, tx.Hash(), time.Second*5)
 	Require(t, err)
-	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	l2balance, err := testNode2.L2Client.BalanceAt(ctx, testNode1.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
@@ -79,14 +79,14 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
-	defer nodeA.StopAndWait()
+	testNode1 := NewNodeBuilder(ctx).SetNodeConfig(seqNodeConfig).CreateTestNodeOnL2Only(t, true)
+	defer testNode1.L2Node.StopAndWait()
 
-	bigChainId, err := client1.ChainID(ctx)
+	bigChainId, err := testNode1.L2Client.ChainID(ctx)
 	Require(t, err)
 
 	config := relay.ConfigDefault
-	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testNode1.L2Node.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
 	config.Node.Feed.Output = *newBroadcasterConfigTest()
 	config.Chain.ID = bigChainId.Uint64()
@@ -101,23 +101,23 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
-	defer nodeC.StopAndWait()
-	StartWatchChanErr(t, ctx, feedErrChan, nodeC)
+	testNode3 := NewNodeBuilder(ctx).SetNodeConfig(clientNodeConfig).CreateTestNodeOnL2Only(t, false)
+	defer testNode3.L2Node.StopAndWait()
+	StartWatchChanErr(t, ctx, feedErrChan, testNode3.L2Node)
 
-	l2info1.GenerateAccount("User2")
+	testNode1.L2Info.GenerateAccount("User2")
 
-	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
+	tx := testNode1.L2Info.PrepareTx("Owner", "User2", testNode1.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	err = client1.SendTransaction(ctx, tx)
+	err = testNode1.L2Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx)
+	_, err = EnsureTxSucceeded(ctx, testNode1.L2Client, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, testNode3.L2Client, tx.Hash(), time.Second*5)
 	Require(t, err)
-	l2balance, err := client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	l2balance, err := testNode3.L2Client.BalanceAt(ctx, testNode1.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)

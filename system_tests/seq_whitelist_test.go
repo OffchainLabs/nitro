@@ -18,22 +18,22 @@ func TestSequencerWhitelist(t *testing.T) {
 
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.SenderWhitelist = GetTestAddressForAccountName(t, "Owner").String() + "," + GetTestAddressForAccountName(t, "User").String()
-	l2info, l2node, client := CreateTestL2WithConfig(t, ctx, nil, config, true)
-	defer l2node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(config).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
-	l2info.GenerateAccount("User")
-	l2info.GenerateAccount("User2")
+	testNode.L2Info.GenerateAccount("User")
+	testNode.L2Info.GenerateAccount("User2")
 
 	// Owner is on the whitelist
-	TransferBalance(t, "Owner", "User", big.NewInt(params.Ether), l2info, client, ctx)
-	TransferBalance(t, "Owner", "User2", big.NewInt(params.Ether), l2info, client, ctx)
+	TransferBalance(t, "Owner", "User", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
+	TransferBalance(t, "Owner", "User2", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
 
 	// User is on the whitelist
-	TransferBalance(t, "User", "User2", big.NewInt(params.Ether/10), l2info, client, ctx)
+	TransferBalance(t, "User", "User2", big.NewInt(params.Ether/10), testNode.L2Info, testNode.L2Client, ctx)
 
 	// User2 is *not* on the whitelist, therefore this should fail
-	tx := l2info.PrepareTx("User2", "User", l2info.TransferGas, big.NewInt(params.Ether/10), nil)
-	err := client.SendTransaction(ctx, tx)
+	tx := testNode.L2Info.PrepareTx("User2", "User", testNode.L2Info.TransferGas, big.NewInt(params.Ether/10), nil)
+	err := testNode.L2Client.SendTransaction(ctx, tx)
 	if err == nil {
 		Fatal(t, "transaction from user not on whitelist accepted")
 	}

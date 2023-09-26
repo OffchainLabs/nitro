@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -26,17 +27,17 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
-	_, simple := deploySimple(t, ctx, auth, client)
+	_, simple := testNode.DeploySimple(t, auth)
 
 	tx, err := simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -51,24 +52,24 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
 	gasPrice := big.NewInt(params.GWei / 10)
 
 	// set the gas price
-	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), testNode.L2Client)
 	Require(t, err, "could not deploy ArbOwner contract")
 	tx, err := arbOwner.SetMinimumL2BaseFee(&auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
 	// connect to arbGasInfo precompile
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), testNode.L2Client)
 	Require(t, err, "could not deploy contract")
 
 	// wait for price to come to equilibrium
@@ -76,8 +77,8 @@ func TestEstimate(t *testing.T) {
 	numTriesLeft := 20
 	for !equilibrated && numTriesLeft > 0 {
 		// make an empty block to let the gas price update
-		l2info.GasPrice = new(big.Int).Mul(l2info.GasPrice, big.NewInt(2))
-		TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
+		testNode.L2Info.GasPrice = new(big.Int).Mul(testNode.L2Info.GasPrice, big.NewInt(2))
+		TransferBalance(t, "Owner", "Owner", common.Big0, testNode.L2Info, testNode.L2Client, ctx)
 
 		// check if the price has equilibrated
 		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
@@ -91,22 +92,22 @@ func TestEstimate(t *testing.T) {
 		Fatal(t, "L2 gas price did not converge", gasPrice)
 	}
 
-	initialBalance, err := client.BalanceAt(ctx, auth.From, nil)
+	initialBalance, err := testNode.L2Client.BalanceAt(ctx, auth.From, nil)
 	Require(t, err, "could not get balance")
 
 	// deploy a test contract
-	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+	_, tx, simple, err := mocksgen.DeploySimple(&auth, testNode.L2Client)
 	Require(t, err, "could not deploy contract")
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
-	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
+	header, err := testNode.L2Client.HeaderByNumber(ctx, receipt.BlockNumber)
 	Require(t, err, "could not get header")
 	if header.BaseFee.Cmp(gasPrice) != 0 {
 		Fatal(t, "Header has wrong basefee", header.BaseFee, gasPrice)
 	}
 
-	balance, err := client.BalanceAt(ctx, auth.From, nil)
+	balance, err := testNode.L2Client.BalanceAt(ctx, auth.From, nil)
 	Require(t, err, "could not get balance")
 	expectedCost := receipt.GasUsed * gasPrice.Uint64()
 	observedCost := initialBalance.Uint64() - balance.Uint64()
@@ -116,7 +117,7 @@ func TestEstimate(t *testing.T) {
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -131,11 +132,11 @@ func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 
 	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
-	l2BaseFee := GetBaseFee(t, client, ctx)
+	l2BaseFee := GetBaseFee(t, testNode.L2Client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
 	colors.PrintGrey("l2 basefee ", l2BaseFee)
@@ -144,10 +145,10 @@ func TestComponentEstimate(t *testing.T) {
 	maxPriorityFeePerGas := big.NewInt(0)
 	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
 
-	l2info.GenerateAccount("User")
-	TransferBalance(t, "Owner", "User", userBalance, l2info, client, ctx)
+	testNode.L2Info.GenerateAccount("User")
+	TransferBalance(t, "Owner", "User", userBalance, testNode.L2Info, testNode.L2Client, ctx)
 
-	from := l2info.GetAddress("User")
+	from := testNode.L2Info.GetAddress("User")
 	to := testhelpers.RandomAddress()
 	gas := uint64(100000000)
 	calldata := []byte{0x00, 0x12}
@@ -171,7 +172,7 @@ func TestComponentEstimate(t *testing.T) {
 		Value:     value,
 		Data:      estimateCalldata,
 	}
-	returnData, err := client.CallContract(ctx, msg, nil)
+	returnData, err := testNode.L2Client.CallContract(ctx, msg, nil)
 	Require(t, err)
 
 	outputs, err := nodeMethod.Outputs.Unpack(returnData)
@@ -185,8 +186,8 @@ func TestComponentEstimate(t *testing.T) {
 	baseFee, _ := outputs[2].(*big.Int)
 	l1BaseFeeEstimate, _ := outputs[3].(*big.Int)
 
-	tx := l2info.SignTxAs("User", &types.DynamicFeeTx{
-		ChainID:   node.Execution.ArbInterface.BlockChain().Config().ChainID,
+	tx := testNode.L2Info.SignTxAs("User", &types.DynamicFeeTx{
+		ChainID:   testNode.L2Node.Execution.ArbInterface.BlockChain().Config().ChainID,
 		Nonce:     0,
 		GasTipCap: maxPriorityFeePerGas,
 		GasFeeCap: maxFeePerGas,
@@ -207,8 +208,8 @@ func TestComponentEstimate(t *testing.T) {
 		Fatal(t, baseFee, l2BaseFee.Uint64())
 	}
 
-	Require(t, client.SendTransaction(ctx, tx))
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	Require(t, testNode.L2Client.SendTransaction(ctx, tx))
+	receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 	Require(t, err)
 
 	l2Used := receipt.GasUsed - receipt.GasUsedForL1
@@ -223,14 +224,14 @@ func TestDisableL1Charging(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
+	defer testNode.L2Node.StopAndWait()
 	addr := common.HexToAddress("0x12345678")
 
-	gasWithL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	gasWithL1Charging, err := testNode.L2Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
 	Require(t, err)
 
-	gasWithoutL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr, SkipL1Charging: true})
+	gasWithoutL1Charging, err := testNode.L2Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr, SkipL1Charging: true})
 	Require(t, err)
 
 	if gasWithL1Charging <= gasWithoutL1Charging {
@@ -240,14 +241,14 @@ func TestDisableL1Charging(t *testing.T) {
 		Fatal(t, "Incorrect gas estimate with disabled L1 charging")
 	}
 
-	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithL1Charging}, nil)
+	_, err = testNode.L2Client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithL1Charging}, nil)
 	Require(t, err)
 
-	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging}, nil)
+	_, err = testNode.L2Client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging}, nil)
 	if err == nil {
 		Fatal(t, "CallContract passed with insufficient gas")
 	}
 
-	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
+	_, err = testNode.L2Client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
 	Require(t, err)
 }

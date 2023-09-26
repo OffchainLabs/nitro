@@ -26,10 +26,10 @@ func TestSequencerParallelNonces(t *testing.T) {
 
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(config).CreateTestNodeOnL2Only(t, false)
+	defer testNode.L2Node.StopAndWait()
 
-	l2info.GenerateAccount("Destination")
+	testNode.L2Info.GenerateAccount("Destination")
 
 	wg := sync.WaitGroup{}
 	for thread := 0; thread < 10; thread++ {
@@ -37,11 +37,11 @@ func TestSequencerParallelNonces(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
-				tx := l2info.PrepareTx("Owner", "Destination", l2info.TransferGas, common.Big1, nil)
+				tx := testNode.L2Info.PrepareTx("Owner", "Destination", testNode.L2Info.TransferGas, common.Big1, nil)
 				// Sleep a random amount of time up to 20 milliseconds
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
 				t.Log("Submitting transaction with nonce", tx.Nonce())
-				err := client.SendTransaction(ctx, tx)
+				err := testNode.L2Client.SendTransaction(ctx, tx)
 				Require(t, err)
 				t.Log("Got response for transaction with nonce", tx.Nonce())
 			}
@@ -49,8 +49,8 @@ func TestSequencerParallelNonces(t *testing.T) {
 	}
 	wg.Wait()
 
-	addr := l2info.GetAddress("Destination")
-	balance, err := client.BalanceAt(ctx, addr, nil)
+	addr := testNode.L2Info.GetAddress("Destination")
+	balance, err := testNode.L2Client.BalanceAt(ctx, addr, nil)
 	Require(t, err)
 	if !arbmath.BigEquals(balance, big.NewInt(100)) {
 		Fatal(t, "Unexpected user balance", balance)
@@ -63,14 +63,14 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	defer cancel()
 
 	config := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(config).CreateTestNodeOnL2Only(t, false)
+	defer testNode.L2Node.StopAndWait()
 
-	l2info.GetInfoWithPrivKey("Owner").Nonce++
+	testNode.L2Info.GetInfoWithPrivKey("Owner").Nonce++
 
 	before := time.Now()
-	tx := l2info.PrepareTx("Owner", "Owner", l2info.TransferGas, common.Big0, nil)
-	err := client.SendTransaction(ctx, tx)
+	tx := testNode.L2Info.PrepareTx("Owner", "Owner", testNode.L2Info.TransferGas, common.Big0, nil)
+	err := testNode.L2Client.SendTransaction(ctx, tx)
 	if err == nil {
 		Fatal(t, "No error when nonce was too high")
 	}
@@ -91,16 +91,16 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.NonceFailureCacheSize = 5
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
-	defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(config).CreateTestNodeOnL2Only(t, false)
+	defer testNode.L2Node.StopAndWait()
 
 	count := 15
 	var completed uint64
 	for i := 0; i < count; i++ {
-		l2info.GetInfoWithPrivKey("Owner").Nonce++
-		tx := l2info.PrepareTx("Owner", "Owner", l2info.TransferGas, common.Big0, nil)
+		testNode.L2Info.GetInfoWithPrivKey("Owner").Nonce++
+		tx := testNode.L2Info.PrepareTx("Owner", "Owner", testNode.L2Info.TransferGas, common.Big0, nil)
 		go func() {
-			err := client.SendTransaction(ctx, tx)
+			err := testNode.L2Client.SendTransaction(ctx, tx)
 			if err == nil {
 				Fatal(t, "No error when nonce was too high")
 			}
