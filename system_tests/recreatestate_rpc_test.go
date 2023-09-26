@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -25,9 +26,10 @@ import (
 func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func()) {
 	t.Helper()
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	nodeConfig.Sequencer.MaxBlockSpeed = 0
-	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
+	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	cacheConfig := &core.CacheConfig{
 		// Arbitrum Config Options
 		TriesInMemory: 128,
@@ -43,7 +45,7 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		SnapshotLimit: 256,
 		SnapshotWait:  true,
 	}
-	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig, nil)
+	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, execConfig, nil, nil, cacheConfig, nil)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
@@ -60,8 +62,9 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		_, err := EnsureTxSucceeded(ctx, l2client, tx)
 		testhelpers.RequireImpl(t, err)
 	}
-	bc = node.Execution.Backend.ArbInterface().BlockChain()
-	db = node.Execution.Backend.ChainDb()
+	exec := getExecNode(t, node)
+	bc = exec.Backend.ArbInterface().BlockChain()
+	db = exec.Backend.ChainDb()
 
 	return
 }

@@ -414,7 +414,7 @@ func ConfigDefaultL2Test() *Config {
 
 type DangerousConfig struct {
 	NoL1Listener  bool `koanf:"no-l1-listener"`
-	NoCoordinator bool `koanf:"no-seq-coordinator"`
+	NoCoordinator bool `koanf:"no-coordinator"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
@@ -424,7 +424,7 @@ var DefaultDangerousConfig = DangerousConfig{
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
-	f.Bool(prefix+".no-seq-coordinator", DefaultDangerousConfig.NoCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
+	f.Bool(prefix+".no-coordinator", DefaultDangerousConfig.NoCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 }
 
 type Node struct {

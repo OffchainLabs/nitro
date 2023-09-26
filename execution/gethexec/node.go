@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -18,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 )
@@ -35,9 +37,9 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader headerreader.Config              `koanf:"l1-reader" reload:"hot"`
+	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDB       arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	RecordingDatabase arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
 	TxPreChecker      TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
 	Forwarder         ForwarderConfig                  `koanf:"forwarder"`
 	ForwardingTarget  string                           `koanf:"forwarding-target"`
@@ -70,7 +72,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
-	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
@@ -81,15 +83,15 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:              arbitrum.DefaultConfig,
-	Sequencer:        DefaultSequencerConfig,
-	RecordingDB:      arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTarget: "",
-	TxPreChecker:     DefaultTxPreCheckerConfig,
-	Archive:          false,
-	TxLookupLimit:    126_230_400, // 1 year at 4 blocks per second
-	Caching:          DefaultCachingConfig,
-	Dangerous:        DefaultDangerousConfig,
+	RPC:               arbitrum.DefaultConfig,
+	Sequencer:         DefaultSequencerConfig,
+	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:  "",
+	TxPreChecker:      DefaultTxPreCheckerConfig,
+	Archive:           false,
+	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
+	Caching:           DefaultCachingConfig,
+	Dangerous:         DefaultDangerousConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -135,19 +137,20 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(&config.RecordingDB, execEngine, chainDB)
+	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, chainDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil {
-		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader })
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	fwTarget := config.ForwardingTarget()
+	fwTarget := config.ForwardingTargetF()
 	if config.Sequencer.Enable {
 		if fwTarget != "" {
 			return nil, errors.New("sequencer and forwarding target both set")

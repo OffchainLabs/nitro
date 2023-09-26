@@ -74,10 +74,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
 	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer.Enable = false
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.Sequencer.Enable = false
+	config.Sequencer = false
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
-	_, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, config, gethexec.ConfigDefaultTest(), nil)
+	_, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, config, execConfig, nil)
 	defer l2nodeB.StopAndWait()
 	execNodeB := getExecNode(t, l2nodeB)
 

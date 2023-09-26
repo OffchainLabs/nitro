@@ -313,11 +313,11 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Node.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
-		if nodeConfig.Node.Archive {
-			nodeConfig.Node.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
+	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
+		if nodeConfig.Execution.Archive {
+			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
 		} else {
-			nodeConfig.Node.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
+			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
@@ -818,7 +818,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
-		l2MaxTxSize := execution.DefaultSequencerConfig.MaxTxDataSize
+		l2MaxTxSize := gethexec.DefaultSequencerConfig.MaxTxDataSize
 		bufferSpace := 5000
 		if l2MaxTxSize < bufferSpace*2 {
 			return false, fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
