@@ -93,6 +93,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
+	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,
@@ -163,9 +164,9 @@ func newNonceCache(size int) *nonceCache {
 
 func (c *nonceCache) matches(header *types.Header) bool {
 	if c.dirty != nil {
-		// The header is updated as the block is built,
-		// so instead of checking its hash, we do a pointer comparison.
-		return c.dirty == header
+		// Note, even though the of the header changes, c.dirty points to the
+		// same header, hence hashes will be the same and this check will pass.
+		return headerreader.HeadersEqual(c.dirty, header)
 	}
 	return c.block == header.ParentHash
 }
@@ -249,11 +250,16 @@ func (c nonceFailureCache) Contains(err NonceError) bool {
 }
 
 func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
+	expiry := queueItem.firstAppearance.Add(c.getExpiry())
+	if c.Contains(err) || time.Now().After(expiry) {
+		queueItem.returnResult(err)
+		return
+	}
 	key := addressAndNonce{err.sender, err.txNonce}
 	val := &nonceFailure{
 		queueItem: queueItem,
 		nonceErr:  err,
-		expiry:    queueItem.firstAppearance.Add(c.getExpiry()),
+		expiry:    expiry,
 		revived:   false,
 	}
 	evicted := c.LruCache.Add(key, val)
@@ -348,12 +354,12 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 	}
 }
 
-func (s *Sequencer) ctxWithQueueTimeout(inctx context.Context) (context.Context, context.CancelFunc) {
-	timeout := s.config().QueueTimeout
+// ctxWithTimeout is like context.WithTimeout except a timeout of 0 means unlimited instead of instantly expired.
+func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout == time.Duration(0) {
-		return context.WithCancel(inctx)
+		return context.WithCancel(ctx)
 	}
-	return context.WithTimeout(inctx, timeout)
+	return context.WithTimeout(ctx, timeout)
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
@@ -384,8 +390,13 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
-	ctx, cancelFunc := s.ctxWithQueueTimeout(parentCtx)
+	queueTimeout := s.config().QueueTimeout
+	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
+
+	// Just to be safe, make sure we don't run over twice the queue timeout
+	abortCtx, cancel := ctxWithTimeout(parentCtx, queueTimeout*2)
+	defer cancel()
 
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
@@ -393,22 +404,27 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		options,
 		resultChan,
 		false,
-		ctx,
+		queueCtx,
 		time.Now(),
 	}
 	select {
 	case s.txQueue <- queueItem:
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-queueCtx.Done():
+		return queueCtx.Err()
 	}
 
 	select {
 	case res := <-resultChan:
 		return res
-	case <-parentCtx.Done():
-		// We use parentCtx here and not ctx, because the QueueTimeout only applies to the background queue.
+	case <-abortCtx.Done():
+		// We use abortCtx here and not queueCtx, because the QueueTimeout only applies to the background queue.
 		// We want to give the background queue as much time as possible to make a response.
-		return parentCtx.Err()
+		err := abortCtx.Err()
+		if parentCtx.Err() == nil {
+			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
+			log.Warn("Transaction sequencing hit abort deadline", "err", err, "submittedAt", queueItem.firstAppearance, "queueTimeout", queueTimeout, "txHash", tx.Hash())
+		}
+		return err
 	}
 }
 
@@ -619,7 +635,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		return queueItems
 	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
-	signer := types.MakeSigner(bc.Config(), nextHeaderNumber)
+	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int
@@ -675,11 +691,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 					continue
 				}
 				// Retry this transaction if its predecessor appears
-				if s.nonceFailures.Contains(nonceError) {
-					queueItem.returnResult(err)
-				} else {
-					s.nonceFailures.Add(nonceError, queueItem)
-				}
+				s.nonceFailures.Add(nonceError, queueItem)
 				continue
 			} else if err != nil {
 				nonceCacheRejectedCounter.Inc(1)
@@ -973,11 +985,11 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 {
+	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 && s.nonceFailures.Len() == 0 {
 		return
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
-	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
+	log.Warn("Sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len(), "nonceFailures", s.nonceFailures.Len())
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
 		var wg sync.WaitGroup
@@ -992,6 +1004,7 @@ func (s *Sequencer) StopAndWait() {
 				_, failure, _ := s.nonceFailures.GetOldest()
 				failure.revived = true
 				item = failure.queueItem
+				source = "nonceFailures"
 				s.nonceFailures.RemoveOldest()
 			} else {
 				select {

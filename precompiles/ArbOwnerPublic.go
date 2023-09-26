@@ -11,12 +11,23 @@ import (
 // The calls to this precompile do not require the sender be a chain owner.
 // For those that are, see ArbOwner
 type ArbOwnerPublic struct {
-	Address addr // 0x6b
+	Address                    addr // 0x6b
+	ChainOwnerRectified        func(ctx, mech, addr) error
+	ChainOwnerRectifiedGasCost func(addr) (uint64, error)
 }
 
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
 	return c.State.ChainOwners().AllMembers(65536)
+}
+
+// RectifyChainOwner checks if the account is a chain owner
+func (con ArbOwnerPublic) RectifyChainOwner(c ctx, evm mech, addr addr) error {
+	err := c.State.ChainOwners().RectifyMapping(addr)
+	if err != nil {
+		return err
+	}
+	return con.ChainOwnerRectified(c, evm, addr)
 }
 
 // IsChainOwner checks if the user is a chain owner

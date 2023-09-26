@@ -86,7 +86,7 @@ func TestReloads(t *testing.T) {
 	// check that non-reloadable fields fail assignment
 	update.Metrics = !update.Metrics
 	testUnsafe()
-	update.L2.ChainID++
+	update.ParentChain.ID++
 	testUnsafe()
 	update.Node.Staker.Enable = !update.Node.Staker.Enable
 	testUnsafe()
@@ -123,7 +123,7 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// check that an invalid reload gets rejected
 	update = config.ShallowClone()
-	update.L2.ChainID++
+	update.ParentChain.ID++
 	if liveConfig.Set(update) == nil {
 		Fail(t, "failed to reject invalid update")
 	}

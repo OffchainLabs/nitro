@@ -77,13 +77,13 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	Require(t, err)
 	seqTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	conf.BatchPoster.Enable = true
-	conf.BatchPoster.MaxBatchSize = len(firstTxData) * 2
+	conf.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := l1client.BlockNumber(ctx)
 	Require(t, err)
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := conf.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()
@@ -176,7 +176,7 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.CompressionLevel = brotli.BestCompression
-	conf.BatchPoster.MaxBatchPostDelay = time.Hour
+	conf.BatchPoster.MaxDelay = time.Hour
 	execConf := gethexec.ConfigDefaultTest()
 	execConf.RPC.RPCTxFeeCap = 1000.
 	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, execConf, nil, nil)

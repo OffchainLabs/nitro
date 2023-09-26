@@ -35,25 +35,25 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	L1Reader             headerreader.Config              `koanf:"l1-reader" reload:"hot"`
-	Sequencer            SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDB          arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker         TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder            ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTargetImpl string                           `koanf:"forwarding-target"`
-	Caching              CachingConfig                    `koanf:"caching"`
-	RPC                  arbitrum.Config                  `koanf:"rpc"`
-	Archive              bool                             `koanf:"archive"`
-	TxLookupLimit        uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous            DangerousConfig                  `koanf:"dangerous"`
+	ParentChainReader headerreader.Config              `koanf:"l1-reader" reload:"hot"`
+	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDB       arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker      TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder         ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget  string                           `koanf:"forwarding-target"`
+	Caching           CachingConfig                    `koanf:"caching"`
+	RPC               arbitrum.Config                  `koanf:"rpc"`
+	Archive           bool                             `koanf:"archive"`
+	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
+	Dangerous         DangerousConfig                  `koanf:"dangerous"`
 }
 
-func (c *Config) ForwardingTarget() string {
-	if c.ForwardingTargetImpl == "null" {
+func (c *Config) ForwardingTargetF() string {
+	if c.ForwardingTarget == "null" {
 		return ""
 	}
 
-	return c.ForwardingTargetImpl
+	return c.ForwardingTarget
 }
 
 func (c *Config) Validate() error {
@@ -81,15 +81,15 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:                  arbitrum.DefaultConfig,
-	Sequencer:            DefaultSequencerConfig,
-	RecordingDB:          arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTargetImpl: "",
-	TxPreChecker:         DefaultTxPreCheckerConfig,
-	Archive:              false,
-	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
-	Caching:              DefaultCachingConfig,
-	Dangerous:            DefaultDangerousConfig,
+	RPC:              arbitrum.DefaultConfig,
+	Sequencer:        DefaultSequencerConfig,
+	RecordingDB:      arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget: "",
+	TxPreChecker:     DefaultTxPreCheckerConfig,
+	Archive:          false,
+	TxLookupLimit:    126_230_400, // 1 year at 4 blocks per second
+	Caching:          DefaultCachingConfig,
+	Dangerous:        DefaultDangerousConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -110,16 +110,16 @@ func ConfigDefaultTest() *Config {
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
-	ChainDB       ethdb.Database
-	Backend       *arbitrum.Backend
-	FilterSystem  *filters.FilterSystem
-	ArbInterface  *ArbInterface
-	ExecEngine    *ExecutionEngine
-	Recorder      *BlockRecorder
-	Sequencer     *Sequencer // either nil or same as TxPublisher
-	TxPublisher   TransactionPublisher
-	ConfigFetcher ConfigFetcher
-	L1Reader      *headerreader.HeaderReader
+	ChainDB           ethdb.Database
+	Backend           *arbitrum.Backend
+	FilterSystem      *filters.FilterSystem
+	ArbInterface      *ArbInterface
+	ExecEngine        *ExecutionEngine
+	Recorder          *BlockRecorder
+	Sequencer         *Sequencer // either nil or same as TxPublisher
+	TxPublisher       TransactionPublisher
+	ConfigFetcher     ConfigFetcher
+	ParentChainReader *headerreader.HeaderReader
 }
 
 func CreateExecutionNode(
@@ -139,9 +139,9 @@ func CreateExecutionNode(
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
-	var l1Reader *headerreader.HeaderReader
+	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil {
-		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader })
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +153,7 @@ func CreateExecutionNode(
 			return nil, errors.New("sequencer and forwarding target both set")
 		}
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
-		sequencer, err = NewSequencer(execEngine, l1Reader, seqConfigFetcher)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
 		if err != nil {
 			return nil, err
 		}
@@ -218,16 +218,16 @@ func CreateExecutionNode(
 	stack.RegisterAPIs(apis)
 
 	return &ExecutionNode{
-		chainDB,
-		backend,
-		filterSystem,
-		arbInterface,
-		execEngine,
-		recorder,
-		sequencer,
-		txPublisher,
-		configFetcher,
-		l1Reader,
+		ChainDB:           chainDB,
+		Backend:           backend,
+		FilterSystem:      filterSystem,
+		ArbInterface:      arbInterface,
+		ExecEngine:        execEngine,
+		Recorder:          recorder,
+		Sequencer:         sequencer,
+		TxPublisher:       txPublisher,
+		ConfigFetcher:     configFetcher,
+		ParentChainReader: parentChainReader,
 	}, nil
 
 }
@@ -260,8 +260,8 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
-	if n.L1Reader != nil {
-		n.L1Reader.Start(ctx)
+	if n.ParentChainReader != nil {
+		n.ParentChainReader.Start(ctx)
 	}
 	return nil
 }
@@ -273,8 +273,8 @@ func (n *ExecutionNode) StopAndWait() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
-	if n.L1Reader != nil && n.L1Reader.Started() {
-		n.L1Reader.StopAndWait()
+	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
+		n.ParentChainReader.StopAndWait()
 	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
