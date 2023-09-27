@@ -43,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -827,7 +828,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
+			wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 			if err != nil {
 				return nil, err
 			}
@@ -835,7 +836,7 @@ func createNodeImpl(
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
+			wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
 			if err != nil {
 				return nil, err
 			}
