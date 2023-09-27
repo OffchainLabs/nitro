@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package txbuilder
 
 import (
 	"context"
@@ -15,12 +15,21 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-// ValidatorTxBuilder combines any transactions sent to it via SendTransaction into one batch,
+type ValidatorWalletInterface interface {
+	// Address must be able to be called concurrently with other functions
+	Address() *common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *Builder, common.Address) (*types.Transaction, error)
+	AuthIfEoa() *bind.TransactOpts
+}
+
+// Builder combines any transactions sent to it via SendTransaction into one batch,
 // which is then sent to the validator wallet.
 // This lets the validator make multiple atomic transactions.
 // This inherits from an eth client so it can be used as an L1Interface,
 // where it transparently intercepts calls to SendTransaction and queues them for the next batch.
-type ValidatorTxBuilder struct {
+type Builder struct {
 	arbutil.L1Interface
 	transactions []*types.Transaction
 	builderAuth  *bind.TransactOpts
@@ -28,7 +37,7 @@ type ValidatorTxBuilder struct {
 	wallet       ValidatorWalletInterface
 }
 
-func NewValidatorTxBuilder(wallet ValidatorWalletInterface) (*ValidatorTxBuilder, error) {
+func NewBuilder(wallet ValidatorWalletInterface) (*Builder, error) {
 	randKey, err := crypto.GenerateKey()
 	if err != nil {
 		return nil, err
@@ -43,7 +52,7 @@ func NewValidatorTxBuilder(wallet ValidatorWalletInterface) (*ValidatorTxBuilder
 		}
 		isAuthFake = true
 	}
-	return &ValidatorTxBuilder{
+	return &Builder{
 		builderAuth: builderAuth,
 		wallet:      wallet,
 		L1Interface: wallet.L1Client(),
@@ -51,22 +60,22 @@ func NewValidatorTxBuilder(wallet ValidatorWalletInterface) (*ValidatorTxBuilder
 	}, nil
 }
 
-func (b *ValidatorTxBuilder) BuildingTransactionCount() int {
+func (b *Builder) BuildingTransactionCount() int {
 	return len(b.transactions)
 }
 
-func (b *ValidatorTxBuilder) ClearTransactions() {
+func (b *Builder) ClearTransactions() {
 	b.transactions = nil
 }
 
-func (b *ValidatorTxBuilder) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
+func (b *Builder) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
 	if len(b.transactions) == 0 && !b.isAuthFake {
 		return b.L1Interface.EstimateGas(ctx, call)
 	}
 	return 0, nil
 }
 
-func (b *ValidatorTxBuilder) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+func (b *Builder) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	b.transactions = append(b.transactions, tx)
 	err := b.wallet.TestTransactions(ctx, b.transactions)
 	if err != nil {
@@ -80,7 +89,7 @@ func (b *ValidatorTxBuilder) SendTransaction(ctx context.Context, tx *types.Tran
 // While this is not currently required, it's recommended not to reuse the returned auth for multiple transactions,
 // as for an EOA this has the nonce in it. However, the EOA wwallet currently will only publish the first created tx,
 // which is why that doesn't really matter.
-func (b *ValidatorTxBuilder) AuthWithAmount(ctx context.Context, amount *big.Int) (*bind.TransactOpts, error) {
+func (b *Builder) AuthWithAmount(ctx context.Context, amount *big.Int) (*bind.TransactOpts, error) {
 	nonce, err := b.NonceAt(ctx, b.builderAuth.From, nil)
 	if err != nil {
 		return nil, err
@@ -98,6 +107,20 @@ func (b *ValidatorTxBuilder) AuthWithAmount(ctx context.Context, amount *big.Int
 
 // Auth is the same as AuthWithAmount with a 0 amount specified.
 // See AuthWithAmount docs for important details.
-func (b *ValidatorTxBuilder) Auth(ctx context.Context) (*bind.TransactOpts, error) {
+func (b *Builder) Auth(ctx context.Context) (*bind.TransactOpts, error) {
 	return b.AuthWithAmount(ctx, common.Big0)
+}
+
+func (b *Builder) Transactions() []*types.Transaction {
+	return b.transactions
+}
+
+// Auth is the same as AuthWithAmount with a 0 amount specified.
+// See AuthWithAmount docs for important details.
+func (b *Builder) BuilderAuth() *bind.TransactOpts {
+	return b.builderAuth
+}
+
+func (b *Builder) WalletAddress() *common.Address {
+	return b.wallet.Address()
 }
