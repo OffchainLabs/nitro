@@ -91,7 +91,7 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	return append(res, time.Hour*24*365*10), nil
 }
 
-func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
+func NewDataPoster(ctx context.Context, db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
 	initConfig := config()
 	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
 	if err != nil {
@@ -118,7 +118,13 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 			return nil, err
 		}
 	case initConfig.UseLevelDB:
-		queue = leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		ldb := leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if config().Dangerous.ClearLevelDB {
+			if err := ldb.PruneAll(ctx); err != nil {
+				return nil, err
+			}
+		}
+		queue = ldb
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
@@ -618,19 +624,26 @@ type DataPosterConfig struct {
 	ReplacementTimes string                     `koanf:"replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
-	WaitForL1Finality      bool    `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64  `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int     `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64 `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64 `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64 `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64 `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64 `koanf:"max-tip-cap-gwei" reload:"hot"`
-	NonceRbfSoftConfs      uint64  `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	AllocateMempoolBalance bool    `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool    `koanf:"use-leveldb"`
-	UseNoOpStorage         bool    `koanf:"use-noop-storage"`
-	LegacyStorageEncoding  bool    `koanf:"legacy-storage-encoding" reload:"hot"`
+	WaitForL1Finality      bool            `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64          `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int             `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64         `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64         `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64         `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64         `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64         `koanf:"max-tip-cap-gwei" reload:"hot"`
+	NonceRbfSoftConfs      uint64          `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool            `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseLevelDB             bool            `koanf:"use-leveldb"`
+	UseNoOpStorage         bool            `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool            `koanf:"legacy-storage-encoding" reload:"hot"`
+	Dangerous              DangerousConfig `koanf:"dangerous"`
+}
+
+type DangerousConfig struct {
+	// This should be used with caution, only when dataposter somehow gets in a
+	// bad state and we require clearing it.
+	ClearLevelDB bool `koanf:"clear-leveldb"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -652,7 +665,13 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
+
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
+	addDangerousOptions(prefix+".dangerous", f)
+}
+
+func addDangerousOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".clear-leveldb", DefaultDataPosterConfig.Dangerous.ClearLevelDB, "clear leveldb")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -668,6 +687,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseLevelDB:             true,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
+	Dangerous:              DangerousConfig{ClearLevelDB: false},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
