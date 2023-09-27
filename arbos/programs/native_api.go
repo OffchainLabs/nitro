@@ -26,18 +26,18 @@ EvmApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, R
     return setBytes32Impl(api, key, value, cost, error);
 }
 
-EvmApiStatus contractCallImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len);
-EvmApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len) {
+EvmApiStatus contractCallImpl(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, Bytes32 value, u32 * len);
+EvmApiStatus contractCallWrap(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, Bytes32 value, u32 * len) {
     return contractCallImpl(api, contract, calldata, gas, value, len);
 }
 
-EvmApiStatus delegateCallImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len);
-EvmApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len) {
+EvmApiStatus delegateCallImpl(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, u32 * len);
+EvmApiStatus delegateCallWrap(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, u32 * len) {
     return delegateCallImpl(api, contract, calldata, gas, len);
 }
 
-EvmApiStatus staticCallImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len);
-EvmApiStatus staticCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len) {
+EvmApiStatus staticCallImpl(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, u32 * len);
+EvmApiStatus staticCallWrap(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, u32 * len) {
     return staticCallImpl(api, contract, calldata, gas, len);
 }
 
@@ -74,6 +74,11 @@ Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
 u64 addPagesImpl(usize api, u16 pages);
 u64 addPagesWrap(usize api, u16 pages) {
     return addPagesImpl(api, pages);
+}
+
+void captureHostioImpl(usize api, RustSlice * name, RustSlice * data, u64 ink);
+void captureHostioWrap(usize api, RustSlice * name, RustSlice * data, u64 ink) {
+    return captureHostioImpl(api, name, data, ink);
 }
 */
 import "C"
@@ -112,6 +117,7 @@ func newApi(
 		account_balance:  (*[0]byte)(C.accountBalanceWrap),
 		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
 		add_pages:        (*[0]byte)(C.addPagesWrap),
+		capture_hostio:   (*[0]byte)(C.captureHostioWrap),
 		id:               id,
 	}, id
 }

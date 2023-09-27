@@ -36,7 +36,7 @@ sol_storage! {
 // Another contract we'd like to call
 sol_interface! {
     interface IMath {
-        function sum(uint256[] values) pure returns (string, uint256);
+        function sumValues(uint256[] values) pure returns (string, uint256);
     }
 }
 
@@ -57,13 +57,13 @@ impl Weth {
     }
 
     // sums numbers
-    pub fn sum(values: Vec<U256>) -> Result<(String, U256), Vec<u8>> {
+    pub fn sum_values(values: Vec<U256>) -> Result<(String, U256), Vec<u8>> {
         Ok(("sum".into(), values.iter().sum()))
     }
 
-    // calls the sum() method from the interface
+    // calls the sum_values() method from the interface
     pub fn sum_with_helper(&self, helper: IMath, values: Vec<U256>) -> Result<U256, Vec<u8>> {
-        let (text, sum) = helper.sum(self, values)?;
+        let (text, sum) = helper.sum_values(self, values)?;
         assert_eq!(&text, "sum");
         Ok(sum)
     }

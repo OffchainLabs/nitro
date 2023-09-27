@@ -4,7 +4,7 @@
 #![no_main]
 
 use stylus_sdk::{
-    alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
+    alloy_primitives::{Address, Signed, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
 };
 
@@ -24,6 +24,7 @@ sol_storage! {
         bytes bytes_long;
         string chars;
         Maps maps;
+        Arrays arrays;
     }
 
     #[derive(Erase)]
@@ -39,6 +40,20 @@ sol_storage! {
         mapping(int32 => address)[] array;
         mapping(bytes1 => mapping(bool => uint256)) nested;
         mapping(string => Struct) structs;
+    }
+
+    pub struct Arrays {
+        string[4] strings;
+
+        uint8 spacer;
+        uint24[5] packed;
+        uint8 trail;
+
+        address[2] spill;
+        uint8[2][4] matrix;
+        int96[4][] vector;
+        int96[][4] vectors;
+        Struct[3] structs;
     }
 }
 
@@ -186,6 +201,61 @@ fn populate(mut contract: Contract) {
         entry.other.set(contract.sub.other.get());
         entry.word.set(contract.sub.word.get());
     }
+
+    // test fixed arrays
+    let mut arrays = contract.arrays;
+    let mut slot = arrays.strings.setter(2).unwrap();
+    slot.set_str("L2 is for you!");
+
+    // test packed arrays
+    for i in 0..5 {
+        let mut slot = arrays.packed.get_mut(i).unwrap();
+        slot.set(Uint::from(i));
+    }
+
+    // test arrays that don't fit into a single word
+    for i in 0..2 {
+        let mut slot = arrays.spill.get_mut(i).unwrap();
+        slot.set(Address::with_last_byte(i as u8));
+    }
+
+    // test 2d arrays
+    let mut matrix = arrays.matrix;
+    for i in 0..4 {
+        let mut inner = matrix.get_mut(i).unwrap();
+        let mut slot = inner.get_mut(0).unwrap();
+        slot.set(U8::from(i));
+
+        let value = slot.get();
+        let mut slot = inner.get_mut(1).unwrap();
+        slot.set(value + U8::from(1));
+    }
+
+    // test vector of arrays
+    for _ in 0..3 {
+        let mut fixed = arrays.vector.grow();
+        for i in 0..4 {
+            let mut slot = fixed.get_mut(i).unwrap();
+            slot.set(Signed::from_raw(Uint::from(i)));
+        }
+    }
+
+    // test array of vectors
+    for w in 0..4 {
+        let mut vector = arrays.vectors.setter(w).unwrap();
+        for i in 0..4 {
+            vector.push(Signed::from_raw(Uint::from(i)));
+        }
+    }
+
+    // test array of structs
+    for i in 0..3 {
+        let mut entry = arrays.structs.get_mut(i).unwrap();
+
+        entry.num.set(contract.sub.num.get());
+        entry.other.set(contract.sub.other.get());
+        entry.word.set(contract.sub.word.get());
+    }
 }
 
 fn remove(mut contract: Contract) {
@@ -243,4 +313,10 @@ fn remove(mut contract: Contract) {
 
     // erase a struct
     contract.structs.erase_last();
+
+    // erase fixed arrays
+    contract.arrays.matrix.erase();
+    contract.arrays.vector.erase();
+    contract.arrays.vectors.erase();
+    contract.arrays.structs.erase();
 }

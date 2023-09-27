@@ -76,6 +76,7 @@ pub struct EvmData {
     pub tx_origin: Bytes20,
     pub reentrant: u32,
     pub return_data_len: u32,
+    pub tracing: bool,
 }
 
 /// Returns the minimum number of EVM words needed to store `bytes` bytes.

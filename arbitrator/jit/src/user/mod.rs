@@ -224,6 +224,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         tx_origin: sp.read_bytes20().into(),
         reentrant: sp.read_u32(),
         return_data_len: 0,
+        tracing: false,
     };
     sp.skip_space();
     sp.write_ptr(heapify(evm_data));

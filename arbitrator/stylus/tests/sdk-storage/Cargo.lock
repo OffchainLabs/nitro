@@ -449,10 +449,11 @@ dependencies = [
 
 [[package]]
 name = "stylus-proc"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
+ "cfg-if 1.0.0",
  "convert_case 0.6.0",
  "lazy_static",
  "proc-macro2",
@@ -465,10 +466,11 @@ dependencies = [
 
 [[package]]
 name = "stylus-sdk"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
+ "cfg-if 1.0.0",
  "derivative",
  "fnv",
  "hex",

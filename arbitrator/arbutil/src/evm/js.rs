@@ -120,6 +120,12 @@ impl From<Bytes> for ApiValue {
     }
 }
 
+impl From<&[u8]> for ApiValue {
+    fn from(value: &[u8]) -> Self {
+        ApiValueKind::Bytes(value.to_vec()).into()
+    }
+}
+
 impl From<Bytes20> for ApiValue {
     fn from(value: Bytes20) -> Self {
         ApiValueKind::Bytes20(value).into()
@@ -220,7 +226,7 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn contract_call(
         &mut self,
         contract: Bytes20,
-        input: Bytes,
+        input: &[u8],
         gas: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
@@ -231,7 +237,7 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn delegate_call(
         &mut self,
         contract: Bytes20,
-        input: Bytes,
+        input: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let [len, cost, status] = call!(self, 3, DelegateCall, contract, input, gas);
@@ -241,7 +247,7 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn static_call(
         &mut self,
         contract: Bytes20,
-        input: Bytes,
+        input: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let [len, cost, status] = call!(self, 3, StaticCall, contract, input, gas);
@@ -306,5 +312,13 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn add_pages(&mut self, pages: u16) -> u64 {
         let [cost] = call!(self, 1, AddPages, pages);
         cost.assert_u64()
+    }
+
+    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], ink: u64) {
+        let args = hex::encode(args);
+        let outs = hex::encode(outs);
+        println!(
+            "Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}, {ink}"
+        );
     }
 }

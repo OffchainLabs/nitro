@@ -290,6 +290,7 @@ func (p Programs) CallProgram(
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
+		tracing:         tracingInfo != nil,
 	}
 
 	address := contract.Address()
@@ -352,6 +353,17 @@ func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {
 	return program.version, nil
 }
 
+func (p Programs) ProgramSize(codeHash common.Hash) (uint32, error) {
+	program, err := p.deserializeProgram(codeHash)
+	// wasmSize represents the number of half kb units, return as bytes
+	return uint32(program.wasmSize) * 512, err
+}
+
+func (p Programs) ProgramMemoryFootprint(codeHash common.Hash) (uint16, error) {
+	program, err := p.deserializeProgram(codeHash)
+	return program.footprint, err
+}
+
 type goParams struct {
 	version   uint16
 	maxDepth  uint32
@@ -393,6 +405,7 @@ type evmData struct {
 	txGasPrice      common.Hash
 	txOrigin        common.Address
 	reentrant       uint32
+	tracing         bool
 }
 
 type userStatus uint8

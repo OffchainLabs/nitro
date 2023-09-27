@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::RustVec;
+use crate::{RustSlice, RustVec};
 use arbutil::{
     evm::{
         api::{EvmApi, EvmApiStatus},
@@ -24,7 +24,7 @@ pub struct GoEvmApi {
     pub contract_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
-        calldata: *mut RustVec,
+        calldata: *mut RustSlice,
         gas: *mut u64,
         value: Bytes32,
         return_data_len: *mut u32,
@@ -32,14 +32,14 @@ pub struct GoEvmApi {
     pub delegate_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
-        calldata: *mut RustVec,
+        calldata: *mut RustSlice,
         gas: *mut u64,
         return_data_len: *mut u32,
     ) -> EvmApiStatus,
     pub static_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
-        calldata: *mut RustVec,
+        calldata: *mut RustSlice,
         gas: *mut u64,
         return_data_len: *mut u32,
     ) -> EvmApiStatus,
@@ -66,6 +66,13 @@ pub struct GoEvmApi {
     pub account_codehash:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // codehash
     pub add_pages: unsafe extern "C" fn(id: usize, pages: u16) -> u64, // gas cost
+    pub capture_hostio: unsafe extern "C" fn(
+        id: usize,
+        name: *mut RustVec,
+        args: *mut RustSlice,
+        outs: *mut RustSlice,
+        ink: u64,
+    ),
     pub id: usize,
 }
 
@@ -111,7 +118,7 @@ impl EvmApi for GoEvmApi {
     fn contract_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
@@ -121,7 +128,7 @@ impl EvmApi for GoEvmApi {
             self,
             contract_call,
             contract,
-            ptr!(RustVec::new(calldata)),
+            ptr!(RustSlice::new(calldata)),
             ptr!(call_gas),
             value,
             ptr!(return_data_len)
@@ -132,7 +139,7 @@ impl EvmApi for GoEvmApi {
     fn delegate_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let mut call_gas = gas; // becomes the call's cost
@@ -141,7 +148,7 @@ impl EvmApi for GoEvmApi {
             self,
             delegate_call,
             contract,
-            ptr!(RustVec::new(calldata)),
+            ptr!(RustSlice::new(calldata)),
             ptr!(call_gas),
             ptr!(return_data_len)
         );
@@ -151,7 +158,7 @@ impl EvmApi for GoEvmApi {
     fn static_call(
         &mut self,
         contract: Bytes20,
-        calldata: Vec<u8>,
+        calldata: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let mut call_gas = gas; // becomes the call's cost
@@ -160,7 +167,7 @@ impl EvmApi for GoEvmApi {
             self,
             static_call,
             contract,
-            ptr!(RustVec::new(calldata)),
+            ptr!(RustSlice::new(calldata)),
             ptr!(call_gas),
             ptr!(return_data_len)
         );
@@ -249,5 +256,16 @@ impl EvmApi for GoEvmApi {
 
     fn add_pages(&mut self, pages: u16) -> u64 {
         call!(self, add_pages, pages)
+    }
+
+    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], ink: u64) {
+        call!(
+            self,
+            capture_hostio,
+            ptr!(RustVec::new(name.as_bytes().to_vec())),
+            ptr!(RustSlice::new(args)),
+            ptr!(RustSlice::new(outs)),
+            ink
+        )
     }
 }

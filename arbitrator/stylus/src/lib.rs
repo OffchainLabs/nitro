@@ -13,7 +13,7 @@ use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::prelude::*;
 use run::RunProgram;
-use std::mem;
+use std::{marker::PhantomData, mem};
 
 pub use prover;
 
@@ -38,6 +38,23 @@ pub struct GoSliceData {
 impl GoSliceData {
     unsafe fn slice(&self) -> &[u8] {
         std::slice::from_raw_parts(self.ptr, self.len)
+    }
+}
+
+#[repr(C)]
+pub struct RustSlice<'a> {
+    ptr: *const u8,
+    len: usize,
+    phantom: PhantomData<&'a [u8]>,
+}
+
+impl<'a> RustSlice<'a> {
+    fn new(slice: &'a [u8]) -> Self {
+        Self {
+            ptr: slice.as_ptr(),
+            len: slice.len(),
+            phantom: PhantomData,
+        }
     }
 }
 
