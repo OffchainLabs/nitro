@@ -17,11 +17,15 @@ import (
 
 // NoOp validator wallet is used for watchtower mode.
 type NoOp struct {
-	l1Client arbutil.L1Interface
+	l1Client      arbutil.L1Interface
+	rollupAddress common.Address
 }
 
-func NewNoOp(l1Client arbutil.L1Interface) *NoOp {
-	return &NoOp{l1Client: l1Client}
+func NewNoOp(l1Client arbutil.L1Interface, rollupAddress common.Address) *NoOp {
+	return &NoOp{
+		l1Client:      l1Client,
+		rollupAddress: rollupAddress,
+	}
 }
 
 func (*NoOp) Initialize(context.Context) error { return nil }
@@ -44,7 +48,7 @@ func (*NoOp) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types
 
 func (n *NoOp) L1Client() arbutil.L1Interface { return n.l1Client }
 
-func (*NoOp) RollupAddress() common.Address { return common.Address{} }
+func (n *NoOp) RollupAddress() common.Address { return n.rollupAddress }
 
 func (*NoOp) ChallengeManagerAddress() common.Address { return common.Address{} }
 
