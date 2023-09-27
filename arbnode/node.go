@@ -831,7 +831,7 @@ func createNodeImpl(
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
 		// creation into multiple helpers.
-		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client)
+		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
 		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
 			if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
 				var existingWalletAddress *common.Address
