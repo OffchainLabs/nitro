@@ -24,6 +24,8 @@ var (
 	limitCheckDurationHistogram = metrics.NewRegisteredHistogram("arb/rpc/limitcheck/duration", nil, metrics.NewBoundedHistogramSample())
 	limitCheckSuccessCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/success", nil)
 	limitCheckFailureCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/failure", nil)
+	nitroMemLimit               = metrics.GetOrRegisterGauge("arb/memory/limit", nil)
+	nitroMemUsage               = metrics.GetOrRegisterGauge("arb/memory/usage", nil)
 	errNotSupported             = errors.New("not supported")
 )
 
@@ -236,7 +238,13 @@ func (c *cgroupsMemoryLimitChecker) isLimitExceeded() (bool, error) {
 	if inactive, err = readFromMemStats(c.files.statsFile, c.files.inactiveRe); err != nil {
 		return false, err
 	}
-	return limit-(usage-(active+inactive)) <= c.memLimitBytes, nil
+
+	memLimit := limit - c.memLimitBytes
+	memUsage := usage - (active + inactive)
+	nitroMemLimit.Update(int64(memLimit))
+	nitroMemUsage.Update(int64(memUsage))
+
+	return memUsage >= memLimit, nil
 }
 
 func (c cgroupsMemoryLimitChecker) String() string {
