@@ -46,7 +46,7 @@ func Init(conf *Config) error {
 		var c limitChecker
 		c, err := newCgroupsMemoryLimitCheckerIfSupported(limit)
 		if errors.Is(err, errNotSupported) {
-			log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
+			log.Error("no method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
 			c = &trivialLimitChecker{}
 		}
 
@@ -60,8 +60,7 @@ func parseMemLimit(limitStr string) (int, error) {
 		limit int = 1
 		s     string
 	)
-	_, err := fmt.Sscanf(limitStr, "%d%s", &limit, &s)
-	if err != nil {
+	if _, err := fmt.Sscanf(limitStr, "%d%s", &limit, &s); err != nil {
 		return 0, err
 	}
 
@@ -76,7 +75,7 @@ func parseMemLimit(limitStr string) (int, error) {
 		limit <<= 40
 	case "B":
 	default:
-		return 0, fmt.Errorf("Unsupported memory limit suffix string %s", s)
+		return 0, fmt.Errorf("unsupported memory limit suffix string %s", s)
 	}
 
 	return limit, nil
@@ -118,7 +117,7 @@ func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	exceeded, err := s.c.isLimitExceeded()
 	limitCheckDurationHistogram.Update(time.Since(start).Nanoseconds())
 	if err != nil {
-		log.Error("Error checking memory limit", "err", err, "checker", s.c)
+		log.Error("error checking memory limit", "err", err, "checker", s.c)
 	} else if exceeded {
 		http.Error(w, "Too many requests", http.StatusTooManyRequests)
 		limitCheckFailureCounter.Inc(1)
