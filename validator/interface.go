@@ -30,7 +30,7 @@ type ExecutionSpawner interface {
 
 type ExecutionRun interface {
 	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
-	GetLeavesInRangeWithStepSize(uint64, uint64, uint64) containers.PromiseInterface[[]common.Hash]
+	GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash]
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]

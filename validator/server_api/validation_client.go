@@ -177,32 +177,10 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+func (r *ExecutionClientRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
 		var resJson []common.Hash
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getBigStepLeavesUpTo", r.id, toBigStep, numOpcodesPerBigStep)
-		if err != nil {
-			return nil, err
-		}
-		return resJson, err
-	})
-}
-
-func (r *ExecutionClientRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
-		var resJson []common.Hash
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getSmallStepLeavesUpTo", r.id, bigStep, toSmallStep, numOpcodesPerBigStep)
-		if err != nil {
-			return nil, err
-		}
-		return resJson, err
-	})
-}
-
-func (r *ExecutionClientRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
-		var resJson []common.Hash
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesInRangeWithStepSize", r.id, fromStep, toStep, stepSize)
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, machineStartIndex, stepSize, numDesiredLeaves)
 		if err != nil {
 			return nil, err
 		}

@@ -58,21 +58,51 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
+		if err != nil {
+			return nil, err
+		}
 		var stateRoots []common.Hash
-		n := 0
+		if machineStartIndex == 0 {
+			gs := machine.GetGlobalState()
+			stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+		}
 		start := time.Now()
-		for i := fromStep; i < toStep; i = i + stepSize {
-			if n%100 == 0 {
-				fmt.Printf("%d steps, %v since start, from %d => to %d, step size %d\n", n, time.Since(start), fromStep, toStep, stepSize)
+		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
+			position := machineStartIndex + stepSize*numIterations
+
+			// Advance the machine in step size increments.
+			if err := machine.Step(ctx, stepSize); err != nil {
+				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
-			machineStep, err := e.intermediateGetStepAt(ctx, i)
-			if err != nil {
-				return nil, err
+			machineStep := machine.GetStepCount()
+
+			fmt.Printf("Since start %v => num iters %d, expected position %d, machine position %d start index %d, step size %d\n", time.Since(start), numIterations, position, machineStep, machineStartIndex, stepSize)
+
+			// If the machine reached the finished state, we can break out of the loop and append to
+			// our state roots slice a finished machine hash.
+			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
+				gs := machine.GetGlobalState()
+				stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+				break
 			}
-			stateRoots = append(stateRoots, machineStep.Hash)
-			n += 1
+			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
+			if position != machineStep {
+				machineRunning := machine.IsRunning()
+				if machineRunning || machineStep > position {
+					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
+				}
+			}
+			stateRoots = append(stateRoots, machine.Hash())
+		}
+
+		// If the machine finished in less than the number of hashes we anticipate, we pad
+		// to the expected value by repeating the last machine hash until the state roots are the correct
+		// length.
+		for uint64(len(stateRoots)) < numDesiredLeaves {
+			stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 		}
 		return stateRoots, nil
 	})
@@ -91,12 +121,6 @@ func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint6
 		return nil, err
 	}
 	machineStep := machine.GetStepCount()
-
-	if position == 0 {
-		gs := machine.GetGlobalState()
-		fmt.Printf("Got global state at 0 %+v, hash %#x, and machine finished version %#x, num step count %d\n", gs, gs.Hash(), crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()), machineStep)
-	}
-
 	if position != machineStep {
 		machineRunning := machine.IsRunning()
 		if machineRunning || machineStep > position {
