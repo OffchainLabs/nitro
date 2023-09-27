@@ -14,7 +14,7 @@ import (
 func TestDebugAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, nil, nil, nil)
+	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, nil, nil)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
