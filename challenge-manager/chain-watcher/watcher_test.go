@@ -16,6 +16,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/ethereum/go-ethereum/common"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,11 +169,13 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	mockManager := &mocks.MockEdgeTracker{}
 	mockManager.On("TrackEdge", ctx, edge).Return(nil)
 
+	cache, _ := lru.New(1)
 	watcher := &Watcher{
-		challenges:  threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
-		histChecker: mockStateManager,
-		chain:       mockChain,
-		edgeManager: mockManager,
+		challenges:          threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
+		histChecker:         mockStateManager,
+		chain:               mockChain,
+		edgeManager:         mockManager,
+		junkCommitmentCache: cache,
 	}
 	err := watcher.processEdgeAddedEvent(ctx, &challengeV2gen.EdgeChallengeManagerEdgeAdded{
 		EdgeId:   edgeId.Hash,

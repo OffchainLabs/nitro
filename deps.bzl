@@ -1881,3 +1881,10 @@ def go_dependencies():
         sum = "h1:5Pf6pFKu98ODmgnpvkJ3kFUOQGGLIzLIkbzUHp47618=",
         version = "v0.0.0-20220517211312-f3a8303e98df",
     )
+
+    go_repository(
+        name = "com_github_hashicorp_golang_lru",
+        importpath = "github.com/hashicorp/golang-lru",
+        sum = "h1:dV3g9Z/unq5DpblPpw+Oqcv4dU/1omnb4Ok8iPY6p1c=",
+        version = "v1.0.2",
+    )

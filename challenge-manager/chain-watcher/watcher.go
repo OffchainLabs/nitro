@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
 )
 
@@ -97,6 +98,7 @@ type Watcher struct {
 	validatorName        string
 	numBigStepLevels     uint8
 	initialSyncCompleted atomic.Bool
+	junkCommitmentCache  *lru.Cache
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -110,15 +112,17 @@ func New(
 	numBigStepLevels uint8,
 	validatorName string,
 ) *Watcher {
+	cache, _ := lru.New(2048)
 	return &Watcher{
-		chain:              chain,
-		edgeManager:        edgeManager,
-		pollEventsInterval: interval,
-		challenges:         threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
-		backend:            backend,
-		histChecker:        histChecker,
-		numBigStepLevels:   numBigStepLevels,
-		validatorName:      validatorName,
+		chain:               chain,
+		edgeManager:         edgeManager,
+		pollEventsInterval:  interval,
+		challenges:          threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
+		backend:             backend,
+		histChecker:         histChecker,
+		numBigStepLevels:    numBigStepLevels,
+		validatorName:       validatorName,
+		junkCommitmentCache: cache,
 	}
 }
 
@@ -449,12 +453,37 @@ func (w *Watcher) processEdgeAddedEvent(
 		}
 		w.challenges.Put(assertionHash, chal)
 	}
+
+	// Create a composite key from the start commitment and height
+	type commitHeightKey struct {
+		commit string
+		height uint64
+	}
+	startHeight, startCommitment := edge.StartCommitment()
+	key := commitHeightKey{
+		commit: startCommitment.String(),
+		height: uint64(startHeight),
+	}
+
+	// Check if the composite key exists in the junkCommitmentCache
+	// This is to short-circuit processing if we already know the commitment is "junk"
+	if _, ok := w.junkCommitmentCache.Get(key); ok {
+		// Cache hit: this startCommitment and height combination is known to be junk, skipping further processing
+		return nil
+	}
+
 	// Add the edge to a local challenge tree of tracked edges. If it is honest,
 	// we also spawn a tracker for the edge.
 	agreement, err := chal.honestEdgeTree.AddEdge(ctx, edge)
 	if err != nil {
 		return errors.Wrap(err, "could not add edge to challenge tree")
 	}
+
+	if !agreement.AgreesWithStartCommit && key.height != 0 {
+		// Cache miss: this startCommitment and height combination is determined to be junk, adding to cache for future short-circuit
+		w.junkCommitmentCache.Add(key, struct{}{})
+	}
+
 	if agreement.IsHonestEdge {
 		return w.edgeManager.TrackEdge(ctx, edge)
 	}
