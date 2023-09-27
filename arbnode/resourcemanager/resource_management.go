@@ -48,7 +48,7 @@ func Init(conf *Config) error {
 		var c limitChecker
 		c, err := newCgroupsMemoryLimitCheckerIfSupported(limit)
 		if errors.Is(err, errNotSupported) {
-			log.Error("no method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
+			log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
 			c = &trivialLimitChecker{}
 		}
 
@@ -119,7 +119,7 @@ func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	exceeded, err := s.c.isLimitExceeded()
 	limitCheckDurationHistogram.Update(time.Since(start).Nanoseconds())
 	if err != nil {
-		log.Error("error checking memory limit", "err", err, "checker", s.c)
+		log.Error("Error checking memory limit", "err", err, "checker", s.c.String())
 	} else if exceeded {
 		http.Error(w, "Too many requests", http.StatusTooManyRequests)
 		limitCheckFailureCounter.Inc(1)
