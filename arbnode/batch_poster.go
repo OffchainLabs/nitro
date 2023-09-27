@@ -955,7 +955,9 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.dataPoster.Start(ctxIn)
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
-	b.LaunchThread(b.pollForReverts)
+	if !b.l1Reader.IsParentChainArbitrum() {
+		b.LaunchThread(b.pollForReverts)
+	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
