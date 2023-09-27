@@ -145,6 +145,33 @@ func initStorages(ctx context.Context, t *testing.T) map[string]QueueStorage {
 	return m
 }
 
+func TestPruneAll(t *testing.T) {
+	s := newLevelDBStorage(t, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		if err := s.Put(ctx, uint64(i), nil, valueOf(t, i)); err != nil {
+			t.Fatalf("Error putting a key/value: %v", err)
+		}
+	}
+	size, err := s.Length(ctx)
+	if err != nil {
+		t.Fatalf("Length() unexpected error %v", err)
+	}
+	if size != 20 {
+		t.Errorf("Length()=%v want 20", size)
+	}
+	if err := s.PruneAll(ctx); err != nil {
+		t.Fatalf("PruneAll() unexpected error: %v", err)
+	}
+	size, err = s.Length(ctx)
+	if err != nil {
+		t.Fatalf("Length() unexpected error %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Length()=%v want 0", size)
+	}
+}
+
 func TestFetchContents(t *testing.T) {
 	ctx := context.Background()
 	for name, s := range initStorages(ctx, t) {
