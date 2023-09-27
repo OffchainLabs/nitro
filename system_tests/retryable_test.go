@@ -87,7 +87,7 @@ func retryableSetup(t *testing.T) (
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	TransferBalance(t, "Faucet", "Burn", discard, testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceViaL2(t, "Faucet", "Burn", discard)
 
 	teardown := func() {
 
@@ -289,7 +289,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, testNode.L2Client, testNode.L2Info)
-	elevateL2Basefee(t, ctx, testNode.L2Client, testNode.L2Info)
+	elevateL2Basefee(t, ctx, testNode)
 
 	usertxopts := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -502,7 +502,7 @@ func TestArbitrumContractTx(t *testing.T) {
 	testNode, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	faucetL2Addr := util.RemapL1Address(testNode.L1Info.GetAddress("Faucet"))
-	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceToViaL2(t, "Faucet", faucetL2Addr, big.NewInt(1e18))
 
 	l2TxOpts := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	l2ContractAddr, _ := testNode.DeploySimple(t, l2TxOpts)
@@ -559,7 +559,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	faucetL2Addr := util.RemapL1Address(testNode.L1Info.GetAddress("Faucet"))
 	// Transfer balance to Faucet's corresponding L2 address, so that there is
 	// enough balance on its' account for executing L2 transaction.
-	TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceToViaL2(t, "Faucet", faucetL2Addr, big.NewInt(1e18))
 
 	l2TxOpts := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	contractAddr, _ := testNode.DeploySimple(t, l2TxOpts)
@@ -631,7 +631,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
-	elevateL2Basefee(t, ctx, testNode.L2Client, testNode.L2Info)
+	elevateL2Basefee(t, ctx, testNode)
 
 	infraBalanceBefore, err := testNode.L2Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
@@ -643,7 +643,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	callValue := common.Big0
 	usertxoptsL1 := testNode.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL1.Value = deposit
-	baseFee := GetBaseFee(t, testNode.L2Client, ctx)
+	baseFee := testNode.GetBaseFeeAtViaL2(t, nil)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxoptsL1,
 		simpleAddr,
@@ -736,7 +736,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	Require(t, err)
 	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	submissionBaseFee := GetBaseFeeAt(t, testNode.L2Client, ctx, submissionReceipt.BlockNumber)
+	submissionBaseFee := testNode.GetBaseFeeAtViaL2(t, submissionReceipt.BlockNumber)
 	submissionTx, ok := submissionTxOuter.GetInner().(*types.ArbitrumSubmitRetryableTx)
 	if !ok {
 		Fatal(t, "inner tx isn't ArbitrumSubmitRetryableTx")
@@ -756,7 +756,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	if !ok {
 		Fatal(t, "inner tx isn't ArbitrumRetryTx")
 	}
-	redeemBaseFee := GetBaseFeeAt(t, testNode.L2Client, ctx, redeemReceipt.BlockNumber)
+	redeemBaseFee := testNode.GetBaseFeeAtViaL2(t, redeemReceipt.BlockNumber)
 
 	t.Log("redeem base fee:", redeemBaseFee)
 	// redeem & retry expected fees
@@ -792,29 +792,29 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 }
 
 // elevateL2Basefee by burning gas exceeding speed limit
-func elevateL2Basefee(t *testing.T, ctx context.Context, l2client *ethclient.Client, l2info *BlockchainTestInfo) {
-	baseFeeBefore := GetBaseFee(t, l2client, ctx)
+func elevateL2Basefee(t *testing.T, ctx context.Context, testNode *NodeBuilder) {
+	baseFeeBefore := testNode.GetBaseFeeAtViaL2(t, nil)
 	colors.PrintBlue("Elevating base fee...")
 	arbostestabi, err := precompilesgen.ArbosTestMetaData.GetAbi()
 	Require(t, err)
-	_, err = precompilesgen.NewArbosTest(common.HexToAddress("0x69"), l2client)
+	_, err = precompilesgen.NewArbosTest(common.HexToAddress("0x69"), testNode.L2Client)
 	Require(t, err, "failed to deploy ArbosTest")
 
 	burnAmount := arbnode.ConfigDefaultL1Test().RPC.RPCGasCap
 	burnTarget := uint64(5 * l2pricing.InitialSpeedLimitPerSecondV6 * l2pricing.InitialBacklogTolerance)
 	for i := uint64(0); i < (burnTarget+burnAmount)/burnAmount; i++ {
 		burnArbGas := arbostestabi.Methods["burnArbGas"]
-		data, err := burnArbGas.Inputs.Pack(arbmath.UintToBig(burnAmount - l2info.TransferGas))
+		data, err := burnArbGas.Inputs.Pack(arbmath.UintToBig(burnAmount - testNode.L2Info.TransferGas))
 		Require(t, err)
 		input := append([]byte{}, burnArbGas.ID...)
 		input = append(input, data...)
 		to := common.HexToAddress("0x69")
-		tx := l2info.PrepareTxTo("Faucet", &to, burnAmount, big.NewInt(0), input)
-		Require(t, l2client.SendTransaction(ctx, tx))
-		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		tx := testNode.L2Info.PrepareTxTo("Faucet", &to, burnAmount, big.NewInt(0), input)
+		Require(t, testNode.L2Client.SendTransaction(ctx, tx))
+		_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 		Require(t, err)
 	}
-	baseFee := GetBaseFee(t, l2client, ctx)
+	baseFee := testNode.GetBaseFeeAtViaL2(t, nil)
 	colors.PrintBlue("New base fee: ", baseFee, " diff:", baseFee.Uint64()-baseFeeBefore.Uint64())
 }
 

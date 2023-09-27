@@ -31,10 +31,10 @@ func TestReorgResequencing(t *testing.T) {
 	testNode.L2Info.GenerateAccount("User2")
 	testNode.L2Info.GenerateAccount("User3")
 	testNode.L2Info.GenerateAccount("User4")
-	TransferBalance(t, "Owner", "User1", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
-	TransferBalance(t, "Owner", "Intermediate", big.NewInt(params.Ether*3), testNode.L2Info, testNode.L2Client, ctx)
-	TransferBalance(t, "Intermediate", "User2", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
-	TransferBalance(t, "Intermediate", "User3", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceViaL2(t, "Owner", "User1", big.NewInt(params.Ether))
+	testNode.TransferBalanceViaL2(t, "Owner", "Intermediate", big.NewInt(params.Ether*3))
+	testNode.TransferBalanceViaL2(t, "Intermediate", "User2", big.NewInt(params.Ether))
+	testNode.TransferBalanceViaL2(t, "Intermediate", "User3", big.NewInt(params.Ether))
 
 	// Intermediate does not have exactly 1 ether because of fees
 	accountsWithBalance := []string{"User1", "User2", "User3"}

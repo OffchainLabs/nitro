@@ -57,6 +57,9 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+type info = *BlockchainTestInfo
+type client = arbutil.L1Interface
+
 type NodeBuilder struct {
 	// Nodebuilder configuration
 	ctx           context.Context
@@ -130,20 +133,54 @@ func (b *NodeBuilder) SetIsSequencer(v bool) *NodeBuilder {
 
 func (b *NodeBuilder) CreateTestNodeOnL1AndL2(t *testing.T) *NodeBuilder {
 	b.L2Info, b.L2Node, b.L2Client, b.L2Stack, b.L1Info, b.L1Backend, b.L1Client, b.L1Stack =
-		createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.l2StackConfig, b.cacheConfig, b.L2Info)
+		createTestNodeOnL1AndL2Impl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.l2StackConfig, b.cacheConfig, b.L2Info)
 	return b
 }
 
 func (b *NodeBuilder) CreateTestNodeOnL2Only(t *testing.T, takeOwnership bool) *NodeBuilder {
-	b.L2Info, b.L2Node, b.L2Client = CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, takeOwnership)
+	b.L2Info, b.L2Node, b.L2Client = createTestNodeOnL2OnlyImpl(t, b.ctx, b.L2Info, b.nodeConfig, takeOwnership)
 	return b
 }
-func (b *NodeBuilder) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
-	return deploySimple(t, b.ctx, auth, b.L2Client)
+
+func (b *NodeBuilder) SendSignedTxViaL1(t *testing.T, transaction *types.Transaction) *types.Receipt {
+	return sendSignedTxViaL1Impl(t, b.ctx, b.L1Info, b.L1Client, b.L2Client, transaction)
 }
 
-type info = *BlockchainTestInfo
-type client = arbutil.L1Interface
+func (b *NodeBuilder) SendUnsignedTxViaL1(t *testing.T, transaction *types.Transaction) *types.Receipt {
+	return sendUnsignedTxViaL1Impl(t, b.ctx, b.L1Info, b.L1Client, b.L2Client, transaction)
+}
+
+func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return bridgeBalanceImpl(t, account, amount, b.L1Info, b.L2Info, b.L1Client, b.L2Client, b.ctx)
+}
+
+func (b *NodeBuilder) TransferBalanceViaL2(t *testing.T, from string, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return transferBalanceToImpl(t, from, b.L2Info.GetAddress(to), amount, b.L2Info, b.L2Client, b.ctx)
+}
+
+func (b *NodeBuilder) TransferBalanceViaL1(t *testing.T, from string, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return transferBalanceToImpl(t, from, b.L1Info.GetAddress(to), amount, b.L1Info, b.L1Client, b.ctx)
+}
+
+func (b *NodeBuilder) TransferBalanceToViaL2(t *testing.T, from string, to common.Address, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return transferBalanceToImpl(t, from, to, amount, b.L2Info, b.L2Client, b.ctx)
+}
+
+func (b *NodeBuilder) TransferBalanceToViaL1(t *testing.T, from string, to common.Address, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return transferBalanceToImpl(t, from, to, amount, b.L1Info, b.L1Client, b.ctx)
+}
+
+func (b *NodeBuilder) GetBaseFeeAtViaL2(t *testing.T, blockNum *big.Int) *big.Int {
+	return getBaseFeeAtImpl(t, b.L2Client, b.ctx, blockNum)
+}
+
+func (b *NodeBuilder) GetBaseFeeAtViaL1(t *testing.T, blockNum *big.Int) *big.Int {
+	return getBaseFeeAtImpl(t, b.L1Client, b.ctx, blockNum)
+}
+
+func (b *NodeBuilder) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
+	return deploySimpleImpl(t, b.ctx, auth, b.L2Client)
+}
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
@@ -156,14 +193,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 	}
 }
 
-func TransferBalance(
-	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
-) (*types.Transaction, *types.Receipt) {
-	t.Helper()
-	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
-}
-
-func TransferBalanceTo(
+func transferBalanceToImpl(
 	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
@@ -176,7 +206,7 @@ func TransferBalanceTo(
 }
 
 // if l2client is not nil - will wait until balance appears in l2
-func BridgeBalance(
+func bridgeBalanceImpl(
 	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
@@ -223,7 +253,7 @@ func BridgeBalance(
 			if balance.Cmp(l2Balance) >= 0 {
 				break
 			}
-			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
+			transferBalanceToImpl(t, "Faucet", l1info.GetAddress("User"), big.NewInt(1), l1info, l1client, ctx)
 			if i > 20 {
 				Fatal(t, "bridging failed")
 			}
@@ -234,7 +264,7 @@ func BridgeBalance(
 	return tx, res
 }
 
-func SendSignedTxViaL1(
+func sendSignedTxViaL1Impl(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
@@ -265,7 +295,7 @@ func SendSignedTxViaL1(
 	return receipt
 }
 
-func SendUnsignedTxViaL1(
+func sendUnsignedTxViaL1Impl(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
@@ -316,13 +346,7 @@ func SendUnsignedTxViaL1(
 	return receipt
 }
 
-func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
-	header, err := client.HeaderByNumber(ctx, nil)
-	Require(t, err)
-	return header.BaseFee
-}
-
-func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+func getBaseFeeAtImpl(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
 	header, err := client.HeaderByNumber(ctx, blockNum)
 	Require(t, err)
 	return header.BaseFee
@@ -634,33 +658,7 @@ func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
 }
 
 // Create and deploy L1 and arbnode for L2
-func createTestNodeOnL1(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, nil, nil, nil)
-}
-
-func createTestNodeOnL1WithConfig(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
-) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil, nil)
-	return
-}
-
-func createTestNodeOnL1WithConfigImpl(
+func createTestNodeOnL1AndL2Impl(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
@@ -724,7 +722,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2WithConfig(
+func createTestNodeOnL2OnlyImpl(
 	t *testing.T,
 	ctx context.Context,
 	l2Info *BlockchainTestInfo,
@@ -990,7 +988,7 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	return timeout
 }
 
-func deploySimple(
+func deploySimpleImpl(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
 ) (common.Address, *mocksgen.Simple) {
 	addr, tx, simple, err := mocksgen.DeploySimple(&auth, client)

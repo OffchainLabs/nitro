@@ -28,7 +28,7 @@ func TestAliasing(t *testing.T) {
 
 	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	user := testNode.L1Info.GetDefaultTransactOpts("User", ctx)
-	TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceToViaL2(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18))
 
 	simpleAddr, simple := testNode.DeploySimple(t, auth)
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
@@ -63,7 +63,7 @@ func TestAliasing(t *testing.T) {
 		data, err := simpleContract.Pack("checkCalls", top, direct, static, delegate, callcode, call)
 		Require(t, err)
 		tx = testNode.L2Info.PrepareTxTo("Owner", &simpleAddr, 500000, big.NewInt(0), data)
-		SendSignedTxViaL1(t, ctx, testNode.L1Info, testNode.L1Client, testNode.L2Client, tx)
+		testNode.SendSignedTxViaL1(t, tx)
 	}
 
 	testUnsigned := func(top, direct, static, delegate, callcode, call bool) {
@@ -73,7 +73,7 @@ func TestAliasing(t *testing.T) {
 		data, err := simpleContract.Pack("checkCalls", top, direct, static, delegate, callcode, call)
 		Require(t, err)
 		tx := testNode.L2Info.PrepareTxTo("Owner", &simpleAddr, 500000, big.NewInt(0), data)
-		SendUnsignedTxViaL1(t, ctx, testNode.L1Info, testNode.L1Client, testNode.L2Client, tx)
+		testNode.SendUnsignedTxViaL1(t, tx)
 	}
 
 	testL2Signed(true, true, false, false, false, false)

@@ -135,11 +135,11 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, nil)
-	defer requireClose(t, l1stack, "unable to close l1stack")
-	defer nodeA.StopAndWait()
+	testNodeA := NewNodeBuilder(ctx).SetNodeConfig(nodeConfigA).SetChainConfig(chainConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNodeA.L1Stack, "unable to close l1Stack")
+	defer testNodeA.L2Node.StopAndWait()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, testNodeA.L1Info, testNodeA.L1Client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
@@ -147,7 +147,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.DataAvailability.RPCAggregator.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC, nil)
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, testNodeA.L2Node, testNodeA.L1Stack, testNodeA.L1Info, &testNodeA.L2Info.ArbInitData, nodeConfigC, nil)
 	defer nodeC.StopAndWait()
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -158,15 +158,15 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigB.DataAvailability.RPCAggregator.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, testNodeA.L2Node, testNodeA.L1Stack, testNodeA.L1Info, &testNodeA.L2Info.ArbInitData, nodeConfigB, nil)
 	defer nodeB.StopAndWait()
 
-	l2infoA.GenerateAccount("FraudUser")
-	l2infoA.GenerateAccount("RealUser")
+	testNodeA.L2Info.GenerateAccount("FraudUser")
+	testNodeA.L2Info.GenerateAccount("RealUser")
 
-	fraudTx := l2infoA.PrepareTx("Owner", "FraudUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
-	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
-	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
+	fraudTx := testNodeA.L2Info.PrepareTx("Owner", "FraudUser", testNodeA.L2Info.TransferGas, big.NewInt(1e12), nil)
+	testNodeA.L2Info.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
+	realTx := testNodeA.L2Info.PrepareTx("Owner", "RealUser", testNodeA.L2Info.TransferGas, big.NewInt(1e12), nil)
 
 	err := l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
@@ -183,7 +183,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if err != nil {
 		t.Fatal("error waiting for tx:", err)
 	}
-	l2balance, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
+	l2balance, err := l2clientB.BalanceAt(ctx, testNodeA.L2Info.GetAddress("FraudUser"), nil)
 	if err != nil {
 		t.Fatal("error getting balance:", err)
 	}
@@ -192,12 +192,12 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 
 	// Send the real transaction to client A
-	err = l2clientA.SendTransaction(ctx, realTx)
+	err = testNodeA.L2Client.SendTransaction(ctx, realTx)
 	if err != nil {
 		t.Fatal("error sending real transaction:", err)
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx)
+	_, err = EnsureTxSucceeded(ctx, testNodeA.L2Client, realTx)
 	if err != nil {
 		t.Fatal("error ensuring real transaction succeeded:", err)
 	}
@@ -207,7 +207,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if err != nil {
 		t.Fatal("error waiting for transaction to get to node b:", err)
 	}
-	l2balanceFraudAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
+	l2balanceFraudAcct, err := l2clientB.BalanceAt(ctx, testNodeA.L2Info.GetAddress("FraudUser"), nil)
 	if err != nil {
 		t.Fatal("error getting fraud balance:", err)
 	}
@@ -215,7 +215,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance (fraud acct should be empty) was:", l2balanceFraudAcct)
 	}
 
-	l2balanceRealAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("RealUser"), nil)
+	l2balanceRealAcct, err := l2clientB.BalanceAt(ctx, testNodeA.L2Info.GetAddress("RealUser"), nil)
 	if err != nil {
 		t.Fatal("error getting real balance:", err)
 	}

@@ -78,7 +78,7 @@ func TestEstimate(t *testing.T) {
 	for !equilibrated && numTriesLeft > 0 {
 		// make an empty block to let the gas price update
 		testNode.L2Info.GasPrice = new(big.Int).Mul(testNode.L2Info.GasPrice, big.NewInt(2))
-		TransferBalance(t, "Owner", "Owner", common.Big0, testNode.L2Info, testNode.L2Client, ctx)
+		testNode.TransferBalanceViaL2(t, "Owner", "Owner", common.Big0)
 
 		// check if the price has equilibrated
 		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
@@ -136,7 +136,7 @@ func TestComponentEstimate(t *testing.T) {
 	defer testNode.L2Node.StopAndWait()
 
 	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
-	l2BaseFee := GetBaseFee(t, testNode.L2Client, ctx)
+	l2BaseFee := testNode.GetBaseFeeAtViaL2(t, nil)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
 	colors.PrintGrey("l2 basefee ", l2BaseFee)
@@ -146,7 +146,7 @@ func TestComponentEstimate(t *testing.T) {
 	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
 
 	testNode.L2Info.GenerateAccount("User")
-	TransferBalance(t, "Owner", "User", userBalance, testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceViaL2(t, "Owner", "User", userBalance)
 
 	from := testNode.L2Info.GetAddress("User")
 	to := testhelpers.RandomAddress()

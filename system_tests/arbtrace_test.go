@@ -147,11 +147,11 @@ func TestArbTraceForwarding(t *testing.T) {
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.RPC.ClassicRedirect = ipcPath
 	nodeConfig.RPC.ClassicRedirectTimeout = time.Second
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, nil, nil)
-	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stack)
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNode.L1Stack)
+	defer requireClose(t, testNode.L2Stack)
 
-	l2rpc, _ := l2stack.Attach()
+	l2rpc, _ := testNode.L2Stack.Attach()
 	txArgs := callTxArgs{}
 	traceTypes := []string{"trace"}
 	blockNum := rpc.BlockNumberOrHash{}

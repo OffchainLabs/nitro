@@ -278,9 +278,9 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, nodeA, clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, params.ArbitrumDevTestChainConfig(), nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
+	testNodeA := NewNodeBuilder(ctx).SetNodeConfig(nodeConfig).SetChainConfig(params.ArbitrumDevTestChainConfig()).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNodeA.L1Stack)
+	defer testNodeA.L2Node.StopAndWait()
 
 	redisClient, err := redisutil.RedisClientFromURL(nodeConfig.SeqCoordinator.RedisUrl)
 	Require(t, err)
@@ -297,7 +297,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 		break
 	}
 
-	l2Info.GenerateAccount("User2")
+	testNodeA.L2Info.GenerateAccount("User2")
 
 	nodeConfigDup := *nodeConfig
 	nodeConfig = &nodeConfigDup
@@ -305,23 +305,23 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 	if !successCase {
 		nodeConfig.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
-		nodeConfig.SeqCoordinator.Signer.ECDSA.AllowedAddresses = []string{l2Info.GetAddress("User2").Hex()}
+		nodeConfig.SeqCoordinator.Signer.ECDSA.AllowedAddresses = []string{testNodeA.L2Info.GetAddress("User2").Hex()}
 	}
-	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig, nil)
+	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, testNodeA.L2Node, testNodeA.L1Stack, testNodeA.L1Info, &testNodeA.L2Info.ArbInitData, nodeConfig, nil)
 	defer nodeB.StopAndWait()
 
-	tx := l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(1e12), nil)
+	tx := testNodeA.L2Info.PrepareTx("Owner", "User2", testNodeA.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	err = clientA.SendTransaction(ctx, tx)
+	err = testNodeA.L2Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, testNodeA.L2Client, tx)
 	Require(t, err)
 
 	if successCase {
 		_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
 		Require(t, err)
-		l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
+		l2balance, err := clientB.BalanceAt(ctx, testNodeA.L2Info.GetAddress("User2"), nil)
 		Require(t, err)
 		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 			t.Fatal("Unexpected balance:", l2balance)

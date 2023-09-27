@@ -25,11 +25,11 @@ func TestDelayInboxLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, l2node, l2client, l1info, l1backend, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNode.L1Stack)
+	defer testNode.L2Node.StopAndWait()
 
-	l2info.GenerateAccount("User2")
+	testNode.L2Info.GenerateAccount("User2")
 
 	fundsPerDelayed := int64(1000000)
 	delayedMessages := int64(0)
@@ -42,22 +42,22 @@ func TestDelayInboxLong(t *testing.T) {
 			randNum := rand.Int() % messagesPerDelayed
 			var l1tx *types.Transaction
 			if randNum == 0 {
-				delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(fundsPerDelayed), nil)
-				l1tx = WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000)
+				delayedTx := testNode.L2Info.PrepareTx("Owner", "User2", 50001, big.NewInt(fundsPerDelayed), nil)
+				l1tx = WrapL2ForDelayed(t, delayedTx, testNode.L1Info, "User", 100000)
 				lastDelayedMessage = delayedTx
 				delayedMessages++
 			} else {
-				l1tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
+				l1tx = testNode.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
 		// adding multiple messages in the same AddLocal to get them in the same L1 block
-		errs := l1backend.TxPool().AddLocals(l1Txs)
+		errs := testNode.L1Backend.TxPool().AddLocals(l1Txs)
 		for _, err := range errs {
 			Require(t, err)
 		}
 		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
-		_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+		_, err := EnsureTxSucceeded(ctx, testNode.L1Client, l1Txs[len(l1Txs)-1])
 		Require(t, err)
 	}
 
@@ -68,14 +68,14 @@ func TestDelayInboxLong(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 100; i++ {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+		SendWaitTestTransactions(t, ctx, testNode.L1Client, []*types.Transaction{
+			testNode.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 
-	_, err := WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
+	_, err := WaitForTx(ctx, testNode.L2Client, lastDelayedMessage.Hash(), time.Second*5)
 	Require(t, err)
-	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	l2balance, err := testNode.L2Client.BalanceAt(ctx, testNode.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(fundsPerDelayed*delayedMessages)) != 0 {
 		Fatal(t, "Unexpected balance:", "balance", l2balance, "expected", fundsPerDelayed*delayedMessages)

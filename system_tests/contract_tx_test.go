@@ -30,7 +30,7 @@ func TestContractTxDeploy(t *testing.T) {
 	defer testNode.L2Node.StopAndWait()
 
 	from := common.HexToAddress("0x123412341234")
-	TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceToViaL2(t, "Faucet", from, big.NewInt(1e18))
 
 	for stateNonce := uint64(0); stateNonce < 2; stateNonce++ {
 		pos, err := testNode.L2Node.TxStreamer.GetMessageCount()

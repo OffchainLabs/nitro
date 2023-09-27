@@ -22,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func()) {
+func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64) (*arbnode.Node, *core.BlockChain, ethdb.Database, *ethclient.Client, info, func()) {
 	t.Helper()
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
@@ -43,27 +43,27 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		SnapshotLimit: 256,
 		SnapshotWait:  true,
 	}
-	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig, nil)
-	cancel = func() {
-		defer requireClose(t, l1stack)
-		defer node.StopAndWait()
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeConfig).SetCacheConfig(cacheConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	cancel := func() {
+		defer requireClose(t, testNode.L1Stack)
+		defer testNode.L2Node.StopAndWait()
 	}
-	l2info.GenerateAccount("User2")
+	testNode.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < txCount; i++ {
-		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
+		tx := testNode.L2Info.PrepareTx("Owner", "User2", testNode.L2Info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
-		err := l2client.SendTransaction(ctx, tx)
+		err := testNode.L2Client.SendTransaction(ctx, tx)
 		testhelpers.RequireImpl(t, err)
 	}
 	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, l2client, tx)
+		_, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
 		testhelpers.RequireImpl(t, err)
 	}
-	bc = node.Execution.Backend.ArbInterface().BlockChain()
-	db = node.Execution.Backend.ChainDb()
+	bc := testNode.L2Node.Execution.Backend.ArbInterface().BlockChain()
+	db := testNode.L2Node.Execution.Backend.ChainDb()
 
-	return
+	return testNode.L2Node, bc, db, testNode.L2Client, testNode.L2Info, cancel
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {

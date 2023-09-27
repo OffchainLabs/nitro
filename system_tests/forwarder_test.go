@@ -40,9 +40,9 @@ func TestStaticForwarder(t *testing.T) {
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.BatchPoster.Enable = false
 
-	l2info, nodeA, clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, nil, stackConfig)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
+	testNodeA := NewNodeBuilder(ctx).SetNodeConfig(nodeConfigA).SetL2StackConfig(stackConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNodeA.L1Stack)
+	defer testNodeA.L2Node.StopAndWait()
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	nodeConfigB.Sequencer.Enable = false
@@ -51,18 +51,18 @@ func TestStaticForwarder(t *testing.T) {
 	nodeConfigB.ForwardingTarget = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
 
-	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nodeConfigB, nil)
+	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, testNodeA.L2Node, testNodeA.L1Stack, testNodeA.L1Info, &testNodeA.L2Info.ArbInitData, nodeConfigB, nil)
 	defer nodeB.StopAndWait()
 
-	l2info.GenerateAccount("User2")
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, transferAmount, nil)
+	testNodeA.L2Info.GenerateAccount("User2")
+	tx := testNodeA.L2Info.PrepareTx("Owner", "User2", testNodeA.L2Info.TransferGas, transferAmount, nil)
 	err := clientB.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, testNodeA.L2Client, tx)
 	Require(t, err)
 
-	l2balance, err := clientA.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	l2balance, err := testNodeA.L2Client.BalanceAt(ctx, testNodeA.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
 	if l2balance.Cmp(transferAmount) != 0 {
@@ -105,7 +105,8 @@ func fallbackSequencer(
 	nodeConfig.SeqCoordinator.Enable = opts.enableSecCoordinator
 	nodeConfig.SeqCoordinator.RedisUrl = opts.redisUrl
 	nodeConfig.SeqCoordinator.MyUrl = opts.ipcPath
-	return createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, stackConfig)
+	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeConfig).SetL2StackConfig(stackConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	return testNode.L2Info, testNode.L2Node, testNode.L2Client, testNode.L1Info, testNode.L1Backend, testNode.L1Client, testNode.L1Stack
 }
 
 func createForwardingNode(

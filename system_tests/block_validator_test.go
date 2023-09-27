@@ -50,20 +50,20 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		delayEvery = workloadLoops / 3
 	}
 
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
+	testNodeA := NewNodeBuilder(ctx).SetIsSequencer(true).SetNodeConfig(l1NodeConfigA).SetChainConfig(chainConfig).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNodeA.L1Stack)
+	defer testNodeA.L2Node.StopAndWait()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, testNodeA.L1Info, testNodeA.L1Client)
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.RPCAggregator.Enable = false
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, testNodeA.L2Node, testNodeA.L1Stack, testNodeA.L1Info, &testNodeA.L2Info.ArbInitData, validatorConfig, nil)
 	defer nodeB.StopAndWait()
-	l2info.GenerateAccount("User2")
+	testNodeA.L2Info.GenerateAccount("User2")
 
 	perTransfer := big.NewInt(1e12)
 
@@ -72,7 +72,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			var tx *types.Transaction
 
 			if workload == ethSend {
-				tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, perTransfer, nil)
+				tx = testNodeA.L2Info.PrepareTx("Owner", "User2", testNodeA.L2Info.TransferGas, perTransfer, nil)
 			} else {
 				var contractCode []byte
 				var gas uint64
@@ -86,10 +86,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 					contractCode = append(contractCode, byte(vm.CODECOPY))
 					contractCode = append(contractCode, byte(vm.PUSH0))
 					contractCode = append(contractCode, byte(vm.RETURN))
-					basefee := GetBaseFee(t, l2client, ctx)
+					basefee := testNodeA.GetBaseFeeAtViaL2(t, nil)
 					var err error
-					gas, err = l2client.EstimateGas(ctx, ethereum.CallMsg{
-						From:     l2info.GetAddress("Owner"),
+					gas, err = testNodeA.L2Client.EstimateGas(ctx, ethereum.CallMsg{
+						From:     testNodeA.L2Info.GetAddress("Owner"),
 						GasPrice: basefee,
 						Value:    big.NewInt(0),
 						Data:     contractCode,
@@ -101,14 +101,14 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 						contractCode = append(contractCode, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
 					}
 					contractCode = append(contractCode, 0x60, 0x00, 0x56) // JUMP
-					gas = l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6
+					gas = testNodeA.L2Info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6
 				}
-				tx = l2info.PrepareTxTo("Owner", nil, gas, common.Big0, contractCode)
+				tx = testNodeA.L2Info.PrepareTxTo("Owner", nil, gas, common.Big0, contractCode)
 			}
 
-			err := l2client.SendTransaction(ctx, tx)
+			err := testNodeA.L2Client.SendTransaction(ctx, tx)
 			Require(t, err)
-			_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
+			_, err = EnsureTxSucceededWithTimeout(ctx, testNodeA.L2Client, tx, time.Second*5)
 			if workload != depleteGas {
 				Require(t, err)
 			}
@@ -117,40 +117,40 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			}
 		}
 	} else {
-		auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+		auth := testNodeA.L2Info.GetDefaultTransactOpts("Owner", ctx)
 		// make auth a chain owner
-		arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
+		arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), testNodeA.L2Client)
 		Require(t, err)
 		tx, err := arbDebug.BecomeChainOwner(&auth)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		_, err = EnsureTxSucceeded(ctx, testNodeA.L2Client, tx)
 		Require(t, err)
-		arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), l2client)
+		arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), testNodeA.L2Client)
 		Require(t, err)
 		tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, 11, 0)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		_, err = EnsureTxSucceeded(ctx, testNodeA.L2Client, tx)
 		Require(t, err)
 
-		tx = l2info.PrepareTxTo("Owner", nil, l2info.TransferGas, perTransfer, []byte{byte(vm.PUSH0)})
-		err = l2client.SendTransaction(ctx, tx)
+		tx = testNodeA.L2Info.PrepareTxTo("Owner", nil, testNodeA.L2Info.TransferGas, perTransfer, []byte{byte(vm.PUSH0)})
+		err = testNodeA.L2Client.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
+		_, err = EnsureTxSucceededWithTimeout(ctx, testNodeA.L2Client, tx, time.Second*5)
 		Require(t, err)
 	}
 
 	if workload != depleteGas {
-		delayedTx := l2info.PrepareTx("Owner", "User2", 30002, perTransfer, nil)
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
+		delayedTx := testNodeA.L2Info.PrepareTx("Owner", "User2", 30002, perTransfer, nil)
+		SendWaitTestTransactions(t, ctx, testNodeA.L1Client, []*types.Transaction{
+			WrapL2ForDelayed(t, delayedTx, testNodeA.L1Info, "User", 100000),
 		})
 		// give the inbox reader a bit of time to pick up the delayed message
 		time.Sleep(time.Millisecond * 500)
 
 		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 		for i := 0; i < 30; i++ {
-			SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-				l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+			SendWaitTestTransactions(t, ctx, testNodeA.L1Client, []*types.Transaction{
+				testNodeA.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}
 
@@ -159,7 +159,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	}
 
 	if workload == ethSend {
-		l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+		l2balance, err := l2clientB.BalanceAt(ctx, testNodeA.L2Info.GetAddress("User2"), nil)
 		Require(t, err)
 
 		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))

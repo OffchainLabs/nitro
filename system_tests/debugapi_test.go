@@ -14,11 +14,11 @@ import (
 func TestDebugAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, nil, nil, nil)
-	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stack)
+	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	defer requireClose(t, testNode.L1Stack)
+	defer requireClose(t, testNode.L2Stack)
 
-	l2rpc, _ := l2stack.Attach()
+	l2rpc, _ := testNode.L2Stack.Attach()
 
 	var dump state.Dump
 	err := l2rpc.CallContext(ctx, &dump, "debug_dumpBlock", rpc.LatestBlockNumber)

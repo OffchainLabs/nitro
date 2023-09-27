@@ -25,11 +25,11 @@ func TestSequencerWhitelist(t *testing.T) {
 	testNode.L2Info.GenerateAccount("User2")
 
 	// Owner is on the whitelist
-	TransferBalance(t, "Owner", "User", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
-	TransferBalance(t, "Owner", "User2", big.NewInt(params.Ether), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceViaL2(t, "Owner", "User", big.NewInt(params.Ether))
+	testNode.TransferBalanceViaL2(t, "Owner", "User2", big.NewInt(params.Ether))
 
 	// User is on the whitelist
-	TransferBalance(t, "User", "User2", big.NewInt(params.Ether/10), testNode.L2Info, testNode.L2Client, ctx)
+	testNode.TransferBalanceViaL2(t, "User", "User2", big.NewInt(params.Ether/10))
 
 	// User2 is *not* on the whitelist, therefore this should fail
 	tx := testNode.L2Info.PrepareTx("User2", "User", testNode.L2Info.TransferGas, big.NewInt(params.Ether/10), nil)
