@@ -29,11 +29,13 @@ type SequenceNumberCatchupBuffer struct {
 	messages     []*BroadcastFeedMessage
 	messageCount int32
 	limitCatchup func() bool
+	maxCatchup   func() int
 }
 
-func NewSequenceNumberCatchupBuffer(limitCatchup func() bool) *SequenceNumberCatchupBuffer {
+func NewSequenceNumberCatchupBuffer(limitCatchup func() bool, maxCatchup func() int) *SequenceNumberCatchupBuffer {
 	return &SequenceNumberCatchupBuffer{
 		limitCatchup: limitCatchup,
+		maxCatchup:   maxCatchup,
 	}
 }
 
@@ -98,6 +100,15 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(clientConnection *wsbroad
 	return nil, bmCount, time.Since(start)
 }
 
+// Takes as input an index into the messages array, not a message index
+func (b *SequenceNumberCatchupBuffer) pruneBufferToIndex(idx int) {
+	b.messages = b.messages[idx:]
+	if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
+		// Too much spare capacity, copy to fresh slice to reset memory usage
+		b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
+	}
+}
+
 func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber arbutil.MessageIndex) {
 	if len(b.messages) == 0 {
 		return
@@ -126,11 +137,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 		return
 	}
 
-	b.messages = b.messages[confirmedIndex+1:]
-	if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
-		// Too much spare capacity, copy to fresh slice to reset memory usage
-		b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
-	}
+	b.pruneBufferToIndex(int(confirmedIndex) + 1)
 }
 
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
@@ -145,6 +152,12 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 	if confirmMsg := broadcastMessage.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		b.deleteConfirmed(confirmMsg.SequenceNumber)
 		confirmedSequenceNumberGauge.Update(int64(confirmMsg.SequenceNumber))
+	}
+
+	maxCatchup := b.maxCatchup()
+	if maxCatchup == 0 {
+		b.messages = nil
+		return nil
 	}
 
 	for _, newMsg := range broadcastMessage.Messages {
@@ -165,6 +178,10 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		} else {
 			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
+	}
+
+	if maxCatchup >= 0 && len(b.messages) > maxCatchup {
+		b.pruneBufferToIndex(len(b.messages) - maxCatchup)
 	}
 
 	return nil

@@ -290,6 +290,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					cd.aggSignersMask = aggSignersMask
 					certDetailsChan <- cd
 					returned = true
+					if a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
+						storeFailures+1 > a.maxAllowedServiceStoreFailures {
+						log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
+					}
 				} else if storeFailures > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
 					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, BatchToDasFailed)

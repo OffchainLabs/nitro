@@ -51,6 +51,7 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -367,7 +368,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
+		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
@@ -380,7 +381,10 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
-	resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
+	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
+		flag.Usage()
+		log.Crit("Failed to start resource management module", "err", err)
+	}
 
 	var sameProcessValidationNodeEnabled bool
 	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
@@ -774,7 +778,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.ParentChainIsArbitrum != nil {
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
-		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainId, "parentChainId", chainInfo.ParentChainId)
+		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
 		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true

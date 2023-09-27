@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -43,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -540,7 +542,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 }
 
 func StakerDataposter(
-	db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
 ) (*dataposter.DataPoster, error) {
 	if transactOpts == nil {
@@ -564,7 +566,7 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
-	return dataposter.NewDataPoster(db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
+	return dataposter.NewDataPoster(ctx, db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
 }
 
 func createNodeImpl(
@@ -805,6 +807,7 @@ func createNodeImpl(
 
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
+			ctx,
 			rawdb.NewTable(arbDb, storage.StakerPrefix),
 			l1Reader,
 			txOptsValidator,
@@ -815,28 +818,32 @@ func createNodeImpl(
 			return nil, err
 		}
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
-		var wallet staker.ValidatorWalletInterface
-		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
-			var existingWalletAddress *common.Address
-			if len(config.Staker.ContractWalletAddress) > 0 {
-				if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
-					log.Error("invalid validator smart contract wallet", "addr", config.Staker.ContractWalletAddress)
-					return nil, errors.New("invalid validator smart contract wallet address")
+		// TODO: factor this out into separate helper, and split rest of node
+		// creation into multiple helpers.
+		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
+		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
+			if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
+				var existingWalletAddress *common.Address
+				if len(config.Staker.ContractWalletAddress) > 0 {
+					if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
+						log.Error("invalid validator smart contract wallet", "addr", config.Staker.ContractWalletAddress)
+						return nil, errors.New("invalid validator smart contract wallet address")
+					}
+					tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
+					existingWalletAddress = &tmpAddress
 				}
-				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
-				existingWalletAddress = &tmpAddress
-			}
-			wallet, err = staker.NewContractValidatorWallet(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			if len(config.Staker.ContractWalletAddress) > 0 {
-				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
-			}
-			wallet, err = staker.NewEoaValidatorWallet(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
-			if err != nil {
-				return nil, err
+				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				if len(config.Staker.ContractWalletAddress) > 0 {
+					return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
+				}
+				wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -850,9 +857,8 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		if stakerObj.Strategy() != staker.WatchtowerStrategy {
-			err := wallet.Initialize(ctx)
-			if err != nil {
+		if stakerObj.Strategy() == staker.WatchtowerStrategy {
+			if err := wallet.Initialize(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -873,7 +879,7 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(rawdb.NewTable(arbDb, storage.BatchPosterPrefix), l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
+		batchPoster, err = NewBatchPoster(ctx, rawdb.NewTable(arbDb, storage.BatchPosterPrefix), l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
 		if err != nil {
 			return nil, err
 		}
