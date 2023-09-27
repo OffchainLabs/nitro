@@ -38,6 +38,9 @@ func main() {
 func startMetrics(cfg *ValidationNodeConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
 		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
@@ -65,7 +68,7 @@ func mainImpl() int {
 	stackConf.DataDir = "" // ephemeral
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
-	nodeConfig.AuthRPC.Apply(&stackConf)
+	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
@@ -88,13 +91,13 @@ func mainImpl() int {
 		}
 	}
 
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Workdir))
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Workdir)("jwtsecret")
+		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -107,8 +110,11 @@ func mainImpl() int {
 	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
 
-		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(newCfg.Workdir))
+		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
+
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()

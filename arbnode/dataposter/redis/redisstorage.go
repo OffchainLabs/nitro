@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -19,18 +18,19 @@ import (
 // duplicate keys or values. That is, putting the same element on different
 // indexes will not yield expected behavior.
 // More  at: https://redis.io/commands/zadd/.
-type Storage[Item any] struct {
+type Storage struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac
 	key    string
+	encDec storage.EncoderDecoderF
 }
 
-func NewStorage[Item any](client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*Storage[Item], error) {
+func NewStorage(client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig, enc storage.EncoderDecoderF) (*Storage, error) {
 	signer, err := signature.NewSimpleHmac(signerConf)
 	if err != nil {
 		return nil, err
 	}
-	return &Storage[Item]{client, signer, key}, nil
+	return &Storage{client, signer, key, enc}, nil
 }
 
 func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
@@ -40,7 +40,7 @@ func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
 	return append(sig, msg...), nil
 }
 
-func (s *Storage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
+func (s *Storage) peelVerifySignature(data []byte) ([]byte, error) {
 	if len(data) < 32 {
 		return nil, errors.New("data is too short to contain message signature")
 	}
@@ -52,7 +52,7 @@ func (s *Storage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	return data[32:], nil
 }
 
-func (s *Storage[Item]) FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+func (s *Storage) FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error) {
 	query := redis.ZRangeArgs{
 		Key:     s.key,
 		ByScore: true,
@@ -63,23 +63,22 @@ func (s *Storage[Item]) FetchContents(ctx context.Context, startingIndex uint64,
 	if err != nil {
 		return nil, err
 	}
-	var items []*Item
+	var items []*storage.QueuedTransaction
 	for _, itemString := range itemStrings {
-		var item Item
 		data, err := s.peelVerifySignature([]byte(itemString))
 		if err != nil {
 			return nil, err
 		}
-		err = rlp.DecodeBytes(data, &item)
+		item, err := s.encDec().Decode(data)
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, &item)
+		items = append(items, item)
 	}
 	return items, nil
 }
 
-func (s *Storage[Item]) FetchLast(ctx context.Context) (*Item, error) {
+func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,
 		Start: 0,
@@ -93,31 +92,41 @@ func (s *Storage[Item]) FetchLast(ctx context.Context) (*Item, error) {
 	if len(itemStrings) > 1 {
 		return nil, fmt.Errorf("expected only one return value for GetLast but got %v", len(itemStrings))
 	}
-	var ret *Item
+	var ret *storage.QueuedTransaction
 	if len(itemStrings) > 0 {
-		var item Item
 		data, err := s.peelVerifySignature([]byte(itemStrings[0]))
 		if err != nil {
 			return nil, err
 		}
-		err = rlp.DecodeBytes(data, &item)
+		item, err := s.encDec().Decode(data)
 		if err != nil {
 			return nil, err
 		}
-		ret = &item
+		ret = item
 	}
 	return ret, nil
 }
 
-func (s *Storage[Item]) Prune(ctx context.Context, until uint64) error {
+func (s *Storage) Prune(ctx context.Context, until uint64) error {
 	if until > 0 {
 		return s.client.ZRemRangeByScore(ctx, s.key, "-inf", fmt.Sprintf("%v", until-1)).Err()
 	}
 	return nil
 }
 
-func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
-	if newItem == nil {
+// normalizeDecoding decodes data (regardless of what encoding it used), and
+// encodes it according to current encoding for storage.
+// As a result, encoded data is transformed to currently used encoding.
+func (s *Storage) normalizeDecoding(data []byte) ([]byte, error) {
+	item, err := s.encDec().Decode(data)
+	if err != nil {
+		return nil, err
+	}
+	return s.encDec().Encode(item)
+}
+
+func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.QueuedTransaction) error {
+	if new == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
 	}
 	action := func(tx *redis.Tx) error {
@@ -133,32 +142,35 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, n
 		}
 		pipe := tx.TxPipeline()
 		if len(haveItems) == 0 {
-			if prevItem != nil {
+			if prev != nil {
 				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", storage.ErrStorageRace, index)
 			}
 		} else if len(haveItems) == 1 {
-			if prevItem == nil {
+			if prev == nil {
 				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", storage.ErrStorageRace, index)
 			}
 			verifiedItem, err := s.peelVerifySignature([]byte(haveItems[0]))
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
 			}
-			prevItemEncoded, err := rlp.EncodeToBytes(prevItem)
+			verifiedItem, err = s.normalizeDecoding(verifiedItem)
+			if err != nil {
+				return fmt.Errorf("error normalizing encoding for verified item: %w", err)
+			}
+			prevItemEncoded, err := s.encDec().Encode(prev)
 			if err != nil {
 				return err
 			}
 			if !bytes.Equal(verifiedItem, prevItemEncoded) {
 				return fmt.Errorf("%w: replacing different item than expected at index %v", storage.ErrStorageRace, index)
 			}
-			err = pipe.ZRem(ctx, s.key, haveItems[0]).Err()
-			if err != nil {
+			if err := pipe.ZRem(ctx, s.key, haveItems[0]).Err(); err != nil {
 				return err
 			}
 		} else {
 			return fmt.Errorf("expected only one return value for Put but got %v", len(haveItems))
 		}
-		newItemEncoded, err := rlp.EncodeToBytes(*newItem)
+		newItemEncoded, err := s.encDec().Encode(new)
 		if err != nil {
 			return err
 		}
@@ -170,11 +182,10 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, n
 		if err != nil {
 			return err
 		}
-		err = pipe.ZAdd(ctx, s.key, &redis.Z{
+		if err := pipe.ZAdd(ctx, s.key, &redis.Z{
 			Score:  float64(index),
 			Member: string(signedItem),
-		}).Err()
-		if err != nil {
+		}).Err(); err != nil {
 			return err
 		}
 		_, err = pipe.Exec(ctx)
@@ -189,7 +200,7 @@ func (s *Storage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, n
 	return s.client.Watch(ctx, action, s.key)
 }
 
-func (s *Storage[Item]) Length(ctx context.Context) (int, error) {
+func (s *Storage) Length(ctx context.Context) (int, error) {
 	count, err := s.client.ZCount(ctx, s.key, "-inf", "+inf").Result()
 	if err != nil {
 		return 0, err
@@ -197,6 +208,6 @@ func (s *Storage[Item]) Length(ctx context.Context) (int, error) {
 	return int(count), nil
 }
 
-func (s *Storage[Item]) IsPersistent() bool {
+func (s *Storage) IsPersistent() bool {
 	return true
 }

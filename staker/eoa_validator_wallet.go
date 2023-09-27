@@ -5,10 +5,13 @@ package staker
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -20,15 +23,19 @@ type EoaValidatorWallet struct {
 	rollupAddress           common.Address
 	challengeManager        *challengegen.ChallengeManager
 	challengeManagerAddress common.Address
+	dataPoster              *dataposter.DataPoster
+	getExtraGas             func() uint64
 }
 
 var _ ValidatorWalletInterface = (*EoaValidatorWallet)(nil)
 
-func NewEoaValidatorWallet(rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts) (*EoaValidatorWallet, error) {
+func NewEoaValidatorWallet(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EoaValidatorWallet, error) {
 	return &EoaValidatorWallet{
 		auth:          auth,
 		client:        l1Client,
 		rollupAddress: rollupAddress,
+		dataPoster:    dataPoster,
+		getExtraGas:   getExtraGas,
 	}, nil
 }
 
@@ -80,8 +87,20 @@ func (w *EoaValidatorWallet) ExecuteTransactions(ctx context.Context, builder *V
 		return nil, nil
 	}
 	tx := builder.transactions[0] // we ignore future txs and only execute the first
-	err := w.client.SendTransaction(ctx, tx)
-	return tx, err
+	return w.postTransaction(ctx, tx)
+}
+
+func (w *EoaValidatorWallet) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
+	nonce, err := w.L1Client().NonceAt(ctx, w.auth.From, nil)
+	if err != nil {
+		return nil, err
+	}
+	gas := baseTx.Gas() + w.getExtraGas()
+	newTx, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
+	if err != nil {
+		return nil, fmt.Errorf("post transaction: %w", err)
+	}
+	return newTx, nil
 }
 
 func (w *EoaValidatorWallet) TimeoutChallenges(ctx context.Context, timeouts []uint64) (*types.Transaction, error) {
@@ -90,7 +109,12 @@ func (w *EoaValidatorWallet) TimeoutChallenges(ctx context.Context, timeouts []u
 	}
 	auth := *w.auth
 	auth.Context = ctx
-	return w.challengeManager.Timeout(&auth, timeouts[0])
+	auth.NoSend = true
+	tx, err := w.challengeManager.Timeout(&auth, timeouts[0])
+	if err != nil {
+		return nil, err
+	}
+	return w.postTransaction(ctx, tx)
 }
 
 func (w *EoaValidatorWallet) CanBatchTxs() bool {
@@ -99,4 +123,16 @@ func (w *EoaValidatorWallet) CanBatchTxs() bool {
 
 func (w *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
 	return w.auth
+}
+
+func (w *EoaValidatorWallet) Start(ctx context.Context) {
+	w.dataPoster.Start(ctx)
+}
+
+func (b *EoaValidatorWallet) StopAndWait() {
+	b.dataPoster.StopAndWait()
+}
+
+func (b *EoaValidatorWallet) DataPoster() *dataposter.DataPoster {
+	return b.dataPoster
 }

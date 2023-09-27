@@ -29,7 +29,7 @@ func createWallet(t *testing.T, pathname string) {
 	walletConf := genericconf.WalletConfigDefault
 	walletConf.Pathname = pathname
 	walletConf.OnlyCreateKey = true
-	walletConf.PasswordImpl = "foo"
+	walletConf.Password = "foo"
 
 	testPassCalled := false
 	testPass := func() (string, error) {
@@ -69,7 +69,7 @@ func TestExistingKeystoreNoCreate(t *testing.T) {
 	walletConf := genericconf.WalletConfigDefault
 	walletConf.Pathname = pathname
 	walletConf.OnlyCreateKey = true
-	walletConf.PasswordImpl = "foo"
+	walletConf.Password = "foo"
 
 	testPassCalled := false
 	testPass := func() (string, error) {
