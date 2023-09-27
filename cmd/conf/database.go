@@ -92,7 +92,7 @@ func DatabaseInDirectory(path string) bool {
 func (c *PersistentConfig) Validate() error {
 	// we are validating .db-engine here to avoid unintended behaviour as empty string value also has meaning in geth's node.Config.DBEngine
 	if c.DBEngine != "leveldb" && c.DBEngine != "pebble" {
-		return fmt.Errorf("Invalid .db-engine choice: \"%v\", allowed \"leveldb\" or \"pebble\"", c.DBEngine)
+		return fmt.Errorf(`invalid .db-engine choice: %q, allowed "leveldb" or "pebble"`, c.DBEngine)
 	}
 	return nil
 }
