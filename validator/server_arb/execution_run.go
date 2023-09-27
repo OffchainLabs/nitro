@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -56,52 +58,21 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		var stateRoots []common.Hash
-		machine, err := e.cache.GetMachineAt(ctx, 0)
-		if err != nil {
-			return nil, err
-		}
-		if !machine.IsRunning() {
-			return stateRoots, nil
-		}
-		for i := uint64(0); i <= toBigStep; i++ {
-			position := i * numOpcodesPerBigStep
-			if err = machine.Step(ctx, position); err != nil {
-				return nil, err
-			}
-			stateRoots = append(stateRoots, machine.Hash())
-		}
-		return stateRoots, nil
-	})
-}
-
-func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		var stateRoots []common.Hash
-		fromSmall := bigStep * numOpcodesPerBigStep
-		toSmall := fromSmall + toSmallStep
-		for i := fromSmall; i <= toSmall; i++ {
-			machineStep, err := e.intermediateGetStepAt(ctx, i)
-			if err != nil {
-				return nil, err
-			}
-			stateRoots = append(stateRoots, machineStep.Hash)
-		}
-		return stateRoots, nil
-	})
-}
-
 func (e *executionRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		var stateRoots []common.Hash
-		for i := fromStep; i <= toStep; i = i + stepSize {
+		n := 0
+		start := time.Now()
+		for i := fromStep; i < toStep; i = i + stepSize {
+			if n%100 == 0 {
+				fmt.Printf("%d steps, %v since start, from %d => to %d, step size %d\n", n, time.Since(start), fromStep, toStep, stepSize)
+			}
 			machineStep, err := e.intermediateGetStepAt(ctx, i)
 			if err != nil {
 				return nil, err
 			}
 			stateRoots = append(stateRoots, machineStep.Hash)
+			n += 1
 		}
 		return stateRoots, nil
 	})
@@ -120,6 +91,12 @@ func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint6
 		return nil, err
 	}
 	machineStep := machine.GetStepCount()
+
+	if position == 0 {
+		gs := machine.GetGlobalState()
+		fmt.Printf("Got global state at 0 %+v, hash %#x, and machine finished version %#x, num step count %d\n", gs, gs.Hash(), crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()), machineStep)
+	}
+
 	if position != machineStep {
 		machineRunning := machine.IsRunning()
 		if machineRunning || machineStep > position {

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -45,6 +47,7 @@ type StateManager struct {
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
+	sync.RWMutex
 }
 
 func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challengeLeafHeights []l2stateprovider.Height) (*StateManager, error) {
@@ -269,7 +272,6 @@ func (s *StateManager) L2MessageStatesUpTo(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("In nitro, states from %d to %d, batch %d got num hashes %d\n", from, to, batch, len(items))
 	return items, nil
 }
 
@@ -311,19 +313,35 @@ func (s *StateManager) CollectProof(
 	return oneStepProofPromise.Await(ctx)
 }
 
-func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, startHeight []l2stateprovider.Height, fromStep uint64, toStep uint64, stepSize uint64) ([]common.Hash, error) {
-	// cacheKey := &challengecache.Key{
-	// 	WavmModuleRoot: wasmModuleRoot,
-	// 	MessageHeight:  protocol.Height(blockHeight),
-	// 	StepHeights:    startHeight,
-	// // }
-	// Make sure that the last level starts with 0
-	// if startHeight[len(startHeight)-1] == 0 {
-	// 	cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toStep))
-	// 	if err == nil {
-	// 		return cachedRoots, nil
-	// 	}
-	// }
+func (s *StateManager) intermediateStepLeaves(
+	ctx context.Context,
+	wasmModuleRoot common.Hash,
+	blockHeight uint64,
+	startHeight []l2stateprovider.Height,
+	fromStep,
+	toStep,
+	stepSize uint64,
+) ([]common.Hash, error) {
+	s.Lock()
+	defer s.Unlock()
+	cacheKey := &challengecache.Key{
+		WavmModuleRoot: wasmModuleRoot,
+		MessageHeight:  protocol.Height(blockHeight),
+		StepHeights:    startHeight,
+	}
+	numItems := ((toStep - fromStep) / stepSize)
+	fmt.Printf("Requesting intermediate leaves at message %d, step heights %v, to step %d, num items %d\n", blockHeight, startHeight, toStep, numItems)
+	cachedRoots, err := s.historyCache.Get(cacheKey, numItems)
+	fmt.Printf("Num roots %d, err %v\n", len(cachedRoots), err)
+	switch {
+	case err == nil:
+		fmt.Printf("Hit cache with roots %d\n", len(cachedRoots))
+		return cachedRoots, nil
+	case !errors.Is(err, challengecache.ErrNotFoundInCache):
+		return nil, err
+	}
+	start := time.Now()
+	fmt.Println("Creating entry")
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
 	if err != nil {
 		return nil, err
@@ -332,25 +350,26 @@ func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoo
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("Creating run")
 	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Getting leaves from %d to %d, in step sizes %d", fromStep, toStep, stepSize)
 	stepLeaves := execRun.GetLeavesInRangeWithStepSize(fromStep, toStep, stepSize)
 	result, err := stepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Took %v to compute %d items\n", time.Since(start), len(result))
 	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
 	if len(result) > 1 {
-		// // Make sure that the last level starts with 0
-		// if startHeight[len(startHeight)-1] == 0 {
-		// 	if err := s.historyCache.Put(cacheKey, result); err != nil {
-		// 		if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
-		// 			return nil, err
-		// 		}
-		// 	}
-		// }
+		fmt.Printf("Writing key %+v and num items %d\n", cacheKey, len(result))
+		if err := s.historyCache.Put(cacheKey, result); err != nil {
+			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
+				return nil, err
+			}
+		}
 	}
 	return result, nil
 }

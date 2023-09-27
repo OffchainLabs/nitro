@@ -45,8 +45,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(2048)   // this + the number below should be 2^43 total WAVM opcodes per block.
-	smallStepChallengeLeafHeight = uint64(1 << 20)
+	bigStepChallengeLeafHeight   = uint64(1 << 7) // this + the number below should be 2^43 total WAVM opcodes per block.
+	smallStepChallengeLeafHeight = uint64(1 << 8)
 )
 
 func TestBoldProtocol(t *testing.T) {
@@ -455,7 +455,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(new(big.Int).SetUint64(1)),
+		challenge_testing.WithNumBigStepLevels(new(big.Int).SetUint64(5)),
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
