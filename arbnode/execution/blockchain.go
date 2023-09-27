@@ -26,15 +26,17 @@ import (
 )
 
 type CachingConfig struct {
-	Archive                 bool          `koanf:"archive"`
-	BlockCount              uint64        `koanf:"block-count"`
-	BlockAge                time.Duration `koanf:"block-age"`
-	TrieTimeLimit           time.Duration `koanf:"trie-time-limit"`
-	TrieDirtyCache          int           `koanf:"trie-dirty-cache"`
-	TrieCleanCache          int           `koanf:"trie-clean-cache"`
-	SnapshotCache           int           `koanf:"snapshot-cache"`
-	DatabaseCache           int           `koanf:"database-cache"`
-	SnapshotRestoreGasLimit uint64        `koanf:"snapshot-restore-gas-limit"`
+	Archive                            bool          `koanf:"archive"`
+	BlockCount                         uint64        `koanf:"block-count"`
+	BlockAge                           time.Duration `koanf:"block-age"`
+	TrieTimeLimit                      time.Duration `koanf:"trie-time-limit"`
+	TrieDirtyCache                     int           `koanf:"trie-dirty-cache"`
+	TrieCleanCache                     int           `koanf:"trie-clean-cache"`
+	SnapshotCache                      int           `koanf:"snapshot-cache"`
+	DatabaseCache                      int           `koanf:"database-cache"`
+	SnapshotRestoreGasLimit            uint64        `koanf:"snapshot-restore-gas-limit"`
+	MaxNumberOfBlocksToSkipStateSaving uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
+	MaxAmountOfGasToSkipStateSaving    uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -47,18 +49,22 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
 	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreGasLimit, "maximum gas rolled back to recover snapshot")
+	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only)")
+	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only)")
 }
 
 var DefaultCachingConfig = CachingConfig{
-	Archive:                 false,
-	BlockCount:              128,
-	BlockAge:                30 * time.Minute,
-	TrieTimeLimit:           time.Hour,
-	TrieDirtyCache:          1024,
-	TrieCleanCache:          600,
-	SnapshotCache:           400,
-	DatabaseCache:           2048,
-	SnapshotRestoreGasLimit: 300_000_000_000,
+	Archive:                            false,
+	BlockCount:                         128,
+	BlockAge:                           30 * time.Minute,
+	TrieTimeLimit:                      time.Hour,
+	TrieDirtyCache:                     1024,
+	TrieCleanCache:                     600,
+	SnapshotCache:                      400,
+	DatabaseCache:                      2048,
+	SnapshotRestoreGasLimit:            300_000_000_000,
+	MaxNumberOfBlocksToSkipStateSaving: 127,
+	MaxAmountOfGasToSkipStateSaving:    15 * 1000 * 1000,
 }
 
 func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
@@ -68,18 +74,20 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:        cachingConfig.TrieCleanCache,
-		TrieCleanJournal:      stack.ResolvePath(baseConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:    baseConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch:   baseConf.NoPrefetch,
-		TrieDirtyLimit:        cachingConfig.TrieDirtyCache,
-		TrieDirtyDisabled:     cachingConfig.Archive,
-		TrieTimeLimit:         cachingConfig.TrieTimeLimit,
-		TriesInMemory:         cachingConfig.BlockCount,
-		TrieRetention:         cachingConfig.BlockAge,
-		SnapshotLimit:         cachingConfig.SnapshotCache,
-		Preimages:             baseConf.Preimages,
-		SnapshotRestoreMaxGas: cachingConfig.SnapshotRestoreGasLimit,
+		TrieCleanLimit:                     cachingConfig.TrieCleanCache,
+		TrieCleanJournal:                   stack.ResolvePath(baseConf.TrieCleanCacheJournal),
+		TrieCleanRejournal:                 baseConf.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch:                baseConf.NoPrefetch,
+		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
+		TrieDirtyDisabled:                  cachingConfig.Archive,
+		TrieTimeLimit:                      cachingConfig.TrieTimeLimit,
+		TriesInMemory:                      cachingConfig.BlockCount,
+		TrieRetention:                      cachingConfig.BlockAge,
+		SnapshotLimit:                      cachingConfig.SnapshotCache,
+		Preimages:                          baseConf.Preimages,
+		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
+		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
+		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 	}
 }
 
