@@ -24,6 +24,8 @@ var (
 	limitCheckDurationHistogram = metrics.NewRegisteredHistogram("arb/rpc/limitcheck/duration", nil, metrics.NewBoundedHistogramSample())
 	limitCheckSuccessCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/success", nil)
 	limitCheckFailureCounter    = metrics.NewRegisteredCounter("arb/rpc/limitcheck/failure", nil)
+	nitroMemLimit               = metrics.GetOrRegisterGauge("arb/memory/limit", nil)
+	nitroMemUsage               = metrics.GetOrRegisterGauge("arb/memory/usage", nil)
 	errNotSupported             = errors.New("not supported")
 )
 
@@ -46,7 +48,7 @@ func Init(conf *Config) error {
 		var c limitChecker
 		c, err := newCgroupsMemoryLimitCheckerIfSupported(limit)
 		if errors.Is(err, errNotSupported) {
-			log.Error("no method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
+			log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
 			c = &trivialLimitChecker{}
 		}
 
@@ -117,7 +119,7 @@ func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	exceeded, err := s.c.isLimitExceeded()
 	limitCheckDurationHistogram.Update(time.Since(start).Nanoseconds())
 	if err != nil {
-		log.Error("error checking memory limit", "err", err, "checker", s.c)
+		log.Error("Error checking memory limit", "err", err, "checker", s.c.String())
 	} else if exceeded {
 		http.Error(w, "Too many requests", http.StatusTooManyRequests)
 		limitCheckFailureCounter.Inc(1)
@@ -236,7 +238,13 @@ func (c *cgroupsMemoryLimitChecker) isLimitExceeded() (bool, error) {
 	if inactive, err = readFromMemStats(c.files.statsFile, c.files.inactiveRe); err != nil {
 		return false, err
 	}
-	return limit-(usage-(active+inactive)) <= c.memLimitBytes, nil
+
+	memLimit := limit - c.memLimitBytes
+	memUsage := usage - (active + inactive)
+	nitroMemLimit.Update(int64(memLimit))
+	nitroMemUsage.Update(int64(memUsage))
+
+	return memUsage >= memLimit, nil
 }
 
 func (c cgroupsMemoryLimitChecker) String() string {

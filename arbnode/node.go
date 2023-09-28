@@ -566,7 +566,18 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
-	return dataposter.NewDataPoster(ctx, db, l1Reader, transactOpts, redisC, redisLock, dpCfg, mdRetriever)
+	return dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			Database:          db,
+			HeaderReader:      l1Reader,
+			Auth:              transactOpts,
+			RedisClient:       redisC,
+			RedisLock:         redisLock,
+			Config:            dpCfg,
+			MetadataRetriever: mdRetriever,
+			// transactOpts is non-nil, it's checked at the beginning.
+			RedisKey: transactOpts.From.String() + ".staker-data-poster.queue",
+		})
 }
 
 func createNodeImpl(
@@ -641,7 +652,7 @@ func createNodeImpl(
 		return nil, err
 	}
 	var coordinator *SeqCoordinator
-	var bpVerifier *contracts.BatchPosterVerifier
+	var bpVerifier *contracts.AddressVerifier
 	if deployInfo != nil && l1client != nil {
 		sequencerInboxAddr := deployInfo.SequencerInbox
 
@@ -649,7 +660,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	if config.SeqCoordinator.Enable {
