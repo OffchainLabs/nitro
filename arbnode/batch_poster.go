@@ -331,7 +331,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 
 			reverted, err := b.checkReverts(ctx, blockNum)
 			if err != nil {
-				logLevel := log.Error
+				logLevel := log.Warn
 				if strings.Contains(err.Error(), "not found") {
 					// Just parent chain node inconsistency
 					// One node sent us a block, but another didn't have it
