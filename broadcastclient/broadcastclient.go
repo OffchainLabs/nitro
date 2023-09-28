@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/gobwas/httphead"
@@ -140,6 +141,8 @@ type BroadcastClient struct {
 	retrying                        bool
 	shuttingDown                    bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
+	firstWSMessage                  chan *m.BroadcastFeedMessage
+	wsMessages                      chan *m.BroadcastMessage
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
 	adjustCount                     func(int32)
@@ -172,6 +175,8 @@ func NewBroadcastClient(
 		nextSeqNum:                      currentMessageCount,
 		txStreamer:                      txStreamer,
 		confirmedSequenceNumberListener: confirmedSequencerNumberListener,
+		firstWSMessage:                  make(chan *m.BroadcastFeedMessage, 1),
+		wsMessages:                      make(chan *m.BroadcastMessage),
 		fatalErrChan:                    fatalErrChan,
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
@@ -196,7 +201,15 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				return
 			}
 			if err == nil {
-				bc.startBackgroundReader(earlyFrameData)
+				bc.startBackgroundReader(earlyFrameData) // change name to WS reader
+				bm, err := bc.getHTTPBacklog()
+				if err != nil && !errors.Is(err, syscall.ECONNREFUSED) {
+					bc.fatalErrChan <- err
+					return
+				} else if bm != nil && len(bm.Messages) > 0 {
+					bc.streamMsg(ctx, bm)
+				}
+				bc.startBackgroundStreamer()
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
@@ -395,41 +408,63 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					sourcesConnectedGauge.Inc(1)
 					bc.adjustCount(1)
 				}
-				if len(res.Messages) > 0 {
-					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
-				} else if res.ConfirmedSequenceNumberMessage != nil {
-					log.Debug("confirmed sequence number", "seq", res.ConfirmedSequenceNumberMessage.SequenceNumber)
-				} else {
-					log.Debug("received broadcast with no messages populated", "length", len(msg))
+				if len(bc.firstWSMessage) == 0 && len(res.Messages) > 0 {
+					bc.firstWSMessage <- res.Messages[0]
 				}
-				if res.Version == 1 {
-					if len(res.Messages) > 0 {
-						for _, message := range res.Messages {
-							if message == nil {
-								log.Warn("ignoring nil feed message")
-								continue
-							}
-
-							err := bc.isValidSignature(ctx, message)
-							if err != nil {
-								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- fmt.Errorf("error validating feed signature %v: %w", message.SequenceNumber, err)
-								continue
-							}
-
-							bc.nextSeqNum = message.SequenceNumber + 1
-						}
-						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
-							log.Error("Error adding message from Sequencer Feed", "err", err)
-						}
-					}
-					if res.ConfirmedSequenceNumberMessage != nil && bc.confirmedSequenceNumberListener != nil {
-						bc.confirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
-					}
-				}
+				bc.wsMessages <- &res
 			}
 		}
 	})
+}
+
+func (bc *BroadcastClient) getHTTPBacklog() (*m.BroadcastMessage, error) {
+	c := client.NewHTTPBroadcastClient(func() *client.Config { return &bc.config().HTTP })
+	msg := <-bc.firstWSMessage
+	return c.GetMessages(0, msg.SequenceNumber-arbutil.MessageIndex(1))
+}
+
+func (bc *BroadcastClient) startBackgroundStreamer() {
+	bc.LaunchThread(func(ctx context.Context) {
+		for {
+			msg := <-bc.wsMessages
+			bc.streamMsg(ctx, msg)
+		}
+	})
+}
+
+func (bc *BroadcastClient) streamMsg(ctx context.Context, bm *m.BroadcastMessage) {
+	if len(bm.Messages) > 0 {
+		log.Debug("received batch item", "count", len(bm.Messages), "first seq", bm.Messages[0].SequenceNumber)
+	} else if bm.ConfirmedSequenceNumberMessage != nil {
+		log.Debug("confirmed sequence number", "seq", bm.ConfirmedSequenceNumberMessage.SequenceNumber)
+	} else {
+		log.Debug("received broadcast with no messages populated")
+	}
+	if bm.Version == 1 {
+		if len(bm.Messages) > 0 {
+			for _, message := range bm.Messages {
+				if message == nil {
+					log.Warn("ignoring nil feed message")
+					continue
+				}
+
+				err := bc.isValidSignature(ctx, message)
+				if err != nil {
+					log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
+					bc.fatalErrChan <- fmt.Errorf("error validating feed signature %v: %w", message.SequenceNumber, err)
+					continue
+				}
+
+				bc.nextSeqNum = message.SequenceNumber + 1
+			}
+			if err := bc.txStreamer.AddBroadcastMessages(bm.Messages); err != nil {
+				log.Error("Error adding message from Sequencer Feed", "err", err)
+			}
+		}
+		if bm.ConfirmedSequenceNumberMessage != nil && bc.confirmedSequenceNumberListener != nil {
+			bc.confirmedSequenceNumberListener <- bm.ConfirmedSequenceNumberMessage.SequenceNumber
+		}
+	}
 }
 
 func (bc *BroadcastClient) GetRetryCount() int64 {
