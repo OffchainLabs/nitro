@@ -10,6 +10,6 @@ func compressedBufferSizeFor(length int) int {
 	return length + (length>>10)*8 + 64 // actual limit is: length + (length >> 14) * 4 + 6
 }
 
-func CompressFast(input []byte, level int) ([]byte, error) {
+func CompressLevel(input []byte, level int) ([]byte, error) {
 	return compressLevel(input, level)
 }

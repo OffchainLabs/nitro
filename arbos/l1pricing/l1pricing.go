@@ -36,9 +36,8 @@ type L1PricingState struct {
 	inertia            storage.StorageBackedUint64
 	perUnitReward      storage.StorageBackedUint64
 	// variables
-	lastUpdateTime         storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
-	fundsDueForRewards     storage.StorageBackedBigInt
-	brotliCompressionLevel storage.StorageBackedUint64 // brotli compression level used for pricing
+	lastUpdateTime     storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
+	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
 	unitsSinceUpdate     storage.StorageBackedUint64  // calldata units collected for since last update
 	pricePerUnit         storage.StorageBackedBigUint // current price per calldata unit
@@ -64,7 +63,6 @@ const (
 	perUnitRewardOffset
 	lastUpdateTimeOffset
 	fundsDueForRewardsOffset
-	brotliCompressionLevelOffset
 	unitsSinceOffset
 	pricePerUnitOffset
 	lastSurplusOffset
@@ -74,11 +72,10 @@ const (
 )
 
 const (
-	InitialInertia                = 10
-	InitialPerUnitReward          = 10
-	InitialPerBatchGasCostV6      = 100_000
-	InitialPerBatchGasCostV12     = 210_000 // overriden as part of the upgrade
-	InitialBrotliCompressionLevel = 0
+	InitialInertia            = 10
+	InitialPerUnitReward      = 10
+	InitialPerBatchGasCostV6  = 100_000
+	InitialPerBatchGasCostV12 = 210_000 // overriden as part of the upgrade
 )
 
 // one minute at 100000 bytes / sec
@@ -115,10 +112,6 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	if err := pricePerUnit.SetSaturatingWithWarning(initialL1BaseFee, "initial L1 base fee (storing in price per unit)"); err != nil {
 		return err
 	}
-	brotliCompressionLevel := sto.OpenStorageBackedUint64(brotliCompressionLevelOffset)
-	if err := brotliCompressionLevel.Set(InitialBrotliCompressionLevel); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -132,7 +125,6 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedUint64(perUnitRewardOffset),
 		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
 		sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
-		sto.OpenStorageBackedUint64(brotliCompressionLevelOffset),
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
 		sto.OpenStorageBackedBigUint(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
@@ -260,17 +252,6 @@ func (ps *L1PricingState) L1FeesAvailable() (*big.Int, error) {
 
 func (ps *L1PricingState) SetL1FeesAvailable(val *big.Int) error {
 	return ps.l1FeesAvailable.SetChecked(val)
-}
-
-func (ps *L1PricingState) BrotliCompressionLevel() (uint64, error) {
-	return ps.brotliCompressionLevel.Get()
-}
-
-func (ps *L1PricingState) SetBrotliCompressionLevel(val uint64) error {
-	if val <= arbcompress.LEVEL_WELL {
-		return ps.brotliCompressionLevel.Set(val)
-	}
-	return errors.New("invalid brotli compression level")
 }
 
 func (ps *L1PricingState) AddToL1FeesAvailable(delta *big.Int) (*big.Int, error) {
@@ -508,7 +489,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	return nil
 }
 
-func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, posterAddr common.Address) uint64 {
+func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, posterAddr common.Address, brotliCompressionLevel uint64) uint64 {
 
 	if posterAddr != BatchPosterAddress {
 		return 0
@@ -519,11 +500,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 		return 0
 	}
 
-	level, err := ps.BrotliCompressionLevel()
-	if err != nil {
-		panic(fmt.Sprintf("failed to get brotli compression level: %v", err))
-	}
-	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, int(level))
+	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, int(brotliCompressionLevel))
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
@@ -531,13 +508,13 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
-func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address, brotliCompressionLevel uint64) (*big.Int, uint64) {
 	if poster != BatchPosterAddress {
 		return common.Big0, 0
 	}
 	units := atomic.LoadUint64(&tx.CalldataUnits)
 	if units == 0 {
-		units = ps.getPosterUnitsWithoutCache(tx, poster)
+		units = ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
 		atomic.StoreUint64(&tx.CalldataUnits, units)
 	}
 
@@ -593,23 +570,23 @@ func makeFakeTxForMessage(message *core.Message) *types.Transaction {
 	})
 }
 
-func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Address, brotliCompressionLevel uint64) (*big.Int, uint64) {
 	tx := message.Tx
 	if tx != nil {
-		return ps.GetPosterInfo(tx, poster)
+		return ps.GetPosterInfo(tx, poster, brotliCompressionLevel)
 	}
 
 	// Otherwise, we don't have an underlying transaction, so we're likely in gas estimation.
 	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
 	tx = makeFakeTxForMessage(message)
-	units := ps.getPosterUnitsWithoutCache(tx, poster)
+	units := ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
 	units = arbmath.UintMulByBips(units+estimationPaddingUnits, arbmath.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
 func byteCountAfterBrotliLevel(input []byte, level int) (uint64, error) {
-	compressed, err := arbcompress.CompressFast(input, level)
+	compressed, err := arbcompress.CompressLevel(input, level)
 	if err != nil {
 		return 0, err
 	}

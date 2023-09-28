@@ -13,7 +13,6 @@ import (
 	merkletree "github.com/wealdtech/go-merkletree"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
 
 // MerkleSample is an example using the Merkle tree to generate and verify proofs.
@@ -43,7 +42,7 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 }
 
 func testCompression(data []byte) {
-	compressed, err := arbcompress.CompressFast(data, l1pricing.InitialBrotliCompressionLevel)
+	compressed, err := arbcompress.CompressLevel(data, 0)
 	if err != nil {
 		panic(err)
 	}

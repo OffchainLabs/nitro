@@ -24,7 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -175,7 +174,7 @@ func FuzzStateTransition(f *testing.F) {
 		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
 		if compressSeqMsg {
 			seqBatch = append(seqBatch, arbstate.BrotliMessageHeaderByte)
-			seqMsgCompressed, err := arbcompress.CompressFast(seqMsg, l1pricing.InitialBrotliCompressionLevel)
+			seqMsgCompressed, err := arbcompress.CompressLevel(seqMsg, 0)
 			if err != nil {
 				panic(fmt.Sprintf("failed to compress sequencer message: %v", err))
 			}
