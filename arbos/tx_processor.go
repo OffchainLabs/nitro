@@ -410,7 +410,11 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		// Since tips go to the network, and not to the poster, we use the basefee.
 		// Note, this only determines the amount of gas bought, not the price per gas.
 
-		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
+		if err != nil {
+			return common.Address{}, fmt.Errorf("failed to get brotli compression level: %w", err)
+		}
+		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}

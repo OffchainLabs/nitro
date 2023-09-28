@@ -3,6 +3,7 @@ run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_r
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
     paths:
       - 'arbitrator/**'

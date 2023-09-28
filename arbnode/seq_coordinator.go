@@ -134,7 +134,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 
 func NewSeqCoordinator(
 	dataSigner signature.DataSignerFunc,
-	bpvalidator *contracts.BatchPosterVerifier,
+	bpvalidator *contracts.AddressVerifier,
 	streamer *TransactionStreamer,
 	sequencer execution.ExecutionSequencer,
 	sync *SyncMonitor,

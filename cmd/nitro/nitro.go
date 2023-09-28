@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
 	flag "github.com/spf13/pflag"
@@ -51,6 +52,7 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -116,7 +118,7 @@ func closeDb(db io.Closer, name string) {
 	if db != nil {
 		err := db.Close()
 		// unfortunately the freezer db means we can't just use errors.Is
-		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) {
+		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) && !strings.Contains(err.Error(), pebble.ErrClosed.Error()) {
 			log.Warn("failed to close database on shutdown", "db", name, "err", err)
 		}
 	}
@@ -160,7 +162,7 @@ func mainImpl() int {
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
-	stackConf.DBEngine = "leveldb"
+	stackConf.DBEngine = nodeConfig.Persistent.DBEngine
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -357,7 +359,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
+		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
@@ -370,7 +372,10 @@ func mainImpl() int {
 		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
-	resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
+	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
+		flag.Usage()
+		log.Crit("Failed to start resource management module", "err", err)
+	}
 
 	var sameProcessValidationNodeEnabled bool
 	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
@@ -678,7 +683,10 @@ func (c *NodeConfig) Validate() error {
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
-	return c.Node.Validate()
+	if err := c.Node.Validate(); err != nil {
+		return err
+	}
+	return c.Persistent.Validate()
 }
 
 func (c *NodeConfig) GetReloadInterval() time.Duration {
