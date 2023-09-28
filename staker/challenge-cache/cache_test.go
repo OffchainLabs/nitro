@@ -2,46 +2,7 @@
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 package challengecache
 
-import (
-	"os"
-	"testing"
-)
-
 var _ HistoryCommitmentCacher = (*Cache)(nil)
-
-func TestAnalyzeSubchallenge(t *testing.T) {
-	goodClaim := "/tmp/good/wavm-module-root-0xea34855b4ce5923e655a9c5142dabfe4ffe066fdb6d0bb26426d6d299036a238/message-num-1/subchallenge-level-1-big-step-0/state-roots"
-	good := "/tmp/good/wavm-module-root-0xea34855b4ce5923e655a9c5142dabfe4ffe066fdb6d0bb26426d6d299036a238/message-num-1/subchallenge-level-1-big-step-0/subchallenge-level-2-big-step-3/state-roots"
-	f, err := os.Open(goodClaim)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		t.Error(f.Close())
-	}()
-	numRoots := uint64(129)
-	claimRoots, err := readStateRoots(f, numRoots)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f2, err := os.Open(good)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		t.Error(f2.Close())
-	}()
-	subChalRoots, err := readStateRoots(f2, numRoots)
-	if err != nil {
-		t.Fatal(err)
-	}
-	//t.Infof("claim at 4 %#x, subchal ending %#x", claimRoots[4], subChalRoots[len(subChalRoots)-1])
-	t.Logf("claim at 3 %#x, subchal first %#x", claimRoots[3], subChalRoots[0])
-	for _, rt := range subChalRoots[:10] {
-		t.Logf("%#x", rt)
-	}
-	t.Fatal("done")
-}
 
 // func TestCache(t *testing.T) {
 // 	basePath := t.TempDir()
