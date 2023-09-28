@@ -42,7 +42,7 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 }
 
 func testCompression(data []byte) {
-	compressed, err := arbcompress.CompressFast(data)
+	compressed, err := arbcompress.CompressLevel(data, 0)
 	if err != nil {
 		panic(err)
 	}
