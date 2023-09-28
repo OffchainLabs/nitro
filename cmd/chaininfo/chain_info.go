@@ -18,8 +18,9 @@ import (
 var DefaultChainInfo []byte
 
 type ChainInfo struct {
-	ChainName     string `json:"chain-name"`
-	ParentChainId uint64 `json:"parent-chain-id"`
+	ChainName             string `json:"chain-name"`
+	ParentChainId         uint64 `json:"parent-chain-id"`
+	ParentChainIsArbitrum *bool  `json:"parent-chain-is-arbitrum"`
 	// This is the forwarding target to submit transactions to, called the sequencer URL for clarity
 	SequencerUrl    string              `json:"sequencer-url"`
 	FeedUrl         string              `json:"feed-url"`

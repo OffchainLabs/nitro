@@ -43,6 +43,9 @@ func printSampleUsage(progname string) {
 func startMetrics(cfg *relay.Config) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
 		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
@@ -60,7 +63,7 @@ func startup() error {
 	ctx := context.Background()
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
-	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
+	if err != nil || len(relayConfig.Node.Feed.Input.URL) == 0 || relayConfig.Node.Feed.Input.URL[0] == "" || relayConfig.Chain.ID == 0 {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 

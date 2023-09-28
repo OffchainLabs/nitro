@@ -79,7 +79,7 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 	if !creatingNew && walletConfig.OnlyCreateKey {
 		return nil, fmt.Errorf("wallet key already created, backup key (%s) and remove --%s.wallet.only-create-key to run normally", walletConfig.Pathname, description)
 	}
-	passOpt := walletConfig.Password()
+	passOpt := walletConfig.Pwd()
 	var password string
 	if passOpt != nil {
 		password = *passOpt
