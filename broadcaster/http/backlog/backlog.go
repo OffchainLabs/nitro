@@ -27,15 +27,14 @@ type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
 	lookupByIndex map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]
-	segmentLimit  func() int
+	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
-func NewBacklog(segmentLimit func() int) Backlog {
-	// TODO: add some config stuff
+func NewBacklog(c ConfigFetcher) Backlog {
 	return &backlog{
 		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
-		segmentLimit:  segmentLimit,
+		config:        c,
 	}
 }
 
@@ -58,7 +57,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 
 		prevMsgIdx := s.end
-		if s.MessageCount() >= b.segmentLimit() {
+		if s.MessageCount() >= b.config().SegmentLimit {
 			nextS := &backlogSegment{}
 			s.nextSegment.Store(nextS)
 			prevMsgIdx = s.end

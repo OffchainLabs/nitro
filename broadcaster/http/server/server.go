@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"path"
 	"strconv"
-	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -15,33 +14,32 @@ import (
 )
 
 type HTTPBroadcastServer struct {
+	config           ConfigFetcher
+	handler          *BroadcastHandler
 	server           *http.Server
 	serverExitedChan chan interface{}
 	serverError      error
 }
 
-func NewHTTPBroadcastServer(httpBacklog backlog.Backlog) *HTTPBroadcastServer {
-	handler := &BroadcastHandler{
-		httpBacklog: httpBacklog,
-	}
-
-	server := &http.Server{
-		Addr:              ":54321",
-		Handler:           handler,
-		ReadTimeout:       30 * time.Second,
-		ReadHeaderTimeout: 30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-
+func NewHTTPBroadcastServer(c ConfigFetcher, httpBacklog backlog.Backlog) *HTTPBroadcastServer {
 	return &HTTPBroadcastServer{
-		server:           server,
+		config:           c,
+		handler:          &BroadcastHandler{httpBacklog},
 		serverExitedChan: make(chan interface{}),
 		serverError:      nil,
 	}
 }
 
 func (s *HTTPBroadcastServer) Start() {
+	c := s.config()
+	s.server = &http.Server{
+		Addr:              fmt.Sprintf("%s:%s", c.Host, c.Port),
+		Handler:           s.handler,
+		ReadTimeout:       c.ReadTimeout,
+		ReadHeaderTimeout: c.ReadHeaderTimeout,
+		WriteTimeout:      c.WriteTimeout,
+		IdleTimeout:       c.IdleTimeout,
+	}
 	go func() {
 		err := s.server.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -52,13 +50,15 @@ func (s *HTTPBroadcastServer) Start() {
 }
 
 func (s *HTTPBroadcastServer) StopAndWait() error {
-	err := s.server.Close()
-	if err != nil {
-		return err
-	}
-	<-s.serverExitedChan
-	if s.serverError != nil {
-		return err
+	if s.server != nil {
+		err := s.server.Close()
+		if err != nil {
+			return err
+		}
+		<-s.serverExitedChan
+		if s.serverError != nil {
+			return err
+		}
 	}
 	return nil
 }

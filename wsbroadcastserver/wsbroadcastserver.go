@@ -24,6 +24,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/http/server"
 )
 
 var (
@@ -63,6 +64,7 @@ type BroadcasterConfig struct {
 	MaxCatchup         int                     `koanf:"max-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
 	ClientDelay        time.Duration           `koanf:"client-delay" reload:"hot"`
+	HTTP               server.Config           `koanf:"http" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -97,6 +99,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-catchup", DefaultBroadcasterConfig.MaxCatchup, "the maximum size of the catchup buffer (-1 means unlimited)")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
 	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay the first messages sent to each client by this amount")
+	server.AddOptions(prefix+".http", f)
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -122,6 +125,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
+	HTTP:               server.DefaultConfig,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -147,6 +151,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
+	HTTP:               server.DefaultTestConfig,
 }
 
 type WSBroadcastServer struct {

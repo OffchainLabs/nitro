@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/http/client"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -71,6 +72,7 @@ type Config struct {
 	URL                     []string                 `koanf:"url"`
 	Verify                  signature.VerifierConfig `koanf:"verify"`
 	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
+	HTTP                    client.Config            `koanf:"http" reload:"hot"`
 }
 
 func (c *Config) Enable() bool {
@@ -88,6 +90,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".url", DefaultConfig.URL, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
+	client.AddOptions(prefix+".http", f)
 }
 
 var DefaultConfig = Config{
@@ -99,6 +102,7 @@ var DefaultConfig = Config{
 	URL:                     []string{""},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
+	HTTP:                    client.DefaultConfig,
 }
 
 var DefaultTestConfig = Config{
@@ -110,6 +114,7 @@ var DefaultTestConfig = Config{
 	URL:                     []string{""},
 	Timeout:                 200 * time.Millisecond,
 	EnableCompression:       true,
+	HTTP:                    client.DefaultTestConfig,
 }
 
 type TransactionStreamerInterface interface {

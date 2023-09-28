@@ -31,14 +31,14 @@ type Broadcaster struct {
 
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup }, func() int { return config().MaxCatchup })
-	httpBacklog := backlog.NewBacklog(func() int { return 240 })
+	httpBacklog := backlog.NewBacklog(func() *backlog.Config { return &config().HTTP.Backlog })
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
 		httpBacklog:   httpBacklog,
 		chainId:       chainId,
 		dataSigner:    dataSigner,
-		httpServer:    httpServer.NewHTTPBroadcastServer(httpBacklog),
+		httpServer:    httpServer.NewHTTPBroadcastServer(func() *httpServer.Config { return &config().HTTP }, httpBacklog),
 	}
 }
 

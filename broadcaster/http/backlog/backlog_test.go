@@ -31,10 +31,10 @@ func validateBacklog(t *testing.T, b *backlog, count int, start, end arbutil.Mes
 	}
 }
 
-func createDummyBacklog(indexes []arbutil.MessageIndex, segmentLimit int) (*backlog, error) {
+func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
 		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
-		segmentLimit:  func() int { return segmentLimit },
+		config:        func() *Config { return &DefaultTestConfig },
 	}
 	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
 	err := b.Append(bm)
@@ -112,7 +112,7 @@ func TestAppend(t *testing.T) {
 			// The segment limit is 3, the above test cases have been created
 			// to include testing certain actions on the first message of a
 			// new segment.
-			b, err := createDummyBacklog(tc.backlogIndexes, 3)
+			b, err := createDummyBacklog(tc.backlogIndexes)
 			if err != nil {
 				t.Fatalf("error creating dummy backlog: %s", err)
 			}
@@ -142,7 +142,7 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 
 	b := &backlog{
 		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{40: p},
-		segmentLimit:  func() int { return 3 },
+		config:        func() *Config { return &DefaultTestConfig },
 	}
 	b.messageCount.Store(2)
 	b.head.Store(s)
@@ -220,7 +220,7 @@ func TestDelete(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			b, err := createDummyBacklog(tc.backlogIndexes, 3)
+			b, err := createDummyBacklog(tc.backlogIndexes)
 			if err != nil {
 				t.Fatalf("error creating dummy backlog: %s", err)
 			}
@@ -243,7 +243,7 @@ func TestDelete(t *testing.T) {
 // make sure that an append, then delete, then append ends up with the correct messageCounts
 
 func TestGetEmptyBacklog(t *testing.T) {
-	b, err := createDummyBacklog([]arbutil.MessageIndex{}, 3)
+	b, err := createDummyBacklog([]arbutil.MessageIndex{})
 	if err != nil {
 		t.Fatalf("error creating dummy backlog: %s", err)
 	}
@@ -256,7 +256,7 @@ func TestGetEmptyBacklog(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
-	b, err := createDummyBacklog(indexes, 3)
+	b, err := createDummyBacklog(indexes)
 	if err != nil {
 		t.Fatalf("error creating dummy backlog: %s", err)
 	}
