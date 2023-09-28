@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -128,14 +128,14 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		if err != nil {
 			return nil, err
 		}
-	case initConfig.UseLevelDB:
-		ldb := leveldb.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-		if initConfig.Dangerous.ClearLevelDB {
-			if err := ldb.PruneAll(ctx); err != nil {
+	case initConfig.UseDBStorage:
+		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if initConfig.Dangerous.ClearDBStorage {
+			if err := storage.PruneAll(ctx); err != nil {
 				return nil, err
 			}
 		}
-		queue = ldb
+		queue = storage
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
@@ -645,7 +645,7 @@ type DataPosterConfig struct {
 	MaxTipCapGwei          float64         `koanf:"max-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64          `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool            `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool            `koanf:"use-leveldb"`
+	UseDBStorage           bool            `koanf:"use-db-storage"`
 	UseNoOpStorage         bool            `koanf:"use-noop-storage"`
 	LegacyStorageEncoding  bool            `koanf:"legacy-storage-encoding" reload:"hot"`
 	Dangerous              DangerousConfig `koanf:"dangerous"`
@@ -654,7 +654,7 @@ type DataPosterConfig struct {
 type DangerousConfig struct {
 	// This should be used with caution, only when dataposter somehow gets in a
 	// bad state and we require clearing it.
-	ClearLevelDB bool `koanf:"clear-leveldb"`
+	ClearDBStorage bool `koanf:"clear-dbstorage"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -673,7 +673,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".max-tip-cap-gwei", DefaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
-	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-db-storage", DefaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 
@@ -682,7 +682,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".clear-leveldb", DefaultDataPosterConfig.Dangerous.ClearLevelDB, "clear leveldb")
+	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear database storage")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -695,10 +695,10 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             true,
+	UseDBStorage:           true,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
-	Dangerous:              DangerousConfig{ClearLevelDB: false},
+	Dangerous:              DangerousConfig{ClearDBStorage: false},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -718,7 +718,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             false,
+	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 }
 
