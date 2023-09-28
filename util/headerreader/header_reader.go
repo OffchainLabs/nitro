@@ -72,7 +72,7 @@ var DefaultConfig = Config{
 	PollInterval:         15 * time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
 	TxTimeout:            5 * time.Minute,
-	OldHeaderTimeout:     5 * time.Minute,
+	OldHeaderTimeout:     10 * time.Minute,
 	UseFinalityData:      true,
 }
 

@@ -289,11 +289,11 @@ func (s *StateManager) CollectMachineHashes(
 	cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
 	switch {
 	case err == nil:
-		fmt.Printf("Hit cache with roots %d\n", len(cachedRoots))
 		return cachedRoots, nil
 	case !errors.Is(err, challengecache.ErrNotFoundInCache):
 		return nil, err
 	}
+	fmt.Println("Cache miss")
 	start := time.Now()
 	fmt.Println("Creating entry")
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(cfg.MessageNumber))

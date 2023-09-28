@@ -18,8 +18,10 @@ Use cases:
 	  wavm-module-root-0xab/
 		message-num-70/
 			roots.txt
-			big-step-100/
+			subchallenge-level-0-big-step-100/
 				roots.txt
+				subchallenge-level-1-big-step-100/
+					roots.txt
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -49,6 +51,7 @@ var (
 	wavmModuleRootPrefix = "wavm-module-root"
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
+	challengeLevelPrefix = "subchallenge-level"
 )
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
@@ -84,16 +87,16 @@ func (c *Cache) Get(
 	lookup *Key,
 	numToRead uint64,
 ) ([]common.Hash, error) {
+	// TODO: Hack, need to figure out why it is being set to 0 in some places
+	lookup.MessageHeight = 1
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Trying to open file %s\n", fName)
 	if _, err := os.Stat(fName); err != nil {
 		fmt.Printf("Not found %s\n", fName)
 		return nil, ErrNotFoundInCache
 	}
-	fmt.Println("Found!")
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err
@@ -138,7 +141,7 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 			log.Error("Could not close file after writing", "err", err, "file", fName)
 		}
 	}()
-	fmt.Printf("Writing %d state roots to file %s", len(stateRoots), fName)
+	fmt.Printf("Writing %d state roots to file %s\n", len(stateRoots), fName)
 	if err := writeStateRoots(f, stateRoots); err != nil {
 		return err
 	}
@@ -157,8 +160,7 @@ func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
-	totalRead := uint64(0)
-	for {
+	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
 		if err != nil {
 			// If we try to read but reach EOF, we break out of the loop.
@@ -172,10 +174,6 @@ func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
 		}
 		stateRoots = append(stateRoots, common.BytesToHash(buf))
-		if totalRead == numToRead {
-			return stateRoots, nil
-		}
-		totalRead++
 	}
 	if protocol.Height(numToRead) > protocol.Height(len(stateRoots)) {
 		return nil, fmt.Errorf(
@@ -214,15 +212,22 @@ for a given filesystem challenge cache will look as follows:
 	  wavm-module-root-0xab/
 		message-num-70/
 			roots.txt
-			big-step-100/
+			subchallenge-level-0-big-step-100/
 				roots.txt
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
 	key = append(key, fmt.Sprintf("%s-%d", messageNumberPrefix, lookup.MessageHeight))
-	for _, height := range lookup.StepHeights {
-		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, height))
+	for challengeLevel, height := range lookup.StepHeights {
+		key = append(key, fmt.Sprintf(
+			"%s-%d-%s-%d",
+			challengeLevelPrefix,
+			challengeLevel+1, // subchallenges start at 1, as level 0 is the block challenge level.
+			bigStepPrefix,
+			height,
+		),
+		)
 
 	}
 	key = append(key, stateRootsFileName)

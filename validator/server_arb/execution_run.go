@@ -5,6 +5,7 @@ package server_arb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -68,23 +69,32 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
 			stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+		} else {
+			stateRoots = append(stateRoots, machine.Hash())
+		}
+		if numDesiredLeaves == 1 {
+			return stateRoots, nil
 		}
 		start := time.Now()
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
-			position := machineStartIndex + stepSize*numIterations
-
+			position := machineStartIndex + stepSize*(numIterations+1)
 			// Advance the machine in step size increments.
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
 			machineStep := machine.GetStepCount()
 
-			fmt.Printf("Since start %v => num iters %d, expected position %d, machine position %d start index %d, step size %d\n", time.Since(start), numIterations, position, machineStep, machineStartIndex, stepSize)
-
+			if numIterations%20 == 0 {
+				fmt.Printf("Since start %v => num iters %d, expected position %d, machine position %d start index %d, step size %d\n", time.Since(start), numIterations, position, machineStep, machineStartIndex, stepSize)
+			}
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
+				// The last hash should have consumed the whole batch.
+				if gs.PosInBatch != 0 {
+					return nil, errors.New("machine finished in the middle of a batch")
+				}
 				stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
 				break
 			}

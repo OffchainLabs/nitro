@@ -45,8 +45,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 7) // this + the number below should be 2^43 total WAVM opcodes per block.
-	smallStepChallengeLeafHeight = uint64(1 << 8)
+	bigStepChallengeLeafHeight   = uint64(1 << 6) // this + the number below should be 2^43 total WAVM opcodes per block.
+	smallStepChallengeLeafHeight = uint64(1 << 7)
 )
 
 func TestBoldProtocol(t *testing.T) {
@@ -231,6 +231,11 @@ func TestBoldProtocol(t *testing.T) {
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
@@ -256,6 +261,11 @@ func TestBoldProtocol(t *testing.T) {
 		stateManagerB,
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
@@ -455,7 +465,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(new(big.Int).SetUint64(5)),
+		challenge_testing.WithNumBigStepLevels(uint64(6)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
