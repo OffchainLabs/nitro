@@ -65,7 +65,7 @@ func NewAnvilLocal(ctx context.Context) (*AnvilLocal, error) {
 		return nil, err
 	}
 
-	c, err := rpc.DialContext(ctx, "http://localhost:8545")
+	c, err := rpc.DialContext(ctx, "http://localhost:8686")
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +144,7 @@ func (a *AnvilLocal) Start() error {
 		"--block-time=1",
 		"--chain-id=1002",
 		"--gas-limit=50000000000",
+		"--port=8686",
 	}
 
 	cmd := exec.CommandContext(a.ctx, binaryPath, args...) // #nosec G204 -- Test only code.
