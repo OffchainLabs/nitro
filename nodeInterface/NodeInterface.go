@@ -469,7 +469,11 @@ func (n NodeInterface) GasEstimateL1Component(
 	// Compute the fee paid for L1 in L2 terms
 	//   See in GasChargingHook that this does not induce truncation error
 	//
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 	return gasForL1, baseFee, l1BaseFeeEstimate, nil
@@ -507,7 +511,11 @@ func (n NodeInterface) GasEstimateComponents(
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
+	if err != nil {
+		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
