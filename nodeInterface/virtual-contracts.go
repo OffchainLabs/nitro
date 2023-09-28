@@ -137,7 +137,7 @@ func init() {
 
 		brotliCompressionLevel, err := state.BrotliCompressionLevel()
 		if err != nil {
-			log.Error("failed to get brotliCompressionLevel", "err", err)
+			log.Error("failed to get brotli compression level", "err", err)
 			return
 		}
 		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)

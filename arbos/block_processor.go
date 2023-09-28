@@ -273,7 +273,7 @@ func ProduceBlockAdvanced(
 				dataGas = math.MaxUint64
 				brotliCompressionLevel, err := state.BrotliCompressionLevel()
 				if err != nil {
-					return nil, nil, fmt.Errorf("failed to get brotliCompressionLevel: %w", err)
+					return nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 				}
 				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)

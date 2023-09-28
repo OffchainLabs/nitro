@@ -190,7 +190,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	}
 	brotliCompressionLevel, err := arbos.BrotliCompressionLevel()
 	if err != nil {
-		return fmt.Errorf("failed to get brotliCompressionLevel: %w", err)
+		return fmt.Errorf("failed to get brotli compression level: %w", err)
 	}
 	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)

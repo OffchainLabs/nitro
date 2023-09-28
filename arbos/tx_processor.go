@@ -412,7 +412,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
 		if err != nil {
-			return common.Address{}, fmt.Errorf("failed to get brotliCompressionLevel: %w", err)
+			return common.Address{}, fmt.Errorf("failed to get brotli compression level: %w", err)
 		}
 		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {

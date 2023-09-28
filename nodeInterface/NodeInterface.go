@@ -471,7 +471,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	//
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to get brotliCompressionLevel: %w", err)
+		return 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 	}
 	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
@@ -513,7 +513,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
-		return 0, 0, nil, nil, fmt.Errorf("failed to get brotliCompressionLevel: %w", err)
+		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 	}
 	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 
