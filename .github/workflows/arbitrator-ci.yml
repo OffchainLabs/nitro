@@ -166,7 +166,7 @@ jobs:
           args: --all --manifest-path arbitrator/Cargo.toml -- --check
 
       - name: Make proofs from test cases
-        run: make -j test-gen-proofs
+        run: make test-gen-proofs
 
       - name: Create code-coverage files
         run: |
