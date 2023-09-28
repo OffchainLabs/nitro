@@ -253,7 +253,18 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(ctx, dataPosterDB, l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			Database:          dataPosterDB,
+			HeaderReader:      l1Reader,
+			Auth:              transactOpts,
+			RedisClient:       redisClient,
+			RedisLock:         redisLock,
+			Config:            dataPosterConfigFetcher,
+			MetadataRetriever: b.getBatchPosterPosition,
+			RedisKey:          "data-poster.queue",
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

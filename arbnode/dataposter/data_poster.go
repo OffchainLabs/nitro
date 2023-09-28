@@ -91,18 +91,29 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	return append(res, time.Hour*24*365*10), nil
 }
 
-func NewDataPoster(ctx context.Context, db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
-	initConfig := config()
+type DataPosterOpts struct {
+	Database          ethdb.Database
+	HeaderReader      *headerreader.HeaderReader
+	Auth              *bind.TransactOpts
+	RedisClient       redis.UniversalClient
+	RedisLock         AttemptLocker
+	Config            ConfigFetcher
+	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	RedisKey          string // Redis storage key
+}
+
+func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
+	initConfig := opts.Config()
 	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
-	if headerReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
+	if opts.HeaderReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
 		initConfig.UseNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
 	encF := func() storage.EncoderDecoderInterface {
-		if config().LegacyStorageEncoding {
+		if opts.Config().LegacyStorageEncoding {
 			return &storage.LegacyEncoderDecoder{}
 		}
 		return &storage.EncoderDecoder{}
@@ -111,15 +122,15 @@ func NewDataPoster(ctx context.Context, db ethdb.Database, headerReader *headerr
 	switch {
 	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
-	case redisClient != nil:
+	case opts.RedisClient != nil:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &initConfig.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
 	case initConfig.UseLevelDB:
-		ldb := leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-		if config().Dangerous.ClearLevelDB {
+		ldb := leveldb.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if initConfig.Dangerous.ClearLevelDB {
 			if err := ldb.PruneAll(ctx); err != nil {
 				return nil, err
 			}
@@ -129,15 +140,15 @@ func NewDataPoster(ctx context.Context, db ethdb.Database, headerReader *headerr
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
 	return &DataPoster{
-		headerReader:      headerReader,
-		client:            headerReader.Client(),
-		sender:            auth.From,
-		signer:            auth.Signer,
-		config:            config,
+		headerReader:      opts.HeaderReader,
+		client:            opts.HeaderReader.Client(),
+		sender:            opts.Auth.From,
+		signer:            opts.Auth.Signer,
+		config:            opts.Config,
 		replacementTimes:  replacementTimes,
-		metadataRetriever: metadataRetriever,
+		metadataRetriever: opts.MetadataRetriever,
 		queue:             queue,
-		redisLock:         redisLock,
+		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
 	}, nil
 }
