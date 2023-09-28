@@ -132,8 +132,14 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Signer:            signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer execution.ExecutionSequencer,
-	sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(
+	dataSigner signature.DataSignerFunc,
+	bpvalidator *contracts.BatchPosterVerifier,
+	streamer *TransactionStreamer,
+	sequencer execution.ExecutionSequencer,
+	sync *SyncMonitor,
+	config SeqCoordinatorConfig,
+) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err

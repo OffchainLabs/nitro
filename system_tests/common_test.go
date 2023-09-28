@@ -797,6 +797,7 @@ func Create2ndNodeWithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
+	Require(t, execConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)

@@ -376,7 +376,7 @@ func ConfigDefaultL1Test() *Config {
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
-	config.Dangerous.NoCoordinator = true
+	config.Dangerous.NoSequencerCoordinator = true
 
 	return config
 }
@@ -413,18 +413,18 @@ func ConfigDefaultL2Test() *Config {
 }
 
 type DangerousConfig struct {
-	NoL1Listener  bool `koanf:"no-l1-listener"`
-	NoCoordinator bool `koanf:"no-coordinator"`
+	NoL1Listener           bool `koanf:"no-l1-listener"`
+	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	NoL1Listener:  false,
-	NoCoordinator: false,
+	NoL1Listener:           false,
+	NoSequencerCoordinator: false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
-	f.Bool(prefix+".no-coordinator", DefaultDangerousConfig.NoCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
+	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 }
 
 type Node struct {
@@ -606,8 +606,8 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	} else if config.Sequencer && !config.Dangerous.NoCoordinator {
-		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
+	} else if config.Sequencer && !config.Dangerous.NoSequencerCoordinator {
+		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-sequencer-coordinator set")
 	}
 	dbs := []ethdb.Database{arbDb}
 	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
@@ -929,11 +929,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
-	if execClient != nil {
-		err := execClient.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting exec client: %w", err)
-		}
+	err = n.Execution.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting exec client: %w", err)
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
@@ -1038,12 +1036,8 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
-	if !ok {
-		execClient = nil
-	}
-	if execClient != nil {
-		execClient.StopAndWait()
+	if n.Execution != nil {
+		n.Execution.StopAndWait()
 	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()

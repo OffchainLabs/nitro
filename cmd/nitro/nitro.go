@@ -203,10 +203,6 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
-	if nodeConfig.Execution.Archive {
-		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
-		nodeConfig.Execution.Caching.Archive = true
-	}
 
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
@@ -218,18 +214,12 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
-	if nodeConfig.Execution.Sequencer.Enable {
-		if nodeConfig.Execution.ForwardingTargetF() != "" {
-			flag.Usage()
-			log.Crit("forwarding-target cannot be set when sequencer is enabled")
-		}
-		if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-			flag.Usage()
-			log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
-		}
-	} else if nodeConfig.Execution.ForwardingTarget == "" {
+	if nodeConfig.Execution.Sequencer.Enable && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
 		flag.Usage()
-		log.Crit("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
+		log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
+	}
+	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
+		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
 
 	var l1TransactionOpts *bind.TransactOpts
@@ -314,7 +304,7 @@ func mainImpl() int {
 	}
 
 	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
-		if nodeConfig.Execution.Archive {
+		if nodeConfig.Execution.Caching.Archive {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
 		} else {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
@@ -764,7 +754,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.ParentChain.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.Chain.DevWallet = genericconf.WalletConfigDefault
 
-	if nodeConfig.Execution.Archive {
+	if nodeConfig.Execution.Caching.Archive {
 		nodeConfig.Node.MessagePruner.Enable = false
 	}
 	err = nodeConfig.Validate()

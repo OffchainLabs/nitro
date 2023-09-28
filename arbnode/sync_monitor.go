@@ -67,12 +67,14 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
 
-	builtMessageCount, err := s.txStreamer.exec.HeadMessageNumber()
+	builtMessageCount, err := s.exec.HeadMessageNumber()
 	if err != nil {
-		res["blockMessageToMessageCountError"] = err.Error()
+		res["builtMessageCountError"] = err.Error()
 		syncing = true
 		builtMessageCount = 0
 	} else {
+		blockNum := s.exec.MessageIndexToBlockNumber(builtMessageCount)
+		res["blockNum"] = blockNum
 		builtMessageCount++
 		res["messageOfLastBlock"] = builtMessageCount
 	}

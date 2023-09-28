@@ -62,6 +62,9 @@ type FullExecutionClient interface {
 	ExecutionRecorder
 	ExecutionSequencer
 
+	Start(ctx context.Context) error
+	StopAndWait()
+
 	Maintenance() error
 
 	// TODO: only used to get safe/finalized block numbers

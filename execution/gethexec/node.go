@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -45,25 +46,26 @@ type Config struct {
 	ForwardingTarget  string                           `koanf:"forwarding-target"`
 	Caching           CachingConfig                    `koanf:"caching"`
 	RPC               arbitrum.Config                  `koanf:"rpc"`
-	Archive           bool                             `koanf:"archive"`
 	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
 	Dangerous         DangerousConfig                  `koanf:"dangerous"`
-}
 
-func (c *Config) ForwardingTargetF() string {
-	if c.ForwardingTarget == "null" {
-		return ""
-	}
-
-	return c.ForwardingTarget
+	forwardingTarget string
 }
 
 func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
-	if err := c.Sequencer.Validate(); err != nil {
-		return err
+	if !c.Sequencer.Enable && c.ForwardingTarget == "" {
+		return errors.New("ForwardingTarget not set and not sequencer (can use \"null\")")
+	}
+	if c.ForwardingTarget == "null" {
+		c.forwardingTarget = ""
+	} else {
+		c.forwardingTarget = c.ForwardingTarget
+	}
+	if c.forwardingTarget != "" && c.Sequencer.Enable {
+		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
 	return nil
 }
@@ -77,8 +79,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
-	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -88,7 +88,6 @@ var ConfigDefault = Config{
 	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
 	ForwardingTarget:  "",
 	TxPreChecker:      DefaultTxPreCheckerConfig,
-	Archive:           false,
 	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
 	Caching:           DefaultCachingConfig,
 	Dangerous:         DefaultDangerousConfig,
@@ -98,6 +97,9 @@ func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
 
 	return &config
 }
@@ -105,6 +107,9 @@ func ConfigDefaultNonSequencerTest() *Config {
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
 
 	return &config
 }
@@ -122,6 +127,7 @@ type ExecutionNode struct {
 	TxPublisher       TransactionPublisher
 	ConfigFetcher     ConfigFetcher
 	ParentChainReader *headerreader.HeaderReader
+	started           atomic.Bool
 }
 
 func CreateExecutionNode(
@@ -150,11 +156,7 @@ func CreateExecutionNode(
 		}
 	}
 
-	fwTarget := config.ForwardingTargetF()
 	if config.Sequencer.Enable {
-		if fwTarget != "" {
-			return nil, errors.New("sequencer and forwarding target both set")
-		}
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
 		if err != nil {
@@ -163,11 +165,11 @@ func CreateExecutionNode(
 		txPublisher = sequencer
 	} else {
 		if config.Forwarder.RedisUrl != "" {
-			txPublisher = NewRedisTxForwarder(fwTarget, &config.Forwarder)
-		} else if fwTarget == "" {
+			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
+		} else if config.forwardingTarget == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(fwTarget, &config.Forwarder)
+			txPublisher = NewForwarder(config.forwardingTarget, &config.Forwarder)
 		}
 	}
 
@@ -252,7 +254,11 @@ func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, syn
 	return nil
 }
 
+// not thread safe
 func (n *ExecutionNode) Start(ctx context.Context) error {
+	if n.started.Swap(true) {
+		return errors.New("already started")
+	}
 	// TODO after separation
 	// err := n.Stack.Start()
 	// if err != nil {
@@ -270,6 +276,9 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 }
 
 func (n *ExecutionNode) StopAndWait() {
+	if !n.started.Load() {
+		return
+	}
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
 	if n.TxPublisher.Started() {
@@ -342,7 +351,7 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 	if n.Sequencer != nil {
 		return n.Sequencer.ForwardTo(url)
 	} else {
-		return errors.New("forwardTo not supported - sequencer not acrtive")
+		return errors.New("forwardTo not supported - sequencer not active")
 	}
 }
 func (n *ExecutionNode) SetTransactionStreamer(streamer execution.TransactionStreamer) {
