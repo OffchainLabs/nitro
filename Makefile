@@ -212,7 +212,7 @@ $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm,%, $@)
 
-$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go .make/solgen
+$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go
 	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
 
 $(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
