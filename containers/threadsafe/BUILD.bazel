@@ -13,7 +13,12 @@ go_library(
 
 go_test(
     name = "threadsafe_test",
-    srcs = ["collections_test.go"],
+    srcs = [
+        "collections_test.go",
+        "map_test.go",
+        "set_test.go",
+        "slice_test.go",
+    ],
     embed = [":threadsafe"],
     deps = ["@com_github_stretchr_testify//require"],
 )
