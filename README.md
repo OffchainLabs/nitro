@@ -1,7 +1,7 @@
 <br />
 <p align="center">
   <a href="https://arbitrum.io/">
-    <img src="https://arbitrum.io/wp-content/uploads/2021/08/Arbitrum_Symbol-Full-color-White-background-768x840.png" alt="Logo" width="80" height="80">
+    <img src="https://arbitrum.io/assets/arbitrum/logo_color.png" alt="Logo" width="80" height="80">
   </a>
 
   <h3 align="center">Arbitrum Nitro</h3>
@@ -14,7 +14,7 @@
 
 ## About Arbitrum Nitro
 
-<img src="https://arbitrum.io/wp-content/uploads/2021/08/Arbitrum_Symbol-Full-color-White-background-768x840.png" alt="Logo" width="80" height="80">
+<img src="https://arbitrum.io/assets/arbitrum/logo_color.png" alt="Logo" width="80" height="80">
 
 Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete
 layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges, 
