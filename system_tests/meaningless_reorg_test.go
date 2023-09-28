@@ -20,24 +20,24 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	defer cancel()
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(conf).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
-	defer requireClose(t, testNode.L1Stack)
-	defer testNode.L2Node.StopAndWait()
+	l2Info, arbNode, l2Client, l1Info, l1Backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	defer requireClose(t, l1stack)
+	defer arbNode.StopAndWait()
 
-	seqInbox, err := bridgegen.NewSequencerInbox(testNode.L1Info.GetAddress("SequencerInbox"), testNode.L1Client)
+	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	Require(t, err)
-	seqOpts := testNode.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
 	Require(t, err)
-	batchReceipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, tx)
+	batchReceipt, err := EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 
 	for i := 0; ; i++ {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch from L1")
 		}
-		msgNum, err := testNode.L2Node.Execution.ExecEngine.HeadMessageNumber()
+		msgNum, err := arbNode.Execution.ExecEngine.HeadMessageNumber()
 		Require(t, err)
 		if msgNum == 1 {
 			break
@@ -46,33 +46,33 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	metadata, err := testNode.L2Node.InboxTracker.GetBatchMetadata(1)
+	metadata, err := arbNode.InboxTracker.GetBatchMetadata(1)
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
 	if metadata.ParentChainBlock != originalBatchBlock {
 		Fatal(t, "Posted batch in block", originalBatchBlock, "but metadata says L1 block was", metadata.ParentChainBlock)
 	}
 
-	_, l2Receipt := testNode.TransferBalanceViaL2(t, "Owner", "Owner", common.Big1)
+	_, l2Receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2Info, l2Client, ctx)
 
 	// Make the reorg larger to force the miner to discard transactions.
 	// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 	// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 	// Therefore, we make a bunch of small blocks to prevent the code from running.
 	for j := uint64(0); j < 70; j++ {
-		testNode.TransferBalanceViaL1(t, "Faucet", "Faucet", common.Big1)
+		TransferBalance(t, "Faucet", "Faucet", common.Big1, l1Info, l1Client, ctx)
 	}
 
-	parentBlock := testNode.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
-	err = testNode.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
+	parentBlock := l1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
+	err = l1Backend.BlockChain().ReorgToOldBlock(parentBlock)
 	Require(t, err)
 
 	// Produce a new l1Block so that the batch ends up in a different l1Block than before
-	testNode.TransferBalanceViaL1(t, "User", "User", common.Big1)
+	TransferBalance(t, "User", "User", common.Big1, l1Info, l1Client, ctx)
 
 	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
 	Require(t, err)
-	newBatchReceipt, err := EnsureTxSucceeded(ctx, testNode.L1Client, tx)
+	newBatchReceipt, err := EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 
 	newBatchBlock := newBatchReceipt.BlockNumber.Uint64()
@@ -86,7 +86,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch reorg from L1")
 		}
-		metadata, err = testNode.L2Node.InboxTracker.GetBatchMetadata(1)
+		metadata, err = arbNode.InboxTracker.GetBatchMetadata(1)
 		Require(t, err)
 		if metadata.ParentChainBlock == newBatchBlock {
 			break
@@ -96,10 +96,10 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, err = testNode.L2Node.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, err = arbNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
-	l2Header, err := testNode.L2Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)
+	l2Header, err := l2Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)
 	Require(t, err)
 
 	if l2Header.Hash() != l2Receipt.BlockHash {

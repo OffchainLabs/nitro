@@ -28,14 +28,14 @@ func TestBloom(t *testing.T) {
 	nodeconfig := arbnode.ConfigDefaultL2Test()
 	nodeconfig.RPC.BloomBitsBlocks = 256
 	nodeconfig.RPC.BloomConfirms = 1
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeconfig).CreateTestNodeOnL2Only(t, false)
-	defer testNode.L2Node.StopAndWait()
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
+	defer node.StopAndWait()
 
-	testNode.L2Info.GenerateAccount("User2")
+	l2info.GenerateAccount("User2")
 
-	ownerTxOpts := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
-	_, simple := testNode.DeploySimple(t, ownerTxOpts)
+	_, simple := deploySimple(t, ctx, ownerTxOpts, client)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
@@ -63,7 +63,7 @@ func TestBloom(t *testing.T) {
 		if sendNullEvent {
 			tx, err = simple.EmitNullEvent(&ownerTxOpts)
 			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+			_, err = EnsureTxSucceeded(ctx, client, tx)
 			Require(t, err)
 		}
 
@@ -74,7 +74,7 @@ func TestBloom(t *testing.T) {
 			tx, err = simple.Increment(&ownerTxOpts)
 		}
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 		if i%100 == 0 {
 			t.Log("counts: ", i, "/", countsNum)
@@ -82,7 +82,7 @@ func TestBloom(t *testing.T) {
 	}
 
 	for {
-		sectionSize, sectionNum := testNode.L2Node.Execution.Backend.APIBackend().BloomStatus()
+		sectionSize, sectionNum := node.Execution.Backend.APIBackend().BloomStatus()
 		if sectionSize != 256 {
 			Fatal(t, "unexpected section size: ", sectionSize)
 		}
@@ -92,14 +92,14 @@ func TestBloom(t *testing.T) {
 		}
 		<-time.After(time.Second)
 	}
-	lastHeader, err := testNode.L2Client.HeaderByNumber(ctx, nil)
+	lastHeader, err := client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	nullEventQuery := ethereum.FilterQuery{
 		FromBlock: big.NewInt(0),
 		ToBlock:   lastHeader.Number,
 		Topics:    [][]common.Hash{{simpleABI.Events["NullEvent"].ID}},
 	}
-	logs, err := testNode.L2Client.FilterLogs(ctx, nullEventQuery)
+	logs, err := client.FilterLogs(ctx, nullEventQuery)
 	Require(t, err)
 	if len(logs) != len(nullEventCounts) {
 		Fatal(t, "expected ", len(nullEventCounts), " logs, got ", len(logs))
@@ -107,7 +107,7 @@ func TestBloom(t *testing.T) {
 	incrementEventQuery := ethereum.FilterQuery{
 		Topics: [][]common.Hash{{simpleABI.Events["CounterEvent"].ID}},
 	}
-	logs, err = testNode.L2Client.FilterLogs(ctx, incrementEventQuery)
+	logs, err = client.FilterLogs(ctx, incrementEventQuery)
 	Require(t, err)
 	if len(logs) != len(eventCounts) {
 		Fatal(t, "expected ", len(eventCounts), " logs, got ", len(logs))

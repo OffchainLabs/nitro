@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -36,14 +35,14 @@ func TestOutboxProofs(t *testing.T) {
 	withdrawTopic := arbSysAbi.Events["L2ToL1Tx"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
-	defer testNode.L2Node.StopAndWait()
+	l2info, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
 
-	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, testNode.L2Client)
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
 	Require(t, err)
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, testNode.L2Client)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, client)
 	Require(t, err)
 
 	txnCount := int64(1 + rand.Intn(16))
@@ -72,7 +71,7 @@ func TestOutboxProofs(t *testing.T) {
 		txns = append(txns, tx.Hash())
 
 		time.Sleep(4 * time.Millisecond) // Geth takes a few ms for the receipt to show up
-		_, err = testNode.L2Client.TransactionReceipt(ctx, tx.Hash())
+		_, err = client.TransactionReceipt(ctx, tx.Hash())
 		if err == nil {
 			merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
 			Require(t, err, "could not get merkle root")
@@ -87,7 +86,7 @@ func TestOutboxProofs(t *testing.T) {
 
 	for _, tx := range txns {
 		var receipt *types.Receipt
-		receipt, err = testNode.L2Client.TransactionReceipt(ctx, tx)
+		receipt, err = client.TransactionReceipt(ctx, tx)
 		Require(t, err, "No receipt for txn")
 
 		if receipt.Status != types.ReceiptStatusSuccessful {
@@ -188,7 +187,7 @@ func TestOutboxProofs(t *testing.T) {
 			// in one lookup, query geth for all the data we need to construct a proof
 			var logs []types.Log
 			if len(query) > 0 {
-				logs, err = testNode.L2Client.FilterLogs(ctx, ethereum.FilterQuery{
+				logs, err = client.FilterLogs(ctx, ethereum.FilterQuery{
 					Addresses: []common.Address{
 						types.ArbSysAddress,
 					},

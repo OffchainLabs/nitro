@@ -203,42 +203,42 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
-	defer requireClose(t, testNode.L1Stack)
-	defer testNode.L2Node.StopAndWait()
+	l2info, node, l2client, _, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer node.StopAndWait()
 
-	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	contractAddress1, simple1 := testNode.DeploySimple(t, auth)
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	contractAddress1, simple1 := deploySimple(t, ctx, auth, l2client)
 	tx, err := simple1.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	contractAddress2, simple2 := testNode.DeploySimple(t, auth)
+	contractAddress2, simple2 := deploySimple(t, ctx, auth, l2client)
 	tx, err = simple2.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	tx, err = simple2.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	currentRootHash1 := getStorageRootHash(t, testNode.L2Node, contractAddress1)
-	currentSlotValueMap1 := getStorageSlotValue(t, testNode.L2Node, contractAddress1)
-	currentRootHash2 := getStorageRootHash(t, testNode.L2Node, contractAddress2)
-	currentSlotValueMap2 := getStorageSlotValue(t, testNode.L2Node, contractAddress2)
+	currentRootHash1 := getStorageRootHash(t, node, contractAddress1)
+	currentSlotValueMap1 := getStorageSlotValue(t, node, contractAddress1)
+	currentRootHash2 := getStorageRootHash(t, node, contractAddress2)
+	currentSlotValueMap2 := getStorageSlotValue(t, node, contractAddress2)
 
-	rpcClient, err := testNode.L2Node.Stack.Attach()
+	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
 
-	testNode.L2Info.GenerateAccount("User2")
+	l2info.GenerateAccount("User2")
 
-	testConditionalTxThatShouldSucceed(t, ctx, -1, testNode.L2Info, rpcClient, nil)
+	testConditionalTxThatShouldSucceed(t, ctx, -1, l2info, rpcClient, nil)
 	for i, options := range getEmptyOptions(contractAddress1) {
-		testConditionalTxThatShouldSucceed(t, ctx, i, testNode.L2Info, rpcClient, options)
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 
-	block, err := testNode.L1Client.BlockByNumber(ctx, nil)
+	block, err := l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber := block.NumberU64()
 	blockTime := block.Time()
@@ -249,33 +249,33 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	options1 := dedupOptions(t, append(append(optionsAB, optionsA...), optionsB...))
 	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
 	for i, options := range options1 {
-		testConditionalTxThatShouldSucceed(t, ctx, i, testNode.L2Info, rpcClient, options)
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 
 	tx, err = simple1.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	tx, err = simple2.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	previousStorageRootHash1 := currentRootHash1
-	currentRootHash1 = getStorageRootHash(t, testNode.L2Node, contractAddress1)
+	currentRootHash1 = getStorageRootHash(t, node, contractAddress1)
 	if bytes.Equal(previousStorageRootHash1.Bytes(), currentRootHash1.Bytes()) {
 		Fatal(t, "storage root hash didn't change as expected")
 	}
-	currentSlotValueMap1 = getStorageSlotValue(t, testNode.L2Node, contractAddress1)
+	currentSlotValueMap1 = getStorageSlotValue(t, node, contractAddress1)
 
 	previousStorageRootHash2 := currentRootHash2
-	currentRootHash2 = getStorageRootHash(t, testNode.L2Node, contractAddress2)
+	currentRootHash2 = getStorageRootHash(t, node, contractAddress2)
 	if bytes.Equal(previousStorageRootHash2.Bytes(), currentRootHash2.Bytes()) {
 		Fatal(t, "storage root hash didn't change as expected")
 	}
-	currentSlotValueMap2 = getStorageSlotValue(t, testNode.L2Node, contractAddress2)
+	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
 
-	block, err = testNode.L1Client.BlockByNumber(ctx, nil)
+	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
 	blockTime = block.Time()
@@ -286,35 +286,35 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	options2 := dedupOptions(t, append(append(optionsCD, optionsC...), optionsD...))
 	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
 	for i, options := range options2 {
-		testConditionalTxThatShouldSucceed(t, ctx, i, testNode.L2Info, rpcClient, options)
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 	for i, options := range options1 {
-		testConditionalTxThatShouldFail(t, ctx, i, testNode.L2Info, rpcClient, options, -32003)
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
-	block, err = testNode.L1Client.BlockByNumber(ctx, nil)
+	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
 	blockTime = block.Time()
 	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, blockTime))
 	for i, options := range options3 {
-		testConditionalTxThatShouldFail(t, ctx, i, testNode.L2Info, rpcClient, options, -32003)
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
 	options4 := optionsDedupProduct(t, options2, options1)
 	for i, options := range options4 {
-		testConditionalTxThatShouldFail(t, ctx, i, testNode.L2Info, rpcClient, options, -32003)
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
 }
 
 func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(arbnode.ConfigDefaultL2Test()).CreateTestNodeOnL2Only(t, true)
-	defer testNode.L2Node.StopAndWait()
-	rpcClient, err := testNode.L2Node.Stack.Attach()
+	l2info, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
 
-	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	contractAddress, simple := testNode.DeploySimple(t, auth)
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	contractAddress, simple := deploySimple(t, ctx, auth, client)
 
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	Require(t, err)
@@ -325,11 +325,11 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	var options []*arbitrum_types.ConditionalOptions
 	for i := 0; i < numTxes; i++ {
 		account := fmt.Sprintf("User%v", i)
-		testNode.L2Info.GenerateAccount(account)
-		tx := testNode.L2Info.PrepareTx("Owner", account, testNode.L2Info.TransferGas, big.NewInt(1e16), nil)
-		err := testNode.L2Client.SendTransaction(ctx, tx)
+		l2info.GenerateAccount(account)
+		tx := l2info.PrepareTx("Owner", account, l2info.TransferGas, big.NewInt(1e16), nil)
+		err := client.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 	for i := numTxes - 1; i >= 0; i-- {
@@ -337,7 +337,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		data, err := simpleContract.Pack("logAndIncrement", big.NewInt(int64(expected)))
 		Require(t, err)
 		account := fmt.Sprintf("User%v", i)
-		txes = append(txes, testNode.L2Info.PrepareTxTo(account, &contractAddress, testNode.L2Info.TransferGas, big.NewInt(0), data))
+		txes = append(txes, l2info.PrepareTxTo(account, &contractAddress, l2info.TransferGas, big.NewInt(0), data))
 		options = append(options, &arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress: {SlotValue: map[common.Hash]common.Hash{{0}: common.BigToHash(big.NewInt(int64(expected)))}}}})
 	}
 	ctxWithTimeout, cancelCtxWithTimeout := context.WithTimeout(ctx, 5*time.Second)
@@ -367,7 +367,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	}
 	cancelCtxWithTimeout()
 	wg.Wait()
-	bc := testNode.L2Node.Execution.Backend.ArbInterface().BlockChain()
+	bc := node.Execution.Backend.ArbInterface().BlockChain()
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 
 	var receipts types.Receipts
@@ -409,34 +409,34 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	nodeConfig.TxPreChecker.RequiredStateAge = 1
 	nodeConfig.TxPreChecker.RequiredStateMaxBlocks = 2
 
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
-	defer requireClose(t, testNode.L1Stack)
-	defer testNode.L2Node.StopAndWait()
-	rpcClient, err := testNode.L2Node.Stack.Attach()
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
+	defer requireClose(t, l1stack)
+	defer node.StopAndWait()
+	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
 
-	testNode.L2Info.GenerateAccount("User2")
+	l2info.GenerateAccount("User2")
 
-	auth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	start := time.Now().Unix()
-	contractAddress, simple := testNode.DeploySimple(t, auth)
+	contractAddress, simple := deploySimple(t, ctx, auth, l2client)
 	if time.Since(time.Unix(start, 0)) > 200*time.Millisecond {
 		start++
 		time.Sleep(time.Until(time.Unix(start, 0)))
 	}
 	tx, err := simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	currentRootHash := getStorageRootHash(t, testNode.L2Node, contractAddress)
+	currentRootHash := getStorageRootHash(t, node, contractAddress)
 	options := &arbitrum_types.ConditionalOptions{
 		KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
 			contractAddress: {RootHash: &currentRootHash},
 		},
 	}
-	testConditionalTxThatShouldFail(t, ctx, 0, testNode.L2Info, rpcClient, options, -32003)
+	testConditionalTxThatShouldFail(t, ctx, 0, l2info, rpcClient, options, -32003)
 	time.Sleep(time.Until(time.Unix(start+1, 0)))
-	testConditionalTxThatShouldSucceed(t, ctx, 1, testNode.L2Info, rpcClient, options)
+	testConditionalTxThatShouldSucceed(t, ctx, 1, l2info, rpcClient, options)
 
 	start = time.Now().Unix()
 	if time.Since(time.Unix(start, 0)) > 200*time.Millisecond {
@@ -445,23 +445,23 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	}
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	currentRootHash = getStorageRootHash(t, testNode.L2Node, contractAddress)
+	currentRootHash = getStorageRootHash(t, node, contractAddress)
 	options = &arbitrum_types.ConditionalOptions{
 		KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
 			contractAddress: {RootHash: &currentRootHash},
 		},
 	}
-	testConditionalTxThatShouldFail(t, ctx, 2, testNode.L2Info, rpcClient, options, -32003)
-	tx = testNode.L2Info.PrepareTx("Owner", "User2", testNode.L2Info.TransferGas, big.NewInt(1e12), nil)
-	Require(t, testNode.L2Client.SendTransaction(ctx, tx))
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	testConditionalTxThatShouldFail(t, ctx, 2, l2info, rpcClient, options, -32003)
+	tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	testConditionalTxThatShouldFail(t, ctx, 3, testNode.L2Info, rpcClient, options, -32003)
-	tx = testNode.L2Info.PrepareTx("Owner", "User2", testNode.L2Info.TransferGas, big.NewInt(1e12), nil)
-	Require(t, testNode.L2Client.SendTransaction(ctx, tx))
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	testConditionalTxThatShouldFail(t, ctx, 3, l2info, rpcClient, options, -32003)
+	tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	testConditionalTxThatShouldSucceed(t, ctx, 4, testNode.L2Info, rpcClient, options)
+	testConditionalTxThatShouldSucceed(t, ctx, 4, l2info, rpcClient, options)
 }

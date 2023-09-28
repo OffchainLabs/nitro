@@ -33,19 +33,19 @@ func TestSequencerFeePaid(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	testNode := NewNodeBuilder(ctx).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
-	defer requireClose(t, testNode.L1Stack)
-	defer testNode.L2Node.StopAndWait()
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
 
-	version := testNode.L2Node.Execution.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
-	callOpts := testNode.L2Info.GetDefaultCallOpts("Owner", ctx)
+	version := l2node.Execution.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account
-	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), testNode.L2Client)
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), l2client)
 	Require(t, err, "failed to deploy contract")
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), testNode.L2Client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
 	Require(t, err, "failed to deploy contract")
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), testNode.L2Client)
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
 	Require(t, err, "failed to deploy contract")
 	networkFeeAccount, err := arbOwnerPublic.GetNetworkFeeAccount(callOpts)
 	Require(t, err, "could not get the network fee account")
@@ -53,24 +53,24 @@ func TestSequencerFeePaid(t *testing.T) {
 	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 	Require(t, err)
 
-	baseFee := testNode.GetBaseFeeAtViaL2(t, nil)
-	testNode.L2Info.GasPrice = baseFee
+	baseFee := GetBaseFee(t, l2client, ctx)
+	l2info.GasPrice = baseFee
 
 	testFees := func(tip uint64) (*big.Int, *big.Int) {
 		tipCap := arbmath.BigMulByUint(baseFee, tip)
-		txOpts := testNode.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+		txOpts := l2info.GetDefaultTransactOpts("Faucet", ctx)
 		txOpts.GasTipCap = tipCap
 		gasPrice := arbmath.BigAdd(baseFee, tipCap)
 
-		networkBefore := GetBalance(t, ctx, testNode.L2Client, networkFeeAccount)
+		networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 
 		tx, err := arbDebug.Events(&txOpts, true, [32]byte{})
 		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 
-		networkAfter := GetBalance(t, ctx, testNode.L2Client, networkFeeAccount)
-		l1Charge := arbmath.BigMulByUint(testNode.L2Info.GasPrice, receipt.GasUsedForL1)
+		networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
+		l1Charge := arbmath.BigMulByUint(l2info.GasPrice, receipt.GasUsedForL1)
 
 		// the network should receive
 		//     1. compute costs
@@ -92,7 +92,7 @@ func TestSequencerFeePaid(t *testing.T) {
 		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
 		l1ChargeExpected := arbmath.BigMulByUint(l1Estimate, txSize*params.TxDataNonZeroGasEIP2028)
 		// L1 gas can only be charged in terms of L2 gas, so subtract off any rounding error from the expected value
-		l1ChargeExpected.Sub(l1ChargeExpected, new(big.Int).Mod(l1ChargeExpected, testNode.L2Info.GasPrice))
+		l1ChargeExpected.Sub(l1ChargeExpected, new(big.Int).Mod(l1ChargeExpected, l2info.GasPrice))
 
 		colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
 
@@ -135,38 +135,38 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.DelayedSequencer.FinalizeDistance = 1
 
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(conf).SetChainConfig(chainConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
-	defer requireClose(t, testNode.L1Stack)
-	defer testNode.L2Node.StopAndWait()
+	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, nil)
+	defer requireClose(t, l1stack)
+	defer node.StopAndWait()
 
-	ownerAuth := testNode.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ownerAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 	// make ownerAuth a chain owner
-	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), testNode.L2Client)
+	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
 	Require(t, err)
 	tx, err := arbdebug.BecomeChainOwner(&ownerAuth)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 
 	// use ownerAuth to set the L1 price per unit
 	Require(t, err)
-	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), testNode.L2Client)
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), l2client)
 	Require(t, err)
 	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, arbmath.UintToBig(initialEstimate))
 	Require(t, err)
-	_, err = WaitForTx(ctx, testNode.L2Client, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)
 
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), testNode.L2Client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
 	Require(t, err)
 	lastEstimate, err := arbGasInfo.GetL1BaseFeeEstimate(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	lastBatchCount, err := testNode.L2Node.InboxTracker.GetBatchCount()
+	lastBatchCount, err := node.InboxTracker.GetBatchCount()
 	Require(t, err)
-	l1Header, err := testNode.L1Client.HeaderByNumber(ctx, nil)
+	l1Header, err := l1client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 
-	rewardRecipientBalanceBefore := GetBalance(t, ctx, testNode.L2Client, l1pricing.BatchPosterAddress)
+	rewardRecipientBalanceBefore := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
 	timesPriceAdjusted := 0
 
 	colors.PrintBlue("Initial values")
@@ -175,17 +175,17 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 
 	numRetrogradeMoves := 0
 	for i := 0; i < 256; i++ {
-		tx, receipt := testNode.TransferBalanceViaL2(t, "Owner", "Owner", common.Big1)
-		header, err := testNode.L2Client.HeaderByHash(ctx, receipt.BlockHash)
+		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx)
+		header, err := l2client.HeaderByHash(ctx, receipt.BlockHash)
 		Require(t, err)
 
-		testNode.TransferBalanceViaL1(t, "Faucet", "Faucet", common.Big1) // generate l1 traffic
+		TransferBalance(t, "Faucet", "Faucet", common.Big1, l1info, l1client, ctx) // generate l1 traffic
 
 		units := compressedTxSize(t, tx) * params.TxDataNonZeroGasEIP2028
 		estimatedL1FeePerUnit := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, receipt.GasUsedForL1), units)
 
 		if !arbmath.BigEquals(lastEstimate, estimatedL1FeePerUnit) {
-			l1Header, err = testNode.L1Client.HeaderByNumber(ctx, nil)
+			l1Header, err = l1client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 
 			callOpts := &bind.CallOpts{Context: ctx, BlockNumber: receipt.BlockNumber}
@@ -234,7 +234,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			// see that the inbox advances
 
 			for j := 16; j > 0; j-- {
-				newBatchCount, err := testNode.L2Node.InboxTracker.GetBatchCount()
+				newBatchCount, err := node.InboxTracker.GetBatchCount()
 				Require(t, err)
 				if newBatchCount > lastBatchCount {
 					colors.PrintGrey("posted new batch ", newBatchCount)
@@ -249,7 +249,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		}
 	}
 
-	rewardRecipientBalanceAfter := GetBalance(t, ctx, testNode.L2Client, chainConfig.ArbitrumChainParams.InitialChainOwner)
+	rewardRecipientBalanceAfter := GetBalance(t, ctx, l2client, chainConfig.ArbitrumChainParams.InitialChainOwner)
 	colors.PrintMint("reward recipient balance ", rewardRecipientBalanceBefore, " ➤ ", rewardRecipientBalanceAfter)
 	colors.PrintMint("price changes     ", timesPriceAdjusted)
 
@@ -260,7 +260,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		Fatal(t, "reward recipient didn't get paid")
 	}
 
-	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), testNode.L2Client)
+	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), l2client)
 	Require(t, err)
 	batchPosterAddresses, err := arbAggregator.GetBatchPosters(&bind.CallOpts{Context: ctx})
 	Require(t, err)
@@ -268,7 +268,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	for _, bpAddr := range batchPosterAddresses {
 		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != l1pricing.L1PricerFundsPoolAddress {
 			numReimbursed++
-			bal, err := testNode.L1Client.BalanceAt(ctx, bpAddr, nil)
+			bal, err := l1client.BalanceAt(ctx, bpAddr, nil)
 			Require(t, err)
 			if bal.Sign() == 0 {
 				Fatal(t, "Batch poster balance is zero for", bpAddr)

@@ -60,31 +60,75 @@ import (
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
+type TestClient struct {
+	// Nodebuilder fields
+	ctx     context.Context
+	Info    info
+	Client  *ethclient.Client
+	Backend *eth.Ethereum
+	Stack   *node.Node
+	Node    *arbnode.Node
+}
+
+func NewTestClient(ctx context.Context) *TestClient {
+	return &TestClient{ctx: ctx}
+}
+
+// SetClient is used to initialize *ethclient.Client when users dont want to create TestClients via create methods from nodebuilder
+func (tc *TestClient) SetClient(c *ethclient.Client) *TestClient {
+	tc.Client = c
+	return tc
+}
+
+// SetInfo is used to initialize *BlockchainTestInfo when users dont want to create TestClients via create methods from nodebuilder
+func (tc *TestClient) SetInfo(i info) *TestClient {
+	tc.Info = i
+	return tc
+}
+
+func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction) *types.Receipt {
+	return SendSignedTxViaL1(t, tc.ctx, tc.Info, tc.Client, l2Client, transaction)
+}
+
+func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction) *types.Receipt {
+	return SendUnsignedTxViaL1(t, tc.ctx, tc.Info, tc.Client, l2Client, transaction)
+}
+
+func (tc *TestClient) TransferBalance(t *testing.T, from string, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return TransferBalanceTo(t, from, tc.Info.GetAddress(to), amount, tc.Info, tc.Client, tc.ctx)
+}
+
+func (tc *TestClient) TransferBalanceTo(t *testing.T, from string, to common.Address, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return TransferBalanceTo(t, from, to, amount, tc.Info, tc.Client, tc.ctx)
+}
+
+func (tc *TestClient) GetBalance(t *testing.T, account common.Address) *big.Int {
+	return GetBalance(t, tc.ctx, tc.Client, account)
+}
+
+func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
+	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
+}
+
+func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
+	return deploySimple(t, tc.ctx, auth, tc.Client)
+}
+
 type NodeBuilder struct {
 	// Nodebuilder configuration
 	ctx           context.Context
+	Info          info
 	chainConfig   *params.ChainConfig
 	cacheConfig   *core.CacheConfig
 	nodeConfig    *arbnode.Config
-	l1StackConfig *node.Config
-	l2StackConfig *node.Config
+	stackConfig   *node.Config
+	cachingConfig *execution.CachingConfig
 	isSequencer   bool
+	takeOwnership bool
 
-	// L1 Nodebuilder fields
-	L1Info    info
-	L1Client  *ethclient.Client
-	L1Backend *eth.Ethereum
-	L1Stack   *node.Node
-
-	// L2 Nodebuilder fields
-	L2Info       info
-	L2Client     *ethclient.Client
-	L2Backend    *eth.Ethereum
-	L2Node       *arbnode.Node
-	L2Stack      *node.Node
-	L2ChainDB    ethdb.Database
-	L2NodeDB     ethdb.Database
-	L2Blockchain *core.BlockChain
+	// Created nodes
+	L1 *TestClient
+	L2 *TestClient
 }
 
 func NewNodeBuilder(ctx context.Context) *NodeBuilder {
@@ -106,23 +150,18 @@ func (b *NodeBuilder) SetCacheConfig(c *core.CacheConfig) *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) SetL1StackConfig(c *node.Config) *NodeBuilder {
-	b.l1StackConfig = c
+func (b *NodeBuilder) SetStackConfig(c *node.Config) *NodeBuilder {
+	b.stackConfig = c
 	return b
 }
 
-func (b *NodeBuilder) SetL2StackConfig(c *node.Config) *NodeBuilder {
-	b.l2StackConfig = c
+func (b *NodeBuilder) SetInfo(i info) *NodeBuilder {
+	b.Info = i
 	return b
 }
 
-func (b *NodeBuilder) SetL1Info(l1Info info) *NodeBuilder {
-	b.L1Info = l1Info
-	return b
-}
-
-func (b *NodeBuilder) SetL2Info(l2Info info) *NodeBuilder {
-	b.L2Info = l2Info
+func (b *NodeBuilder) SetCachingConfig(c *execution.CachingConfig) *NodeBuilder {
+	b.cachingConfig = c
 	return b
 }
 
@@ -131,55 +170,101 @@ func (b *NodeBuilder) SetIsSequencer(v bool) *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) CreateTestNodeOnL1AndL2(t *testing.T) *NodeBuilder {
-	b.L2Info, b.L2Node, b.L2Client, b.L2Stack, b.L1Info, b.L1Backend, b.L1Client, b.L1Stack =
-		createTestNodeOnL1AndL2Impl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+func (b *NodeBuilder) SetTakeOwnership(v bool) *NodeBuilder {
+	b.takeOwnership = v
 	return b
 }
 
-func (b *NodeBuilder) CreateTestNodeOnL2Only(t *testing.T, takeOwnership bool) *NodeBuilder {
-	b.L2Info, b.L2Node, b.L2Client = createTestNodeOnL2OnlyImpl(t, b.ctx, b.L2Info, b.nodeConfig, takeOwnership)
+func (b *NodeBuilder) ConfigForL2OnL1(isSequencer bool, n *arbnode.Config, c *params.ChainConfig, s *node.Config, i info) *NodeBuilder {
+	b.isSequencer = isSequencer
+	b.nodeConfig = n
+	b.chainConfig = c
+	b.stackConfig = s
+	b.Info = i
 	return b
 }
 
-func (b *NodeBuilder) SendSignedTxViaL1(t *testing.T, transaction *types.Transaction) *types.Receipt {
-	return sendSignedTxViaL1Impl(t, b.ctx, b.L1Info, b.L1Client, b.L2Client, transaction)
+func (b *NodeBuilder) BuildL2OnL1(t *testing.T) (*TestClient, *TestClient) {
+	l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
+	l2.Info, l2.Node, l2.Client, l2.Stack, l1.Info, l1.Backend, l1.Client, l1.Stack =
+		createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.stackConfig, b.Info)
+	b.L1, b.L2 = l1, l2
+	return l1, l2
 }
 
-func (b *NodeBuilder) SendUnsignedTxViaL1(t *testing.T, transaction *types.Transaction) *types.Receipt {
-	return sendUnsignedTxViaL1Impl(t, b.ctx, b.L1Info, b.L1Client, b.L2Client, transaction)
+func (b *NodeBuilder) ConfigForL2(takeOwnership bool, n *arbnode.Config, i info) *NodeBuilder {
+	b.takeOwnership = takeOwnership
+	b.nodeConfig = n
+	b.Info = i
+	return b
 }
 
-func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return bridgeBalanceImpl(t, account, amount, b.L1Info, b.L2Info, b.L1Client, b.L2Client, b.ctx)
+func (b *NodeBuilder) BuildL2(t *testing.T) *TestClient {
+	l2 := NewTestClient(b.ctx)
+	l2.Info, l2.Node, l2.Client =
+		CreateTestL2WithConfig(t, b.ctx, b.Info, b.nodeConfig, b.takeOwnership)
+	b.L2 = l2
+	return l2
 }
 
-func (b *NodeBuilder) TransferBalanceViaL2(t *testing.T, from string, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return transferBalanceToImpl(t, from, b.L2Info.GetAddress(to), amount, b.L2Info, b.L2Client, b.ctx)
+func (b *NodeBuilder) Build2ndNode(t *testing.T, initData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.Config, stackConfig *node.Config) *TestClient {
+	if b.L1 == nil {
+		t.Fatal("builder did not previously build a L1 Node")
+	}
+	if b.L2 == nil {
+		t.Fatal("builder did not previously build a L2 Node")
+	}
+	l2 := NewTestClient(b.ctx)
+	l2.Client, l2.Node =
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1.Info, initData, nodeConfig, stackConfig)
+	return l2
 }
 
-func (b *NodeBuilder) TransferBalanceViaL1(t *testing.T, from string, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return transferBalanceToImpl(t, from, b.L1Info.GetAddress(to), amount, b.L1Info, b.L1Client, b.ctx)
+func (b *NodeBuilder) Build2ndNodeDAS(t *testing.T, initData *statetransfer.ArbosInitializationInfo, dasConfig *das.DataAvailabilityConfig) *TestClient {
+	if b.L1 == nil {
+		t.Fatal("builder did not previously build a L1 Node")
+	}
+	if b.L2 == nil {
+		t.Fatal("builder did not previously build a L2 Node")
+	}
+	l2 := NewTestClient(b.ctx)
+	l2.Client, l2.Node =
+		Create2ndNode(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1.Info, initData, dasConfig)
+	return l2
 }
 
-func (b *NodeBuilder) TransferBalanceToViaL2(t *testing.T, from string, to common.Address, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return transferBalanceToImpl(t, from, to, amount, b.L2Info, b.L2Client, b.ctx)
+type TestBlockchain struct {
+	TestClient
+	// Blockchain fields
+	ChainDB    ethdb.Database
+	NodeDB     ethdb.Database
+	Blockchain *core.BlockChain
 }
 
-func (b *NodeBuilder) TransferBalanceToViaL1(t *testing.T, from string, to common.Address, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return transferBalanceToImpl(t, from, to, amount, b.L1Info, b.L1Client, b.ctx)
+func (b *NodeBuilder) ConfigForL1Blockchain(s *node.Config, i info) *NodeBuilder {
+	b.stackConfig = s
+	b.Info = i
+	return b
 }
 
-func (b *NodeBuilder) GetBaseFeeAtViaL2(t *testing.T, blockNum *big.Int) *big.Int {
-	return getBaseFeeAtImpl(t, b.L2Client, b.ctx, blockNum)
+func (b *NodeBuilder) BuilL1Blockchain(t *testing.T) *TestBlockchain {
+	l1 := &TestBlockchain{}
+	l1.ctx = b.ctx
+	l1.Info, l1.Client, l1.Backend, l1.Stack = createTestL1BlockChainWithConfig(t, b.Info, b.stackConfig)
+	return l1
 }
 
-func (b *NodeBuilder) GetBaseFeeAtViaL1(t *testing.T, blockNum *big.Int) *big.Int {
-	return getBaseFeeAtImpl(t, b.L1Client, b.ctx, blockNum)
+func (b *NodeBuilder) ConfigForL2Blockchain(s *node.Config, i info) *NodeBuilder {
+	b.stackConfig = s
+	b.Info = i
+	return b
 }
 
-func (b *NodeBuilder) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
-	return deploySimpleImpl(t, b.ctx, auth, b.L2Client)
+func (b *NodeBuilder) BuilL2Blockchain(t *testing.T, dataDir string, initMessage *arbostypes.ParsedInitMessage) *TestBlockchain {
+	l2 := &TestBlockchain{}
+	l2.Info, l2.Stack, l2.ChainDB, l2.NodeDB, l2.Blockchain =
+		createL2BlockChainWithStackConfig(t, b.Info, dataDir, b.chainConfig, initMessage, b.stackConfig, b.cachingConfig)
+	return l2
 }
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
@@ -193,7 +278,14 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 	}
 }
 
-func transferBalanceToImpl(
+func TransferBalance(
+	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
+) (*types.Transaction, *types.Receipt) {
+	t.Helper()
+	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
+}
+
+func TransferBalanceTo(
 	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
@@ -206,7 +298,7 @@ func transferBalanceToImpl(
 }
 
 // if l2client is not nil - will wait until balance appears in l2
-func bridgeBalanceImpl(
+func BridgeBalance(
 	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
@@ -253,7 +345,7 @@ func bridgeBalanceImpl(
 			if balance.Cmp(l2Balance) >= 0 {
 				break
 			}
-			transferBalanceToImpl(t, "Faucet", l1info.GetAddress("User"), big.NewInt(1), l1info, l1client, ctx)
+			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
 			if i > 20 {
 				Fatal(t, "bridging failed")
 			}
@@ -264,7 +356,7 @@ func bridgeBalanceImpl(
 	return tx, res
 }
 
-func sendSignedTxViaL1Impl(
+func SendSignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
@@ -295,7 +387,7 @@ func sendSignedTxViaL1Impl(
 	return receipt
 }
 
-func sendUnsignedTxViaL1Impl(
+func SendUnsignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
@@ -346,7 +438,13 @@ func sendUnsignedTxViaL1Impl(
 	return receipt
 }
 
-func getBaseFeeAtImpl(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
+	header, err := client.HeaderByNumber(ctx, nil)
+	Require(t, err)
+	return header.BaseFee
+}
+
+func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
 	header, err := client.HeaderByNumber(ctx, blockNum)
 	Require(t, err)
 	return header.BaseFee
@@ -662,7 +760,33 @@ func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
 }
 
 // Create and deploy L1 and arbnode for L2
-func createTestNodeOnL1AndL2Impl(
+func createTestNodeOnL1(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+) (
+	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
+	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+) {
+	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, nil, nil, nil)
+}
+
+func createTestNodeOnL1WithConfig(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	stackConfig *node.Config,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
+	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+) {
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil)
+	return
+}
+
+func createTestNodeOnL1WithConfigImpl(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
@@ -725,12 +849,12 @@ func createTestNodeOnL1AndL2Impl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func createTestNodeOnL2OnlyImpl(
-	t *testing.T,
-	ctx context.Context,
-	l2Info *BlockchainTestInfo,
-	nodeConfig *arbnode.Config,
-	takeOwnership bool,
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true)
+}
+
+func CreateTestL2WithConfig(
+	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
 
@@ -993,7 +1117,7 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	return timeout
 }
 
-func deploySimpleImpl(
+func deploySimple(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
 ) (common.Address, *mocksgen.Simple) {
 	addr, tx, simple, err := mocksgen.DeploySimple(&auth, client)

@@ -21,26 +21,26 @@ import (
 	"github.com/offchainlabs/nitro/util"
 )
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, txCount uint64) (*arbnode.Node, *execution.ExecutionNode, *ethclient.Client, func()) {
+func prepareNodeWithHistory(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, txCount uint64) (node *arbnode.Node, executionNode *execution.ExecutionNode, l2client *ethclient.Client, cancel func()) {
 	t.Helper()
-	testNode := NewNodeBuilder(ctx).SetNodeConfig(nodeConfig).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
-	cancel := func() {
-		defer requireClose(t, testNode.L1Stack)
-		defer testNode.L2Node.StopAndWait()
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
+	cancel = func() {
+		defer requireClose(t, l1stack)
+		defer node.StopAndWait()
 	}
-	testNode.L2Info.GenerateAccount("User2")
+	l2info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < txCount; i++ {
-		tx := testNode.L2Info.PrepareTx("Owner", "User2", testNode.L2Info.TransferGas, common.Big1, nil)
+		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
-		err := testNode.L2Client.SendTransaction(ctx, tx)
+		err := l2client.SendTransaction(ctx, tx)
 		Require(t, err)
 	}
 	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, testNode.L2Client, tx)
+		_, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	}
-	return testNode.L2Node, testNode.L2Node.Execution, testNode.L2Client, cancel
+	return node, node.Execution, l2client, cancel
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
