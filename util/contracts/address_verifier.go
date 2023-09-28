@@ -34,49 +34,49 @@ func NewAddressVerifier(seqInboxCaller *bridgegen.SequencerInboxCaller) *Address
 	}
 }
 
-func (bpv *AddressVerifier) IsBatchPosterOrSequencer(ctx context.Context, addr common.Address) (bool, error) {
-	bpv.mutex.Lock()
-	if time.Now().After(bpv.cacheExpiry) {
-		if err := bpv.flushCache_locked(ctx); err != nil {
-			bpv.mutex.Unlock()
+func (av *AddressVerifier) IsBatchPosterOrSequencer(ctx context.Context, addr common.Address) (bool, error) {
+	av.mutex.Lock()
+	if time.Now().After(av.cacheExpiry) {
+		if err := av.flushCache_locked(ctx); err != nil {
+			av.mutex.Unlock()
 			return false, err
 		}
 	}
-	if bpv.cache[addr] {
-		bpv.mutex.Unlock()
+	if av.cache[addr] {
+		av.mutex.Unlock()
 		return true, nil
 	}
-	bpv.mutex.Unlock()
+	av.mutex.Unlock()
 
-	result, err := bpv.seqInboxCaller.IsBatchPoster(&bind.CallOpts{Context: ctx}, addr)
+	result, err := av.seqInboxCaller.IsBatchPoster(&bind.CallOpts{Context: ctx}, addr)
 	if err != nil {
 		return false, err
 	}
 	if !result {
 		var err error
-		result, err = bpv.seqInboxCaller.IsSequencer(&bind.CallOpts{Context: ctx}, addr)
+		result, err = av.seqInboxCaller.IsSequencer(&bind.CallOpts{Context: ctx}, addr)
 		if err != nil {
 			return false, err
 		}
 	}
 	if result {
-		bpv.mutex.Lock()
-		bpv.cache[addr] = true
-		bpv.mutex.Unlock()
+		av.mutex.Lock()
+		av.cache[addr] = true
+		av.mutex.Unlock()
 		return true, nil
 	}
 	return result, nil
 }
 
-func (bpv *AddressVerifier) FlushCache(ctx context.Context) error {
-	bpv.mutex.Lock()
-	defer bpv.mutex.Unlock()
-	return bpv.flushCache_locked(ctx)
+func (av *AddressVerifier) FlushCache(ctx context.Context) error {
+	av.mutex.Lock()
+	defer av.mutex.Unlock()
+	return av.flushCache_locked(ctx)
 }
 
-func (bpv *AddressVerifier) flushCache_locked(ctx context.Context) error {
-	bpv.cache = make(map[common.Address]bool)
-	bpv.cacheExpiry = time.Now().Add(addressVerifierLifetime)
+func (av *AddressVerifier) flushCache_locked(ctx context.Context) error {
+	av.cache = make(map[common.Address]bool)
+	av.cacheExpiry = time.Now().Add(addressVerifierLifetime)
 	return nil
 }
 

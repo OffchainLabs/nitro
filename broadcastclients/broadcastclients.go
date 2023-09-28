@@ -31,7 +31,7 @@ func NewBroadcastClients(
 	addrVerifier contracts.AddressVerifierInterface,
 ) (*BroadcastClients, error) {
 	config := configFetcher()
-	urlCount := len(config.URLs)
+	urlCount := len(config.URL)
 	if urlCount <= 0 {
 		return nil, nil
 	}
@@ -39,7 +39,7 @@ func NewBroadcastClients(
 	clients := BroadcastClients{}
 	clients.clients = make([]*broadcastclient.BroadcastClient, 0, urlCount)
 	var lastClientErr error
-	for _, address := range config.URLs {
+	for _, address := range config.URL {
 		client, err := broadcastclient.NewBroadcastClient(
 			configFetcher,
 			address,

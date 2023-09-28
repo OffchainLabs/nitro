@@ -1,7 +1,9 @@
-name: CI
+name: Arbitrator CI
+run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
     paths:
       - 'arbitrator/**'
@@ -23,7 +25,7 @@ jobs:
     runs-on: ubuntu-8
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
@@ -35,12 +37,12 @@ jobs:
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
-          go-version: 1.19.x
+          go-version: 1.20.x
 
       - name: Setup nodejs
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: '16'
           cache: 'yarn'
@@ -109,16 +111,16 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-2-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-3-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
           restore-keys: ${{ runner.os }}-brotli-2-
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./build-brotli.sh -l
+        run: ./scripts/build-brotli.sh -l
 
       - name: Setup emsdk
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        uses: mymindstorm/setup-emsdk@v11
+        uses: mymindstorm/setup-emsdk@v12
         with:
           # Make sure to set a version number!
           version: 3.1.6
@@ -130,7 +132,7 @@ jobs:
 
       - name: Build cbrotli-wasm
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./build-brotli.sh -w
+        run: ./scripts/build-brotli.sh -w
 
       - name: Add wabt to path
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"

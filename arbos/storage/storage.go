@@ -461,7 +461,8 @@ func (sbbu *StorageBackedBigUint) Get() (*big.Int, error) {
 func (sbbu *StorageBackedBigUint) SetChecked(val *big.Int) error {
 	if val.Sign() < 0 {
 		return sbbu.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
-	} else if val.BitLen() > 256 {
+	}
+	if val.BitLen() > 256 {
 		return sbbu.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
 	}
 	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
@@ -579,9 +580,8 @@ func (sba *StorageBackedAddressOrNil) Get() (*common.Address, error) {
 func (sba *StorageBackedAddressOrNil) Set(val *common.Address) error {
 	if val == nil {
 		return sba.StorageSlot.Set(NilAddressRepresentation)
-	} else {
-		return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 	}
+	return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 type StorageBackedBytes struct {

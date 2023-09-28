@@ -7,11 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -49,7 +49,7 @@ func (c *KeyConfig) BLSPrivKey() (blsSignatures.PrivateKey, error) {
 	}
 	privKey, err := DecodeBase64BLSPrivateKey(privKeyBytes)
 	if err != nil {
-		return nil, errors.Wrap(err, "'priv-key' was invalid")
+		return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
 	}
 	return privKey, nil
 }
@@ -86,14 +86,14 @@ type SignAfterStoreDASWriter struct {
 }
 
 func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDASWriter, error) {
-	privKey, err := config.KeyConfig.BLSPrivKey()
+	privKey, err := config.Key.BLSPrivKey()
 	if err != nil {
 		return nil, err
 	}
-	if config.L1NodeURL == "none" {
+	if config.ParentChainNodeURL == "none" {
 		return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
-	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -162,9 +162,8 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		extraBpVerifier = func(message []byte, timeout uint64, sig []byte) bool {
 			if len(sig) >= 64 {
 				return crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
-			} else {
-				return false
 			}
+			return false
 		}
 	}
 

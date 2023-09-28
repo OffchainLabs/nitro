@@ -34,14 +34,36 @@ func main() {
 
 func printSampleUsage(progname string) {
 	fmt.Printf("\n")
-	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --l2.chain-id=<L2 chain id> \n", progname)
+	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --chain.id=<L2 chain id> \n", progname)
+}
+
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *relay.Config) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
 }
 
 func startup() error {
 	ctx := context.Background()
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
-	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
+	if err != nil || len(relayConfig.Node.Feed.Input.URL) == 0 || relayConfig.Node.Feed.Input.URL[0] == "" || relayConfig.Chain.ID == 0 {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 
@@ -68,16 +90,13 @@ func startup() error {
 	if err != nil {
 		return err
 	}
-	err = newRelay.Start(ctx)
-	if err != nil {
+
+	if err := startMetrics(relayConfig); err != nil {
 		return err
 	}
 
-	if relayConfig.Metrics && relayConfig.MetricsServer.Addr != "" {
-		go metrics.CollectProcessMetrics(relayConfig.MetricsServer.UpdateInterval)
-
-		address := fmt.Sprintf("%v:%v", relayConfig.MetricsServer.Addr, relayConfig.MetricsServer.Port)
-		exp.Setup(address)
+	if err := newRelay.Start(ctx); err != nil {
+		return err
 	}
 
 	select {

@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"errors"
 
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -44,6 +46,7 @@ type TransactionStreamer struct {
 	chainConfig      *params.ChainConfig
 	exec             *execution.ExecutionEngine
 	execLastMsgCount arbutil.MessageIndex
+	validator        *staker.BlockValidator
 
 	db           ethdb.Database
 	fatalErrChan chan<- error
@@ -66,7 +69,7 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcastQueueSize   int           `koanf:"max-broadcaster-queue-size"`
+	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 }
@@ -74,19 +77,19 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   1024,
+	MaxBroadcasterQueueSize: 1024,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   10_000,
+	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
+	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 }
@@ -126,7 +129,13 @@ func uint64ToKey(x uint64) []byte {
 }
 
 func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
-	s.exec.SetBlockValidator(validator)
+	if s.Started() {
+		panic("trying to set coordinator after start")
+	}
+	if s.validator != nil {
+		panic("trying to set coordinator when already set")
+	}
+	s.validator = validator
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
@@ -194,6 +203,45 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 		}
 	}
 	return iter.Error()
+}
+
+// deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
+// might have deleted some keys even if returning an error
+func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, error) {
+	batch := db.NewBatch()
+	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
+	defer startIter.Release()
+	var prunedKeysRange []uint64
+	for startIter.Next() {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		currentKey := binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
+		if currentKey >= endMinKey {
+			break
+		}
+		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
+			prunedKeysRange = append(prunedKeysRange, currentKey)
+		} else {
+			prunedKeysRange[1] = currentKey
+		}
+		err := batch.Delete(startIter.Key())
+		if err != nil {
+			return nil, err
+		}
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			if err := batch.Write(); err != nil {
+				return nil, err
+			}
+			batch.Reset()
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return nil, err
+		}
+	}
+	return prunedKeysRange, nil
 }
 
 // The insertion mutex must be held. This acquires the reorg mutex.
@@ -292,6 +340,13 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 
+	if s.validator != nil {
+		err = s.validator.Reorg(s.GetContext(), count)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
@@ -349,6 +404,21 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 		return 0, err
 	}
 	return arbutil.MessageIndex(pos), nil
+}
+
+func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	digestedHead, err := s.exec.HeadMessageNumber()
+	if err != nil {
+		return 0, err
+	}
+	if msgCount > digestedHead+1 {
+		return digestedHead + 1, nil
+	}
+	return msgCount, nil
 }
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
@@ -409,7 +479,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
-			maxQueueSize := s.config().MaxBroadcastQueueSize
+			maxQueueSize := s.config().MaxBroadcasterQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
@@ -456,6 +526,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 
 // AddFakeInitMessage should only be used for testing or running a local dev node
 func (s *TransactionStreamer) AddFakeInitMessage() error {
+	chainConfigJson, err := json.Marshal(s.chainConfig)
+	if err != nil {
+		return fmt.Errorf("failed to serialize chain config: %w", err)
+	}
+	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
@@ -463,7 +538,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 				RequestId: &common.Hash{},
 				L1BaseFee: common.Big0,
 			},
-			L2msg: math.U256Bytes(s.chainConfig.ChainID),
+			L2msg: msg,
 		},
 		DelayedMessagesRead: 1,
 	}})
@@ -549,45 +624,43 @@ func (s *TransactionStreamer) countDuplicateMessages(
 		if !bytes.Equal(haveMessage, wantMessage) {
 			// Current message does not exactly match message in database
 			var dbMessageParsed arbostypes.MessageWithMetadata
-			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
-			if err != nil {
+
+			if err := rlp.DecodeBytes(haveMessage, &dbMessageParsed); err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)",
 					"pos", pos,
 					"err", err,
 				)
 				return curMsg, true, nil, nil
-			} else {
-				var duplicateMessage bool
-				if nextMessage.Message != nil {
-					if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
-						// Remove both of the batch gas costs and see if the messages still differ
-						nextMessageCopy := nextMessage
-						nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
-						*nextMessageCopy.Message = *nextMessage.Message
-						batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-						dbMessageParsed.Message.BatchGasCost = nil
-						nextMessageCopy.Message.BatchGasCost = nil
-						if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
-							// Actually this isn't a reorg; only the batch gas costs differed
-							duplicateMessage = true
-							// If possible - update the message in the database to add the gas cost cache.
-							if batch != nil && nextMessage.Message.BatchGasCost != nil {
-								if *batch == nil {
-									*batch = s.db.NewBatch()
-								}
-								err = s.writeMessage(pos, nextMessage, *batch)
-								if err != nil {
-									return 0, false, nil, err
-								}
+			}
+			var duplicateMessage bool
+			if nextMessage.Message != nil {
+				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+					// Remove both of the batch gas costs and see if the messages still differ
+					nextMessageCopy := nextMessage
+					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
+					*nextMessageCopy.Message = *nextMessage.Message
+					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
+					dbMessageParsed.Message.BatchGasCost = nil
+					nextMessageCopy.Message.BatchGasCost = nil
+					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
+						// Actually this isn't a reorg; only the batch gas costs differed
+						duplicateMessage = true
+						// If possible - update the message in the database to add the gas cost cache.
+						if batch != nil && nextMessage.Message.BatchGasCost != nil {
+							if *batch == nil {
+								*batch = s.db.NewBatch()
+							}
+							if err := s.writeMessage(pos, nextMessage, *batch); err != nil {
+								return 0, false, nil, err
 							}
 						}
-						dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 					}
+					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 				}
+			}
 
-				if !duplicateMessage {
-					return curMsg, true, &dbMessageParsed, nil
-				}
+			if !duplicateMessage {
+				return curMsg, true, &dbMessageParsed, nil
 			}
 		}
 
@@ -785,8 +858,8 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	return nil
 }
 
-func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
+func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
+	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
@@ -796,6 +869,13 @@ func (s *TransactionStreamer) PauseReorgs() {
 
 func (s *TransactionStreamer) ResumeReorgs() {
 	s.reorgMutex.RUnlock()
+}
+
+func (s *TransactionStreamer) PopulateFeedBacklog() error {
+	if s.broadcastServer == nil {
+		return nil
+	}
+	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
 }
 
 func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
@@ -837,6 +917,14 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
+// TODO: eventually there will be a table maintained by txStreamer itself
+func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
+	if count == 0 {
+		return &execution.MessageResult{}, nil
+	}
+	return s.exec.ResultAtPos(count - 1)
+}
+
 // return value: true if should be called again immediately
 func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *execution.ExecutionEngine) bool {
 	if ctx.Err() != nil {
@@ -852,7 +940,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	s.execLastMsgCount = prevMessageCount
+	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)

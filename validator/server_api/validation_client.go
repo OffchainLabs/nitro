@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -16,58 +18,61 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client    *rpc.Client
-	url       string
-	name      string
-	jwtSecret *common.Hash
+	client *rpcclient.RpcClient
+	name   string
+	room   int32
 }
 
-func NewValidationClient(url string, jwtSecret *common.Hash) *ValidationClient {
+func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		url:       url,
-		jwtSecret: jwtSecret,
+		client: rpcclient.NewRpcClient(config, stack),
 	}
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	valrun := server_common.NewValRun(moduleRoot)
-	c.LaunchThread(func(ctx context.Context) {
+	atomic.AddInt32(&c.room, -1)
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
-		valrun.ConsumeResult(res, err)
+		atomic.AddInt32(&c.room, 1)
+		return res, err
 	})
-	return valrun
+	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	var client *rpc.Client
-	var err error
-	if c.jwtSecret == nil {
-		client, err = rpc.DialWebsocket(ctx, c.url, "")
-	} else {
-		client, err = rpc.DialOptions(ctx, c.url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*c.jwtSecret))))
-	}
+	err := c.client.Start(ctx)
 	if err != nil {
 		return err
 	}
 	var name string
-	err = client.CallContext(ctx, &name, Namespace+"_name")
+	err = c.client.CallContext(ctx, &name, Namespace+"_name")
 	if err != nil {
 		return err
 	}
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	c.client = client
-	c.name = name + " on " + c.url
+	var room int
+	err = c.client.CallContext(c.GetContext(), &room, Namespace+"_room")
+	if err != nil {
+		return err
+	}
+	if room < 2 {
+		log.Warn("validation server not enough room, overriding to 2", "name", name, "room", room)
+		room = 2
+	} else {
+		log.Info("connected to validation server", "name", name, "room", room)
+	}
+	atomic.StoreInt32(&c.room, int32(room))
+	c.name = name
 	return nil
 }
 
@@ -82,26 +87,24 @@ func (c *ValidationClient) Name() string {
 	if c.Started() {
 		return c.name
 	}
-	return "(not started) on " + c.url
+	return "(not started)"
 }
 
 func (c *ValidationClient) Room() int {
-	var res int
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_room")
-	if err != nil {
-		log.Error("error contacting validation server", "name", c.name, "err", err)
+	room32 := atomic.LoadInt32(&c.room)
+	if room32 < 0 {
 		return 0
 	}
-	return res
+	return int(room32)
 }
 
 type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(url string, jwtSecret *common.Hash) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
-		ValidationClient: *NewValidationClient(url, jwtSecret),
+		ValidationClient: *NewValidationClient(config, stack),
 	}
 }
 

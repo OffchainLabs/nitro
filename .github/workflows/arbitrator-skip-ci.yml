@@ -1,6 +1,8 @@
-name: CI
+name: Arbitrator skip CI
+run-name: Arbitrator skip CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
+  merge_group:
   pull_request:
     paths-ignore:
       - 'arbitrator/**'

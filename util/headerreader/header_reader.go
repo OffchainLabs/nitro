@@ -5,6 +5,7 @@ package headerreader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -17,18 +18,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
+
+type ArbSysInterface interface {
+	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
+}
 
 type HeaderReader struct {
 	stopwaiter.StopWaiter
 	config                ConfigFetcher
 	client                arbutil.L1Interface
 	isParentChainArbitrum bool
-	arbSys                *precompilesgen.ArbSys
+	arbSys                ArbSysInterface
 
 	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
@@ -40,15 +43,15 @@ type HeaderReader struct {
 	lastPendingCallBlockNr     uint64
 	requiresPendingCallUpdates int
 
-	safe      cachedBlockNumber
-	finalized cachedBlockNumber
+	safe      cachedHeader
+	finalized cachedHeader
 }
 
-type cachedBlockNumber struct {
+type cachedHeader struct {
 	mutex          sync.Mutex
 	rpcBlockNum    *big.Int
 	headWhenCached *types.Header
-	blockNumber    uint64
+	header         *types.Header
 }
 
 type Config struct {
@@ -91,18 +94,17 @@ var TestConfig = Config{
 	UseFinalityData:  false,
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) (*HeaderReader, error) {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	var arbSys *precompilesgen.ArbSys
-	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(codeAt) != 0 {
-		isParentChainArbitrum = true
-		arbSys, err = precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	var arbSys ArbSysInterface
+	if arbSysPrecompile != nil {
+		codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 		if err != nil {
 			return nil, err
+		}
+		if len(codeAt) != 0 {
+			isParentChainArbitrum = true
+			arbSys = arbSysPrecompile
 		}
 	}
 	return &HeaderReader{
@@ -112,8 +114,8 @@ func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) 
 		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
-		safe:                  cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
-		finalized:             cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
+		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:             cachedHeader{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}, nil
 }
 
@@ -311,7 +313,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	l1Timetamp := time.Unix(int64(storedHeader.Time), 0)
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
-		s.setError(errors.Errorf("latest header is at least %v old", headerTime))
+		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
 		log.Warn(
 			"latest L1 block is old", "l1Block", storedHeader.Number,
 			"l1Timestamp", l1Timetamp, "age", headerTime,
@@ -380,45 +382,90 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uint64, error) {
+func headerIndicatesFinalitySupport(header *types.Header) bool {
+	if header.Difficulty.Sign() == 0 {
+		// This is an Ethereum PoS chain
+		return true
+	}
+	if types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion > 0 {
+		// This is an Arbitrum chain
+		return true
+	}
+	// This is probably an Ethereum PoW or Clique chain, which doesn't support finality
+	return false
+}
+
+func HeadersEqual(ha, hb *types.Header) bool {
+	if (ha == nil) != (hb == nil) {
+		return false
+	}
+	return (ha == nil && hb == nil) || ha.Hash() == hb.Hash()
+}
+
+func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.Header, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	currentHead, err := s.LastHeader(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	if currentHead == c.headWhenCached {
-		return c.blockNumber, nil
+	if HeadersEqual(currentHead, c.headWhenCached) {
+		return c.header, nil
 	}
-	if !s.config().UseFinalityData || currentHead.Difficulty.Sign() != 0 {
-		return 0, ErrBlockNumberNotSupported
+	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
+		return nil, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	c.blockNumber = header.Number.Uint64()
-	return c.blockNumber, nil
+	c.header = header
+	c.headWhenCached = currentHead
+	return c.header, nil
+}
+
+func (s *HeaderReader) LatestSafeBlockHeader(ctx context.Context) (*types.Header, error) {
+	header, err := s.getCached(ctx, &s.safe)
+	if errors.Is(err, ErrBlockNumberNotSupported) {
+		return nil, fmt.Errorf("%w: safe block not found", ErrBlockNumberNotSupported)
+	}
+	return header, err
 }
 
 func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.safe)
-	if errors.Is(err, ErrBlockNumberNotSupported) {
-		err = errors.New("safe block not found")
+	header, err := s.LatestSafeBlockHeader(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return blockNum, err
+	return header.Number.Uint64(), nil
+}
+
+func (s *HeaderReader) LatestFinalizedBlockHeader(ctx context.Context) (*types.Header, error) {
+	header, err := s.getCached(ctx, &s.finalized)
+	if errors.Is(err, ErrBlockNumberNotSupported) {
+		return nil, fmt.Errorf("%w: finalized block not found", ErrBlockNumberNotSupported)
+	}
+	return header, err
 }
 
 func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.finalized)
-	if errors.Is(err, ErrBlockNumberNotSupported) {
-		err = errors.New("finalized block not found")
+	header, err := s.LatestFinalizedBlockHeader(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return blockNum, err
+	return header.Number.Uint64(), nil
 }
 
 func (s *HeaderReader) Client() arbutil.L1Interface {
 	return s.client
+}
+
+func (s *HeaderReader) UseFinalityData() bool {
+	return s.config().UseFinalityData
+}
+
+func (s *HeaderReader) IsParentChainArbitrum() bool {
+	return s.isParentChainArbitrum
 }
 
 func (s *HeaderReader) Start(ctxIn context.Context) {

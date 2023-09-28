@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -43,7 +43,7 @@ func TestDeploy(t *testing.T) {
 	Require(t, err, "failed to get counter")
 
 	if counter != 1 {
-		Fail(t, "Unexpected counter value", counter)
+		Fatal(t, "Unexpected counter value", counter)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestEstimate(t *testing.T) {
 		numTriesLeft--
 	}
 	if !equilibrated {
-		Fail(t, "L2 gas price did not converge", gasPrice)
+		Fatal(t, "L2 gas price did not converge", gasPrice)
 	}
 
 	initialBalance, err := client.BalanceAt(ctx, auth.From, nil)
@@ -103,7 +103,7 @@ func TestEstimate(t *testing.T) {
 	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
 	Require(t, err, "could not get header")
 	if header.BaseFee.Cmp(gasPrice) != 0 {
-		Fail(t, "Header has wrong basefee", header.BaseFee, gasPrice)
+		Fatal(t, "Header has wrong basefee", header.BaseFee, gasPrice)
 	}
 
 	balance, err := client.BalanceAt(ctx, auth.From, nil)
@@ -111,7 +111,7 @@ func TestEstimate(t *testing.T) {
 	expectedCost := receipt.GasUsed * gasPrice.Uint64()
 	observedCost := initialBalance.Uint64() - balance.Uint64()
 	if expectedCost != observedCost {
-		Fail(t, "Expected deployment to cost", expectedCost, "instead of", observedCost)
+		Fatal(t, "Expected deployment to cost", expectedCost, "instead of", observedCost)
 	}
 
 	tx, err = simple.Increment(&auth)
@@ -123,7 +123,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "failed to get counter")
 
 	if counter != 1 {
-		Fail(t, "Unexpected counter value", counter)
+		Fatal(t, "Unexpected counter value", counter)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
-	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
+	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
@@ -177,7 +177,7 @@ func TestComponentEstimate(t *testing.T) {
 	outputs, err := nodeMethod.Outputs.Unpack(returnData)
 	Require(t, err)
 	if len(outputs) != 4 {
-		Fail(t, "expected 4 outputs from gasEstimateComponents, got", len(outputs))
+		Fatal(t, "expected 4 outputs from gasEstimateComponents, got", len(outputs))
 	}
 
 	gasEstimate, _ := outputs[0].(uint64)
@@ -201,10 +201,10 @@ func TestComponentEstimate(t *testing.T) {
 	colors.PrintBlue("Est. ", gasEstimate, " - ", gasEstimateForL1, " = ", l2Estimate)
 
 	if !arbmath.BigEquals(l1BaseFeeEstimate, l1BaseFee) {
-		Fail(t, l1BaseFeeEstimate, l1BaseFee)
+		Fatal(t, l1BaseFeeEstimate, l1BaseFee)
 	}
 	if !arbmath.BigEquals(baseFee, l2BaseFee) {
-		Fail(t, baseFee, l2BaseFee.Uint64())
+		Fatal(t, baseFee, l2BaseFee.Uint64())
 	}
 
 	Require(t, client.SendTransaction(ctx, tx))
@@ -215,6 +215,39 @@ func TestComponentEstimate(t *testing.T) {
 	colors.PrintMint("True ", receipt.GasUsed, " - ", receipt.GasUsedForL1, " = ", l2Used)
 
 	if l2Estimate != l2Used {
-		Fail(t, l2Estimate, l2Used)
+		Fatal(t, l2Estimate, l2Used)
 	}
+}
+
+func TestDisableL1Charging(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+	addr := common.HexToAddress("0x12345678")
+
+	gasWithL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	Require(t, err)
+
+	gasWithoutL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr, SkipL1Charging: true})
+	Require(t, err)
+
+	if gasWithL1Charging <= gasWithoutL1Charging {
+		Fatal(t, "SkipL1Charging didn't disable L1 charging")
+	}
+	if gasWithoutL1Charging != params.TxGas {
+		Fatal(t, "Incorrect gas estimate with disabled L1 charging")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithL1Charging}, nil)
+	Require(t, err)
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging}, nil)
+	if err == nil {
+		Fatal(t, "CallContract passed with insufficient gas")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
+	Require(t, err)
 }

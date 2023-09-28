@@ -72,17 +72,17 @@ const (
 )
 
 const (
-	InitialInertia           = 10
-	InitialPerUnitReward     = 10
-	InitialPricePerUnitWei   = 50 * params.GWei
-	InitialPerBatchGasCostV6 = 100000
+	InitialInertia            = 10
+	InitialPerUnitReward      = 10
+	InitialPerBatchGasCostV6  = 100_000
+	InitialPerBatchGasCostV12 = 210_000 // overriden as part of the upgrade
 )
 
 // one minute at 100000 bytes / sec
 var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
 var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
-func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
+func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
@@ -109,7 +109,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 		return err
 	}
 	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
-	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
+	if err := pricePerUnit.SetSaturatingWithWarning(initialL1BaseFee, "initial L1 base fee (storing in price per unit)"); err != nil {
 		return err
 	}
 	return nil
@@ -146,6 +146,10 @@ func (ps *L1PricingState) SetPayRewardsTo(addr common.Address) error {
 	return ps.payRewardsTo.Set(addr)
 }
 
+func (ps *L1PricingState) GetRewardsRecepient() (common.Address, error) {
+	return ps.payRewardsTo.Get()
+}
+
 func (ps *L1PricingState) EquilibrationUnits() (*big.Int, error) {
 	return ps.equilibrationUnits.Get()
 }
@@ -168,6 +172,10 @@ func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 
 func (ps *L1PricingState) SetPerUnitReward(weiPerUnit uint64) error {
 	return ps.perUnitReward.Set(weiPerUnit)
+}
+
+func (ps *L1PricingState) GetRewardsRate() (uint64, error) {
+	return ps.perUnitReward.Get()
 }
 
 func (ps *L1PricingState) LastUpdateTime() (uint64, error) {
@@ -529,22 +537,22 @@ var randS = crypto.Keccak256Hash([]byte("S")).Big()
 
 // The returned tx will be invalid, likely for a number of reasons such as an invalid signature.
 // It's only used to check how large it is after brotli level 0 compression.
-func makeFakeTxForMessage(message core.Message) *types.Transaction {
-	nonce := message.Nonce()
+func makeFakeTxForMessage(message *core.Message) *types.Transaction {
+	nonce := message.Nonce
 	if nonce == 0 {
 		nonce = randomNonce
 	}
-	gasTipCap := message.GasTipCap()
+	gasTipCap := message.GasTipCap
 	if gasTipCap.Sign() == 0 {
 		gasTipCap = randomGasTipCap
 	}
-	gasFeeCap := message.GasFeeCap()
+	gasFeeCap := message.GasFeeCap
 	if gasFeeCap.Sign() == 0 {
 		gasFeeCap = randomGasFeeCap
 	}
 	// During gas estimation, we don't want the gas limit variability to change the L1 cost.
-	gas := message.Gas()
-	if gas == 0 || message.RunMode() == types.MessageGasEstimationMode {
+	gas := message.GasLimit
+	if gas == 0 || message.TxRunMode == core.MessageGasEstimationMode {
 		gas = RandomGas
 	}
 	return types.NewTx(&types.DynamicFeeTx{
@@ -552,18 +560,18 @@ func makeFakeTxForMessage(message core.Message) *types.Transaction {
 		GasTipCap:  gasTipCap,
 		GasFeeCap:  gasFeeCap,
 		Gas:        gas,
-		To:         message.To(),
-		Value:      message.Value(),
-		Data:       message.Data(),
-		AccessList: message.AccessList(),
+		To:         message.To,
+		Value:      message.Value,
+		Data:       message.Data,
+		AccessList: message.AccessList,
 		V:          randV,
 		R:          randR,
 		S:          randS,
 	})
 }
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
-	tx := message.UnderlyingTransaction()
+func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Address) (*big.Int, uint64) {
+	tx := message.Tx
 	if tx != nil {
 		return ps.GetPosterInfo(tx, poster)
 	}

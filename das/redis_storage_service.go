@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,27 +24,27 @@ import (
 )
 
 type RedisConfig struct {
-	Enable                  bool          `koanf:"enable"`
-	RedisUrl                string        `koanf:"redis-url"`
-	Expiration              time.Duration `koanf:"redis-expiration"`
-	KeyConfig               string        `koanf:"redis-key-config"`
-	SyncFromStorageServices bool          `koanf:"sync-from-storage-service"`
-	SyncToStorageServices   bool          `koanf:"sync-to-storage-service"`
+	Enable                 bool          `koanf:"enable"`
+	Url                    string        `koanf:"url"`
+	Expiration             time.Duration `koanf:"expiration"`
+	KeyConfig              string        `koanf:"key-config"`
+	SyncFromStorageService bool          `koanf:"sync-from-storage-service"`
+	SyncToStorageService   bool          `koanf:"sync-to-storage-service"`
 }
 
 var DefaultRedisConfig = RedisConfig{
-	RedisUrl:   "",
+	Url:        "",
 	Expiration: time.Hour,
 	KeyConfig:  "",
 }
 
 func RedisConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultRedisConfig.Enable, "enable Redis caching of sequencer batch data")
-	f.String(prefix+".redis-url", DefaultRedisConfig.RedisUrl, "Redis url")
-	f.Duration(prefix+".redis-expiration", DefaultRedisConfig.Expiration, "Redis expiration")
-	f.String(prefix+".redis-key-config", DefaultRedisConfig.KeyConfig, "Redis key config")
-	f.Bool(prefix+".sync-from-storage-service", DefaultRedisConfig.SyncFromStorageServices, "enable Redis to be used as a source for regular sync storage")
-	f.Bool(prefix+".sync-to-storage-service", DefaultRedisConfig.SyncToStorageServices, "enable Redis to be used as a sink for regular sync storage")
+	f.String(prefix+".url", DefaultRedisConfig.Url, "Redis url")
+	f.Duration(prefix+".expiration", DefaultRedisConfig.Expiration, "Redis expiration")
+	f.String(prefix+".key-config", DefaultRedisConfig.KeyConfig, "Redis key config")
+	f.Bool(prefix+".sync-from-storage-service", DefaultRedisConfig.SyncFromStorageService, "enable Redis to be used as a source for regular sync storage")
+	f.Bool(prefix+".sync-to-storage-service", DefaultRedisConfig.SyncToStorageService, "enable Redis to be used as a sink for regular sync storage")
 }
 
 type RedisStorageService struct {
@@ -55,7 +55,7 @@ type RedisStorageService struct {
 }
 
 func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageService) (StorageService, error) {
-	redisClient, err := redisutil.RedisClientFromURL(redisConfig.RedisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(redisConfig.Url)
 	if err != nil {
 		return nil, err
 	}

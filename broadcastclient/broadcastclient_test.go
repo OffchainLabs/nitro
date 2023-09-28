@@ -202,10 +202,10 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 	port := listenerAddress.(*net.TCPAddr).Port
 	var av contracts.AddressVerifierInterface
 	if validAddr != nil {
-		config.Verifier.AcceptSequencer = true
+		config.Verify.AcceptSequencer = true
 		av = contracts.NewMockAddressVerifier(*validAddr)
 	} else {
-		config.Verifier.AcceptSequencer = false
+		config.Verify.AcceptSequencer = false
 	}
 	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, av, func(_ int32) {})
 }

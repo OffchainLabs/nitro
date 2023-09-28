@@ -17,13 +17,14 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
 
-	nitroutil "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
@@ -45,7 +46,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, ConfigDefaultL2Test().TxLookupLimit, 0)
+	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, ConfigDefaultL2Test().TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
@@ -96,7 +97,7 @@ func TestTransactionStreamer(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]*big.Int{
-			ownerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(int64(nitroutil.NormalizeL2GasForL1GasInitial(1_000_000, params.GWei)))),
+			ownerAddress: new(big.Int).SetUint64(params.Ether),
 		},
 		accounts:    []common.Address{ownerAddress},
 		numMessages: 1,
@@ -164,6 +165,7 @@ func TestTransactionStreamer(t *testing.T) {
 			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
 			state.numMessages += arbutil.MessageIndex(len(messages))
+			prevBlockNumber := state.blockNumber
 			state.blockNumber += uint64(len(messages))
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()
@@ -176,14 +178,38 @@ func TestTransactionStreamer(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
+			for blockNum := prevBlockNumber + 1; blockNum <= state.blockNumber; blockNum++ {
+				block := bc.GetBlockByNumber(blockNum)
+				txs := block.Transactions()
+				receipts := bc.GetReceiptsByHash(block.Hash())
+				if len(txs) != len(receipts) {
+					Fail(t, "got", len(txs), "transactions but", len(receipts), "receipts in block", blockNum)
+				}
+				for i, receipt := range receipts {
+					sender, err := types.Sender(types.LatestSigner(bc.Config()), txs[i])
+					Require(t, err)
+					balance, ok := state.balances[sender]
+					if !ok {
+						continue
+					}
+					balance.Sub(balance, arbmath.BigMulByUint(block.BaseFee(), receipt.GasUsed))
+				}
+			}
 			blockStates = append(blockStates, state)
 		}
 
 		// Check that state balances are consistent with blockchain's balances
-		lastBlockNumber := bc.CurrentHeader().Number.Uint64()
 		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
-		if lastBlockNumber != expectedLastBlockNumber {
-			Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+		for i := 0; ; i++ {
+			lastBlockNumber := bc.CurrentHeader().Number.Uint64()
+			if lastBlockNumber == expectedLastBlockNumber {
+				break
+			} else if lastBlockNumber > expectedLastBlockNumber {
+				Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+			} else if i == 10 {
+				Fail(t, "timeout waiting for block number", expectedLastBlockNumber, "current", lastBlockNumber)
+			}
+			time.Sleep(time.Millisecond * 100)
 		}
 
 		for _, state := range blockStates {
@@ -197,7 +223,7 @@ func TestTransactionStreamer(t *testing.T) {
 					Fail(t, "error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
-				if balance.Cmp(haveBalance) < 0 {
+				if balance.Cmp(haveBalance) != 0 {
 					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}

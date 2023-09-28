@@ -60,7 +60,6 @@ type ExecServerAPI struct {
 }
 
 func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
-	rand.Seed(time.Now().UnixNano())
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
@@ -92,7 +91,7 @@ func (a *ExecServerAPI) LatestWasmModuleRoot(ctx context.Context) (common.Hash, 
 }
 
 func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
-	oldestKept := time.Now().Add(-1 * a.config().ExecRunTimeout)
+	oldestKept := time.Now().Add(-1 * a.config().ExecutionRunTimeout)
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	for id, entry := range a.runs {
@@ -100,7 +99,7 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 			delete(a.runs, id)
 		}
 	}
-	return a.config().ExecRunTimeout / 5
+	return a.config().ExecutionRunTimeout / 5
 }
 
 func (a *ExecServerAPI) Start(ctx_in context.Context) {

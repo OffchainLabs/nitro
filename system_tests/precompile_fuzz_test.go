@@ -11,10 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
@@ -32,7 +32,8 @@ func FuzzPrecompiles(f *testing.F) {
 			panic(err)
 		}
 		burner := burn.NewSystemBurner(nil, false)
-		_, err = arbosState.InitializeArbosState(sdb, burner, params.ArbitrumDevTestChainConfig())
+		chainConfig := params.ArbitrumDevTestChainConfig()
+		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, arbostypes.TestInitMessage)
 		if err != nil {
 			panic(err)
 		}
@@ -53,7 +54,7 @@ func FuzzPrecompiles(f *testing.F) {
 			GasLimit:    fuzzGas,
 			BaseFee:     common.Big1,
 		}
-		evm := vm.NewEVM(blockContext, txContext, sdb, params.ArbitrumDevTestChainConfig(), vm.Config{})
+		evm := vm.NewEVM(blockContext, txContext, sdb, chainConfig, vm.Config{})
 
 		// Pick a precompile address based on the first byte of the input
 		var addr common.Address
@@ -71,19 +72,18 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 
 		// Create and apply a message
-		msg := types.NewMessage(
-			common.Address{},
-			&addr,
-			0,
-			new(big.Int),
-			fuzzGas,
-			new(big.Int),
-			new(big.Int),
-			new(big.Int),
-			input,
-			nil,
-			true,
-		)
+		msg := &core.Message{
+			From:       common.Address{},
+			To:         &addr,
+			Nonce:      0,
+			Value:      new(big.Int),
+			GasLimit:   fuzzGas,
+			GasPrice:   new(big.Int),
+			GasFeeCap:  new(big.Int),
+			GasTipCap:  new(big.Int),
+			Data:       input,
+			AccessList: nil,
+		}
 		_, _ = core.ApplyMessage(evm, msg, &gp)
 	})
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -53,7 +53,7 @@ func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx i
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err != nil {
-		Fail(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
+		Fatal(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
 	}
 }
 
@@ -65,18 +65,18 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
 		if options == nil {
-			Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", options)
+			Fatal(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", options)
 		} else {
-			Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", *options)
+			Fatal(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", *options)
 		}
 	} else {
 		var rErr rpc.Error
 		if errors.As(err, &rErr) {
 			if rErr.ErrorCode() != expectedErrorCode {
-				Fail(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
+				Fatal(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
 			}
 		} else {
-			Fail(t, "unexpected error type, err:", err)
+			Fatal(t, "unexpected error type, err:", err)
 		}
 	}
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
@@ -103,23 +103,23 @@ func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[c
 }
 
 func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := hexutil.Uint64(timestamp + 30)
-	past := hexutil.Uint64(timestamp - 1)
-	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
-	currentBlockNumber := hexutil.Uint64(blockNumber)
+	future := math.HexOrDecimal64(timestamp + 30)
+	past := math.HexOrDecimal64(timestamp - 1)
+	futureBlockNumber := math.HexOrDecimal64(blockNumber + 1000)
+	currentBlockNumber := math.HexOrDecimal64(blockNumber)
 	return getBlockTimeLimits(t, currentBlockNumber, futureBlockNumber, past, future)
 }
 
 func getUnfulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := hexutil.Uint64(timestamp + 30)
-	past := hexutil.Uint64(timestamp - 1)
-	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
-	previousBlockNumber := hexutil.Uint64(blockNumber - 1)
+	future := math.HexOrDecimal64(timestamp + 30)
+	past := math.HexOrDecimal64(timestamp - 1)
+	futureBlockNumber := math.HexOrDecimal64(blockNumber + 1000)
+	previousBlockNumber := math.HexOrDecimal64(blockNumber - 1)
 	// skip first empty options
 	return getBlockTimeLimits(t, futureBlockNumber, previousBlockNumber, future, past)[1:]
 }
 
-func getBlockTimeLimits(t *testing.T, blockMin, blockMax hexutil.Uint64, timeMin, timeMax hexutil.Uint64) []*arbitrum_types.ConditionalOptions {
+func getBlockTimeLimits(t *testing.T, blockMin, blockMax math.HexOrDecimal64, timeMin, timeMax math.HexOrDecimal64) []*arbitrum_types.ConditionalOptions {
 	basic := []*arbitrum_types.ConditionalOptions{
 		{},
 		{TimestampMin: &timeMin},
@@ -157,9 +157,9 @@ func optionsProduct(optionsA, optionsB []*arbitrum_types.ConditionalOptions) []*
 				c.KnownAccounts[k] = v
 			}
 			limitTriples := []struct {
-				a *hexutil.Uint64
-				b *hexutil.Uint64
-				c **hexutil.Uint64
+				a *math.HexOrDecimal64
+				b *math.HexOrDecimal64
+				c **math.HexOrDecimal64
 			}{
 				{a.BlockNumberMin, b.BlockNumberMin, &c.BlockNumberMin},
 				{a.BlockNumberMax, b.BlockNumberMax, &c.BlockNumberMax},
@@ -168,10 +168,10 @@ func optionsProduct(optionsA, optionsB []*arbitrum_types.ConditionalOptions) []*
 			}
 			for _, tripple := range limitTriples {
 				if tripple.b != nil {
-					value := hexutil.Uint64(*tripple.b)
+					value := math.HexOrDecimal64(*tripple.b)
 					*tripple.c = &value
 				} else if tripple.a != nil {
-					value := hexutil.Uint64(*tripple.a)
+					value := math.HexOrDecimal64(*tripple.a)
 					*tripple.c = &value
 				} else {
 					*tripple.c = nil
@@ -264,14 +264,14 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	previousStorageRootHash1 := currentRootHash1
 	currentRootHash1 = getStorageRootHash(t, node, contractAddress1)
 	if bytes.Equal(previousStorageRootHash1.Bytes(), currentRootHash1.Bytes()) {
-		Fail(t, "storage root hash didn't change as expected")
+		Fatal(t, "storage root hash didn't change as expected")
 	}
 	currentSlotValueMap1 = getStorageSlotValue(t, node, contractAddress1)
 
 	previousStorageRootHash2 := currentRootHash2
 	currentRootHash2 = getStorageRootHash(t, node, contractAddress2)
 	if bytes.Equal(previousStorageRootHash2.Bytes(), currentRootHash2.Bytes()) {
-		Fail(t, "storage root hash didn't change as expected")
+		Fatal(t, "storage root hash didn't change as expected")
 	}
 	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
 
@@ -362,7 +362,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		select {
 		case <-success:
 		case <-ctxWithTimeout.Done():
-			Fail(t, "test timeouted")
+			Fatal(t, "test timeouted")
 		}
 	}
 	cancelCtxWithTimeout()
@@ -375,7 +375,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	for i := genesis + 1; header != nil; i++ {
 		blockReceipts := bc.GetReceiptsByHash(header.Hash())
 		if blockReceipts == nil {
-			Fail(t, "Failed to get block receipts, block number:", header.Number)
+			Fatal(t, "Failed to get block receipts, block number:", header.Number)
 		}
 		receipts = append(receipts, blockReceipts...)
 		header = bc.GetHeaderByNumber(i)
@@ -387,14 +387,14 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 			parsed, err := simple.ParseLogAndIncrementCalled(*receipt.Logs[0])
 			Require(t, err)
 			if parsed.Expected.Int64() != parsed.Have.Int64() {
-				Fail(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
+				Fatal(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
 			} else {
 				succeeded++
 			}
 		}
 	}
 	if succeeded != expectedSuccesses {
-		Fail(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
+		Fatal(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
 	}
 }
 

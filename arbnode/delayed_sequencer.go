@@ -43,7 +43,7 @@ type DelayedSequencerConfig struct {
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
+	f.Bool(prefix+".enable", DefaultDelayedSequencerConfig.Enable, "enable delayed sequencer")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
@@ -52,14 +52,14 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              false,
 	FinalizeDistance:    20,
-	RequireFullFinality: true,
+	RequireFullFinality: false,
 	UseMergeFinality:    true,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
-	RequireFullFinality: true,
+	RequireFullFinality: false,
 	UseMergeFinality:    true,
 }
 
@@ -140,20 +140,21 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, acc, err := d.inbox.GetDelayedMessageAndAccumulator(pos)
+		msg, acc, parentChainBlockNumber, err := d.inbox.GetDelayedMessageAccumulatorAndParentChainBlockNumber(pos)
 		if err != nil {
 			return err
 		}
-		if msg.Header.BlockNumber > finalized {
+		if parentChainBlockNumber > finalized {
 			// Message isn't finalized yet; stop here
-			d.waitingForFinalizedBlock = msg.Header.BlockNumber
+			d.waitingForFinalizedBlock = parentChainBlockNumber
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {
 			// Ensure that there hasn't been a reorg and this message follows the last
 			fullMsg := DelayedInboxMessage{
-				BeforeInboxAcc: lastDelayedAcc,
-				Message:        msg,
+				BeforeInboxAcc:         lastDelayedAcc,
+				Message:                msg,
+				ParentChainBlockNumber: parentChainBlockNumber,
 			}
 			if fullMsg.AfterInboxAcc() != acc {
 				return errors.New("delayed message accumulator mismatch while sequencing")

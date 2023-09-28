@@ -76,13 +76,13 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	Require(t, err)
 	seqTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	conf.BatchPoster.Enable = true
-	conf.BatchPoster.MaxBatchSize = len(firstTxData) * 2
+	conf.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := l1client.BlockNumber(ctx)
 	Require(t, err)
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := conf.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(ctx, nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()
@@ -118,14 +118,14 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 			if i == 0 {
 				continue
 			}
-			if batches[i-1].BlockNumber == batches[i].BlockNumber {
+			if batches[i-1].ParentChainBlockNumber == batches[i].ParentChainBlockNumber {
 				foundMultipleInBlock = true
 				break
 			}
 		}
 
 		if !foundMultipleInBlock {
-			Fail(t, "only found one batch per block")
+			Fatal(t, "only found one batch per block")
 		}
 	}
 
@@ -133,7 +133,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	Require(t, err)
 
 	if l2balance.Sign() == 0 {
-		Fail(t, "Unexpected zero balance")
+		Fatal(t, "Unexpected zero balance")
 	}
 }
 
@@ -164,7 +164,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	receiptB, err := EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
 	Require(t, err)
 	if receiptA.BlockHash != receiptB.BlockHash {
-		Fail(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
+		Fatal(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.CompressionLevel = brotli.BestCompression
-	conf.BatchPoster.MaxBatchPostDelay = time.Hour
+	conf.BatchPoster.MaxDelay = time.Hour
 	conf.RPC.RPCTxFeeCap = 1000.
 	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
 	defer requireClose(t, l1stack)

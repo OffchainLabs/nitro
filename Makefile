@@ -5,6 +5,7 @@
 # have to update an existing file. So - for docker, convert all dependencies
 # to order-only dependencies (timestamps ignored).
 # WARNING: when using this trick, you cannot use the $< automatic variable
+
 ifeq ($(origin NITRO_BUILD_IGNORE_TIMESTAMPS),undefined)
  DEP_PREDICATE:=
  ORDER_ONLY_PREDICATE:=|
@@ -87,7 +88,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager)
 	@printf $(done)
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
@@ -180,6 +181,12 @@ $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
+
+$(output_root)/bin/nitro-val: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro-val"
+
+$(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-manager"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
@@ -300,6 +307,8 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 # strategic rules to minimize dependency building
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
+	go run ./linter/koanf ./...
+	go run ./linter/pointercheck ./...
 	golangci-lint run --fix
 	yarn --cwd contracts solhint
 	@touch $@
@@ -329,23 +338,22 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/include/brotli/encode.h || ./build-brotli.sh -l
-	test -f target/include/brotli/decode.h || ./build-brotli.sh -l
-	test -f target/lib/libbrotlicommon-static.a || ./build-brotli.sh -l
-	test -f target/lib/libbrotlienc-static.a || ./build-brotli.sh -l
-	test -f target/lib/libbrotlidec-static.a || ./build-brotli.sh -l
+	test -f target/include/brotli/encode.h || ./scripts/build-brotli.sh -l
+	test -f target/include/brotli/decode.h || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlicommon-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlienc-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlidec-static.a || ./scripts/build-brotli.sh -l
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/lib-wasm/libbrotlicommon-static.a || ./build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlienc-static.a || ./build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w -d
 	@touch $@
 
-.make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./build-brotli.sh -f -d -t .
-	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./build-brotli.sh -f -d -t .
-	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./build-brotli.sh -f -d -t .
+.make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make
+	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t ..
+	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t ..
 	@touch $@
 
 .make:

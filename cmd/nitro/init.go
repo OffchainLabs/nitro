@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/offchainlabs/nitro/cmd/util"
 
 	"github.com/cavaliergopher/grab/v3"
 	extract "github.com/codeclysm/extract/v3"
@@ -27,16 +31,18 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/pkg/errors"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 )
 
 type InitConfig struct {
@@ -45,7 +51,7 @@ type InitConfig struct {
 	DownloadPath    string        `koanf:"download-path"`
 	DownloadPoll    time.Duration `koanf:"download-poll"`
 	DevInit         bool          `koanf:"dev-init"`
-	DevInitAddr     string        `koanf:"dev-init-address"`
+	DevInitAddress  string        `koanf:"dev-init-address"`
 	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
 	Empty           bool          `koanf:"empty"`
 	AccountsPerSync uint          `koanf:"accounts-per-sync"`
@@ -53,6 +59,7 @@ type InitConfig struct {
 	ThenQuit        bool          `koanf:"then-quit"`
 	Prune           string        `koanf:"prune"`
 	PruneBloomSize  uint64        `koanf:"prune-bloom-size"`
+	ResetToMessage  int64         `koanf:"reset-to-message"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -61,29 +68,31 @@ var InitConfigDefault = InitConfig{
 	DownloadPath:    "/tmp/",
 	DownloadPoll:    time.Minute,
 	DevInit:         false,
-	DevInitAddr:     "",
+	DevInitAddress:  "",
 	DevInitBlockNum: 0,
 	ImportFile:      "",
 	AccountsPerSync: 100000,
 	ThenQuit:        false,
 	Prune:           "",
 	PruneBloomSize:  2048,
+	ResetToMessage:  -1,
 }
 
-func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
+func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
 	f.String(prefix+".url", InitConfigDefault.Url, "url to download initializtion data - will poll if download fails")
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
-	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddr, "Address of dev-account. Leave empty to use the dev-wallet.")
+	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
-	f.Bool(prefix+".empty", InitConfigDefault.DevInit, "init with empty state")
+	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
+	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 }
 
 func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
@@ -167,7 +176,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	}
 }
 
-func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) error {
+func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
 	statedb, err := blockChain.State()
 	if err != nil {
 		return err
@@ -180,9 +189,28 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	if err != nil {
 		return err
 	}
-	if chainId.Cmp(expectedChainId) != 0 {
-		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", expectedChainId, chainId)
+	if chainId.Cmp(chainConfig.ChainID) != 0 {
+		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId)
 	}
+	oldSerializedConfig, err := currentArbosState.ChainConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get old chain config from ArbOS state: %w", err)
+	}
+	if len(oldSerializedConfig) != 0 {
+		var oldConfig params.ChainConfig
+		err = json.Unmarshal(oldSerializedConfig, &oldConfig)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize old chain config: %w", err)
+		}
+		currentBlock := blockChain.CurrentBlock()
+		if currentBlock == nil {
+			return errors.New("failed to get current block")
+		}
+		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.Number.Uint64(), currentBlock.Time); err != nil {
+			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -221,12 +249,11 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
-		if overwrite {
-			r.roots = r.roots[:len(r.roots)-1]
-			r.heights = r.heights[:len(r.heights)-1]
-		} else {
+		if !overwrite {
 			return nil
 		}
+		r.roots = r.roots[:len(r.roots)-1]
+		r.heights = r.heights[:len(r.heights)-1]
 	}
 	if len(r.heights) > 0 && r.heights[len(r.heights)-1]+minRootDistance > height {
 		return nil
@@ -239,7 +266,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) ([]common.Hash, error) {
 	initConfig := &nodeConfig.Init
 	chainConfig := execution.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
@@ -303,24 +330,28 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
-		lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
+		validatorDb := rawdb.NewTable(arbDb, storage.BlockValidatorPrefix)
+		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
 		}
 		if lastValidated != nil {
-			lastValidatedHeader := rawdb.ReadHeader(chainDb, lastValidated.BlockHash, lastValidated.BlockNumber)
+			var lastValidatedHeader *types.Header
+			headerNum := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
+			if headerNum != nil {
+				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, *headerNum)
+			}
 			if lastValidatedHeader != nil {
 				err = roots.addHeader(lastValidatedHeader, false)
 				if err != nil {
 					return nil, err
 				}
 			} else {
-				log.Warn("missing latest validated block", "number", lastValidated.BlockNumber, "hash", lastValidated.BlockHash)
+				log.Warn("missing latest validated block", "hash", lastValidated.GlobalState.BlockHash)
 			}
 		}
 	} else if initConfig.Prune == "full" {
-		if nodeConfig.Node.Staker.Enable || nodeConfig.Node.BlockValidator.Enable {
+		if nodeConfig.Node.ValidatorRequired() {
 			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
@@ -366,7 +397,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			if err != nil {
 				return nil, err
 			}
-			if meta.L1Block <= l1BlockNum {
+			if meta.ParentChainBlock <= l1BlockNum {
 				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
 				blockNum := uint64(signedBlockNum)
 				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
@@ -388,7 +419,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	return roots.roots, nil
 }
 
-func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) error {
+func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) error {
 	trieCachePath := cacheConfig.TrieCleanJournal
 	config := &nodeConfig.Init
 	if config.Prune == "" {
@@ -406,7 +437,7 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	return pruner.Prune(root)
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -423,7 +454,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, err
 				}
-				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
+				err = validateBlockChain(l2BlockChain, chainConfig)
 				if err != nil {
 					return chainDb, l2BlockChain, err
 				}
@@ -484,7 +515,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			NextBlockNumber: config.Init.DevInitBlockNum,
 			Accounts: []statetransfer.AccountInitializationInfo{
 				{
-					Addr:       common.HexToAddress(config.Init.DevInitAddr),
+					Addr:       common.HexToAddress(config.Init.DevInitAddress),
 					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
 					Nonce:      0,
 				},
@@ -520,7 +551,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr)
+		combinedL2ChainInfoFiles := config.Chain.InfoFiles
+		if config.Chain.InfoIpfsUrl != "" {
+			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, config.Chain.InfoIpfsUrl, config.Chain.InfoIpfsDownloadPath)
+			if err != nil {
+				log.Error("error getting l2 chain info file from ipfs", "err", err)
+			}
+			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+		}
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, combinedL2ChainInfoFiles, config.Chain.InfoJson)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -544,7 +583,55 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
+		var parsedInitMessage *arbostypes.ParsedInitMessage
+		if config.Node.ParentChainReader.Enable {
+			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
+			if err != nil {
+				return chainDb, nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
+			}
+			deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
+			delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
+			if err != nil {
+				return chainDb, nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
+			}
+			var initMessage *arbostypes.L1IncomingMessage
+			for _, msg := range delayedMessages {
+				if msg.Message.Header.Kind == arbostypes.L1MessageType_Initialize {
+					initMessage = msg.Message
+					break
+				}
+			}
+			if initMessage == nil {
+				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
+			}
+			parsedInitMessage, err = initMessage.ParseInitMessage()
+			if err != nil {
+				return chainDb, nil, err
+			}
+			if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
+				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
+			}
+			if parsedInitMessage.ChainConfig != nil {
+				if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
+				}
+			}
+			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
+		} else {
+			serializedChainConfig, err := json.Marshal(chainConfig)
+			if err != nil {
+				return chainDb, nil, err
+			}
+			parsedInitMessage = &arbostypes.ParsedInitMessage{
+				ChainId:               chainConfig.ChainID,
+				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+				ChainConfig:           chainConfig,
+				SerializedChainConfig: serializedChainConfig,
+			}
+			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
+		}
+
+		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -560,7 +647,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 	}
 
-	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
+	err = validateBlockChain(l2BlockChain, chainConfig)
 	if err != nil {
 		return chainDb, l2BlockChain, err
 	}

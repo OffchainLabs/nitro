@@ -23,24 +23,24 @@ import (
 )
 
 type ArbitratorSpawnerConfig struct {
-	Workers        int                `koanf:"workers" reload:"hot"`
-	OutputPath     string             `koanf:"output-path" reload:"hot"`
-	Execution      MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
-	ExecRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
+	Workers             int                `koanf:"workers" reload:"hot"`
+	OutputPath          string             `koanf:"output-path" reload:"hot"`
+	Execution           MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	ExecutionRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	Workers:        0,
-	OutputPath:     "./target/output",
-	Execution:      DefaultMachineCacheConfig,
-	ExecRunTimeout: time.Minute * 15,
+	Workers:             0,
+	OutputPath:          "./target/output",
+	Execution:           DefaultMachineCacheConfig,
+	ExecutionRunTimeout: time.Minute * 15,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
-	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecRunTimeout, "timeout before discarding execution run")
+	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 }
@@ -55,32 +55,6 @@ type ArbitratorSpawner struct {
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
 	config        ArbitratorSpawnerConfigFecher
-}
-
-type valRun struct {
-	containers.Promise[validator.GoGlobalState]
-	root common.Hash
-}
-
-func (r *valRun) WasmModuleRoot() common.Hash {
-	return r.root
-}
-
-func (r *valRun) Close() {}
-
-func NewvalRun(root common.Hash) *valRun {
-	return &valRun{
-		Promise: containers.NewPromise[validator.GoGlobalState](nil),
-		root:    root,
-	}
-}
-
-func (r *valRun) consumeResult(res validator.GoGlobalState, err error) {
-	if err != nil {
-		r.ProduceError(err)
-	} else {
-		r.Produce(res)
-	}
 }
 
 func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
@@ -180,12 +154,11 @@ func (v *ArbitratorSpawner) execute(
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&v.count, 1)
-	run := NewvalRun(moduleRoot)
-	v.LaunchThread(func(ctx context.Context) {
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
 		defer atomic.AddInt32(&v.count, -1)
-		run.consumeResult(v.execute(ctx, entry, moduleRoot))
+		return v.execute(ctx, entry, moduleRoot)
 	})
-	return run
+	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (v *ArbitratorSpawner) Room() int {
@@ -193,11 +166,7 @@ func (v *ArbitratorSpawner) Room() int {
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
-	current := int(atomic.LoadInt32(&v.count))
-	if current >= avail {
-		return 0
-	}
-	return avail - current
+	return avail
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")

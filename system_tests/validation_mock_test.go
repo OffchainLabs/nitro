@@ -3,7 +3,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -12,13 +11,21 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 type mockSpawner struct {
+	ExecSpawned []uint64
+	LaunchDelay time.Duration
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -49,11 +56,8 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 		Promise: containers.NewPromise[validator.GoGlobalState](nil),
 		root:    moduleRoot,
 	}
-	if moduleRoot != mockWasmModuleRoot {
-		run.ProduceError(errors.New("unsupported root"))
-	} else {
-		run.Produce(globalstateFromTestPreimages(entry.Preimages))
-	}
+	<-time.After(s.LaunchDelay)
+	run.Produce(globalstateFromTestPreimages(entry.Preimages))
 	return run
 }
 
@@ -65,9 +69,7 @@ func (s *mockSpawner) Name() string                { return "mock" }
 func (s *mockSpawner) Room() int                   { return 4 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	if wasmModuleRoot != mockWasmModuleRoot {
-		return containers.NewReadyPromise[validator.ExecutionRun](nil, errors.New("unsupported root"))
-	}
+	s.ExecSpawned = append(s.ExecSpawned, input.Id)
 	return containers.NewReadyPromise[validator.ExecutionRun](&mockExecRun{
 		startState: input.StartState,
 		endState:   globalstateFromTestPreimages(input.Preimages),
@@ -129,7 +131,7 @@ func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[s
 
 func (r *mockExecRun) Close() {}
 
-func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) *node.Node {
+func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.DataDir = ""
@@ -169,7 +171,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 		serverAPI.StopOnly()
 	}()
 
-	return stack
+	return spawner, stack
 }
 
 // mostly tests translation to/from json and running over network
@@ -177,8 +179,8 @@ func TestValidationServerAPI(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	validationDefault := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(validationDefault.WSEndpoint(), nil)
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
+	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -237,19 +239,100 @@ func TestValidationServerAPI(t *testing.T) {
 	}
 }
 
+func TestValidationClientRoom(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
+	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	err := client.Start(ctx)
+	Require(t, err)
+
+	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
+	Require(t, err)
+
+	if client.Room() != 4 {
+		Fatal(t, "wrong initial room ", client.Room())
+	}
+
+	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
+	hash2 := common.HexToHash("0x11111111122222223333333444444444")
+
+	startState := validator.GoGlobalState{
+		BlockHash:  hash1,
+		SendRoot:   hash2,
+		Batch:      300,
+		PosInBatch: 3000,
+	}
+	endState := validator.GoGlobalState{
+		BlockHash:  hash2,
+		SendRoot:   hash1,
+		Batch:      3000,
+		PosInBatch: 300,
+	}
+
+	valInput := validator.ValidationInput{
+		StartState: startState,
+		Preimages:  globalstateToTestPreimages(endState),
+	}
+
+	valRuns := make([]validator.ValidationRun, 0, 4)
+
+	for i := 0; i < 4; i++ {
+		valRun := client.Launch(&valInput, wasmRoot)
+		valRuns = append(valRuns, valRun)
+	}
+
+	for i := range valRuns {
+		_, err := valRuns[i].Await(ctx)
+		Require(t, err)
+	}
+
+	if client.Room() != 4 {
+		Fatal(t, "wrong room after launch", client.Room())
+	}
+
+	mockSpawner.LaunchDelay = time.Hour
+
+	valRuns = make([]validator.ValidationRun, 0, 3)
+
+	for i := 0; i < 4; i++ {
+		valRun := client.Launch(&valInput, wasmRoot)
+		valRuns = append(valRuns, valRun)
+		room := client.Room()
+		if room != 3-i {
+			Fatal(t, "wrong room after launch ", room, " expected: ", 4-i)
+		}
+	}
+
+	for i := range valRuns {
+		valRuns[i].Cancel()
+		_, err := valRuns[i].Await(ctx)
+		if err == nil {
+			Fatal(t, "no error returned after cancel i:", i)
+		}
+	}
+
+	room := client.Room()
+	if room != 4 {
+		Fatal(t, "wrong room after canceling runs: ", room)
+	}
+}
+
 func TestExecutionKeepAlive(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	validationDefault := createMockValidationNode(t, ctx, nil)
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
-	shortTimeoutConfig.ExecRunTimeout = time.Second
-	validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
+	shortTimeoutConfig.ExecutionRunTimeout = time.Second
+	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
+	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
-	clientDefault := server_api.NewExecutionClient(validationDefault.WSEndpoint(), nil)
+	clientDefault := server_api.NewExecutionClient(configFetcher, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	clientShortTO := server_api.NewExecutionClient(validationShortTO.WSEndpoint(), nil)
+	clientShortTO := server_api.NewExecutionClient(configFetcher, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
@@ -271,4 +354,44 @@ func TestExecutionKeepAlive(t *testing.T) {
 	if err == nil {
 		t.Error("getStep should have timed out but didn't")
 	}
+}
+
+type mockBlockRecorder struct {
+	validator *staker.StatelessBlockValidator
+	streamer  *arbnode.TransactionStreamer
+}
+
+func (m *mockBlockRecorder) RecordBlockCreation(
+	ctx context.Context,
+	pos arbutil.MessageIndex,
+	msg *arbostypes.MessageWithMetadata,
+) (*execution.RecordResult, error) {
+	_, globalpos, err := m.validator.GlobalStatePositionsAtCount(pos + 1)
+	if err != nil {
+		return nil, err
+	}
+	res, err := m.streamer.ResultAtCount(pos + 1)
+	if err != nil {
+		return nil, err
+	}
+	globalState := validator.GoGlobalState{
+		Batch:      globalpos.BatchNumber,
+		PosInBatch: globalpos.PosInBatch,
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+	}
+	return &execution.RecordResult{
+		Pos:       pos,
+		BlockHash: res.BlockHash,
+		Preimages: globalstateToTestPreimages(globalState),
+	}, nil
+}
+
+func (m *mockBlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {}
+func (m *mockBlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
+	return nil
+}
+
+func newMockRecorder(validator *staker.StatelessBlockValidator, streamer *arbnode.TransactionStreamer) *mockBlockRecorder {
+	return &mockBlockRecorder{validator, streamer}
 }

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -121,10 +122,22 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
 		chainDb := rawdb.NewMemoryDatabase()
+		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		if err != nil {
+			panic(err)
+		}
+		initMessage := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
-			params.ArbitrumRollupGoerliTestnetChainConfig(),
+			chainConfig,
+			initMessage,
 			0,
 			0,
 		)
