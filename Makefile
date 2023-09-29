@@ -295,7 +295,7 @@ contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/target/wasm32
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
 
 contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success
+	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success --preimages $(arbitrator_cases)/rust/data/preimages.bin
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
