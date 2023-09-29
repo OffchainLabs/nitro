@@ -16,7 +16,7 @@ func TestSequencerPause(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info1, nodeA, client := CreateTestL2(t, ctx, nil)
+	l2info1, nodeA, client := CreateTestL2(t, ctx)
 	defer nodeA.StopAndWait()
 
 	const numUsers = 100

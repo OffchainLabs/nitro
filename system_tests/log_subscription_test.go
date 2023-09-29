@@ -19,7 +19,7 @@ func TestLogSubscription(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx, nil)
+	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)

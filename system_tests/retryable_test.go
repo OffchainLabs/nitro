@@ -116,7 +116,7 @@ func retryableSetup(t *testing.T) (
 func TestRetryableNoExist(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, node, l2client := CreateTestL2(t, ctx, nil)
+	_, node, l2client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)

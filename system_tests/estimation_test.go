@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/arbnode"
 	"math/big"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx, nil)
+	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -51,7 +52,7 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx, nil)
+	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -131,7 +132,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx, nil)
+	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -153,7 +154,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
-	l2info, node, client := CreateTestL2(t, ctx, chainConfig)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, chainConfig)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -173,7 +174,7 @@ func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx, nil)
+	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
 	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)

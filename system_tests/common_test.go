@@ -642,8 +642,8 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context, chainConfig *params.ChainConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, chainConfig)
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, nil)
 }
 
 func CreateTestL2WithConfig(

@@ -308,7 +308,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node, client := CreateTestL2(t, ctx, nil)
+	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
