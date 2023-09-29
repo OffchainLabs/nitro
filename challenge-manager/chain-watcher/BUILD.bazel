@@ -17,7 +17,6 @@ go_library(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//log",
         "@com_github_ethereum_go_ethereum//metrics",
-        "@com_github_hashicorp_golang_lru//:golang-lru",
         "@com_github_pkg_errors//:errors",
     ],
 )
@@ -35,7 +34,6 @@ go_test(
         "//solgen/go/challengeV2gen",
         "//testing/mocks",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_hashicorp_golang_lru//:golang-lru",
         "@com_github_stretchr_testify//require",
     ],
 )
