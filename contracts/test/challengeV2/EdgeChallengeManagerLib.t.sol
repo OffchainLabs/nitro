@@ -1582,21 +1582,16 @@ contract EdgeChallengeManagerLibTest is Test {
     struct ExecStateVars {
         ExecutionState execState;
         bytes32 machineHash;
-        bytes32 stateHash;
     }
 
-    function randomExecutionState(IOneStepProofEntry os, uint256 inboxMaxCount)
-        private
-        returns (ExecStateVars memory)
-    {
+    function randomExecutionState(IOneStepProofEntry os) private returns (ExecStateVars memory) {
         ExecutionState memory execState = ExecutionState(
             GlobalState([rand.hash(), rand.hash()], [uint64(uint256(rand.hash())), uint64(uint256(rand.hash()))]),
             MachineStatus.FINISHED
         );
 
         bytes32 machineHash = os.getMachineHash(execState);
-        bytes32 stateHash = RollupLib.stateHashMem(execState, inboxMaxCount);
-        return ExecStateVars(execState, machineHash, stateHash);
+        return ExecStateVars(execState, machineHash);
     }
 
     function createZeroBlockEdge(uint256 mode) internal {
@@ -1608,8 +1603,8 @@ contract EdgeChallengeManagerLibTest is Test {
             revertArg = abi.encodeWithSelector(NotPowerOfTwo.selector, expectedEndHeight);
         }
 
-        ExecStateVars memory startExec = randomExecutionState(entry, 10);
-        ExecStateVars memory endExec = randomExecutionState(entry, 20);
+        ExecStateVars memory startExec = randomExecutionState(entry);
+        ExecStateVars memory endExec = randomExecutionState(entry);
         ExpsAndProofs memory roots = newRootsAndProofs(0, expectedEndHeight, startExec.machineHash, endExec.machineHash);
         bytes32 claimId = rand.hash();
         bytes32 endRoot;

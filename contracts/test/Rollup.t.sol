@@ -23,8 +23,11 @@ import "../src/libraries/Error.sol";
 import "../src/mocks/TestWETH9.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import "@openzeppelin/contracts-upgradeable/utils/Create2Upgradeable.sol";
 
 contract RollupTest is Test {
+    using GlobalStateLib for GlobalState;
+
     address constant owner = address(1337);
     address constant sequencer = address(7331);
 
@@ -129,6 +132,11 @@ contract RollupTest is Test {
         vm.expectEmit(false, false, false, false);
         emit RollupCreated(address(0), address(0), address(0), address(0), address(0));
         address rollupAddr = rollupCreator.createRollup(config, address(0), new address[](0), false, MAX_DATA_SIZE);
+        bytes32 rollupSalt = keccak256(abi.encode(config, address(0), new address[](0), false, MAX_DATA_SIZE));
+        address expectedRollupAddress = Create2Upgradeable.computeAddress(
+            rollupSalt, keccak256(type(RollupProxy).creationCode), address(rollupCreator)
+        );
+        assertEq(expectedRollupAddress, rollupAddr, "Unexpected rollup address");
 
         userRollup = RollupUserLogic(address(rollupAddr));
         adminRollup = RollupAdminLogic(address(rollupAddr));
@@ -1183,5 +1191,25 @@ contract RollupTest is Test {
     function testRevertSetChallengeManager() public {
         vm.expectRevert();
         adminRollup.setChallengeManager(address(0xdeadbeef));
+    }
+
+    function testExecutionStateHash() public {
+        ExecutionState memory es = ExecutionState(
+            GlobalState([rand.hash(), rand.hash()], [uint64(uint256(rand.hash())), uint64(uint256(rand.hash()))]),
+            MachineStatus.FINISHED
+        );
+        bytes32 expectedHash = keccak256(abi.encodePacked(es.machineStatus, es.globalState.hash()));
+        assertEq(RollupLib.executionStateHash(es), expectedHash, "Unexpected hash");
+    }
+
+    function testAssertionHash() public {
+        bytes32 parentHash = rand.hash();
+        ExecutionState memory es = ExecutionState(
+            GlobalState([rand.hash(), rand.hash()], [uint64(uint256(rand.hash())), uint64(uint256(rand.hash()))]),
+            MachineStatus.FINISHED
+        );
+        bytes32 inboxAcc = rand.hash();
+        bytes32 expectedHash = keccak256(abi.encodePacked(parentHash, RollupLib.executionStateHash(es), inboxAcc));
+        assertEq(RollupLib.assertionHash(parentHash, es, inboxAcc), expectedHash, "Unexpected hash");
     }
 }

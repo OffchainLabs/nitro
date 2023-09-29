@@ -117,7 +117,8 @@ contract RollupCreator is Ownable {
         deployed.proxyAdmin.transferOwnership(config.owner);
 
         // Create the rollup proxy to figure out the address and initialize it later
-        deployed.rollup = new RollupProxy{salt: keccak256(abi.encode(config))}();
+        deployed.rollup =
+        new RollupProxy{salt: keccak256(abi.encode(config, _batchPoster, _validators, disableValidatorWhitelist, maxDataSize))}();
 
         (deployed.bridge, deployed.sequencerInbox, deployed.inbox, deployed.rollupEventInbox, deployed.outbox) =
         bridgeCreator.createBridge(

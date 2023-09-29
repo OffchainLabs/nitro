@@ -18,37 +18,6 @@ import "../challengeV2/EdgeChallengeManager.sol";
 library RollupLib {
     using GlobalStateLib for GlobalState;
 
-    function stateHash(ExecutionState calldata execState, uint256 inboxMaxCount)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return
-            keccak256(
-                abi.encodePacked(
-                    execState.globalState.hash(),
-                    inboxMaxCount,
-                    execState.machineStatus
-                )
-            );
-    }
-
-    /// @dev same as stateHash but expects execState in memory instead of calldata
-    function stateHashMem(ExecutionState memory execState, uint256 inboxMaxCount)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return
-            keccak256(
-                abi.encodePacked(
-                    execState.globalState.hash(),
-                    inboxMaxCount,
-                    execState.machineStatus
-                )
-            );
-    }
-
     // Not the same as a machine hash for a given execution state
     function executionStateHash(ExecutionState memory state) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(state.machineStatus, state.globalState.hash()));

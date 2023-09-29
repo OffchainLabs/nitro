@@ -331,7 +331,7 @@ contract BOLDUpgradeAction {
         (ExecutionState memory genesisExecState, uint256 inboxMaxCount) = PREIMAGE_LOOKUP.get(latestConfirmedStateHash);
         // double check the hash
         require(
-            RollupLib.stateHashMem(genesisExecState, inboxMaxCount) == latestConfirmedStateHash,
+            PREIMAGE_LOOKUP.stateHash(genesisExecState, inboxMaxCount) == latestConfirmedStateHash,
             "Invalid latest execution hash"
         );
 
@@ -361,9 +361,8 @@ contract BOLDUpgradeAction {
     }
 
     function upgradeSurroundingContracts(address newRollupAddress) private {
-        // now we upgrade each of the contracts that a reference to the rollup address
-        // first we upgrade to an implementation which allows setting, then set the rollup address
-        // then we revert to the previous implementation since we dont require this functionality going forward
+        // upgrade each of these contracts to an implementation that allows
+        // the rollup address to be set to the new rollup address
 
         TransparentUpgradeableProxy bridge = TransparentUpgradeableProxy(payable(BRIDGE));
         address currentBridgeImpl = PROXY_ADMIN_BRIDGE.getProxyImplementation(bridge);

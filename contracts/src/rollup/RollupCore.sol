@@ -397,9 +397,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         require(assertion.beforeState.machineStatus == MachineStatus.FINISHED, "BAD_PREV_STATUS");
 
         AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionHash);
+        // Required inbox position through which the next assertion (the one after this new assertion) must consume
         uint256 nextInboxPosition;
         bytes32 sequencerBatchAcc;
         {
+            // This new assertion consumes the messages from prevInboxPosition to afterInboxPosition
             uint64 afterInboxPosition = assertion.afterState.globalState.getInboxPosition();
             uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
 
@@ -413,6 +415,14 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             require(afterInboxPosition >= prevInboxPosition, "INBOX_BACKWARDS");
             require(afterInboxPosition <= assertion.beforeStateData.configData.nextInboxPosition, "INBOX_TOO_FAR");
 
+            // SANITY CHECK: the next inbox position did indeed move forward
+            // this is enforced by code in a later section that artificially increases the nextInboxPosition
+            // even if there hadn't been any new messages since the last assertion;
+            // this ensures that assertions will continue to advance.
+            // It also means that below, where we check that afterInboxPosition equals prev.nextInboxPosition
+            // in the FINISHED state, we can be sure that it processed at least one message
+            require(assertion.beforeStateData.configData.nextInboxPosition > prevInboxPosition, "NEXT_INBOX_BACKWARDS");
+
             // if the position in the message is > 0, then the afterInboxPosition cannot be the nextInboxPosition
             // as this would be outside the range - this can only occur for ERRORED states
             if (assertion.afterState.machineStatus == MachineStatus.ERRORED) {
@@ -422,7 +432,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                     );
                 }
             } else if (assertion.afterState.machineStatus == MachineStatus.FINISHED) {
-                // if the machine is FINISHED, then it should consume all messages in the inbox as seen at the time of prev
+                // if the machine is FINISHED, then it should consume all messages in the inbox as seen at the time of prev (minimum 1; see below)
                 require(
                     afterInboxPosition == assertion.beforeStateData.configData.nextInboxPosition,
                     "INVALID_FINISHED_INBOX"
@@ -433,7 +443,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 // we checked this above, but include a safety check here in case of refactoring
                 revert("INVALID_STATUS");
             }
-
+            // Inbox position at the time of this assertion being created
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
             // Cannot read more messages than currently exist in the inbox
             require(afterInboxPosition <= currentInboxPosition, "INBOX_PAST_END");
@@ -452,7 +462,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 // No new messages have been added to the inbox since the last assertion
                 // In this case if we set the next inbox position to the current one we would be insisting that
                 // the next assertion process no messages. So instead we increment the next inbox position to current
-                // plus one, so that the next assertion will process exactly one message
+                // plus one, so that the next assertion will process exactly one message. 
+                // Thus, no assertion can be empty (except the genesis assertion, which is created
+                // via a different codepath).
                 nextInboxPosition = currentInboxPosition + 1;
             } else {
                 nextInboxPosition = currentInboxPosition;

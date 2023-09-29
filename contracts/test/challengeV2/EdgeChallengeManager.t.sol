@@ -262,6 +262,54 @@ contract EdgeChallengeManagerTest is Test {
         );
     }
 
+    function testRevertInvalidHash() public {
+        EdgeInitData memory ei = deployAndInit();
+
+        (bytes32[] memory states, bytes32[] memory exp) =
+            appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(ei.a1State), height1);
+
+        vm.expectRevert("INVALID_ASSERTION_HASH");
+        ei.challengeManager.createLayerZeroEdge(
+            CreateEdgeArgs({
+                level: 0,
+                endHistoryRoot: MerkleTreeLib.root(exp),
+                endHeight: height1,
+                claimId: ei.a2,
+                prefixProof: abi.encode(
+                    ProofUtils.expansionFromLeaves(states, 0, 1),
+                    ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
+                    ),
+                proof: abi.encode(
+                    ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0), genesisStateData, ei.a1Data
+                    )
+            })
+        );
+    }
+
+    function testRevertInvalidHashPrev() public {
+        EdgeInitData memory ei = deployAndInit();
+
+        (bytes32[] memory states, bytes32[] memory exp) =
+            appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(ei.a1State), height1);
+
+        vm.expectRevert("INVALID_ASSERTION_HASH");
+        ei.challengeManager.createLayerZeroEdge(
+            CreateEdgeArgs({
+                level: 0,
+                endHistoryRoot: MerkleTreeLib.root(exp),
+                endHeight: height1,
+                claimId: ei.a1,
+                prefixProof: abi.encode(
+                    ProofUtils.expansionFromLeaves(states, 0, 1),
+                    ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
+                    ),
+                proof: abi.encode(
+                    ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1), ei.a2Data, ei.a1Data
+                    )
+            })
+        );
+    }
+
     function testCanCreateEdgeWithStake()
         public
         returns (EdgeInitData memory, bytes32[] memory, bytes32[] memory, bytes32)

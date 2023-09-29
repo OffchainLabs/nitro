@@ -37,9 +37,9 @@ error InvalidEndHeight(uint256 actualHeight, uint256 expectedHeight);
 /// @dev The prefix proof is empty
 error EmptyPrefixProof();
 /// @dev The edge is not of type Block
-error EdgeTypeNotBlock(uint256 eType);
+error EdgeTypeNotBlock(uint256 level);
 /// @dev The edge is not of type SmallStep
-error EdgeTypeNotSmallStep(uint256 eType);
+error EdgeTypeNotSmallStep(uint256 level);
 /// @dev The first rival record is empty
 error EmptyFirstRival();
 /// @dev The difference between two heights is less than 2
