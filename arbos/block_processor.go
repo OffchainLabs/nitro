@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -39,6 +40,7 @@ var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
+var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
 type L1Info struct {
 	poster        common.Address
@@ -190,7 +192,7 @@ func ProduceBlockAdvanced(
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number)
+	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
@@ -269,7 +271,11 @@ func ProduceBlockAdvanced(
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
+				brotliCompressionLevel, err := state.BrotliCompressionLevel()
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+				}
+				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -343,11 +349,7 @@ func ProduceBlockAdvanced(
 			log.Debug("error applying transaction", "tx", tx, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
-				if blockGasLeft > params.TxGas {
-					blockGasLeft -= params.TxGas
-				} else {
-					blockGasLeft = 0
-				}
+				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
 				}
@@ -416,11 +418,11 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		if blockGasLeft > computeUsed {
-			blockGasLeft -= computeUsed
-		} else {
-			blockGasLeft = 0
-		}
+		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
+
+		// Add gas used since startup to prometheus metric.
+		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
+		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)

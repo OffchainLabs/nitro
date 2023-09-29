@@ -35,15 +35,15 @@ func TestRPC(t *testing.T) {
 
 	config := DataAvailabilityConfig{
 		Enable: true,
-		KeyConfig: KeyConfig{
+		Key: KeyConfig{
 			KeyDir: keyDir,
 		},
-		LocalFileStorageConfig: LocalFileStorageConfig{
+		LocalFileStorage: LocalFileStorageConfig{
 			Enable:  true,
 			DataDir: dataDir,
 		},
-		L1NodeURL:      "none",
-		RequestTimeout: 5 * time.Second,
+		ParentChainNodeURL: "none",
+		RequestTimeout:     5 * time.Second,
 	}
 
 	var syncFromStorageServices []*IterableStorageService
@@ -51,7 +51,7 @@ func TestRPC(t *testing.T) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	privKey, err := config.KeyConfig.BLSPrivKey()
+	privKey, err := config.Key.BLSPrivKey()
 	testhelpers.RequireImpl(t, err)
 	localDas, err := NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, "")
 	testhelpers.RequireImpl(t, err)
@@ -71,7 +71,7 @@ func TestRPC(t *testing.T) {
 	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
 	testhelpers.RequireImpl(t, err)
 	aggConf := DataAvailabilityConfig{
-		AggregatorConfig: AggregatorConfig{
+		RPCAggregator: AggregatorConfig{
 			AssumedHonest: 1,
 			Backends:      string(backendsJsonByte),
 		},

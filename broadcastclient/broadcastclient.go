@@ -68,13 +68,13 @@ type Config struct {
 	RequireChainId          bool                     `koanf:"require-chain-id" reload:"hot"`
 	RequireFeedVersion      bool                     `koanf:"require-feed-version" reload:"hot"`
 	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
-	URLs                    []string                 `koanf:"url"`
-	Verifier                signature.VerifierConfig `koanf:"verify"`
+	URL                     []string                 `koanf:"url"`
+	Verify                  signature.VerifierConfig `koanf:"verify"`
 	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
 }
 
 func (c *Config) Enable() bool {
-	return len(c.URLs) > 0 && c.URLs[0] != ""
+	return len(c.URL) > 0 && c.URL[0] != ""
 }
 
 type ConfigFetcher func() *Config
@@ -85,7 +85,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
-	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
+	f.StringSlice(prefix+".url", DefaultConfig.URL, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
@@ -95,8 +95,8 @@ var DefaultConfig = Config{
 	ReconnectMaximumBackoff: time.Second * 64,
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
-	Verifier:                signature.DefultFeedVerifierConfig,
-	URLs:                    []string{""},
+	Verify:                  signature.DefultFeedVerifierConfig,
+	URL:                     []string{""},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
 }
@@ -106,8 +106,8 @@ var DefaultTestConfig = Config{
 	ReconnectMaximumBackoff: 0,
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
-	Verifier:                signature.DefultFeedVerifierConfig,
-	URLs:                    []string{""},
+	Verify:                  signature.DefultFeedVerifierConfig,
+	URL:                     []string{""},
 	Timeout:                 200 * time.Millisecond,
 	EnableCompression:       true,
 }
@@ -153,10 +153,10 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	confirmedSequencerNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
-	bpVerifier contracts.BatchPosterVerifierInterface,
+	addrVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
 ) (*BroadcastClient, error) {
-	sigVerifier, err := signature.NewVerifier(&config().Verifier, bpVerifier)
+	sigVerifier, err := signature.NewVerifier(&config().Verify, addrVerifier)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +480,7 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
-	if bc.config().Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
+	if bc.config().Verify.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
 		return nil
 	}
