@@ -7,11 +7,13 @@ package server_arb
 #cgo CFLAGS: -g -Wall -I../../target/include/
 #include "arbitrator.h"
 
-ResolvedPreimage preimageResolverC(size_t context, const uint8_t* hash);
+ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash);
 */
 import "C"
 import (
 	"context"
+	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -19,8 +21,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/pkg/errors"
 )
 
 type MachineInterface interface {
@@ -48,7 +51,7 @@ type ArbitratorMachine struct {
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
-var preimageResolvers sync.Map
+var preimageResolvers containers.SyncMap[int64, GoPreimageResolver]
 var lastPreimageResolverId int64 // atomic
 
 // Any future calls to this machine will result in a panic
@@ -85,7 +88,7 @@ func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, err
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
-		return nil, errors.Errorf("failed to load simple machine at path %v", wasm)
+		return nil, fmt.Errorf("failed to load simple machine at path %v", wasm)
 	}
 	return machineFromPointer(mach), nil
 }
@@ -334,10 +337,10 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 	}
 }
 
-type GoPreimageResolver = func(common.Hash) ([]byte, error)
+type GoPreimageResolver = func(arbutil.PreimageType, common.Hash) ([]byte, error)
 
 //export preimageResolver
-func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
+func preimageResolver(context C.size_t, ty C.uint8_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 	var hash common.Hash
 	input := (*[1 << 30]byte)(ptr)[:32]
 	copy(hash[:], input)
@@ -347,14 +350,7 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 			len: -1,
 		}
 	}
-	resolverFunc, ok := resolver.(GoPreimageResolver)
-	if !ok {
-		log.Warn("preimage resolver has wrong type")
-		return C.ResolvedPreimage{
-			len: -1,
-		}
-	}
-	preimage, err := resolverFunc(hash)
+	preimage, err := resolver(arbutil.PreimageType(ty), hash)
 	if err != nil {
 		log.Error("preimage resolution failed", "err", err)
 		return C.ResolvedPreimage{

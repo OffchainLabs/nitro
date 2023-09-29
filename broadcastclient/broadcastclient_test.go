@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -104,7 +104,7 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			Require(t, b.BroadcastSingle(arbstate.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
+			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
 		}
 	}()
 
@@ -155,7 +155,7 @@ func TestInvalidSignature(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			Require(t, b.BroadcastSingle(arbstate.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
+			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
 		}
 	}()
 
@@ -200,14 +200,14 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadca
 
 func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, confirmedSequenceNumberListener chan arbutil.MessageIndex, feedErrChan chan error, validAddr *common.Address) (*BroadcastClient, error) {
 	port := listenerAddress.(*net.TCPAddr).Port
-	var bpv contracts.BatchPosterVerifierInterface
+	var av contracts.AddressVerifierInterface
 	if validAddr != nil {
-		config.Verifier.AcceptSequencer = true
-		bpv = contracts.NewMockBatchPosterVerifier(*validAddr)
+		config.Verify.AcceptSequencer = true
+		av = contracts.NewMockAddressVerifier(*validAddr)
 	} else {
-		config.Verifier.AcceptSequencer = false
+		config.Verify.AcceptSequencer = false
 	}
-	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, bpv, func(_ int32) {})
+	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, av, func(_ int32) {})
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
@@ -301,7 +301,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -372,7 +372,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -709,8 +709,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

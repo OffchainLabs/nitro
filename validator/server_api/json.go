@@ -1,10 +1,14 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package server_api
 
 import (
 	"encoding/base64"
 
 	"github.com/ethereum/go-ethereum/common"
-
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -17,25 +21,24 @@ type ValidationInputJson struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	PreimagesB64  map[string]string
+	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
 }
 
 func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
 	res := &ValidationInputJson{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
-		PreimagesB64:  make(map[string]string),
-	}
-	for hash, data := range entry.Preimages {
-		encHash := base64.StdEncoding.EncodeToString(hash.Bytes())
-		encData := base64.StdEncoding.EncodeToString(data)
-		res.PreimagesB64[encHash] = encData
+		PreimagesB64:  jsonPreimagesMap,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
@@ -45,29 +48,22 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 }
 
 func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
 	valInput := &validator.ValidationInput{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
-		Preimages:     make(map[common.Hash][]byte),
+		Preimages:     preimages,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
 		return nil, err
 	}
 	valInput.DelayedMsg = delayed
-	for encHash, encData := range entry.PreimagesB64 {
-		hash, err := base64.StdEncoding.DecodeString(encHash)
-		if err != nil {
-			return nil, err
-		}
-		data, err := base64.StdEncoding.DecodeString(encData)
-		if err != nil {
-			return nil, err
-		}
-		valInput.Preimages[common.BytesToHash(hash)] = data
-	}
 	for _, binfo := range entry.BatchInfo {
 		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
 		if err != nil {

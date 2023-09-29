@@ -82,7 +82,7 @@ func TestVerifierBatchPoster(t *testing.T) {
 	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := DataSignerFromPrivateKey(privateKey)
 
-	bpVerifier := contracts.NewMockBatchPosterVerifier(signingAddr)
+	bpVerifier := contracts.NewMockAddressVerifier(signingAddr)
 	config := TestingFeedVerifierConfig
 	config.AcceptSequencer = true
 	verifier, err := NewVerifier(&config, bpVerifier)

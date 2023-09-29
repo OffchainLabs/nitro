@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::{format, Color, DebugColor};
+use arbutil::{format, Color, DebugColor, PreimageType};
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
@@ -9,9 +9,8 @@ use prover::{
     utils::{Bytes32, CBytes},
     wavm::Opcode,
 };
-use sha3::{Digest, Keccak256};
-use std::io::BufWriter;
 use std::sync::Arc;
+use std::{convert::TryInto, io::BufWriter};
 use std::{
     fs::File,
     io::{BufReader, ErrorKind, Read, Write},
@@ -79,24 +78,6 @@ struct Opts {
     max_steps: Option<u64>,
 }
 
-fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
-    let mut file = BufReader::new(File::open(path)?);
-    let mut contents = Vec::new();
-    loop {
-        let mut size_buf = [0u8; 8];
-        match file.read_exact(&mut size_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(e.into()),
-        }
-        let size = u64::from_le_bytes(size_buf) as usize;
-        let mut buf = vec![0u8; size];
-        file.read_exact(&mut buf)?;
-        contents.push(buf);
-    }
-    Ok(contents)
-}
-
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
     let mut msg = vec![0u8; headerlength];
     File::open(path).unwrap().read_to_end(&mut msg)?;
@@ -160,19 +141,34 @@ fn main() -> Result<()> {
         delayed_position += 1;
     }
 
-    let mut preimages: HashMap<Bytes32, CBytes> = HashMap::default();
+    let mut preimages: HashMap<PreimageType, HashMap<Bytes32, CBytes>> = HashMap::default();
     if let Some(path) = opts.preimages {
-        preimages = parse_size_delim(&path)?
-            .into_iter()
-            .map(|b| {
-                let mut hasher = Keccak256::new();
-                hasher.update(&b);
-                (hasher.finalize().into(), CBytes::from(b.as_slice()))
-            })
-            .collect();
+        let mut file = BufReader::new(File::open(path)?);
+        loop {
+            let mut ty_buf = [0u8; 1];
+            match file.read_exact(&mut ty_buf) {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e.into()),
+            }
+            let preimage_ty: PreimageType = ty_buf[0].try_into()?;
+
+            let mut size_buf = [0u8; 8];
+            file.read_exact(&mut size_buf)?;
+            let size = u64::from_le_bytes(size_buf) as usize;
+            let mut buf = vec![0u8; size];
+            file.read_exact(&mut buf)?;
+
+            let hash = preimage_ty.hash(&buf);
+            preimages
+                .entry(preimage_ty)
+                .or_default()
+                .insert(hash.into(), buf.as_slice().into());
+        }
     }
     let preimage_resolver =
-        Arc::new(move |_, hash| preimages.get(&hash).cloned()) as PreimageResolver;
+        Arc::new(move |_, ty, hash| preimages.get(&ty).and_then(|m| m.get(&hash)).cloned())
+            as PreimageResolver;
 
     let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
     let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
@@ -500,6 +496,7 @@ fn main() -> Result<()> {
     }
 
     if opts.require_success && mach.get_status() != MachineStatus::Finished {
+        eprintln!("Machine didn't finish: {}", mach.get_status().red());
         std::process::exit(1);
     }
 

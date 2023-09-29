@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
@@ -15,6 +15,7 @@ pub mod value;
 pub mod wavm;
 
 use crate::machine::{argument_data_to_inbox, Machine};
+use arbutil::PreimageType;
 use eyre::Result;
 use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
 use sha3::{Digest, Keccak256};
@@ -292,11 +293,11 @@ pub struct ResolvedPreimage {
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
-    resolver: unsafe extern "C" fn(u64, *const u8) -> ResolvedPreimage,
+    resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
 ) {
-    (*mach).set_preimage_resolver(
-        Arc::new(move |context: u64, hash: Bytes32| -> Option<CBytes> {
-            let res = resolver(context, hash.as_ptr());
+    (*mach).set_preimage_resolver(Arc::new(
+        move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
+            let res = resolver(context, ty.into(), hash.as_ptr());
             if res.len < 0 {
                 return None;
             }
@@ -310,8 +311,8 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
                 );
             }
             Some(data)
-        }) as PreimageResolver,
-    );
+        },
+    ) as PreimageResolver);
 }
 
 #[no_mangle]

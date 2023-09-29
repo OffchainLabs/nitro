@@ -5,22 +5,23 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/pkg/errors"
 )
 
 type ConfirmType uint8
@@ -41,16 +42,14 @@ const (
 )
 
 type L1Validator struct {
-	rollup             *RollupWatcher
-	rollupAddress      common.Address
-	validatorUtils     *rollupgen.ValidatorUtils
-	client             arbutil.L1Interface
-	builder            *ValidatorTxBuilder
-	wallet             ValidatorWalletInterface
-	callOpts           bind.CallOpts
-	genesisBlockNumber uint64
+	rollup         *RollupWatcher
+	rollupAddress  common.Address
+	validatorUtils *rollupgen.ValidatorUtils
+	client         arbutil.L1Interface
+	builder        *txbuilder.Builder
+	wallet         ValidatorWalletInterface
+	callOpts       bind.CallOpts
 
-	l2Blockchain       *core.BlockChain
 	das                arbstate.DataAvailabilityReader
 	inboxTracker       InboxTrackerInterface
 	txStreamer         TransactionStreamerInterface
@@ -63,13 +62,12 @@ func NewL1Validator(
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
-	l2Blockchain *core.BlockChain,
 	das arbstate.DataAvailabilityReader,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
 ) (*L1Validator, error) {
-	builder, err := NewValidatorTxBuilder(wallet)
+	builder, err := txbuilder.NewBuilder(wallet)
 	if err != nil {
 		return nil, err
 	}
@@ -84,24 +82,18 @@ func NewL1Validator(
 	if err != nil {
 		return nil, err
 	}
-	genesisBlockNumber, err := txStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return nil, err
-	}
 	return &L1Validator{
-		rollup:             rollup,
-		rollupAddress:      wallet.RollupAddress(),
-		validatorUtils:     validatorUtils,
-		client:             client,
-		builder:            builder,
-		wallet:             wallet,
-		callOpts:           callOpts,
-		genesisBlockNumber: genesisBlockNumber,
-		l2Blockchain:       l2Blockchain,
-		das:                das,
-		inboxTracker:       inboxTracker,
-		txStreamer:         txStreamer,
-		blockValidator:     blockValidator,
+		rollup:         rollup,
+		rollupAddress:  wallet.RollupAddress(),
+		validatorUtils: validatorUtils,
+		client:         client,
+		builder:        builder,
+		wallet:         wallet,
+		callOpts:       callOpts,
+		das:            das,
+		inboxTracker:   inboxTracker,
+		txStreamer:     txStreamer,
+		blockValidator: blockValidator,
 	}, nil
 }
 
@@ -169,7 +161,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			return false, nil
 		}
 		log.Warn("rejecting node", "node", unresolvedNodeIndex)
-		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
+		auth, err := v.builder.Auth(ctx)
+		if err != nil {
+			return false, err
+		}
+		_, err = v.rollup.RejectNextNode(auth, *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
 		nodeInfo, err := v.rollup.LookupNode(ctx, unresolvedNodeIndex)
@@ -178,7 +174,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
 		log.Info("confirming node", "node", unresolvedNodeIndex)
-		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
+		auth, err := v.builder.Auth(ctx)
+		if err != nil {
+			return false, err
+		}
+		_, err = v.rollup.ConfirmNextNode(auth, afterGs.BlockHash, afterGs.SendRoot)
 		if err != nil {
 			return false, err
 		}
@@ -205,7 +205,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 type createNodeAction struct {
 	assertion         *Assertion
 	prevInboxMaxCount *big.Int
-	hash              [32]byte
+	hash              common.Hash
 }
 
 type existingNodeAction struct {
@@ -217,50 +217,34 @@ type nodeAction interface{}
 
 type OurStakerInfo struct {
 	LatestStakedNode     uint64
-	LatestStakedNodeHash [32]byte
+	LatestStakedNodeHash common.Hash
 	CanProgress          bool
 	StakeExists          bool
 	*StakerInfo
 }
 
-// Returns (block number, global state inbox position is invalid, error).
-// If global state is invalid, block number is set to the last of the batch.
-func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (int64, bool, error) {
-	var batchHeight arbutil.MessageIndex
-	if gs.Batch > 0 {
-		var err error
-		batchHeight, err = v.inboxTracker.GetBatchMessageCount(gs.Batch - 1)
-		if err != nil {
-			return 0, false, err
-		}
-	}
-
-	// Validate the PosInBatch if it's non-zero
-	if gs.PosInBatch > 0 {
-		nextBatchHeight, err := v.inboxTracker.GetBatchMessageCount(gs.Batch)
-		if err != nil {
-			return 0, false, err
-		}
-
-		if gs.PosInBatch >= uint64(nextBatchHeight-batchHeight) {
-			// This PosInBatch would enter the next batch. Return the last block before the next batch.
-			// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
-			return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
-		}
-	}
-
-	return arbutil.MessageCountToBlockNumber(batchHeight+arbutil.MessageIndex(gs.PosInBatch), v.genesisBlockNumber), false, nil
-}
-
-func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, makeAssertionInterval time.Duration) (nodeAction, bool, error) {
-	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+func (v *L1Validator) generateNodeAction(
+	ctx context.Context,
+	stakerInfo *OurStakerInfo,
+	strategy StakerStrategy,
+	stakerConfig *L1ValidatorConfig,
+) (nodeAction, bool, error) {
+	startState, prevInboxMaxCount, startStateProposedL1, startStateProposedParentChain, err := lookupNodeStartState(
+		ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash,
+	)
 	if err != nil {
-		return nil, false, fmt.Errorf("error looking up node %v (hash %v) start state: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
+		return nil, false, fmt.Errorf(
+			"error looking up node %v (hash %v) start state: %w",
+			stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err,
+		)
 	}
 
-	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposed))
+	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, arbmath.UintToBig(startStateProposedParentChain))
 	if err != nil {
-		return nil, false, fmt.Errorf("error looking up L1 header of block %v of node start state: %w", startStateProposed, err)
+		return nil, false, fmt.Errorf(
+			"error looking up L1 header of block %v of node start state: %w",
+			startStateProposedParentChain, err,
+		)
 	}
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
@@ -271,69 +255,101 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting batch count from inbox tracker: %w", err)
 	}
-	if localBatchCount < startState.RequiredBatches() {
-		log.Info("catching up to chain batches", "localBatches", localBatchCount, "target", startState.RequiredBatches())
+	if localBatchCount < startState.RequiredBatches() || localBatchCount == 0 {
+		log.Info(
+			"catching up to chain batches", "localBatches", localBatchCount,
+			"target", startState.RequiredBatches(),
+		)
 		return nil, false, nil
 	}
 
-	startBlock := v.l2Blockchain.GetBlockByHash(startState.GlobalState.BlockHash)
-	if startBlock == nil && (startState.GlobalState != validator.GoGlobalState{}) {
-		expectedBlockHeight, inboxPositionInvalid, err := v.blockNumberFromGlobalState(startState.GlobalState)
+	caughtUp, startCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, startState.GlobalState)
+	if err != nil {
+		return nil, false, fmt.Errorf("start state not in chain: %w", err)
+	}
+	if !caughtUp {
+		target := GlobalStatePosition{
+			BatchNumber: startState.GlobalState.Batch,
+			PosInBatch:  startState.GlobalState.PosInBatch,
+		}
+		var current GlobalStatePosition
+		head, err := v.txStreamer.GetProcessedMessageCount()
 		if err != nil {
-			return nil, false, fmt.Errorf("error getting block number from global state: %w", err)
+			_, current, err = v.blockValidator.GlobalStatePositionsAtCount(head)
 		}
-		if inboxPositionInvalid {
-			log.Error("invalid start global state inbox position", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
-			return nil, false, errors.New("invalid start global state inbox position")
-		}
-		latestHeader := v.l2Blockchain.CurrentBlock().Header()
-		if latestHeader.Number.Int64() < expectedBlockHeight {
-			log.Info("catching up to chain blocks", "localBlocks", latestHeader.Number, "target", expectedBlockHeight)
-			return nil, false, nil
+		if err != nil {
+			log.Info("catching up to chain messages", "target", target)
 		} else {
-			log.Error("unknown start block hash", "hash", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
-			return nil, false, errors.New("unknown start block hash")
+			log.Info("catching up to chain blocks", "target", target, "current", current)
 		}
+		return nil, false, nil
 	}
 
-	var lastBlockValidated uint64
+	var validatedCount arbutil.MessageIndex
+	var validatedGlobalState validator.GoGlobalState
 	if v.blockValidator != nil {
-		var expectedHash common.Hash
-		var validRoots []common.Hash
-		lastBlockValidated, expectedHash, validRoots = v.blockValidator.LastBlockValidatedAndHash()
-		haveHash := v.l2Blockchain.GetCanonicalHash(lastBlockValidated)
-		if haveHash != expectedHash {
-			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
+		valInfo, err := v.blockValidator.ReadLastValidatedInfo()
+		if err != nil || valInfo == nil {
+			return nil, false, err
+		}
+		validatedGlobalState = valInfo.GlobalState
+		caughtUp, validatedCount, err = GlobalStateToMsgCount(
+			v.inboxTracker, v.txStreamer, valInfo.GlobalState,
+		)
+		if err != nil {
+			return nil, false, fmt.Errorf("%w: not found validated block in blockchain", err)
+		}
+		if !caughtUp {
+			log.Info("catching up to last validated block", "target", valInfo.GlobalState)
+			return nil, false, nil
 		}
 		if err := v.updateBlockValidatorModuleRoot(ctx); err != nil {
 			return nil, false, fmt.Errorf("error updating block validator module root: %w", err)
 		}
 		wasmRootValid := false
-		for _, root := range validRoots {
+		for _, root := range valInfo.WasmRoots {
 			if v.lastWasmModuleRoot == root {
 				wasmRootValid = true
 				break
 			}
 		}
 		if !wasmRootValid {
-			return nil, false, fmt.Errorf("wasmroot doesn't match rollup : %v, valid: %v", v.lastWasmModuleRoot, validRoots)
+			if !stakerConfig.Dangerous.IgnoreRollupWasmModuleRoot {
+				return nil, false, fmt.Errorf(
+					"wasmroot doesn't match rollup : %v, valid: %v",
+					v.lastWasmModuleRoot, valInfo.WasmRoots,
+				)
+			}
+			log.Warn("wasmroot doesn't match rollup", "rollup", v.lastWasmModuleRoot, "blockValidator", valInfo.WasmRoots)
 		}
 	} else {
-		lastBlockValidated = v.l2Blockchain.CurrentBlock().Header().Number.Uint64()
-
-		if localBatchCount > 0 {
-			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
-			if err != nil {
-				return nil, false, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
-			}
-			// Must be non-negative as a batch must contain at least one message
-			lastBatchBlock := uint64(arbutil.MessageCountToBlockNumber(messageCount, v.genesisBlockNumber))
-			if lastBlockValidated > lastBatchBlock {
-				lastBlockValidated = lastBatchBlock
-			}
-		} else {
-			lastBlockValidated = 0
+		validatedCount, err = v.txStreamer.GetProcessedMessageCount()
+		if err != nil || validatedCount == 0 {
+			return nil, false, err
 		}
+		var batchNum uint64
+		messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
+		if err != nil {
+			return nil, false, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
+		}
+		if validatedCount >= messageCount {
+			batchNum = localBatchCount - 1
+			validatedCount = messageCount
+		} else {
+			batchNum, err = FindBatchContainingMessageIndex(v.inboxTracker, validatedCount-1, localBatchCount)
+			if err != nil {
+				return nil, false, err
+			}
+		}
+		execResult, err := v.txStreamer.ResultAtCount(validatedCount)
+		if err != nil {
+			return nil, false, err
+		}
+		_, gsPos, err := GlobalStatePositionsAtCount(v.inboxTracker, validatedCount, batchNum)
+		if err != nil {
+			return nil, false, fmt.Errorf("%w: failed calculating GSposition for count %d", err, validatedCount)
+		}
+		validatedGlobalState = buildGlobalState(*execResult, gsPos)
 	}
 
 	currentL1BlockNum, err := v.client.BlockNumber(ctx)
@@ -341,12 +357,17 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
+	l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
+	if err != nil {
+		return nil, false, err
+	}
+
 	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
-	timeSinceProposed := big.NewInt(int64(currentL1BlockNum) - int64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(l1BlockNumber) - int64(startStateProposedL1))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
@@ -367,99 +388,71 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			// We've found everything we could hope to find
 			break
 		}
-		if correctNode == nil {
-			afterGs := nd.AfterState().GlobalState
-			requiredBatches := nd.AfterState().RequiredBatches()
-			if localBatchCount < requiredBatches {
-				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion batches: %v/%v", localBatchCount, requiredBatches)
-			}
-			if requiredBatches > 0 {
-				haveAcc, err := v.inboxTracker.GetBatchAcc(requiredBatches - 1)
-				if err != nil {
-					return nil, false, fmt.Errorf("error getting batch %v accumulator: %w", requiredBatches-1, err)
-				}
-				if haveAcc != nd.AfterInboxBatchAcc {
-					return nil, false, fmt.Errorf("missed sequencer batches reorg: at seq num %v have acc %v but assertion has acc %v", requiredBatches-1, haveAcc, nd.AfterInboxBatchAcc)
-				}
-			}
-			lastBlockNum, inboxPositionInvalid, err := v.blockNumberFromGlobalState(afterGs)
-			if err != nil {
-				return nil, false, fmt.Errorf("error getting block number from global state: %w", err)
-			}
-			if int64(lastBlockValidated) < lastBlockNum {
-				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", lastBlockValidated, lastBlockNum)
-			}
-			var expectedBlockHash common.Hash
-			var expectedSendRoot common.Hash
-			if lastBlockNum >= 0 {
-				lastBlock := v.l2Blockchain.GetBlockByNumber(uint64(lastBlockNum))
-				if lastBlock == nil {
-					return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
-				}
-				lastBlockExtra, err := types.DeserializeHeaderExtraInformation(lastBlock.Header())
-				if err != nil {
-					return nil, false, fmt.Errorf("error getting block %v header extra info: %w", lastBlockNum, err)
-				}
-				expectedBlockHash = lastBlock.Hash()
-				expectedSendRoot = lastBlockExtra.SendRoot
-			}
-
-			var expectedNumBlocks uint64
-			if startBlock == nil {
-				expectedNumBlocks = uint64(lastBlockNum + 1)
-			} else {
-				expectedNumBlocks = uint64(lastBlockNum) - startBlock.NumberU64()
-			}
-			valid := !inboxPositionInvalid &&
-				nd.Assertion.NumBlocks == expectedNumBlocks &&
-				afterGs.BlockHash == expectedBlockHash &&
-				afterGs.SendRoot == expectedSendRoot
-			if valid {
-				log.Info(
-					"found correct assertion",
-					"node", nd.NodeNum,
-					"blockNum", lastBlockNum,
-					"blockHash", afterGs.BlockHash,
-				)
-				correctNode = existingNodeAction{
-					number: nd.NodeNum,
-					hash:   nd.NodeHash,
-				}
-				continue
-			} else {
-				log.Error(
-					"found incorrect assertion",
-					"node", nd.NodeNum,
-					"inboxPositionInvalid", inboxPositionInvalid,
-					"computedBlockNum", lastBlockNum,
-					"numBlocks", nd.Assertion.NumBlocks,
-					"expectedNumBlocks", expectedNumBlocks,
-					"blockHash", afterGs.BlockHash,
-					"expectedBlockHash", expectedBlockHash,
-					"sendRoot", afterGs.SendRoot,
-					"expectedSendRoot", expectedSendRoot,
-				)
-			}
-		} else {
+		if correctNode != nil {
 			log.Error("found younger sibling to correct assertion (implicitly invalid)", "node", nd.NodeNum)
+			wrongNodesExist = true
+			continue
 		}
-		// If we've hit this point, the node is "wrong"
-		wrongNodesExist = true
+		afterGS := nd.AfterState().GlobalState
+		requiredBatch := afterGS.Batch
+		if afterGS.PosInBatch == 0 && afterGS.Batch > 0 {
+			requiredBatch -= 1
+		}
+		if localBatchCount <= requiredBatch {
+			log.Info("staker: waiting for node to catch up to assertion batch", "current", localBatchCount, "target", requiredBatch-1)
+			return nil, false, nil
+		}
+		nodeBatchMsgCount, err := v.inboxTracker.GetBatchMessageCount(requiredBatch)
+		if err != nil {
+			return nil, false, err
+		}
+		if validatedCount < nodeBatchMsgCount {
+			log.Info("staker: waiting for validator to catch up to assertion batch messages", "current", validatedCount, "target", nodeBatchMsgCount)
+			return nil, false, nil
+		}
+		if nd.Assertion.AfterState.MachineStatus != validator.MachineStatusFinished {
+			wrongNodesExist = true
+			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
+			continue
+		}
+		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
+		if errors.Is(err, ErrGlobalStateNotInChain) {
+			wrongNodesExist = true
+			log.Error("Found incorrect assertion", "node", nd.NodeNum, "afterGS", afterGS, "err", err)
+			continue
+		}
+		if err != nil {
+			return nil, false, fmt.Errorf("error getting message number from global state: %w", err)
+		}
+		if !caughtUp {
+			return nil, false, fmt.Errorf("unexpected no-caught-up parsing assertion. Current: %d target: %v", validatedCount, afterGS)
+		}
+		log.Info(
+			"found correct assertion",
+			"node", nd.NodeNum,
+			"count", nodeMsgCount,
+			"blockHash", afterGS.BlockHash,
+		)
+		correctNode = existingNodeAction{
+			number: nd.NodeNum,
+			hash:   nd.NodeHash,
+		}
 	}
 
 	if correctNode != nil || strategy == WatchtowerStrategy {
 		return correctNode, wrongNodesExist, nil
 	}
 
+	makeAssertionInterval := stakerConfig.MakeAssertionInterval
 	if wrongNodesExist || (strategy >= MakeNodesStrategy && time.Since(startStateProposedTime) >= makeAssertionInterval) {
 		// There's no correct node; create one.
 		var lastNodeHashIfExists *common.Hash
 		if len(successorNodes) > 0 {
 			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
 		}
-		action, err := v.createNewNodeAction(ctx, stakerInfo, lastBlockValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
+		action, err := v.createNewNodeAction(ctx, stakerInfo, prevInboxMaxCount, startCount, startState, validatedCount, validatedGlobalState, lastNodeHashIfExists)
 		if err != nil {
-			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action (from start block %v to last block validated %v): %w", startBlock, lastBlockValidated, err)
+			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action (from pos %d to %d): %w", startCount, validatedCount, err)
 		}
 		return action, wrongNodesExist, nil
 	}
@@ -470,81 +463,32 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 func (v *L1Validator) createNewNodeAction(
 	ctx context.Context,
 	stakerInfo *OurStakerInfo,
-	lastBlockValidated uint64,
-	localBatchCount uint64,
 	prevInboxMaxCount *big.Int,
-	startBlock *types.Block,
+	startCount arbutil.MessageIndex,
 	startState *validator.ExecutionState,
+	validatedCount arbutil.MessageIndex,
+	validatedGS validator.GoGlobalState,
 	lastNodeHashIfExists *common.Hash,
 ) (nodeAction, error) {
 	if !prevInboxMaxCount.IsUint64() {
 		return nil, fmt.Errorf("inbox max count %v isn't a uint64", prevInboxMaxCount)
 	}
-	minBatchCount := prevInboxMaxCount.Uint64()
-	if localBatchCount < minBatchCount {
-		// not enough batches in database
-		return nil, nil
-	}
-
-	if localBatchCount == 0 {
-		// we haven't validated anything
-		return nil, nil
-	}
-	if startBlock != nil && lastBlockValidated <= startBlock.NumberU64() {
+	if validatedCount <= startCount {
 		// we haven't validated any new blocks
 		return nil, nil
 	}
-	var assertionCoversBatch uint64
-	var afterGsBatch uint64
-	var afterGsPosInBatch uint64
-	for i := localBatchCount - 1; i+1 >= minBatchCount && i > 0; i-- {
-		batchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i)
-		if err != nil {
-			return nil, fmt.Errorf("error getting batch %v message count: %w", i, err)
-		}
-		prevBatchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i - 1)
-		if err != nil {
-			return nil, fmt.Errorf("error getting previous batch %v message count: %w", i-1, err)
-		}
-		// Must be non-negative as a batch must contain at least one message
-		lastBlockNum := uint64(arbutil.MessageCountToBlockNumber(batchMessageCount, v.genesisBlockNumber))
-		prevBlockNum := uint64(arbutil.MessageCountToBlockNumber(prevBatchMessageCount, v.genesisBlockNumber))
-		if lastBlockValidated > lastBlockNum {
-			return nil, fmt.Errorf("%v blocks have been validated but only %v appear in the latest batch", lastBlockValidated, lastBlockNum)
-		}
-		if lastBlockValidated > prevBlockNum {
-			// We found the batch containing the last validated block
-			if i+1 == minBatchCount && lastBlockValidated < lastBlockNum {
-				// We haven't reached the minimum assertion size yet
-				break
-			}
-			assertionCoversBatch = i
-			if lastBlockValidated < lastBlockNum {
-				afterGsBatch = i
-				afterGsPosInBatch = lastBlockValidated - prevBlockNum
-			} else {
-				afterGsBatch = i + 1
-				afterGsPosInBatch = 0
-			}
-			break
-		}
-	}
-	if assertionCoversBatch == 0 {
-		// we haven't validated the next batch completely
+	if validatedGS.Batch < prevInboxMaxCount.Uint64() {
+		// didn't validate enough batches
+		log.Info("staker: not enough batches validated to create new assertion", "validated.Batch", validatedGS.Batch, "posInBatch", validatedGS.PosInBatch, "required batch", prevInboxMaxCount)
 		return nil, nil
 	}
-	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(assertionCoversBatch)
-	if err != nil {
-		return nil, fmt.Errorf("error getting batch %v accumulator: %w", assertionCoversBatch, err)
+	batchValidated := validatedGS.Batch
+	if validatedGS.PosInBatch == 0 {
+		batchValidated--
 	}
-
-	assertingBlock := v.l2Blockchain.GetBlockByNumber(lastBlockValidated)
-	if assertingBlock == nil {
-		return nil, fmt.Errorf("missing validated block %v", lastBlockValidated)
-	}
-	assertingBlockExtra, err := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
+	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(batchValidated)
 	if err != nil {
-		return nil, fmt.Errorf("error getting asserting block %v header extra info: %w", assertingBlock.Number(), err)
+		return nil, fmt.Errorf("error getting batch %v accumulator: %w", batchValidated, err)
 	}
 
 	hasSiblingByte := [1]byte{0}
@@ -554,21 +498,11 @@ func (v *L1Validator) createNewNodeAction(
 		lastHash = *lastNodeHashIfExists
 		hasSiblingByte[0] = 1
 	}
-	var assertionNumBlocks uint64
-	if startBlock == nil {
-		assertionNumBlocks = assertingBlock.NumberU64() + 1
-	} else {
-		assertionNumBlocks = assertingBlock.NumberU64() - startBlock.NumberU64()
-	}
+	assertionNumBlocks := uint64(validatedCount - startCount)
 	assertion := &Assertion{
 		BeforeState: startState,
 		AfterState: &validator.ExecutionState{
-			GlobalState: validator.GoGlobalState{
-				BlockHash:  assertingBlock.Hash(),
-				SendRoot:   assertingBlockExtra.SendRoot,
-				Batch:      afterGsBatch,
-				PosInBatch: afterGsPosInBatch,
-			},
+			GlobalState:   validatedGS,
 			MachineStatus: validator.MachineStatusFinished,
 		},
 		NumBlocks: assertionNumBlocks,
@@ -594,24 +528,28 @@ func (v *L1Validator) createNewNodeAction(
 	return action, nil
 }
 
-// Returns (execution state, inbox max count, block proposed, error)
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
+// Returns (execution state, inbox max count, L1 block proposed, parent chain block proposed, error)
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash common.Hash) (*validator.ExecutionState, *big.Int, uint64, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
+			return nil, nil, 0, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
+		}
+		l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, rollup.client, creationEvent.Raw.BlockNumber)
+		if err != nil {
+			return nil, nil, 0, 0, err
 		}
 		return &validator.ExecutionState{
 			GlobalState:   validator.GoGlobalState{},
 			MachineStatus: validator.MachineStatusFinished,
-		}, big.NewInt(1), creationEvent.Raw.BlockNumber, nil
+		}, big.NewInt(1), l1BlockNumber, creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, 0, err
 	}
 	if node.NodeHash != nodeHash {
-		return nil, nil, 0, errors.New("looked up starting node but found wrong hash")
+		return nil, nil, 0, 0, errors.New("looked up starting node but found wrong hash")
 	}
-	return node.AfterState(), node.InboxMaxCount, node.BlockProposed, nil
+	return node.AfterState(), node.InboxMaxCount, node.L1BlockProposed, node.ParentChainBlockProposed, nil
 }

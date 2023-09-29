@@ -1,9 +1,0 @@
-
-digraph StorageDiagram {
-rankdir=LR
-color=black
-arrowhead=open
-node [shape=record, style=filled, fillcolor=gray95 fontname="Courier New"]
-1 [label="ChallengeManager \<\<Contract\>\>\n | {{ slot| 0 | 1 | 2 | 3 | 4 | 5 } | { type: \<inherited contract\>.variable (bytes) | {  unallocated (24)  |  uint64: totalChallengesCreated (8) } | {  mapping\(uint256=\>ChallengeLib.Challenge\): challenges (32) } | {  unallocated (12)  |  IChallengeResultReceiver: resultReceiver (20) } | {  unallocated (12)  |  ISequencerInbox: sequencerInbox (20) } | {  unallocated (12)  |  IBridge: bridge (20) } | {  unallocated (12)  |  IOneStepProofEntry: osp (20) }}}"]
-
-}

@@ -60,7 +60,6 @@ type ExecServerAPI struct {
 }
 
 func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
-	rand.Seed(time.Now().UnixNano())
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
@@ -70,12 +69,12 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
-	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input)
+	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -87,12 +86,12 @@ func (a *ExecServerAPI) CreateExecutionRun(wasmModuleRoot common.Hash, jsonInput
 	return newId, nil
 }
 
-func (a *ExecServerAPI) LatestWasmModuleRoot() (common.Hash, error) {
-	return a.execSpawner.LatestWasmModuleRoot()
+func (a *ExecServerAPI) LatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
+	return a.execSpawner.LatestWasmModuleRoot().Await(ctx)
 }
 
 func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
-	oldestKept := time.Now().Add(-1 * a.config().ExecRunTimeout)
+	oldestKept := time.Now().Add(-1 * a.config().ExecutionRunTimeout)
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	for id, entry := range a.runs {
@@ -100,7 +99,7 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 			delete(a.runs, id)
 		}
 	}
-	return a.config().ExecRunTimeout / 5
+	return a.config().ExecutionRunTimeout / 5
 }
 
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
@@ -108,12 +107,13 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return err
 	}
-	return a.execSpawner.WriteToFile(input, expOut, moduleRoot)
+	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
+	return err
 }
 
 var errRunNotFound error = errors.New("run not found")
@@ -139,7 +139,7 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	if err != nil {
 		return nil, err
 	}
-	return MachineStepResultToJson(&res), nil
+	return MachineStepResultToJson(res), nil
 }
 
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
@@ -160,8 +160,8 @@ func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, 
 	if err != nil {
 		return err
 	}
-	run.PrepareRange(start, end)
-	return nil
+	_, err = run.PrepareRange(start, end).Await(ctx)
+	return err
 }
 
 func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error {

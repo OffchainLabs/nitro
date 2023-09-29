@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -70,11 +70,11 @@ func TestContractTxDeploy(t *testing.T) {
 		l2Msg = append(l2Msg, math.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = node.TxStreamer.AddMessages(pos, true, []arbstate.MessageWithMetadata{
+		err = node.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
 			{
-				Message: &arbos.L1IncomingMessage{
-					Header: &arbos.L1IncomingMessageHeader{
-						Kind:        arbos.L1MessageType_L2Message,
+				Message: &arbostypes.L1IncomingMessage{
+					Header: &arbostypes.L1IncomingMessageHeader{
+						Kind:        arbostypes.L1MessageType_L2Message,
 						Poster:      from,
 						BlockNumber: 0,
 						Timestamp:   0,
@@ -94,12 +94,12 @@ func TestContractTxDeploy(t *testing.T) {
 		receipt, err := WaitForTx(ctx, client, txHash, time.Second*10)
 		Require(t, err)
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			Fail(t, "Receipt has non-successful status", receipt.Status)
+			Fatal(t, "Receipt has non-successful status", receipt.Status)
 		}
 
 		expectedAddr := crypto.CreateAddress(from, stateNonce)
 		if receipt.ContractAddress != expectedAddr {
-			Fail(t, "expected address", from, "nonce", stateNonce, "to deploy to", expectedAddr, "but got", receipt.ContractAddress)
+			Fatal(t, "expected address", from, "nonce", stateNonce, "to deploy to", expectedAddr, "but got", receipt.ContractAddress)
 		}
 		t.Log("deployed contract", receipt.ContractAddress, "from address", from, "with nonce", stateNonce)
 		stateNonce++
@@ -107,7 +107,7 @@ func TestContractTxDeploy(t *testing.T) {
 		code, err := client.CodeAt(ctx, receipt.ContractAddress, nil)
 		Require(t, err)
 		if !bytes.Equal(code, []byte{0xFE}) {
-			Fail(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))
+			Fatal(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))
 		}
 	}
 }

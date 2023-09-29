@@ -1,7 +1,9 @@
-name: CI
+name: Docker build CI
+run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
   push:
     branches:
@@ -21,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
@@ -64,7 +66,7 @@ jobs:
           # We work around this by piping a tarball through stdout
           docker run --rm --entrypoint tar localhost:5000/nitro-node-dev:latest -cf - target/machines/latest | tar xf -
           module_root="$(cat "target/machines/latest/module-root.txt")"
-          echo "::set-output name=module-root::$module_root"
+          echo "name=module-root=$module_root" >> $GITHUB_STATE
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
       - name: Upload WAVM machine as artifact

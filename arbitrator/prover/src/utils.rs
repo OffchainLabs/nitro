@@ -1,9 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
+    convert::TryInto,
     fmt,
     fs::File,
     io::Read,
@@ -156,6 +158,13 @@ impl From<&[u8]> for CBytes {
     }
 }
 
+// There's no thread safety concerns for CBytes.
+// This type is basically a Box<[u8]> (which is Send + Sync) with libc as an allocator.
+// Any data races between threads are prevented by Rust borrowing rules,
+// and the data isn't thread-local so there's no concern moving it between threads.
+unsafe impl Send for CBytes {}
+unsafe impl Sync for CBytes {}
+
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Type")]
 enum RemoteType {
@@ -239,9 +248,16 @@ impl IntoIterator for CBytes {
     }
 }
 
-pub fn file_bytes(path: &Path) -> eyre::Result<Vec<u8>> {
+pub fn file_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut f = File::open(path)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
     Ok(buf)
+}
+
+pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
+    let parts: Vec<_> = qualified.split("__").collect();
+    let parts = parts.try_into().map_err(|_| eyre!("bad import"))?;
+    let [module, name]: [&str; 2] = parts;
+    Ok((module, name))
 }

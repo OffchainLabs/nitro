@@ -70,45 +70,43 @@ func (enc *ZeroheavyEncoder) readOneImpl() (byte, error) {
 		}
 		if !secondBit {
 			return 0, nil
-		} else {
-			ret := byte(1)
-			for i := 0; i < 6; i++ {
-				nextBit, err := enc.nextInputBit()
-				if err != nil {
-					return 0, err
-				}
-				ret <<= 1
-				if nextBit {
-					ret++
-				}
-			}
-			if ret == 64 {
-				return 1, nil
-			}
-			ret = (ret << 1) & 0x7f
+		}
+		ret := byte(1)
+		for i := 0; i < 6; i++ {
 			nextBit, err := enc.nextInputBit()
 			if err != nil {
 				return 0, err
 			}
+			ret <<= 1
 			if nextBit {
 				ret++
 			}
-			return ret, nil
 		}
-	} else {
-		ret := byte(1) // first bit is 1
-		for i := 0; i < 7; i++ {
-			ret <<= 1
-			nextBit, err := enc.nextInputBit()
-			if err != nil {
-				return 0, err
-			}
-			if nextBit {
-				ret += 1
-			}
+		if ret == 64 {
+			return 1, nil
+		}
+		ret = (ret << 1) & 0x7f
+		nextBit, err := enc.nextInputBit()
+		if err != nil {
+			return 0, err
+		}
+		if nextBit {
+			ret++
 		}
 		return ret, nil
 	}
+	ret := byte(1) // first bit is 1
+	for i := 0; i < 7; i++ {
+		ret <<= 1
+		nextBit, err := enc.nextInputBit()
+		if err != nil {
+			return 0, err
+		}
+		if nextBit {
+			ret += 1
+		}
+	}
+	return ret, nil
 }
 
 func (enc *ZeroheavyEncoder) Read(p []byte) (int, error) {

@@ -20,8 +20,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestGetEmptyCacheMessages(t *testing.T) {
@@ -29,6 +30,7 @@ func TestGetEmptyCacheMessages(t *testing.T) {
 		messages:     nil,
 		messageCount: 0,
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	// Get everything
@@ -46,7 +48,7 @@ func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int
 	for _, seqNum := range seqNums {
 		broadcastMessage := &BroadcastFeedMessage{
 			SequenceNumber: seqNum,
-			Message:        arbstate.EmptyTestMessageWithMetadata,
+			Message:        arbostypes.EmptyTestMessageWithMetadata,
 		}
 		broadcastMessages = append(broadcastMessages, broadcastMessage)
 	}
@@ -60,6 +62,7 @@ func TestGetCacheMessages(t *testing.T) {
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	// Get everything
@@ -110,6 +113,7 @@ func TestDeleteConfirmedNil(t *testing.T) {
 		messages:     nil,
 		messageCount: 0,
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	buffer.deleteConfirmed(0)
@@ -124,6 +128,7 @@ func TestDeleteConfirmInvalidOrder(t *testing.T) {
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	// Confirm before cache
@@ -139,6 +144,7 @@ func TestDeleteConfirmed(t *testing.T) {
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	// Confirm older than cache
@@ -154,6 +160,7 @@ func TestDeleteFreeMem(t *testing.T) {
 		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	// Confirm older than cache
@@ -169,6 +176,7 @@ func TestBroadcastBadMessage(t *testing.T) {
 		messages:     nil,
 		messageCount: 0,
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	var foo int
@@ -187,6 +195,7 @@ func TestBroadcastPastSeqNum(t *testing.T) {
 		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	bm := BroadcastMessage{
@@ -208,6 +217,8 @@ func TestBroadcastFutureSeqNum(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
+		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return -1 },
 	}
 
 	bm := BroadcastMessage{
@@ -222,4 +233,39 @@ func TestBroadcastFutureSeqNum(t *testing.T) {
 		t.Error("expected error")
 	}
 
+}
+
+func TestMaxCatchupBufferSize(t *testing.T) {
+	limit := 5
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     nil,
+		messageCount: 0,
+		limitCatchup: func() bool { return false },
+		maxCatchup:   func() int { return limit },
+	}
+
+	firstMessage := 10
+	for i := firstMessage; i <= 20; i += 2 {
+		bm := BroadcastMessage{
+			Messages: []*BroadcastFeedMessage{
+				{
+					SequenceNumber: arbutil.MessageIndex(i),
+				},
+				{
+					SequenceNumber: arbutil.MessageIndex(i + 1),
+				},
+			},
+		}
+		err := buffer.OnDoBroadcast(bm)
+		Require(t, err)
+		haveMessages := buffer.getCacheMessages(0)
+		expectedCount := arbmath.MinInt(i+len(bm.Messages)-firstMessage, limit)
+		if len(haveMessages.Messages) != expectedCount {
+			t.Errorf("after broadcasting messages %v and %v, expected to have %v messages but got %v", i, i+1, expectedCount, len(haveMessages.Messages))
+		}
+		expectedFirstMessage := arbutil.MessageIndex(arbmath.MaxInt(firstMessage, i+len(bm.Messages)-limit))
+		if haveMessages.Messages[0].SequenceNumber != expectedFirstMessage {
+			t.Errorf("after broadcasting messages %v and %v, expected the first message to be %v but got %v", i, i+1, expectedFirstMessage, haveMessages.Messages[0].SequenceNumber)
+		}
+	}
 }

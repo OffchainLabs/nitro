@@ -6,7 +6,7 @@ use crate::{
     wavmio, wavmio::Bytes32, Opts,
 };
 
-use arbutil::Color;
+use arbutil::{Color, PreimageType};
 use eyre::{bail, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
@@ -108,7 +108,13 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "github.com/offchainlabs/nitro/wavmio.setGlobalStateU64" => func!(wavmio::set_global_state_u64),
             "github.com/offchainlabs/nitro/wavmio.readInboxMessage" => func!(wavmio::read_inbox_message),
             "github.com/offchainlabs/nitro/wavmio.readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-            "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => func!(wavmio::resolve_preimage),
+            "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => {
+                #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
+                {
+                    func!(wavmio::resolve_keccak_preimage)
+                }
+            },
+            "github.com/offchainlabs/nitro/wavmio.resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
 
             "github.com/offchainlabs/nitro/arbcompress.brotliCompress" => func!(arbcompress::brotli_compress),
             "github.com/offchainlabs/nitro/arbcompress.brotliDecompress" => func!(arbcompress::brotli_decompress),
@@ -178,7 +184,7 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
+pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -193,7 +199,7 @@ pub struct WasmEnv {
     /// An ordered list of the 32-byte globals
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
-    pub preimages: Oracle,
+    pub preimages: Preimages,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages
@@ -242,11 +248,12 @@ impl WasmEnv {
                 file.read_exact(&mut buf)?;
                 preimages.push(buf);
             }
+            let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
             for preimage in preimages {
                 let mut hasher = Keccak256::new();
                 hasher.update(&preimage);
                 let hash = hasher.finalize().into();
-                env.preimages.insert(hash, preimage);
+                keccak_preimages.insert(hash, preimage);
             }
         }
 
@@ -311,8 +318,6 @@ pub struct ProcessEnv {
     pub debug: bool,
     /// Mechanism for asking for preimages and returning results
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
-    /// The last preimage received over the socket
-    pub last_preimage: Option<([u8; 32], Vec<u8>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
     /// Whether the machine has reached the first wavmio instruction
@@ -325,7 +330,6 @@ impl Default for ProcessEnv {
             forks: false,
             debug: false,
             socket: None,
-            last_preimage: None,
             timestamp: Instant::now(),
             reached_wavmio: false,
         }

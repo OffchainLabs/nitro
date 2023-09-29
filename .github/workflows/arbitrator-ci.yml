@@ -1,14 +1,13 @@
-name: CI
+name: Arbitrator CI
+run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
     paths:
       - 'arbitrator/**'
-      - 'contracts/src/osp/**'
-      - 'contracts/src/mock/**'
-      - 'contracts/test/**'
-      - 'contracts/hardhat.config.ts'
+      - 'contracts'
       - '.github/workflows/arbitrator-ci.yml'
       - 'Makefile'
   push:
@@ -18,7 +17,7 @@ on:
 env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
-  WABT_VERSION: 1.0.24
+  WABT_VERSION: 1.0.32
 
 jobs:
   coverage:
@@ -26,20 +25,24 @@ jobs:
     runs-on: ubuntu-8
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
       - name: Install Ubuntu dependencies
         run: |
           sudo add-apt-repository -y ppa:ethereum/ethereum
-          sudo add-apt-repository -y ppa:longsleep/golang-backports
           sudo apt-get update && sudo apt-get install -y \
-            build-essential cmake ethereum lld-14 golang-1.19 libudev-dev
+            build-essential cmake ethereum lld-14 libudev-dev
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
+      - name: Install go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.20.x
+
       - name: Setup nodejs
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: '16'
           cache: 'yarn'
@@ -50,7 +53,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           override: true
           components: 'llvm-tools-preview, rustfmt, clippy'
 
@@ -108,16 +111,16 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-2-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-3-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
           restore-keys: ${{ runner.os }}-brotli-2-
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./build-brotli.sh -l
+        run: ./scripts/build-brotli.sh -l
 
       - name: Setup emsdk
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        uses: mymindstorm/setup-emsdk@v11
+        uses: mymindstorm/setup-emsdk@v12
         with:
           # Make sure to set a version number!
           version: 3.1.6
@@ -129,7 +132,7 @@ jobs:
 
       - name: Build cbrotli-wasm
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./build-brotli.sh -w
+        run: ./scripts/build-brotli.sh -w
 
       - name: Add wabt to path
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"

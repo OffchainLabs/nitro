@@ -22,11 +22,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -44,15 +46,15 @@ func startLocalDASServer(
 
 	config := das.DataAvailabilityConfig{
 		Enable: true,
-		KeyConfig: das.KeyConfig{
+		Key: das.KeyConfig{
 			KeyDir: keyDir,
 		},
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
+		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  true,
 			DataDir: dataDir,
 		},
-		L1NodeURL:      "none",
-		RequestTimeout: 5 * time.Second,
+		ParentChainNodeURL: "none",
+		RequestTimeout:     5 * time.Second,
 	}
 
 	var syncFromStorageServices []*das.IterableStorageService
@@ -63,7 +65,7 @@ func startLocalDASServer(
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
-	privKey, err := config.KeyConfig.BLSPrivKey()
+	privKey, err := config.Key.BLSPrivKey()
 	Require(t, err)
 	daWriter, err := das.NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
 	Require(t, err)
@@ -109,7 +111,7 @@ func TestDASRekey(t *testing.T) {
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -125,30 +127,30 @@ func TestDASRekey(t *testing.T) {
 		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
 		// Setup L2 chain
-		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, l2info, nodeDir, chainConfig)
+		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, l2info, nodeDir, chainConfig, initMessage, nil, nil)
 		l2info.GenerateAccount("User2")
 
 		// Setup DAS config
 
 		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{restServerUrlA}
-		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigA)
+		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
+		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
+		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain, l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
 		Require(t, nodeA.Start(ctx))
 		l2clientA := ClientForStack(t, l2stackA)
 
 		l1NodeConfigB.BlockValidator.Enable = false
 		l1NodeConfigB.DataAvailability.Enable = true
-		l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{restServerUrlA}
+		l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
+		l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
 
-		l1NodeConfigB.DataAvailability.L1NodeURL = "none"
+		l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 
 		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
@@ -176,10 +178,10 @@ func TestDASRekey(t *testing.T) {
 	l2arbDb, err := l2stackA.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	l2blockchain, err := arbnode.GetBlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test())
+	l2blockchain, err := execution.GetBlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit)
 	Require(t, err)
-	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigB)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain, l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
@@ -217,7 +219,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 		Require(t, err)
 
 		if l2balance.Cmp(expectedBalance) != 0 {
-			Fail(t, "Unexpected balance:", l2balance)
+			Fatal(t, "Unexpected balance:", l2balance)
 		}
 
 	}
@@ -232,11 +234,13 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
-	l1Reader := headerreader.New(l1client, func() *headerreader.Config { return &headerreader.TestConfig })
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	Require(t, err)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
@@ -245,18 +249,18 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCacheConfig: das.TestBigCacheConfig,
+		LocalCache: das.TestBigCacheConfig,
 
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
+		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  true,
 			DataDir: fileDataDir,
 		},
-		LocalDBStorageConfig: das.LocalDBStorageConfig{
+		LocalDBStorage: das.LocalDBStorageConfig{
 			Enable:  true,
 			DataDir: dbDataDir,
 		},
 
-		KeyConfig: das.KeyConfig{
+		Key: das.KeyConfig{
 			KeyDir: keyDir,
 		},
 
@@ -291,23 +295,23 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,
 	}
-	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-	l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-	l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-	l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-	l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+	l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
+	l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
+	l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+	l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.Accounts["Sequencer"].PrivateKey)
 
 	Require(t, err)
 
 	// Setup L2 chain
-	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, "", chainConfig)
+	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
 	l2info.GenerateAccount("User2")
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain, l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, feedErrChan)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
@@ -319,16 +323,16 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 		// AggregatorConfig set up below
 
-		L1NodeURL:      "none",
-		RequestTimeout: 5 * time.Second,
+		ParentChainNodeURL: "none",
+		RequestTimeout:     5 * time.Second,
 	}
 
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.Enable = true
-	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-	l1NodeConfigB.DataAvailability.L1NodeURL = "none"
+	l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
+	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+	l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)

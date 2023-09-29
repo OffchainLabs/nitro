@@ -16,9 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -32,12 +33,11 @@ type hash = common.Hash
 type bytes32 = [32]byte
 type ctx = *precompiles.Context
 
-type Message = types.Message
 type BackendAPI = core.NodeInterfaceBackendAPI
 type ExecutionResult = core.ExecutionResult
 
 func init() {
-	arbstate.RequireHookedGeth()
+	gethhook.RequireHookedGeth()
 
 	nodeInterfaceImpl := &NodeInterface{Address: types.NodeInterfaceAddress}
 	nodeInterfaceMeta := node_interfacegen.NodeInterfaceMetaData
@@ -48,18 +48,19 @@ func init() {
 	_, nodeInterfaceDebug := precompiles.MakePrecompile(nodeInterfaceDebugMeta, nodeInterfaceDebugImpl)
 
 	core.InterceptRPCMessage = func(
-		msg Message,
+		msg *core.Message,
 		ctx context.Context,
 		statedb *state.StateDB,
 		header *types.Header,
 		backend core.NodeInterfaceBackendAPI,
-	) (Message, *ExecutionResult, error) {
-		to := msg.To()
+		blockCtx *vm.BlockContext,
+	) (*core.Message, *ExecutionResult, error) {
+		to := msg.To
 		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
 		if to != nil && arbosVersion != 0 {
 			var precompile precompiles.ArbosPrecompile
 			var swapMessages bool
-			returnMessage := &Message{}
+			returnMessage := &core.Message{}
 			var address addr
 
 			switch *to {
@@ -87,10 +88,7 @@ func init() {
 				return msg, nil, nil
 			}
 
-			evm, vmError, err := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true})
-			if err != nil {
-				return msg, nil, err
-			}
+			evm, vmError := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
 			go func() {
 				<-ctx.Done()
 				evm.Cancel()
@@ -98,16 +96,16 @@ func init() {
 			core.ReadyEVMForL2(evm, msg)
 
 			output, gasLeft, err := precompile.Call(
-				msg.Data(), address, address, msg.From(), msg.Value(), false, msg.Gas(), evm,
+				msg.Data, address, address, msg.From, msg.Value, false, msg.GasLimit, evm,
 			)
 			if err != nil {
 				return msg, nil, err
 			}
 			if swapMessages {
-				return *returnMessage, nil, nil
+				return returnMessage, nil, nil
 			}
 			res := &ExecutionResult{
-				UsedGas:       msg.Gas() - gasLeft,
+				UsedGas:       msg.GasLimit - gasLeft,
 				Err:           nil,
 				ReturnData:    output,
 				ScheduledTxes: nil,
@@ -117,7 +115,7 @@ func init() {
 		return msg, nil, nil
 	}
 
-	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, header *types.Header, statedb *state.StateDB) {
+	core.InterceptRPCGasCap = func(gascap *uint64, msg *core.Message, header *types.Header, statedb *state.StateDB) {
 		if *gascap == 0 {
 			// It's already unlimited
 			return
@@ -137,8 +135,13 @@ func init() {
 			return
 		}
 
-		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress)
-		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
+		brotliCompressionLevel, err := state.BrotliCompressionLevel()
+		if err != nil {
+			log.Error("failed to get brotli compression level", "err", err)
+			return
+		}
+		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
+		posterCostInL2Gas := arbos.GetPosterGas(state, header.BaseFee, msg.TxRunMode, posterCost)
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
 

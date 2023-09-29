@@ -4,10 +4,11 @@
 package genericconf
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/pkg/errors"
+	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
 )
 
@@ -102,4 +103,20 @@ func FileLoggingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".local-time", DefaultFileLoggingConfig.LocalTime, "if true: local time will be used in old log filename timestamps")
 	f.Bool(prefix+".compress", DefaultFileLoggingConfig.Compress, "enable compression of old log files")
 	f.Int(prefix+".buf-size", DefaultFileLoggingConfig.BufSize, "size of intermediate log records buffer")
+}
+
+type RpcConfig struct {
+	MaxBatchResponseSize int `koanf:"max-batch-response-size"`
+}
+
+var DefaultRpcConfig = RpcConfig{
+	MaxBatchResponseSize: 10_000_000, // 10MB
+}
+
+func (c *RpcConfig) Apply() {
+	rpc.MaxBatchResponseSize = c.MaxBatchResponseSize
+}
+
+func RpcConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int(prefix+".max-batch-response-size", DefaultRpcConfig.MaxBatchResponseSize, "the maximum response size for a JSON-RPC request measured in bytes (-1 means no limit)")
 }

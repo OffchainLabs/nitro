@@ -7,6 +7,8 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
+
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // NextPowerOf2 the smallest power of two greater than the input
@@ -171,6 +173,11 @@ func BigAbs(value *big.Int) *big.Int {
 // BigAddByUint add a uint to a huge
 func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
+}
+
+// BigSub subtracts a uint from a huge
+func BigSubByUint(minuend *big.Int, subtrahend uint64) *big.Int {
+	return new(big.Int).Sub(minuend, UintToBig(subtrahend))
 }
 
 // BigMulByFrac multiply a huge by a rational
@@ -362,4 +369,10 @@ func SquareUint(value uint64) uint64 {
 // SquareFloat returns square of float
 func SquareFloat(value float64) float64 {
 	return value * value
+}
+
+// BalancePerEther returns balance per ether.
+func BalancePerEther(balance *big.Int) float64 {
+	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
+	return balancePerEther
 }

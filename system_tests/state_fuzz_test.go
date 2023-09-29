@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -22,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -93,15 +95,15 @@ func (b *inboxBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	if seqNum >= uint64(len(b.delayedMessages)) {
 		return nil, errors.New("delayed inbox message out of bounds")
 	}
-	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
 	if err != nil {
 		// The bridge won't generate an invalid L1 message,
 		// so here we substitute it with a less invalid one for fuzzing.
-		msg = &arbos.TestIncomingMessageWithRequestId
+		msg = &arbostypes.TestIncomingMessageWithRequestId
 	}
 	return msg, nil
 }
@@ -120,10 +122,22 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
 		chainDb := rawdb.NewMemoryDatabase()
+		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		if err != nil {
+			panic(err)
+		}
+		initMessage := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
-			params.ArbitrumRollupGoerliTestnetChainConfig(),
+			chainConfig,
+			initMessage,
 			0,
 			0,
 		)
@@ -160,7 +174,7 @@ func FuzzStateTransition(f *testing.F) {
 		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
 		if compressSeqMsg {
 			seqBatch = append(seqBatch, arbstate.BrotliMessageHeaderByte)
-			seqMsgCompressed, err := arbcompress.CompressFast(seqMsg)
+			seqMsgCompressed, err := arbcompress.CompressLevel(seqMsg, 0)
 			if err != nil {
 				panic(fmt.Sprintf("failed to compress sequencer message: %v", err))
 			}

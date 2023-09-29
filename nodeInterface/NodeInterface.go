@@ -39,9 +39,9 @@ type NodeInterface struct {
 	backend       core.NodeInterfaceBackendAPI
 	context       context.Context
 	header        *types.Header
-	sourceMessage types.Message
+	sourceMessage *core.Message
 	returnMessage struct {
-		message *types.Message
+		message *core.Message
 		changed *bool
 	}
 }
@@ -63,11 +63,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	if err != nil {
 		return 0, err
 	}
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
-	return findBatchContainingBlock(node, genesis, blockNum)
+	return findBatchContainingBlock(node, node.TxStreamer.GenesisBlockNumber(), blockNum)
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
@@ -78,16 +74,13 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if node.InboxReader == nil {
 		return 0, nil
 	}
-	bc := node.ArbInterface.BlockChain()
+	bc := node.Execution.ArbInterface.BlockChain()
 	header := bc.GetHeaderByHash(blockHash)
 	if header == nil {
 		return 0, errors.New("unknown block hash")
 	}
 	blockNum := header.Number.Uint64()
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
+	genesis := node.TxStreamer.GenesisBlockNumber()
 	batch, err := findBatchContainingBlock(node, genesis, blockNum)
 	if err != nil {
 		if errors.Is(err, blockInGenesis) {
@@ -106,14 +99,14 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if err != nil {
 		return 0, err
 	}
-	if latestL1Block < meta.L1Block || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
+	if latestL1Block < meta.ParentChainBlock || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
 		return 0, nil
 	}
 	canonicalHash := bc.GetCanonicalHash(header.Number.Uint64())
 	if canonicalHash != header.Hash() {
 		return 0, errors.New("block hash is non-canonical")
 	}
-	confs := (latestL1Block - meta.L1Block) + 1 + node.InboxReader.GetDelayBlocks()
+	confs := (latestL1Block - meta.ParentChainBlock) + 1 + node.InboxReader.GetDelayBlocks()
 	return confs, nil
 }
 
@@ -143,8 +136,8 @@ func (n NodeInterface) EstimateRetryableTicket(
 		From:             util.RemapL1Address(sender),
 		L1BaseFee:        l1BaseFee,
 		DepositValue:     deposit,
-		GasFeeCap:        n.sourceMessage.GasPrice(),
-		Gas:              n.sourceMessage.Gas(),
+		GasFeeCap:        n.sourceMessage.GasPrice,
+		Gas:              n.sourceMessage.GasLimit,
 		RetryTo:          pRetryTo,
 		RetryValue:       l2CallValue,
 		Beneficiary:      callValueRefundAddress,
@@ -154,10 +147,15 @@ func (n NodeInterface) EstimateRetryableTicket(
 	}
 
 	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-	msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
-	*n.returnMessage.message = msg
+	msg, err := core.TransactionToMessage(types.NewTx(submitTx), types.NewArbitrumSigner(nil), nil)
+	if err != nil {
+		return err
+	}
+
+	msg.TxRunMode = core.MessageGasEstimationMode
+	*n.returnMessage.message = *msg
 	*n.returnMessage.changed = true
-	return err
+	return nil
 }
 
 func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) (bytes32, bytes32, []bytes32, error) {
@@ -165,10 +163,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	hash0 := bytes32{}
 
 	currentBlock := n.backend.CurrentBlock()
-	currentBlockInfo, err := types.DeserializeHeaderExtraInformation(currentBlock.Header())
-	if err != nil {
-		return hash0, hash0, nil, err
-	}
+	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock)
 	if leaf > currentBlockInfo.SendCount {
 		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
@@ -274,11 +269,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 			return
 		}
 
-		info, err := types.DeserializeHeaderExtraInformation(block.Header())
-		if err != nil {
-			searchErr = err
-			return
-		}
+		info := types.DeserializeHeaderExtraInformation(block.Header())
 
 		// Figure out which elements are above and below the midpoint
 		//   lower includes leaves older than the midpoint
@@ -299,7 +290,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		}
 	}
 
-	search(0, currentBlock.NumberU64(), query)
+	search(0, currentBlock.Number.Uint64(), query)
 
 	if searchErr != nil {
 		return hash0, hash0, nil, searchErr
@@ -427,11 +418,11 @@ func (n NodeInterface) messageArgs(
 	evm mech, value huge, to addr, contractCreation bool, data []byte,
 ) arbitrum.TransactionArgs {
 	msg := n.sourceMessage
-	from := msg.From()
-	gas := msg.Gas()
-	nonce := msg.Nonce()
-	maxFeePerGas := msg.GasFeeCap()
-	maxPriorityFeePerGas := msg.GasTipCap()
+	from := msg.From
+	gas := msg.GasLimit
+	nonce := msg.Nonce
+	maxFeePerGas := msg.GasFeeCap
+	maxPriorityFeePerGas := msg.GasTipCap
 	chainid := evm.ChainConfig().ChainID
 
 	args := arbitrum.TransactionArgs{
@@ -459,7 +450,8 @@ func (n NodeInterface) GasEstimateL1Component(
 	randomGas := l1pricing.RandomGas
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
-	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB))
+	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
+	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -477,7 +469,11 @@ func (n NodeInterface) GasEstimateL1Component(
 	// Compute the fee paid for L1 in L2 terms
 	//   See in GasChargingHook that this does not induce truncation error
 	//
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 	return gasForL1, baseFee, l1BaseFeeEstimate, nil
@@ -495,7 +491,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	context := n.context
-	backend := node.Backend.APIBackend()
+	backend := node.Execution.Backend.APIBackend()
 	gasCap := backend.RPCGasCap()
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)
@@ -508,13 +504,18 @@ func (n NodeInterface) GasEstimateComponents(
 
 	pricing := c.State.L1PricingState()
 
-	// Setting the gas will affect the poster data cost
+	// Setting the gas currently doesn't affect the PosterDataCost,
+	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
+	if err != nil {
+		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
@@ -526,10 +527,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	// Compute the fee paid for L1 in L2 terms
-	//   See in GasChargingHook that this does not induce truncation error
-	//
-	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
-	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
+	gasForL1 := arbos.GetPosterGas(c.State, baseFee, core.MessageGasEstimationMode, feeForL1)
 
 	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }
@@ -599,4 +597,81 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 	data = data[32:]
 	calldataForL1 = data
 	return
+}
+
+// L2BlockRangeForL1 fetches the L1 block number of a given l2 block number.
+// c ctx and evm mech arguments are not used but supplied to match the precompile function type in NodeInterface contract
+func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
+	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
+	if err != nil {
+		return 0, err
+	}
+	if blockHeader == nil {
+		return 0, fmt.Errorf("nil header for l2 block: %d", l2BlockNum)
+	}
+	blockL1Num := types.DeserializeHeaderExtraInformation(blockHeader).L1BlockNumber
+	return blockL1Num, nil
+}
+
+func (n NodeInterface) matchL2BlockNumWithL1(c ctx, evm mech, l2BlockNum uint64, l1BlockNum uint64) error {
+	blockL1Num, err := n.BlockL1Num(c, evm, l2BlockNum)
+	if err != nil {
+		return fmt.Errorf("failed to get the L1 block number of the L2 block: %v. Error: %w", l2BlockNum, err)
+	}
+	if blockL1Num != l1BlockNum {
+		return fmt.Errorf("no L2 block was found with the given L1 block number. Found L2 block: %v with L1 block number: %v, given L1 block number: %v", l2BlockNum, blockL1Num, l1BlockNum)
+	}
+	return nil
+}
+
+// L2BlockRangeForL1 finds the first and last L2 block numbers that have the given L1 block number
+func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (uint64, uint64, error) {
+	currentBlockNum := n.backend.CurrentBlock().Number.Uint64()
+	genesis := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
+
+	storedMids := map[uint64]uint64{}
+	firstL2BlockForL1 := func(target uint64) (uint64, error) {
+		low, high := genesis, currentBlockNum
+		highBlockL1Num, err := n.BlockL1Num(c, evm, high)
+		if err != nil {
+			return 0, err
+		}
+		if highBlockL1Num < target {
+			return high + 1, nil
+		}
+		for low < high {
+			mid := arbmath.SaturatingUAdd(low, high) / 2
+			if _, ok := storedMids[mid]; !ok {
+				midBlockL1Num, err := n.BlockL1Num(c, evm, mid)
+				if err != nil {
+					return 0, err
+				}
+				storedMids[mid] = midBlockL1Num
+			}
+			if storedMids[mid] < target {
+				low = mid + 1
+			} else {
+				high = mid
+			}
+		}
+		return high, nil
+	}
+
+	firstBlock, err := firstL2BlockForL1(l1BlockNum)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get the first L2 block with the L1 block: %v. Error: %w", l1BlockNum, err)
+	}
+	lastBlock, err := firstL2BlockForL1(l1BlockNum + 1)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get the last L2 block with the L1 block: %v. Error: %w", l1BlockNum, err)
+	}
+
+	if err := n.matchL2BlockNumWithL1(c, evm, firstBlock, l1BlockNum); err != nil {
+		return 0, 0, err
+	}
+	lastBlock -= 1
+	if err = n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
+		return 0, 0, err
+	}
+	return firstBlock, lastBlock, nil
 }

@@ -17,6 +17,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
@@ -24,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -38,13 +40,15 @@ type DAServerConfig struct {
 	RESTPort           uint64                              `koanf:"rest-port"`
 	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
 
-	DAConf das.DataAvailabilityConfig `koanf:"data-availability"`
+	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
 
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
-	LogLevel   int                    `koanf:"log-level"`
+	Conf     genericconf.ConfConfig `koanf:"conf"`
+	LogLevel int                    `koanf:"log-level"`
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 }
 
 var DefaultDAServerConfig = DAServerConfig{
@@ -56,10 +60,12 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTAddr:           "localhost",
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
-	DAConf:             das.DefaultDataAvailabilityConfig,
-	ConfConfig:         genericconf.ConfConfigDefault,
+	DataAvailability:   das.DefaultDataAvailabilityConfig,
+	Conf:               genericconf.ConfConfigDefault,
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	PProf:              false,
+	PprofCfg:           genericconf.PProfDefault,
 	LogLevel:           3,
 }
 
@@ -89,6 +95,9 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("metrics", DefaultDAServerConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 
+	f.Bool("pprof", DefaultDAServerConfig.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
+
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -102,7 +111,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	if err := confighelpers.EndCommonParse(k, &serverConfig); err != nil {
 		return nil, err
 	}
-	if serverConfig.ConfConfig.Dump {
+	if serverConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"data-availability.key.priv-key": "",
 		})
@@ -135,6 +144,28 @@ func (c *L1ReaderCloser) String() string {
 	return "l1 reader closer"
 }
 
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *DAServerConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 func startup() error {
 	// Some different defaults to DAS config in a node.
 	das.DefaultDataAvailabilityConfig.Enable = true
@@ -151,16 +182,8 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	if serverConfig.Metrics {
-		if len(serverConfig.MetricsServer.Addr) == 0 {
-			fmt.Printf("Metrics is enabled, but missing --metrics-server.addr")
-			return nil
-		}
-
-		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
-
-		address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
-		exp.Setup(address)
+	if err := startMetrics(serverConfig); err != nil {
+		return err
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -170,19 +193,23 @@ func startup() error {
 	defer cancel()
 
 	var l1Reader *headerreader.HeaderReader
-	if serverConfig.DAConf.L1NodeURL != "" && serverConfig.DAConf.L1NodeURL != "none" {
-		l1Client, err := das.GetL1Client(ctx, serverConfig.DAConf.L1ConnectionAttempts, serverConfig.DAConf.L1NodeURL)
+	if serverConfig.DataAvailability.ParentChainNodeURL != "" && serverConfig.DataAvailability.ParentChainNodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, serverConfig.DataAvailability.ParentChainConnectionAttempts, serverConfig.DataAvailability.ParentChainNodeURL)
 		if err != nil {
 			return err
 		}
-		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
+		if err != nil {
+			return err
+		}
 	}
 
 	var seqInboxAddress *common.Address
-	if serverConfig.DAConf.SequencerInboxAddress == "none" {
+	if serverConfig.DataAvailability.SequencerInboxAddress == "none" {
 		seqInboxAddress = nil
-	} else if len(serverConfig.DAConf.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DAConf.SequencerInboxAddress)
+	} else if len(serverConfig.DataAvailability.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DataAvailability.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
@@ -193,7 +220,7 @@ func startup() error {
 		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
 	}
 
-	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
+	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}

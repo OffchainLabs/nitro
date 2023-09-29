@@ -41,9 +41,8 @@ var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
 func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
 	if c.State.ArbOSVersion() >= 3 {
 		return con.NoTicketWithIDError()
-	} else {
-		return errors.New("ticketId not found")
 	}
+	return errors.New("ticketId not found")
 }
 
 // Redeem schedules an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
@@ -52,7 +51,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return bytes32{}, ErrSelfModifyingRetryable
 	}
 	retryableState := c.State.RetryableState()
-	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
+	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)
 	if err != nil {
 		return hash{}, err
 	}
@@ -61,7 +60,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 
-	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
+	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time)
 	if err != nil {
 		return hash{}, err
 	}
@@ -139,7 +138,7 @@ func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 // GetTimeout gets the timestamp for when ticket will expire
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.State.RetryableState()
-	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
+	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +157,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 
 	// charge for the expiry update
 	retryableState := c.State.RetryableState()
-	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
+	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +169,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return big.NewInt(0), err
 	}
 
-	currentTime := evm.Context.Time.Uint64()
+	currentTime := evm.Context.Time
 	window := currentTime + retryables.RetryableLifetimeSeconds
 	newTimeout, err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
 	if err != nil {
@@ -184,7 +183,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 // GetBeneficiary gets the beneficiary of the ticket
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.State.RetryableState()
-	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
+	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time)
 	if err != nil {
 		return addr{}, err
 	}
@@ -200,7 +199,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 		return ErrSelfModifyingRetryable
 	}
 	retryableState := c.State.RetryableState()
-	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
+	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time)
 	if err != nil {
 		return err
 	}
@@ -226,9 +225,8 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
 	if c.txProcessor.CurrentRefundTo != nil {
 		return *c.txProcessor.CurrentRefundTo, nil
-	} else {
-		return common.Address{}, nil
 	}
+	return common.Address{}, nil
 }
 
 func (con ArbRetryableTx) SubmitRetryable(

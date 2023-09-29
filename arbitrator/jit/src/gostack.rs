@@ -1,6 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::useless_transmute)]
+
 use crate::{
     machine::{WasmEnv, WasmEnvMut},
     syscall::JsValue,
@@ -60,6 +62,10 @@ impl GoStack {
     pub fn simple(start: u32, env: &WasmEnvMut<'_>) -> Self {
         let memory = MemoryViewContainer::create(env);
         Self { start, memory }
+    }
+
+    pub fn shift_start(&mut self, offset: u32) {
+        self.start += offset;
     }
 
     fn view(&self) -> &MemoryView {
