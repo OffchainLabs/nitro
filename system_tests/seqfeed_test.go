@@ -8,12 +8,16 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -69,6 +73,146 @@ func TestSequencerFeed(t *testing.T) {
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
+	}
+}
+
+func TestSequencerFeed_TimeBoost(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seqNodeConfig := arbnode.ConfigDefaultL2Test()
+	seqNodeConfig.Sequencer.TimeBoost = false
+
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
+
+	l2info1, sequencerNode, sequencerClient := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	defer sequencerNode.StopAndWait()
+	clientNodeConfig := arbnode.ConfigDefaultL2Test()
+	port := sequencerNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+
+	_, listenerNode, _ := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	defer listenerNode.StopAndWait()
+
+	baseFee := GetBaseFee(t, sequencerClient, ctx)
+	l2info1.GasPrice = baseFee
+	callOpts := l2info1.GetDefaultCallOpts("Owner", ctx)
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), sequencerClient)
+	Require(t, err, "failed to deploy contract")
+
+	// Get the network fee account
+	networkFeeAccount, err := arbOwnerPublic.GetNetworkFeeAccount(callOpts)
+	Require(t, err, "could not get the network fee account")
+
+	// Seed 5 different accounts with value and prepare 10 transactions to send to the sequencer
+	// with timeboost enabled to ensure that they are ordered according to their priority fee.
+	numTxs := 5
+	users := make([]common.Address, numTxs)
+	for i := 0; i < numTxs; i++ {
+		userName := fmt.Sprintf("User%d", i)
+		l2info1.GenerateAccount(userName)
+		tx := l2info1.PrepareTx("Owner", userName, l2info1.TransferGas, big.NewInt(1e18), nil)
+		Require(t, sequencerClient.SendTransaction(ctx, tx))
+		_, err := EnsureTxSucceeded(ctx, sequencerClient, tx)
+		Require(t, err)
+		users[i] = l2info1.GetAddress(userName)
+	}
+
+	type txsForUser struct {
+		txs []common.Hash
+		sync.RWMutex
+	}
+
+	userTxs := &txsForUser{
+		txs: make([]common.Hash, len(users)),
+	}
+	ensureTxPaysNetworkTip := func(userIdx uint64) {
+		baseFee := GetBaseFee(t, sequencerClient, ctx)
+		l2info1.GasPrice = baseFee
+		tip := uint64(userIdx + 1)
+		tipCap := arbmath.BigMulByUint(baseFee, tip)
+		gasPrice := arbmath.BigAdd(baseFee, tipCap)
+		value := big.NewInt(1)
+		var data []byte
+		userName := fmt.Sprintf("User%d", userIdx)
+		tx := l2info1.PrepareTippingTx(userName, "Owner", gasPrice.Uint64(), tipCap, value, data)
+		networkBefore := GetBalance(t, ctx, sequencerClient, networkFeeAccount)
+		Require(t, sequencerClient.SendTransaction(ctx, tx))
+		_, err := EnsureTxSucceeded(ctx, sequencerClient, tx)
+		Require(t, err)
+		userTxs.Lock()
+		userTxs.txs[userIdx] = tx.Hash()
+		userTxs.Unlock()
+
+		networkAfter := GetBalance(t, ctx, sequencerClient, networkFeeAccount)
+		networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
+		t.Logf("Network revenue=%d", networkRevenue.Uint64())
+	}
+
+	// Send out 10 boosted transactions concurrently.
+	// TODO: Normalize to the same time boost round with some timer magic. Hacky for now.
+	time.Sleep(time.Millisecond * 50)
+	var wg sync.WaitGroup
+	wg.Add(numTxs)
+	for userIdx := range users {
+		go func(ii uint64, w *sync.WaitGroup) {
+			defer w.Done()
+			ensureTxPaysNetworkTip(ii)
+		}(uint64(userIdx), &wg)
+	}
+	wg.Wait()
+
+	// Group txs by block number.
+	txIndexByBlockNum := make(map[uint64][]int, numTxs) // Change the value type to a slice of ints to store multiple tx indices per block
+	for i, tx := range userTxs.txs {
+		receipt, err := sequencerClient.TransactionReceipt(ctx, tx)
+		Require(t, err)
+		blockNum := receipt.BlockNumber.Uint64()
+		txIndexByBlockNum[blockNum] = append(txIndexByBlockNum[blockNum], i)
+	}
+	txIndexByHash := make(map[common.Hash]int, numTxs)
+
+	for i, tx := range userTxs.txs {
+		txIndexByHash[tx] = i
+	}
+
+	// For the txs within each block, we check that the txs are ordered by priority fee, and that
+	// txs indices follow the relationship i < j => txs[i].PriorityFee > txs[j].PriorityFee.
+	for blockNum, txIndices := range txIndexByBlockNum {
+		block, err := sequencerClient.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
+		Require(t, err)
+
+		blockTxs := block.Transactions()
+
+		// Check this block contains all tx indices we care about.
+		blockTxsByHash := make(map[common.Hash]struct{}, len(blockTxs))
+		for _, blockTx := range blockTxs {
+			blockTxsByHash[blockTx.Hash()] = struct{}{}
+		}
+		for _, txIndex := range txIndices {
+			txHash := userTxs.txs[txIndex]
+			if _, ok := blockTxsByHash[txHash]; !ok {
+				t.Fatal("Block", blockNum, "does not contain tx", txHash.Hex())
+			}
+		}
+
+		// Assuming PriorityFee is a field in your tx struct and can be accessed as tx.PriorityFee
+		// Check the order of priority fees for transactions within the block
+		// TODO: Skip tx 0 seems to be irrelevant?
+		for i := 1; i < len(blockTxs)-1; i++ {
+			txA := blockTxs[i]
+			txB := blockTxs[i+1]
+			txAIndex := txIndexByHash[txA.Hash()]
+			txBIndex := txIndexByHash[txB.Hash()]
+			t.Logf("Creation_idx=%d, idx_in_block=%d has fee %d, creation_idx=%d, idx_in_block=%d has fee %d", txAIndex, i, txA.GasTipCap().Uint64(), txBIndex, i+1, txB.GasTipCap().Uint64())
+			if txA.GasTipCap().Uint64() < txB.GasTipCap().Uint64() {
+				t.Fatalf("Transactions in block are not ordered by priority fee, tx=%d has fee %d, tx=%d has fee %d", i, txA.GasTipCap().Uint64(), i+1, txB.GasTipCap().Uint64())
+			}
+			if txAIndex < txBIndex {
+				t.Fatalf("Transaction at index %d should be greater than index %d due to time boost", txAIndex, txBIndex)
+			}
+		}
 	}
 }
 

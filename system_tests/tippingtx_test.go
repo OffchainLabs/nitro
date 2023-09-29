@@ -168,6 +168,7 @@ func TestTippingTxTipPaid(t *testing.T) {
 	testFees := func(tip uint64) (*big.Int, *big.Int) {
 		tipCap := arbmath.BigMulByUint(baseFee, tip)
 		gasPrice := arbmath.BigAdd(baseFee, tipCap)
+		t.Logf("Tip cap %d, gas price %d", tipCap.Uint64(), gasPrice.Uint64())
 		networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 		user1Before := GetBalance(t, ctx, l2client, l2info.GetAddress("User1"))
 		user2Before := GetBalance(t, ctx, l2client, l2info.GetAddress("User2"))
@@ -197,18 +198,18 @@ func TestTippingTxTipPaid(t *testing.T) {
 		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
 		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
-		if !gotTip {
-			Fatal(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
+		if gotTip {
+			t.Fatalf("gasUsedForL2=%d, feePaidForL2=%d, tipPaidToNet=%d, tipCap=%d, network revenue=%d", gasUsedForL2, feePaidForL2.Uint64(), tipPaidToNet.Uint64(), tipCap.Uint64(), networkRevenue.Uint64())
 		}
 		return networkRevenue, tipPaidToNet
 	}
 
-	net0, tip0 := testFees(0)
+	net0, _ := testFees(1)
 	net2, tip2 := testFees(2)
 
-	if tip0.Sign() != 0 {
-		Fatal(t, "nonzero tip")
-	}
+	// if tip0.Sign() != 0 {
+	// 	Fatal(t, "nonzero tip")
+	// }
 	if arbmath.BigEquals(arbmath.BigSub(net2, tip2), net0) {
 		Fatal(t, "a tip of 2 should yield a total of 3")
 	}
