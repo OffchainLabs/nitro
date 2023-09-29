@@ -410,6 +410,7 @@ var ConfigDefault = Config{
 	Caching:             execution.DefaultCachingConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
+	Maintenance:         DefaultMaintenanceConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
