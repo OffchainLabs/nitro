@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -80,7 +81,7 @@ func TestSequencerFeed_TimeBoost(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Sequencer.TimeBoost = true
+	seqNodeConfig.Sequencer.TimeBoost = false
 
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
 
@@ -93,30 +94,91 @@ func TestSequencerFeed_TimeBoost(t *testing.T) {
 	_, listenerNode, _ := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
 	defer listenerNode.StopAndWait()
 
-	l2info1.GenerateAccount("User2")
+	// Seed 10 different accounts with value and prepare 10 transactions to send to the sequencer
+	// with timeboost enabled to ensure that they are ordered according to their priority fee.
+	numTxs := 10
+	txs := make([]*types.Transaction, numTxs)
+	for i := 0; i < numTxs; i++ {
+		userName := fmt.Sprintf("User%d", i)
+		l2info1.GenerateAccount(userName)
+		tx := l2info1.PrepareTx("Owner", userName, l2info1.TransferGas, big.NewInt(1e18), nil)
+		Require(t, sequencerClient.SendTransaction(ctx, tx))
+		_, err := EnsureTxSucceeded(ctx, sequencerClient, tx)
+		Require(t, err)
 
-	txs := make([]*types.Transaction, 10)
-	for i := 0; i < 10; i++ {
-		priorityFee := new(big.Int).SetUint64(100 + uint64(i*50))
-		tx := l2info1.PrepareBoostableTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12+int64(i)), nil, priorityFee)
+		// Prepare a tx from the user back to the owner with a priority fee for time boost.
+		// In this example, lower index users will have lower priority fees. That is, if we send txs
+		// 0, 1, 2,... we expect the ordering to be ..., 2, 1, 0.
+		priorityFee := new(big.Int).SetUint64(uint64((i + 1) * 50))
+		tx = l2info1.PrepareBoostableTx(userName, "Owner", l2info1.TransferGas, big.NewInt(1e12+int64(i)), nil, priorityFee)
 		txs[i] = tx
 	}
 
 	// Send out 10 boosted transactions concurrently.
+	// TODO: Normalize to the same time boost round with some timer magic. Hacky for now.
+	time.Sleep(time.Millisecond * 50)
 	var wg sync.WaitGroup
-	wg.Add(10)
+	wg.Add(numTxs)
 	for i := range txs {
 		go func(ii int, w *sync.WaitGroup) {
 			defer w.Done()
-			err := sequencerClient.SendTransaction(ctx, txs[ii])
+			Require(t, sequencerClient.SendTransaction(ctx, txs[ii]))
+			_, err := EnsureTxSucceeded(ctx, sequencerClient, txs[ii])
 			Require(t, err)
 		}(i, &wg)
 	}
 	wg.Wait()
 
-	_, err := EnsureTxSucceeded(ctx, sequencerClient, txs[len(txs)-1])
-	Require(t, err)
-	t.Error("fails")
+	// Group txs by block number.
+	txIndexByBlockNum := make(map[uint64][]int, numTxs) // Change the value type to a slice of ints to store multiple tx indices per block
+	for i := range txs {
+		receipt, err := sequencerClient.TransactionReceipt(ctx, txs[i].Hash())
+		Require(t, err)
+		blockNum := receipt.BlockNumber.Uint64()
+		txIndexByBlockNum[blockNum] = append(txIndexByBlockNum[blockNum], i)
+	}
+	txIndexByHash := make(map[common.Hash]int, numTxs)
+	for i := range txs {
+		txIndexByHash[txs[i].Hash()] = i
+	}
+
+	// For the txs within each block, we check that the txs are ordered by priority fee, and that
+	// txs indices follow the relationship i < j => txs[i].PriorityFee > txs[j].PriorityFee.
+	for blockNum, txIndices := range txIndexByBlockNum {
+		block, err := sequencerClient.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
+		Require(t, err)
+
+		blockTxs := block.Transactions()
+
+		// Check this block contains all tx indices we care about.
+		blockTxsByHash := make(map[common.Hash]struct{}, len(blockTxs))
+		for _, blockTx := range blockTxs {
+			blockTxsByHash[blockTx.Hash()] = struct{}{}
+		}
+		for _, txIndex := range txIndices {
+			txHash := txs[txIndex].Hash()
+			if _, ok := blockTxsByHash[txHash]; !ok {
+				t.Fatal("Block", blockNum, "does not contain tx", txHash.Hex())
+			}
+		}
+
+		// Assuming PriorityFee is a field in your tx struct and can be accessed as tx.PriorityFee
+		// Check the order of priority fees for transactions within the block
+		// TODO: Skip tx 0 seems to be irrelevant?
+		for i := 1; i < len(blockTxs)-1; i++ {
+			txA := blockTxs[i]
+			txB := blockTxs[i+1]
+			txAIndex := txIndexByHash[txA.Hash()]
+			txBIndex := txIndexByHash[txB.Hash()]
+			t.Logf("Creation_idx=%d, idx_in_block=%d has fee %d, creation_idx=%d, idx_in_block=%d has fee %d", txAIndex, i, txA.GasTipCap().Uint64(), txBIndex, i+1, txB.GasTipCap().Uint64())
+			if txA.GasTipCap().Uint64() < txB.GasTipCap().Uint64() {
+				t.Fatalf("Transactions in block are not ordered by priority fee, tx=%d has fee %d, tx=%d has fee %d", i, txA.GasTipCap().Uint64(), i+1, txB.GasTipCap().Uint64())
+			}
+			if txAIndex < txBIndex {
+				t.Fatalf("Transaction at index %d should be greater than index %d due to time boost", txAIndex, txBIndex)
+			}
+		}
+	}
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
