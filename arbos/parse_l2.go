@@ -20,15 +20,15 @@ import (
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
-func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, arbOSVersion uint64, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
-	if len(msg.L2msg) > MaxL2MessageSize {
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, arbOSVersion uint64, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
+	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
 	}
 	switch msg.Header.Kind {
-	case L1MessageType_L2Message:
+	case arbostypes.L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0, arbOSVersion)
-	case L1MessageType_Initialize:
+	case arbostypes.L1MessageType_Initialize:
 		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case arbostypes.L1MessageType_EndOfBlock:
 		return nil, nil

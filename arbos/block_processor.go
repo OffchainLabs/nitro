@@ -139,7 +139,7 @@ func ProduceBlock(
 		return nil, nil, err
 	}
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, arbState.ArbOSVersion(), func(batchNum uint64, batchHash common.Hash) []byte {
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, arbState.ArbOSVersion(), func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
@@ -199,7 +199,7 @@ func ProduceBlockAdvanced(
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number)
+	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
@@ -272,17 +272,17 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, sender); err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				brotliCompressionLevel, err := state.BrotliCompressionLevel()
+				brotliCompressionLevel, err := arbState.BrotliCompressionLevel()
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 				}
-				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
+				posterCost, _ := arbState.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -339,13 +339,13 @@ func ProduceBlockAdvanced(
 
 		if tx.Type() == types.ArbitrumInternalTxType {
 			// ArbOS might have upgraded to a new version, so we need to refresh our state
-			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			arbState, err = arbosState.OpenSystemArbosState(statedb, nil, true)
 			if err != nil {
 				return nil, nil, err
 			}
 			// Update the ArbOS version in the header (if it changed)
 			extraInfo := types.DeserializeHeaderExtraInformation(header)
-			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
+			extraInfo.ArbOSFormatVersion = arbState.ArbOSVersion()
 			extraInfo.UpdateHeaderWithInfo(header)
 		}
 

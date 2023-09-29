@@ -672,7 +672,7 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 
 func (p *TxProcessor) DropTip() bool {
 	version := p.state.ArbOSVersion()
-	transaction := p.msg.UnderlyingTransaction()
+	transaction := p.msg.Tx
 	tippingTx := false
 	if version >= 11 && transaction != nil && transaction.Type() == types.ArbitrumSubtypedTxType {
 		subtype := types.GetArbitrumTxSubtype(transaction)
