@@ -469,7 +469,11 @@ func (n NodeInterface) GasEstimateL1Component(
 	// Compute the fee paid for L1 in L2 terms
 	//   See in GasChargingHook that this does not induce truncation error
 	//
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 	return gasForL1, baseFee, l1BaseFeeEstimate, nil
@@ -507,7 +511,11 @@ func (n NodeInterface) GasEstimateComponents(
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
+	if err != nil {
+		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
@@ -589,4 +597,81 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 	data = data[32:]
 	calldataForL1 = data
 	return
+}
+
+// L2BlockRangeForL1 fetches the L1 block number of a given l2 block number.
+// c ctx and evm mech arguments are not used but supplied to match the precompile function type in NodeInterface contract
+func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
+	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
+	if err != nil {
+		return 0, err
+	}
+	if blockHeader == nil {
+		return 0, fmt.Errorf("nil header for l2 block: %d", l2BlockNum)
+	}
+	blockL1Num := types.DeserializeHeaderExtraInformation(blockHeader).L1BlockNumber
+	return blockL1Num, nil
+}
+
+func (n NodeInterface) matchL2BlockNumWithL1(c ctx, evm mech, l2BlockNum uint64, l1BlockNum uint64) error {
+	blockL1Num, err := n.BlockL1Num(c, evm, l2BlockNum)
+	if err != nil {
+		return fmt.Errorf("failed to get the L1 block number of the L2 block: %v. Error: %w", l2BlockNum, err)
+	}
+	if blockL1Num != l1BlockNum {
+		return fmt.Errorf("no L2 block was found with the given L1 block number. Found L2 block: %v with L1 block number: %v, given L1 block number: %v", l2BlockNum, blockL1Num, l1BlockNum)
+	}
+	return nil
+}
+
+// L2BlockRangeForL1 finds the first and last L2 block numbers that have the given L1 block number
+func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (uint64, uint64, error) {
+	currentBlockNum := n.backend.CurrentBlock().Number.Uint64()
+	genesis := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
+
+	storedMids := map[uint64]uint64{}
+	firstL2BlockForL1 := func(target uint64) (uint64, error) {
+		low, high := genesis, currentBlockNum
+		highBlockL1Num, err := n.BlockL1Num(c, evm, high)
+		if err != nil {
+			return 0, err
+		}
+		if highBlockL1Num < target {
+			return high + 1, nil
+		}
+		for low < high {
+			mid := arbmath.SaturatingUAdd(low, high) / 2
+			if _, ok := storedMids[mid]; !ok {
+				midBlockL1Num, err := n.BlockL1Num(c, evm, mid)
+				if err != nil {
+					return 0, err
+				}
+				storedMids[mid] = midBlockL1Num
+			}
+			if storedMids[mid] < target {
+				low = mid + 1
+			} else {
+				high = mid
+			}
+		}
+		return high, nil
+	}
+
+	firstBlock, err := firstL2BlockForL1(l1BlockNum)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get the first L2 block with the L1 block: %v. Error: %w", l1BlockNum, err)
+	}
+	lastBlock, err := firstL2BlockForL1(l1BlockNum + 1)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get the last L2 block with the L1 block: %v. Error: %w", l1BlockNum, err)
+	}
+
+	if err := n.matchL2BlockNumWithL1(c, evm, firstBlock, l1BlockNum); err != nil {
+		return 0, 0, err
+	}
+	lastBlock -= 1
+	if err = n.matchL2BlockNumWithL1(c, evm, lastBlock, l1BlockNum); err != nil {
+		return 0, 0, err
+	}
+	return firstBlock, lastBlock, nil
 }

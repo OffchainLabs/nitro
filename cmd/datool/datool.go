@@ -84,14 +84,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                   string                 `koanf:"url"`
-	Message               string                 `koanf:"message"`
-	RandomMessageSize     int                    `koanf:"random-message-size"`
-	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
-	SigningKey            string                 `koanf:"signing-key"`
-	SigningWallet         string                 `koanf:"signing-wallet"`
-	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
-	Conf                  genericconf.ConfConfig `koanf:"conf"`
+	URL                   string        `koanf:"url"`
+	Message               string        `koanf:"message"`
+	RandomMessageSize     int           `koanf:"random-message-size"`
+	DASRetentionPeriod    time.Duration `koanf:"das-retention-period"`
+	SigningKey            string        `koanf:"signing-key"`
+	SigningWallet         string        `koanf:"signing-wallet"`
+	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -196,9 +195,8 @@ func startClientStore(args []string) error {
 // datool client rest getbyhash
 
 type RESTClientGetByHashConfig struct {
-	URL      string                 `koanf:"url"`
-	DataHash string                 `koanf:"data-hash"`
-	Conf     genericconf.ConfConfig `koanf:"conf"`
+	URL      string `koanf:"url"`
+	DataHash string `koanf:"data-hash"`
 }
 
 func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
@@ -257,8 +255,7 @@ func startRESTClientGetByHash(args []string) error {
 // das keygen
 
 type KeyGenConfig struct {
-	Dir  string
-	Conf genericconf.ConfConfig `koanf:"conf"`
+	Dir string
 	// ECDSA mode.
 	ECDSA bool `koanf:"ecdsa"`
 	// Wallet mode.

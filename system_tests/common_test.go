@@ -433,7 +433,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	}})
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining(1))
+	Require(t, l1backend.StartMining())
 
 	rpcClient, err := stack.Attach()
 	Require(t, err)
@@ -475,13 +475,19 @@ func DeployOnTestL1(
 	Require(t, err)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	Require(t, err)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
-		l1client,
+		l1Reader,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		0,
-		func() *headerreader.Config { return &headerreader.TestConfig },
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 	)
 	Require(t, err)
@@ -493,13 +499,13 @@ func DeployOnTestL1(
 }
 
 func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, cacheConfig *core.CacheConfig,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, cacheConfig *execution.CachingConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, cacheConfig)
 }
 
 func createL2BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, cacheConfig *core.CacheConfig,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, cacheConfig *execution.CachingConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -530,7 +536,11 @@ func createL2BlockChainWithStackConfig(
 			SerializedChainConfig: serializedChainConfig,
 		}
 	}
-	blockchain, err := execution.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	var coreCacheConfig *core.CacheConfig
+	if cacheConfig != nil {
+		coreCacheConfig = execution.DefaultCacheConfigFor(stack, cacheConfig)
+	}
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -565,7 +575,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil, nil)
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil)
 	return
 }
 
@@ -576,7 +586,6 @@ func createTestNodeOnL1WithConfigImpl(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
-	cacheConfig *core.CacheConfig,
 	l2info_in info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -598,7 +607,7 @@ func createTestNodeOnL1WithConfigImpl(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, cacheConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, &nodeConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -644,7 +653,7 @@ func CreateTestL2WithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig(), nil)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig(), &nodeConfig.Caching)
 	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
@@ -749,7 +758,9 @@ func Create2ndNodeWithConfig(
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
-	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+
+	coreCacheConfig := execution.DefaultCacheConfigFor(l2stack, &nodeConfig.Caching)
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)

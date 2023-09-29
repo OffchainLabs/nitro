@@ -3,6 +3,7 @@ run-name: Go tests CI triggered from @${{ github.actor }} of ${{ github.head_ref
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
   push:
     branches:
@@ -129,6 +130,10 @@ jobs:
           version: latest
           skip-go-installation: true
           skip-pkg-cache: true
+      - name: Custom Lint
+        run: |
+          go run ./linter/koanf ./...
+          go run ./linter/pointercheck ./...
 
       - name: Set environment variables
         run: |

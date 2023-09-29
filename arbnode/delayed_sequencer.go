@@ -52,14 +52,14 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              false,
 	FinalizeDistance:    20,
-	RequireFullFinality: true,
+	RequireFullFinality: false,
 	UseMergeFinality:    true,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
-	RequireFullFinality: true,
+	RequireFullFinality: false,
 	UseMergeFinality:    true,
 }
 

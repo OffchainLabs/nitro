@@ -18,17 +18,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
+
+type ArbSysInterface interface {
+	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
+}
 
 type HeaderReader struct {
 	stopwaiter.StopWaiter
 	config                ConfigFetcher
 	client                arbutil.L1Interface
 	isParentChainArbitrum bool
-	arbSys                *precompilesgen.ArbSys
+	arbSys                ArbSysInterface
 
 	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
@@ -91,18 +94,17 @@ var TestConfig = Config{
 	UseFinalityData:  false,
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) (*HeaderReader, error) {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	var arbSys *precompilesgen.ArbSys
-	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(codeAt) != 0 {
-		isParentChainArbitrum = true
-		arbSys, err = precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	var arbSys ArbSysInterface
+	if arbSysPrecompile != nil {
+		codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 		if err != nil {
 			return nil, err
+		}
+		if len(codeAt) != 0 {
+			isParentChainArbitrum = true
+			arbSys = arbSysPrecompile
 		}
 	}
 	return &HeaderReader{
@@ -312,7 +314,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
 		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
-		log.Warn(
+		log.Error(
 			"latest L1 block is old", "l1Block", storedHeader.Number,
 			"l1Timestamp", l1Timetamp, "age", headerTime,
 		)
@@ -393,6 +395,13 @@ func headerIndicatesFinalitySupport(header *types.Header) bool {
 	return false
 }
 
+func HeadersEqual(ha, hb *types.Header) bool {
+	if (ha == nil) != (hb == nil) {
+		return false
+	}
+	return (ha == nil && hb == nil) || ha.Hash() == hb.Hash()
+}
+
 func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.Header, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -400,7 +409,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	if err != nil {
 		return nil, err
 	}
-	if currentHead == c.headWhenCached {
+	if HeadersEqual(currentHead, c.headWhenCached) {
 		return c.header, nil
 	}
 	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
@@ -453,6 +462,10 @@ func (s *HeaderReader) Client() arbutil.L1Interface {
 
 func (s *HeaderReader) UseFinalityData() bool {
 	return s.config().UseFinalityData
+}
+
+func (s *HeaderReader) IsParentChainArbitrum() bool {
+	return s.isParentChainArbitrum
 }
 
 func (s *HeaderReader) Start(ctxIn context.Context) {
