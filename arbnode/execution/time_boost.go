@@ -3,10 +3,12 @@ package execution
 import (
 	"container/heap"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 const (
@@ -61,6 +63,7 @@ func newTimeBoostService(
 	for _, o := range opts {
 		o(s)
 	}
+	log.Info("Initializing timeboost service", "gFactor", s.gFactor)
 	return s
 }
 
@@ -68,6 +71,7 @@ func newTimeBoostService(
 // which it inserts into a max heap where txs with the highest
 // bid win (ties are broken by timestamp).
 func (s *timeBoostService) run(ctx context.Context) {
+	log.Info("Running timeboost loop, next round released in", fmt.Sprintf("%d", s.gFactor), "milliseconds")
 	afterChan := time.After(s.gFactor)
 	for {
 		select {
@@ -79,12 +83,14 @@ func (s *timeBoostService) run(ctx context.Context) {
 		case <-afterChan:
 			// Releasing all items from the queue.
 			s.Lock()
+			log.Info("Releasing", fmt.Sprintf("%d", s.prioQueue.Len()), "txs from timeboost queue")
 			for s.prioQueue.Len() > 0 {
 				tx := heap.Pop(&s.prioQueue).(boostableTx)
 				s.txOutputFeed <- tx
 			}
 			s.Unlock()
 		case <-s.nextRoundStart:
+			log.Info("Notified to start next timeboost round")
 			// We need to await an external notification to start the next round of time boost.
 			// This should be triggered after all txs output in a round of time boost are made
 			// public in the sequencer's output feed.
