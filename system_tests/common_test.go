@@ -61,7 +61,6 @@ type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
 type TestClient struct {
-	// Nodebuilder fields
 	ctx     context.Context
 	Info    info
 	Client  *ethclient.Client
@@ -115,12 +114,12 @@ type NodeBuilder struct {
 	stackConfig   *node.Config
 	cachingConfig *execution.CachingConfig
 
-	// NodeBuiilder Node parameters
+	// L1, L2 Node parameters
 	isSequencer   bool
 	takeOwnership bool
 	withL1        bool
 
-	// NodeBuiilder Blockchain parameters
+	// Blockchain parameters
 	dataDir     string
 	initMessage *arbostypes.ParsedInitMessage
 
