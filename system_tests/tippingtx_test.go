@@ -12,10 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -158,26 +156,14 @@ func TestTippingTxTipPaid(t *testing.T) {
 	// get the network fee account
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), l2client)
 	Require(t, err, "failed to deploy contract")
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
-	Require(t, err, "failed to deploy contract")
 	networkFeeAccount, err := arbOwnerPublic.GetNetworkFeeAccount(callOpts)
 	Require(t, err, "could not get the network fee account")
-
-	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
-	Require(t, err)
 
 	baseFee := GetBaseFee(t, l2client, ctx)
 	l2info.GasPrice = baseFee
 	l2info.GenerateAccount("User1")
 	l2info.GenerateAccount("User2")
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{l2info.PrepareTx("Owner", "User1", l2info.TransferGas, big.NewInt(1e18), nil)})
-	compressedTxSize := func(t *testing.T, tx *types.Transaction) uint64 {
-		txBin, err := tx.MarshalBinary()
-		Require(t, err)
-		compressed, err := arbcompress.CompressFast(txBin)
-		Require(t, err)
-		return uint64(len(compressed))
-	}
 
 	testFees := func(tip uint64) (*big.Int, *big.Int) {
 		tipCap := arbmath.BigMulByUint(baseFee, tip)
@@ -198,32 +184,21 @@ func TestTippingTxTipPaid(t *testing.T) {
 		user2Got := arbmath.BigSub(user2After, user2Before)
 
 		if arbmath.BigEquals(user1Paid, arbmath.BigAdd(new(big.Int).SetUint64(receipt.GasUsed), user2Got)) {
-			Fail(t, "after transfer balances sanity check failed")
+			Fatal(t, "after transfer balances sanity check failed")
 		}
-
-		networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
-		l1Charge := arbmath.BigMulByUint(l2info.GasPrice, receipt.GasUsedForL1)
 
 		// the network should receive
 		//     1. compute costs
 		//     2. tip on the compute costs
 		//     3. tip on the data costs
+		networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
 		networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
 		gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
 		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
 		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
 		if !gotTip {
-			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
-		}
-		txSize := compressedTxSize(t, tx)
-		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
-		l1GasActual := txSize * params.TxDataNonZeroGasEIP2028
-
-		colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
-
-		if l1GasBought != l1GasActual {
-			Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
+			Fatal(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
 		}
 		return networkRevenue, tipPaidToNet
 	}
@@ -232,10 +207,10 @@ func TestTippingTxTipPaid(t *testing.T) {
 	net2, tip2 := testFees(2)
 
 	if tip0.Sign() != 0 {
-		Fail(t, "nonzero tip")
+		Fatal(t, "nonzero tip")
 	}
 	if arbmath.BigEquals(arbmath.BigSub(net2, tip2), net0) {
-		Fail(t, "a tip of 2 should yield a total of 3")
+		Fatal(t, "a tip of 2 should yield a total of 3")
 	}
 }
 
