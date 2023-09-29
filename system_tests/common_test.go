@@ -74,18 +74,6 @@ func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
 }
 
-// SetClient is used to initialize *ethclient.Client when users dont want to create TestClients via create methods from nodebuilder
-func (tc *TestClient) SetClient(c *ethclient.Client) *TestClient {
-	tc.Client = c
-	return tc
-}
-
-// SetInfo is used to initialize *BlockchainTestInfo when users dont want to create TestClients via create methods from nodebuilder
-func (tc *TestClient) SetInfo(i info) *TestClient {
-	tc.Info = i
-	return tc
-}
-
 func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction) *types.Receipt {
 	return SendSignedTxViaL1(t, tc.ctx, tc.Info, tc.Client, l2Client, transaction)
 }
@@ -110,21 +98,31 @@ func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
 	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
 }
 
+func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) {
+	SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
+}
+
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
 	return deploySimple(t, tc.ctx, auth, tc.Client)
 }
 
 type NodeBuilder struct {
-	// Nodebuilder configuration
+	// NodeBuilder configuration
 	ctx           context.Context
 	Info          info
 	chainConfig   *params.ChainConfig
-	cacheConfig   *core.CacheConfig
 	nodeConfig    *arbnode.Config
 	stackConfig   *node.Config
 	cachingConfig *execution.CachingConfig
+
+	// NodeBuiilder Node parameters
 	isSequencer   bool
 	takeOwnership bool
+	withL1        bool
+
+	// NodeBuiilder Blockchain parameters
+	dataDir     string
+	initMessage *arbostypes.ParsedInitMessage
 
 	// Created nodes
 	L1 *TestClient
@@ -135,136 +133,108 @@ func NewNodeBuilder(ctx context.Context) *NodeBuilder {
 	return &NodeBuilder{ctx: ctx}
 }
 
-func (b *NodeBuilder) SetChainConfig(c *params.ChainConfig) *NodeBuilder {
-	b.chainConfig = c
+func (b *NodeBuilder) DefaultConfig(withL1 bool, n *arbnode.Config, c *params.ChainConfig) *NodeBuilder {
+	// most used values across current tests are set here as default
+	b.withL1 = withL1
+	if withL1 {
+		b.isSequencer = true
+		b.nodeConfig = arbnode.ConfigDefaultL1Test()
+		if n != nil {
+			b.nodeConfig = n
+		}
+		b.chainConfig = c
+	} else {
+		b.takeOwnership = true
+		b.nodeConfig = arbnode.ConfigDefaultL2Test()
+		if n != nil {
+			b.nodeConfig = n
+		}
+		b.chainConfig = c
+	}
 	return b
 }
 
-func (b *NodeBuilder) SetNodeConfig(c *arbnode.Config) *NodeBuilder {
-	b.nodeConfig = c
+func (b *NodeBuilder) Build(t *testing.T) *NodeBuilder {
+	if b.withL1 {
+		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
+		l2.Info, l2.Node, l2.Client, l2.Stack, l1.Info, l1.Backend, l1.Client, l1.Stack =
+			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.stackConfig, b.Info)
+		b.L1, b.L2 = l1, l2
+	} else {
+		l2 := NewTestClient(b.ctx)
+		l2.Info, l2.Node, l2.Client =
+			CreateTestL2WithConfig(t, b.ctx, b.Info, b.nodeConfig, b.takeOwnership)
+		b.L2 = l2
+	}
 	return b
 }
 
-func (b *NodeBuilder) SetCacheConfig(c *core.CacheConfig) *NodeBuilder {
-	b.cacheConfig = c
-	return b
-}
+type SecondNodeParams map[string]interface{}
 
-func (b *NodeBuilder) SetStackConfig(c *node.Config) *NodeBuilder {
-	b.stackConfig = c
-	return b
-}
-
-func (b *NodeBuilder) SetInfo(i info) *NodeBuilder {
-	b.Info = i
-	return b
-}
-
-func (b *NodeBuilder) SetCachingConfig(c *execution.CachingConfig) *NodeBuilder {
-	b.cachingConfig = c
-	return b
-}
-
-func (b *NodeBuilder) SetIsSequencer(v bool) *NodeBuilder {
-	b.isSequencer = v
-	return b
-}
-
-func (b *NodeBuilder) SetTakeOwnership(v bool) *NodeBuilder {
-	b.takeOwnership = v
-	return b
-}
-
-func (b *NodeBuilder) ConfigForL2OnL1(isSequencer bool, n *arbnode.Config, c *params.ChainConfig, s *node.Config, i info) *NodeBuilder {
-	b.isSequencer = isSequencer
-	b.nodeConfig = n
-	b.chainConfig = c
-	b.stackConfig = s
-	b.Info = i
-	return b
-}
-
-func (b *NodeBuilder) BuildL2OnL1(t *testing.T) (*TestClient, *TestClient) {
-	l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
-	l2.Info, l2.Node, l2.Client, l2.Stack, l1.Info, l1.Backend, l1.Client, l1.Stack =
-		createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.stackConfig, b.Info)
-	b.L1, b.L2 = l1, l2
-	return l1, l2
-}
-
-func (b *NodeBuilder) ConfigForL2(takeOwnership bool, n *arbnode.Config, i info) *NodeBuilder {
-	b.takeOwnership = takeOwnership
-	b.nodeConfig = n
-	b.Info = i
-	return b
-}
-
-func (b *NodeBuilder) BuildL2(t *testing.T) *TestClient {
-	l2 := NewTestClient(b.ctx)
-	l2.Info, l2.Node, l2.Client =
-		CreateTestL2WithConfig(t, b.ctx, b.Info, b.nodeConfig, b.takeOwnership)
-	b.L2 = l2
-	return l2
-}
-
-func (b *NodeBuilder) Build2ndNode(t *testing.T, initData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.Config, stackConfig *node.Config) *TestClient {
+func (b *NodeBuilder) Build2ndNode(t *testing.T, params SecondNodeParams) *TestClient {
 	if b.L1 == nil {
 		t.Fatal("builder did not previously build a L1 Node")
 	}
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build a L2 Node")
 	}
+	if _, ok := params["dasConfig"]; ok {
+		nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
+		if params["dasConfig"] == nil {
+			nodeConf.DataAvailability.Enable = false
+		} else {
+			nodeConf.DataAvailability = *params["dasConfig"].(*das.DataAvailabilityConfig)
+		}
+		params["nodeConfig"] = nodeConf
+	} else if _, ok := params["nodeConfig"]; !ok {
+		params["nodeConfig"] = b.nodeConfig
+	}
+	if _, ok := params["stackConfig"]; !ok {
+		params["stackConfig"] = b.stackConfig
+	}
+
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.Node =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1.Info, initData, nodeConfig, stackConfig)
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1.Info,
+			params["initData"].(*statetransfer.ArbosInitializationInfo),
+			params["nodeConfig"].(*arbnode.Config),
+			params["stackConfig"].(*node.Config))
 	return l2
 }
 
-func (b *NodeBuilder) Build2ndNodeDAS(t *testing.T, initData *statetransfer.ArbosInitializationInfo, dasConfig *das.DataAvailabilityConfig) *TestClient {
-	if b.L1 == nil {
-		t.Fatal("builder did not previously build a L1 Node")
-	}
-	if b.L2 == nil {
-		t.Fatal("builder did not previously build a L2 Node")
-	}
-	l2 := NewTestClient(b.ctx)
-	l2.Client, l2.Node =
-		Create2ndNode(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1.Info, initData, dasConfig)
+func (b *NodeBuilder) BuildL1Blockchain(t *testing.T) *TestBlockchain {
+	l1 := NewTestBlockchain(b.ctx)
+	l1.Info, l1.Client, l1.Backend, l1.Stack = createTestL1BlockChain(t, b.Info)
+	return l1
+}
+
+func (b *NodeBuilder) BuildL2Blockchain(t *testing.T) *TestBlockchain {
+	l2 := NewTestBlockchain(b.ctx)
+	l2.Info, l2.Stack, l2.ChainDB, l2.NodeDB, l2.Blockchain =
+		createL2BlockChainWithStackConfig(t, b.Info, b.dataDir, b.chainConfig, b.initMessage, b.stackConfig, b.cachingConfig)
 	return l2
+}
+
+func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return BridgeBalance(t, account, amount, b.L1.Info, b.L2.Info, b.L1.Client, b.L2.Client, b.ctx)
 }
 
 type TestBlockchain struct {
 	TestClient
 	// Blockchain fields
-	ChainDB    ethdb.Database
-	NodeDB     ethdb.Database
-	Blockchain *core.BlockChain
+	chainConfig *params.ChainConfig
+	ChainDB     ethdb.Database
+	NodeDB      ethdb.Database
+	Blockchain  *core.BlockChain
 }
 
-func (b *NodeBuilder) ConfigForL1Blockchain(s *node.Config, i info) *NodeBuilder {
-	b.stackConfig = s
-	b.Info = i
-	return b
+func NewTestBlockchain(ctx context.Context) *TestBlockchain {
+	tc := NewTestClient(ctx)
+	return &TestBlockchain{TestClient: *tc}
 }
 
-func (b *NodeBuilder) BuilL1Blockchain(t *testing.T) *TestBlockchain {
-	l1 := &TestBlockchain{}
-	l1.ctx = b.ctx
-	l1.Info, l1.Client, l1.Backend, l1.Stack = createTestL1BlockChainWithConfig(t, b.Info, b.stackConfig)
-	return l1
-}
-
-func (b *NodeBuilder) ConfigForL2Blockchain(s *node.Config, i info) *NodeBuilder {
-	b.stackConfig = s
-	b.Info = i
-	return b
-}
-
-func (b *NodeBuilder) BuilL2Blockchain(t *testing.T, dataDir string, initMessage *arbostypes.ParsedInitMessage) *TestBlockchain {
-	l2 := &TestBlockchain{}
-	l2.Info, l2.Stack, l2.ChainDB, l2.NodeDB, l2.Blockchain =
-		createL2BlockChainWithStackConfig(t, b.Info, dataDir, b.chainConfig, initMessage, b.stackConfig, b.cachingConfig)
-	return l2
+func (tb *TestBlockchain) Deploy(t *testing.T) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
+	return DeployOnTestL1(t, tb.ctx, tb.Info, tb.Client, tb.chainConfig)
 }
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {

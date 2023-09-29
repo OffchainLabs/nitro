@@ -45,16 +45,19 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		parallelBatchPosters = 4
 	}
 
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.BatchPoster.Enable = false
-	conf.BatchPoster.RedisUrl = redisUrl
-	builder := NewNodeBuilder(ctx).SetNodeConfig(conf).SetIsSequencer(true)
-	l1A, l2A := builder.BuildL2OnL1(t)
-	// testNodeA := NewNodeBuilder(ctx).SetNodeConfig(conf).SetIsSequencer(true).CreateTestNodeOnL1AndL2(t)
+	builder := NewNodeBuilder(ctx).DefaultConfig(true, nil, nil)
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
+	builder.Build(t)
+	l1A, l2A := builder.L1, builder.L2
+
 	defer requireClose(t, l1A.Stack)
 	defer l2A.Node.StopAndWait()
 
-	l2B := builder.Build2ndNodeDAS(t, &l2A.Info.ArbInitData, nil)
+	params := make(SecondNodeParams)
+	params["initData"] = &l2A.Info.ArbInitData
+	params["dasConfig"] = nil
+	l2B := builder.Build2ndNode(t, params)
 	defer l2B.Node.StopAndWait()
 
 	l2A.Info.GenerateAccount("User2")
@@ -77,13 +80,13 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	firstTxData, err := txs[0].MarshalBinary()
 	Require(t, err)
 	seqTxOpts := l1A.Info.GetDefaultTransactOpts("Sequencer", ctx)
-	conf.BatchPoster.Enable = true
-	conf.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := l1A.Client.BlockNumber(ctx)
 	Require(t, err)
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
-		batchPosterConfig := conf.BatchPoster
+		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx, nil, l2A.Node.L1Reader, l2A.Node.InboxTracker, l2A.Node.TxStreamer, l2A.Node.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, l2A.Node.DeployInfo, &seqTxOpts, nil)
 		Require(t, err)
 		batchPoster.Start(ctx)
@@ -144,14 +147,18 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.Sequencer.MaxTxDataSize = 110000
-	builder := NewNodeBuilder(ctx).SetNodeConfig(conf).SetIsSequencer(true)
-	l1A, l2A := builder.BuildL2OnL1(t)
+	builder := NewNodeBuilder(ctx).DefaultConfig(true, nil, nil)
+	builder.nodeConfig.Sequencer.MaxTxDataSize = 110000
+	builder.Build(t)
+
+	l1A, l2A := builder.L1, builder.L2
 	defer requireClose(t, l1A.Stack)
 	defer l2A.Node.StopAndWait()
 
-	l2B := builder.Build2ndNodeDAS(t, &l2A.Info.ArbInitData, nil)
+	params := make(SecondNodeParams)
+	params["initData"] = &l2A.Info.ArbInitData
+	params["dasConfig"] = nil
+	l2B := builder.Build2ndNode(t, params)
 	defer l2B.Node.StopAndWait()
 
 	data := make([]byte, 100000)
@@ -176,12 +183,12 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.BatchPoster.CompressionLevel = brotli.BestCompression
-	conf.BatchPoster.MaxDelay = time.Hour
-	conf.RPC.RPCTxFeeCap = 1000.
-	builder := NewNodeBuilder(ctx).SetNodeConfig(conf).SetIsSequencer(true)
-	l1A, l2A := builder.BuildL2OnL1(t)
+	builder := NewNodeBuilder(ctx).DefaultConfig(true, nil, nil)
+	builder.nodeConfig.BatchPoster.CompressionLevel = brotli.BestCompression
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.nodeConfig.RPC.RPCTxFeeCap = 1000.
+	builder.Build(t)
+	l1A, l2A := builder.L1, builder.L2
 	defer requireClose(t, l1A.Stack)
 	defer l2A.Node.StopAndWait()
 	l2A.Info.GasPrice = big.NewInt(100e9)
