@@ -210,7 +210,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass: time.Hour,
 }
 
-func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -253,7 +253,18 @@ func NewBatchPoster(dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderRe
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(dataPosterDB, l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			Database:          dataPosterDB,
+			HeaderReader:      l1Reader,
+			Auth:              transactOpts,
+			RedisClient:       redisClient,
+			RedisLock:         redisLock,
+			Config:            dataPosterConfigFetcher,
+			MetadataRetriever: b.getBatchPosterPosition,
+			RedisKey:          "data-poster.queue",
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +342,7 @@ func (b *BatchPoster) pollForReverts(ctx context.Context) {
 
 			reverted, err := b.checkReverts(ctx, blockNum)
 			if err != nil {
-				logLevel := log.Error
+				logLevel := log.Warn
 				if strings.Contains(err.Error(), "not found") {
 					// Just parent chain node inconsistency
 					// One node sent us a block, but another didn't have it
