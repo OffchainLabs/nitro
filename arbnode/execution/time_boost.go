@@ -63,6 +63,7 @@ func newTimeBoostService(
 	for _, o := range opts {
 		o(s)
 	}
+	log.Info("Initializing timeboost service", "gFactor", s.gFactor)
 	return s
 }
 
