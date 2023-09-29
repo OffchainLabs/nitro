@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -47,7 +48,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
-	l1NodeConfigBDataAvailability.AggregatorConfig.Enable = false
+	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false
 	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
 	defer nodeB.StopAndWait()
 
@@ -173,7 +174,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
 		timeout := getDeadlineTimeout(t, time.Minute*30)
-		if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlockHeader.Number.Uint64(), timeout) {
+		// messageindex is same as block number here
+		if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlockHeader.Number.Uint64()), timeout) {
 			Fatal(t, "did not validate all blocks")
 		}
 	}

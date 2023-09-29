@@ -2,7 +2,6 @@ package server_jit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync/atomic"
@@ -70,14 +69,7 @@ func (v *JitSpawner) execute(
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
-	resolver := func(hash common.Hash) ([]byte, error) {
-		// Check if it's a known preimage
-		if preimage, ok := entry.Preimages[hash]; ok {
-			return preimage, nil
-		}
-		return nil, errors.New("preimage not found")
-	}
-	state, err := machine.prove(ctx, entry, resolver)
+	state, err := machine.prove(ctx, entry)
 	return state, err
 }
 
@@ -90,12 +82,11 @@ func (s *JitSpawner) Name() string {
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&v.count, 1)
-	run := server_common.NewValRun(moduleRoot)
-	go func() {
-		run.ConsumeResult(v.execute(v.GetContext(), entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
-	}()
-	return run
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
+		defer atomic.AddInt32(&v.count, -1)
+		return v.execute(ctx, entry, moduleRoot)
+	})
+	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (v *JitSpawner) Room() int {
@@ -103,7 +94,7 @@ func (v *JitSpawner) Room() int {
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
-	return avail - int(atomic.LoadInt32(&v.count))
+	return avail
 }
 
 func (v *JitSpawner) Stop() {

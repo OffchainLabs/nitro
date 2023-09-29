@@ -45,7 +45,7 @@ var TestSignVerifyConfig = SignVerifyConfig{
 	Symmetric:         TestSimpleHmacConfig,
 }
 
-func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValidator contracts.BatchPosterVerifierInterface) (*SignVerify, error) {
+func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValidator contracts.AddressVerifierInterface) (*SignVerify, error) {
 	var fallback *SimpleHmac
 	if config.SymmetricFallback {
 		var err error

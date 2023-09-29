@@ -95,18 +95,18 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 }
 
 type SequencerInboxBatch struct {
-	BlockHash         common.Hash
-	BlockNumber       uint64
-	SequenceNumber    uint64
-	BeforeInboxAcc    common.Hash
-	AfterInboxAcc     common.Hash
-	AfterDelayedAcc   common.Hash
-	AfterDelayedCount uint64
-	TimeBounds        bridgegen.ISequencerInboxTimeBounds
-	rawLog            types.Log
-	dataLocation      batchDataLocation
-	bridgeAddress     common.Address
-	serialized        []byte // nil if serialization isn't cached yet
+	BlockHash              common.Hash
+	ParentChainBlockNumber uint64
+	SequenceNumber         uint64
+	BeforeInboxAcc         common.Hash
+	AfterInboxAcc          common.Hash
+	AfterDelayedAcc        common.Hash
+	AfterDelayedCount      uint64
+	TimeBounds             bridgegen.ISequencerInboxTimeBounds
+	rawLog                 types.Log
+	dataLocation           batchDataLocation
+	bridgeAddress          common.Address
+	serialized             []byte // nil if serialization isn't cached yet
 }
 
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
@@ -222,17 +222,17 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		}
 		lastSeqNum = &seqNum
 		batch := &SequencerInboxBatch{
-			BlockHash:         log.BlockHash,
-			BlockNumber:       log.BlockNumber,
-			SequenceNumber:    seqNum,
-			BeforeInboxAcc:    parsedLog.BeforeAcc,
-			AfterInboxAcc:     parsedLog.AfterAcc,
-			AfterDelayedAcc:   parsedLog.DelayedAcc,
-			AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
-			rawLog:            log,
-			TimeBounds:        parsedLog.TimeBounds,
-			dataLocation:      batchDataLocation(parsedLog.DataLocation),
-			bridgeAddress:     log.Address,
+			BlockHash:              log.BlockHash,
+			ParentChainBlockNumber: log.BlockNumber,
+			SequenceNumber:         seqNum,
+			BeforeInboxAcc:         parsedLog.BeforeAcc,
+			AfterInboxAcc:          parsedLog.AfterAcc,
+			AfterDelayedAcc:        parsedLog.DelayedAcc,
+			AfterDelayedCount:      parsedLog.AfterDelayedMessagesRead.Uint64(),
+			rawLog:                 log,
+			TimeBounds:             parsedLog.TimeBounds,
+			dataLocation:           batchDataLocation(parsedLog.DataLocation),
+			bridgeAddress:          log.Address,
 		}
 		messages = append(messages, batch)
 	}

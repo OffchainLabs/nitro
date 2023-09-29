@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/addressTable"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -35,23 +36,24 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	arbosVersion      uint64                      // version of the ArbOS storage format and semantics
-	upgradeVersion    storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
-	upgradeTimestamp  storage.StorageBackedUint64 // when to do the planned upgrade
-	networkFeeAccount storage.StorageBackedAddress
-	l1PricingState    *l1pricing.L1PricingState
-	l2PricingState    *l2pricing.L2PricingState
-	retryableState    *retryables.RetryableState
-	addressTable      *addressTable.AddressTable
-	chainOwners       *addressSet.AddressSet
-	sendMerkle        *merkleAccumulator.MerkleAccumulator
-	blockhashes       *blockhash.Blockhashes
-	chainId           storage.StorageBackedBigInt
-	chainConfig       storage.StorageBackedBytes
-	genesisBlockNum   storage.StorageBackedUint64
-	infraFeeAccount   storage.StorageBackedAddress
-	backingStorage    *storage.Storage
-	Burner            burn.Burner
+	arbosVersion           uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion         storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp       storage.StorageBackedUint64 // when to do the planned upgrade
+	networkFeeAccount      storage.StorageBackedAddress
+	l1PricingState         *l1pricing.L1PricingState
+	l2PricingState         *l2pricing.L2PricingState
+	retryableState         *retryables.RetryableState
+	addressTable           *addressTable.AddressTable
+	chainOwners            *addressSet.AddressSet
+	sendMerkle             *merkleAccumulator.MerkleAccumulator
+	blockhashes            *blockhash.Blockhashes
+	chainId                storage.StorageBackedBigInt
+	chainConfig            storage.StorageBackedBytes
+	genesisBlockNum        storage.StorageBackedUint64
+	infraFeeAccount        storage.StorageBackedAddress
+	brotliCompressionLevel storage.StorageBackedUint64 // brotli compression level used for pricing
+	backingStorage         *storage.Storage
+	Burner                 burn.Burner
 }
 
 var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
@@ -82,6 +84,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(infraFeeAccountOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(brotliCompressionLevelOffset)),
 		backingStorage,
 		burner,
 	}, nil
@@ -139,6 +142,7 @@ const (
 	chainIdOffset
 	genesisBlockNumOffset
 	infraFeeAccountOffset
+	brotliCompressionLevelOffset
 )
 
 type SubspaceID []byte
@@ -215,6 +219,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
 	_ = chainConfigStorage.Set(initMessage.SerializedChainConfig)
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
+	_ = sto.SetUint64ByUint64(uint64(brotliCompressionLevelOffset), 0) // default brotliCompressionLevel for fast compression is 0
 
 	initialRewardsRecipient := l1pricing.BatchPosterAddress
 	if desiredArbosVersion >= 2 {
@@ -303,7 +308,32 @@ func (state *ArbosState) UpgradeArbosVersion(
 					ErrFatalNodeOutOfDate,
 				)
 			}
-			// no state changes needed
+			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
+			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
+
+			// We had mistakenly initialized AmortizedCostCapBips to math.MaxUint64 in older versions,
+			// but the correct value to disable the amortization cap is 0.
+			oldAmortizationCap, err := state.l1PricingState.AmortizedCostCapBips()
+			ensure(err)
+			if oldAmortizationCap == math.MaxUint64 {
+				ensure(state.l1PricingState.SetAmortizedCostCapBips(0))
+			}
+
+			// Clear chainOwners list to allow rectification of the mapping.
+			if !firstTime {
+				ensure(state.chainOwners.ClearList())
+			}
+		case 11:
+			if !chainConfig.DebugMode() {
+				// This upgrade isn't finalized so we only want to support it for testing
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					state.arbosVersion+1,
+					ErrFatalNodeOutOfDate,
+				)
+			}
+			// Update Brotli compression level for fast compression from 0 to 1
+			ensure(state.SetBrotliCompressionLevel(1))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -315,7 +345,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 	}
 
 	if firstTime && upgradeTo >= 6 {
-		state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		if upgradeTo < 11 {
+			state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		}
 		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))
 		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV6))
 		state.Restrict(state.l2PricingState.SetMaxPerBlockGasLimit(l2pricing.InitialPerBlockGasLimitV6))
@@ -361,6 +393,17 @@ func (state *ArbosState) ArbOSVersion() uint64 {
 func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.arbosVersion = val
 	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val))
+}
+
+func (state *ArbosState) BrotliCompressionLevel() (uint64, error) {
+	return state.brotliCompressionLevel.Get()
+}
+
+func (state *ArbosState) SetBrotliCompressionLevel(val uint64) error {
+	if val <= arbcompress.LEVEL_WELL {
+		return state.brotliCompressionLevel.Set(val)
+	}
+	return errors.New("invalid brotli compression level")
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {

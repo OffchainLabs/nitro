@@ -40,22 +40,22 @@ type DataAvailabilityConfig struct {
 
 	RequestTimeout time.Duration `koanf:"request-timeout"`
 
-	LocalCacheConfig BigCacheConfig `koanf:"local-cache"`
-	RedisCacheConfig RedisConfig    `koanf:"redis-cache"`
+	LocalCache BigCacheConfig `koanf:"local-cache"`
+	RedisCache RedisConfig    `koanf:"redis-cache"`
 
-	LocalDBStorageConfig     LocalDBStorageConfig     `koanf:"local-db-storage"`
-	LocalFileStorageConfig   LocalFileStorageConfig   `koanf:"local-file-storage"`
-	S3StorageServiceConfig   S3StorageServiceConfig   `koanf:"s3-storage"`
-	IpfsStorageServiceConfig IpfsStorageServiceConfig `koanf:"ipfs-storage"`
-	RegularSyncStorageConfig RegularSyncStorageConfig `koanf:"regular-sync-storage"`
+	LocalDBStorage     LocalDBStorageConfig     `koanf:"local-db-storage"`
+	LocalFileStorage   LocalFileStorageConfig   `koanf:"local-file-storage"`
+	S3Storage          S3StorageServiceConfig   `koanf:"s3-storage"`
+	IpfsStorage        IpfsStorageServiceConfig `koanf:"ipfs-storage"`
+	RegularSyncStorage RegularSyncStorageConfig `koanf:"regular-sync-storage"`
 
-	KeyConfig KeyConfig `koanf:"key"`
+	Key KeyConfig `koanf:"key"`
 
-	AggregatorConfig              AggregatorConfig              `koanf:"rpc-aggregator"`
-	RestfulClientAggregatorConfig RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
+	RPCAggregator  AggregatorConfig              `koanf:"rpc-aggregator"`
+	RestAggregator RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
 
-	L1NodeURL                       string `koanf:"parent-chain-node-url"`
-	L1ConnectionAttempts            int    `koanf:"parent-chain-connection-attempts"`
+	ParentChainNodeURL              string `koanf:"parent-chain-node-url"`
+	ParentChainConnectionAttempts   int    `koanf:"parent-chain-connection-attempts"`
 	SequencerInboxAddress           string `koanf:"sequencer-inbox-address"`
 	ExtraSignatureCheckingPublicKey string `koanf:"extra-signature-checking-public-key"`
 
@@ -66,8 +66,8 @@ type DataAvailabilityConfig struct {
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RequestTimeout:                5 * time.Second,
 	Enable:                        false,
-	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
-	L1ConnectionAttempts:          15,
+	RestAggregator:                DefaultRestfulClientAggregatorConfig,
+	ParentChainConnectionAttempts: 15,
 	PanicOnError:                  false,
 	IpfsStorageServiceConfig:      DefaultIpfsStorageServiceConfig,
 }
@@ -133,8 +133,8 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 	IpfsStorageServiceConfigAddOptions(prefix+".ipfs-storage", f)
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
-	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
-	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.ParentChainConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 

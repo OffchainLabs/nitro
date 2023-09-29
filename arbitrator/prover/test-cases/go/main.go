@@ -5,14 +5,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"runtime"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	merkletree "github.com/wealdtech/go-merkletree"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/wavmio"
 )
 
 // MerkleSample is an example using the Merkle tree to generate and verify proofs.
@@ -42,7 +46,7 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 }
 
 func testCompression(data []byte) {
-	compressed, err := arbcompress.CompressFast(data)
+	compressed, err := arbcompress.CompressLevel(data, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -95,4 +99,19 @@ func main() {
 	testCompression([]byte("This is a test string la la la la la la la la la la"))
 
 	println("test compression passed!\n")
+
+	checkPreimage := func(ty arbutil.PreimageType, hash common.Hash) {
+		preimage, err := wavmio.ResolveTypedPreimage(ty, hash)
+		if err != nil {
+			panic(fmt.Sprintf("failed to resolve preimage of type %v: %v", ty, err))
+		}
+		if !bytes.Equal(preimage, []byte("hello world")) {
+			panic(fmt.Sprintf("got wrong preimage of type %v: %v", ty, hex.EncodeToString(preimage)))
+		}
+	}
+
+	checkPreimage(arbutil.Keccak256PreimageType, common.HexToHash("47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad"))
+	checkPreimage(arbutil.Sha2_256PreimageType, common.HexToHash("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"))
+
+	println("verified preimage resolution!\n")
 }

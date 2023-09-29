@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -38,6 +39,49 @@ type blockTestState struct {
 
 const seqInboxTestIters = 40
 
+func deployGasRefunder(ctx context.Context, t *testing.T, info *BlockchainTestInfo, client *ethclient.Client) common.Address {
+	t.Helper()
+	abi, err := bridgegen.GasRefunderMetaData.GetAbi()
+	if err != nil {
+		t.Fatalf("Error getting gas refunder abi: %v", err)
+	}
+	fauOpts := info.GetDefaultTransactOpts("Faucet", ctx)
+	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), client)
+	if err != nil {
+		t.Fatalf("Error getting gas refunder contract deployment transaction: %v", err)
+	}
+	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+		t.Fatalf("Error deploying gas refunder contract: %v", err)
+	}
+	tx = info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
+	if err := client.SendTransaction(ctx, tx); err != nil {
+		t.Fatalf("Error sending gas refunder funding transaction")
+	}
+	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+		t.Fatalf("Error funding gas refunder")
+	}
+	contract, err := bridgegen.NewGasRefunder(addr, client)
+	if err != nil {
+		t.Fatalf("Error getting gas refunder contract binding: %v", err)
+	}
+	tx, err = contract.AllowContracts(&fauOpts, []common.Address{info.GetAddress("SequencerInbox")})
+	if err != nil {
+		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
+	}
+	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+		t.Fatalf("Error addting sequencer inbox in gas refunder allowlist: %v", err)
+	}
+
+	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{info.GetAddress("Sequencer")})
+	if err != nil {
+		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
+	}
+	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+		t.Fatalf("Error addting sequencer in gas refunder allowlist: %v", err)
+	}
+	return addr
+}
+
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -57,6 +101,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	Require(t, err)
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
+
+	gasRefunderAddr := deployGasRefunder(ctx, t, l1Info, l1Client)
 
 	ownerAddress := l2Info.GetAddress("Owner")
 	var startL2BlockNumber uint64 = 0
@@ -216,10 +262,14 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			}
 			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
+			before, err := l1Client.BalanceAt(ctx, seqOpts.From, nil)
+			if err != nil {
+				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
+			}
 			if i%5 == 0 {
-				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
 			}
 			Require(t, err)
 			txRes, err := EnsureTxSucceeded(ctx, l1Client, tx)
@@ -232,6 +282,14 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				_ = l1Client.SendTransaction(ctx, tx)
 				txRes, err = EnsureTxSucceeded(ctx, l1Client, tx)
 				Require(t, err)
+			}
+			after, err := l1Client.BalanceAt(ctx, seqOpts.From, nil)
+			if err != nil {
+				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
+			}
+			txCost := txRes.EffectiveGasPrice.Uint64() * txRes.GasUsed
+			if diff := before.Int64() - after.Int64(); diff >= int64(txCost) {
+				t.Errorf("Transaction: %v was not refunded, balance diff: %v, cost: %v", tx.Hash(), diff, txCost)
 			}
 
 			state.l2BlockNumber += uint64(numMessages)
@@ -267,11 +325,13 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				lastValidated := arbNode.BlockValidator.LastBlockValidated()
-				if lastValidated == expectedBlockNumber {
+				expectedPos, err := arbNode.Execution.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
+				Require(t, err)
+				lastValidated := arbNode.BlockValidator.Validated(t)
+				if lastValidated == expectedPos+1 {
 					break
 				} else if i >= 1000 {
-					Fatal(t, "timed out waiting for block validator; have", lastValidated, "want", expectedBlockNumber)
+					Fatal(t, "timed out waiting for block validator; have", lastValidated, "want", expectedPos+1)
 				}
 				time.Sleep(time.Second)
 			}
