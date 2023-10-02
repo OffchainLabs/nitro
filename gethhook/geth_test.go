@@ -124,7 +124,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		txes, err := msg.ParseL2Transactions(chainId, arbOSVersion, nil)
+		txes, err := arbos.ParseL2Transactions(msg, chainId, arbOSVersion, nil)
 		if err != nil {
 			t.Error(err)
 		}
