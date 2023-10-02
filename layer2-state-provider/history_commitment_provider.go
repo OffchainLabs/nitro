@@ -508,7 +508,7 @@ func (p *HistoryCommitmentProvider) validateOriginHeights(
 			p.challengeLeafHeights,
 		)
 	}
-	return validatedStartHeights(upperChallengeOriginHeights), nil
+	return upperChallengeOriginHeights, nil
 }
 
 // A caller specifies a request for a history commitment at challenge level N. It specifies a list of

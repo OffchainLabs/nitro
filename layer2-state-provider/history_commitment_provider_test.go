@@ -1,6 +1,7 @@
 package l2stateprovider
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/OffchainLabs/bold/containers/option"
@@ -179,4 +180,44 @@ func Test_computeStepSize(t *testing.T) {
 		require.Equal(t, StepSize(2*4*8), stepSize)
 	})
 
+}
+
+func TestValidateOriginHeights(t *testing.T) {
+	p := &HistoryCommitmentProvider{
+		challengeLeafHeights: []Height{1, 2, 3, 4, 5},
+	}
+
+	// Test case: valid upperChallengeOriginHeights
+	_, err := p.validateOriginHeights([]Height{1, 2})
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Test case: too many upperChallengeOriginHeights
+	_, err = p.validateOriginHeights([]Height{1, 2, 3, 4, 5, 6})
+	if err == nil {
+		t.Errorf("Expected an error but got none")
+	} else if fmt.Sprintf("%v", err) != "challenge level 6 is out of range for challenge leaf heights [1 2 3 4 5]" {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+func TestLeafHeightAtChallengeLevel(t *testing.T) {
+	p := &HistoryCommitmentProvider{
+		challengeLeafHeights: []Height{1, 2, 3, 4, 5},
+	}
+
+	// Test case: valid challengeLevel
+	height, err := p.leafHeightAtChallengeLevel(2)
+	if err != nil || height != 3 {
+		t.Errorf("Expected height 3, got %d with error %v", height, err)
+	}
+
+	// Test case: invalid challengeLevel
+	_, err = p.leafHeightAtChallengeLevel(10)
+	if err == nil {
+		t.Errorf("Expected an error but got none")
+	} else if fmt.Sprintf("%v", err) != "challenge level 10 is out of range for challenge leaf heights [1 2 3 4 5]" {
+		t.Errorf("Unexpected error: %v", err)
+	}
 }
