@@ -45,27 +45,25 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		parallelBatchPosters = 4
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(true, nil, nil)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
-	builder.Build(t)
+	cleanup := builder.Build(t)
+	defer cleanup()
 	l1A, l2A := builder.L1, builder.L2
 
-	defer requireClose(t, l1A.Stack)
-	defer l2A.Node.StopAndWait()
-
 	params := make(SecondNodeParams)
-	params["initData"] = &l2A.Info.ArbInitData
+	params["nodeConfig"] = nil
 	params["dasConfig"] = nil
-	l2B := builder.Build2ndNode(t, params)
-	defer l2B.Node.StopAndWait()
+	l2B, cleanup2nd := builder.Build2ndNode(t, params)
+	defer cleanup2nd()
 
-	l2A.Info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("User2")
 
 	var txs []*types.Transaction
 
 	for i := 0; i < 100; i++ {
-		tx := l2A.Info.PrepareTx("Owner", "User2", l2A.Info.TransferGas, common.Big1, nil)
+		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
 
 		err := l2A.Client.SendTransaction(ctx, tx)
@@ -79,7 +77,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 
 	firstTxData, err := txs[0].MarshalBinary()
 	Require(t, err)
-	seqTxOpts := l1A.Info.GetDefaultTransactOpts("Sequencer", ctx)
+	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := l1A.Client.BlockNumber(ctx)
@@ -96,7 +94,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	lastTxHash := txs[len(txs)-1].Hash()
 	for i := 90; i > 0; i-- {
 		SendWaitTestTransactions(t, ctx, l1A.Client, []*types.Transaction{
-			l1A.Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 		time.Sleep(500 * time.Millisecond)
 		_, err := l2B.Client.TransactionReceipt(ctx, lastTxHash)
@@ -134,7 +132,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	}
 
-	l2balance, err := l2B.Client.BalanceAt(ctx, l2A.Info.GetAddress("User2"), nil)
+	l2balance, err := l2B.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
 	if l2balance.Sign() == 0 {
@@ -147,26 +145,24 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(true, nil, nil)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.Sequencer.MaxTxDataSize = 110000
-	builder.Build(t)
-
-	l1A, l2A := builder.L1, builder.L2
-	defer requireClose(t, l1A.Stack)
-	defer l2A.Node.StopAndWait()
+	cleanup := builder.Build(t)
+	defer cleanup()
+	l2A := builder.L2
 
 	params := make(SecondNodeParams)
-	params["initData"] = &l2A.Info.ArbInitData
+	params["nodeConfig"] = nil
 	params["dasConfig"] = nil
-	l2B := builder.Build2ndNode(t, params)
-	defer l2B.Node.StopAndWait()
+	l2B, cleanup2nd := builder.Build2ndNode(t, params)
+	defer cleanup2nd()
 
 	data := make([]byte, 100000)
 	_, err := rand.Read(data)
 	Require(t, err)
-	faucetAddr := l2A.Info.GetAddress("Faucet")
-	gas := l2A.Info.TransferGas + 20000*uint64(len(data))
-	tx := l2A.Info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
+	faucetAddr := builder.L2Info.GetAddress("Faucet")
+	gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
+	tx := builder.L2Info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
 	err = l2A.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 	receiptA, err := EnsureTxSucceeded(ctx, l2A.Client, tx)
@@ -183,23 +179,22 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(true, nil, nil)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.CompressionLevel = brotli.BestCompression
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
 	builder.nodeConfig.RPC.RPCTxFeeCap = 1000.
-	builder.Build(t)
-	l1A, l2A := builder.L1, builder.L2
-	defer requireClose(t, l1A.Stack)
-	defer l2A.Node.StopAndWait()
-	l2A.Info.GasPrice = big.NewInt(100e9)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	l2A := builder.L2
+	builder.L2Info.GasPrice = big.NewInt(100e9)
 
 	go func() {
 		data := make([]byte, 90000)
 		_, err := rand.Read(data)
 		Require(t, err)
 		for {
-			gas := l2A.Info.TransferGas + 20000*uint64(len(data))
-			tx := l2A.Info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
+			gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
+			tx := builder.L2Info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
 			err = l2A.Client.SendTransaction(ctx, tx)
 			Require(t, err)
 			_, err := EnsureTxSucceeded(ctx, l2A.Client, tx)

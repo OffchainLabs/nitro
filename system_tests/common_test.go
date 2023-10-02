@@ -62,31 +62,31 @@ type client = arbutil.L1Interface
 
 type TestClient struct {
 	ctx     context.Context
-	Info    info
 	Client  *ethclient.Client
 	Backend *eth.Ethereum
 	Stack   *node.Node
 	Node    *arbnode.Node
+	cleanup func() // having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 }
 
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
 }
 
-func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction) *types.Receipt {
-	return SendSignedTxViaL1(t, tc.ctx, tc.Info, tc.Client, l2Client, transaction)
+func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, i info) *types.Receipt {
+	return SendSignedTxViaL1(t, tc.ctx, i, tc.Client, l2Client, transaction)
 }
 
-func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction) *types.Receipt {
-	return SendUnsignedTxViaL1(t, tc.ctx, tc.Info, tc.Client, l2Client, transaction)
+func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, i info) *types.Receipt {
+	return SendUnsignedTxViaL1(t, tc.ctx, i, tc.Client, l2Client, transaction)
 }
 
-func (tc *TestClient) TransferBalance(t *testing.T, from string, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return TransferBalanceTo(t, from, tc.Info.GetAddress(to), amount, tc.Info, tc.Client, tc.ctx)
+func (tc *TestClient) TransferBalance(t *testing.T, from string, to string, amount *big.Int, i info) (*types.Transaction, *types.Receipt) {
+	return TransferBalanceTo(t, from, i.GetAddress(to), amount, i, tc.Client, tc.ctx)
 }
 
-func (tc *TestClient) TransferBalanceTo(t *testing.T, from string, to common.Address, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return TransferBalanceTo(t, from, to, amount, tc.Info, tc.Client, tc.ctx)
+func (tc *TestClient) TransferBalanceTo(t *testing.T, from string, to common.Address, amount *big.Int, i info) (*types.Transaction, *types.Receipt) {
+	return TransferBalanceTo(t, from, to, amount, i, tc.Client, tc.ctx)
 }
 
 func (tc *TestClient) GetBalance(t *testing.T, account common.Address) *big.Int {
@@ -108,11 +108,13 @@ func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
-	Info          info
 	chainConfig   *params.ChainConfig
 	nodeConfig    *arbnode.Config
-	stackConfig   *node.Config
 	cachingConfig *execution.CachingConfig
+	L1StackConfig *node.Config
+	L2StackConfig *node.Config
+	L1Info        info
+	L2Info        info
 
 	// L1, L2 Node parameters
 	isSequencer   bool
@@ -126,96 +128,122 @@ type NodeBuilder struct {
 	// Created nodes
 	L1 *TestClient
 	L2 *TestClient
+
+	// Created Blockchains
+	L1B *TestBlockchain
+	L2B *TestBlockchain
 }
 
 func NewNodeBuilder(ctx context.Context) *NodeBuilder {
 	return &NodeBuilder{ctx: ctx}
 }
 
-func (b *NodeBuilder) DefaultConfig(withL1 bool, n *arbnode.Config, c *params.ChainConfig) *NodeBuilder {
+func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
-		if n != nil {
-			b.nodeConfig = n
-		}
-		b.chainConfig = c
 	} else {
 		b.takeOwnership = true
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
-		if n != nil {
-			b.nodeConfig = n
-		}
-		b.chainConfig = c
 	}
+	b.chainConfig = params.ArbitrumDevTestChainConfig()
+	b.L1Info = NewL1TestInfo(t)
+	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
+	b.L1StackConfig = stackConfigForTest(t)
 	return b
 }
 
-func (b *NodeBuilder) Build(t *testing.T) *NodeBuilder {
+func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
-		l2.Info, l2.Node, l2.Client, l2.Stack, l1.Info, l1.Backend, l1.Client, l1.Stack =
-			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.stackConfig, b.Info)
+		b.L2Info, l2.Node, l2.Client, l2.Stack, b.L1Info, l1.Backend, l1.Client, l1.Stack =
+			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.chainConfig, b.L2StackConfig, b.L2Info)
 		b.L1, b.L2 = l1, l2
+		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
 		l2 := NewTestClient(b.ctx)
-		l2.Info, l2.Node, l2.Client =
-			CreateTestL2WithConfig(t, b.ctx, b.Info, b.nodeConfig, b.takeOwnership)
+		b.L2Info, l2.Node, l2.Client =
+			CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, b.takeOwnership)
 		b.L2 = l2
 	}
-	return b
+	b.L2.cleanup = func() { b.L2.Node.StopAndWait() }
+	return func() {
+		b.L2.cleanup()
+		if b.L1 != nil && b.L1.cleanup != nil {
+			b.L1.cleanup()
+		}
+	}
 }
 
 type SecondNodeParams map[string]interface{}
 
-func (b *NodeBuilder) Build2ndNode(t *testing.T, params SecondNodeParams) *TestClient {
-	if b.L1 == nil {
-		t.Fatal("builder did not previously build a L1 Node")
-	}
+func (b *NodeBuilder) Build2ndNode(t *testing.T, params SecondNodeParams) (*TestClient, func()) {
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build a L2 Node")
 	}
-	if _, ok := params["dasConfig"]; ok {
-		nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
-		if params["dasConfig"] == nil {
-			nodeConf.DataAvailability.Enable = false
-		} else {
-			nodeConf.DataAvailability = *params["dasConfig"].(*das.DataAvailabilityConfig)
-		}
-		params["nodeConfig"] = nodeConf
-	} else if _, ok := params["nodeConfig"]; !ok {
+	if _, ok := params["nodeConfig"]; !ok {
 		params["nodeConfig"] = b.nodeConfig
+	} else if params["nodeConfig"] == nil {
+		params["nodeConfig"] = arbnode.ConfigDefaultL1NonSequencerTest()
+	}
+	if _, ok := params["dasConfig"]; ok {
+		if params["dasConfig"] == nil {
+			params["nodeConfig"].(*arbnode.Config).
+				DataAvailability.Enable = false
+		} else {
+			params["nodeConfig"].(*arbnode.Config).
+				DataAvailability = *params["dasConfig"].(*das.DataAvailabilityConfig)
+		}
 	}
 	if _, ok := params["stackConfig"]; !ok {
-		params["stackConfig"] = b.stackConfig
+		params["stackConfig"] = b.L2StackConfig
+	}
+	if _, ok := params["initData"]; !ok {
+		params["initData"] = &b.L2Info.ArbInitData
 	}
 
+	var s *node.Node
+	var i info
+	if b.withL1 {
+		if b.L1 == nil {
+			t.Fatal("builder did not previously build a L1 Node")
+		}
+		s, i = b.L1.Stack, b.L1Info
+	} else {
+		if b.L1B == nil {
+			t.Fatal("builder did not previously build L1 Blockchain")
+		}
+		s, i = b.L1B.Stack, b.L1B.Info
+	}
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.Node =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1.Info,
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, s, i,
 			params["initData"].(*statetransfer.ArbosInitializationInfo),
 			params["nodeConfig"].(*arbnode.Config),
 			params["stackConfig"].(*node.Config))
-	return l2
+	l2.cleanup = func() { l2.Node.StopAndWait() }
+	return l2, func() { l2.cleanup() }
 }
 
-func (b *NodeBuilder) BuildL1Blockchain(t *testing.T) *TestBlockchain {
-	l1 := NewTestBlockchain(b.ctx)
-	l1.Info, l1.Client, l1.Backend, l1.Stack = createTestL1BlockChain(t, b.Info)
-	return l1
+func (b *NodeBuilder) BuildL1Blockchain(t *testing.T) *NodeBuilder {
+	l1B := NewTestBlockchain(b.ctx)
+	l1B.Info, l1B.Client, l1B.Backend, l1B.Stack = createTestL1BlockChainWithConfig(t, b.L1Info, b.L1StackConfig)
+	b.L1B = l1B
+	return b
 }
 
-func (b *NodeBuilder) BuildL2Blockchain(t *testing.T) *TestBlockchain {
-	l2 := NewTestBlockchain(b.ctx)
-	l2.Info, l2.Stack, l2.ChainDB, l2.NodeDB, l2.Blockchain =
-		createL2BlockChainWithStackConfig(t, b.Info, b.dataDir, b.chainConfig, b.initMessage, b.stackConfig, b.cachingConfig)
-	return l2
+func (b *NodeBuilder) BuildL2Blockchain(t *testing.T) *NodeBuilder {
+	l2B := NewTestBlockchain(b.ctx)
+	l2B.Info, l2B.Stack, l2B.ChainDB, l2B.NodeDB, l2B.Blockchain =
+		createL2BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.L2StackConfig, b.cachingConfig)
+	b.L2B = l2B
+	return b
 }
 
 func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
-	return BridgeBalance(t, account, amount, b.L1.Info, b.L2.Info, b.L1.Client, b.L2.Client, b.ctx)
+	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
 }
 
 type TestBlockchain struct {
@@ -225,6 +253,7 @@ type TestBlockchain struct {
 	ChainDB     ethdb.Database
 	NodeDB      ethdb.Database
 	Blockchain  *core.BlockChain
+	Info        info
 }
 
 func NewTestBlockchain(ctx context.Context) *TestBlockchain {

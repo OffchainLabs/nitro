@@ -234,16 +234,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	defer cancel()
 
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
-	l1Info := NewL1TestInfo(t)
-	l1Info.GenerateGenesisAccount("deployer", initialBalance)
-	l1Info.GenerateGenesisAccount("asserter", initialBalance)
-	l1Info.GenerateGenesisAccount("challenger", initialBalance)
-	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	builder := NewNodeBuilder(ctx).DefaultConfig(false, nil, chainConfig)
-	builder.Info = l1Info
-	tbL1 := builder.BuildL1Blockchain(t)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.L1Info.GenerateGenesisAccount("deployer", initialBalance)
+	builder.L1Info.GenerateGenesisAccount("asserter", initialBalance)
+	builder.L1Info.GenerateGenesisAccount("challenger", initialBalance)
+	builder.L1Info.GenerateGenesisAccount("sequencer", initialBalance)
+	tbL1 := builder.BuildL1Blockchain(t).L1B
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
@@ -271,8 +269,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerBridgeAddr, challengerSeqInbox, challengerSeqInboxAddr := setupSequencerInboxStub(ctx, t, tbL1.Info, tbL1.Client, chainConfig)
 
 	builder.initMessage = initMessage
-	builder.Info = nil
-	asserterL2tb := builder.BuildL2Blockchain(t)
+	builder.L2Info = nil
+	asserterL2tb := builder.BuildL2Blockchain(t).L2B
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2, err := arbnode.CreateNode(ctx, asserterL2tb.Stack, asserterL2tb.ChainDB, asserterL2tb.NodeDB, NewFetcherFromConfig(conf), asserterL2tb.Blockchain, tbL1.Client, asserterRollupAddresses, nil, nil, nil, fatalErrChan)
@@ -280,7 +278,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	err = asserterL2.Start(ctx)
 	Require(t, err)
 
-	challengerL2tb := builder.BuildL2Blockchain(t)
+	challengerL2tb := builder.BuildL2Blockchain(t).L2B
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr

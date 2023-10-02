@@ -24,17 +24,17 @@ func TestBloom(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(false, nil, nil)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.RPC.BloomBitsBlocks = 256
 	builder.nodeConfig.RPC.BloomConfirms = 1
 	builder.takeOwnership = false
-	builder.Build(t)
+	cleanup := builder.Build(t)
 
-	defer builder.L2.Node.StopAndWait()
+	defer cleanup()
 
-	builder.L2.Info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("User2")
 
-	ownerTxOpts := builder.L2.Info.GetDefaultTransactOpts("Owner", ctx)
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
 	_, simple := deploySimple(t, ctx, ownerTxOpts, builder.L2.Client)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
