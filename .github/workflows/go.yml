@@ -165,11 +165,43 @@ jobs:
       - name: Install packages
         run: yarn
 
+      - name: Test size
+        run: forge build --sizes
+
       - name: Run foundry tests
         run: forge test
 
       - name: Run hardhat tests
         run: yarn hardhat compile && yarn hardhat --network hardhat test test/contract/*.spec.ts
+
+  sol-test-size:
+    name: Solidity contract size
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Setup node/yarn
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
+
+      - name: Install packages
+        run: yarn
+
+      - name: Test size
+        run: forge build --sizes
 
   bold-upgrade:
     name: BOLD upgrade test
