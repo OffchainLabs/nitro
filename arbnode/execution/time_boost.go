@@ -17,7 +17,6 @@ const (
 
 // A boostable tx type that contains a bid and a timestamp.
 type boostableTx interface {
-	id() string
 	bid() uint64
 	timestamp() time.Time
 	innerTx() *types.Transaction

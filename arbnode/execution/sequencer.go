@@ -169,10 +169,6 @@ func (i txQueueItem) timestamp() time.Time {
 	return i.firstAppearance
 }
 
-func (i txQueueItem) id() string {
-	return i.tx.Hash().Hex()
-}
-
 func (i txQueueItem) innerTx() *types.Transaction {
 	return i.tx
 }
@@ -894,7 +890,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if s.config().TimeBoost {
 		// If timeboost is enabled, we send the txs to a channel a background boost service
 		// is listening on. This service will then output potentially reordered transactions
-		// to an an output channel accordingly.
+		// to an output channel which we then receive from.
 		numQueueItems := len(queueItems)
 		for _, queueItem := range queueItems {
 			s.timeBoostTxFeedIn <- queueItem
