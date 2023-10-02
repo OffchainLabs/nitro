@@ -34,6 +34,8 @@ const (
 
 const MaxL2MessageSize = 256 * 1024
 
+const ArbosVersion_ArbitrumSubtypedTx = 12
+
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
 	Poster      common.Address `json:"sender"`

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -674,7 +675,7 @@ func (p *TxProcessor) DropTip() bool {
 	version := p.state.ArbOSVersion()
 	transaction := p.msg.Tx
 	tippingTx := false
-	if version >= 11 && transaction != nil && transaction.Type() == types.ArbitrumSubtypedTxType {
+	if version >= arbostypes.ArbosVersion_ArbitrumSubtypedTx && transaction != nil && transaction.Type() == types.ArbitrumSubtypedTxType {
 		subtype := types.GetArbitrumTxSubtype(transaction)
 		tippingTx = subtype == types.ArbitrumTippingTxSubtype
 	}
