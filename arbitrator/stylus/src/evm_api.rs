@@ -71,7 +71,8 @@ pub struct GoEvmApi {
         name: *mut RustVec,
         args: *mut RustSlice,
         outs: *mut RustSlice,
-        ink: u64,
+        start_ink: u64,
+        end_ink: u64,
     ),
     pub id: usize,
 }
@@ -258,14 +259,15 @@ impl EvmApi for GoEvmApi {
         call!(self, add_pages, pages)
     }
 
-    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], ink: u64) {
+    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
         call!(
             self,
             capture_hostio,
             ptr!(RustVec::new(name.as_bytes().to_vec())),
             ptr!(RustSlice::new(args)),
             ptr!(RustSlice::new(outs)),
-            ink
+            start_ink,
+            end_ink
         )
     }
 }
