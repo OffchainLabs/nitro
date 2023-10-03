@@ -76,9 +76,9 @@ u64 addPagesWrap(usize api, u16 pages) {
     return addPagesImpl(api, pages);
 }
 
-void captureHostioImpl(usize api, RustSlice * name, RustSlice * data, u64 ink);
-void captureHostioWrap(usize api, RustSlice * name, RustSlice * data, u64 ink) {
-    return captureHostioImpl(api, name, data, ink);
+void captureHostioImpl(usize api, RustSlice * name, RustSlice * data, u64 startInk, u64 endInk);
+void captureHostioWrap(usize api, RustSlice * name, RustSlice * data, u64 startInk, u64 endInk) {
+    return captureHostioImpl(api, name, data, startInk, endInk);
 }
 */
 import "C"

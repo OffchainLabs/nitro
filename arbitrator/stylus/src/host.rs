@@ -22,12 +22,13 @@ macro_rules! be {
 macro_rules! trace {
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data.tracing {
-            let ink = $env.ink_ready()?;
+            let start_ink = $env.start_ink;
+            let after_ink = $env.ink_ready()?;
             let mut args = vec![];
             $(args.extend($args);)*
             let mut outs = vec![];
             $(outs.extend($outs);)*
-            $env.trace($name, &args, &outs, ink);
+            $env.trace($name, &args, &outs, start_ink, after_ink);
         }
         Ok($ret)
     }};
@@ -49,14 +50,14 @@ pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     let mut env = WasmEnv::start(&mut env, 0)?;
     env.pay_for_write(env.args.len() as u64)?;
     env.write_slice(ptr, &env.args)?;
-    trace!("read_args", env, &env.args, &[])
+    trace!("read_args", env, &[], &env.args)
 }
 
 pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env, 0)?;
     env.pay_for_read(len.into())?;
     env.outs = env.read_slice(ptr, len)?;
-    trace!("write_result", env, &[], &env.outs)
+    trace!("write_result", env, &env.outs, &[])
 }
 
 pub(crate) fn storage_load_bytes32<E: EvmApi>(
@@ -150,6 +151,8 @@ where
 {
     let mut env = WasmEnv::start(&mut env, 3 * PTR_INK + EVM_API_INK)?;
     env.pay_for_read(calldata_len.into())?;
+
+    let gas_passed = gas;
     gas = gas.min(env.gas_left()?); // provide no more than what the user has
 
     let contract = env.read_bytes20(contract)?;
@@ -166,10 +169,11 @@ where
     if env.evm_data.tracing {
         let underscore = (!name.is_empty()).then_some("_").unwrap_or_default();
         let name = format!("{name}{underscore}call_contract");
+        let value = value.into_iter().flatten();
         return trace!(
             &name,
             env,
-            [contract, &input, be!(gas), value.unwrap_or_default()],
+            [contract, be!(gas_passed), value, &input],
             [be!(outs_len), be!(status)],
             status
         );
@@ -261,12 +265,12 @@ where
     env.write_u32(revert_data_len, ret_len)?;
     env.write_bytes20(contract, result)?;
 
-    let salt = salt.into_iter().flat_map(|x| x);
+    let salt = salt.into_iter().flatten();
     trace!(
         name,
         env,
-        [code_copy.unwrap(), endowment, salt, be!(gas)],
-        [result, be!(ret_len), be!(gas_cost)],
+        [endowment, salt, code_copy.unwrap()],
+        [result, be!(ret_len)],
         ()
     )
 }
@@ -285,7 +289,7 @@ pub(crate) fn read_return_data<E: EvmApi>(
     env.write_slice(dest, &data)?;
 
     let len = data.len() as u32;
-    trace!("read_return_data", env, [be!(dest), be!(offset)], data, len)
+    trace!("read_return_data", env, [be!(offset), be!(size)], data, len)
 }
 
 pub(crate) fn return_data_size<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
@@ -309,7 +313,7 @@ pub(crate) fn emit_log<E: EvmApi>(
 
     let data = env.read_slice(data, len)?;
     env.evm_api.emit_log(data.clone(), topics)?;
-    trace!("emit_log", env, [data, be!(topics)], &[])
+    trace!("emit_log", env, [be!(topics), data], &[])
 }
 
 pub(crate) fn account_balance<E: EvmApi>(
@@ -323,7 +327,7 @@ pub(crate) fn account_balance<E: EvmApi>(
     let (balance, gas_cost) = env.evm_api.account_balance(address);
     env.buy_gas(gas_cost)?;
     env.write_bytes32(ptr, balance)?;
-    trace!("account_balance", env, &[], balance)
+    trace!("account_balance", env, address, balance)
 }
 
 pub(crate) fn account_codehash<E: EvmApi>(
@@ -337,19 +341,7 @@ pub(crate) fn account_codehash<E: EvmApi>(
     let (hash, gas_cost) = env.evm_api.account_codehash(address);
     env.buy_gas(gas_cost)?;
     env.write_bytes32(ptr, hash)?;
-    trace!("account_codehash", env, &[], hash)
-}
-
-pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
-    let mut env = WasmEnv::start(&mut env, 0)?;
-    let gas = env.gas_left()?;
-    trace!("evm_gas_left", env, be!(gas), &[], gas)
-}
-
-pub(crate) fn evm_ink_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
-    let mut env = WasmEnv::start(&mut env, 0)?;
-    let ink = env.ink_ready()?;
-    trace!("evm_ink_left", env, be!(ink), &[], ink)
+    trace!("account_codehash", env, address, hash)
 }
 
 pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
@@ -392,6 +384,18 @@ pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> M
     let mut env = WasmEnv::start(&mut env, PTR_INK)?;
     env.write_bytes20(ptr, env.evm_data.contract_address)?;
     trace!("contract_address", env, &[], env.evm_data.contract_address)
+}
+
+pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+    let mut env = WasmEnv::start(&mut env, 0)?;
+    let gas = env.gas_left()?;
+    trace!("evm_gas_left", env, be!(gas), &[], gas)
+}
+
+pub(crate) fn evm_ink_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+    let mut env = WasmEnv::start(&mut env, 0)?;
+    let ink = env.ink_ready()?;
+    trace!("evm_ink_left", env, be!(ink), &[], ink)
 }
 
 pub(crate) fn msg_reentrant<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
@@ -446,7 +450,7 @@ pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
 }
 
 pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
-    let mut env = WasmEnv::start_free(&mut env);
+    let mut env = WasmEnv::start_free(&mut env)?;
     if pages == 0 {
         env.buy_ink(HOSTIO_INK)?;
         return Ok(());
@@ -461,7 +465,7 @@ pub(crate) fn console_log_text<E: EvmApi>(
     ptr: u32,
     len: u32,
 ) -> MaybeEscape {
-    let mut env = WasmEnv::start_free(&mut env);
+    let mut env = WasmEnv::start_free(&mut env)?;
     let text = env.read_slice(ptr, len)?;
     env.say(String::from_utf8_lossy(&text));
     trace!("console_log_text", env, text, &[])
@@ -471,7 +475,7 @@ pub(crate) fn console_log<E: EvmApi, T: Into<Value>>(
     mut env: WasmEnvMut<E>,
     value: T,
 ) -> MaybeEscape {
-    let mut env = WasmEnv::start_free(&mut env);
+    let mut env = WasmEnv::start_free(&mut env)?;
     let value = value.into();
     env.say(value);
     trace!("console_log", env, [format!("{value}").as_bytes()], &[])
@@ -481,7 +485,7 @@ pub(crate) fn console_tee<E: EvmApi, T: Into<Value> + Copy>(
     mut env: WasmEnvMut<E>,
     value: T,
 ) -> Result<T, Escape> {
-    let env = WasmEnv::start_free(&mut env);
+    let env = WasmEnv::start_free(&mut env)?;
     env.say(value.into());
     Ok(value)
 }

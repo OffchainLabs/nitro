@@ -999,9 +999,7 @@ func setupProgramTest(t *testing.T, jit bool) (
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
 
-	// TODO: track latest ArbOS version
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
 
 	l2config := arbnode.ConfigDefaultL1Test()
 	l2config.BlockValidator.Enable = false
