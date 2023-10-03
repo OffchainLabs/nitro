@@ -243,7 +243,7 @@ func testSubtypedTxOldArbosVersion(t *testing.T, version uint64) {
 	l2info.GenerateAccount("User1")
 	tx := l2info.PrepareTippingTx("Owner", "User1", gasPrice.Uint64(), tipCap, big.NewInt(1e12), nil)
 	err := l2client.SendTransaction(ctx, tx)
-	if !strings.Contains(err.Error(), types.ErrTxTypeNotSupported.Error()) {
+	if err == nil || !strings.Contains(err.Error(), types.ErrTxTypeNotSupported.Error()) {
 		testhelpers.FailImpl(t, "tx didn't fail as it should for arbos version:", version, "err:", err)
 	}
 }
@@ -252,4 +252,5 @@ func TestSubtypedTxOldArbosVersion(t *testing.T) {
 	testSubtypedTxOldArbosVersion(t, 8)
 	testSubtypedTxOldArbosVersion(t, 9)
 	testSubtypedTxOldArbosVersion(t, 10)
+	testSubtypedTxOldArbosVersion(t, 11)
 }
