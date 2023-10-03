@@ -182,7 +182,7 @@ impl EvmApi for TestEvmApi {
         _args: &[u8],
         _outs: &[u8],
         _start_ink: u64,
-        _after_ink: u64,
+        _end_ink: u64,
     ) {
         unimplemented!()
     }

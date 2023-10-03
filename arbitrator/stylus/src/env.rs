@@ -209,9 +209,9 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         Ok(())
     }
 
-    pub fn trace(&self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, after_ink: u64) {
+    pub fn trace(&self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
         self.evm_api
-            .capture_hostio(name, args, outs, start_ink, after_ink);
+            .capture_hostio(name, args, outs, start_ink, end_ink);
     }
 }
 

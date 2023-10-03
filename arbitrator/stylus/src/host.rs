@@ -23,12 +23,12 @@ macro_rules! trace {
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data.tracing {
             let start_ink = $env.start_ink;
-            let after_ink = $env.ink_ready()?;
+            let end_ink = $env.ink_ready()?;
             let mut args = vec![];
             $(args.extend($args);)*
             let mut outs = vec![];
             $(outs.extend($outs);)*
-            $env.trace($name, &args, &outs, start_ink, after_ink);
+            $env.trace($name, &args, &outs, start_ink, end_ink);
         }
         Ok($ret)
     }};
