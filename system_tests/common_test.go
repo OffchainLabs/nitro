@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -151,7 +150,9 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.chainConfig = params.ArbitrumDevTestChainConfig()
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
-	b.L1StackConfig = stackConfigForTest(t)
+	b.dataDir = t.TempDir()
+	b.L1StackConfig = createStackConfigForTest(b.dataDir)
+	b.L2StackConfig = createStackConfigForTest(b.dataDir)
 	return b
 }
 
@@ -199,6 +200,8 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params SecondNodeParams) (*Test
 	}
 	if _, ok := params["stackConfig"]; !ok {
 		params["stackConfig"] = b.L2StackConfig
+		// should use different dataDir from the previously used ones
+		params["stackConfig"].(*node.Config).DataDir = t.TempDir()
 	}
 	if _, ok := params["initData"]; !ok {
 		params["initData"] = &b.L2Info.ArbInitData
@@ -495,33 +498,19 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
 
-func stackConfigForTest(t *testing.T) *node.Config {
-	stackConfig := node.DefaultConfig
-	stackConfig.HTTPPort = 0
-	stackConfig.WSPort = 0
-	stackConfig.UseLightweightKDF = true
-	stackConfig.P2P.ListenAddr = ""
-	stackConfig.P2P.NoDial = true
-	stackConfig.P2P.NoDiscovery = true
-	stackConfig.P2P.NAT = nil
-	stackConfig.DataDir = t.TempDir()
-	return &stackConfig
-}
-
-func createDefaultStackForTest(dataDir string) (*node.Node, error) {
+func createStackConfigForTest(dataDir string) *node.Config {
 	stackConf := node.DefaultConfig
-	var err error
 	stackConf.DataDir = dataDir
+	stackConf.UseLightweightKDF = true
+	stackConf.WSPort = 0
+	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
-
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		return nil, fmt.Errorf("error creating protocol stack: %w", err)
-	}
-	return stack, nil
+	stackConf.P2P.NAT = nil
+	return &stackConf
 }
 
 func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
@@ -597,7 +586,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 		l1info = NewL1TestInfo(t)
 	}
 	if stackConfig == nil {
-		stackConfig = stackConfigForTest(t)
+		stackConfig = createStackConfigForTest(t.TempDir())
 	}
 	l1info.GenerateAccount("Faucet")
 
@@ -718,12 +707,10 @@ func createL2BlockChainWithStackConfig(
 	var stack *node.Node
 	var err error
 	if stackConfig == nil {
-		stack, err = createDefaultStackForTest(dataDir)
-		Require(t, err)
-	} else {
-		stack, err = node.New(stackConfig)
-		Require(t, err)
+		stackConfig = createStackConfigForTest(dataDir)
 	}
+	stack, err = node.New(stackConfig)
+	Require(t, err)
 
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
@@ -948,7 +935,7 @@ func Create2ndNodeWithConfig(
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
-		stackConfig = stackConfigForTest(t)
+		stackConfig = createStackConfigForTest(t.TempDir())
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)

@@ -270,6 +270,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	builder.initMessage = initMessage
 	builder.L2Info = nil
+	builder.L2StackConfig.DataDir = t.TempDir()
 	asserterL2tb := builder.BuildL2Blockchain(t).L2B
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
@@ -278,6 +279,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	err = asserterL2.Start(ctx)
 	Require(t, err)
 
+	builder.L2StackConfig.DataDir = t.TempDir()
 	challengerL2tb := builder.BuildL2Blockchain(t).L2B
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
