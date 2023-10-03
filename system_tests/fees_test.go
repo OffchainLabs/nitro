@@ -303,7 +303,7 @@ func TestSequencerPriceAdjustsFrom25Gwei(t *testing.T) {
 func compressedTxSize(t *testing.T, tx *types.Transaction) uint64 {
 	txBin, err := tx.MarshalBinary()
 	Require(t, err)
-	compressed, err := arbcompress.CompressFast(txBin)
+	compressed, err := arbcompress.CompressLevel(txBin, 0)
 	Require(t, err)
 	return uint64(len(compressed))
 }

@@ -1,7 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package leveldb
+package dbstorage
 
 import (
 	"bytes"
@@ -10,13 +10,14 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-// Storage implements leveldb based storage for batch poster.
+// Storage implements db based storage for batch poster.
 type Storage struct {
 	db     ethdb.Database
 	encDec storage.EncoderDecoderF
@@ -77,6 +78,18 @@ func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, er
 		return nil, err
 	}
 	return s.encDec().Decode(val)
+}
+
+func (s *Storage) PruneAll(ctx context.Context) error {
+	idx, err := s.lastItemIdx(ctx)
+	if err != nil {
+		return fmt.Errorf("pruning all keys: %w", err)
+	}
+	until, err := strconv.Atoi(string(idx))
+	if err != nil {
+		return fmt.Errorf("converting last item index bytes to integer: %w", err)
+	}
+	return s.Prune(ctx, uint64(until+1))
 }
 
 func (s *Storage) Prune(ctx context.Context, until uint64) error {
@@ -175,5 +188,5 @@ func (s *Storage) IsPersistent() bool {
 }
 
 func isErrNotFound(err error) bool {
-	return errors.Is(err, leveldb.ErrNotFound) || errors.Is(err, memorydb.ErrMemorydbNotFound)
+	return errors.Is(err, leveldb.ErrNotFound) || errors.Is(err, pebble.ErrNotFound) || errors.Is(err, memorydb.ErrMemorydbNotFound)
 }

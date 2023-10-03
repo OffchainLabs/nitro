@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -20,20 +21,24 @@ type ValidationInputJson struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	PreimagesB64  jsonapi.PreimagesMapJson
+	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
 }
 
 func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
 	res := &ValidationInputJson{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
-		PreimagesB64:  jsonapi.NewPreimagesMapJson(entry.Preimages),
+		PreimagesB64:  jsonPreimagesMap,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
@@ -43,12 +48,16 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 }
 
 func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
 	valInput := &validator.ValidationInput{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
-		Preimages:     entry.PreimagesB64.Map,
+		Preimages:     preimages,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
