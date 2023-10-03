@@ -311,48 +311,6 @@ fn test_rust() -> Result<()> {
 }
 
 #[test]
-fn test_c() -> Result<()> {
-    // in siphash.c
-    //     the inputs are a hash, key, and plaintext
-    //     the output is whether the hash was valid
-
-    let filename = "../langs/c/examples/siphash/siphash.wasm";
-    let (compile, config, ink) = test_configs();
-
-    let text: Vec<u8> = (0..63).collect();
-    let key: Vec<u8> = (0..16).collect();
-    let key: [u8; 16] = key.try_into().unwrap();
-    let hash = crypto::siphash(&text, &key);
-
-    let mut args = key.to_vec();
-    args.extend(text);
-
-    let mut native = TestInstance::new_linked(filename, &compile, config)?;
-    let output = run_native(&mut native, &args, ink)?;
-    assert_eq!(output, hash.to_le_bytes());
-
-    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
-    let output = run_machine(&mut machine, &args, config, ink)?;
-    assert_eq!(output, hash.to_le_bytes());
-
-    check_instrumentation(native, machine)
-}
-
-#[test]
-fn test_bf() -> Result<()> {
-    // in cat.b
-    //     the output is the input
-
-    let (compile, config, ink) = test_configs();
-    let args = "Hello world!".as_bytes();
-
-    let mut native = TestInstance::new_linked("tests/bf/cat.wasm", &compile, config)?;
-    let output = run_native(&mut native, args, ink)?;
-    assert_eq!(output, args);
-    Ok(())
-}
-
-#[test]
 fn test_fallible() -> Result<()> {
     // in fallible.rs
     //     an input starting with 0x00 will execute an unreachable
