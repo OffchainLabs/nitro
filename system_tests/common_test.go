@@ -404,7 +404,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesis := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
+	l1Genesis := core.DeveloperGenesisBlock(15_000_000, l1info.GetAddress("Faucet"))
 	infoGenesis := l1info.GetGenesisAlloc()
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
@@ -435,8 +435,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	Require(t, stack.Start())
 	Require(t, l1backend.StartMining())
 
-	rpcClient, err := stack.Attach()
-	Require(t, err)
+	rpcClient := stack.Attach()
 
 	l1Client := ethclient.NewClient(rpcClient)
 
@@ -547,8 +546,7 @@ func createL2BlockChainWithStackConfig(
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient, err := backend.Attach()
-	Require(t, err)
+	rpcClient := backend.Attach()
 	return ethclient.NewClient(rpcClient)
 }
 
@@ -736,10 +734,7 @@ func Create2ndNodeWithConfig(
 	stackConfig *node.Config,
 ) (*ethclient.Client, *arbnode.Node) {
 	feedErrChan := make(chan error, 10)
-	l1rpcClient, err := l1stack.Attach()
-	if err != nil {
-		Fatal(t, err)
-	}
+	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {

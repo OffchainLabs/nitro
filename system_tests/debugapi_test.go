@@ -18,7 +18,7 @@ func TestDebugAPI(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
-	l2rpc, _ := l2stack.Attach()
+	l2rpc := l2stack.Attach()
 
 	var dump state.Dump
 	err := l2rpc.CallContext(ctx, &dump, "debug_dumpBlock", rpc.LatestBlockNumber)

@@ -151,7 +151,7 @@ func TestArbTraceForwarding(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
-	l2rpc, _ := l2stack.Attach()
+	l2rpc := l2stack.Attach()
 	txArgs := callTxArgs{}
 	traceTypes := []string{"trace"}
 	blockNum := rpc.BlockNumberOrHash{}

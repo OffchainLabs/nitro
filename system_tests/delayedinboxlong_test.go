@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -51,8 +52,12 @@ func TestDelayInboxLong(t *testing.T) {
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
-		// adding multiple messages in the same AddLocal to get them in the same L1 block
-		errs := l1backend.TxPool().AddLocals(l1Txs)
+		wrappedL1Txs := make([]*txpool.Transaction, 0, messagesPerAddLocal)
+		for _, tx := range l1Txs {
+			wrappedL1Txs = append(wrappedL1Txs, &txpool.Transaction{Tx: tx})
+		}
+		// adding multiple messages in the same Add with local=true to get them in the same L1 block
+		errs := l1backend.TxPool().Add(wrappedL1Txs, true, false)
 		for _, err := range errs {
 			Require(t, err)
 		}
