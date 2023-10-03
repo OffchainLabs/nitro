@@ -94,9 +94,9 @@ func TestTippingTxJsonMarshalling(t *testing.T) {
 	tippingTx := info.SignTxAs("tester", tipping)
 	tippingJson, err := tippingTx.MarshalJSON()
 	testhelpers.RequireImpl(t, err)
-	expectedJson := []byte(`{"type":"0x63","nonce":"0x2c","gasPrice":"0x0","maxPriorityFeePerGas":"0x7","maxFeePerGas":"0xd","gas":"0x33450","value":"0x8","input":"0xdeadbeef","v":"0x0","r":"0x61397aeca5e1059cda7c7ae10bf7fbf828fab81015c9eed4174d175406c1e6b6","s":"0xb56b52f6d874105b26cc19c6eaca899b5e26f1649845b774a32c5f8266a8d09","to":"0x00000000000000000000000000000000deadbeef","chainId":"0x539","accessList":[{"address":"0x00000000000000000000000000000000deadbeef","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"subtype":"0x1","hash":"0x904e53f088edb34cd09a10fbfc54f809ee840873fb262fd35a6d2434da24bae7"}`)
+	expectedJson := []byte(`{"type":"0x63","chainId":"0x539","nonce":"0x2c","to":"0x00000000000000000000000000000000deadbeef","gas":"0x33450","gasPrice":"0x0","maxPriorityFeePerGas":"0x7","maxFeePerGas":"0xd","value":"0x8","input":"0xdeadbeef","accessList":[{"address":"0x00000000000000000000000000000000deadbeef","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"v":"0x0","r":"0x61397aeca5e1059cda7c7ae10bf7fbf828fab81015c9eed4174d175406c1e6b6","s":"0xb56b52f6d874105b26cc19c6eaca899b5e26f1649845b774a32c5f8266a8d09","subtype":"0x1","hash":"0x904e53f088edb34cd09a10fbfc54f809ee840873fb262fd35a6d2434da24bae7"}`)
 	if !bytes.Equal(tippingJson, expectedJson) {
-		testhelpers.FailImpl(t, "Unexpected json result, want:", string(expectedJson), "got:", string(tippingJson))
+		testhelpers.FailImpl(t, "Unexpected json result, want:\n\t", string(expectedJson), "\ngot:\n\t", string(tippingJson))
 	}
 	var unmarshalledTx types.Transaction
 	err = json.Unmarshal(tippingJson, &unmarshalledTx)
