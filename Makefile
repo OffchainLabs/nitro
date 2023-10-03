@@ -95,7 +95,7 @@ stylus_cargo = arbitrator/stylus/tests/.cargo/config.toml
 
 rust_sdk = arbitrator/langs/rust
 stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(rust_sdk)/*/*.toml)
-stylus_lang_c    = $(wildcard arbitrator/langs/c/*.c arbitrator/langs/c/*.h)
+stylus_lang_c    = $(wildcard arbitrator/langs/c/*/*.c arbitrator/langs/c/*/*.h)
 stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
 
 cargo_nightly = cargo +nightly build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
