@@ -285,44 +285,7 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 	managerB.Start(ctx)
-
-	// creationInfo, err := chainB.ReadAssertionCreationInfo(ctx, honest.Id())
-	// Require(t, err)
-
-	// entry, err := statelessA.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(1))
-	// Require(t, err)
-	// input, err := entry.ToInput()
-	// Require(t, err)
-	// execRun, err := statelessA.ExecutionSpawner().CreateExecutionRun(creationInfo.WasmModuleRoot, input).Await(ctx)
-	// Require(t, err)
-
-	// bigStepLeaves := execRun.GetBigStepLeavesUpTo(bigStepChallengeLeafHeight, smallStepChallengeLeafHeight)
-	// result, err := bigStepLeaves.Await(ctx)
-	// Require(t, err)
-	// t.Logf("Got result %d with first %#x and last %#x", len(result), result[0], result[len(result)-1])
-
-	// entry, err = statelessA.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(1))
-	// Require(t, err)
-	// input, err = entry.ToInput()
-	// Require(t, err)
-	// execRun, err = statelessA.ExecutionSpawner().CreateExecutionRun(creationInfo.WasmModuleRoot, input).Await(ctx)
-	// Require(t, err)
-
-	// t.Log("=======")
-	// bigStep := uint64(58)
-	// bigStepLeaves = execRun.GetSmallStepLeavesUpTo(bigStep, smallStepChallengeLeafHeight, smallStepChallengeLeafHeight)
-	// result, err = bigStepLeaves.Await(ctx)
-	// Require(t, err)
-	// t.Logf("Got result %d with first %#x and last %#x", len(result), result[0], result[len(result)-1])
-
-	// entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
-	// input, err := entry.ToInput()
-	// execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	// bigStepLeaves := execRun.GetSmallStepLeavesUpTo(toBigStep, s.numOpcodesPerBigStep)
-	// result, err := bigStepLeaves.Await(ctx)
-
 	time.Sleep(time.Hour)
-
 }
 
 func createTestNodeOnL1ForBoldProtocol(
@@ -465,7 +428,8 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint64(6)), // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint64(6)),       // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(1500)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
@@ -477,6 +441,7 @@ func deployContractsOnly(
 		l1info.GetAddress("Sequencer"),
 		cfg,
 		false, // do not use mock bridge.
+		false, // do not use a mock one step prover
 	)
 	Require(t, err)
 
