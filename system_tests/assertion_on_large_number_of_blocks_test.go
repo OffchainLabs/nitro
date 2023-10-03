@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -91,10 +92,13 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 		"test",
 		time.Second,
 	)
+	assertion, err := poster.PostAssertion(ctx)
+	Require(t, err)
 	setupEndTime := time.Now().Unix()
 	print("Time taken for setup:")
 	print(setupEndTime - setupStartTime)
-	assertion, err := poster.PostAssertion(ctx)
+
+	assertion, err = poster.PostAssertion(ctx)
 	Require(t, err)
 	assertionPostingEndTime := time.Now().Unix()
 	print("Time taken to post assertion:")
@@ -226,11 +230,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	l1Info.SetContract("Inbox", rollupAddresses.Inbox)
 	initMessage := getInitMessage(ctx, t, l1Backend, rollupAddresses)
 
-	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
-
 	l2Info, l2Stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
-	rollupAddresses.Bridge = bridgeAddr
-	rollupAddresses.SequencerInbox = seqInboxAddr
 
 	fatalErrChan := make(chan error, 10)
 	l2Node, err := arbnode.CreateNode(ctx, l2Stack, l2ChainDb, l2ArbDb, NewFetcherFromConfig(conf), l2Blockchain, l1Backend, rollupAddresses, nil, nil, nil, fatalErrChan)
@@ -243,7 +243,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	rollup, err := rollupgen.NewRollupAdminLogic(l2Node.DeployInfo.Rollup, l1Backend)
 	Require(t, err)
 	deployAuth := l1Info.GetDefaultTransactOpts("RollupOwner", ctx)
-	_, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	_, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(0))
 	Require(t, err)
 
 	emptyArray, err := rlp.EncodeToBytes([]uint8{0})
@@ -259,17 +259,19 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	simpleAddress, simple := deploySimple(t, ctx, txOpts, l1Backend)
-	tx, err = seqInbox.SetIsBatchPosterWithoutOwner(&deployAuth, simpleAddress, true)
+	seqInbox, err := bridgegen.NewSequencerInbox(rollupAddresses.SequencerInbox, l1Backend)
+	Require(t, err)
+	tx, err = seqInbox.SetIsBatchPoster(&deployAuth, simpleAddress, true)
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 	for i := 0; i < 3; i++ {
-		tx, err = simple.PostManyBatches(&txOpts, seqInboxAddr, batch, big.NewInt(300))
+		tx, err = simple.PostManyBatches(&txOpts, rollupAddresses.SequencerInbox, batch, big.NewInt(300))
 		Require(t, err)
 		receipt, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 		Require(t, err)
 
-		nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, seqInboxAddr, 0)
+		nodeSeqInbox, err := arbnode.NewSequencerInbox(l1Backend, rollupAddresses.SequencerInbox, 0)
 		Require(t, err)
 		batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
 		Require(t, err)
