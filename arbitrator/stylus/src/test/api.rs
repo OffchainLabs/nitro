@@ -176,7 +176,14 @@ impl EvmApi for TestEvmApi {
         model.gas_cost(new, open, ever)
     }
 
-    fn capture_hostio(&self, _name: &str, _args: &[u8], _outs: &[u8], _ink: u64) {
+    fn capture_hostio(
+        &self,
+        _name: &str,
+        _args: &[u8],
+        _outs: &[u8],
+        _start_ink: u64,
+        _end_ink: u64,
+    ) {
         unimplemented!()
     }
 }

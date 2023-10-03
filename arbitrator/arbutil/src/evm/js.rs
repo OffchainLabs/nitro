@@ -314,11 +314,11 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         cost.assert_u64()
     }
 
-    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], ink: u64) {
+    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, _end_ink: u64) {
         let args = hex::encode(args);
         let outs = hex::encode(outs);
         println!(
-            "Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}, {ink}"
+            "Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}, {start_ink}"
         );
     }
 }

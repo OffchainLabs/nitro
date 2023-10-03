@@ -78,8 +78,9 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
         env.config = Some(config);
 
         if env.evm_data.tracing {
+            let args_len = args.len() as u32;
             env.evm_api
-                .capture_hostio(STYLUS_ENTRY_POINT, &args.len().to_be_bytes(), &[], ink);
+                .capture_hostio(STYLUS_ENTRY_POINT, &args_len.to_be_bytes(), &[], ink, ink);
         }
 
         let exports = &self.instance.exports;
@@ -109,7 +110,7 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
         let env = self.env();
         if env.evm_data.tracing {
             env.evm_api
-                .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink);
+                .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink, ink);
         }
 
         let outs = self.env().outs.clone();

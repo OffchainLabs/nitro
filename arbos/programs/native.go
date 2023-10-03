@@ -257,9 +257,9 @@ func addPagesImpl(api usize, pages u16) u64 {
 }
 
 //export captureHostioImpl
-func captureHostioImpl(api usize, name *rustSlice, args *rustSlice, outs *rustSlice, ink u64) {
+func captureHostioImpl(api usize, name *rustSlice, args *rustSlice, outs *rustSlice, startInk, endInk u64) {
 	closures := getApi(api)
-	closures.captureHostio(string(name.read()), args.read(), outs.read(), uint64(ink))
+	closures.captureHostio(string(name.read()), args.read(), outs.read(), uint64(startInk), uint64(endInk))
 }
 
 func (value bytes20) toAddress() common.Address {
