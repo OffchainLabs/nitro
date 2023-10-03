@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -107,7 +108,10 @@ func TestTippingTxJsonMarshalling(t *testing.T) {
 func TestTippingTxJsonRPC(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	// make sure ArbOSVersion supports ArbitrumSubtypedTx
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumSubtypedTx, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
@@ -147,7 +151,10 @@ func TestTippingTxTipPaid(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	// make sure ArbOSVersion supports ArbitrumSubtypedTx
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumSubtypedTx, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
