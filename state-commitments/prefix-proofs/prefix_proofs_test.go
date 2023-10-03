@@ -24,6 +24,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAppendCompleteSubTree(t *testing.T) {
+	// Test case: Level >= MAX_LEVEL
+	_, err := prefixproofs.AppendCompleteSubTree([]common.Hash{{1}}, prefixproofs.MAX_LEVEL, common.Hash{2})
+	require.ErrorContains(t, err, "level too high")
+
+	// Test case: Empty Subtree Root
+	_, err = prefixproofs.AppendCompleteSubTree([]common.Hash{{1}}, 1, common.Hash{})
+	require.ErrorContains(t, err, "cannot append empty")
+
+	// Test case: Expansion Too Large
+	_, err = prefixproofs.AppendCompleteSubTree(make([]common.Hash, prefixproofs.MAX_LEVEL+1), 1, common.Hash{2})
+	require.ErrorContains(t, err, "merkle expansion to large")
+
+	// Test case: Empty 'me' Array
+	_, err = prefixproofs.AppendCompleteSubTree([]common.Hash{}, 1, common.Hash{2})
+	require.NoError(t, err)
+
+	// Test case: Level >= len(me)
+	_, err = prefixproofs.AppendCompleteSubTree([]common.Hash{{1}}, 2, common.Hash{2})
+	require.ErrorContains(t, err, "failing before for loop: level too high")
+}
+
+func TestGeneratePrefixProof(t *testing.T) {
+	defaultLeaves := []common.Hash{{1}, {2}}
+
+	// Test case: Zero PrefixHeight
+	_, err := prefixproofs.GeneratePrefixProof(0, nil, defaultLeaves, nil)
+	require.ErrorContains(t, err, "prefixHeight was 0")
+
+	// Test case: Zero Length of Leaves
+	_, err = prefixproofs.GeneratePrefixProof(1, nil, []common.Hash{}, nil)
+	require.ErrorContains(t, err, "length of leaves was 0")
+}
+
 func TestRoot(t *testing.T) {
 	t.Run("tree with exactly size MAX_LEVEL should pass validation", func(t *testing.T) {
 		tree := make([]common.Hash, prefixproofs.MAX_LEVEL)
@@ -537,4 +571,39 @@ func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.
 	}
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
 	return accs, backend
+}
+
+func TestVerifyPrefixProof(t *testing.T) {
+	// Test when PreSize is 0
+	t.Run("TestPreSizeZero", func(t *testing.T) {
+		cfg := &prefixproofs.VerifyPrefixProofConfig{
+			PreSize: 0,
+		}
+		err := prefixproofs.VerifyPrefixProof(cfg)
+		require.ErrorContains(t, err, "presize was 0: cannot be zero")
+	})
+
+	// Test when PreExpansion root does not match PreRoot
+	t.Run("TestPreRootMismatch", func(t *testing.T) {
+		cfg := &prefixproofs.VerifyPrefixProofConfig{
+			PreRoot:      common.Hash{1},
+			PreExpansion: []common.Hash{{2}},
+			PreSize:      1,
+		}
+		err := prefixproofs.VerifyPrefixProof(cfg)
+		require.ErrorContains(t, err, "pre expansion root mismatch: root mismatch")
+	})
+
+	// Test when PreSize does not match TreeSize
+	t.Run("TestTreeSizeMismatch", func(t *testing.T) {
+		r, err := prefixproofs.Root([]common.Hash{{1}, {2}})
+		require.NoError(t, err)
+		cfg := &prefixproofs.VerifyPrefixProofConfig{
+			PreRoot:      r,
+			PreSize:      1,
+			PreExpansion: []common.Hash{{1}, {2}},
+		}
+		err = prefixproofs.VerifyPrefixProof(cfg)
+		require.ErrorContains(t, err, "pre expansion tree size: tree size")
+	})
 }

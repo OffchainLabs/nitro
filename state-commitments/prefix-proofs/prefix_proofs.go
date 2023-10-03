@@ -354,6 +354,7 @@ func GeneratePrefixProof(
 	height := prefixHeight
 	postHeight := height + uint64(len(leaves))
 
+	// Impossible to generate a prefix proof if the prefix height is greater than the post height given conditions above
 	if prefixHeight >= postHeight {
 		return nil, errors.Wrapf(
 			ErrStartNotLessThanEnd,
