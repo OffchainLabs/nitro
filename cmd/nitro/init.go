@@ -34,12 +34,12 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/spf13/pflag"
@@ -268,7 +268,7 @@ var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{
 // Finds important roots to retain while proving
 func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) ([]common.Hash, error) {
 	initConfig := &nodeConfig.Init
-	chainConfig := execution.TryReadStoredChainConfig(chainDb)
+	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
@@ -440,9 +440,9 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
-			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
+			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -450,7 +450,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -487,7 +487,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 	if err != nil {
 		return chainDb, nil, err
 	}
@@ -529,11 +529,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
-		chainConfig = execution.TryReadStoredChainConfig(chainDb)
+		chainConfig = gethexec.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -631,7 +631,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
-		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

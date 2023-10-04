@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -23,9 +22,8 @@ func TestInfraFee(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeconfig := arbnode.ConfigDefaultL2Test()
 
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, true)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, nil, true)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("User2")

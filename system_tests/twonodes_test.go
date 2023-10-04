@@ -20,7 +20,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 

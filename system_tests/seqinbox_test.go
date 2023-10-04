@@ -91,8 +91,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	if validator {
 		conf.BlockValidator.Enable = true
 	}
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil)
-	l2Backend := arbNode.Execution.Backend
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil, nil)
+	execNode := getExecNode(t, arbNode)
+	l2Backend := execNode.Backend
 	defer requireClose(t, l1stack)
 	defer arbNode.StopAndWait()
 
@@ -325,7 +326,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				expectedPos, err := arbNode.Execution.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
+				expectedPos, err := execNode.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
 				Require(t, err)
 				lastValidated := arbNode.BlockValidator.Validated(t)
 				if lastValidated == expectedPos+1 {

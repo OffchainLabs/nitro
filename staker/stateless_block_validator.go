@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
@@ -33,7 +33,7 @@ type StatelessBlockValidator struct {
 	execSpawner        validator.ExecutionSpawner
 	validationSpawners []validator.ValidationSpawner
 
-	recorder BlockRecorder
+	recorder execution.ExecutionRecorder
 
 	inboxReader  InboxReaderInterface
 	inboxTracker InboxTrackerInterface
@@ -48,16 +48,6 @@ type StatelessBlockValidator struct {
 
 type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
-}
-
-type BlockRecorder interface {
-	RecordBlockCreation(
-		ctx context.Context,
-		pos arbutil.MessageIndex,
-		msg *arbostypes.MessageWithMetadata,
-	) (*execution.RecordResult, error)
-	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
-	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 }
 
 type InboxTrackerInterface interface {
@@ -234,7 +224,7 @@ func NewStatelessBlockValidator(
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
-	recorder BlockRecorder,
+	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	config func() *BlockValidatorConfig,
@@ -432,7 +422,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder BlockRecorder) {
+func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {
 	v.recorder = recorder
 }
 
