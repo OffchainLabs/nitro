@@ -52,10 +52,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	defer cleanup()
 	l1A, l2A := builder.L1, builder.L2
 
-	params := make(SecondNodeParams)
-	params["nodeConfig"] = nil
-	params["dasConfig"] = nil
-	l2B, cleanup2nd := builder.Build2ndNode(t, params)
+	l2B, cleanup2nd := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanup2nd()
 
 	builder.L2Info.GenerateAccount("User2")
@@ -151,10 +148,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	defer cleanup()
 	l2A := builder.L2
 
-	params := make(SecondNodeParams)
-	params["nodeConfig"] = nil
-	params["dasConfig"] = nil
-	l2B, cleanup2nd := builder.Build2ndNode(t, params)
+	l2B, cleanup2nd := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanup2nd()
 
 	data := make([]byte, 100000)

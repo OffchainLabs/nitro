@@ -257,21 +257,21 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	configByValidationNode(t, conf, valStack)
 
 	fatalErrChan := make(chan error, 10)
-	tbL1.chainConfig = chainConfig
-	asserterRollupAddresses, initMessage := tbL1.Deploy(t)
+	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, builder.L1Info, tbL1.Client, chainConfig)
 
-	deployerTxOpts := tbL1.Info.GetDefaultTransactOpts("deployer", ctx)
-	sequencerTxOpts := tbL1.Info.GetDefaultTransactOpts("sequencer", ctx)
-	asserterTxOpts := tbL1.Info.GetDefaultTransactOpts("asserter", ctx)
-	challengerTxOpts := tbL1.Info.GetDefaultTransactOpts("challenger", ctx)
+	deployerTxOpts := builder.L1Info.GetDefaultTransactOpts("deployer", ctx)
+	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("sequencer", ctx)
+	asserterTxOpts := builder.L1Info.GetDefaultTransactOpts("asserter", ctx)
+	challengerTxOpts := builder.L1Info.GetDefaultTransactOpts("challenger", ctx)
 
-	asserterBridgeAddr, asserterSeqInbox, asserterSeqInboxAddr := setupSequencerInboxStub(ctx, t, tbL1.Info, tbL1.Client, chainConfig)
-	challengerBridgeAddr, challengerSeqInbox, challengerSeqInboxAddr := setupSequencerInboxStub(ctx, t, tbL1.Info, tbL1.Client, chainConfig)
+	asserterBridgeAddr, asserterSeqInbox, asserterSeqInboxAddr := setupSequencerInboxStub(ctx, t, builder.L1Info, tbL1.Client, chainConfig)
+	challengerBridgeAddr, challengerSeqInbox, challengerSeqInboxAddr := setupSequencerInboxStub(ctx, t, builder.L1Info, tbL1.Client, chainConfig)
 
 	builder.initMessage = initMessage
 	builder.L2Info = nil
-	builder.L2StackConfig.DataDir = t.TempDir()
+	builder.l2StackConfig.DataDir = t.TempDir()
 	asserterL2tb := builder.BuildL2Blockchain(t).L2B
+	asserterL2tbInfo := builder.L2Info
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2, err := arbnode.CreateNode(ctx, asserterL2tb.Stack, asserterL2tb.ChainDB, asserterL2tb.NodeDB, NewFetcherFromConfig(conf), asserterL2tb.Blockchain, tbL1.Client, asserterRollupAddresses, nil, nil, nil, fatalErrChan)
@@ -279,8 +279,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	err = asserterL2.Start(ctx)
 	Require(t, err)
 
-	builder.L2StackConfig.DataDir = t.TempDir()
+	builder.L2Info = nil
+	builder.l2StackConfig.DataDir = t.TempDir()
 	challengerL2tb := builder.BuildL2Blockchain(t).L2B
+	challengerL2tbInfo := builder.L2Info
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
@@ -289,32 +291,32 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	err = challengerL2.Start(ctx)
 	Require(t, err)
 
-	asserterL2tb.Info.GenerateAccount("Destination")
-	challengerL2tb.Info.SetFullAccountInfo("Destination", asserterL2tb.Info.GetInfoWithPrivKey("Destination"))
+	asserterL2tbInfo.GenerateAccount("Destination")
+	challengerL2tbInfo.SetFullAccountInfo("Destination", asserterL2tbInfo.GetInfoWithPrivKey("Destination"))
 
 	if challengeMsgIdx < 1 || challengeMsgIdx > 3*makeBatch_MsgsPerBatch {
 		Fatal(t, "challengeMsgIdx illegal")
 	}
 
 	// seqNum := common.Big2
-	makeBatch(t, asserterL2, asserterL2tb.Info, tbL1.Client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2tb.Info, tbL1.Client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-1)
+	makeBatch(t, asserterL2, asserterL2tbInfo, tbL1.Client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
+	makeBatch(t, challengerL2, challengerL2tbInfo, tbL1.Client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-1)
 
 	// seqNum.Add(seqNum, common.Big1)
-	makeBatch(t, asserterL2, asserterL2tb.Info, tbL1.Client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2tb.Info, tbL1.Client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch-1)
+	makeBatch(t, asserterL2, asserterL2tbInfo, tbL1.Client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
+	makeBatch(t, challengerL2, challengerL2tbInfo, tbL1.Client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch-1)
 
 	// seqNum.Add(seqNum, common.Big1)
-	makeBatch(t, asserterL2, asserterL2tb.Info, tbL1.Client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2tb.Info, tbL1.Client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch*2-1)
+	makeBatch(t, asserterL2, asserterL2tbInfo, tbL1.Client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
+	makeBatch(t, challengerL2, challengerL2tbInfo, tbL1.Client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch*2-1)
 
 	trueSeqInboxAddr := challengerSeqInboxAddr
 	trueDelayedBridge := challengerBridgeAddr
-	expectedWinner := tbL1.Info.GetAddress("challenger")
+	expectedWinner := builder.L1Info.GetAddress("challenger")
 	if asserterIsCorrect {
 		trueSeqInboxAddr = asserterSeqInboxAddr
 		trueDelayedBridge = asserterBridgeAddr
-		expectedWinner = tbL1.Info.GetAddress("asserter")
+		expectedWinner = builder.L1Info.GetAddress("asserter")
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, tbL1.Client)
 
@@ -367,11 +369,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		asserterStartGlobalState,
 		asserterEndGlobalState,
 		numBlocks,
-		tbL1.Info.GetAddress("asserter"),
-		tbL1.Info.GetAddress("challenger"),
+		builder.L1Info.GetAddress("asserter"),
+		builder.L1Info.GetAddress("challenger"),
 	)
 
-	confirmLatestBlock(ctx, t, tbL1.Info, tbL1.Client)
+	confirmLatestBlock(ctx, t, builder.L1Info, tbL1.Client)
 
 	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2.Execution.Recorder, asserterL2tb.NodeDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
@@ -416,7 +418,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		// Invoke a new L1 block, with a new timestamp, before estimating.
 		time.Sleep(time.Second)
 		SendWaitTestTransactions(t, ctx, tbL1.Client, []*types.Transaction{
-			tbL1.Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 
 		if i%2 == 0 {
@@ -460,7 +462,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 			Fatal(t, err)
 		}
 
-		confirmLatestBlock(ctx, t, tbL1.Info, tbL1.Client)
+		confirmLatestBlock(ctx, t, builder.L1Info, tbL1.Client)
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
 		if err != nil {
