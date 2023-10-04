@@ -60,7 +60,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
 	RequireFullFinality: false,
-	UseMergeFinality:    true,
+	UseMergeFinality:    false,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec *execution.ExecutionEngine, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {

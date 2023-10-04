@@ -37,6 +37,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/catalyst"
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -412,9 +414,16 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
+	nodeConf.SyncMode = downloader.FullSync
 
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
+
+	simBeacon, err := catalyst.NewSimulatedBeacon(0, l1backend)
+	Require(t, err)
+	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
+	stack.RegisterLifecycle(simBeacon)
+
 	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
 	Require(t, err)
