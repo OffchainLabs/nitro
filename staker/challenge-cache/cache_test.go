@@ -53,7 +53,7 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := cache.Get(key, 2)
+	got, err := cache.Get(key, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		want := common.BytesToHash([]byte("foo"))
 		b.Write(want.Bytes())
-		roots, err := readStateRoots(b, 0)
+		roots, err := readStateRoots(b, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -101,7 +101,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b.Write(foo.Bytes())
 		b.Write(bar.Bytes())
 		b.Write(baz.Bytes())
-		roots, err := readStateRoots(b, 1)
+		roots, err := readStateRoots(b, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +191,7 @@ func Test_readStateRoots(t *testing.T) {
 		if err == nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(err.Error(), "wanted to read up to 100, but only read 0 state roots") {
+		if !strings.Contains(err.Error(), "wanted to read 100") {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
@@ -217,7 +217,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: false, roots: want, bytesRead: 32}
-		got, err := readStateRoots(m, 2)
+		got, err := readStateRoots(m, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
