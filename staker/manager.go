@@ -56,9 +56,9 @@ func NewManager(
 	if err != nil {
 		return nil, err
 	}
-	challengeLeafHeights := make([]l2stateprovider.Height, numBigStepLevel.Uint64()+2)
-	for i := uint64(0); i <= numBigStepLevel.Uint64()+1; i++ {
-		leafHeight, err := managerBinding.GetLayerZeroEndHeight(&callOpts, uint8(i))
+	challengeLeafHeights := make([]l2stateprovider.Height, numBigStepLevel+2)
+	for i := uint8(0); i <= numBigStepLevel+1; i++ {
+		leafHeight, err := managerBinding.GetLayerZeroEndHeight(&callOpts, i)
 		if err != nil {
 			return nil, err
 		}

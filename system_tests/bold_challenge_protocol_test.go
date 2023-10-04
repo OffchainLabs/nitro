@@ -303,6 +303,7 @@ func createTestNodeOnL1ForBoldProtocol(
 ) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
+		nodeConfig.ParentChainReader.OldHeaderTimeout = time.Minute * 10
 	}
 	if chainConfig == nil {
 		chainConfig = params.ArbitrumDevTestChainConfig()
@@ -428,7 +429,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint64(6)),       // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(6)),        // TODO: Hardcoded.
 		challenge_testing.WithConfirmPeriodBlocks(uint64(1500)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
@@ -577,9 +578,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
-	}
-	if nodeConfig == nil {
-		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
+		nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	fatalErrChan := make(chan error, 10)
