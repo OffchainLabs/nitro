@@ -10,6 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
+	"runtime"
+	"sync"
 )
 
 var (
@@ -65,9 +67,28 @@ func GenerateInclusionProof(leaves []common.Hash, idx uint64) ([]common.Hash, er
 		return make([]common.Hash, 0), nil
 	}
 	rehashed := make([]common.Hash, len(leaves))
-	for i, r := range leaves {
-		rehashed[i] = crypto.Keccak256Hash(r.Bytes())
+	var waitGroup sync.WaitGroup
+	gomaxprocs := runtime.GOMAXPROCS(-1)
+	waitGroup.Add(gomaxprocs)
+	batchSize := len(leaves) / gomaxprocs
+	batchRemainder := len(leaves) % gomaxprocs
+	for i := 0; i < gomaxprocs-1; i++ {
+		start := i * batchSize
+		go func() {
+			defer waitGroup.Done()
+			for j := start; j < start+batchSize; j++ {
+				rehashed[j] = crypto.Keccak256Hash(leaves[j].Bytes())
+			}
+		}()
 	}
+	start := (gomaxprocs - 1) * batchSize
+	go func() {
+		defer waitGroup.Done()
+		for j := start; j < start+batchSize+batchRemainder; j++ {
+			rehashed[j] = crypto.Keccak256Hash(leaves[j].Bytes())
+		}
+	}()
+	waitGroup.Wait()
 
 	fullT, err := FullTree(rehashed)
 	if err != nil {

@@ -7,9 +7,10 @@ package history
 
 import (
 	"errors"
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	"sync"
 
 	inclusionproofs "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs"
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -33,30 +34,52 @@ type History struct {
 	LastLeaf       common.Hash
 }
 
-// New constructs a commitment from a list of leaves.
 func New(leaves []common.Hash) (History, error) {
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
-	firstLeafProof, err := inclusionproofs.GenerateInclusionProof(leaves, 0)
-	if err != nil {
-		return emptyCommit, err
-	}
-	lastLeafProof, err := inclusionproofs.GenerateInclusionProof(leaves, uint64(len(leaves))-1)
-	if err != nil {
-		return emptyCommit, err
-	}
-	exp := prefixproofs.NewEmptyMerkleExpansion()
-	for _, r := range leaves {
-		exp, err = prefixproofs.AppendLeaf(exp, r)
-		if err != nil {
-			return emptyCommit, err
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(3)
+
+	var firstLeafProof []common.Hash
+	var err1 error
+	go func() {
+		defer waitGroup.Done()
+		firstLeafProof, err1 = inclusionproofs.GenerateInclusionProof(leaves, 0)
+	}()
+
+	var lastLeafProof []common.Hash
+	var err2 error
+	go func() {
+		defer waitGroup.Done()
+		lastLeafProof, err2 = inclusionproofs.GenerateInclusionProof(leaves, uint64(len(leaves))-1)
+	}()
+
+	var root common.Hash
+	var err3 error
+	go func() {
+		defer waitGroup.Done()
+		exp := prefixproofs.NewEmptyMerkleExpansion()
+		for _, r := range leaves {
+			exp, err3 = prefixproofs.AppendLeaf(exp, r)
+			if err3 != nil {
+				return
+			}
 		}
+		root, err3 = prefixproofs.Root(exp)
+	}()
+	waitGroup.Wait()
+
+	if err1 != nil {
+		return emptyCommit, err1
 	}
-	root, err := prefixproofs.Root(exp)
-	if err != nil {
-		return emptyCommit, err
+	if err2 != nil {
+		return emptyCommit, err2
 	}
+	if err3 != nil {
+		return emptyCommit, err3
+	}
+
 	return History{
 		Merkle:         root,
 		Height:         uint64(len(leaves) - 1),
