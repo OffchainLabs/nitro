@@ -10,6 +10,7 @@ import (
 	"context"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/pkg/errors"
@@ -103,41 +104,79 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		startHeights[i] = l2stateprovider.Height(h)
 	}
 
-	isHonestEdge, err := ht.histChecker.AgreesWithHistoryCommitment(
-		ctx,
-		challengeLevel,
-		&l2stateprovider.HistoryCommitmentRequest{
+	var isHonestEdge bool
+	var agreesWithStart bool
+	if challengeLevel == protocol.NewBlockChallengeLevel() {
+		request := &l2stateprovider.HistoryCommitmentRequest{
 			WasmModuleRoot:              creationInfo.WasmModuleRoot,
 			Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
 			FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
-			UpperChallengeOriginHeights: startHeights,
-		},
-		l2stateprovider.History{
-			Height:     uint64(endHeight),
-			MerkleRoot: endCommit,
-		},
-	)
-	if err != nil {
-		return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
-	}
-	agreesWithStart, err := ht.histChecker.AgreesWithHistoryCommitment(
-		ctx,
-		challengeLevel,
-		&l2stateprovider.HistoryCommitmentRequest{
+			UpperChallengeOriginHeights: make([]l2stateprovider.Height, 0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch + uint64(endHeight))),
+		}
+		isHonestEdge, err = ht.histChecker.AgreesWithHistoryCommitment(
+			ctx,
+			challengeLevel,
+			request,
+			l2stateprovider.History{
+				Height:     uint64(endHeight),
+				MerkleRoot: endCommit,
+			},
+		)
+		if err != nil {
+			return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
+		}
+		agreesWithStart, err = ht.histChecker.AgreesWithHistoryCommitment(
+			ctx,
+			challengeLevel,
+			request,
+			l2stateprovider.History{
+				Height:     uint64(startHeight),
+				MerkleRoot: startCommit,
+			},
+		)
+		if err != nil {
+			return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
+		}
+	} else {
+		if len(startHeights) == 0 {
+			return protocol.Agreement{}, errors.New("start height cannot be zero")
+		}
+		// If this is a subchallenge, the first element of the start heights must account for the batch
+		// it corresponds to in the assertion chain.
+		startHeights[0] += l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch)
+		request := &l2stateprovider.HistoryCommitmentRequest{
 			WasmModuleRoot:              creationInfo.WasmModuleRoot,
 			Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-			FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
+			FromHeight:                  l2stateprovider.Height(0),
 			UpperChallengeOriginHeights: startHeights,
-		},
-		l2stateprovider.History{
-			Height:     uint64(startHeight),
-			MerkleRoot: startCommit,
-		},
-	)
-	if err != nil {
-		return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
+			UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
+		}
+		isHonestEdge, err = ht.histChecker.AgreesWithHistoryCommitment(
+			ctx,
+			challengeLevel,
+			request,
+			l2stateprovider.History{
+				Height:     uint64(endHeight),
+				MerkleRoot: endCommit,
+			},
+		)
+		if err != nil {
+			return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
+		}
+		agreesWithStart, err = ht.histChecker.AgreesWithHistoryCommitment(
+			ctx,
+			challengeLevel,
+			request,
+			l2stateprovider.History{
+				Height:     uint64(startHeight),
+				MerkleRoot: startCommit,
+			},
+		)
+		if err != nil {
+			return protocol.Agreement{}, errors.Wrapf(err, "could not check if agrees with history commit for edge %#x", eg.Id())
+		}
 	}
-
 	// If we agree with the edge, we add it to our edges mapping and if it is level zero,
 	// we keep track of it specifically in our struct.
 	if isHonestEdge {

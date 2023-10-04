@@ -13,6 +13,7 @@ go_library(
         "//solgen/go/bridgegen",
         "//solgen/go/challengeV2gen",
         "//solgen/go/mocksgen",
+        "//solgen/go/ospgen",
         "//solgen/go/rollupgen",
         "//testing",
         "//testing/mocks/state-provider",

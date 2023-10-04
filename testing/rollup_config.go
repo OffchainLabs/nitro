@@ -34,6 +34,18 @@ func WithLayerZeroHeights(h *protocol.LayerZeroHeights) Opt {
 	}
 }
 
+func WithConfirmPeriodBlocks(num uint64) Opt {
+	return func(c *rollupgen.Config) {
+		c.ConfirmPeriodBlocks = num
+	}
+}
+
+func WithChallengeGracePeriodBlocks(num uint64) Opt {
+	return func(c *rollupgen.Config) {
+		c.ChallengeGracePeriodBlocks = num
+	}
+}
+
 func GenerateRollupConfig(
 	prod bool,
 	wasmModuleRoot common.Hash,

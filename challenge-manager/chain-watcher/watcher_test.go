@@ -143,6 +143,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 			Batch:                       1,
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
 			FromHeight:                  0,
+			UpToHeight:                  option.Some[l2stateprovider.Height](4),
 		},
 		l2stateprovider.History{
 			Height:     uint64(0),
@@ -158,6 +159,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 			Batch:                       1,
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
 			FromHeight:                  0,
+			UpToHeight:                  option.Some[l2stateprovider.Height](4),
 		},
 		l2stateprovider.History{
 			Height:     uint64(4),

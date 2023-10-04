@@ -27,7 +27,7 @@ import (
 func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	ctx := context.Background()
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -194,7 +194,7 @@ func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 
 func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	chain1 := createdData.Chains[0]
@@ -501,7 +501,7 @@ func TestEdgeChallengeManager_ConfirmByTimerAndChildren(t *testing.T) {
 func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 	ctx := context.Background()
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -663,6 +663,7 @@ func setupBisectionScenario(
 ) *bisectionScenario {
 	ctx := context.Background()
 
+	opts = append(opts, setup.WithMockOneStepProver())
 	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, opts...)
 	require.NoError(t, err)
 

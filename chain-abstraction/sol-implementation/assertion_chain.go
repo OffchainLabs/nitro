@@ -135,6 +135,11 @@ func (a *AssertionChain) IsStaked(ctx context.Context) (bool, error) {
 	return a.rollup.IsStaked(&bind.CallOpts{Context: ctx}, a.txOpts.From)
 }
 
+// RollupAddress for the assertion chain.
+func (a *AssertionChain) RollupAddress() common.Address {
+	return a.rollupAddr
+}
+
 // NewStakeOnNewAssertion makes an onchain claim given a previous assertion hash, execution state,
 // and a commitment to a post-state. It also adds a new stake to the newly created assertion.
 // if the validator is already staked, use StakeOnNewAssertion instead.

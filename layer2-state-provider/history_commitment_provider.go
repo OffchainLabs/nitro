@@ -158,7 +158,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 	}
 
 	// Collect the machine hashes at the specified challenge level based on the values we computed.
-	hashes, err := p.machineHashCollector.CollectMachineHashes(
+	return p.machineHashCollector.CollectMachineHashes(
 		ctx,
 		&HashCollectorConfig{
 			WasmModuleRoot: req.WasmModuleRoot,
@@ -172,10 +172,6 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 			StepSize:          stepSize,
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-	return hashes, nil
 }
 
 // AgreesWithHistoryCommitment checks if the l2 state provider agrees with a specified start and end
@@ -256,38 +252,74 @@ func (p *HistoryCommitmentProvider) PrefixProof(
 	prefixHeight Height,
 ) ([]byte, error) {
 	// Obtain the leaves we need to produce our Merkle expansion.
-	prefixLeaves, err := p.historyCommitmentImpl(
+	leaves, err := p.historyCommitmentImpl(
 		ctx,
 		req,
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	// The low commitment height.
+	// If no upToHeight is provided, we want to use the max number of leaves in our computation.
 	lowCommitmentNumLeaves := uint64(prefixHeight + 1)
-	highCommitmentNumLeaves := uint64(req.UpToHeight.Unwrap() + 1)
-
-	// Validate we are within bounds of the leaves slice.
-	if highCommitmentNumLeaves > uint64(len(prefixLeaves)) {
-		return nil, fmt.Errorf("high prefix size out of bounds, got %d, leaves length %d", highCommitmentNumLeaves, len(prefixLeaves))
+	var highCommitmentNumLeaves uint64
+	if req.UpToHeight.IsNone() {
+		highCommitmentNumLeaves = uint64(len(leaves))
+	} else {
+		// Else if it is provided, we expect the number of leaves to be the difference
+		// between the to and from height + 1.
+		upTo := req.UpToHeight.Unwrap()
+		if upTo < req.FromHeight {
+			return nil, fmt.Errorf("invalid range: end %d was < start %d", upTo, req.FromHeight)
+		}
+		highCommitmentNumLeaves = uint64(upTo) - uint64(req.FromHeight) + 1
 	}
 
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(prefixLeaves[:lowCommitmentNumLeaves])
+	// Validate we are within bounds of the leaves slice.
+	if highCommitmentNumLeaves > uint64(len(leaves)) {
+		return nil, fmt.Errorf("high prefix size out of bounds, got %d, leaves length %d", highCommitmentNumLeaves, len(leaves))
+	}
+
+	// Validate low vs high commitment.
+	if lowCommitmentNumLeaves > highCommitmentNumLeaves {
+		return nil, fmt.Errorf("low prefix size %d was greater than high prefix size %d", lowCommitmentNumLeaves, highCommitmentNumLeaves)
+	}
+
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(leaves[:lowCommitmentNumLeaves])
 	if err != nil {
 		return nil, err
 	}
 	prefixProof, err := prefixproofs.GeneratePrefixProof(
 		lowCommitmentNumLeaves,
 		prefixExpansion,
-		prefixLeaves[lowCommitmentNumLeaves:highCommitmentNumLeaves],
+		leaves[lowCommitmentNumLeaves:highCommitmentNumLeaves],
 		prefixproofs.RootFetcherFromExpansion,
 	)
 	if err != nil {
 		return nil, err
 	}
+	bigCommit, err := commitments.New(leaves[:highCommitmentNumLeaves])
+	if err != nil {
+		return nil, err
+	}
+
+	prefixCommit, err := commitments.New(leaves[:lowCommitmentNumLeaves])
+	if err != nil {
+		return nil, err
+	}
 	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, lowCommitmentNumLeaves)
 	onlyProof := prefixProof[numRead:]
+
+	// We verify our prefix proof before an onchain submission as an extra safety-check.
+	if err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      prefixCommit.Merkle,
+		PreSize:      lowCommitmentNumLeaves,
+		PostRoot:     bigCommit.Merkle,
+		PostSize:     highCommitmentNumLeaves,
+		PreExpansion: prefixExpansion,
+		PrefixProof:  onlyProof,
+	}); err != nil {
+		return nil, fmt.Errorf("could not verify prefix proof locally: %w", err)
+	}
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
 
@@ -336,29 +368,6 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 		return nil, nil, nil, err
 	}
 	machineIndex += OpcodeIndex(upToHeight)
-	hashes, err := p.machineHashCollector.CollectMachineHashes(
-		ctx,
-		&HashCollectorConfig{
-			WasmModuleRoot:    wasmModuleRoot,
-			MessageNumber:     startHeights[0],
-			StepHeights:       startHeights[1:],
-			NumDesiredHashes:  2,
-			MachineStartIndex: machineIndex,
-			StepSize:          1,
-		})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if len(hashes) != 2 {
-		return nil, nil, nil, fmt.Errorf("expected 2 hashes, got %d", len(hashes))
-	}
-
-	if hashes[0] != startCommit.LastLeaf {
-		return nil, nil, nil, fmt.Errorf("machine executed to start step %v hash %v but expected %v", machineIndex, hashes[0], startCommit.LastLeaf)
-	}
-	if hashes[1] != endCommit.LastLeaf {
-		return nil, nil, nil, fmt.Errorf("machine executed to end step %v hash %v but expected %v", machineIndex+1, hashes[1], endCommit.LastLeaf)
-	}
 
 	osp, err := p.proofCollector.CollectProof(ctx, wasmModuleRoot, startHeights[0], machineIndex)
 	if err != nil {

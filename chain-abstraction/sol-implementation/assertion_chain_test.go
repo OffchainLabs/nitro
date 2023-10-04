@@ -244,10 +244,10 @@ func TestAssertionUnrivaledBlocks(t *testing.T) {
 
 func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 	ctx := context.Background()
-	_, err := setup.ChainsWithEdgeChallengeManager()
+	_, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)

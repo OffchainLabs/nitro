@@ -271,6 +271,7 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 			opts...,
 		),
 		false, // Do not use a mock bridge.
+		true,  // Use a mock one step prover entry.
 	)
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "could not deploy rollup stack")

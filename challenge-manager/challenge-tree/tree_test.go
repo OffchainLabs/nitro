@@ -13,6 +13,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/challenge-manager/challenge-tree/mock"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/testing/mocks"
@@ -72,6 +73,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(end)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(start),
@@ -87,6 +89,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(end)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(end),
@@ -115,6 +118,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -130,6 +134,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -168,6 +173,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -183,6 +189,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -225,6 +232,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -240,6 +248,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -280,6 +289,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -295,6 +305,7 @@ func TestAddEdge(t *testing.T) {
 				Batch:                       1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
+				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),

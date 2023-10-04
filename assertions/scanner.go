@@ -20,6 +20,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 )
@@ -93,6 +94,18 @@ func (s *Scanner) Start(ctx context.Context) {
 	})
 	if err != nil {
 		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
+		return
+	}
+	filterOpts := &bind.FilterOpts{
+		Start:   fromBlock,
+		End:     nil,
+		Context: ctx,
+	}
+	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+		return true, s.checkForAssertionAdded(ctx, filterer, filterOpts)
+	})
+	if err != nil {
+		srvlog.Error("Could not check for assertion added event")
 		return
 	}
 	ticker := time.NewTicker(s.pollInterval)
@@ -169,12 +182,23 @@ func (s *Scanner) ProcessAssertionCreation(
 	ctx context.Context,
 	assertionHash protocol.AssertionHash,
 ) error {
-	srvlog.Info("Processed assertion creation event", log.Ctx{"validatorName": s.validatorName})
-	s.assertionsProcessedCount++
+	if assertionHash.Hash == (common.Hash{}) {
+		return nil // Assertions cannot have a zero hash, not even genesis.
+	}
 	creationInfo, err := s.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
 	}
+	if creationInfo.ParentAssertionHash == (common.Hash{}) {
+		return nil // Skip processing genesis, as it has a parent assertion hash of 0x0.
+	}
+	goGs := protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState)
+	srvlog.Info("Processed assertion creation event", log.Ctx{
+		"validatorName":       s.validatorName,
+		"globalState":         goGs,
+		"machineFinishedHash": crypto.Keccak256Hash([]byte("Machine finished:"), goGs.Hash().Bytes()),
+	})
+	s.assertionsProcessedCount++
 	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	if err != nil {
 		return err

@@ -9,6 +9,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	"github.com/OffchainLabs/bold/containers"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
@@ -19,14 +20,14 @@ import (
 type Poster struct {
 	validatorName string
 	chain         protocol.Protocol
-	stateManager  l2stateprovider.Provider
+	stateManager  l2stateprovider.ExecutionProvider
 	postInterval  time.Duration
 }
 
 // NewPoster creates a poster from required dependencies.
 func NewPoster(
 	chain protocol.Protocol,
-	stateManager l2stateprovider.Provider,
+	stateManager l2stateprovider.ExecutionProvider,
 	validatorName string,
 	postInterval time.Duration,
 ) *Poster {
@@ -116,7 +117,11 @@ func (p *Poster) postAssertionImpl(
 	case err != nil:
 		return nil, err
 	}
-	srvlog.Info("Submitted latest L2 state claim as an assertion to L1", log.Ctx{"validatorName": p.validatorName})
+	srvlog.Info("Submitted latest L2 state claim as an assertion to L1", log.Ctx{
+		"validatorName":   p.validatorName,
+		"layer2BlockHash": containers.Trunc(newState.GlobalState.BlockHash[:]),
+		"batch":           newState.GlobalState.Batch,
+	})
 
 	return assertion, nil
 }

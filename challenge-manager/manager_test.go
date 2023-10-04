@@ -27,7 +27,7 @@ var _ = types.ChallengeManager(&Manager{})
 
 func TestEdgeTracker_Act(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	tkr, _ := setupEdgeTrackersForBisection(t, ctx, createdData, option.None[uint64]())
@@ -46,7 +46,7 @@ func TestEdgeTracker_Act(t *testing.T) {
 
 func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -87,7 +87,7 @@ func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 
 func TestEdgeTracker_Act_ConfirmedByTime(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -108,7 +108,7 @@ func TestEdgeTracker_Act_ConfirmedByTime(t *testing.T) {
 
 func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -141,8 +141,8 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 		tkr.Watcher(),
 		tkr.ChallengeManager(),
 		edgetracker.HeightConfig{
-			StartBlockHeight:           0,
-			TopLevelClaimEndBatchCount: 1,
+			StartBlockHeight: 0,
+			InboxMaxCount:    1,
 		},
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 	)
@@ -155,8 +155,8 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 		tkr.Watcher(),
 		tkr.ChallengeManager(),
 		edgetracker.HeightConfig{
-			StartBlockHeight:           0,
-			TopLevelClaimEndBatchCount: 1,
+			StartBlockHeight: 0,
+			InboxMaxCount:    1,
 		},
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 	)
@@ -187,7 +187,7 @@ func Test_getEdgeTrackers(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(1), trk.StartBlockHeight())
-	require.Equal(t, uint64(0x64), trk.TopLevelClaimEndBatchCount())
+	require.Equal(t, uint64(0x65), trk.InboxMaxCount())
 }
 
 func setupEdgeTrackersForBisection(
@@ -258,8 +258,8 @@ func setupEdgeTrackersForBisection(
 		honestWatcher,
 		honestValidator,
 		edgetracker.HeightConfig{
-			StartBlockHeight:           0,
-			TopLevelClaimEndBatchCount: 1,
+			StartBlockHeight: 0,
+			InboxMaxCount:    1,
 		},
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 		edgetracker.WithValidatorName(honestValidator.name),
@@ -284,8 +284,8 @@ func setupEdgeTrackersForBisection(
 		evilWatcher,
 		evilValidator,
 		edgetracker.HeightConfig{
-			StartBlockHeight:           0,
-			TopLevelClaimEndBatchCount: 1,
+			StartBlockHeight: 0,
+			InboxMaxCount:    1,
 		},
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 		edgetracker.WithValidatorName(evilValidator.name),
@@ -311,7 +311,7 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	p.On("SpecChallengeManager", ctx).Return(cm, nil)
 	cm.On("NumBigSteps", ctx).Return(uint8(1), nil)
 	s := &mocks.MockStateManager{}
-	cfg, err := setup.ChainsWithEdgeChallengeManager()
+	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
 	v, err := New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, WithMode(types.MakeMode), WithEdgeTrackerWakeInterval(100*time.Millisecond))
 	require.NoError(t, err)

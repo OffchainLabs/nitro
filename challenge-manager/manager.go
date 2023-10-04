@@ -96,6 +96,18 @@ func WithEdgeTrackerWakeInterval(d time.Duration) Opt {
 	}
 }
 
+func WithAssertionPostingInterval(d time.Duration) Opt {
+	return func(val *Manager) {
+		val.assertionPostingInterval = d
+	}
+}
+
+func WithAssertionScanningInterval(d time.Duration) Opt {
+	return func(val *Manager) {
+		val.assertionScanningInterval = d
+	}
+}
+
 // WithMode specifies the mode of the challenge manager.
 func WithMode(m types.Mode) Opt {
 	return func(val *Manager) {
@@ -280,7 +292,7 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 			return nil, heightErr
 		}
 		assertionHeight = height
-		inboxMsgCount = assertionCreationInfo.InboxMaxCount.Uint64()
+		inboxMsgCount = assertionCreationInfo.InboxMaxCount.Uint64() + 1
 		m.assertionHashCache.Put(assertionHash, [2]uint64{assertionHeight, inboxMsgCount})
 	} else {
 		assertionHeight, inboxMsgCount = cachedHeightAndInboxMsgCount[0], cachedHeightAndInboxMsgCount[1]
@@ -294,8 +306,8 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 			m.watcher,
 			m,
 			edgetracker.HeightConfig{
-				StartBlockHeight:           assertionHeight,
-				TopLevelClaimEndBatchCount: inboxMsgCount,
+				StartBlockHeight: assertionHeight,
+				InboxMaxCount:    inboxMsgCount,
 			},
 			edgetracker.WithActInterval(m.edgeTrackerWakeInterval),
 			edgetracker.WithTimeReference(m.timeRef),

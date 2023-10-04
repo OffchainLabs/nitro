@@ -47,5 +47,6 @@ contract SimpleOneStepProofEntry is IOneStepProofEntry {
     function getMachineHash(ExecutionState calldata execState) external pure override returns (bytes32) {
         require(execState.machineStatus == MachineStatus.FINISHED, "BAD_MACHINE_STATUS");
         return execState.globalState.hash();
+
     }
 }

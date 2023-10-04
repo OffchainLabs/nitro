@@ -59,7 +59,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		ctx := context.Background()
 		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
 			DivergeBlockHeight: 5,
-		})
+		}, setup.WithMockOneStepProver())
 		require.NoError(t, err)
 
 		manager, err := challengemanager.New(
@@ -104,7 +104,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		ctx := context.Background()
 		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
 			DivergeBlockHeight: 5,
-		})
+		}, setup.WithMockOneStepProver())
 		require.NoError(t, err)
 
 		manager, err := challengemanager.New(
@@ -156,7 +156,7 @@ func setupChallengeManager(t *testing.T) (*challengemanager.Manager, *mocks.Mock
 	p.On("CurrentChallengeManager", ctx).Return(cm, nil)
 	p.On("SpecChallengeManager", ctx).Return(cm, nil)
 	s := &mocks.MockStateManager{}
-	cfg, err := setup.ChainsWithEdgeChallengeManager()
+	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
 	v, err := challengemanager.New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, challengemanager.WithMode(types.MakeMode), challengemanager.WithEdgeTrackerWakeInterval(100*time.Millisecond))
 	require.NoError(t, err)
