@@ -87,8 +87,6 @@ func (c *Cache) Get(
 	lookup *Key,
 	numToRead uint64,
 ) ([]common.Hash, error) {
-	// TODO: Hack, need to figure out why it is being set to 0 in some places
-	lookup.MessageHeight = 1
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
