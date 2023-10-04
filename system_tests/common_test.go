@@ -74,11 +74,6 @@ type TestClient struct {
 	Stack   *node.Node
 	Node    *arbnode.Node
 
-	// Blockchain specific fields
-	ChainDB    ethdb.Database
-	NodeDB     ethdb.Database
-	Blockchain *core.BlockChain
-
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
 }
@@ -124,28 +119,20 @@ type NodeBuilder struct {
 	ctx           context.Context
 	chainConfig   *params.ChainConfig
 	nodeConfig    *arbnode.Config
-	cachingConfig *execution.CachingConfig
 	l1StackConfig *node.Config
 	l2StackConfig *node.Config
 	L1Info        info
 	L2Info        info
 
 	// L1, L2 Node parameters
+	dataDir       string
 	isSequencer   bool
 	takeOwnership bool
 	withL1        bool
 
-	// Blockchain parameters
-	dataDir     string
-	initMessage *arbostypes.ParsedInitMessage
-
 	// Created nodes
 	L1 *TestClient
 	L2 *TestClient
-
-	// Created Blockchains
-	L1B *TestClient
-	L2B *TestClient
 }
 
 func NewNodeBuilder(ctx context.Context) *NodeBuilder {
@@ -223,32 +210,12 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 			t.Fatal("builder did not previously build a L1 Node")
 		}
 		stack, l1Info = b.L1.Stack, b.L1Info
-	} else {
-		if b.L1B == nil {
-			t.Fatal("builder did not previously build L1 Blockchain")
-		}
-		stack, l1Info = b.L1B.Stack, b.L1Info
 	}
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.Node =
 		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, stack, l1Info, params.initData, params.nodeConfig, params.stackConfig)
 	l2.cleanup = func() { l2.Node.StopAndWait() }
 	return l2, func() { l2.cleanup() }
-}
-
-func (b *NodeBuilder) BuildL1Blockchain(t *testing.T) *NodeBuilder {
-	l1B := NewTestClient(b.ctx)
-	b.L1Info, l1B.Client, l1B.Backend, l1B.Stack = createTestL1BlockChainWithConfig(t, b.L1Info, b.l1StackConfig)
-	b.L1B = l1B
-	return b
-}
-
-func (b *NodeBuilder) BuildL2Blockchain(t *testing.T) *NodeBuilder {
-	l2B := NewTestClient(b.ctx)
-	b.L2Info, l2B.Stack, l2B.ChainDB, l2B.NodeDB, l2B.Blockchain =
-		createL2BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.cachingConfig)
-	b.L2B = l2B
-	return b
 }
 
 func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
