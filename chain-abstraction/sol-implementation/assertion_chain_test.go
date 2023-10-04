@@ -5,7 +5,6 @@ package solimpl_test
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 
@@ -32,21 +31,17 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 	backend := cfg.Backend
-	fmt.Println("a")
 
 	genesisHash, err := chain.GenesisAssertionHash(ctx)
 	require.NoError(t, err)
 	genesisInfo, err := chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
-	fmt.Println("b")
 
 	t.Run("OK", func(t *testing.T) {
 		latestBlockHash := common.Hash{}
-		fmt.Println("c")
 		for i := uint64(0); i < 100; i++ {
 			latestBlockHash = backend.Commit()
 		}
-		fmt.Println("d")
 
 		postState := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
@@ -57,16 +52,12 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		fmt.Println("e")
 		assertion, err := chain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
 		require.NoError(t, err)
-
-		fmt.Println("f")
 
 		existingAssertion, err := chain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
 		require.NoError(t, err)
 		require.Equal(t, assertion.Id(), existingAssertion.Id())
-		fmt.Println("g")
 	})
 	t.Run("can create fork", func(t *testing.T) {
 		assertionChain := cfg.Chains[1]

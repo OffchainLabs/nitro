@@ -246,7 +246,7 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(&bind.CallOpts{Context: ctx})
 	require.NoError(t, err)
-	numBigStepLevels := uint8(numBigStepLevelsRaw.Uint64())
+	numBigStepLevels := numBigStepLevelsRaw
 
 	honestWatcher := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice")
 	honestValidator.watcher = honestWatcher

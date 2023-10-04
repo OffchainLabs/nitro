@@ -462,7 +462,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 // No new messages have been added to the inbox since the last assertion
                 // In this case if we set the next inbox position to the current one we would be insisting that
                 // the next assertion process no messages. So instead we increment the next inbox position to current
-                // plus one, so that the next assertion will process exactly one message. 
+                // plus one, so that the next assertion will process exactly one message.
                 // Thus, no assertion can be empty (except the genesis assertion, which is created
                 // via a different codepath).
                 nextInboxPosition = currentInboxPosition + 1;
@@ -541,11 +541,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         });
     }
 
-    function getFirstChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+    function getFirstChildCreationBlock(bytes32 assertionHash) external view returns (uint64) {
         return getAssertionStorage(assertionHash).firstChildBlock;
     }
 
-    function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+    function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint64) {
         return getAssertionStorage(assertionHash).secondChildBlock;
     }
 

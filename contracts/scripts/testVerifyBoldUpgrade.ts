@@ -85,9 +85,8 @@ async function main() {
   }
 
   if (
-    !(await edgeChallengeManager.NUM_BIGSTEP_LEVEL()).eq(
-      config.settings.numBigStepLevel
-    )
+    (await edgeChallengeManager.NUM_BIGSTEP_LEVEL()) !==
+    config.settings.numBigStepLevel
   ) {
     throw new Error('Number of big step level does not match')
   }

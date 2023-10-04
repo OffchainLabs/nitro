@@ -29,7 +29,7 @@ error ClaimEdgeNotPending();
 /// @dev The claim edge does not have a length one rival
 error ClaimEdgeNotLengthOneRival(bytes32 claimId);
 /// @dev The claim edge has an invalid level
-error ClaimEdgeInvalidLevel(uint256 argLevel, uint256 claimLevel);
+error ClaimEdgeInvalidLevel(uint8 argLevel, uint8 claimLevel);
 /// @dev The val is not a power of two
 error NotPowerOfTwo(uint256 val);
 /// @dev The height has an unexpected value
@@ -37,9 +37,9 @@ error InvalidEndHeight(uint256 actualHeight, uint256 expectedHeight);
 /// @dev The prefix proof is empty
 error EmptyPrefixProof();
 /// @dev The edge is not of type Block
-error EdgeTypeNotBlock(uint256 level);
+error EdgeTypeNotBlock(uint8 level);
 /// @dev The edge is not of type SmallStep
-error EdgeTypeNotSmallStep(uint256 level);
+error EdgeTypeNotSmallStep(uint8 level);
 /// @dev The first rival record is empty
 error EmptyFirstRival();
 /// @dev The difference between two heights is less than 2
@@ -51,7 +51,7 @@ error EdgeUnrivaled(bytes32 edgeId);
 /// @dev The edge is not confirmed
 error EdgeNotConfirmed(bytes32 edgeId, EdgeStatus);
 /// @dev The edge level is unexpected
-error EdgeLevelInvalid(bytes32 edgeId1, bytes32 edgeId2, uint256 level1, uint256 level2);
+error EdgeLevelInvalid(bytes32 edgeId1, bytes32 edgeId2, uint8 level1, uint8 level2);
 /// @dev The claim id on the claimingEdge does not match the provided edge id
 error EdgeClaimMismatch(bytes32 edgeId, bytes32 claimingEdgeId);
 /// @dev The origin id is not equal to the mutual id
@@ -94,5 +94,7 @@ error EmptyStakeReceiver();
 error RivalEdgeConfirmed(bytes32 edgeId, bytes32 confirmedRivalId);
 /// @dev Thrown when big step levels is set to 0
 error ZeroBigStepLevels();
+/// @dev Thrown when there are too many big step levels requested
+error BigStepLevelsTooMany(uint8 levels);
 /// @dev Thrown when the level does not correspond to a valid type
-error LevelTooHigh(uint256 level, uint256 numBigStepLevels);
+error LevelTooHigh(uint8 level, uint8 numBigStepLevels);

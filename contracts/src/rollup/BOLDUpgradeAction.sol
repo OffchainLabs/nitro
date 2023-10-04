@@ -163,7 +163,7 @@ contract BOLDUpgradeAction {
     uint256 public immutable BLOCK_LEAF_SIZE;
     uint256 public immutable BIGSTEP_LEAF_SIZE;
     uint256 public immutable SMALLSTEP_LEAF_SIZE;
-    uint256 public immutable NUM_BIGSTEP_LEVEL;
+    uint8 public immutable NUM_BIGSTEP_LEVEL;
 
     address public immutable L1_TIMELOCK;
     IOldRollup public immutable OLD_ROLLUP;
@@ -217,7 +217,7 @@ contract BOLDUpgradeAction {
         uint256 blockLeafSize;
         uint256 bigStepLeafSize;
         uint256 smallStepLeafSize;
-        uint256 numBigStepLevel;
+        uint8 numBigStepLevel;
         uint64 challengeGracePeriodBlocks;
     }
 

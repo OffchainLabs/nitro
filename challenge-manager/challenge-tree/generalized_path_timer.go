@@ -137,10 +137,7 @@ func (ht *HonestChallengeTree) ComputeAncestorsWithTimers(
 	if !ok {
 		return nil, errNotFound(edgeId)
 	}
-	currentChallengeLevel, err := startEdge.GetReversedChallengeLevel()
-	if err != nil {
-		return nil, err
-	}
+	currentChallengeLevel := startEdge.GetReversedChallengeLevel()
 
 	// Set a cursor at the edge we start from. We will update this cursor
 	// as we advance in this function.

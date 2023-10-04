@@ -33,7 +33,7 @@ interface IEdgeChallengeManager {
     /// @param _numBigStepLevel             The number of bigstep levels
     function initialize(
         IAssertionChain _assertionChain,
-        uint256 _challengePeriodBlocks,
+        uint64 _challengePeriodBlocks,
         IOneStepProofEntry _oneStepProofEntry,
         uint256 layerZeroBlockEdgeHeight,
         uint256 layerZeroBigStepEdgeHeight,
@@ -41,10 +41,10 @@ interface IEdgeChallengeManager {
         IERC20 _stakeToken,
         uint256 _stakeAmount,
         address _excessStakeReceiver,
-        uint256 _numBigStepLevel
+        uint8 _numBigStepLevel
     ) external;
 
-    function challengePeriodBlocks() external view returns (uint256);
+    function challengePeriodBlocks() external view returns (uint64);
 
     /// @notice The one step proof resolver used to decide between rival SmallStep edges of length 1
     function oneStepProofEntry() external view returns (IOneStepProofEntry);
@@ -126,7 +126,7 @@ interface IEdgeChallengeManager {
     /// @param endHeight        The end height of the edge
     /// @param endHistoryRoot   The end history root of the edge
     function calculateEdgeId(
-        uint256 level,
+        uint8 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -142,7 +142,7 @@ interface IEdgeChallengeManager {
     /// @param startHistoryRoot The start history root of the edge
     /// @param endHeight        The end height of the edge
     function calculateMutualId(
-        uint256 level,
+        uint8 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -169,7 +169,7 @@ interface IEdgeChallengeManager {
     ///         This value is increasing whilst an edge is unrivaled, once a rival is created
     ///         it is fixed. If an edge has rivals from the moment it is created then it will have
     ///         a zero time unrivaled
-    function timeUnrivaled(bytes32 edgeId) external view returns (uint256);
+    function timeUnrivaled(bytes32 edgeId) external view returns (uint64);
 
     /// @notice Get the id of the prev assertion that this edge is originates from
     /// @dev    Uses the parent chain to traverse upwards SmallStep->BigStep->Block->Assertion
@@ -210,7 +210,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32 indexed originId,
         bytes32 claimId,
         uint256 length,
-        uint256 level,
+        uint8 level,
         bool hasRival,
         bool isLayerZero
     );
@@ -229,11 +229,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @param mutualId The mutual id of the confirmed edge
     event EdgeConfirmedByChildren(bytes32 indexed edgeId, bytes32 indexed mutualId);
 
-    /// @notice An edge can be confirmed if the cumulative time unrivaled of it and a direct chain of ancestors is greater than a threshold
+    /// @notice An edge can be confirmed if the cumulative time (in blocks) unrivaled of it and a direct chain of ancestors is greater than a threshold
     /// @param edgeId               The edge that was confirmed
     /// @param mutualId             The mutual id of the confirmed edge
-    /// @param totalTimeUnrivaled   The cumulative amount of time this edge spent unrivaled
-    event EdgeConfirmedByTime(bytes32 indexed edgeId, bytes32 indexed mutualId, uint256 totalTimeUnrivaled);
+    /// @param totalTimeUnrivaled   The cumulative amount of time (in blocks) this edge spent unrivaled
+    event EdgeConfirmedByTime(bytes32 indexed edgeId, bytes32 indexed mutualId, uint64 totalTimeUnrivaled);
 
     /// @notice An edge can be confirmed if a zero layer edge in the level below claims this edge
     /// @param edgeId           The edge that was confirmed
@@ -273,7 +273,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     uint256 public stakeAmount;
 
     /// @notice The number of blocks accumulated on an edge before it can be confirmed by time
-    uint256 public challengePeriodBlocks;
+    uint64 public challengePeriodBlocks;
 
     /// @notice The assertion chain about which challenges are created
     IAssertionChain public assertionChain;
@@ -289,7 +289,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     uint256 public LAYERZERO_SMALLSTEPEDGE_HEIGHT;
     /// @notice The number of big step levels configured for this challenge manager
     ///         There is 1 block level, 1 small step level and N big step levels
-    uint256 public NUM_BIGSTEP_LEVEL;
+    uint8 public NUM_BIGSTEP_LEVEL;
 
     constructor() {
         _disableInitializers();
@@ -298,7 +298,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @inheritdoc IEdgeChallengeManager
     function initialize(
         IAssertionChain _assertionChain,
-        uint256 _challengePeriodBlocks,
+        uint64 _challengePeriodBlocks,
         IOneStepProofEntry _oneStepProofEntry,
         uint256 layerZeroBlockEdgeHeight,
         uint256 layerZeroBigStepEdgeHeight,
@@ -306,7 +306,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         IERC20 _stakeToken,
         uint256 _stakeAmount,
         address _excessStakeReceiver,
-        uint256 _numBigStepLevel
+        uint8 _numBigStepLevel
     ) public initializer {
         if (address(_assertionChain) == address(0)) {
             revert EmptyAssertionChain();
@@ -344,6 +344,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         // ensure that there is at least on of each type of level
         if (_numBigStepLevel == 0) {
             revert ZeroBigStepLevels();
+        }
+        // ensure there's also space for the block level and the small step level
+        // in total level parameters
+        if (_numBigStepLevel > 253) {
+            revert BigStepLevelsTooMany(_numBigStepLevel);
         }
         NUM_BIGSTEP_LEVEL = _numBigStepLevel;
     }
@@ -493,7 +498,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             revert EdgeNotLayerZero(topEdge.id(), topEdge.staker, topEdge.claimId);
         }
 
-        uint256 assertionBlocks;
+        uint64 assertionBlocks;
         // if the assertion being claiming against was the first child of its predecessor
         // then we are able to count the time between the first and second child as time towards
         // the this edge
@@ -513,7 +518,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             assertionBlocks = 0;
         }
 
-        uint256 totalTimeUnrivaled =
+        uint64 totalTimeUnrivaled =
             store.confirmEdgeByTime(edgeId, ancestorEdges, assertionBlocks, challengePeriodBlocks, NUM_BIGSTEP_LEVEL);
 
         emit EdgeConfirmedByTime(edgeId, store.edges[edgeId].mutualId(), totalTimeUnrivaled);
@@ -585,7 +590,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function calculateEdgeId(
-        uint256 level,
+        uint8 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -597,7 +602,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function calculateMutualId(
-        uint256 level,
+        uint8 level,
         bytes32 originId,
         uint256 startHeight,
         bytes32 startHistoryRoot,
@@ -632,7 +637,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function timeUnrivaled(bytes32 edgeId) public view returns (uint256) {
+    function timeUnrivaled(bytes32 edgeId) public view returns (uint64) {
         return store.timeUnrivaled(edgeId);
     }
 

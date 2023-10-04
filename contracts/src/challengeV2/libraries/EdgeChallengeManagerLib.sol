@@ -31,7 +31,7 @@ struct CreateEdgeArgs {
     ///         Finally in the last level, a SmallStep edge is added that claims a lower level length one BigStep edge, and these
     ///         SmallStep edges are bisected until they reach length one. A length one small step edge
     ///         can then be directly executed using a one-step proof.
-    uint256 level;
+    uint8 level;
     /// @notice The end history root of the edge to be created
     bytes32 endHistoryRoot;
     /// @notice The end height of the edge to be created.
@@ -98,7 +98,7 @@ struct EdgeAddedData {
     bytes32 originId;
     bytes32 claimId;
     uint256 length;
-    uint256 level;
+    uint8 level;
     bool hasRival;
     bool isLayerZero;
 }
@@ -211,7 +211,7 @@ library EdgeChallengeManagerLib {
         CreateEdgeArgs calldata args,
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
-        uint256 numBigStepLevel
+        uint8 numBigStepLevel
     ) private view returns (ProofData memory, bytes32) {
         if (ChallengeEdgeLib.levelToType(args.level, numBigStepLevel) == EdgeType.Block) {
             // origin id is the assertion which is the root of challenge
@@ -282,7 +282,7 @@ library EdgeChallengeManagerLib {
             }
 
             // the edge must be a level up from the claim
-            if (args.level != EdgeChallengeManagerLib.nextEdgeLevel(claimEdge.level, numBigStepLevel)) {
+            if (args.level != nextEdgeLevel(claimEdge.level, numBigStepLevel)) {
                 revert ClaimEdgeInvalidLevel(args.level, claimEdge.level);
             }
 
@@ -410,7 +410,7 @@ library EdgeChallengeManagerLib {
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
-        uint256 numBigStepLevel
+        uint8 numBigStepLevel
     ) internal returns (EdgeAddedData memory) {
         // each edge type requires some specific checks
         (ProofData memory proofData, bytes32 originId) =
@@ -425,7 +425,7 @@ library EdgeChallengeManagerLib {
     /// @notice From any given edge, get the id of the previous assertion
     /// @param edgeId           The edge to get the prev assertion Hash
     /// @param numBigStepLevel  The number of big step levels in this challenge
-    function getPrevAssertionHash(EdgeStore storage store, bytes32 edgeId, uint256 numBigStepLevel)
+    function getPrevAssertionHash(EdgeStore storage store, bytes32 edgeId, uint8 numBigStepLevel)
         internal
         view
         returns (bytes32)
@@ -487,7 +487,7 @@ library EdgeChallengeManagerLib {
     ///         This value is increasing whilst an edge is unrivaled, once a rival is created
     ///         it is fixed. If an edge has rivals from the moment it is created then it will have
     ///         a zero time unrivaled
-    function timeUnrivaled(EdgeStore storage store, bytes32 edgeId) internal view returns (uint256) {
+    function timeUnrivaled(EdgeStore storage store, bytes32 edgeId) internal view returns (uint64) {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
@@ -502,7 +502,7 @@ library EdgeChallengeManagerLib {
         // this edge has no rivals, the time is still going up
         // we give the current amount of time unrivaled
         if (firstRival == UNRIVALED) {
-            return block.number - store.edges[edgeId].createdAtBlock;
+            return uint64(block.number) - store.edges[edgeId].createdAtBlock;
         } else {
             // Sanity check: it's not possible an edge does not exist for a first rival record
             if (!store.edges[firstRival].exists()) {
@@ -510,8 +510,8 @@ library EdgeChallengeManagerLib {
             }
 
             // rivals exist for this edge
-            uint256 firstRivalCreatedAtBlock = store.edges[firstRival].createdAtBlock;
-            uint256 edgeCreatedAtBlock = store.edges[edgeId].createdAtBlock;
+            uint64 firstRivalCreatedAtBlock = store.edges[firstRival].createdAtBlock;
+            uint64 edgeCreatedAtBlock = store.edges[edgeId].createdAtBlock;
             if (firstRivalCreatedAtBlock > edgeCreatedAtBlock) {
                 // if this edge was created before the first rival then we return the difference
                 // in createdAtBlock number
@@ -655,8 +655,8 @@ library EdgeChallengeManagerLib {
     /// @notice Returns the sub edge level of the provided edge level
     /// @param level            The edge level to fetch the next of
     /// @param numBigStepLevel  The number of big step levels in this challenge
-    function nextEdgeLevel(uint256 level, uint256 numBigStepLevel) internal pure returns (uint256) {
-        uint256 nextLevel = level + 1;
+    function nextEdgeLevel(uint8 level, uint8 numBigStepLevel) internal pure returns (uint8) {
+        uint8 nextLevel = level + 1;
 
         // levelToType throws an error when level is not a valid type
         ChallengeEdgeLib.levelToType(nextLevel, numBigStepLevel);
@@ -670,7 +670,7 @@ library EdgeChallengeManagerLib {
     /// @param edgeId           The edge being claimed
     /// @param claimingEdgeId   The edge with a claim id equal to edge id
     /// @param numBigStepLevel  The number of big step levels in this challenge
-    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId, uint256 numBigStepLevel)
+    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId, uint8 numBigStepLevel)
         private
         view
     {
@@ -704,7 +704,7 @@ library EdgeChallengeManagerLib {
         EdgeStore storage store,
         bytes32 edgeId,
         bytes32 claimingEdgeId,
-        uint256 numBigStepLevel
+        uint8 numBigStepLevel
     ) internal {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
@@ -748,16 +748,16 @@ library EdgeChallengeManagerLib {
         EdgeStore storage store,
         bytes32 edgeId,
         bytes32[] memory ancestorEdgeIds,
-        uint256 claimedAssertionUnrivaledBlocks,
-        uint256 confirmationThresholdBlock,
-        uint256 numBigStepLevel
-    ) internal returns (uint256) {
+        uint64 claimedAssertionUnrivaledBlocks,
+        uint64 confirmationThresholdBlock,
+        uint8 numBigStepLevel
+    ) internal returns (uint64) {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
 
         bytes32 currentEdgeId = edgeId;
-        uint256 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
+        uint64 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
 
         // ancestors start from parent, then extend upwards
         for (uint256 i = 0; i < ancestorEdgeIds.length; i++) {
@@ -818,7 +818,7 @@ library EdgeChallengeManagerLib {
         ExecutionContext memory execCtx,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof,
-        uint256 numBigStepLevel
+        uint8 numBigStepLevel
     ) internal {
         // get checks existence
         uint256 machineStep = get(store, edgeId).startHeight;

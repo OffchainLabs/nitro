@@ -97,11 +97,7 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	}
 	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
 
-	challengeLevel, err := eg.GetChallengeLevel()
-	if err != nil {
-		return protocol.Agreement{}, err
-	}
-
+	challengeLevel := eg.GetChallengeLevel()
 	startHeights := make([]l2stateprovider.Height, len(heights.ChallengeOriginHeights))
 	for i, h := range heights.ChallengeOriginHeights {
 		startHeights[i] = l2stateprovider.Height(h)
@@ -148,10 +144,7 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		id := eg.Id()
 		ht.edges.Put(id, eg)
 		if !eg.ClaimId().IsNone() {
-			reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
-			if err != nil {
-				return protocol.Agreement{}, err
-			}
+			reversedChallengeLevel := eg.GetReversedChallengeLevel()
 			rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
 			if !ok || rootEdgesAtLevel == nil {
 				honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
@@ -196,10 +189,7 @@ func (ht *HonestChallengeTree) AddHonestEdge(eg protocol.VerifiedHonestEdge) err
 	ht.edges.Put(id, eg)
 	// If the edge has a claim id, it means it is a level zero edge and we keep track of it.
 	if !eg.ClaimId().IsNone() {
-		reversedChallengeLevel, err := eg.GetReversedChallengeLevel()
-		if err != nil {
-			return err
-		}
+		reversedChallengeLevel := eg.GetReversedChallengeLevel()
 		rootEdgesAtLevel, ok := ht.honestRootEdgesByLevel.TryGet(reversedChallengeLevel)
 		if !ok || rootEdgesAtLevel == nil {
 			honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()

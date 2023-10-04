@@ -165,9 +165,6 @@ jobs:
       - name: Install packages
         run: yarn
 
-      - name: Test size
-        run: forge build --sizes
-
       - name: Run foundry tests
         run: forge test
 
@@ -201,7 +198,10 @@ jobs:
         run: yarn
 
       - name: Test size
-        run: forge build --sizes
+        run: yarn build
+
+      - name: Test size
+        run: yarn contract:size
 
   bold-upgrade:
     name: BOLD upgrade test

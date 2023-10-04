@@ -5,6 +5,7 @@ import '@nomiclabs/hardhat-etherscan'
 import '@typechain/hardhat'
 import 'solidity-coverage'
 import 'hardhat-gas-reporter'
+import 'hardhat-contract-sizer'
 
 const solidity = {
   compilers: [
@@ -18,7 +19,17 @@ const solidity = {
       },
     },
   ],
-  overrides: {},
+  overrides: {
+    'src/challengeV2/EdgeChallengeManager.sol': {
+      version: '0.8.17',
+      settings: {
+        optimizer: {
+          enabled: true,
+          runs: 500,
+        },
+      },
+    },
+  },
 }
 
 if (process.env['INTERFACE_TESTER_SOLC_VERSION']) {
@@ -32,12 +43,15 @@ if (process.env['INTERFACE_TESTER_SOLC_VERSION']) {
     },
   })
   solidity.overrides = {
-    'src/test-helpers/InterfaceCompatibilityTester.sol': {
-      version: process.env['INTERFACE_TESTER_SOLC_VERSION'],
-      settings: {
-        optimizer: {
-          enabled: true,
-          runs: 100,
+    ...(solidity.overrides || {}),
+    ...{
+      'src/test-helpers/InterfaceCompatibilityTester.sol': {
+        version: process.env['INTERFACE_TESTER_SOLC_VERSION'],
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 100,
+          },
         },
       },
     },
@@ -161,4 +175,7 @@ module.exports = {
     outDir: 'build/types',
     target: 'ethers-v5',
   },
+  contractSizer: {
+    strict: process.env.STRICT ? true : false
+  }
 }

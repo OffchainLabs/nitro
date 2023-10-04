@@ -650,10 +650,7 @@ func (w *Watcher) processEdgeConfirmation(
 	}
 
 	// Check if we should confirm the assertion by challenge winner.
-	challengeLevel, err := edge.GetChallengeLevel()
-	if err != nil {
-		return err
-	}
+	challengeLevel := edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
 		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash{Hash: common.Hash(claimId)}, edgeId); confirmAssertionErr != nil {
 			return confirmAssertionErr

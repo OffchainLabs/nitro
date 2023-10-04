@@ -409,10 +409,7 @@ func (et *Tracker) uniqueTrackerLogFields() log.Ctx {
 	startHeight, startCommit := et.edge.StartCommitment()
 	endHeight, endCommit := et.edge.EndCommitment()
 	id := et.edge.Id()
-	chalLevel, err := et.edge.GetChallengeLevel()
-	if err != nil {
-		panic(err) // TODO: Remove
-	}
+	chalLevel := et.edge.GetChallengeLevel()
 	return log.Ctx{
 		"id":            id.Hash,
 		"startHeight":   startHeight,
@@ -537,10 +534,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 	if err != nil {
 		return commitments.History{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", startHeight, endHeight)
 	}
-	challengeLevel, err := et.edge.GetChallengeLevel()
-	if err != nil {
-		return commitments.History{}, nil, err
-	}
+	challengeLevel := et.edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
 		historyCommit, commitErr := et.stateProvider.HistoryCommitment(
 			ctx,
@@ -635,10 +629,7 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 			containers.Trunc(endCommit.Bytes()),
 		)
 	}
-	challengeLevel, err := et.edge.GetChallengeLevel()
-	if err != nil {
-		return nil, nil, err
-	}
+	challengeLevel := et.edge.GetChallengeLevel()
 	srvlog.Info("Successfully bisected edge", log.Ctx{
 		"name":               et.validatorName,
 		"challengeType":      challengeLevel,
@@ -681,10 +672,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	var startParentCommitment commitments.History
 	var endParentCommitment commitments.History
 	var startEndPrefixProof []byte
-	challengeLevel, err := et.edge.GetChallengeLevel()
-	if err != nil {
-		return err
-	}
+	challengeLevel := et.edge.GetChallengeLevel()
 	switch challengeLevel {
 	case protocol.NewBlockChallengeLevel():
 		fromBlock := fromAssertionHeight + et.heightConfig.StartBlockHeight
@@ -845,10 +833,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	}
 	fields["firstLeaf"] = containers.Trunc(startHistory.FirstLeaf.Bytes())
 	fields["startCommitment"] = containers.Trunc(startHistory.Merkle.Bytes())
-	addedLeafChallengeLevel, err := addedLeaf.GetChallengeLevel()
-	if err != nil {
-		return err
-	}
+	addedLeafChallengeLevel := addedLeaf.GetChallengeLevel()
 	fields["subChallengeType"] = addedLeafChallengeLevel
 	srvlog.Info("Created subchallenge edge", fields)
 
@@ -933,13 +918,7 @@ func canOneStepProve(ctx context.Context, edge protocol.SpecEdge) (bool, error) 
 	if start >= end {
 		return false, fmt.Errorf("start height %d cannot be >= end height %d", start, end)
 	}
-	challengeLevel, err := edge.GetChallengeLevel()
-	if err != nil {
-		return false, err
-	}
-	totalChallengeLevels, err := edge.GetTotalChallengeLevels(ctx)
-	if err != nil {
-		return false, err
-	}
-	return end-start == 1 && uint64(challengeLevel) == totalChallengeLevels-1, nil
+	challengeLevel := edge.GetChallengeLevel()
+	totalChallengeLevels := edge.GetTotalChallengeLevels(ctx)
+	return end-start == 1 && challengeLevel.Uint8() == totalChallengeLevels-1, nil
 }

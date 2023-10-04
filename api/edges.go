@@ -61,10 +61,7 @@ func convertSpecEdgeEdgesToEdges(ctx context.Context, e []protocol.SpecEdge) ([]
 }
 
 func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge, error) {
-	challengeLevel, err := e.GetChallengeLevel()
-	if err != nil {
-		return nil, err
-	}
+	challengeLevel := e.GetChallengeLevel()
 	edge := &Edge{
 		ID:              e.Id().Hash,
 		Type:            challengeLevel.String(),

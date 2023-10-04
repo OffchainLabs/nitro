@@ -231,19 +231,19 @@ func (m *MockSpecEdge) Id() protocol.EdgeId {
 	args := m.Called()
 	return args.Get(0).(protocol.EdgeId)
 }
-func (m *MockSpecEdge) GetChallengeLevel() (protocol.ChallengeLevel, error) {
+func (m *MockSpecEdge) GetChallengeLevel() protocol.ChallengeLevel {
 	args := m.Called()
-	return args.Get(0).(protocol.ChallengeLevel), args.Error(1)
+	return args.Get(0).(protocol.ChallengeLevel)
 }
 
-func (m *MockSpecEdge) GetReversedChallengeLevel() (protocol.ChallengeLevel, error) {
+func (m *MockSpecEdge) GetReversedChallengeLevel() protocol.ChallengeLevel {
 	args := m.Called()
-	return args.Get(0).(protocol.ChallengeLevel), args.Error(1)
+	return args.Get(0).(protocol.ChallengeLevel)
 }
 
-func (m *MockSpecEdge) GetTotalChallengeLevels(ctx context.Context) (uint64, error) {
+func (m *MockSpecEdge) GetTotalChallengeLevels(ctx context.Context) uint8 {
 	args := m.Called(ctx)
-	return args.Get(0).(uint64), args.Get(1).(error)
+	return args.Get(0).(uint8)
 }
 
 func (m *MockSpecEdge) MiniStaker() option.Option[common.Address] {

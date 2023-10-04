@@ -102,5 +102,5 @@ type specEdge struct {
 	inner                challengeV2gen.ChallengeEdge
 	startHeight          uint64
 	endHeight            uint64
-	totalChallengeLevels uint64
+	totalChallengeLevels uint8
 }

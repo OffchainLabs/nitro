@@ -20,9 +20,9 @@ const (
 
 type Opt func(c *rollupgen.Config)
 
-func WithNumBigStepLevels(num uint64) Opt {
+func WithNumBigStepLevels(num uint8) Opt {
 	return func(c *rollupgen.Config) {
-		c.NumBigStepLevel = new(big.Int).SetUint64(num)
+		c.NumBigStepLevel = num
 	}
 }
 
@@ -83,7 +83,7 @@ func GenerateRollupConfig(
 		GenesisExecutionState:        genesisExecutionState,
 		GenesisInboxCount:            genesisInboxCount,
 		AnyTrustFastConfirmer:        anyTrustFastConfirmer,
-		NumBigStepLevel:              new(big.Int).SetUint64(1),
+		NumBigStepLevel:              1,
 		ChallengeGracePeriodBlocks:   gracePeriod,
 	}
 	for _, o := range opts {

@@ -13,8 +13,8 @@ struct MockAssertion {
     uint256 height;
     ExecutionState state;
     bytes32 successionChallenge;
-    uint256 firstChildCreationBlock;
-    uint256 secondChildCreationBlock;
+    uint64 firstChildCreationBlock;
+    uint64 secondChildCreationBlock;
     bool isFirstChild;
     bool isPending;
     bytes32 configHash;
@@ -47,12 +47,12 @@ contract MockAssertionChain is IAssertionChain {
         require(assertionHash == calculateAssertionHash(prevAssertionHash, state), "INVALID_ASSERTION_HASH");
     }
 
-    function getFirstChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+    function getFirstChildCreationBlock(bytes32 assertionHash) external view returns (uint64) {
         require(assertionExists(assertionHash), "Assertion does not exist");
         return assertions[assertionHash].firstChildCreationBlock;
     }
 
-    function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint256) {
+    function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint64) {
         require(assertionExists(assertionHash), "Assertion does not exist");
         return assertions[assertionHash].secondChildCreationBlock;
     }
@@ -100,9 +100,9 @@ contract MockAssertionChain is IAssertionChain {
 
     function childCreated(bytes32 assertionHash) internal {
         if (assertions[assertionHash].firstChildCreationBlock == 0) {
-            assertions[assertionHash].firstChildCreationBlock = block.number;
+            assertions[assertionHash].firstChildCreationBlock = uint64(block.number);
         } else if (assertions[assertionHash].secondChildCreationBlock == 0) {
-            assertions[assertionHash].secondChildCreationBlock = block.number;
+            assertions[assertionHash].secondChildCreationBlock = uint64(block.number);
         }
     }
 

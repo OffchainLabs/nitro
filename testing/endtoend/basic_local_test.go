@@ -40,7 +40,7 @@ func TestTotalWasmOpcodes(t *testing.T) {
 			BigStepChallengeHeight:   1 << 10,
 			SmallStepChallengeHeight: 1 << 13,
 		}
-		numBigSteps := uint64(3)
+		numBigSteps := uint8(3)
 		require.Equal(t, uint64(1<<43), totalWasmOpcodes(layerZeroHeights, numBigSteps))
 	})
 	t.Run("minimal configuration", func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestTotalWasmOpcodes(t *testing.T) {
 			BigStepChallengeHeight:   1 << 5,
 			SmallStepChallengeHeight: 1 << 5,
 		}
-		numBigSteps := uint64(1)
+		numBigSteps := uint8(1)
 		require.Equal(t, uint64(1<<10), totalWasmOpcodes(layerZeroHeights, numBigSteps))
 	})
 }
@@ -74,7 +74,7 @@ func TestChallengeProtocol_AliceAndBob_AnvilLocal(t *testing.T) {
 		BigStepChallengeHeight:   1 << 5,
 		SmallStepChallengeHeight: 1 << 5,
 	}
-	numBigSteps := uint64(3)
+	numBigSteps := uint8(3)
 	totalOpcodes := totalWasmOpcodes(layerZeroHeights, numBigSteps)
 
 	// Diverge exactly at the halfway opcode within the block.
@@ -131,9 +131,9 @@ func TestSync_HonestBobStopsCharlieJoins(t *testing.T) {
 		BigStepChallengeHeight:   1 << 3,
 		SmallStepChallengeHeight: 1 << 5,
 	}
-	numBigSteps := uint64(3)
+	numBigSteps := uint8(3)
 	totalWasmOpcodes := uint64(1)
-	for i := uint64(0); i < numBigSteps; i++ {
+	for i := uint8(0); i < numBigSteps; i++ {
 		totalWasmOpcodes *= layerZeroHeights.BigStepChallengeHeight
 	}
 	totalWasmOpcodes *= layerZeroHeights.SmallStepChallengeHeight
@@ -342,9 +342,9 @@ func setupValidator(
 	return v, chain, nil
 }
 
-func totalWasmOpcodes(heights *protocol.LayerZeroHeights, numBigSteps uint64) uint64 {
+func totalWasmOpcodes(heights *protocol.LayerZeroHeights, numBigSteps uint8) uint64 {
 	totalWasmOpcodes := uint64(1)
-	for i := uint64(0); i < numBigSteps; i++ {
+	for i := uint8(0); i < numBigSteps; i++ {
 		totalWasmOpcodes *= heights.BigStepChallengeHeight
 	}
 	totalWasmOpcodes *= heights.SmallStepChallengeHeight

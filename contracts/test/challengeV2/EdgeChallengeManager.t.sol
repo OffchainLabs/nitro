@@ -38,7 +38,7 @@ contract EdgeChallengeManagerTest is Test {
     bytes32 genesisAfterStateHash = RollupLib.executionStateHash(genesisState);
     ExecutionStateData genesisStateData = ExecutionStateData(genesisState, bytes32(0), bytes32(0));
 
-    uint256 public NUM_BIGSTEP_LEVEL = 3;
+    uint8 public NUM_BIGSTEP_LEVEL = 3;
 
     bytes32 genesisAssertionHash;
 
@@ -62,7 +62,7 @@ contract EdgeChallengeManagerTest is Test {
     address excessStakeReceiver = address(77);
     address nobody = address(78);
 
-    uint256 challengePeriodBlock = 1000;
+    uint64 challengePeriodBlock = 1000;
     ExecutionStateData empty;
 
     function appendRandomStates(bytes32[] memory currentStates, uint256 numStates)
@@ -1076,7 +1076,7 @@ contract EdgeChallengeManagerTest is Test {
 
     struct CreateMachineEdgesBisectArgs {
         EdgeChallengeManager challengeManager;
-        uint256 eType;
+        uint8 eType;
         bytes32 claim1Id;
         bytes32 claim2Id;
         bytes32 endState1;
@@ -1366,7 +1366,7 @@ contract EdgeChallengeManagerTest is Test {
             )
         );
 
-        for (uint256 i = 1; i < NUM_BIGSTEP_LEVEL; ++i) {
+        for (uint8 i = 1; i < NUM_BIGSTEP_LEVEL; ++i) {
             local.bigStepBisections[i] = createMachineEdgesAndBisectToFork(
                 CreateMachineEdgesBisectArgs(
                     ei.challengeManager,

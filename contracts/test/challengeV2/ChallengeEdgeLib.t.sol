@@ -9,14 +9,14 @@ import "./Utils.sol";
 import "../../src/challengeV2/libraries/ChallengeEdgeLib.sol";
 
 contract TestChallengeEdge {
-    function levelToType(uint256 level, uint256 numBigStepLevels) public pure returns (EdgeType eType) {
+    function levelToType(uint8 level, uint8 numBigStepLevels) public pure returns (EdgeType eType) {
         return ChallengeEdgeLib.levelToType(level, numBigStepLevels);
     }
 }
 
 contract ChallengeEdgeLibTest is Test {
     Random rand = new Random();
-    uint256 constant NUM_BIGSTEP_LEVEL = 3;
+    uint8 constant NUM_BIGSTEP_LEVEL = 3;
 
     function randCheckArgs() internal returns (bytes32, bytes32, bytes32) {
         return (rand.hash(), rand.hash(), rand.hash());
@@ -213,7 +213,7 @@ contract ChallengeEdgeLibTest is Test {
     }
 
     function testLevelToType() public {
-        uint256 numBigStep = 4;
+        uint8 numBigStep = 4;
         assertTrue(ChallengeEdgeLib.levelToType(0, numBigStep) == EdgeType.Block, "Block");
         assertTrue(ChallengeEdgeLib.levelToType(1, numBigStep) == EdgeType.BigStep, "Big step 1");
         assertTrue(ChallengeEdgeLib.levelToType(2, numBigStep) == EdgeType.BigStep, "Big step 2");
