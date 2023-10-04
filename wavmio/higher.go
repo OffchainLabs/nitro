@@ -6,7 +6,10 @@
 
 package wavmio
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
+)
 
 const INITIAL_CAPACITY = 128
 const QUERY_SIZE = 32
@@ -61,9 +64,9 @@ func AdvanceInboxMessage() {
 	setGlobalStateU64(IDX_INBOX_POSITION, pos+1)
 }
 
-func ResolvePreImage(hash common.Hash) ([]byte, error) {
+func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
 	return readBuffer(func(offset uint32, buf []byte) uint32 {
-		return resolvePreImage(hash[:], offset, buf)
+		return resolveTypedPreimage(uint8(ty), hash[:], offset, buf)
 	}), nil
 }
 
