@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -334,5 +335,98 @@ func TestFindBatch(t *testing.T) {
 		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
 			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
 		}
+	}
+}
+
+func TestDisableL1Charging(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+	addr := common.HexToAddress("0x12345678")
+
+	gasWithL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	Require(t, err)
+
+	gasWithoutL1Charging, err := client.EstimateGas(ctx, ethereum.CallMsg{To: &addr, SkipL1Charging: true})
+	Require(t, err)
+
+	if gasWithL1Charging <= gasWithoutL1Charging {
+		Fatal(t, "SkipL1Charging didn't disable L1 charging")
+	}
+	if gasWithoutL1Charging != params.TxGas {
+		Fatal(t, "Incorrect gas estimate with disabled L1 charging")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithL1Charging}, nil)
+	Require(t, err)
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging}, nil)
+	if err == nil {
+		Fatal(t, "CallContract passed with insufficient gas")
+	}
+
+	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
+	Require(t, err)
+}
+
+func TestL2BlockRangeForL1(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l2info, node, l2client, l1info, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer node.StopAndWait()
+	user := l1info.GetDefaultTransactOpts("User", ctx)
+
+	numTransactions := 200
+	for i := 0; i < numTransactions; i++ {
+		TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), l2info, l2client, ctx)
+	}
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
+	if err != nil {
+		t.Fatalf("Error creating node interface: %v", err)
+	}
+
+	l1BlockNums := map[uint64]*[2]uint64{}
+	latestL2, err := l2client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatalf("Error querying most recent l2 block: %v", err)
+	}
+	for l2BlockNum := uint64(0); l2BlockNum <= latestL2; l2BlockNum++ {
+		l1BlockNum, err := nodeInterface.BlockL1Num(&bind.CallOpts{}, l2BlockNum)
+		if err != nil {
+			t.Fatalf("Error quering l1 block number for l2 block: %d, error: %v", l2BlockNum, err)
+		}
+		if _, ok := l1BlockNums[l1BlockNum]; !ok {
+			l1BlockNums[l1BlockNum] = &[2]uint64{l2BlockNum, l2BlockNum}
+		}
+		l1BlockNums[l1BlockNum][1] = l2BlockNum
+	}
+
+	// Test success.
+	for l1BlockNum := range l1BlockNums {
+		rng, err := nodeInterface.L2BlockRangeForL1(&bind.CallOpts{}, l1BlockNum)
+		if err != nil {
+			t.Fatalf("Error getting l2 block range for l1 block: %d, error: %v", l1BlockNum, err)
+		}
+		expected := l1BlockNums[l1BlockNum]
+		if rng.FirstBlock != expected[0] || rng.LastBlock != expected[1] {
+			unexpectedL1BlockNum, err := nodeInterface.BlockL1Num(&bind.CallOpts{}, rng.LastBlock)
+			if err != nil {
+				t.Fatalf("Error quering l1 block number for l2 block: %d, error: %v", rng.LastBlock, err)
+			}
+			// Handle the edge case when new l2 blocks are produced between latestL2 was last calculated and now.
+			if unexpectedL1BlockNum != l1BlockNum || rng.LastBlock < expected[1] || rng.FirstBlock != expected[0] {
+				t.Errorf("L2BlockRangeForL1(%d) = (%d %d) want (%d %d)", l1BlockNum, rng.FirstBlock, rng.LastBlock, expected[0], expected[1])
+			}
+		}
+	}
+	// Test invalid case.
+	if _, err := nodeInterface.L2BlockRangeForL1(&bind.CallOpts{}, 1e5); err == nil {
+		t.Fatalf("GetL2BlockRangeForL1 didn't fail for an invalid input")
 	}
 }

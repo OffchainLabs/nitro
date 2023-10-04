@@ -25,10 +25,11 @@ func openTestKeystore(description string, walletConfig *genericconf.WalletConfig
 }
 
 func createWallet(t *testing.T, pathname string) {
+	t.Helper()
 	walletConf := genericconf.WalletConfigDefault
 	walletConf.Pathname = pathname
 	walletConf.OnlyCreateKey = true
-	walletConf.PasswordImpl = "foo"
+	walletConf.Password = "foo"
 
 	testPassCalled := false
 	testPass := func() (string, error) {
@@ -36,13 +37,8 @@ func createWallet(t *testing.T, pathname string) {
 		return "", nil
 	}
 
-	_, _, err := openTestKeystore("test", &walletConf, testPass)
-	if err == nil {
-		t.Fatalf("should have failed")
-	}
-	keyCreatedError := "wallet key created"
-	if !strings.Contains(err.Error(), keyCreatedError) {
-		t.Fatalf("incorrect failure: %v, should have been %s", err, keyCreatedError)
+	if _, _, err := openTestKeystore("test", &walletConf, testPass); err != nil {
+		t.Fatalf("openTestKeystore() unexpected error: %v", err)
 	}
 	if testPassCalled {
 		t.Error("password prompted for when it should not have been")
@@ -73,7 +69,7 @@ func TestExistingKeystoreNoCreate(t *testing.T) {
 	walletConf := genericconf.WalletConfigDefault
 	walletConf.Pathname = pathname
 	walletConf.OnlyCreateKey = true
-	walletConf.PasswordImpl = "foo"
+	walletConf.Password = "foo"
 
 	testPassCalled := false
 	testPass := func() (string, error) {
@@ -110,13 +106,8 @@ func TestNewKeystorePromptPasswordTerminal(t *testing.T) {
 		return password, nil
 	}
 
-	_, _, err := openTestKeystore("test", &walletConf, getPass)
-	if err == nil {
-		t.Fatalf("should have failed")
-	}
-	keyCreatedError := "wallet key created"
-	if !strings.Contains(err.Error(), keyCreatedError) {
-		t.Fatalf("incorrect failure: %v, should have been %s", err, keyCreatedError)
+	if _, _, err := openTestKeystore("test", &walletConf, getPass); err != nil {
+		t.Fatalf("openTestKeystore() unexpected error: %v", err)
 	}
 	if !testPassCalled {
 		t.Error("password not prompted for")
@@ -167,13 +158,8 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 		return password, nil
 	}
 
-	_, _, err := openTestKeystore("test", &walletConf, testPass)
-	if err == nil {
-		t.Fatalf("should have failed")
-	}
-	keyCreatedError := "wallet key created"
-	if !strings.Contains(err.Error(), keyCreatedError) {
-		t.Fatalf("incorrect failure: %v, should have been %s", err, keyCreatedError)
+	if _, _, err := openTestKeystore("test", &walletConf, testPass); err != nil {
+		t.Fatalf("openTestKeystore() unexpected error: %v", err)
 	}
 	if !testPassCalled {
 		t.Error("password not prompted for")
@@ -206,6 +192,7 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 		t.Fatal("should have failed")
 	}
 	invalidAddressError := "address is invalid"
+	keyCreatedError := "wallet key created"
 	if !strings.Contains(err.Error(), invalidAddressError) {
 		t.Fatalf("incorrect failure: %v, should have been %s", err, keyCreatedError)
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 	"testing"
 
@@ -75,6 +76,7 @@ type L1ReaderInterface interface {
 	Client() arbutil.L1Interface
 	Subscribe(bool) (<-chan *types.Header, func())
 	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+	UseFinalityData() bool
 }
 
 type GlobalStatePosition struct {
@@ -135,7 +137,7 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[common.Hash][]byte
+	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
 	DelayedMsg []byte
 }
 
@@ -228,6 +230,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
+	e.Preimages = make(map[arbutil.PreimageType]map[common.Hash][]byte)
 	if e.Pos != 0 {
 		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
 		if err != nil {
@@ -239,7 +242,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
 
 		if recording.Preimages != nil {
-			e.Preimages = recording.Preimages
+			e.Preimages[arbutil.Keccak256PreimageType] = recording.Preimages
 		}
 	}
 	if e.HasDelayedMsg {
@@ -252,9 +255,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 		e.DelayedMsg = delayedMsg
-	}
-	if e.Preimages == nil {
-		e.Preimages = make(map[common.Hash][]byte)
 	}
 	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
@@ -408,8 +408,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			}
 			v.pendingWasmModuleRoot = latest
 		} else {
+			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", v.config.PendingUpgradeModuleRoot)
 			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
-			if (v.pendingWasmModuleRoot == common.Hash{}) {
+			if (!valid || v.pendingWasmModuleRoot == common.Hash{}) {
 				return errors.New("pending-upgrade-module-root config value illegal")
 			}
 		}

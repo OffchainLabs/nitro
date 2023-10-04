@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,7 +32,7 @@ const nodesCount = 5 // number of testnodes to create in tests
 func TestStaticForwarder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ipcPath := filepath.Join(t.TempDir(), "test.ipc")
+	ipcPath := tmpPath(t, "test.ipc")
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
 	stackConfig := stackConfigForTest(t)
@@ -49,7 +50,7 @@ func TestStaticForwarder(t *testing.T) {
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
 	execConfigB.Forwarder.RedisUrl = ""
-	execConfigB.ForwardingTargetImpl = ipcPath
+	execConfigB.ForwardingTarget = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
 
 	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nodeConfigB, execConfigB, nil)
@@ -105,7 +106,7 @@ func fallbackSequencer(
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.SeqCoordinator.Enable = opts.enableSecCoordinator
 	nodeConfig.SeqCoordinator.RedisUrl = opts.redisUrl
-	nodeConfig.SeqCoordinator.MyUrlImpl = opts.ipcPath
+	nodeConfig.SeqCoordinator.MyUrl = opts.ipcPath
 	return createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil, stackConfig)
 }
 
@@ -128,10 +129,11 @@ func createForwardingNode(
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.Sequencer = false
 	nodeConfig.DelayedSequencer.Enable = false
+	nodeConfig.BatchPoster.Enable = false
 	execConfig := gethexec.ConfigDefaultTest()
 	execConfig.Sequencer.Enable = false
 	execConfig.Forwarder.RedisUrl = redisUrl
-	execConfig.ForwardingTargetImpl = fallbackPath
+	execConfig.ForwardingTarget = fallbackPath
 	//	nodeConfig.Feed.Output.Enable = false
 
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, execConfig, stackConfig)
@@ -151,17 +153,28 @@ func createSequencer(
 	ipcConfig.Path = ipcPath
 	ipcConfig.Apply(stackConfig)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.BatchPoster.Enable = true
+	nodeConfig.BatchPoster.Enable = false
 	nodeConfig.SeqCoordinator.Enable = true
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
-	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
+	nodeConfig.SeqCoordinator.MyUrl = ipcPath
 
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, gethexec.ConfigDefaultTest(), stackConfig)
 }
 
 // tmpPath returns file path with specified filename from temporary directory of the test.
 func tmpPath(t *testing.T, filename string) string {
-	return filepath.Join(t.TempDir(), filename)
+	t.Helper()
+	// create a unique, maximum 10 characters-long temporary directory {name} with path as $TMPDIR/{name}
+	tmpDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err = os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("Failed to cleanup temp dir: %v", err)
+		}
+	})
+	return filepath.Join(tmpDir, filename)
 }
 
 // testNodes creates specified number of paths for ipc from temporary directory of the test.

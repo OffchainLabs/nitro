@@ -44,6 +44,7 @@ RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
     # pinned rust 1.65.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.68.2 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
+COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
@@ -160,6 +161,7 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
 RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
 RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
+RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
 
 FROM golang:1.20-bullseye as node-builder
 WORKDIR /workspace
@@ -201,6 +203,7 @@ WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \

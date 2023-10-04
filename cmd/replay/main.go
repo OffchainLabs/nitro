@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
@@ -33,7 +34,7 @@ import (
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
-	enc, err := wavmio.ResolvePreImage(hash)
+	enc, err := wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	if err != nil {
 		panic(fmt.Errorf("Error resolving preimage: %w", err))
 	}
@@ -102,7 +103,10 @@ type PreimageDASReader struct {
 }
 
 func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return dastree.Content(hash, wavmio.ResolvePreImage)
+	oracle := func(hash common.Hash) ([]byte, error) {
+		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	}
+	return dastree.Content(hash, oracle)
 }
 
 func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {

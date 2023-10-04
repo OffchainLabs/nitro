@@ -3,6 +3,7 @@ run-name: Go tests CI triggered from @${{ github.actor }} of ${{ github.head_ref
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
   push:
     branches:
@@ -28,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: true
 
@@ -36,14 +37,14 @@ jobs:
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: '16'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: 1.20.x
 
@@ -129,11 +130,15 @@ jobs:
           version: latest
           skip-go-installation: true
           skip-pkg-cache: true
+      - name: Custom Lint
+        run: |
+          go run ./linter/koanf ./...
+          go run ./linter/pointercheck ./...
 
       - name: Set environment variables
         run: |
-          mkdir -p target/tmp
-          echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
+          mkdir -p target/tmp/deadbeefbee
+          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 

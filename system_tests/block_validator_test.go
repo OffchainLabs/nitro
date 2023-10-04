@@ -47,7 +47,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 	var delayEvery int
 	if workloadLoops > 1 {
-		l1NodeConfigA.BatchPoster.MaxBatchPostDelay = time.Millisecond * 500
+		l1NodeConfigA.BatchPoster.MaxDelay = time.Millisecond * 500
 		delayEvery = workloadLoops / 3
 	}
 
@@ -60,7 +60,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
+	validatorConfig.DataAvailability.RPCAggregator.Enable = false
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil, nil)
 	defer nodeB.StopAndWait()

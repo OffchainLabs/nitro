@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -23,7 +24,9 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -37,10 +40,13 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -230,69 +236,37 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
-	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
-	if err != nil {
-		return nil, err
-	}
-	l1Reader.Start(ctx)
-	defer l1Reader.StopAndWait()
-
+func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
+	}
+
+	var validatorAddrs []common.Address
+	for i := uint64(1); i <= authorizeValidators; i++ {
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
 	}
 
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
+		batchPoster,
+		validatorAddrs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+	receipt, err := parentChainReader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
 	info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
-	}
-
-	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
-	if err != nil {
-		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
-	}
-
-	// if a zero sequencer address is specified, don't authorize any sequencers
-	if sequencer != (common.Address{}) {
-		tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-		err = andTxSucceeded(ctx, l1Reader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("error setting is batch poster: %w", err)
-		}
-	}
-
-	var allowValidators []bool
-	var validatorAddrs []common.Address
-	for i := uint64(1); i <= authorizeValidators; i++ {
-		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
-		allowValidators = append(allowValidators, true)
-	}
-	if len(validatorAddrs) > 0 {
-		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
-		if err != nil {
-			return nil, fmt.Errorf("error getting rollup admin: %w", err)
-		}
-		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-		err = andTxSucceeded(ctx, l1Reader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("error setting validator: %w", err)
-		}
 	}
 
 	return &chaininfo.RollupAddresses{
@@ -308,25 +282,25 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 type Config struct {
 	Sequencer           bool                        `koanf:"sequencer"`
-	L1Reader            headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
+	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster         BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
 	MessagePruner       MessagePrunerConfig         `koanf:"message-pruner" reload:"hot"`
 	BlockValidator      staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
-	Staker              staker.L1ValidatorConfig    `koanf:"staker"`
+	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
-	ResourceManagement  resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
-	if c.L1Reader.Enable && c.Sequencer && !c.DelayedSequencer.Enable {
+	if c.ParentChainReader.Enable && c.Sequencer && !c.DelayedSequencer.Enable {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
 	if c.DelayedSequencer.Enable && !c.Sequencer {
@@ -382,7 +356,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 }
 
 var ConfigDefault = Config{
-	L1Reader:            headerreader.DefaultConfig,
+	Sequencer:           false,
+	ParentChainReader:   headerreader.DefaultConfig,
 	InboxReader:         DefaultInboxReaderConfig,
 	DelayedSequencer:    DefaultDelayedSequencerConfig,
 	BatchPoster:         DefaultBatchPosterConfig,
@@ -395,6 +370,7 @@ var ConfigDefault = Config{
 	SyncMonitor:         DefaultSyncMonitorConfig,
 	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
+	ResourceMgmt:        resourcemanager.DefaultConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -403,20 +379,21 @@ func ConfigDefaultL1Test() *Config {
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
-	config.Dangerous.NoCoordinator = true
+	config.Dangerous.NoSequencerCoordinator = true
 
 	return config
 }
 
 func ConfigDefaultL1NonSequencerTest() *Config {
 	config := ConfigDefault
-	config.L1Reader = headerreader.TestConfig
+	config.ParentChainReader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
 
@@ -425,12 +402,13 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
-	config.L1Reader.Enable = false
+	config.ParentChainReader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
-	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
+	config.Feed.Input.Verify.Dangerous.AcceptMissing = true
 	config.Feed.Output.Signed = false
-	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
-	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
+	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
+	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
+	config.Staker = staker.TestL1ValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
@@ -440,18 +418,18 @@ func ConfigDefaultL2Test() *Config {
 }
 
 type DangerousConfig struct {
-	NoL1Listener  bool `koanf:"no-l1-listener"`
-	NoCoordinator bool `koanf:"no-seq-coordinator"`
+	NoL1Listener           bool `koanf:"no-l1-listener"`
+	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	NoL1Listener:  false,
-	NoCoordinator: false,
+	NoL1Listener:           false,
+	NoSequencerCoordinator: false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
-	f.Bool(prefix+".no-seq-coordinator", DefaultDangerousConfig.NoCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
+	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 }
 
 type Node struct {
@@ -526,6 +504,45 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
+func StakerDataposter(
+	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
+) (*dataposter.DataPoster, error) {
+	if transactOpts == nil {
+		return nil, nil
+	}
+	cfg := cfgFetcher.Get()
+	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+		return nil, nil
+	}
+	redisC, err := redisutil.RedisClientFromURL(cfg.Staker.RedisUrl)
+	if err != nil {
+		return nil, fmt.Errorf("creating redis client from url: %w", err)
+	}
+	lockCfgFetcher := func() *redislock.SimpleCfg {
+		return &cfg.Staker.RedisLock
+	}
+	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
+	if err != nil {
+		return nil, err
+	}
+	dpCfg := func() *dataposter.DataPosterConfig {
+		return &cfg.Staker.DataPoster
+	}
+	return dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			Database:          db,
+			HeaderReader:      l1Reader,
+			Auth:              transactOpts,
+			RedisClient:       redisC,
+			RedisLock:         redisLock,
+			Config:            dpCfg,
+			MetadataRetriever: mdRetriever,
+			// transactOpts is non-nil, it's checked at the beginning.
+			RedisKey: transactOpts.From.String() + ".staker-data-poster.queue",
+		})
+}
+
 func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
@@ -555,8 +572,9 @@ func createNodeImpl(
 	syncMonitor := NewSyncMonitor(syncConfigFetcher)
 
 	var l1Reader *headerreader.HeaderReader
-	if config.L1Reader.Enable {
-		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+	if config.ParentChainReader.Enable {
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
@@ -580,7 +598,7 @@ func createNodeImpl(
 		return nil, err
 	}
 	var coordinator *SeqCoordinator
-	var bpVerifier *contracts.BatchPosterVerifier
+	var bpVerifier *contracts.AddressVerifier
 	if deployInfo != nil && l1client != nil {
 		sequencerInboxAddr := deployInfo.SequencerInbox
 
@@ -588,7 +606,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	if config.SeqCoordinator.Enable {
@@ -596,8 +614,8 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	} else if config.Sequencer && !config.Dangerous.NoCoordinator {
-		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
+	} else if config.Sequencer && !config.Dangerous.NoSequencerCoordinator {
+		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-sequencer-coordinator set")
 	}
 	dbs := []ethdb.Database{arbDb}
 	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
@@ -626,30 +644,30 @@ func createNodeImpl(
 		}
 	}
 
-	if !config.L1Reader.Enable {
+	if !config.ParentChainReader.Enable {
 		return &Node{
-			arbDb,
-			stack,
-			exec,
-			nil,
-			txStreamer,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			broadcastServer,
-			broadcastClients,
-			coordinator,
-			maintenanceRunner,
-			nil,
-			syncMonitor,
-			configFetcher,
-			ctx,
+			ArbDB:                   arbDb,
+			Stack:                   stack,
+			Execution:               exec,
+			L1Reader:                nil,
+			TxStreamer:              txStreamer,
+			DeployInfo:              nil,
+			InboxReader:             nil,
+			InboxTracker:            nil,
+			DelayedSequencer:        nil,
+			BatchPoster:             nil,
+			MessagePruner:           nil,
+			BlockValidator:          nil,
+			StatelessBlockValidator: nil,
+			Staker:                  nil,
+			BroadcastServer:         broadcastServer,
+			BroadcastClients:        broadcastClients,
+			SeqCoordinator:          coordinator,
+			MaintenanceRunner:       maintenanceRunner,
+			DASLifecycleManager:     nil,
+			SyncMonitor:             syncMonitor,
+			configFetcher:           configFetcher,
+			ctx:                     ctx,
 		}, nil
 	}
 
@@ -710,7 +728,7 @@ func createNodeImpl(
 			inboxTracker,
 			txStreamer,
 			exec,
-			rawdb.NewTable(arbDb, BlockValidatorPrefix),
+			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			daReader,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
@@ -744,44 +762,59 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		var wallet staker.ValidatorWalletInterface
-		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
-			var existingWalletAddress *common.Address
-			if len(config.Staker.ContractWalletAddress) > 0 {
-				if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
-					log.Error("invalid validator smart contract wallet", "addr", config.Staker.ContractWalletAddress)
-					return nil, errors.New("invalid validator smart contract wallet address")
-				}
-				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
-				existingWalletAddress = &tmpAddress
-			}
-			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			if len(config.Staker.ContractWalletAddress) > 0 {
-				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
-			}
-			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOptsValidator)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		notifiers := make([]staker.LatestStakedNotifier, 0)
-		if config.MessagePruner.Enable {
-			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
-			notifiers = append(notifiers, messagePruner)
-		}
-
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, notifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		dp, err := StakerDataposter(
+			ctx,
+			rawdb.NewTable(arbDb, storage.StakerPrefix),
+			l1Reader,
+			txOptsValidator,
+			configFetcher,
+			syncMonitor,
+		)
 		if err != nil {
 			return nil, err
 		}
-		if stakerObj.Strategy() != staker.WatchtowerStrategy {
-			err := wallet.Initialize(ctx)
-			if err != nil {
+		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
+		// TODO: factor this out into separate helper, and split rest of node
+		// creation into multiple helpers.
+		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
+		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
+			if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
+				var existingWalletAddress *common.Address
+				if len(config.Staker.ContractWalletAddress) > 0 {
+					if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
+						log.Error("invalid validator smart contract wallet", "addr", config.Staker.ContractWalletAddress)
+						return nil, errors.New("invalid validator smart contract wallet address")
+					}
+					tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
+					existingWalletAddress = &tmpAddress
+				}
+				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				if len(config.Staker.ContractWalletAddress) > 0 {
+					return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
+				}
+				wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		var confirmedNotifiers []staker.LatestConfirmedNotifier
+		if config.MessagePruner.Enable {
+			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
+			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
+		}
+
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		if err != nil {
+			return nil, err
+		}
+		if stakerObj.Strategy() == staker.WatchtowerStrategy {
+			if err := wallet.Initialize(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -802,7 +835,7 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
+		batchPoster, err = NewBatchPoster(ctx, rawdb.NewTable(arbDb, storage.BatchPosterPrefix), l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -815,28 +848,28 @@ func createNodeImpl(
 	}
 
 	return &Node{
-		arbDb,
-		stack,
-		exec,
-		l1Reader,
-		txStreamer,
-		deployInfo,
-		inboxReader,
-		inboxTracker,
-		delayedSequencer,
-		batchPoster,
-		messagePruner,
-		blockValidator,
-		statelessBlockValidator,
-		stakerObj,
-		broadcastServer,
-		broadcastClients,
-		coordinator,
-		maintenanceRunner,
-		dasLifecycleManager,
-		syncMonitor,
-		configFetcher,
-		ctx,
+		ArbDB:                   arbDb,
+		Stack:                   stack,
+		Execution:               exec,
+		L1Reader:                l1Reader,
+		TxStreamer:              txStreamer,
+		DeployInfo:              deployInfo,
+		InboxReader:             inboxReader,
+		InboxTracker:            inboxTracker,
+		DelayedSequencer:        delayedSequencer,
+		BatchPoster:             batchPoster,
+		MessagePruner:           messagePruner,
+		BlockValidator:          blockValidator,
+		StatelessBlockValidator: statelessBlockValidator,
+		Staker:                  stakerObj,
+		BroadcastServer:         broadcastServer,
+		BroadcastClients:        broadcastClients,
+		SeqCoordinator:          coordinator,
+		MaintenanceRunner:       maintenanceRunner,
+		DASLifecycleManager:     dasLifecycleManager,
+		SyncMonitor:             syncMonitor,
+		configFetcher:           configFetcher,
+		ctx:                     ctx,
 	}, nil
 }
 
@@ -908,10 +941,10 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
-		err := execClient.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting exec client: %w", err)
-		}
+	}
+	err = n.Execution.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting exec client: %w", err)
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
@@ -1017,12 +1050,8 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
-	if !ok {
-		execClient = nil
-	}
-	if execClient != nil {
-		execClient.StopAndWait()
+	if n.Execution != nil {
+		n.Execution.StopAndWait()
 	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()

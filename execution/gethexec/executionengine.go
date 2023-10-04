@@ -597,7 +597,7 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			s.latestBlockMutex.Lock()
 			block := s.latestBlock
 			s.latestBlockMutex.Unlock()
-			if block != lastBlock && block != nil {
+			if block != nil && (lastBlock == nil || block.Hash() != lastBlock.Hash()) {
 				log.Info(
 					"created block",
 					"l2Block", block.Number(),

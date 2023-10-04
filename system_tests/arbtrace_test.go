@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -132,7 +131,7 @@ func (s *ArbTraceAPIStub) Filter(ctx context.Context, filter *filterRequest) ([]
 func TestArbTraceForwarding(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ipcPath := filepath.Join(t.TempDir(), "redirect.ipc")
+	ipcPath := tmpPath(t, "redirect.ipc")
 	var apis []rpc.API
 	apis = append(apis, rpc.API{
 		Namespace: "arbtrace",
