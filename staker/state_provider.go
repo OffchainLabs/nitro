@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -67,7 +66,6 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 		return 0, fmt.Errorf("position in batch must be zero, but got %d", state.GlobalState.PosInBatch)
 	}
 	if state.GlobalState.Batch == 1 && state.GlobalState.PosInBatch == 0 {
-		// TODO: 1 is correct?
 		return 1, nil
 	}
 	batch := state.GlobalState.Batch - 1
@@ -122,13 +120,16 @@ func (s *StateManager) executionStateAtMessageNumberImpl(_ context.Context, mess
 	if err != nil {
 		return &protocol.ExecutionState{}, err
 	}
+	if globalState.PosInBatch != 0 {
+		return &protocol.ExecutionState{}, fmt.Errorf("position in batch must be zero, but got %d", globalState.PosInBatch)
+	}
 	return &protocol.ExecutionState{
-		GlobalState:   protocol.GoGlobalState(globalState),
-		MachineStatus: protocol.MachineStatusFinished, // TODO: Why hardcode?
+		GlobalState: protocol.GoGlobalState(globalState),
+		// Batches with position 0 consume all the messages from the previous batch, so their machine status is finished.
+		MachineStatus: protocol.MachineStatusFinished,
 	}, nil
 }
 
-// TODO: Rename block to message.
 func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchCount uint64) ([]common.Hash, error) {
 	if blockEnd < blockStart {
 		return nil, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
@@ -137,8 +138,8 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Document why we cannot validate genesis.
 	if batch == 0 {
+		// Genesis cannot be validated. If genesis is passed in, we start from batch index 1.
 		batch += 1
 	}
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
@@ -147,7 +148,7 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	var stateRoots []common.Hash
 	var lastStateRoot common.Hash
 
-	// TODO: Document why we cannot validate genesis.
+	// Genesis cannot be validated. If genesis is passed in, we start from block number 1.
 	if blockStart == 0 {
 		blockStart += 1
 	}
@@ -293,9 +294,6 @@ func (s *StateManager) CollectMachineHashes(
 	case !errors.Is(err, challengecache.ErrNotFoundInCache):
 		return nil, err
 	}
-	fmt.Println("Cache miss")
-	start := time.Now()
-	fmt.Println("Creating entry")
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(cfg.MessageNumber))
 	if err != nil {
 		return nil, err
@@ -304,7 +302,6 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Creating run")
 	execRun, err := s.validator.execSpawner.CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
@@ -314,10 +311,8 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Took %v to compute %d items\n", time.Since(start), len(result))
-	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
+	// Do not save a history commitment of length 1 to the cache.
 	if len(result) > 1 {
-		fmt.Printf("Writing key %+v and num items %d\n", cacheKey, len(result))
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
 			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
 				return nil, err

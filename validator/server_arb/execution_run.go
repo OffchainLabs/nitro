@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -65,27 +64,28 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if err != nil {
 			return nil, err
 		}
+		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
+		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
 			stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
 		} else {
+			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
 		}
+
+		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
-		start := time.Now()
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
+			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
+
 			// Advance the machine in step size increments.
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
-			}
-			machineStep := machine.GetStepCount()
-
-			if numIterations%20 == 0 {
-				fmt.Printf("Since start %v => num iters %d, expected position %d, machine position %d start index %d, step size %d\n", time.Since(start), numIterations, position, machineStep, machineStartIndex, stepSize)
 			}
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
@@ -99,6 +99,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
+			machineStep := machine.GetStepCount()
 			if position != machineStep {
 				machineRunning := machine.IsRunning()
 				if machineRunning || machineStep > position {

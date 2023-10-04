@@ -141,7 +141,6 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 			log.Error("Could not close file after writing", "err", err, "file", fName)
 		}
 	}()
-	fmt.Printf("Writing %d state roots to file %s\n", len(stateRoots), fName)
 	if err := writeStateRoots(f, stateRoots); err != nil {
 		return err
 	}
