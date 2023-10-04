@@ -187,6 +187,9 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build a L2 Node")
 	}
+	if b.withL1 && b.L1 == nil {
+		t.Fatal("builder did not previously build a L1 Node")
+	}
 	if params.nodeConfig == nil {
 		if params.useBuilderNodeConfig {
 			params.nodeConfig = b.nodeConfig
@@ -209,17 +212,9 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 		params.execConfig = b.execConfig
 	}
 
-	var stack *node.Node
-	var l1Info info
-	if b.withL1 {
-		if b.L1 == nil {
-			t.Fatal("builder did not previously build a L1 Node")
-		}
-		stack, l1Info = b.L1.Stack, b.L1Info
-	}
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.Node =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, stack, l1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
 	l2.cleanup = func() { l2.Node.StopAndWait() }
 	return l2, func() { l2.cleanup() }
 }
