@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -91,18 +91,29 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	return append(res, time.Hour*24*365*10), nil
 }
 
-func NewDataPoster(ctx context.Context, db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
-	initConfig := config()
+type DataPosterOpts struct {
+	Database          ethdb.Database
+	HeaderReader      *headerreader.HeaderReader
+	Auth              *bind.TransactOpts
+	RedisClient       redis.UniversalClient
+	RedisLock         AttemptLocker
+	Config            ConfigFetcher
+	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	RedisKey          string // Redis storage key
+}
+
+func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
+	initConfig := opts.Config()
 	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
-	if headerReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
+	if opts.HeaderReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
 		initConfig.UseNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
 	encF := func() storage.EncoderDecoderInterface {
-		if config().LegacyStorageEncoding {
+		if opts.Config().LegacyStorageEncoding {
 			return &storage.LegacyEncoderDecoder{}
 		}
 		return &storage.EncoderDecoder{}
@@ -111,33 +122,33 @@ func NewDataPoster(ctx context.Context, db ethdb.Database, headerReader *headerr
 	switch {
 	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
-	case redisClient != nil:
+	case opts.RedisClient != nil:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &initConfig.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
-	case initConfig.UseLevelDB:
-		ldb := leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-		if config().Dangerous.ClearLevelDB {
-			if err := ldb.PruneAll(ctx); err != nil {
+	case initConfig.UseDBStorage:
+		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if initConfig.Dangerous.ClearDBStorage {
+			if err := storage.PruneAll(ctx); err != nil {
 				return nil, err
 			}
 		}
-		queue = ldb
+		queue = storage
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
 	return &DataPoster{
-		headerReader:      headerReader,
-		client:            headerReader.Client(),
-		sender:            auth.From,
-		signer:            auth.Signer,
-		config:            config,
+		headerReader:      opts.HeaderReader,
+		client:            opts.HeaderReader.Client(),
+		sender:            opts.Auth.From,
+		signer:            opts.Auth.Signer,
+		config:            opts.Config,
 		replacementTimes:  replacementTimes,
-		metadataRetriever: metadataRetriever,
+		metadataRetriever: opts.MetadataRetriever,
 		queue:             queue,
-		redisLock:         redisLock,
+		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
 	}, nil
 }
@@ -634,7 +645,7 @@ type DataPosterConfig struct {
 	MaxTipCapGwei          float64         `koanf:"max-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64          `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool            `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool            `koanf:"use-leveldb"`
+	UseDBStorage           bool            `koanf:"use-db-storage"`
 	UseNoOpStorage         bool            `koanf:"use-noop-storage"`
 	LegacyStorageEncoding  bool            `koanf:"legacy-storage-encoding" reload:"hot"`
 	Dangerous              DangerousConfig `koanf:"dangerous"`
@@ -643,7 +654,7 @@ type DataPosterConfig struct {
 type DangerousConfig struct {
 	// This should be used with caution, only when dataposter somehow gets in a
 	// bad state and we require clearing it.
-	ClearLevelDB bool `koanf:"clear-leveldb"`
+	ClearDBStorage bool `koanf:"clear-dbstorage"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
@@ -662,7 +673,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".max-tip-cap-gwei", DefaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
-	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
+	f.Bool(prefix+".use-db-storage", DefaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 
@@ -671,7 +682,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".clear-leveldb", DefaultDataPosterConfig.Dangerous.ClearLevelDB, "clear leveldb")
+	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear database storage")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -684,10 +695,10 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             true,
+	UseDBStorage:           true,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
-	Dangerous:              DangerousConfig{ClearLevelDB: false},
+	Dangerous:              DangerousConfig{ClearDBStorage: false},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -707,7 +718,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             false,
+	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 }
 

@@ -13,6 +13,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -81,9 +82,9 @@ func (s *ArbitratorSpawner) Name() string {
 }
 
 func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *validator.ValidationInput, mach *ArbitratorMachine) error {
-	resolver := func(hash common.Hash) ([]byte, error) {
+	resolver := func(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
 		// Check if it's a known preimage
-		if preimage, ok := entry.Preimages[hash]; ok {
+		if preimage, ok := entry.Preimages[ty][hash]; ok {
 			return preimage, nil
 		}
 		return nil, errors.New("preimage not found")
@@ -242,19 +243,25 @@ func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.Va
 		return err
 	}
 	defer preimageFile.Close()
-	for _, data := range input.Preimages {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		lenbytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
-		_, err := preimageFile.Write(lenbytes)
+	for ty, preimages := range input.Preimages {
+		_, err = preimageFile.Write([]byte{byte(ty)})
 		if err != nil {
 			return err
 		}
-		_, err = preimageFile.Write(data)
-		if err != nil {
-			return err
+		for _, data := range preimages {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			lenbytes := make([]byte, 8)
+			binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
+			_, err := preimageFile.Write(lenbytes)
+			if err != nil {
+				return err
+			}
+			_, err = preimageFile.Write(data)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

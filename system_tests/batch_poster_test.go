@@ -143,7 +143,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.nodeConfig.Sequencer.MaxTxDataSize = 110000
+	builder.execConfig.Sequencer.MaxTxDataSize = 110000
 	cleanup := builder.Build(t)
 	defer cleanup()
 	l2A := builder.L2
@@ -176,7 +176,7 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.CompressionLevel = brotli.BestCompression
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
-	builder.nodeConfig.RPC.RPCTxFeeCap = 1000.
+	builder.execConfig.RPC.RPCTxFeeCap = 1000.
 	cleanup := builder.Build(t)
 	defer cleanup()
 	l2A := builder.L2

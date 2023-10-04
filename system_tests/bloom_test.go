@@ -25,8 +25,8 @@ func TestBloom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.nodeConfig.RPC.BloomBitsBlocks = 256
-	builder.nodeConfig.RPC.BloomConfirms = 1
+	builder.execConfig.RPC.BloomBitsBlocks = 256
+	builder.execConfig.RPC.BloomConfirms = 1
 	builder.takeOwnership = false
 	cleanup := builder.Build(t)
 
@@ -81,9 +81,9 @@ func TestBloom(t *testing.T) {
 			t.Log("counts: ", i, "/", countsNum)
 		}
 	}
-
+	execNode := getExecNode(t, builder.L2.Node)
 	for {
-		sectionSize, sectionNum := builder.L2.Node.Execution.Backend.APIBackend().BloomStatus()
+		sectionSize, sectionNum := execNode.Backend.APIBackend().BloomStatus()
 		if sectionSize != 256 {
 			Fatal(t, "unexpected section size: ", sectionSize)
 		}
