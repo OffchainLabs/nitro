@@ -40,7 +40,7 @@ func TestEdgeTracker_Act(t *testing.T) {
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 
 	err = tkr.Act(ctx)
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "not yet confirmable")
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 }
 
@@ -69,19 +69,33 @@ func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 
 	// However, it should not be confirmable yet as we are halfway through the challenge period.
 	err = tkr.Act(ctx)
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "not yet confirmable")
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
+
+	someEdge, err := chalManager.GetEdge(ctx, tkr.EdgeId())
+	require.NoError(t, err)
+	require.Equal(t, false, someEdge.IsNone())
+	edge := someEdge.Unwrap()
+	assertionHash, err := edge.AssertionHash(ctx)
+	require.NoError(t, err)
+
+	pathTimerBefore, _, _, err := tkr.Watcher().ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+	require.NoError(t, err)
 
 	// Advance our backend way beyond the challenge period.
 	for i := uint64(0); i < chalPeriodBlocks; i++ {
 		createdData.Backend.Commit()
 	}
 
+	pathTimerAfter, _, _, err := tkr.Watcher().ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+	require.NoError(t, err)
+	require.Equal(t, pathTimerBefore, pathTimerAfter)
+
 	// Despite a lot of time having passed since the edge was created, its timer stopped halfway
 	// through the challenge period as it gained a rival. That is, no matter how much time passes,
 	// our edge will still not be confirmed by time.
 	err = tkr.Act(ctx)
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "not yet confirmable")
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 }
 
@@ -118,28 +132,28 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 
 	// Delay the evil root edge creation by a challenge period.
 	delayEvilRootEdgeCreation := option.Some(chalPeriodBlocks)
-	tkr, _ := setupEdgeTrackersForBisection(t, ctx, createdData, delayEvilRootEdgeCreation)
+	honestParent, _ := setupEdgeTrackersForBisection(t, ctx, createdData, delayEvilRootEdgeCreation)
 
 	// We manually bisect the honest, root level edge and initialize
 	// edge trackers for its children.
-	history, proof, err := tkr.DetermineBisectionHistoryWithProof(ctx)
+	history, proof, err := honestParent.DetermineBisectionHistoryWithProof(ctx)
 	require.NoError(t, err)
-	edge, err := chalManager.GetEdge(ctx, tkr.EdgeId())
+	edge, err := chalManager.GetEdge(ctx, honestParent.EdgeId())
 	require.NoError(t, err)
 	require.Equal(t, false, edge.IsNone())
 
 	child1, child2, err := edge.Unwrap().Bisect(ctx, history.Merkle, proof)
 	require.NoError(t, err)
-	require.NoError(t, tkr.Watcher().AddVerifiedHonestEdge(ctx, child1))
-	require.NoError(t, tkr.Watcher().AddVerifiedHonestEdge(ctx, child2))
+	require.NoError(t, honestParent.Watcher().AddVerifiedHonestEdge(ctx, child1))
+	require.NoError(t, honestParent.Watcher().AddVerifiedHonestEdge(ctx, child2))
 
 	childTracker1, err := edgetracker.New(
 		ctx,
 		child1,
 		createdData.Chains[1],
 		createdData.HonestStateManager,
-		tkr.Watcher(),
-		tkr.ChallengeManager(),
+		honestParent.Watcher(),
+		honestParent.ChallengeManager(),
 		edgetracker.HeightConfig{
 			StartBlockHeight: 0,
 			InboxMaxCount:    1,
@@ -152,8 +166,8 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 		child2,
 		createdData.Chains[1],
 		createdData.HonestStateManager,
-		tkr.Watcher(),
-		tkr.ChallengeManager(),
+		honestParent.Watcher(),
+		honestParent.ChallengeManager(),
 		edgetracker.HeightConfig{
 			StartBlockHeight: 0,
 			InboxMaxCount:    1,
@@ -168,10 +182,10 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 	require.Equal(t, true, childTracker2.ShouldDespawn(ctx))
 
 	// We check we can also confirm the ancestor edge.
-	err = tkr.Act(ctx)
+	err = honestParent.Act(ctx)
 	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirmed, tkr.CurrentState())
-	require.Equal(t, true, tkr.ShouldDespawn(ctx))
+	require.Equal(t, edgetracker.EdgeConfirmed, honestParent.CurrentState())
+	require.Equal(t, true, honestParent.ShouldDespawn(ctx))
 }
 
 func Test_getEdgeTrackers(t *testing.T) {
@@ -266,14 +280,6 @@ func setupEdgeTrackersForBisection(
 	)
 	require.NoError(t, err)
 
-	go honestWatcher.Start(ctx)
-	for {
-		if honestWatcher.IsSynced() {
-			break
-		}
-		time.Sleep(time.Millisecond * 10)
-	}
-
 	evilWatcher := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice")
 	evilValidator.watcher = evilWatcher
 	tracker2, err := edgetracker.New(
@@ -292,13 +298,11 @@ func setupEdgeTrackersForBisection(
 	)
 	require.NoError(t, err)
 
-	go evilWatcher.Start(ctx)
-	for {
-		if evilWatcher.IsSynced() {
-			break
-		}
-		time.Sleep(time.Millisecond * 10)
-	}
+	require.NoError(t, honestWatcher.AddVerifiedHonestEdge(ctx, honestEdge))
+	require.NoError(t, honestWatcher.AddEdge(ctx, evilEdge))
+	require.NoError(t, evilWatcher.AddVerifiedHonestEdge(ctx, evilEdge))
+	require.NoError(t, evilWatcher.AddEdge(ctx, honestEdge))
+
 	return tracker1, tracker2
 }
 

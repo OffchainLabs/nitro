@@ -412,24 +412,8 @@ func (w *Watcher) checkForEdgeAdded(
 	return nil
 }
 
-// Processes an edge added event by adding it to the honest challenge tree if it is honest.
-func (w *Watcher) processEdgeAddedEvent(
-	ctx context.Context,
-	event *challengeV2gen.EdgeChallengeManagerEdgeAdded,
-) error {
-	challengeManager, err := w.chain.SpecChallengeManager(ctx)
-	if err != nil {
-		return err
-	}
-	edgeOpt, err := challengeManager.GetEdge(ctx, protocol.EdgeId{Hash: event.EdgeId})
-	if err != nil {
-		return err
-	}
-	if edgeOpt.IsNone() {
-		return fmt.Errorf("no edge found with id %#x", event.EdgeId)
-	}
-	edge := edgeOpt.Unwrap()
-
+// AddEdge to watcher. If it is honest, it will be tracked.
+func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) error {
 	assertionHash, err := edge.AssertionHash(ctx)
 	if err != nil {
 		return err
@@ -437,7 +421,7 @@ func (w *Watcher) processEdgeAddedEvent(
 	chal, ok := w.challenges.TryGet(assertionHash)
 	if !ok {
 		tree := challengetree.New(
-			protocol.AssertionHash{Hash: event.OriginId},
+			assertionHash,
 			w.chain,
 			w.histChecker,
 			w.numBigStepLevels,
@@ -459,6 +443,25 @@ func (w *Watcher) processEdgeAddedEvent(
 		return w.edgeManager.TrackEdge(ctx, edge)
 	}
 	return nil
+}
+
+// Processes an edge added event by adding it to the honest challenge tree if it is honest.
+func (w *Watcher) processEdgeAddedEvent(
+	ctx context.Context,
+	event *challengeV2gen.EdgeChallengeManagerEdgeAdded,
+) error {
+	challengeManager, err := w.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return err
+	}
+	edgeOpt, err := challengeManager.GetEdge(ctx, protocol.EdgeId{Hash: event.EdgeId})
+	if err != nil {
+		return err
+	}
+	if edgeOpt.IsNone() {
+		return fmt.Errorf("no edge found with id %#x", event.EdgeId)
+	}
+	return w.AddEdge(ctx, edgeOpt.Unwrap())
 }
 
 // Filters for edge confirmed by one step proof events within a range.

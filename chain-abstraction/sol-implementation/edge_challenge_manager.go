@@ -280,7 +280,7 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
 		})
 	})
-	return err
+	return errors.Wrapf(err, "could not confirm edge with tx and ancestors %v", ancestors)
 }
 
 func (e *specEdge) ConfirmByChildren(ctx context.Context) error {
