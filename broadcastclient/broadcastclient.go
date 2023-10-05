@@ -202,7 +202,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 			}
 			if err == nil {
 				bc.startBackgroundReader(earlyFrameData) // change name to WS reader
-				bm, err := bc.getHTTPBacklog()
+				bm, err := bc.getHTTPBacklog(ctx)
 				if err != nil && !errors.Is(err, syscall.ECONNREFUSED) {
 					bc.fatalErrChan <- err
 					return
@@ -412,22 +412,32 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					bc.firstWSMessage <- res.Messages[0]
 				}
 				bc.wsMessages <- &res
+				//bc.streamMsg(ctx, &res)
 			}
 		}
 	})
 }
 
-func (bc *BroadcastClient) getHTTPBacklog() (*m.BroadcastMessage, error) {
+func (bc *BroadcastClient) getHTTPBacklog(ctx context.Context) (*m.BroadcastMessage, error) {
 	c := client.NewHTTPBroadcastClient(func() *client.Config { return &bc.config().HTTP })
-	msg := <-bc.firstWSMessage
-	return c.GetMessages(0, msg.SequenceNumber-arbutil.MessageIndex(1))
+	select {
+	case <-ctx.Done():
+		return nil, nil
+	case msg := <-bc.firstWSMessage:
+		return c.GetMessages(0, msg.SequenceNumber-arbutil.MessageIndex(1))
+	}
 }
 
 func (bc *BroadcastClient) startBackgroundStreamer() {
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
-			msg := <-bc.wsMessages
-			bc.streamMsg(ctx, msg)
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-bc.wsMessages:
+				bc.streamMsg(ctx, msg)
+			default:
+			}
 		}
 	})
 }

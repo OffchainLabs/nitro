@@ -97,8 +97,18 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	clientsConnectCount.Inc(1)
 
 	atomic.AddInt32(&cm.clientCount, 1)
-	if cm.config().LogConnect {
-		log.Info("client registered", "cliet", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum())
+	if !cm.config().HTTP.Enabled {
+		err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
+		if err != nil {
+			clientsTotalFailedRegisterCounter.Inc(1)
+			if cm.config().ConnectionLimits.Enable {
+				cm.connectionLimiter.Release(clientConnection.clientIp)
+			}
+			return err
+		}
+		if cm.config().LogConnect {
+			log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", sent, "elapsed", elapsed)
+		}
 	}
 
 	clientConnection.Start(ctx)

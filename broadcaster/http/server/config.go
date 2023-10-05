@@ -10,7 +10,7 @@ import (
 type ConfigFetcher func() *Config
 
 type Config struct {
-	Enable            bool           `koanf:"enable" reload:"hot"`
+	Enabled           bool           `koanf:"enabled" reload:"hot"`
 	Host              string         `koanf:"host" reload:"hot"`
 	Port              string         `koanf:"port" reload:"hot"`
 	ReadTimeout       time.Duration  `koanf:"read-timeout" reload:"hot"`
@@ -21,7 +21,7 @@ type Config struct {
 }
 
 func AddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable Broadcaster's HTTP server")
+	f.Bool(prefix+".enable", DefaultConfig.Enabled, "enable Broadcaster's HTTP server")
 	f.String(prefix+".host", DefaultConfig.Host, "host to bind the feed's HTTP output to")
 	f.String(prefix+".port", DefaultConfig.Port, "port to bind the feed's HTTP output to")
 	f.Duration(prefix+".read-timeout", DefaultConfig.ReadTimeout, "the maximum duration for reading the entire request, including the body, from clients")
@@ -33,7 +33,7 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 
 var (
 	DefaultConfig = Config{
-		Enable:            false,
+		Enabled:           false,
 		Host:              "",
 		Port:              "9643",
 		ReadTimeout:       time.Second,
@@ -43,8 +43,8 @@ var (
 		Backlog:           backlog.DefaultConfig,
 	}
 	DefaultTestConfig = Config{
-		Enable:            false,
-		Host:              "0.0.0.0",
+		Enabled:           false,
+		Host:              "127.0.0.1",
 		Port:              "0",
 		ReadTimeout:       time.Second,
 		ReadHeaderTimeout: 0 * time.Second,

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"path"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 type HTTPBroadcastServer struct {
 	config           ConfigFetcher
 	handler          *BroadcastHandler
+	listener         net.Listener
 	server           *http.Server
 	serverExitedChan chan interface{}
 	serverError      error
@@ -30,23 +32,32 @@ func NewHTTPBroadcastServer(c ConfigFetcher, httpBacklog backlog.Backlog) *HTTPB
 	}
 }
 
-func (s *HTTPBroadcastServer) Start() {
+func (s *HTTPBroadcastServer) Start() error {
 	c := s.config()
-	s.server = &http.Server{
-		Addr:              fmt.Sprintf("%s:%s", c.Host, c.Port),
-		Handler:           s.handler,
-		ReadTimeout:       c.ReadTimeout,
-		ReadHeaderTimeout: c.ReadHeaderTimeout,
-		WriteTimeout:      c.WriteTimeout,
-		IdleTimeout:       c.IdleTimeout,
-	}
-	go func() {
-		err := s.server.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.serverError = err
+	if c.Enabled {
+		s.server = &http.Server{
+			Addr:              fmt.Sprintf("%s:%s", c.Host, c.Port),
+			Handler:           s.handler,
+			ReadTimeout:       c.ReadTimeout,
+			ReadHeaderTimeout: c.ReadHeaderTimeout,
+			WriteTimeout:      c.WriteTimeout,
+			IdleTimeout:       c.IdleTimeout,
 		}
-		close(s.serverExitedChan)
-	}()
+
+		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%s", c.Host, c.Port))
+		if err != nil {
+			return err
+		}
+		s.listener = listener
+		go func() {
+			err := s.server.Serve(s.listener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.serverError = err
+			}
+			close(s.serverExitedChan)
+		}()
+	}
+	return nil
 }
 
 func (s *HTTPBroadcastServer) StopAndWait() error {
@@ -61,6 +72,10 @@ func (s *HTTPBroadcastServer) StopAndWait() error {
 		}
 	}
 	return nil
+}
+
+func (s *HTTPBroadcastServer) Addr() net.Addr {
+	return s.listener.Addr()
 }
 
 type BroadcastHandler struct {

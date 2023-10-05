@@ -21,7 +21,8 @@ type HTTPBroadcastClient struct {
 func (c *HTTPBroadcastClient) GetMessages(start, end arbutil.MessageIndex) (*m.BroadcastMessage, error) {
 	cfg := c.config()
 	url := fmt.Sprintf("%s://%s:%s/?start=%d&end=%d", cfg.Protocol, cfg.Host, cfg.Port, start, end)
-	res, err := http.Get(url)
+	client := http.Client{Timeout: cfg.Timeout}
+	res, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}

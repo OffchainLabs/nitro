@@ -21,6 +21,7 @@ var (
 type Backlog interface {
 	Append(bm *m.BroadcastMessage) error
 	Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, error)
+	MessageCount() int
 }
 
 type backlog struct {
@@ -98,7 +99,7 @@ func (b *backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 	}
 
 	if start < head.start {
-		return nil, errOutOfBounds
+		start = head.start
 	}
 
 	if end > tail.end {

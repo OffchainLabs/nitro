@@ -100,9 +100,14 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	log.Debug("confirming sequence number", "sequenceNumber", seq)
-	b.server.Broadcast(m.BroadcastMessage{
+	bm := m.BroadcastMessage{
 		Version:                        1,
-		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{seq}})
+		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{seq},
+	}
+	b.server.Broadcast(bm)
+	if err := b.httpBacklog.Append(&bm); err != nil {
+		log.Error("error whilst appending to HTTP backlog", "err", err)
+	}
 }
 
 func (b *Broadcaster) ClientCount() int32 {
@@ -113,8 +118,16 @@ func (b *Broadcaster) ListenerAddr() net.Addr {
 	return b.server.ListenerAddr()
 }
 
+func (b *Broadcaster) HTTPAddr() net.Addr {
+	return b.httpServer.Addr()
+}
+
 func (b *Broadcaster) GetCachedMessageCount() int {
 	return b.catchupBuffer.GetMessageCount()
+}
+
+func (b *Broadcaster) HTTPBacklogMessageCount() int {
+	return b.httpBacklog.MessageCount()
 }
 
 func (b *Broadcaster) Initialize() error {
@@ -122,7 +135,10 @@ func (b *Broadcaster) Initialize() error {
 }
 
 func (b *Broadcaster) Start(ctx context.Context) error {
-	b.httpServer.Start()
+	err := b.httpServer.Start()
+	if err != nil {
+		return err
+	}
 	return b.server.Start(ctx)
 }
 

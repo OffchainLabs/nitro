@@ -15,10 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gobwas/ws"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/gobwas/ws"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -231,8 +230,12 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 	wg.Add(1)
 
 	go func() {
-		defer wg.Done()
-		defer broadcastClient.StopAndWait()
+		defer func() {
+			wg.Done()
+		}()
+		defer func() {
+			broadcastClient.StopAndWait()
+		}()
 		var timeout time.Duration
 		if expectedCount == 0 {
 			timeout = 1 * time.Second
@@ -408,6 +411,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 
 	broadcastClient.StopAndWait()
 }
+
 func TestServerIncorrectChainId(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
