@@ -475,17 +475,6 @@ library EdgeChallengeManagerLib {
         return firstRival != UNRIVALED;
     }
 
-    /// @notice Does this edge currently have a confirmed rival
-    /// @param store    The edge store containing the edge
-    /// @param edgeId   The edge id to test for having a confirmed rival
-    function hasConfirmedRival(EdgeStore storage store, bytes32 edgeId) internal view returns (bool) {
-        if (!store.edges[edgeId].exists()) {
-            revert EdgeNotExists(edgeId);
-        }
-        bytes32 mutualId = store.edges[edgeId].mutualId();
-        return store.confirmedRivals[mutualId] != bytes32(0);
-    }
-
     /// @notice Is the edge a single step in length, and does it have at least one rival.
     /// @param store    The edge store containing the edge
     /// @param edgeId   The edge id to test for single step and rivaled

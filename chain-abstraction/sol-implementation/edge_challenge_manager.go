@@ -70,7 +70,18 @@ func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 }
 
 func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
-	return e.manager.caller.HasConfirmedRival(&bind.CallOpts{Context: ctx}, e.id)
+	mutualId, err := e.manager.caller.CalculateMutualId(
+		&bind.CallOpts{Context: ctx},
+		e.inner.Level,
+		e.inner.OriginId,
+		e.inner.StartHeight,
+		e.inner.StartHistoryRoot,
+		e.inner.EndHeight,
+	)
+	if err != nil {
+		return false, err
+	}
+	return e.manager.caller.HasConfirmedRival(&bind.CallOpts{Context: ctx}, mutualId)
 }
 
 func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
