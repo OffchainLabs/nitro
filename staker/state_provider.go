@@ -61,39 +61,47 @@ func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challeng
 // ExecutionStateMsgCount If the state manager locally has this validated execution state.
 // Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
 // validated / syncing.
-func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
+func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
 	if state.GlobalState.PosInBatch != 0 {
-		return 0, fmt.Errorf("position in batch must be zero, but got %d", state.GlobalState.PosInBatch)
+		return fmt.Errorf("position in batch must be zero, but got %d", state.GlobalState.PosInBatch)
 	}
+	// We always agree with the genesis batch.
 	if state.GlobalState.Batch == 1 && state.GlobalState.PosInBatch == 0 {
-		return 1, nil
+		return nil
 	}
 	batch := state.GlobalState.Batch - 1
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	validatedExecutionState, err := s.executionStateAtMessageNumberImpl(ctx, uint64(messageCount)-1)
+	validatedExecutionState, err := s.executionStateAtMessageCountImpl(ctx, uint64(messageCount)-1)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if validatedExecutionState.GlobalState.Batch < batch {
-		return 0, ErrChainCatchingUp
+		return ErrChainCatchingUp
 	}
 	res, err := s.validator.streamer.ResultAtCount(messageCount)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if res.BlockHash != state.GlobalState.BlockHash || res.SendRoot != state.GlobalState.SendRoot {
-		return 0, l2stateprovider.ErrNoExecutionState
+		return l2stateprovider.ErrNoExecutionState
 	}
-	return uint64(messageCount), nil
+	return nil
 }
 
 // ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
 // Makes sure that PosInBatch is always 0
-func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
-	executionState, err := s.executionStateAtMessageNumberImpl(ctx, messageNumber)
+func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
+	if batchCount == 0 {
+		return nil, errors.New("batch count cannot be 0")
+	}
+	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchCount - 1)
+	if err != nil {
+		return nil, err
+	}
+	executionState, err := s.executionStateAtMessageCountImpl(ctx, uint64(messageCount))
 	if err != nil {
 		return nil, err
 	}
@@ -104,19 +112,16 @@ func (s *StateManager) ExecutionStateAtMessageNumber(ctx context.Context, messag
 	return executionState, nil
 }
 
-func (s *StateManager) executionStateAtMessageNumberImpl(_ context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
-	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(messageNumber))
+func (s *StateManager) executionStateAtMessageCountImpl(_ context.Context, messageCount uint64) (*protocol.ExecutionState, error) {
+	batchIndex, err := s.findBatchAfterMessageCount(messageCount)
 	if err != nil {
 		return &protocol.ExecutionState{}, err
 	}
-	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
 	if err != nil {
 		return &protocol.ExecutionState{}, err
 	}
-	if batchMsgCount <= arbutil.MessageIndex(messageNumber) {
-		batch++
-	}
-	globalState, err := s.getInfoAtMessageCountAndBatch(arbutil.MessageIndex(messageNumber), batch)
+	globalState, err := s.findGlobalStateFromMessageCountAndBatch(batchMsgCount, l2stateprovider.Batch(batchIndex))
 	if err != nil {
 		return &protocol.ExecutionState{}, err
 	}
@@ -130,43 +135,36 @@ func (s *StateManager) executionStateAtMessageNumberImpl(_ context.Context, mess
 	}, nil
 }
 
-func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchCount uint64) ([]common.Hash, error) {
-	if blockEnd < blockStart {
-		return nil, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
+func (s *StateManager) globalStatesUpTo(
+	startHeight,
+	endHeight l2stateprovider.Height,
+	batchIndex l2stateprovider.Batch,
+) ([]common.Hash, error) {
+	if endHeight < startHeight {
+		return nil, fmt.Errorf("end height %v is less than start height %v", endHeight, startHeight)
 	}
-	batch, err := s.findBatchAfterMessageCount(arbutil.MessageIndex(blockStart))
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batchIndex))
 	if err != nil {
 		return nil, err
 	}
-	if batch == 0 {
-		// Genesis cannot be validated. If genesis is passed in, we start from batch index 1.
-		batch += 1
-	}
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
-	desiredStatesLen := int(blockEnd - blockStart + 1)
 	var stateRoots []common.Hash
 	var lastStateRoot common.Hash
 
 	// Genesis cannot be validated. If genesis is passed in, we start from block number 1.
-	if blockStart == 0 {
-		blockStart += 1
-	}
-	for i := blockStart; i <= blockEnd; i++ {
-		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
+	startMessageIndex := batchMsgCount - 1
+	start := startMessageIndex + arbutil.MessageIndex(startHeight)
+	end := startMessageIndex + arbutil.MessageIndex(endHeight)
+	for i := start; i <= end; i++ {
+		messageCount := i + 1
+		gs, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, batchIndex)
 		if err != nil {
 			return nil, err
 		}
-		if batchMsgCount <= arbutil.MessageIndex(i) {
-			batch++
-		}
-		gs, err := s.getInfoAtMessageCountAndBatch(arbutil.MessageIndex(i), batch)
-		if err != nil {
-			return nil, err
-		}
-		if gs.Batch >= nextBatchCount {
-			if gs.Batch > nextBatchCount || gs.PosInBatch > 0 {
-				return nil, fmt.Errorf("overran next batch count %v with global state batch %v position %v", nextBatchCount, gs.Batch, gs.PosInBatch)
+		if gs.Batch >= uint64(batchIndex) {
+			if gs.Batch > uint64(batchIndex) || gs.PosInBatch > 0 {
+				return nil, fmt.Errorf("overran next batch count %v with global state batch %v position %v", batchIndex, gs.Batch, gs.PosInBatch)
 			}
 			break
 		}
@@ -174,13 +172,14 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 		stateRoots = append(stateRoots, stateRoot)
 		lastStateRoot = stateRoot
 	}
-	for len(stateRoots) < desiredStatesLen {
+	desiredStatesLen := uint64(endHeight - startHeight + 1)
+	for uint64(len(stateRoots)) < desiredStatesLen {
 		stateRoots = append(stateRoots, lastStateRoot)
 	}
 	return stateRoots, nil
 }
 
-func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
+func (s *StateManager) findBatchAfterMessageCount(msgCount uint64) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
 	}
@@ -209,10 +208,10 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 				return 0, fmt.Errorf("failed to get batch metadata while binary searching: %w", err)
 			}
 		}
-		if batchMsgCount < msgCount {
+		if uint64(batchMsgCount) < msgCount {
 			low = mid + 1
-		} else if batchMsgCount == msgCount {
-			return mid + 1, nil
+		} else if uint64(batchMsgCount) == msgCount {
+			return mid, nil
 		} else if mid == low { // batchMsgCount > msgCount
 			return mid, nil
 		} else { // batchMsgCount > msgCount
@@ -221,19 +220,11 @@ func (s *StateManager) findBatchAfterMessageCount(msgCount arbutil.MessageIndex)
 	}
 }
 
-func (s *StateManager) getInfoAtMessageCountAndBatch(messageCount arbutil.MessageIndex, batch uint64) (validator.GoGlobalState, error) {
-	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, batch)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	return globalState, nil
-}
-
-func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batch uint64) (validator.GoGlobalState, error) {
+func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
-	if batch > 0 {
-		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(batch - 1)
+	if batchIndex > 0 {
+		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(uint64(batchIndex))
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
@@ -248,7 +239,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
-		Batch:      batch,
+		Batch:      uint64(batchIndex),
 		PosInBatch: uint64(count - prevBatchMsgCount),
 	}, nil
 }
@@ -260,7 +251,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 	_ context.Context,
 	from l2stateprovider.Height,
 	upTo option.Option[l2stateprovider.Height],
-	batch l2stateprovider.Batch,
+	batchIndex l2stateprovider.Batch,
 ) ([]common.Hash, error) {
 	var to l2stateprovider.Height
 	if !upTo.IsNone() {
@@ -269,7 +260,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, err := s.statesUpTo(uint64(from), uint64(to), uint64(batch))
+	items, err := s.globalStatesUpTo(from, to, batchIndex)
 	if err != nil {
 		return nil, err
 	}

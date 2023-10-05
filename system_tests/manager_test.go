@@ -29,13 +29,10 @@ func TestExecutionStateMsgCount(t *testing.T) {
 	l2node, l1stack, manager := setupManger(t, ctx)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
-	res, err := l2node.TxStreamer.ResultAtCount(1)
+	res, err := l2node.TxStreamer.ResultAtCount(2)
 	Require(t, err)
-	msgCount, err := manager.ExecutionStateMsgCount(ctx, &protocol.ExecutionState{GlobalState: protocol.GoGlobalState{Batch: 1, BlockHash: res.BlockHash}})
+	err = manager.AgreesWithExecutionState(ctx, &protocol.ExecutionState{GlobalState: protocol.GoGlobalState{Batch: 1, BlockHash: res.BlockHash}})
 	Require(t, err)
-	if msgCount != 1 {
-		Fail(t, "Unexpected msg batch", msgCount, "(expected 1)")
-	}
 }
 
 func TestExecutionStateAtMessageNumber(t *testing.T) {
@@ -44,7 +41,7 @@ func TestExecutionStateAtMessageNumber(t *testing.T) {
 	l2node, l1stack, manager := setupManger(t, ctx)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
-	res, err := l2node.TxStreamer.ResultAtCount(1)
+	res, err := l2node.TxStreamer.ResultAtCount(2)
 	Require(t, err)
 	expectedState := &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState{
@@ -53,7 +50,8 @@ func TestExecutionStateAtMessageNumber(t *testing.T) {
 		},
 		MachineStatus: protocol.MachineStatusFinished,
 	}
-	executionState, err := manager.ExecutionStateAtMessageNumber(ctx, 1)
+	batchCount := expectedState.GlobalState.Batch + 1
+	executionState, err := manager.ExecutionStateAfterBatchCount(ctx, batchCount)
 	Require(t, err)
 	if !reflect.DeepEqual(executionState, expectedState) {
 		Fail(t, "Unexpected executionState", executionState, "(expected ", expectedState, ")")
