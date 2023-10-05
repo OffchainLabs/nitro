@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
 	flag "github.com/spf13/pflag"
@@ -40,7 +41,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -48,9 +48,11 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -116,7 +118,7 @@ func closeDb(db io.Closer, name string) {
 	if db != nil {
 		err := db.Close()
 		// unfortunately the freezer db means we can't just use errors.Is
-		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) {
+		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) && !strings.Contains(err.Error(), pebble.ErrClosed.Error()) {
 			log.Warn("failed to close database on shutdown", "db", name, "err", err)
 		}
 	}
@@ -160,7 +162,7 @@ func mainImpl() int {
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
-	stackConf.DBEngine = "leveldb"
+	stackConf.DBEngine = nodeConfig.Persistent.DBEngine
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -203,10 +205,6 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
-	if nodeConfig.Node.Archive {
-		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
-		nodeConfig.Node.Caching.Archive = true
-	}
 
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
@@ -218,25 +216,19 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
-	if nodeConfig.Node.Sequencer.Enable {
-		if nodeConfig.Node.ForwardingTargetF() != "" {
-			flag.Usage()
-			log.Crit("forwarding-target cannot be set when sequencer is enabled")
-		}
-		if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-			flag.Usage()
-			log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
-		}
-	} else if nodeConfig.Node.ForwardingTarget == "" {
+	if nodeConfig.Execution.Sequencer.Enable && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
 		flag.Usage()
-		log.Crit("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
+		log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
+	}
+	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
+		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
 
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -313,11 +305,11 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Node.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
-		if nodeConfig.Node.Archive {
-			nodeConfig.Node.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
+	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
+		if nodeConfig.Execution.Caching.Archive {
+			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
 		} else {
-			nodeConfig.Node.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
+			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
@@ -367,7 +359,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
+		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
@@ -375,12 +367,15 @@ func mainImpl() int {
 		return 0
 	}
 
-	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Node.TxLookupLimit = 0
+		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
-	resourcemanager.Init(&nodeConfig.Node.ResourceMgmt)
+	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
+		flag.Usage()
+		log.Crit("Failed to start resource management module", "err", err)
+	}
 
 	var sameProcessValidationNodeEnabled bool
 	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
@@ -415,7 +410,7 @@ func mainImpl() int {
 		}
 	}()
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -458,13 +453,26 @@ func mainImpl() int {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
 		chainDb,
+		l2BlockChain,
+		l1Client,
+		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+	)
+	if err != nil {
+		log.Error("failed to create execution node", "err", err)
+		return 1
+	}
+
+	currentNode, err := arbnode.CreateNode(
+		ctx,
+		stack,
+		execNode,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
-		l2BlockChain,
+		l2BlockChain.Config(),
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOptsValidator,
@@ -500,7 +508,7 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Execution.Backend.APIBackend(), currentNode.Execution.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
@@ -559,6 +567,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution     gethexec.Config                 `koanf:"execution" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	ParentChain   conf.L1Config                   `koanf:"parent-chain" reload:"hot"`
 	Chain         conf.L2Config                   `koanf:"chain"`
@@ -599,6 +608,7 @@ var NodeConfigDefault = NodeConfig{
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
+	gethexec.ConfigAddOptions("execution", f)
 	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("parent-chain", f)
 	conf.L2ConfigAddOptions("chain", f)
@@ -673,7 +683,10 @@ func (c *NodeConfig) Validate() error {
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
-	return c.Node.Validate()
+	if err := c.Node.Validate(); err != nil {
+		return err
+	}
+	return c.Persistent.Validate()
 }
 
 func (c *NodeConfig) GetReloadInterval() time.Duration {
@@ -749,6 +762,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.ParentChain.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.Chain.DevWallet = genericconf.WalletConfigDefault
 
+	if nodeConfig.Execution.Caching.Archive {
+		nodeConfig.Node.MessagePruner.Enable = false
+	}
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, nil, err
@@ -774,7 +790,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.ParentChainIsArbitrum != nil {
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
-		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainId, "parentChainId", chainInfo.ParentChainId)
+		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
 		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
@@ -786,7 +802,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
 	if chainInfo.SequencerUrl != "" {
-		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl
+		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.FeedUrl != "" {
 		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
@@ -800,7 +816,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
-		l2MaxTxSize := execution.DefaultSequencerConfig.MaxTxDataSize
+		l2MaxTxSize := gethexec.DefaultSequencerConfig.MaxTxDataSize
 		bufferSpace := 5000
 		if l2MaxTxSize < bufferSpace*2 {
 			return false, fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
