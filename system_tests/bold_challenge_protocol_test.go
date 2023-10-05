@@ -45,8 +45,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 6) // this + the number below should be 2^43 total WAVM opcodes per block.
-	smallStepChallengeLeafHeight = uint64(1 << 7)
+	bigStepChallengeLeafHeight   = uint64(1 << 5) // testing 5 big step levels, 2^5 each, with small step equalting to 2^31 total.
+	smallStepChallengeLeafHeight = uint64(1 << 6)
 )
 
 func TestBoldProtocol(t *testing.T) {
@@ -235,7 +235,6 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
@@ -266,7 +265,6 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManagerB,
@@ -287,10 +285,16 @@ func TestBoldProtocol(t *testing.T) {
 	managerB.Start(ctx)
 
 	// Every 10 seconds, send an L1 transaction.
+	delay := time.Second * 10
 	for {
-		time.Sleep(time.Second * 10)
+		time.Sleep(delay)
 		balance := big.NewInt(params.GWei)
 		TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+		latestBlock, err := l1client.BlockNumber(ctx)
+		Require(t, err)
+		if latestBlock > 200 {
+			delay = time.Second
+		}
 	}
 }
 
@@ -435,8 +439,8 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(6)),      // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(70)), // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(150)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)

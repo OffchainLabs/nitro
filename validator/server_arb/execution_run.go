@@ -89,6 +89,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			}
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
+			machineStep := machine.GetStepCount()
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
 				// The last hash should have consumed the whole batch.
@@ -96,10 +97,10 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, errors.New("machine finished in the middle of a batch")
 				}
 				stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+				fmt.Printf("Machine total opcodes was %d\n", machineStep)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
-			machineStep := machine.GetStepCount()
 			if position != machineStep {
 				machineRunning := machine.IsRunning()
 				if machineRunning || machineStep > position {
