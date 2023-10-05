@@ -64,6 +64,7 @@ type DataPoster struct {
 	nonce      uint64
 	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
+	accessList types.AccessList
 }
 
 type AttemptLocker interface {
@@ -100,6 +101,7 @@ type DataPosterOpts struct {
 	Config            ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	RedisKey          string // Redis storage key
+	AccessList        types.AccessList
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
@@ -150,6 +152,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		queue:             queue,
 		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
+		accessList:        opts.AccessList,
 	}, nil
 }
 
@@ -362,13 +365,14 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, err
 	}
 	inner := types.DynamicFeeTx{
-		Nonce:     nonce,
-		GasTipCap: tipCap,
-		GasFeeCap: feeCap,
-		Gas:       gasLimit,
-		To:        &to,
-		Value:     value,
-		Data:      calldata,
+		Nonce:      nonce,
+		GasTipCap:  tipCap,
+		GasFeeCap:  feeCap,
+		Gas:        gasLimit,
+		To:         &to,
+		Value:      value,
+		Data:       calldata,
+		AccessList: p.accessList,
 	}
 	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
 	if err != nil {

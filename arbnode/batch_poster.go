@@ -66,6 +66,8 @@ type BatchPoster struct {
 	syncMonitor         *SyncMonitor
 	seqInboxABI         *abi.ABI
 	seqInboxAddr        common.Address
+	bridgeAddr          common.Address
+	gasRefunderAddr     common.Address
 	building            *buildingBatch
 	daWriter            das.DataAvailabilityServiceWriter
 	dataPoster          *dataposter.DataPoster
@@ -238,17 +240,19 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:     l1Reader,
-		inbox:        inbox,
-		streamer:     streamer,
-		syncMonitor:  syncMonitor,
-		config:       config,
-		bridge:       bridge,
-		seqInbox:     seqInbox,
-		seqInboxABI:  seqInboxABI,
-		seqInboxAddr: deployInfo.SequencerInbox,
-		daWriter:     daWriter,
-		redisLock:    redisLock,
+		l1Reader:        l1Reader,
+		inbox:           inbox,
+		streamer:        streamer,
+		syncMonitor:     syncMonitor,
+		config:          config,
+		bridge:          bridge,
+		seqInbox:        seqInbox,
+		seqInboxABI:     seqInboxABI,
+		seqInboxAddr:    deployInfo.SequencerInbox,
+		gasRefunderAddr: config().gasRefunder,
+		bridgeAddr:      deployInfo.Bridge,
+		daWriter:        daWriter,
+		redisLock:       redisLock,
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
@@ -263,12 +267,73 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			RedisKey:          "data-poster.queue",
+			AccessList:        b.accessList(),
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
+}
+
+func (b *BatchPoster) accessList() types.AccessList {
+	l := types.AccessList{
+		types.AccessTuple{
+			// Bridge contract address.
+			Address: b.seqInboxAddr,
+			StorageKeys: []common.Hash{
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"), // totalDelayedMessagesRead
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000001"), // bridge
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"), // maxTimeVariation.delayBlocks
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"), // maxTimeVariation.futureBlocks
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000006"), // maxTimeVariation.delaySeconds
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000007"), // maxTimeVariation.futureSeconds
+				// ADMIN_SLOT from OpenZeppelin, keccak-256 hash of
+				// "eip1967.proxy.admin" subtracted by 1.
+				common.HexToHash("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"),
+				// IMPLEMENTATION_SLOT from OpenZeppelin,  keccak-256 hash
+				// of "eip1967.proxy.implementation" subtracted by 1.
+				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
+				common.HexToHash("0xa10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660"), // isBatchPoster[batchPosterAddr]
+			},
+		},
+		types.AccessTuple{
+			Address: b.bridgeAddr,
+			StorageKeys: []common.Hash{
+				common.HexToHash("0x000000000000000000000000000000000000000000000000000000000000000a"), // sequencerReportedSubMessageCount
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000007"), // sequencerInboxAccs.length
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000006"), // delayedInboxAccs.length
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000009"), // sequencerInbox
+				// ADMIN_SLOT from OpenZeppelin, keccak-256 hash of
+				// "eip1967.proxy.admin" subtracted by 1.
+				common.HexToHash("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"),
+				// IMPLEMENTATION_SLOT from OpenZeppelin,  keccak-256 hash
+				// of "eip1967.proxy.implementation" subtracted by 1.
+				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
+				// TODO: add dynamic storage slots for:
+				// - sequencerInboxAccs[sequencerInboxAccs.length - 1];
+				// - sequencerInboxAccs.push(...);
+				// - delayedInboxAccs[afterDelayedMessagesRead - 1];
+				// May change when transaction is actually executed:
+				// - delayedInboxAccs[delayedInboxAccs.length - 1]
+				// - delayedInboxAccs.push(...);
+			},
+		},
+	}
+	if (b.gasRefunderAddr != common.Address{}) {
+		l = append(l, types.AccessTuple{
+			Address: b.gasRefunderAddr,
+			StorageKeys: []common.Hash{
+				// CommonParameters.{maxRefundeeBalance, extraGasMargin, calldataCost, maxGasTip}
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"),
+				// CommonParameters.{maxGasCost, maxSingleGasUsage}
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"),
+				common.HexToHash("0xe85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62"), // allowedRefundees[refundee]
+				common.HexToHash("0x7686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda41"), // allowedContracts[msg.sender]
+			},
+		})
+	}
+	return l
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
