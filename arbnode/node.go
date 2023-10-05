@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -65,46 +66,69 @@ func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx
 
 func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, error) {
 	client := l1Reader.Client()
-	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
+	errCh := make(chan error, 10)
+
+	wg := sync.WaitGroup{}
+	checkApproval := func(name string, tx *types.Transaction) {
+		wg.Add(1)
+		go func() {
+			if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
+				errCh <- fmt.Errorf("%w error: error executing tx: %w", name, err)
+			}
+			wg.Done()
+		}()
+
 	}
+
+	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("bridge deploy error: error submitting tx: %w", err)
+	}
+	checkApproval("bridge deploy", tx)
 
 	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: error submitting tx: %w", err)
 	}
+	checkApproval("sequencer inbox deploy", tx)
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("inbox deploy error: error submitting tx: %w", err)
 	}
+	checkApproval("inbox deploy deploy", tx)
 
 	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventInbox(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: error submitting tx: %w", err)
 	}
+	checkApproval("rollup event bridge deploy", tx)
 
 	outboxTemplate, tx, _, err := bridgegen.DeployOutbox(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("outbox deploy error: error submitting tx: %w", err)
 	}
+	checkApproval("outbox deploy", tx)
 
 	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("bridge creator deploy error: error submitting tx: %w", err)
+	}
+	checkApproval("bridge creator deploy", tx)
+
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return common.Address{}, err
+	default:
 	}
 
 	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge creator update templates error: %w", err)
+		return common.Address{}, fmt.Errorf("bridge creator update templates error: error submitting tx: %w", err)
+	}
+	if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
+		return common.Address{}, fmt.Errorf("bridge creator update error: error executing tx: %w", err)
 	}
 
 	return bridgeCreatorAddr, nil
