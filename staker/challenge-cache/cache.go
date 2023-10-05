@@ -18,8 +18,10 @@ Use cases:
 	  wavm-module-root-0xab/
 		message-num-70/
 			roots.txt
-			big-step-100/
+			subchallenge-level-0-big-step-100/
 				roots.txt
+				subchallenge-level-1-big-step-100/
+					roots.txt
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -49,11 +51,12 @@ var (
 	wavmModuleRootPrefix = "wavm-module-root"
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
+	challengeLevelPrefix = "subchallenge-level"
 )
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
 type HistoryCommitmentCacher interface {
-	Get(lookup *Key, readUpTo protocol.Height) ([]common.Hash, error)
+	Get(lookup *Key, numToRead uint64) ([]common.Hash, error)
 	Put(lookup *Key, stateRoots []common.Hash) error
 }
 
@@ -82,13 +85,14 @@ type Key struct {
 // is returned.
 func (c *Cache) Get(
 	lookup *Key,
-	readUpTo protocol.Height,
+	numToRead uint64,
 ) ([]common.Hash, error) {
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
+		fmt.Printf("Not found %s\n", fName)
 		return nil, ErrNotFoundInCache
 	}
 	f, err := os.Open(fName)
@@ -100,7 +104,7 @@ func (c *Cache) Get(
 			log.Error("Could not close file after reading", "err", err, "file", fName)
 		}
 	}()
-	return readStateRoots(f, readUpTo)
+	return readStateRoots(f, numToRead)
 }
 
 // Put a list of state roots into the cache.
@@ -149,12 +153,11 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readStateRoots(r io.Reader, readUpTo protocol.Height) ([]common.Hash, error) {
+func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	stateRoots := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
-	totalRead := uint64(0)
-	for {
+	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
 		if err != nil {
 			// If we try to read but reach EOF, we break out of the loop.
@@ -168,15 +171,11 @@ func readStateRoots(r io.Reader, readUpTo protocol.Height) ([]common.Hash, error
 			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
 		}
 		stateRoots = append(stateRoots, common.BytesToHash(buf))
-		if totalRead >= uint64(readUpTo) {
-			return stateRoots, nil
-		}
-		totalRead++
 	}
-	if readUpTo >= protocol.Height(len(stateRoots)) {
+	if protocol.Height(numToRead) > protocol.Height(len(stateRoots)) {
 		return nil, fmt.Errorf(
-			"wanted to read up to %d, but only read %d state roots",
-			readUpTo,
+			"wanted to read %d roots, but only read %d state roots",
+			numToRead,
 			len(stateRoots),
 		)
 	}
@@ -210,15 +209,22 @@ for a given filesystem challenge cache will look as follows:
 	  wavm-module-root-0xab/
 		message-num-70/
 			roots.txt
-			big-step-100/
+			subchallenge-level-0-big-step-100/
 				roots.txt
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
 	key = append(key, fmt.Sprintf("%s-%d", messageNumberPrefix, lookup.MessageHeight))
-	for _, height := range lookup.StepHeights {
-		key = append(key, fmt.Sprintf("%s-%d", bigStepPrefix, height))
+	for challengeLevel, height := range lookup.StepHeights {
+		key = append(key, fmt.Sprintf(
+			"%s-%d-%s-%d",
+			challengeLevelPrefix,
+			challengeLevel+1, // subchallenges start at 1, as level 0 is the block challenge level.
+			bigStepPrefix,
+			height,
+		),
+		)
 
 	}
 	key = append(key, stateRootsFileName)

@@ -116,18 +116,8 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
-	// TODO: Add mock implementation for GetBigStepLeavesUpTo
-	return containers.NewReadyPromise[[]common.Hash](nil, nil)
-}
-
-func (r *mockExecRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
-	// TODO: Add mock implementation for GetSmallStepLeavesUpTo
-	return containers.NewReadyPromise[[]common.Hash](nil, nil)
-}
-
-func (r *mockExecRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
-	// TODO: Add mock implementation for GetLeavesInRangeWithStepSize
+func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetLeavesWithStepSize
 	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 

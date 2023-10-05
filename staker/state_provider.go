@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -45,6 +46,7 @@ type StateManager struct {
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
+	sync.RWMutex
 }
 
 func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challengeLeafHeights []l2stateprovider.Height) (*StateManager, error) {
@@ -64,7 +66,6 @@ func (s *StateManager) ExecutionStateMsgCount(ctx context.Context, state *protoc
 		return 0, fmt.Errorf("position in batch must be zero, but got %d", state.GlobalState.PosInBatch)
 	}
 	if state.GlobalState.Batch == 1 && state.GlobalState.PosInBatch == 0 {
-		// TODO: 1 is correct?
 		return 1, nil
 	}
 	batch := state.GlobalState.Batch - 1
@@ -119,13 +120,16 @@ func (s *StateManager) executionStateAtMessageNumberImpl(_ context.Context, mess
 	if err != nil {
 		return &protocol.ExecutionState{}, err
 	}
+	if globalState.PosInBatch != 0 {
+		return &protocol.ExecutionState{}, fmt.Errorf("position in batch must be zero, but got %d", globalState.PosInBatch)
+	}
 	return &protocol.ExecutionState{
-		GlobalState:   protocol.GoGlobalState(globalState),
-		MachineStatus: protocol.MachineStatusFinished, // TODO: Why hardcode?
+		GlobalState: protocol.GoGlobalState(globalState),
+		// Batches with position 0 consume all the messages from the previous batch, so their machine status is finished.
+		MachineStatus: protocol.MachineStatusFinished,
 	}, nil
 }
 
-// TODO: Rename block to message.
 func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchCount uint64) ([]common.Hash, error) {
 	if blockEnd < blockStart {
 		return nil, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
@@ -134,8 +138,8 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Document why we cannot validate genesis.
 	if batch == 0 {
+		// Genesis cannot be validated. If genesis is passed in, we start from batch index 1.
 		batch += 1
 	}
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
@@ -144,7 +148,7 @@ func (s *StateManager) statesUpTo(blockStart uint64, blockEnd uint64, nextBatchC
 	var stateRoots []common.Hash
 	var lastStateRoot common.Hash
 
-	// TODO: Document why we cannot validate genesis.
+	// Genesis cannot be validated. If genesis is passed in, we start from block number 1.
 	if blockStart == 0 {
 		blockStart += 1
 	}
@@ -265,22 +269,57 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	return s.statesUpTo(uint64(from), uint64(to), uint64(batch))
+	items, err := s.statesUpTo(uint64(from), uint64(to), uint64(batch))
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *StateManager) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
-	return s.intermediateStepLeaves(
-		ctx,
-		cfg.WasmModuleRoot,
-		uint64(cfg.MessageNumber),
-		cfg.StepHeights,
-		uint64(cfg.MachineStartIndex),
-		uint64(cfg.MachineStartIndex)+uint64(cfg.StepSize)*cfg.NumDesiredHashes,
-		uint64(cfg.StepSize),
-	)
+	s.Lock()
+	defer s.Unlock()
+	cacheKey := &challengecache.Key{
+		WavmModuleRoot: cfg.WasmModuleRoot,
+		MessageHeight:  protocol.Height(cfg.MessageNumber),
+		StepHeights:    cfg.StepHeights,
+	}
+	cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
+	switch {
+	case err == nil:
+		return cachedRoots, nil
+	case !errors.Is(err, challengecache.ErrNotFoundInCache):
+		return nil, err
+	}
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(cfg.MessageNumber))
+	if err != nil {
+		return nil, err
+	}
+	input, err := entry.ToInput()
+	if err != nil {
+		return nil, err
+	}
+	execRun, err := s.validator.execSpawner.CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
+	result, err := stepLeaves.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Do not save a history commitment of length 1 to the cache.
+	if len(result) > 1 {
+		if err := s.historyCache.Put(cacheKey, result); err != nil {
+			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
+				return nil, err
+			}
+		}
+	}
+	return result, nil
 }
 
 // CollectProof Collects osp of at a message number and OpcodeIndex .
@@ -304,48 +343,4 @@ func (s *StateManager) CollectProof(
 	}
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
 	return oneStepProofPromise.Await(ctx)
-}
-
-func (s *StateManager) intermediateStepLeaves(ctx context.Context, wasmModuleRoot common.Hash, blockHeight uint64, startHeight []l2stateprovider.Height, fromStep uint64, toStep uint64, stepSize uint64) ([]common.Hash, error) {
-	cacheKey := &challengecache.Key{
-		WavmModuleRoot: wasmModuleRoot,
-		MessageHeight:  protocol.Height(blockHeight),
-		StepHeights:    startHeight,
-	}
-	// Make sure that the last level starts with 0
-	if startHeight[len(startHeight)-1] == 0 {
-		cachedRoots, err := s.historyCache.Get(cacheKey, protocol.Height(toStep))
-		if err == nil {
-			return cachedRoots, nil
-		}
-	}
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(blockHeight))
-	if err != nil {
-		return nil, err
-	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return nil, err
-	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	stepLeaves := execRun.GetLeavesInRangeWithStepSize(fromStep, toStep, stepSize)
-	result, err := stepLeaves.Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// TODO: Hacky workaround to avoid saving a history commitment to height 0.
-	if len(result) > 1 {
-		// Make sure that the last level starts with 0
-		if startHeight[len(startHeight)-1] == 0 {
-			if err := s.historyCache.Put(cacheKey, result); err != nil {
-				if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
-					return nil, err
-				}
-			}
-		}
-	}
-	return result, nil
 }
