@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -144,10 +144,10 @@ func TestArbTraceForwarding(t *testing.T) {
 	defer srv.Stop()
 	defer listener.Close()
 
-	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.RPC.ClassicRedirect = ipcPath
-	nodeConfig.RPC.ClassicRedirectTimeout = time.Second
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, nil, nil)
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.RPC.ClassicRedirect = ipcPath
+	execConfig.RPC.ClassicRedirectTimeout = time.Second
+	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, execConfig, nil, nil, nil)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -34,7 +35,7 @@ func (db PreimageDb) Get(key []byte) ([]byte, error) {
 	} else {
 		return nil, fmt.Errorf("preimage DB attempted to access non-hash key %v", hex.EncodeToString(key))
 	}
-	return wavmio.ResolvePreImage(hash)
+	return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 }
 
 func (db PreimageDb) Put(key []byte, value []byte) error {

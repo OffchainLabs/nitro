@@ -4,7 +4,7 @@
     "parent-chain-id": 1,
     "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://arb1-sequencer.arbitrum.io/rpc",
-    "feed-url": "wss://arb1.arbitrum.io/feed",
+    "feed-url": "wss://arb1-feed.arbitrum.io/feed",
     "has-genesis-state": true,
     "chain-config":
     {
@@ -54,7 +54,7 @@
     "parent-chain-id": 1,
     "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://nova.arbitrum.io/rpc",
-    "feed-url": "wss://nova.arbitrum.io/feed",
+    "feed-url": "wss://nova-feed.arbitrum.io/feed",
     "das-index-url": "https://nova.arbitrum.io/das-servers",
     "chain-config":
     {

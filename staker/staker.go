@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -258,6 +259,27 @@ type Staker struct {
 	statelessBlockValidator *StatelessBlockValidator
 	bridge                  *bridgegen.IBridge
 	fatalErr                chan<- error
+}
+
+type ValidatorWalletInterface interface {
+	Initialize(context.Context) error
+	// Address must be able to be called concurrently with other functions
+	Address() *common.Address
+	// Address must be able to be called concurrently with other functions
+	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
+	RollupAddress() common.Address
+	ChallengeManagerAddress() common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	CanBatchTxs() bool
+	AuthIfEoa() *bind.TransactOpts
+	Start(context.Context)
+	StopAndWait()
+	// May be nil
+	DataPoster() *dataposter.DataPoster
 }
 
 func NewStaker(
@@ -841,8 +863,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.builder,
-			s.builder.builderAuth,
-			*s.builder.wallet.Address(),
+			s.builder.BuilderAuth(),
+			*s.builder.WalletAddress(),
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,
