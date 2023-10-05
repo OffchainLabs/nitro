@@ -285,7 +285,13 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 	managerB.Start(ctx)
-	time.Sleep(time.Hour)
+
+	// Every 10 seconds, send an L1 transaction.
+	for {
+		time.Sleep(time.Second * 10)
+		balance := big.NewInt(params.GWei)
+		TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+	}
 }
 
 func createTestNodeOnL1ForBoldProtocol(
@@ -429,8 +435,8 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(6)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(500)), // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(6)),      // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(70)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
