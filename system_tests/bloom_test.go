@@ -81,9 +81,8 @@ func TestBloom(t *testing.T) {
 			t.Log("counts: ", i, "/", countsNum)
 		}
 	}
-	execNode := getExecNode(t, builder.L2.Node)
 	for {
-		sectionSize, sectionNum := execNode.Backend.APIBackend().BloomStatus()
+		sectionSize, sectionNum := builder.L2.ExecNode.Backend.APIBackend().BloomStatus()
 		if sectionSize != 256 {
 			Fatal(t, "unexpected section size: ", sectionSize)
 		}

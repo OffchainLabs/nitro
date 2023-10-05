@@ -69,11 +69,12 @@ type SecondNodeParams struct {
 }
 
 type TestClient struct {
-	ctx     context.Context
-	Client  *ethclient.Client
-	Backend *eth.Ethereum
-	Stack   *node.Node
-	Node    *arbnode.Node
+	ctx      context.Context
+	Client   *ethclient.Client
+	Backend  *eth.Ethereum
+	Stack    *node.Node
+	Node     *arbnode.Node
+	ExecNode *gethexec.ExecutionNode
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -174,6 +175,7 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 			CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
 		b.L2 = l2
 	}
+	b.L2.ExecNode = getExecNode(t, b.L2.Node)
 	b.L2.cleanup = func() { b.L2.Node.StopAndWait() }
 	return func() {
 		b.L2.cleanup()
