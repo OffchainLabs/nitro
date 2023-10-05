@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -62,7 +63,7 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		l2node.Execution.Recorder,
+		l2node.Execution,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -126,19 +127,24 @@ func testCalculatingBlockChallengeLevelZeroEdgeBisection(
 	Require(t, err)
 	_, err = provider.HistoryCommitment(
 		ctx,
-		wasmModuleRoot,
-		l2stateprovider.Batch(topLevelClaimEndBatchCount),
-		[]l2stateprovider.Height{l2stateprovider.Height(0)},
-		option.Some[l2stateprovider.Height](l2stateprovider.Height(bisectTo)),
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot: wasmModuleRoot,
+			Batch:          l2stateprovider.Batch(topLevelClaimEndBatchCount),
+			FromHeight:     l2stateprovider.Height(0),
+			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(bisectTo)),
+		},
 	)
+
 	Require(t, err)
 	_, err = provider.PrefixProof(
 		ctx,
-		wasmModuleRoot,
-		l2stateprovider.Batch(topLevelClaimEndBatchCount),
-		[]l2stateprovider.Height{l2stateprovider.Height(0)},
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot: wasmModuleRoot,
+			Batch:          l2stateprovider.Batch(topLevelClaimEndBatchCount),
+			FromHeight:     l2stateprovider.Height(bisectTo),
+			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
+		},
 		l2stateprovider.Height(bisectTo),
-		option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 	)
 	Require(t, err)
 }
@@ -153,31 +159,40 @@ func testCalculatingBlockChallengeLevelZeroEdge(
 
 	creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	Require(t, err)
+
 	startCommit, err := provider.HistoryCommitment(
 		ctx,
-		creationInfo.WasmModuleRoot,
-		l2stateprovider.Batch(0),
-		[]l2stateprovider.Height{0},
-		option.Some(l2stateprovider.Height(0)),
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot: creationInfo.WasmModuleRoot,
+			Batch:          l2stateprovider.Batch(0),
+			FromHeight:     l2stateprovider.Height(0),
+			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(0)),
+		},
 	)
 	Require(t, err)
 	levelZeroBlockEdgeHeight := uint64(1 << 26)
 	Require(t, err)
+
 	endCommit, err := provider.HistoryCommitment(
 		ctx,
-		creationInfo.WasmModuleRoot,
-		l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-		[]l2stateprovider.Height{l2stateprovider.Height(0)},
-		option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot: creationInfo.WasmModuleRoot,
+			Batch:          l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			FromHeight:     l2stateprovider.Height(0),
+			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
+		},
 	)
 	Require(t, err)
 	_, err = provider.PrefixProof(
 		ctx,
-		creationInfo.WasmModuleRoot,
-		l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-		[]l2stateprovider.Height{l2stateprovider.Height(0)},
+		&l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot: creationInfo.WasmModuleRoot,
+			Batch:          l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			FromHeight:     l2stateprovider.Height(0),
+			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
+		},
 		l2stateprovider.Height(0),
-		option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)))
+	)
 	Require(t, err)
 	return startCommit.Height, endCommit.Height, creationInfo.WasmModuleRoot, creationInfo.InboxMaxCount.Uint64()
 }
@@ -233,7 +248,10 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	l2Info, l2Stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
 
 	fatalErrChan := make(chan error, 10)
-	l2Node, err := arbnode.CreateNode(ctx, l2Stack, l2ChainDb, l2ArbDb, NewFetcherFromConfig(conf), l2Blockchain, l1Backend, rollupAddresses, nil, nil, nil, fatalErrChan)
+	execConfigFetcher := func() *gethexec.Config { return gethexec.ConfigDefaultTest() }
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2Stack, l2ChainDb, l2Blockchain, l1Backend, execConfigFetcher)
+	Require(t, err)
+	l2Node, err := arbnode.CreateNode(ctx, l2Stack, execNode, l2ArbDb, NewFetcherFromConfig(conf), l2Blockchain.Config(), l1Backend, rollupAddresses, nil, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = l2Node.Start(ctx)
 	Require(t, err)
@@ -326,6 +344,7 @@ func deployBoldContracts(
 		l1info.GetAddress("sequencer"),
 		cfg,
 		false,
+		true,
 	)
 	Require(t, err)
 
