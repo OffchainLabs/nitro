@@ -150,7 +150,7 @@ func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
 
 	if f.NArg() != 0 {
 		// Unexpected number of parameters
-		return nil, errors.New("unexpected number of parameters")
+		return nil, fmt.Errorf("unexpected parameter: %s", f.Arg(0))
 	}
 
 	var k = koanf.New(".")
