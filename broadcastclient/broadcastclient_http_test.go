@@ -101,7 +101,6 @@ func (s *HTTPSuite) TearDownTest() {
 	s.cancel()
 }
 
-// Test receive messages
 // Should we add client & server side compression for HTTP messages too?
 func (s *HTTPSuite) TestReceiveMessages() {
 	// Send some messages before starting the BroadcastClient (BC) and some
@@ -114,6 +113,27 @@ func (s *HTTPSuite) TestReceiveMessages() {
 	defer s.bc.StopAndWait()
 	time.Sleep(100 * time.Millisecond) // ensure client connects
 	s.broadcastMessages(5, 20)
+
+	// Wait for BroadcastClient to receive all the messages
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	count := 0
+	for count < 20 {
+		count = s.waitForMessage(timer, count)
+	}
+}
+
+func (s *HTTPSuite) TestReceiveMessagesMidSequence() {
+	// Send some messages before starting the BroadcastClient (BC) and some
+	// messages after. This ensures that some messages are in the HTTP backlog
+	// when the BC connects. The BC will take some time to connect on start, it
+	// will then receive some of the later messages over WebSocket. This will
+	// tell the BC which messages it needs to request over HTTP.
+	s.broadcastMessages(20, 25)
+	s.bc.Start(s.context)
+	defer s.bc.StopAndWait()
+	time.Sleep(100 * time.Millisecond) // ensure client connects
+	s.broadcastMessages(25, 40)
 
 	// Wait for BroadcastClient to receive all the messages
 	timer := time.NewTimer(5 * time.Second)
@@ -157,7 +177,6 @@ func (s *HTTPSuite) TestInvalidSignature() {
 	s.waitForBroadcastClientError(timer, signature.ErrSignatureNotVerified)
 }
 
-// Test that client disconnect is working as expect, call StopAndWait and the server should report the client as disconnected within an appropriate amount of time
 func (s *HTTPSuite) TestServerClientDisconnect() {
 	// Send some messages before starting the BroadcastClient (BC) and some
 	// messages after. This ensures that some messages are in the HTTP backlog
@@ -200,7 +219,6 @@ func (s *HTTPSuite) TestServerClientDisconnect() {
 	}
 }
 
-// Test that the client receives a confirm message once the server has had a number in sequence confirmed, make sure it is an HTTP message that is processed as confirm message
 func (s *HTTPSuite) TestBroadcastConfirmedMessage() {
 	// Send some messages before starting the BroadcastClient (BC) and some
 	// messages after. This ensures that some messages are in the HTTP backlog
@@ -260,18 +278,6 @@ func (s *HTTPSuite) TestBroadcastConfirmedMessage() {
 	}
 
 }
-
-// Test that HTTP client times out when required
-// * create a listener on some random port
-// * connect client to port and start it, make sure HTTP tries to connect to random listener
-// * set timeout low and ensure that we get a timeout error from the client
-
-// Tests that are only WS specific:
-// * incorrect chain ID header - only happens when connecting to the WS server
-// * missing chain ID header - ditto above
-// * incorrect feed server version header - ditto above
-// * missing feed server version header - ditto above
-// * client retries on server disconnect - this retry only happens for the WS client/server
 
 func (s *HTTPSuite) broadcastMessages(start, end int) {
 	s.T().Helper()
