@@ -63,18 +63,18 @@ func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challeng
 // validated / syncing.
 func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
 	if state.GlobalState.PosInBatch != 0 {
-		return fmt.Errorf("position in batch must be zero, but got %d", state.GlobalState.PosInBatch)
+		return fmt.Errorf("position in batch must be zero, but got %d: %+v", state.GlobalState.PosInBatch, state)
 	}
 	// We always agree with the genesis batch.
 	if state.GlobalState.Batch == 1 && state.GlobalState.PosInBatch == 0 {
 		return nil
 	}
-	batch := state.GlobalState.Batch - 1
+	batch := state.GlobalState.Batch
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 	if err != nil {
 		return err
 	}
-	validatedExecutionState, err := s.executionStateAtMessageCountImpl(ctx, uint64(messageCount)-1)
+	validatedExecutionState, err := s.executionStateAtMessageCountImpl(ctx, uint64(messageCount))
 	if err != nil {
 		return err
 	}
@@ -156,21 +156,33 @@ func (s *StateManager) globalStatesUpTo(
 	startMessageIndex := batchMsgCount - 1
 	start := startMessageIndex + arbutil.MessageIndex(startHeight)
 	end := startMessageIndex + arbutil.MessageIndex(endHeight)
+
+	currBatch := batchIndex
 	for i := start; i <= end; i++ {
-		messageCount := i + 1
-		gs, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, batchIndex)
+		currMessageCount := i + 1
+		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(currBatch))
 		if err != nil {
 			return nil, err
 		}
-		if gs.Batch >= uint64(batchIndex) {
-			if gs.Batch > uint64(batchIndex) || gs.PosInBatch > 0 {
-				return nil, fmt.Errorf("overran next batch count %v with global state batch %v position %v", batchIndex, gs.Batch, gs.PosInBatch)
+		if batchMsgCount < currMessageCount {
+			currBatch++
+		}
+		gs, err := s.findGlobalStateFromMessageCountAndBatch(currMessageCount, currBatch)
+		if err != nil {
+			if strings.Contains(err.Error(), "no metadata for batch") {
+				break
 			}
-			break
+			return nil, err
 		}
 		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 		stateRoots = append(stateRoots, stateRoot)
 		lastStateRoot = stateRoot
+	}
+	if len(stateRoots) == 1 {
+		fmt.Printf("Got state roots %#x\n", stateRoots[0])
+
+	} else if len(stateRoots) == 2 {
+		fmt.Printf("Got state roots %#x and %#x\n", stateRoots[0], stateRoots[1])
 	}
 	desiredStatesLen := uint64(endHeight - startHeight + 1)
 	for uint64(len(stateRoots)) < desiredStatesLen {
