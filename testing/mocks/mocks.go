@@ -270,6 +270,10 @@ func (m *MockSpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
+func (m *MockSpecEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(bool), args.Error(1)
+}
 func (m *MockSpecEdge) HasRival(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)

@@ -294,6 +294,8 @@ type ReadOnlyEdge interface {
 	OriginId() OriginId
 	// The claim id of the edge, if any
 	ClaimId() option.Option[ClaimId]
+	// Checks if the edge has a confirmed rival.
+	HasConfirmedRival(ctx context.Context) (bool, error)
 	// Checks if the edge has children.
 	HasChildren(ctx context.Context) (bool, error)
 	// The lower child of the edge, if any.

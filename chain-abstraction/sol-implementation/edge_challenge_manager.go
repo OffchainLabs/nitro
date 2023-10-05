@@ -69,6 +69,10 @@ func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	return timer, nil
 }
 
+func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
+	return e.manager.caller.HasConfirmedRival(&bind.CallOpts{Context: ctx}, e.id)
+}
+
 func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
 	return e.manager.caller.HasRival(&bind.CallOpts{Context: ctx}, e.id)
 }

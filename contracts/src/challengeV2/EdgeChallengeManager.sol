@@ -162,6 +162,10 @@ interface IEdgeChallengeManager {
     ///         Rival edges share the same mutual id
     function hasRival(bytes32 edgeId) external view returns (bool);
 
+    /// @notice Does this edge currently have a confirmed rival
+    ///         Rival edges share the same mutual id
+    function hasConfirmedRival(bytes32 edgeId) external view returns (bool);
+
     /// @notice Does the edge have at least one rival, and it has length one
     function hasLengthOneRival(bytes32 edgeId) external view returns (bool);
 
@@ -629,6 +633,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @inheritdoc IEdgeChallengeManager
     function hasRival(bytes32 edgeId) public view returns (bool) {
         return store.hasRival(edgeId);
+    }
+
+    /// @inheritdoc IEdgeChallengeManager
+    function hasConfirmedRival(bytes32 edgeId) public view returns (bool) {
+        return store.hasConfirmedRival(edgeId);
     }
 
     /// @inheritdoc IEdgeChallengeManager

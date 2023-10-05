@@ -356,6 +356,16 @@ func (et *Tracker) ShouldDespawn(ctx context.Context) bool {
 		return true
 	}
 	fields := et.uniqueTrackerLogFields()
+	hasConfirmedRival, err := et.edge.HasConfirmedRival(ctx)
+	if err != nil {
+		fields["err"] = err
+		srvlog.Error("Could not check if edge has a confirmed rival", fields)
+		return false
+	}
+	if hasConfirmedRival {
+		// Cannot be confirmed if it has a confirmed rival edge. We should despawn the edge.
+		return true
+	}
 	assertionHash, err := et.edge.AssertionHash(ctx)
 	if err != nil {
 		fields["err"] = err
@@ -457,6 +467,16 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	if status == protocol.EdgeConfirmed {
 		return true, nil
 	}
+
+	hasConfirmedRival, err := et.edge.HasConfirmedRival(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, "could not check if edge has confirmed rival")
+	}
+	if hasConfirmedRival {
+		// Cannot be confirmed if it has a confirmed rival edge.
+		return false, nil
+	}
+
 	assertionHash, err := et.edge.AssertionHash(ctx)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get prev assertion hash")

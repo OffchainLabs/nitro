@@ -88,6 +88,10 @@ func (e *Edge) ClaimId() option.Option[protocol.ClaimId] {
 	return option.Some(protocol.ClaimId(common.BytesToHash([]byte(e.ClaimID))))
 }
 
+func (*Edge) HasConfirmedRival(_ context.Context) (bool, error) {
+	return false, nil
+}
+
 // LowerChild of the edge, if any.
 func (e *Edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
 	if e.LowerChildID == "" {
