@@ -44,7 +44,6 @@
       "inbox": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
       "rollup": "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
       "sequencer-inbox": "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
-      "gas-refunder": "0xe64a54E2533Fd126C2E452c5fAb544d80E2E4eb5",
       "validator-utils": "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
       "validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
       "deployed-at": 15411056
