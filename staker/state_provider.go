@@ -46,15 +46,17 @@ type StateManager struct {
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
+	validatorName        string
 	sync.RWMutex
 }
 
-func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challengeLeafHeights []l2stateprovider.Height) (*StateManager, error) {
+func NewStateManager(val *StatelessBlockValidator, cacheBaseDir string, challengeLeafHeights []l2stateprovider.Height, validatorName string) (*StateManager, error) {
 	historyCache := challengecache.New(cacheBaseDir)
 	return &StateManager{
 		validator:            val,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
+		validatorName:        validatorName,
 	}, nil
 }
 
@@ -66,7 +68,7 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 		return fmt.Errorf("position in batch must be zero, but got %d: %+v", state.GlobalState.PosInBatch, state)
 	}
 	// We always agree with the genesis batch.
-	if state.GlobalState.Batch == 1 && state.GlobalState.PosInBatch == 0 {
+	if state.GlobalState.Batch == 0 && state.GlobalState.PosInBatch == 0 {
 		return nil
 	}
 	batch := state.GlobalState.Batch
@@ -97,7 +99,8 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 	if batchCount == 0 {
 		return nil, errors.New("batch count cannot be 0")
 	}
-	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchCount - 1)
+	batchIndex := batchCount - 1
+	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -105,9 +108,15 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 	if err != nil {
 		return nil, err
 	}
+	// If the execution state did not consume all messages in a batch, we then return
+	// the next batch's execution state.
 	if executionState.GlobalState.PosInBatch != 0 {
-		executionState.GlobalState.Batch++
-		executionState.GlobalState.PosInBatch = 0
+		batchIndex++
+		messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
+		if err != nil {
+			return nil, err
+		}
+		return s.executionStateAtMessageCountImpl(ctx, uint64(messageCount))
 	}
 	return executionState, nil
 }
@@ -125,9 +134,6 @@ func (s *StateManager) executionStateAtMessageCountImpl(_ context.Context, messa
 	if err != nil {
 		return &protocol.ExecutionState{}, err
 	}
-	if globalState.PosInBatch != 0 {
-		return &protocol.ExecutionState{}, fmt.Errorf("position in batch must be zero, but got %d", globalState.PosInBatch)
-	}
 	return &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState(globalState),
 		// Batches with position 0 consume all the messages from the previous batch, so their machine status is finished.
@@ -138,12 +144,13 @@ func (s *StateManager) executionStateAtMessageCountImpl(_ context.Context, messa
 func (s *StateManager) globalStatesUpTo(
 	startHeight,
 	endHeight l2stateprovider.Height,
-	batchIndex l2stateprovider.Batch,
+	fromBatch l2stateprovider.Batch,
+	toBatch l2stateprovider.Batch,
 ) ([]common.Hash, error) {
 	if endHeight < startHeight {
 		return nil, fmt.Errorf("end height %v is less than start height %v", endHeight, startHeight)
 	}
-	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batchIndex))
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch))
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +163,7 @@ func (s *StateManager) globalStatesUpTo(
 	startMessageIndex := batchMsgCount - 1
 	start := startMessageIndex + arbutil.MessageIndex(startHeight)
 	end := startMessageIndex + arbutil.MessageIndex(endHeight)
-
-	currBatch := batchIndex
+	currBatch := fromBatch
 	for i := start; i <= end; i++ {
 		currMessageCount := i + 1
 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(currBatch))
@@ -169,21 +175,19 @@ func (s *StateManager) globalStatesUpTo(
 		}
 		gs, err := s.findGlobalStateFromMessageCountAndBatch(currMessageCount, currBatch)
 		if err != nil {
-			if strings.Contains(err.Error(), "no metadata for batch") {
-				break
-			}
 			return nil, err
 		}
+		fmt.Printf("%s: appending to roots %+v, curr message count %d, curr batch %d\n", s.validatorName, gs, currMessageCount, currBatch)
 		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 		stateRoots = append(stateRoots, stateRoot)
 		lastStateRoot = stateRoot
-	}
-	if len(stateRoots) == 1 {
-		fmt.Printf("Got state roots %#x\n", stateRoots[0])
 
-	} else if len(stateRoots) == 2 {
-		fmt.Printf("Got state roots %#x and %#x\n", stateRoots[0], stateRoots[1])
+		if gs.Batch >= uint64(toBatch) {
+			break
+		}
 	}
+	fmt.Printf("%s: from batch %d, to batch %d, start %d, end %d, total roots %d, first %#x\n", s.validatorName, fromBatch, toBatch, start, end, len(stateRoots), stateRoots[0])
+
 	desiredStatesLen := uint64(endHeight - startHeight + 1)
 	for uint64(len(stateRoots)) < desiredStatesLen {
 		stateRoots = append(stateRoots, lastStateRoot)
@@ -261,18 +265,19 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 // at each message number.
 func (s *StateManager) L2MessageStatesUpTo(
 	_ context.Context,
-	from l2stateprovider.Height,
-	upTo option.Option[l2stateprovider.Height],
-	batchIndex l2stateprovider.Batch,
+	fromHeight l2stateprovider.Height,
+	toHeight option.Option[l2stateprovider.Height],
+	fromBatch,
+	toBatch l2stateprovider.Batch,
 ) ([]common.Hash, error) {
 	var to l2stateprovider.Height
-	if !upTo.IsNone() {
-		to = upTo.Unwrap()
+	if !toHeight.IsNone() {
+		to = toHeight.Unwrap()
 	} else {
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, err := s.globalStatesUpTo(from, to, batchIndex)
+	items, err := s.globalStatesUpTo(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}

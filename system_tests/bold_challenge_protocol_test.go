@@ -138,6 +138,7 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
+		"good",
 	)
 	Require(t, err)
 
@@ -156,6 +157,7 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
+		"evil",
 	)
 	Require(t, err)
 
@@ -216,11 +218,7 @@ func TestBoldProtocol(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	t.Log("Honest party posting assertion at batch 2, pos 0")
-	_, err = poster.PostAssertion(ctx)
-	Require(t, err)
-
-	t.Log("Evil party posting rival assertion at batch 2, pos 0")
+	t.Log("Evil party posting assertion at batch 1, pos 0")
 	_, err = posterB.PostAssertion(ctx)
 	Require(t, err)
 
@@ -239,20 +237,6 @@ func TestBoldProtocol(t *testing.T) {
 		},
 		stateManager,
 	)
-	manager, err := challengemanager.New(
-		ctx,
-		assertionChain,
-		l1client,
-		provider,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("honest"),
-		challengemanager.WithMode(modes.DefensiveMode),
-		challengemanager.WithAssertionPostingInterval(time.Hour),
-		challengemanager.WithAssertionScanningInterval(time.Hour),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
-	)
-	Require(t, err)
-	manager.Start(ctx)
 
 	evilProvider := l2stateprovider.NewHistoryCommitmentProvider(
 		stateManagerB,
@@ -269,6 +253,45 @@ func TestBoldProtocol(t *testing.T) {
 		},
 		stateManagerB,
 	)
+
+	genesis, err := assertionChain.GenesisAssertionHash(ctx)
+	Require(t, err)
+	genesisInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesis})
+	Require(t, err)
+	t.Logf("Genesis: %+v", protocol.GoExecutionStateFromSolidity(genesisInfo.AfterState))
+
+	execStateA, err := provider.ExecutionStateAfterBatchCount(ctx, 1)
+	Require(t, err)
+
+	execStateB, err := evilProvider.ExecutionStateAfterBatchCount(ctx, 1)
+	Require(t, err)
+
+	t.Logf("1 batches Exec a %+v", execStateA)
+	t.Logf("1 batches Exec b %+v", execStateB)
+
+	execStateA, err = provider.ExecutionStateAfterBatchCount(ctx, 2)
+	Require(t, err)
+
+	execStateB, err = evilProvider.ExecutionStateAfterBatchCount(ctx, 2)
+	Require(t, err)
+
+	t.Logf("2 batches Exec a %+v", execStateA)
+	t.Logf("2 batches Exec b %+v", execStateB)
+
+	manager, err := challengemanager.New(
+		ctx,
+		assertionChain,
+		l1client,
+		provider,
+		assertionChain.RollupAddress(),
+		challengemanager.WithName("honest"),
+		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(time.Hour),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+	)
+	Require(t, err)
+	manager.Start(ctx)
 	managerB, err := challengemanager.New(
 		ctx,
 		chainB,
