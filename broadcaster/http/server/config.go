@@ -21,13 +21,13 @@ type Config struct {
 }
 
 func AddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultConfig.Enabled, "enable Broadcaster's HTTP server")
+	f.Bool(prefix+".enabled", DefaultConfig.Enabled, "enable Broadcaster's HTTP server")
 	f.String(prefix+".host", DefaultConfig.Host, "host to bind the feed's HTTP output to")
 	f.String(prefix+".port", DefaultConfig.Port, "port to bind the feed's HTTP output to")
 	f.Duration(prefix+".read-timeout", DefaultConfig.ReadTimeout, "the maximum duration for reading the entire request, including the body, from clients")
-	f.Duration(prefix+".read-header-timeout", DefaultConfig.ReadTimeout, "the maximum duration for reading the request headers from clients. If ReadHeaderTimeout is zero, the value of ReadTimeout is used.")
-	f.Duration(prefix+".write-timeout", DefaultConfig.ReadTimeout, "the maximum duration for writing the response to clients")
-	f.Duration(prefix+".idle-timeout", DefaultConfig.ReadTimeout, "the maximum amount of time to wait for the next request when keep-alives are enabled. If IdleTimeout is zero, the value of ReadTimeout is used. If both are zero, there is no timeout.")
+	f.Duration(prefix+".read-header-timeout", DefaultConfig.ReadHeaderTimeout, "the maximum duration for reading the request headers from clients. If ReadHeaderTimeout is zero, the value of ReadTimeout is used.")
+	f.Duration(prefix+".write-timeout", DefaultConfig.WriteTimeout, "the maximum duration for writing the response to clients")
+	f.Duration(prefix+".idle-timeout", DefaultConfig.IdleTimeout, "the maximum amount of time to wait for the next request when keep-alives are enabled. If IdleTimeout is zero, the value of ReadTimeout is used. If both are zero, there is no timeout.")
 	backlog.AddOptions(prefix+".backlog", f)
 }
 
