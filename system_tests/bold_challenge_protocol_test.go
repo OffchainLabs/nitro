@@ -1,8 +1,8 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"math/big"
 	"testing"
@@ -14,6 +14,7 @@ import (
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	modes "github.com/OffchainLabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -27,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -60,12 +62,15 @@ func TestBoldProtocol(t *testing.T) {
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
+	ownerBal := big.NewInt(params.Ether)
+	ownerBal.Mul(ownerBal, big.NewInt(1_000_000))
+	l2info.GenerateGenesisAccount("Owner", ownerBal)
 
-	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
+	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
-	l2clientB, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil, stakeTokenAddr)
+	_, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
 
 	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
@@ -73,7 +78,6 @@ func TestBoldProtocol(t *testing.T) {
 	if nodeAGenesis != nodeBGenesis {
 		Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
 	}
-	bridgeBalancesToBoldL2s(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2clientA, l2clientB, ctx)
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 
@@ -175,21 +179,35 @@ func TestBoldProtocol(t *testing.T) {
 		time.Hour,
 	)
 
-	t.Log("Sending a tx from faucet to L2 node A background user")
-	l2info.GenerateAccount("BackgroundUser")
-	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
-	err = l2clientA.SendTransaction(ctx, tx)
+	l2info.GenerateAccount("Destination")
+	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+
+	honestSeqInbox := l1info.GetAddress("SequencerInbox")
+	evilSeqInbox := l1info.GetAddress("EvilSequencerInbox")
+	honestSeqInboxBinding, err := bridgegen.NewSequencerInbox(honestSeqInbox, l1client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	evilSeqInboxBinding, err := bridgegen.NewSequencerInbox(evilSeqInbox, l1client)
 	Require(t, err)
 
-	t.Log("Sending a tx from faucet to L2 node B background user")
-	l2info.Accounts["Faucet"].Nonce = 0
-	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, common.Big2, nil)
-	err = l2clientB.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
-	Require(t, err)
+	// Post batches to the honest and evil sequencer inbox that are internally equal.
+	// This means the honest and evil sequencer inboxes will agree with all messages in the batch.
+	totalMessagesPosted := int64(0)
+	numMessagesPerBatch := int64(5)
+	divergeAt := int64(-1)
+	makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
+	l2info.Accounts["Owner"].Nonce = 0
+	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
+	totalMessagesPosted += numMessagesPerBatch
+
+	// Next, we post another batch, this time containing more messages.
+	// We diverge at message index 5 within the evil node's batch.
+	l2info.Accounts["Owner"].Nonce = 5
+	numMessagesPerBatch = int64(10)
+	makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
+	l2info.Accounts["Owner"].Nonce = 5
+	divergeAt = int64(5)
+	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
+	totalMessagesPosted += numMessagesPerBatch
 
 	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
 	Require(t, err)
@@ -199,26 +217,44 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
 	Require(t, err)
-	accA, err := l2nodeA.InboxTracker.GetBatchAcc(bcA - 1)
-	Require(t, err)
-	accB, err := l2nodeB.InboxTracker.GetBatchAcc(bcB - 1)
-	Require(t, err)
-	t.Logf("Node A, count %d, msgs %d, acc %s", bcA, msgA, accA)
-	t.Logf("Node B, count %d, msgs %d, acc %s", bcB, msgB, accB)
 
-	nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	if nodeALatest == nodeBLatest {
-		Fail(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
+	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
+	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
+
+	for {
+		nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader()
+		nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader()
+		isCaughtUp := nodeALatest.Number.Uint64() == uint64(totalMessagesPosted)
+		areEqual := nodeALatest.Number.Uint64() == nodeBLatest.Number.Uint64()
+		if isCaughtUp && areEqual {
+			if nodeALatest.Hash() == nodeBLatest.Hash() {
+				Fatal(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
+			}
+			break
+		}
 	}
+
+	goodBridge, err := bridgegen.NewSequencerInbox(honestSeqInbox, l1client)
+	Require(t, err)
+	totalGoodBatches, err := goodBridge.BatchCount(&bind.CallOpts{})
+	Require(t, err)
+
+	evilBridge, err := bridgegen.NewSequencerInbox(evilSeqInbox, l1client)
+	Require(t, err)
+	totalEvilBatches, err := evilBridge.BatchCount(&bind.CallOpts{})
+	Require(t, err)
+
+	t.Logf("Total good %d, total bad %d", totalGoodBatches.Uint64(), totalEvilBatches.Uint64())
 
 	t.Log("Honest party posting assertion at batch 1, pos 0")
 	_, err = poster.PostAssertion(ctx)
 	Require(t, err)
 
-	time.Sleep(10 * time.Second)
+	t.Log("Honest party posting assertion at batch 3, pos 0")
+	_, err = poster.PostAssertion(ctx)
+	Require(t, err)
 
-	t.Log("Evil party posting assertion at batch 1, pos 0")
+	t.Log("Evil party posting assertion at batch 3, pos 0")
 	_, err = posterB.PostAssertion(ctx)
 	Require(t, err)
 
@@ -254,30 +290,6 @@ func TestBoldProtocol(t *testing.T) {
 		stateManagerB,
 	)
 
-	genesis, err := assertionChain.GenesisAssertionHash(ctx)
-	Require(t, err)
-	genesisInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesis})
-	Require(t, err)
-	t.Logf("Genesis: %+v", protocol.GoExecutionStateFromSolidity(genesisInfo.AfterState))
-
-	execStateA, err := provider.ExecutionStateAfterBatchCount(ctx, 1)
-	Require(t, err)
-
-	execStateB, err := evilProvider.ExecutionStateAfterBatchCount(ctx, 1)
-	Require(t, err)
-
-	t.Logf("1 batches Exec a %+v", execStateA)
-	t.Logf("1 batches Exec b %+v", execStateB)
-
-	execStateA, err = provider.ExecutionStateAfterBatchCount(ctx, 2)
-	Require(t, err)
-
-	execStateB, err = evilProvider.ExecutionStateAfterBatchCount(ctx, 2)
-	Require(t, err)
-
-	t.Logf("2 batches Exec a %+v", execStateA)
-	t.Logf("2 batches Exec b %+v", execStateB)
-
 	manager, err := challengemanager.New(
 		ctx,
 		assertionChain,
@@ -308,17 +320,17 @@ func TestBoldProtocol(t *testing.T) {
 	managerB.Start(ctx)
 
 	// Every 10 seconds, send an L1 transaction.
-	delay := time.Second * 10
-	for {
-		time.Sleep(delay)
-		balance := big.NewInt(params.GWei)
-		TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-		latestBlock, err := l1client.BlockNumber(ctx)
-		Require(t, err)
-		if latestBlock > 200 {
-			delay = time.Second
-		}
-	}
+	// delay := time.Second * 10
+	// for {
+	// 	time.Sleep(delay)
+	// 	balance := big.NewInt(params.GWei)
+	// 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+	// 	latestBlock, err := l1client.BlockNumber(ctx)
+	// 	Require(t, err)
+	// 	if latestBlock > 200 {
+	// 		delay = time.Second
+	// 	}
+	// }
 }
 
 func createTestNodeOnL1ForBoldProtocol(
@@ -533,71 +545,6 @@ func deployContractsOnly(
 	}, chain
 }
 
-func bridgeBalancesToBoldL2s(
-	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2clientA client, l2clientB client, ctx context.Context,
-) (*types.Transaction, *types.Receipt) {
-	t.Helper()
-
-	// setup or validate the same account on l2info
-	l1acct := l1info.GetInfoWithPrivKey(account)
-	if l2info.Accounts[account] == nil {
-		l2info.SetFullAccountInfo(account, &AccountInfo{
-			Address:    l1acct.Address,
-			PrivateKey: l1acct.PrivateKey,
-			Nonce:      0,
-		})
-	} else {
-		l2acct := l2info.GetInfoWithPrivKey(account)
-		if l2acct.PrivateKey.X.Cmp(l1acct.PrivateKey.X) != 0 ||
-			l2acct.PrivateKey.Y.Cmp(l1acct.PrivateKey.Y) != 0 {
-			Fatal(t, "l2 account already exists and not compatible to l1")
-		}
-	}
-
-	// check previous balance
-	l2Balance, err := l2clientA.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
-	Require(t, err)
-	l2BalanceB, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
-	Require(t, err)
-
-	// send transaction
-	data, err := hex.DecodeString("0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
-	Require(t, err)
-	tx := l1info.PrepareTx(account, "Inbox", l1info.TransferGas*100, amount, data)
-	err = l1client.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
-
-	tx = l1info.PrepareTx(account, "EvilInbox", l1info.TransferGas*100, amount, data)
-	err = l1client.SendTransaction(ctx, tx)
-	Require(t, err)
-	res, err := EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
-	_ = res
-
-	// wait for balance to appear in l2
-	l2Balance.Add(l2Balance, amount)
-	l2BalanceB.Add(l2BalanceB, amount)
-	for i := 0; true; i++ {
-		balanceA, err := l2clientA.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
-		Require(t, err)
-		balanceB, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
-		Require(t, err)
-		if balanceA.Cmp(l2Balance) >= 0 && balanceB.Cmp(l2BalanceB) >= 0 {
-			t.Log("Balance was bridged to two L2 nodes successfully")
-			break
-		}
-		TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
-		if i > 50 {
-			Fatal(t, "bridging failed")
-		}
-		<-time.After(time.Millisecond * 100)
-	}
-
-	return tx, res
-}
-
 func create2ndNodeWithConfigForBoldProtocol(
 	t *testing.T,
 	ctx context.Context,
@@ -609,18 +556,24 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stackConfig *node.Config,
 	stakeTokenAddr common.Address,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
-	if nodeConfig == nil {
-		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
-		nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
-	}
-	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		Fatal(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
+	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
+	addresses, assertionChain := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
 
+	l1info.SetContract("EvilBridge", addresses.Bridge)
+	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
+	l1info.SetContract("EvilInbox", addresses.Inbox)
+
+	if nodeConfig == nil {
+		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
+		nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
+	}
+	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	if stackConfig == nil {
 		stackConfig = stackConfigForTest(t)
 	}
@@ -631,13 +584,6 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
-
-	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
-	addresses, assertionChain := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
-
-	l1info.SetContract("EvilBridge", addresses.Bridge)
-	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
-	l1info.SetContract("EvilInbox", addresses.Inbox)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
@@ -660,4 +606,50 @@ func create2ndNodeWithConfigForBoldProtocol(
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 
 	return l2client, l2node, assertionChain
+}
+
+func makeBoldBatch(
+	t *testing.T,
+	l2Node *arbnode.Node,
+	l2Info *BlockchainTestInfo,
+	backend *ethclient.Client,
+	sequencer *bind.TransactOpts,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddr common.Address,
+	messagesPerBatch,
+	divergeAtIndex int64,
+) {
+	ctx := context.Background()
+
+	batchBuffer := bytes.NewBuffer([]byte{})
+	for i := int64(0); i < messagesPerBatch; i++ {
+		value := i
+		if i == divergeAtIndex {
+			value++
+		}
+		err := writeTxToBatch(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
+		Require(t, err)
+	}
+	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
+	Require(t, err)
+	message := append([]byte{0}, compressed...)
+
+	seqNum := new(big.Int).Lsh(common.Big1, 256)
+	seqNum.Sub(seqNum, common.Big1)
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
+
+	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
+	Require(t, err)
+	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
+	Require(t, err)
+	if len(batches) == 0 {
+		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
+	}
+	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
+	Require(t, err)
+	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	Require(t, err, "failed to get batch metadata after adding batch:")
 }
