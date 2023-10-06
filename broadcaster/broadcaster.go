@@ -101,8 +101,10 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	log.Debug("confirming sequence number", "sequenceNumber", seq)
 	bm := m.BroadcastMessage{
-		Version:                        1,
-		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{seq},
+		Version: 1,
+		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+			SequenceNumber: seq,
+		},
 	}
 	b.server.Broadcast(bm)
 	if err := b.httpBacklog.Append(&bm); err != nil {

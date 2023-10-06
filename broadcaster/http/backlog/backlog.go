@@ -14,7 +14,6 @@ import (
 var (
 	errDropSegments       = errors.New("remove previous segments from backlog")
 	errSequenceNumberSeen = errors.New("sequence number already present in backlog")
-	errSequenceOrder      = errors.New("error found in sequence order")
 	errOutOfBounds        = errors.New("message not found in backlog")
 )
 
@@ -27,14 +26,15 @@ type Backlog interface {
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
-	lookupByIndex map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]
+	lookupByIndex map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment]
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
 func NewBacklog(c ConfigFetcher) Backlog {
+	lookup := make(map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment])
 	return &backlog{
-		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
+		lookupByIndex: lookup,
 		config:        c,
 	}
 }
@@ -81,7 +81,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		} else if err != nil {
 			return err
 		}
-		p := atomic.Pointer[backlogSegment]{}
+		p := &atomic.Pointer[backlogSegment]{}
 		p.Store(s)
 		b.lookupByIndex[msg.SequenceNumber] = p
 		b.messageCount.Add(1)
@@ -208,7 +208,7 @@ func (s *backlog) MessageCount() int {
 func (b *backlog) reset() {
 	b.head = atomic.Pointer[backlogSegment]{}
 	b.tail = atomic.Pointer[backlogSegment]{}
-	b.lookupByIndex = map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{}
+	b.lookupByIndex = map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment]{}
 	b.messageCount.Store(0)
 }
 
@@ -267,11 +267,7 @@ func (s *backlogSegment) contains(i arbutil.MessageIndex) bool {
 
 	msgIndex := uint64(i - s.start)
 	msg := s.messages[msgIndex]
-	if msg.SequenceNumber == i {
-		return true
-	}
-
-	return false
+	return msg.SequenceNumber == i
 }
 
 // updateSegment updates the messageCount, start and end indices of the segment

@@ -34,7 +34,7 @@ func validateBacklog(t *testing.T, b *backlog, count int, start, end arbutil.Mes
 
 func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
-		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{},
+		lookupByIndex: map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment]{},
 		config:        func() *Config { return &DefaultTestConfig },
 	}
 	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
@@ -138,11 +138,12 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	}
 	s.messageCount.Store(2)
 
-	p := atomic.Pointer[backlogSegment]{}
+	p := &atomic.Pointer[backlogSegment]{}
 	p.Store(s)
-
+	lookup := make(map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment])
+	lookup[40] = p
 	b := &backlog{
-		lookupByIndex: map[arbutil.MessageIndex]atomic.Pointer[backlogSegment]{40: p},
+		lookupByIndex: lookup,
 		config:        func() *Config { return &DefaultTestConfig },
 	}
 	b.messageCount.Store(2)
@@ -150,8 +151,10 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	b.tail.Store(s)
 
 	bm := &m.BroadcastMessage{
-		Messages:                       nil,
-		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{41},
+		Messages: nil,
+		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+			SequenceNumber: 41,
+		},
 	}
 
 	err := b.Append(bm)
@@ -227,8 +230,10 @@ func TestDelete(t *testing.T) {
 			}
 
 			bm := &m.BroadcastMessage{
-				Messages:                       nil,
-				ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{tc.confirmed},
+				Messages: nil,
+				ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+					SequenceNumber: tc.confirmed,
+				},
 			}
 
 			err = b.Append(bm)

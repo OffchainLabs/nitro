@@ -144,5 +144,10 @@ func (h *BroadcastHandler) getMessagesHandler(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(m)
+	_, err = w.Write(m)
+	if err != nil {
+		msg := fmt.Sprintf("error writing message as response: %s", err)
+		log.Error(msg)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }

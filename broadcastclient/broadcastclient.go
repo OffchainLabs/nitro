@@ -201,7 +201,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				return
 			}
 			if err == nil {
-				bc.startBackgroundReader(earlyFrameData) // change name to WS reader
+				bc.startBackgroundWSReader(earlyFrameData)
 				bm, err := bc.getHTTPBacklog(ctx)
 				if err != nil && !errors.Is(err, syscall.ECONNREFUSED) {
 					bc.fatalErrChan <- err
@@ -209,7 +209,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				} else if bm != nil && len(bm.Messages) > 0 {
 					bc.streamMsg(ctx, bm)
 				}
-				bc.startBackgroundStreamer()
+				bc.startBackgroundWSStreamer()
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
@@ -343,7 +343,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	return earlyFrameData, nil
 }
 
-func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
+func (bc *BroadcastClient) startBackgroundWSReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
@@ -412,7 +412,6 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					bc.firstWSMessage <- res.Messages[0]
 				}
 				bc.wsMessages <- &res
-				//bc.streamMsg(ctx, &res)
 			}
 		}
 	})
@@ -428,7 +427,7 @@ func (bc *BroadcastClient) getHTTPBacklog(ctx context.Context) (*m.BroadcastMess
 	}
 }
 
-func (bc *BroadcastClient) startBackgroundStreamer() {
+func (bc *BroadcastClient) startBackgroundWSStreamer() {
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
@@ -436,7 +435,6 @@ func (bc *BroadcastClient) startBackgroundStreamer() {
 				return
 			case msg := <-bc.wsMessages:
 				bc.streamMsg(ctx, msg)
-			default:
 			}
 		}
 	})
