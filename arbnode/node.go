@@ -53,168 +53,170 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
-	if err != nil {
-		return fmt.Errorf("error submitting tx: %w", err)
-	}
-	_, err = l1Reader.WaitForTxApproval(ctx, tx)
-	if err != nil {
-		return fmt.Errorf("error executing tx: %w", err)
-	}
-	return nil
+func checkTxApproval(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, description string, errCh chan error, wg *sync.WaitGroup) {
+	wg.Add(1)
+	go func() {
+		if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
+			errCh <- fmt.Errorf("%s error: error executing tx with nonce(%d): %w", description, tx.Nonce(), err)
+		}
+		wg.Done()
+	}()
 }
 
-func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, errCh chan error, wg *sync.WaitGroup) (common.Address, func() (*types.Transaction, error), error) {
 	client := l1Reader.Client()
-	errCh := make(chan error, 10)
-
-	wg := sync.WaitGroup{}
-	checkApproval := func(name string, tx *types.Transaction) {
-		wg.Add(1)
-		go func() {
-			if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
-				errCh <- fmt.Errorf("%w error: error executing tx: %w", name, err)
-			}
-			wg.Done()
-		}()
-
-	}
 
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge deploy error: error submitting tx: %w", err)
+		return common.Address{}, nil, fmt.Errorf("bridge deploy error: error submitting tx: %w", err)
 	}
-	checkApproval("bridge deploy", tx)
+	checkTxApproval(ctx, l1Reader, tx, "bridge deploy", errCh, wg)
 
 	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: error submitting tx: %w", err)
+		return common.Address{}, nil, fmt.Errorf("sequencer inbox deploy error: error submitting tx: %w", err)
 	}
-	checkApproval("sequencer inbox deploy", tx)
+	checkTxApproval(ctx, l1Reader, tx, "sequencer inbox deploy", errCh, wg)
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("inbox deploy error: error submitting tx: %w", err)
+		return common.Address{}, nil, fmt.Errorf("inbox deploy error: error submitting tx: %w", err)
 	}
-	checkApproval("inbox deploy deploy", tx)
+	checkTxApproval(ctx, l1Reader, tx, "inbox deploy deploy", errCh, wg)
 
 	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventInbox(auth, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: error submitting tx: %w", err)
+		return common.Address{}, nil, fmt.Errorf("rollup event bridge deploy error: error submitting tx: %w", err)
 	}
-	checkApproval("rollup event bridge deploy", tx)
+	checkTxApproval(ctx, l1Reader, tx, "rollup event bridge deploy", errCh, wg)
 
 	outboxTemplate, tx, _, err := bridgegen.DeployOutbox(auth, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("outbox deploy error: error submitting tx: %w", err)
+		return common.Address{}, nil, fmt.Errorf("outbox deploy error: error submitting tx: %w", err)
 	}
-	checkApproval("outbox deploy", tx)
+	checkTxApproval(ctx, l1Reader, tx, "outbox deploy", errCh, wg)
 
 	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge creator deploy error: error submitting tx: %w", err)
+		return common.Address{}, nil, fmt.Errorf("bridge creator deploy error: error submitting tx: %w", err)
 	}
-	checkApproval("bridge creator deploy", tx)
+	checkTxApproval(ctx, l1Reader, tx, "bridge creator deploy", errCh, wg)
 
-	wg.Wait()
-	select {
-	case err := <-errCh:
-		return common.Address{}, err
-	default:
-	}
-
-	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge creator update templates error: error submitting tx: %w", err)
-	}
-	if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
-		return common.Address{}, fmt.Errorf("bridge creator update error: error executing tx: %w", err)
+	templateUpdateFn := func() (*types.Transaction, error) {
+		tx, err := bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("error submitting tx: %w", err)
+		}
+		if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
+			return nil, fmt.Errorf("error executing tx: %w", err)
+		}
+		return tx, nil
 	}
 
-	return bridgeCreatorAddr, nil
+	return bridgeCreatorAddr, templateUpdateFn, nil
 }
 
-func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
+func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, errCh chan error, wg *sync.WaitGroup) (common.Address, common.Address, error) {
 	client := l1Reader.Client()
+
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "osp0 deploy", errCh, wg)
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "ospMemory deploy", errCh, wg)
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "ospMath deploy", errCh, wg)
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "ospHostIo deploy", errCh, wg)
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "ospEntry deploy", errCh, wg)
 
 	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("challengeManager deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "challengeManager deploy", errCh, wg)
 
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
 func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
+	errCh := make(chan error, 30)
+	wg := sync.WaitGroup{}
+
+	bridgeCreator, bridgeTemplateUpdateFn, err := deployBridgeCreator(ctx, l1Reader, auth, errCh, &wg)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
-	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth, errCh, &wg)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, l1Reader.Client())
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "rollup admin logic deploy", errCh, &wg)
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, l1Reader.Client())
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "rollup user logic deploy", errCh, &wg)
 
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, l1Reader.Client())
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "rollup creator deploy", errCh, &wg)
 
 	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, l1Reader.Client())
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "rollup utils deploy", errCh, &wg)
 
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, l1Reader.Client())
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: error submitting tx: %w", err)
 	}
+	checkTxApproval(ctx, l1Reader, tx, "validator wallet creator deploy", errCh, &wg)
+
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	default:
+	}
+
+	errCh2 := make(chan error, 30)
+	wg2 := sync.WaitGroup{}
+
+	tx, err = bridgeTemplateUpdateFn()
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("bridge creator update templates error:  %w", err)
+	}
+	checkTxApproval(ctx, l1Reader, tx, "bridge creator update templates", errCh2, &wg2)
 
 	tx, err = rollupCreator.SetTemplates(
 		auth,
@@ -226,9 +228,16 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		validatorUtils,
 		validatorWalletCreator,
 	)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator update templates error: error submitting tx: %w", err)
+	}
+	checkTxApproval(ctx, l1Reader, tx, "rollup creator update templates", errCh2, &wg2)
+
+	wg2.Wait()
+	select {
+	case err := <-errCh2:
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	default:
 	}
 
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
