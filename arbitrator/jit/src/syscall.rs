@@ -261,18 +261,13 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
 }
 
 /// go side: λ(v value)
+// TODO: implement ref counting
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    let pool = &mut env.js_state.pool;
+    let (mut sp, _) = GoStack::new(sp, &mut env);
 
     let val = JsValue::new(sp.read_u64());
     match val {
-        JsValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
-        JsValue::Ref(x) => {
-            if pool.remove(x).is_none() {
-                eprintln!("Go trying to finalize unknown ref {}", x);
-            }
-        }
+        JsValue::Ref(_) => {}
         val => eprintln!("Go trying to finalize {:?}", val),
     }
 }
