@@ -137,7 +137,7 @@ func (b *SequenceNumberCatchupBuffer) pruneBufferToIndex(idx int) {
 	b.messages = b.messages[idx:]
 	if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
 		// Too much spare capacity, copy to fresh slice to reset memory usage
-		b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
+		b.messages = append([]*m.BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
 	}
 }
 

@@ -63,3 +63,17 @@ func (mr *MockBacklogMockRecorder) Get(start, end interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBacklog)(nil).Get), start, end)
 }
+
+// MessageCount mocks base method.
+func (m *MockBacklog) MessageCount() int {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MessageCount")
+	ret0, _ := ret[0].(int)
+	return ret0
+}
+
+// MessageCount indicates an expected call of MessageCount.
+func (mr *MockBacklogMockRecorder) MessageCount() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MessageCount", reflect.TypeOf((*MockBacklog)(nil).MessageCount))
+}

@@ -230,12 +230,8 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 	wg.Add(1)
 
 	go func() {
-		defer func() {
-			wg.Done()
-		}()
-		defer func() {
-			broadcastClient.StopAndWait()
-		}()
+		defer wg.Done()
+		defer broadcastClient.StopAndWait()
 		var timeout time.Duration
 		if expectedCount == 0 {
 			timeout = 1 * time.Second

@@ -7,6 +7,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func validateBacklog(t *testing.T, b *backlog, count int, start, end arbutil.MessageIndex, lookupKeys []arbutil.MessageIndex) {
@@ -272,15 +273,15 @@ func TestGet(t *testing.T) {
 			"LowerBoundFar",
 			0,
 			43,
-			errOutOfBounds,
-			0,
+			nil,
+			4,
 		},
 		{
 			"LowerBoundClose",
 			39,
 			43,
-			errOutOfBounds,
-			0,
+			nil,
+			4,
 		},
 		{
 			"UpperBoundFar",
@@ -348,8 +349,9 @@ func TestGet(t *testing.T) {
 					t.Fatalf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, tc.expectedCount)
 				}
 
-				for i := tc.start; i <= tc.end; i++ {
-					msg := bm.Messages[i-tc.start]
+				start := arbmath.MaxInt(tc.start, 40)
+				for i := start; i <= tc.end; i++ {
+					msg := bm.Messages[i-start]
 					if msg.SequenceNumber != i {
 						t.Fatalf("unexpected sequence number (%d) in %d returned message", i, i-tc.start)
 					}

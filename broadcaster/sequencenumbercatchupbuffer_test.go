@@ -305,8 +305,8 @@ func TestMaxCatchupBufferSize(t *testing.T) {
 
 	firstMessage := 10
 	for i := firstMessage; i <= 20; i += 2 {
-		bm := BroadcastMessage{
-			Messages: []*BroadcastFeedMessage{
+		bm := m.BroadcastMessage{
+			Messages: []*m.BroadcastFeedMessage{
 				{
 					SequenceNumber: arbutil.MessageIndex(i),
 				},
