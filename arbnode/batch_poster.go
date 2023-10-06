@@ -267,7 +267,12 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			RedisKey:          "data-poster.queue",
-			AccessList:        b.accessList(),
+			AccessList: AccessList(&AccessListOpts{
+				SequencerInboxAddr: deployInfo.SequencerInbox,
+				DataPosterAddr:     transactOpts.From, // Same as batchposter address.
+				BridgeAddr:         deployInfo.Bridge,
+				GasRefunderAddr:    config().gasRefunder,
+			}),
 		},
 	)
 	if err != nil {
@@ -276,11 +281,18 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 	return b, nil
 }
 
-func (b *BatchPoster) accessList() types.AccessList {
+type AccessListOpts struct {
+	SequencerInboxAddr common.Address
+	BridgeAddr         common.Address
+	DataPosterAddr     common.Address
+	GasRefunderAddr    common.Address
+}
+
+// AccessList returns access list (contracts, storage slots) for batchposter.
+func AccessList(opts *AccessListOpts) types.AccessList {
 	l := types.AccessList{
 		types.AccessTuple{
-			// Bridge contract address.
-			Address: b.seqInboxAddr,
+			Address: opts.SequencerInboxAddr,
 			StorageKeys: []common.Hash{
 				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"), // totalDelayedMessagesRead
 				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000001"), // bridge
@@ -294,16 +306,17 @@ func (b *BatchPoster) accessList() types.AccessList {
 				// IMPLEMENTATION_SLOT from OpenZeppelin,  keccak-256 hash
 				// of "eip1967.proxy.implementation" subtracted by 1.
 				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
-				common.HexToHash("0xa10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660"), // isBatchPoster[batchPosterAddr]
+				// isBatchPoster[batchPosterAddr]; for mainnnet it's: "0xa10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660".
+				common.Hash(arbutil.StorageSlotAddress(opts.DataPosterAddr.Bytes(), []byte{3})),
 			},
 		},
 		types.AccessTuple{
-			Address: b.bridgeAddr,
+			Address: opts.BridgeAddr,
 			StorageKeys: []common.Hash{
-				common.HexToHash("0x000000000000000000000000000000000000000000000000000000000000000a"), // sequencerReportedSubMessageCount
-				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000007"), // sequencerInboxAccs.length
 				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000006"), // delayedInboxAccs.length
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000007"), // sequencerInboxAccs.length
 				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000009"), // sequencerInbox
+				common.HexToHash("0x000000000000000000000000000000000000000000000000000000000000000a"), // sequencerReportedSubMessageCount
 				// ADMIN_SLOT from OpenZeppelin, keccak-256 hash of
 				// "eip1967.proxy.admin" subtracted by 1.
 				common.HexToHash("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"),
@@ -314,22 +327,22 @@ func (b *BatchPoster) accessList() types.AccessList {
 				// - sequencerInboxAccs[sequencerInboxAccs.length - 1];
 				// - sequencerInboxAccs.push(...);
 				// - delayedInboxAccs[afterDelayedMessagesRead - 1];
-				// May change when transaction is actually executed:
+				// These below may change when transaction is actually executed:
 				// - delayedInboxAccs[delayedInboxAccs.length - 1]
 				// - delayedInboxAccs.push(...);
 			},
 		},
 	}
-	if (b.gasRefunderAddr != common.Address{}) {
+	if (opts.GasRefunderAddr != common.Address{}) {
 		l = append(l, types.AccessTuple{
-			Address: b.gasRefunderAddr,
+			Address: opts.GasRefunderAddr,
 			StorageKeys: []common.Hash{
-				// CommonParameters.{maxRefundeeBalance, extraGasMargin, calldataCost, maxGasTip}
-				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"),
-				// CommonParameters.{maxGasCost, maxSingleGasUsage}
-				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"),
-				common.HexToHash("0xe85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62"), // allowedRefundees[refundee]
-				common.HexToHash("0x7686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda41"), // allowedContracts[msg.sender]
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"), // CommonParameters.{maxRefundeeBalance, extraGasMargin, calldataCost, maxGasTip}
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"), // CommonParameters.{maxGasCost, maxSingleGasUsage}
+				//	allowedContracts[msg.sender]; for mainnet it's: "0x7686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda41".
+				common.Hash(arbutil.StorageSlotAddress(opts.SequencerInboxAddr.Bytes(), []byte{1})),
+				// allowedRefundees[refundee]; for mainnet it's: "0xe85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62".
+				common.Hash(arbutil.StorageSlotAddress(opts.DataPosterAddr.Bytes(), []byte{2})),
 			},
 		})
 	}
