@@ -81,7 +81,11 @@ func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return e.manager.caller.HasConfirmedRival(&bind.CallOpts{Context: ctx}, mutualId)
+	confirmedRival, err := e.manager.caller.ConfirmedRival(&bind.CallOpts{Context: ctx}, mutualId)
+	if err != nil {
+		return false, err
+	}
+	return confirmedRival != ([32]byte{}), nil
 }
 
 func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
