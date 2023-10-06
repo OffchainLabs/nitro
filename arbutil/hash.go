@@ -10,7 +10,6 @@ import (
 func StorageSlotAddress(args ...[]byte) []byte {
 	hash := sha3.NewLegacyKeccak256()
 	for _, arg := range args {
-		// fmt.Printf("%x\n", common.BytesToHash(arg).Bytes())
 		hash.Write(common.BytesToHash(arg).Bytes())
 	}
 	return hash.Sum(nil)
