@@ -201,6 +201,11 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	}
 	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
 
+	seqABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		t.Fatalf("Error getting sequencer inbox abi: %v", err)
+	}
+
 	for i := 1; i < seqInboxTestIters; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
@@ -325,10 +330,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			if err != nil {
 				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
 			}
-			seqABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
-			if err != nil {
-				t.Fatalf("Error getting sequencer inbox abi: %v", err)
-			}
+
 			data, err := encodeAddBatch(seqABI, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
 			if err != nil {
 				t.Fatalf("Error encoding batch data: %v", err)
