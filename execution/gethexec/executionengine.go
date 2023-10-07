@@ -71,7 +71,7 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 	s.reorgSequencing = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(consensus execution.FullConsensusClient) {
+func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
 	if s.Started() {
 		panic("trying to set transaction consensus after start")
 	}

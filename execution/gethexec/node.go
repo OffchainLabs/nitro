@@ -158,7 +158,7 @@ func CreateExecutionNode(
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	} else if config.Sequencer.Enable {
 		log.Warn("sequencer enabled without l1 client")
 	}
 
@@ -198,14 +198,15 @@ func CreateExecutionNode(
 	syncMon := NewSyncMonitor(execEngine)
 
 	var classicOutbox *ClassicOutboxRetriever
-	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
-	if err != nil {
-		if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
+
+	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
+		if err != nil {
 			log.Warn("Classic Msg Database not found", "err", err)
+			classicOutbox = nil
+		} else {
+			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 		}
-		classicOutbox = nil
-	} else {
-		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 	}
 
 	apis := []rpc.API{{
@@ -379,7 +380,7 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
-	n.ExecEngine.SetTransactionStreamer(consensus)
+	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 

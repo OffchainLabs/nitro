@@ -65,7 +65,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	if fetcher == nil {
 		return 0, errors.New("batch fetcher not set")
 	}
-	batch, err := fetcher.FindL1BatchForMessage(msgIndex)
+	batch, err := fetcher.FindInboxBatchContainingMessage(msgIndex)
 	return batch, err
 }
 

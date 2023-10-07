@@ -218,7 +218,7 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) FindL1BatchForMessage(pos arbutil.MessageIndex) (uint64, error) {
+func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, error) {
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
 		return 0, err

@@ -1115,8 +1115,8 @@ func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error) 
 	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
 }
 
-func (n *Node) FindL1BatchForMessage(message arbutil.MessageIndex) (uint64, error) {
-	return n.InboxTracker.FindL1BatchForMessage(message)
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, error) {
+	return n.InboxTracker.FindInboxBatchContainingMessage(message)
 }
 
 func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {

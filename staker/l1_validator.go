@@ -336,7 +336,7 @@ func (v *L1Validator) generateNodeAction(
 			batchNum = localBatchCount - 1
 			validatedCount = messageCount
 		} else {
-			batchNum, err = v.inboxTracker.FindL1BatchForMessage(validatedCount - 1)
+			batchNum, err = v.inboxTracker.FindInboxBatchContainingMessage(validatedCount - 1)
 			if err != nil {
 				return nil, false, err
 			}
