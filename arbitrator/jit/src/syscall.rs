@@ -11,6 +11,7 @@ use go_js::{JsEnv, JsValueId};
 use wasmer::{StoreMut, TypedFunction};
 
 /// go side: λ(v value)
+// TODO: implement ref counting
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
     let val = JsValueId(sp.read_u64());

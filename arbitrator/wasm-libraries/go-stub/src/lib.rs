@@ -379,6 +379,7 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
 }
 
 /// Safety: λ(v value)
+/// TODO: reference counting
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: usize) {
     let mut sp = GoStack::new(sp);
