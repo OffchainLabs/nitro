@@ -321,6 +321,7 @@ pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
     let args = read_value_ids(args_ptr, args_len);
 
     let result = get_js().value_call(&mut WasmJsEnv, object, &method_name, &args);
+    sp.restore_stack();
 
     match result {
         Ok(result) => {
