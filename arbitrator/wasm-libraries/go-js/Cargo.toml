@@ -1,0 +1,11 @@
+[package]
+name = "go-js"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = "0.6.8"
+fnv = "1.0.7"
+parking_lot = "0.12.1"
+rand = { version = "0.8.5", default-features = false }
+rand_pcg = { version = "0.3.1", default-features = false }

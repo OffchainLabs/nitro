@@ -1,33 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
-use arbutil::{wavm, Color};
-use go_abi::wavm_guest_call__resume;
-
-use crate::value::{DynamicObject, DynamicObjectPool, GoValue, JsValue, STYLUS_ID};
-
-/// The event Go will execute next
-pub(crate) static mut PENDING_EVENT: Option<PendingEvent> = None;
-
-/// The stylus return result
-pub(crate) static mut STYLUS_RESULT: Option<JsValue> = None;
-
-#[derive(Clone, Debug)]
-pub(crate) struct PendingEvent {
-    pub id: JsValue,
-    pub this: JsValue,
-    pub args: Vec<GoValue>,
-}
-
-/// Sets the Go runtime's pending event.
-///
-/// # Safety
-///
-/// Non-reentrant.
-pub(crate) unsafe fn set_event(id: u32, this: JsValue, args: Vec<GoValue>) {
-    let id = JsValue::Number(id as f64);
-    PENDING_EVENT = Some(PendingEvent { id, this, args });
-}
+use crate::wavm;
 
 /// Executes a Stylus closure, calling back into go via `resume`.
 /// Returns the number of outputs, which are stored in the `STYLUS_RESULT` singleton.
@@ -43,6 +14,7 @@ pub unsafe extern "C" fn go_stub__run_stylus_closure(
     lens: *const usize,
     count: usize,
 ) -> usize {
+    /*
     let this = JsValue::Ref(STYLUS_ID);
     let pool = DynamicObjectPool::singleton();
 
@@ -70,6 +42,8 @@ pub unsafe extern "C" fn go_stub__run_stylus_closure(
         pool.remove(id);
     }
     stylus_result(func).1.len()
+    */
+    todo!("go_stub__run_stylus_closure")
 }
 
 /// Copies the current closure results' lengths.
@@ -80,6 +54,7 @@ pub unsafe extern "C" fn go_stub__run_stylus_closure(
 /// Non-reentrant.
 #[no_mangle]
 pub unsafe extern "C" fn go_stub__read_closure_lens(func: u32, lens: *mut usize) {
+    /*
     let outs = stylus_result(func).1;
     let pool = DynamicObjectPool::singleton();
 
@@ -90,6 +65,8 @@ pub unsafe extern "C" fn go_stub__read_closure_lens(func: u32, lens: *mut usize)
         };
         wavm::caller_store32(lens.add(index) as usize, out.len() as u32);
     }
+    */
+    todo!("go_stub__read_closure_lens")
 }
 
 /// Copies the bytes of the current closure results, releasing the objects.
@@ -101,6 +78,7 @@ pub unsafe extern "C" fn go_stub__read_closure_lens(func: u32, lens: *mut usize)
 /// Non-reentrant.
 #[no_mangle]
 pub unsafe extern "C" fn go_stub__drop_closure_outs(func: u32, data: *const *mut u8) {
+    /*
     let (object, outs) = stylus_result(func);
     let pool = DynamicObjectPool::singleton();
 
@@ -113,23 +91,6 @@ pub unsafe extern "C" fn go_stub__drop_closure_outs(func: u32, data: *const *mut
         wavm::write_slice_usize(&out, ptr as usize)
     }
     pool.remove(object);
-}
-
-/// Retrieves the id and value of the current closure result.
-///
-/// # Safety
-///
-/// Panics if no result exists.
-/// Non-reentrant.
-unsafe fn stylus_result(func: u32) -> (u32, &'static [GoValue]) {
-    let stylus_result = STYLUS_RESULT.as_ref().unwrap();
-    let pool = DynamicObjectPool::singleton();
-
-    let JsValue::Ref(id) = stylus_result else {
-        panic!("bad return value for func {}", func.red())
-    };
-    let Some(DynamicObject::ValueArray(output)) = pool.get(*id) else {
-        panic!("bad return value for func {}", func.red())
-    };
-    (*id, output)
+    */
+    todo!("go_stub__drop_closure_outs")
 }

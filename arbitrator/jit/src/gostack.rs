@@ -5,10 +5,10 @@
 
 use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-    syscall::JsValue,
     wavmio::{Bytes20, Bytes32},
 };
 use arbutil::Color;
+use go_js::JsValueId;
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
 use std::collections::{BTreeSet, BinaryHeap};
@@ -241,11 +241,11 @@ impl GoStack {
         self.view().write(ptr, src).unwrap();
     }
 
-    pub fn read_value_slice(&self, mut ptr: u64, len: u64) -> Vec<JsValue> {
+    pub fn read_value_ids(&self, mut ptr: u64, len: u64) -> Vec<JsValueId> {
         let mut values = Vec::new();
         for _ in 0..len {
             let p = u32::try_from(ptr).expect("Go pointer not a u32");
-            values.push(JsValue::new(self.read_u64_raw(p)));
+            values.push(JsValueId(self.read_u64_raw(p)));
             ptr += 8;
         }
         values
@@ -281,10 +281,18 @@ impl GoStack {
         self.read_slice(ptr, len)
     }
 
-    pub fn read_js_string(&mut self) -> Vec<u8> {
+    pub fn read_string(&mut self) -> String {
         let ptr = self.read_u64();
         let len = self.read_u64();
-        self.read_slice(ptr, len)
+        let bytes = self.read_slice(ptr, len);
+        match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {bytes:?} is not valid utf8: {e:?}");
+                String::from_utf8_lossy(bytes).into_owned()
+            }
+        }
     }
 
     /// Resumes the Go runtime, updating the stack pointer.
@@ -296,15 +304,23 @@ impl GoStack {
         let Some(resume) = &env.exports.resume else {
             return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
         };
+        // recursively call into wasmer (reentrant)
+        resume.call(store)?;
+        self.refresh(env, store)
+    }
+
+    /// Refreshes the stack pointer after potentially the Go runtime was potentially resumed.
+    ///
+    /// # Safety
+    ///
+    /// Caller must cut lifetimes before this call.
+    pub unsafe fn refresh(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
         let Some(get_stack_pointer) = &env.exports.get_stack_pointer else {
             return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()));
         };
 
         // save our progress from the stack pointer
         let saved = self.top - self.sp;
-
-        // recursively call into wasmer (reentrant)
-        resume.call(store)?;
 
         // recover the stack pointer
         let pointer = get_stack_pointer.call(store)? as u32;

@@ -3,11 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::{
-    gostack::GoStack,
-    machine::WasmEnvMut,
-    syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
-};
+use crate::{gostack::GoStack, machine::WasmEnvMut};
 use arbutil::{
     evm::{
         js::{ApiValue, JsCallIntoGo, JsEvmApi},
@@ -96,6 +92,7 @@ pub(super) fn exec_wasm(
         };
         match msg {
             Call(func, args, respond) => {
+                /*
                 let (env, mut store) = env.data_and_store_mut();
                 let js = &mut env.js_state;
 
@@ -135,6 +132,8 @@ pub(super) fn exec_wasm(
                     env.js_state.pool.remove(id);
                 }
                 respond.send(outs).unwrap();
+                */
+                todo!("stylus calls")
             }
             Panic(error) => bail!(error),
             Done => break,

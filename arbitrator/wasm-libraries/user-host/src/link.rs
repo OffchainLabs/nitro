@@ -117,10 +117,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
 
     // call the program
-    let go_stack = sp.save_stack();
     let status = program_call_main(module, main, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
-    sp.restore_stack(go_stack);
+    sp.restore_stack();
 
     /// cleans up and writes the output
     macro_rules! finish {

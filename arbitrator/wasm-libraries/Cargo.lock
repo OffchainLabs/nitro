@@ -358,6 +358,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "go-js"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "fnv",
+ "parking_lot",
+ "rand",
+ "rand_pcg",
+]
+
+[[package]]
 name = "go-stub"
 version = "0.1.0"
 dependencies = [
@@ -365,6 +376,7 @@ dependencies = [
  "eyre",
  "fnv",
  "go-abi",
+ "go-js",
  "hex",
  "rand",
  "rand_pcg",

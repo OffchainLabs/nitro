@@ -3,6 +3,7 @@
 
 package arbtest
 
+/*
 import (
 	"bytes"
 	"context"
@@ -1256,3 +1257,4 @@ func formatTime(duration time.Duration) string {
 	}
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
+*/

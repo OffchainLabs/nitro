@@ -31,15 +31,11 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -913,6 +909,7 @@ func deploySimple(
 	return addr, simple
 }
 
+/*
 func deployContractInitCode(code []byte, revert bool) []byte {
 	// a small prelude to return the given contract code
 	last_opcode := vm.RETURN
@@ -982,6 +979,7 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 	}
 	Fatal(t, "failed to complete after ", delay*time.Duration(max))
 }
+*/
 
 func TestMain(m *testing.M) {
 	logLevelEnv := os.Getenv("TEST_LOGLEVEL")

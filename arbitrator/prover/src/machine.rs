@@ -2522,11 +2522,6 @@ impl Machine {
     }
 
     pub fn say<D: Display>(text: D) {
-        let text = format!("{text}");
-        let text = match text.len() {
-            0..=250 => text,
-            _ => format!("{} ...", &text[0..250]),
-        };
         println!("{} {text}", "WASM says:".yellow());
     }
 
