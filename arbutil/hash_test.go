@@ -2,9 +2,12 @@ package arbutil
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSlotAddress(t *testing.T) {
@@ -39,11 +42,73 @@ func TestSlotAddress(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := StorageSlotAddress(tc.args...)
+			got := PaddedKeccak256(tc.args...)
 			if !bytes.Equal(got, tc.want) {
 				t.Errorf("slotAddress(%x) = %x, want %x", tc.args, got, tc.want)
 			}
 		})
 	}
 
+}
+
+func TestSumBytes(t *testing.T) {
+	for _, tc := range []struct {
+		desc       string
+		a, b, want []byte
+	}{
+		{
+			desc: "simple case",
+			a:    []byte{0x0a, 0x0b},
+			b:    []byte{0x03, 0x04},
+			want: common.HexToHash("0x0d0f").Bytes(),
+		},
+		{
+			desc: "carry over last byte",
+			a:    []byte{0x0a, 0xff},
+			b:    []byte{0x01},
+			want: common.HexToHash("0x0b00").Bytes(),
+		},
+		{
+			desc: "overflow",
+			a:    common.HexToHash("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").Bytes(),
+			b:    []byte{0x01},
+			want: common.HexToHash("0x00").Bytes(),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := SumBytes(tc.a, tc.b)
+			if diff := cmp.Diff(got, tc.want); diff != "" {
+				t.Errorf("SumBytes(%x, %x) = %x want: %x", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBrutforce(t *testing.T) {
+	M := map[common.Hash]bool{
+		common.HexToHash("0xa66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a8736c688"): true,
+		common.HexToHash("0xf652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d40"): true,
+		common.HexToHash("0xf652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f"): true,
+		common.HexToHash("0xa66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a8736c689"): true,
+	}
+
+	for i := 0; i < 256; i++ {
+		for j := 0; j < 256; j++ {
+			addr := SumBytes(PaddedKeccak256(intToBytes(t, i)), intToBytes(t, j))
+			if M[common.BytesToHash(addr)] {
+				t.Errorf("anodar yes, i: %v, j: %v, \taddr: %x", i, j, addr)
+			}
+		}
+
+	}
+}
+
+func intToBytes(t *testing.T, val int) []byte {
+	t.Helper()
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.BigEndian, int64(val))
+	if err != nil {
+		fmt.Println("binary.Write failed:", err)
+	}
+	return buf.Bytes()
 }
