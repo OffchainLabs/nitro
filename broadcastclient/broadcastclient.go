@@ -69,6 +69,7 @@ type Config struct {
 	RequireFeedVersion      bool                     `koanf:"require-feed-version" reload:"hot"`
 	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
 	URL                     []string                 `koanf:"url"`
+	SecondaryURL            []string                 `koanf:"secondary-url"`
 	Verify                  signature.VerifierConfig `koanf:"verify"`
 	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
 }
@@ -85,7 +86,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
-	f.StringSlice(prefix+".url", DefaultConfig.URL, "URL of sequencer feed source")
+	f.StringSlice(prefix+".url", DefaultConfig.URL, "list of primary URLs of sequencer feed source")
+	f.StringSlice(prefix+".secondary-url", DefaultConfig.SecondaryURL, "list of secondary URLs of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
@@ -97,6 +99,7 @@ var DefaultConfig = Config{
 	RequireFeedVersion:      false,
 	Verify:                  signature.DefultFeedVerifierConfig,
 	URL:                     []string{""},
+	SecondaryURL:            []string{},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
 }
@@ -108,6 +111,7 @@ var DefaultTestConfig = Config{
 	RequireFeedVersion:      false,
 	Verify:                  signature.DefultFeedVerifierConfig,
 	URL:                     []string{""},
+	SecondaryURL:            []string{},
 	Timeout:                 200 * time.Millisecond,
 	EnableCompression:       true,
 }
