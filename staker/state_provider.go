@@ -149,6 +149,45 @@ func (s *StateManager) executionStateAtMessageCountImpl(_ context.Context, messa
 	}, nil
 }
 
+func (s *StateManager) statesUpTo(
+	fromBatch,
+	toBatch l2stateprovider.Batch,
+) ([]common.Hash, error) {
+	// The last message's batch count.
+	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+	if err != nil {
+		return nil, err
+	}
+	gs, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, fromBatch-1)
+	if err != nil {
+		return nil, err
+	}
+	if gs.PosInBatch == 0 {
+		return nil, errors.New("final state of batch cannot be at position zero")
+	}
+	// The start state root of our history commitment starts at `batch: fromBatch, pos: 0` using the state
+	// from the last batch.
+	gs.Batch += 1
+	gs.PosInBatch = 0
+	stateRoots := []common.Hash{
+		crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
+	}
+	// TODO: Figure out if we need to end early.
+
+	// Figure out the total number of messages we want to look over.
+	endBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(toBatch))
+	if err != nil {
+		return nil, err
+	}
+
+	totalMessagesInRange := (endBatchMsgCount - prevBatchMsgCount) + 1
+
+	// TODO: Check if it is > the max height we care about.
+
+	// From there, we compute the final state of the last batch.
+	return stateRoots, nil
+}
+
 func (s *StateManager) globalStatesUpTo(
 	startHeight,
 	endHeight l2stateprovider.Height,
@@ -205,6 +244,17 @@ func (s *StateManager) globalStatesUpTo(
 		if gs.Batch >= uint64(toBatch) {
 			break
 		}
+	}
+	if len(stateRoots) > 1 {
+		gs, err := s.findGlobalStateFromMessageCountAndBatch(16, 2)
+		if err != nil {
+			return nil, err
+		}
+		gs.Batch = 3
+		gs.PosInBatch = 0
+		fmt.Printf("Appending %+v\n", gs)
+		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+		stateRoots = append(stateRoots, stateRoot)
 	}
 	fmt.Printf("%s: from batch %d, to batch %d, start %d, end %d, total roots %d, first %#x\n", s.validatorName, fromBatch, toBatch, start, end, len(stateRoots), stateRoots[0])
 
