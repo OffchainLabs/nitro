@@ -244,17 +244,17 @@ func TestBoldProtocol(t *testing.T) {
 	totalEvilBatches, err := evilBridge.BatchCount(&bind.CallOpts{})
 	Require(t, err)
 
-	t.Logf("Total good %d, total bad %d", totalGoodBatches.Uint64(), totalEvilBatches.Uint64())
+	t.Logf("Total good batches %d, total bad batches %d", totalGoodBatches.Uint64(), totalEvilBatches.Uint64())
 
 	t.Log("Honest party posting assertion at batch 1, pos 0")
 	_, err = poster.PostAssertion(ctx)
 	Require(t, err)
 
-	t.Log("Honest party posting assertion at batch 3, pos 0")
+	t.Log("Honest party posting assertion at batch 2, pos 0")
 	_, err = poster.PostAssertion(ctx)
 	Require(t, err)
 
-	t.Log("Evil party posting assertion at batch 3, pos 0")
+	t.Log("Evil party posting assertion at batch 2, pos 0")
 	_, err = posterB.PostAssertion(ctx)
 	Require(t, err)
 
@@ -319,18 +319,18 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	managerB.Start(ctx)
 
-	// Every 10 seconds, send an L1 transaction.
-	// delay := time.Second * 10
-	// for {
-	// 	time.Sleep(delay)
-	// 	balance := big.NewInt(params.GWei)
-	// 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-	// 	latestBlock, err := l1client.BlockNumber(ctx)
-	// 	Require(t, err)
-	// 	if latestBlock > 200 {
-	// 		delay = time.Second
-	// 	}
-	// }
+	//Every 10 seconds, send an L1 transaction.
+	delay := time.Second * 10
+	for {
+		time.Sleep(delay)
+		balance := big.NewInt(params.GWei)
+		TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+		latestBlock, err := l1client.BlockNumber(ctx)
+		Require(t, err)
+		if latestBlock > 200 {
+			delay = time.Second
+		}
+	}
 }
 
 func createTestNodeOnL1ForBoldProtocol(

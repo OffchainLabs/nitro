@@ -68,10 +68,20 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 		return fmt.Errorf("position in batch must be zero, but got %d: %+v", state.GlobalState.PosInBatch, state)
 	}
 	// We always agree with the genesis batch.
-	if state.GlobalState.Batch == 0 && state.GlobalState.PosInBatch == 0 {
+	batch := state.GlobalState.Batch
+	if batch == 0 && state.GlobalState.PosInBatch == 0 {
 		return nil
 	}
-	batch := state.GlobalState.Batch
+	if batch == 1 && state.GlobalState.PosInBatch == 0 {
+		return nil
+	}
+	totalBatches, err := s.validator.inboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	if batch >= totalBatches {
+		batch = batch - 1
+	}
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
 	if err != nil {
 		return err
@@ -83,6 +93,7 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 	if validatedExecutionState.GlobalState.Batch < batch {
 		return ErrChainCatchingUp
 	}
+	fmt.Printf("Checking if we have result at count %d, batch %d\n", messageCount, batch)
 	res, err := s.validator.streamer.ResultAtCount(messageCount)
 	if err != nil {
 		return err
@@ -111,12 +122,9 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 	// If the execution state did not consume all messages in a batch, we then return
 	// the next batch's execution state.
 	if executionState.GlobalState.PosInBatch != 0 {
-		batchIndex++
-		messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
-		if err != nil {
-			return nil, err
-		}
-		return s.executionStateAtMessageCountImpl(ctx, uint64(messageCount))
+		fmt.Printf("%s: needing to increase: %+v\n", s.validatorName, executionState.GlobalState)
+		executionState.GlobalState.Batch += 1
+		executionState.GlobalState.PosInBatch = 0
 	}
 	return executionState, nil
 }
@@ -150,7 +158,7 @@ func (s *StateManager) globalStatesUpTo(
 	if endHeight < startHeight {
 		return nil, fmt.Errorf("end height %v is less than start height %v", endHeight, startHeight)
 	}
-	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch))
+	batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
 		return nil, err
 	}
@@ -173,9 +181,21 @@ func (s *StateManager) globalStatesUpTo(
 		if batchMsgCount < currMessageCount {
 			currBatch++
 		}
+		totalBatches, err := s.validator.inboxTracker.GetBatchCount()
+		if err != nil {
+			return nil, err
+		}
+		if uint64(currBatch) >= totalBatches {
+			break
+		}
 		gs, err := s.findGlobalStateFromMessageCountAndBatch(currMessageCount, currBatch)
 		if err != nil {
 			return nil, err
+		}
+		fmt.Printf("%s: had pos in batch %d, but batch message count %d\n", s.validatorName, gs.PosInBatch, batchMsgCount)
+		if gs.PosInBatch == uint64(batchMsgCount)-1 {
+			gs.Batch += 1
+			gs.PosInBatch = 0
 		}
 		fmt.Printf("%s: appending to roots %+v, curr message count %d, curr batch %d\n", s.validatorName, gs, currMessageCount, currBatch)
 		stateRoot := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
@@ -240,7 +260,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batchIndex > 0 {
-		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(uint64(batchIndex))
+		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(uint64(batchIndex) - 1)
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
@@ -250,7 +270,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 	}
 	res, err := s.validator.streamer.ResultAtCount(count)
 	if err != nil {
-		return validator.GoGlobalState{}, err
+		return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.validatorName, count, err)
 	}
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
