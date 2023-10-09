@@ -18,7 +18,6 @@ import (
 )
 
 const MAX_FEED_INACTIVE_TIME = time.Second * 6
-const ROUTER_QUEUE_SIZE = 1024
 
 type Router struct {
 	stopwaiter.StopWaiter
@@ -55,6 +54,7 @@ func NewBroadcastClients(
 	confirmedSequenceNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
+	queueCapcity int,
 ) (*BroadcastClients, error) {
 	config := configFetcher()
 	if len(config.URL) == 0 && len(config.SecondaryURL) == 0 {
@@ -63,8 +63,8 @@ func NewBroadcastClients(
 
 	clients := BroadcastClients{
 		router: &Router{
-			messageChan:                 make(chan broadcaster.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
-			confirmedSequenceNumberChan: make(chan arbutil.MessageIndex, ROUTER_QUEUE_SIZE),
+			messageChan:                 make(chan broadcaster.BroadcastFeedMessage, queueCapcity),
+			confirmedSequenceNumberChan: make(chan arbutil.MessageIndex, queueCapcity),
 			forwardTxStreamer:           txStreamer,
 			forwardConfirmationChan:     confirmedSequenceNumberListener,
 		},
