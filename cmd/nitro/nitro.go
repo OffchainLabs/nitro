@@ -399,7 +399,7 @@ func mainImpl() int {
 	}
 
 	if err := startMetrics(nodeConfig); err != nil {
-		log.Error("Starting metrics: %v", err)
+		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
 
