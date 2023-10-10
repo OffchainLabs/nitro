@@ -224,6 +224,10 @@ func (s *StateManager) StatesInBatchRange(
 		globalStates = append(globalStates, lastGlobalState)
 	}
 
+	if uint64(len(stateRoots)) > uint64(totalDesiredHashes) {
+		return stateRoots[:totalDesiredHashes], globalStates, nil
+	}
+
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
 		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 	}
@@ -272,13 +276,20 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, states, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}
-	first := states[0]
-	last := states[len(states)-1]
-	fmt.Printf("%s: first %+v, last %+v\n", s.validatorName, first, last)
+	// fmt.Println("Num states", len(states))
+	// for i, root := range items {
+	// 	var state validator.GoGlobalState
+	// 	if i >= len(states) {
+	// 		state = states[len(states)-1]
+	// 	} else {
+	// 		state = states[i]
+	// 	}
+	// 	fmt.Printf("%s: %s, %+v\n", s.validatorName, containers.Trunc(root.Bytes()), state)
+	// }
 	return items, nil
 }
 

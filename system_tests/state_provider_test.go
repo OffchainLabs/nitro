@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
@@ -23,9 +24,91 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	mockmanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 )
+
+func TestStateProvider_BOLD_Bisections(t *testing.T) {
+	t.Parallel()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+	l2node, l1info, l2info, l1stack, l1client, stateManager := setupBoldStateProvider(t, ctx)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+	l2info.GenerateAccount("Destination")
+	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+
+	seqInbox := l1info.GetAddress("SequencerInbox")
+	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
+	Require(t, err)
+
+	// We will make two batches, with 5 messages in each batch.
+	numMessagesPerBatch := int64(5)
+	divergeAt := int64(-1) // No divergence.
+	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
+	numMessagesPerBatch = int64(10)
+	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
+
+	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
+	Require(t, err)
+	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	totalBatches := totalBatchesBig.Uint64()
+	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
+	Require(t, err)
+
+	// Wait until the validator has validated the batches.
+	for {
+		if _, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount)); err == nil {
+			break
+		}
+	}
+
+	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
+		stateManager,
+		stateManager,
+		stateManager, []l2stateprovider.Height{
+			1 << 5,
+			1 << 5,
+			1 << 5,
+		},
+		stateManager,
+	)
+	bisectionHeight := l2stateprovider.Height(16)
+	request := &l2stateprovider.HistoryCommitmentRequest{
+		WasmModuleRoot:              common.Hash{},
+		FromBatch:                   1,
+		ToBatch:                     3,
+		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		FromHeight:                  0,
+		UpToHeight:                  option.Some(bisectionHeight),
+	}
+	bisectionCommitment, err := historyCommitter.HistoryCommitment(ctx, request)
+	Require(t, err)
+
+	request.UpToHeight = option.None[l2stateprovider.Height]()
+	packedProof, err := historyCommitter.PrefixProof(ctx, request, bisectionHeight)
+	Require(t, err)
+
+	data, err := mockmanager.ProofArgs.Unpack(packedProof)
+	Require(t, err)
+	preExpansion := data[0].([][32]byte)
+
+	hashes := make([]common.Hash, len(preExpansion))
+	for i, h := range preExpansion {
+		hash := h
+		hashes[i] = common.Hash(hash)
+	}
+
+	computed, err := prefixproofs.Root(hashes)
+	Require(t, err)
+	if computed != bisectionCommitment.Merkle {
+		Fatal(t, "wrong commitment")
+	}
+}
 
 func TestStateProvider_BOLD(t *testing.T) {
 	t.Parallel()
