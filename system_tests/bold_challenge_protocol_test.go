@@ -76,7 +76,7 @@ func TestBoldProtocol(t *testing.T) {
 	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
 	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
 	if nodeAGenesis != nodeBGenesis {
-		Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+		Fatal(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
 	}
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)

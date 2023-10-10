@@ -85,32 +85,36 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 		return fmt.Errorf("position in batch must be zero, but got %d: %+v", state.GlobalState.PosInBatch, state)
 	}
 	// We always agree with the genesis batch.
-	batch := state.GlobalState.Batch
-	if batch == 0 && state.GlobalState.PosInBatch == 0 {
+	batchIndex := state.GlobalState.Batch
+	if batchIndex == 0 && state.GlobalState.PosInBatch == 0 {
 		return nil
 	}
-	if batch == 1 && state.GlobalState.PosInBatch == 0 {
+	// We always agree with the init message.
+	if batchIndex == 1 && state.GlobalState.PosInBatch == 0 {
 		return nil
 	}
+
+	// Because an execution state from the assertion chain fully consumes the preceding batch,
+	// we actually want to check if we agree with the last state of the preceding batch, so
+	// we decrement the batch index by 1.
+	batchIndex -= 1
+
 	totalBatches, err := s.validator.inboxTracker.GetBatchCount()
 	if err != nil {
 		return err
 	}
-	if batch >= totalBatches {
-		batch = batch - 1
-	}
-	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batch)
-	if err != nil {
-		return err
-	}
-	validatedGlobalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batch))
-	if err != nil {
-		return err
-	}
-	if validatedGlobalState.Batch < batch {
+	if batchIndex >= totalBatches {
 		return ErrChainCatchingUp
 	}
-	if state.GlobalState.BlockHash != validatedGlobalState.BlockHash || state.GlobalState.SendRoot != state.GlobalState.SendRoot {
+	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
+	if err != nil {
+		return err
+	}
+	validatedGlobalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
+	if err != nil {
+		return err
+	}
+	if state.GlobalState.BlockHash != validatedGlobalState.BlockHash || state.GlobalState.SendRoot != validatedGlobalState.SendRoot {
 		return l2stateprovider.ErrNoExecutionState
 	}
 	return nil
@@ -120,7 +124,7 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 // Makes sure that PosInBatch is always 0
 func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
 	if batchCount == 0 {
-		return nil, errors.New("batch count cannot be 0")
+		return nil, errors.New("batch count cannot be zero")
 	}
 	batchIndex := batchCount - 1
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
@@ -216,47 +220,6 @@ func (s *StateManager) StatesInBatchRange(
 
 	return stateRoots, globalStates, nil
 }
-
-// func (s *StateManager) findBatchAfterMessageCount(msgCount uint64) (uint64, error) {
-// 	if msgCount == 0 {
-// 		return 0, nil
-// 	}
-// 	low := uint64(0)
-// 	batchCount, err := s.validator.inboxTracker.GetBatchCount()
-// 	if err != nil {
-// 		return 0, err
-// 	}
-// 	high := batchCount
-// 	for {
-// 		// Binary search invariants:
-// 		//   - messageCount(high) >= msgCount
-// 		//   - messageCount(low-1) < msgCount
-// 		//   - high >= low
-// 		if high < low {
-// 			return 0, fmt.Errorf("when attempting to find batch for message count %v high %v < low %v", msgCount, high, low)
-// 		}
-// 		mid := (low + high) / 2
-// 		batchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(mid)
-// 		if err != nil {
-// 			// TODO: There is a circular dep with the error in inbox_tracker.go, we
-// 			// should move it somewhere else and use errors.Is.
-// 			if strings.Contains(err.Error(), "accumulator not found") {
-// 				high = mid
-// 			} else {
-// 				return 0, fmt.Errorf("failed to get batch metadata while binary searching: %w", err)
-// 			}
-// 		}
-// 		if uint64(batchMsgCount) < msgCount {
-// 			low = mid + 1
-// 		} else if uint64(batchMsgCount) == msgCount {
-// 			return mid, nil
-// 		} else if mid == low { // batchMsgCount > msgCount
-// 			return mid, nil
-// 		} else { // batchMsgCount > msgCount
-// 			high = mid
-// 		}
-// 	}
-// }
 
 func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
