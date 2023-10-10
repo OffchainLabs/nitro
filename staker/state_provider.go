@@ -103,6 +103,9 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 	if err != nil {
 		return err
 	}
+
+	// If the batch index is >= the total number of batches we have in our inbox tracker,
+	// we are still catching up to the chain.
 	if batchIndex >= totalBatches {
 		return ErrChainCatchingUp
 	}
@@ -114,6 +117,7 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 	if err != nil {
 		return err
 	}
+	// We check if the block hash and send root match at our expected result.
 	if state.GlobalState.BlockHash != validatedGlobalState.BlockHash || state.GlobalState.SendRoot != validatedGlobalState.SendRoot {
 		return l2stateprovider.ErrNoExecutionState
 	}
@@ -185,6 +189,12 @@ func (s *StateManager) StatesInBatchRange(
 
 	// Check if there are enough messages in the range to satisfy our request.
 	totalDesiredHashes := (toHeight - fromHeight) + 1
+
+	// We can return early if all we want is one hash.
+	if totalDesiredHashes == 1 {
+		return stateRoots, globalStates, nil
+	}
+
 	for batch := fromBatch; batch < toBatch; batch++ {
 		msgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
@@ -262,10 +272,13 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, states, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}
+	first := states[0]
+	last := states[len(states)-1]
+	fmt.Printf("%s: first %+v, last %+v\n", s.validatorName, first, last)
 	return items, nil
 }
 

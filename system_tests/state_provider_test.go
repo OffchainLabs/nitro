@@ -28,6 +28,7 @@ import (
 )
 
 func TestStateProvider_BOLD(t *testing.T) {
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	l2node, l1info, l2info, l1stack, l1client, stateManager := setupBoldStateProvider(t, ctx)
@@ -179,7 +180,6 @@ func TestStateProvider_BOLD(t *testing.T) {
 		// retrieved execution state.
 		err = stateManager.AgreesWithExecutionState(ctx, execState)
 		Require(t, err)
-		Fatal(t, "failed for no reason")
 	})
 }
 

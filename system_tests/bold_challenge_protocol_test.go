@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -221,6 +222,7 @@ func TestBoldProtocol(t *testing.T) {
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
 	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
 
+	// Wait for both nodes' chains to catch up.
 	for {
 		nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader()
 		nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader()
@@ -234,17 +236,27 @@ func TestBoldProtocol(t *testing.T) {
 		}
 	}
 
-	goodBridge, err := bridgegen.NewSequencerInbox(honestSeqInbox, l1client)
+	// Wait for the vaidator to validate the batches.
+	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
 	Require(t, err)
-	totalGoodBatches, err := goodBridge.BatchCount(&bind.CallOpts{})
+	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	totalBatches := totalBatchesBig.Uint64()
+	totalMessageCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
 
-	evilBridge, err := bridgegen.NewSequencerInbox(evilSeqInbox, l1client)
-	Require(t, err)
-	totalEvilBatches, err := evilBridge.BatchCount(&bind.CallOpts{})
-	Require(t, err)
+	// Wait until the validator has validated the batches.
+	for {
+		_, err1 := l2nodeA.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
+		nodeAHasValidated := err1 == nil
 
-	t.Logf("Total good batches %d, total bad batches %d", totalGoodBatches.Uint64(), totalEvilBatches.Uint64())
+		_, err2 := l2nodeB.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
+		nodeBHasValidated := err2 == nil
+
+		if nodeAHasValidated && nodeBHasValidated {
+			break
+		}
+	}
 
 	t.Log("Honest party posting assertion at batch 1, pos 0")
 	_, err = poster.PostAssertion(ctx)
@@ -319,7 +331,7 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	managerB.Start(ctx)
 
-	//Every 10 seconds, send an L1 transaction.
+	// Every 10 seconds, send an L1 transaction to keep the chain moving.
 	delay := time.Second * 10
 	for {
 		time.Sleep(delay)
