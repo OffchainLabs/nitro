@@ -6,16 +6,20 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -38,6 +42,54 @@ type blockTestState struct {
 }
 
 const seqInboxTestIters = 40
+
+func encodeAddBatch(seqABI *abi.ABI, seqNum *big.Int, message []byte, afterDelayedMsgRead *big.Int, gasRefunder common.Address) ([]byte, error) {
+	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin0"]
+	if !ok {
+		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin0 method")
+	}
+	inputData, err := method.Inputs.Pack(
+		seqNum,
+		message,
+		afterDelayedMsgRead,
+		gasRefunder,
+		new(big.Int).SetUint64(uint64(1)),
+		new(big.Int).SetUint64(uint64(1)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	fullData := append([]byte{}, method.ID...)
+	fullData = append(fullData, inputData...)
+	return fullData, nil
+}
+func diffAccessList(accessed, al types.AccessList) string {
+	m := make(map[common.Address]map[common.Hash]bool)
+	for i := 0; i < len(al); i++ {
+		if _, ok := m[al[i].Address]; !ok {
+			m[al[i].Address] = make(map[common.Hash]bool)
+		}
+		for _, slot := range al[i].StorageKeys {
+			m[al[i].Address][slot] = true
+		}
+	}
+
+	diff := ""
+	for i := 0; i < len(accessed); i++ {
+		addr := accessed[i].Address
+		if _, ok := m[addr]; !ok {
+			diff += fmt.Sprintf("contract address: %q wasn't accessed\n", addr)
+			continue
+		}
+		for j := 0; j < len(accessed[i].StorageKeys); j++ {
+			slot := accessed[i].StorageKeys[j]
+			if _, ok := m[addr][slot]; !ok {
+				diff += fmt.Sprintf("storage slot: %q for contract: %v wasn't accessed", slot, addr)
+			}
+		}
+	}
+	return diff
+}
 
 func deployGasRefunder(ctx context.Context, t *testing.T, info *BlockchainTestInfo, client *ethclient.Client) common.Address {
 	t.Helper()
@@ -91,12 +143,19 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	if validator {
 		conf.BlockValidator.Enable = true
 	}
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil)
-	l2Backend := arbNode.Execution.Backend
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil, nil)
+	execNode := getExecNode(t, arbNode)
+	l2Backend := execNode.Backend
 	defer requireClose(t, l1stack)
 	defer arbNode.StopAndWait()
 
 	l1BlockChain := l1backend.BlockChain()
+
+	rpcC, err := l1stack.Attach()
+	if err != nil {
+		t.Fatalf("Error connecting to l1 node: %v", err)
+	}
+	gethClient := gethclient.New(rpcC)
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	Require(t, err)
@@ -141,6 +200,11 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		faucetTxs = append(faucetTxs, l1Info.PrepareTx("Faucet", acct, 30000, big.NewInt(1e16), nil))
 	}
 	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
+
+	seqABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		t.Fatalf("Error getting sequencer inbox abi: %v", err)
+	}
 
 	for i := 1; i < seqInboxTestIters; i++ {
 		if i%10 == 0 {
@@ -266,6 +330,29 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			if err != nil {
 				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
 			}
+
+			data, err := encodeAddBatch(seqABI, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
+			if err != nil {
+				t.Fatalf("Error encoding batch data: %v", err)
+			}
+			si := l1Info.GetAddress("SequencerInbox")
+			wantAL, _, _, err := gethClient.CreateAccessList(ctx, ethereum.CallMsg{
+				From: seqOpts.From,
+				To:   &si,
+				Data: data,
+			})
+			if err != nil {
+				t.Fatalf("Error creating access list: %v", err)
+			}
+			accessed := arbnode.AccessList(&arbnode.AccessListOpts{
+				SequencerInboxAddr: l1Info.GetAddress("SequencerInbox"),
+				BridgeAddr:         l1Info.GetAddress("Bridge"),
+				DataPosterAddr:     seqOpts.From,
+				GasRefunderAddr:    gasRefunderAddr,
+			})
+			if diff := diffAccessList(accessed, *wantAL); diff != "" {
+				t.Errorf("Access list mistmatch:\n%s\n", diff)
+			}
 			if i%5 == 0 {
 				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
 			} else {
@@ -325,7 +412,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				expectedPos, err := arbNode.Execution.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
+				expectedPos, err := execNode.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
 				Require(t, err)
 				lastValidated := arbNode.BlockValidator.Validated(t)
 				if lastValidated == expectedPos+1 {

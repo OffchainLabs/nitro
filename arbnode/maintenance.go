@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -21,6 +22,7 @@ import (
 type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
+	exec            execution.FullExecutionClient
 	config          MaintenanceConfigFetcher
 	seqCoordinator  *SeqCoordinator
 	dbs             []ethdb.Database
@@ -83,12 +85,13 @@ var DefaultMaintenanceConfig = MaintenanceConfig{
 
 type MaintenanceConfigFetcher func() *MaintenanceConfig
 
-func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database) (*MaintenanceRunner, error) {
+func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database, exec execution.FullExecutionClient) (*MaintenanceRunner, error) {
 	cfg := config()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 	res := &MaintenanceRunner{
+		exec:            exec,
 		config:          config,
 		seqCoordinator:  seqCoordinator,
 		dbs:             dbs,
@@ -168,15 +171,22 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 func (mr *MaintenanceRunner) runMaintenance() {
 	log.Info("Compacting databases (this may take a while...)")
 	results := make(chan error, len(mr.dbs))
+	expected := 0
 	for _, db := range mr.dbs {
+		expected++
 		db := db
 		go func() {
 			results <- db.Compact(nil, nil)
 		}()
 	}
-	for range mr.dbs {
-		if err := <-results; err != nil {
-			log.Warn("Failed to compact database", "err", err)
+	expected++
+	go func() {
+		results <- mr.exec.Maintenance()
+	}()
+	for i := 0; i < expected; i++ {
+		err := <-results
+		if err != nil {
+			log.Warn("maintenance error", "err", err)
 		}
 	}
 	log.Info("Done compacting databases")
