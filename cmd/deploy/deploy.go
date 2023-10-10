@@ -40,7 +40,8 @@ func main() {
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
 	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
 	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
-	nativeTokenAddressString := flag.String("nativeTokenAddress", "", "address of the ERC20 token which is used as native L2 currency")
+	nativeTokenAddressString := flag.String("nativeTokenAddress", "0x0000000000000000000000000000000000000000", "address of the ERC20 token which is used as native L2 currency")
+	maxDataSizeUint := flag.Uint64("maxDataSize", 117964, "maximum size of data")
 	loserEscrowAddressString := flag.String("loserEscrowAddress", "", "the address which half of challenge loser's funds accumulate at")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
@@ -56,6 +57,7 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
+	maxDataSize := new(big.Int).SetUint64(*maxDataSizeUint)
 
 	if *prod {
 		if *wasmmoduleroot == "" {
@@ -147,6 +149,7 @@ func main() {
 		*authorizevalidators,
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
+		maxDataSize,
 	)
 	if err != nil {
 		flag.Usage()

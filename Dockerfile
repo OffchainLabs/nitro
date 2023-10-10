@@ -29,7 +29,7 @@ RUN apt-get update && \
     apt-get install -y git python3 make g++
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
-RUN cd contracts && yarn install --ignore-optional
+RUN cd contracts && yarn install
 COPY contracts contracts/
 COPY Makefile .
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity

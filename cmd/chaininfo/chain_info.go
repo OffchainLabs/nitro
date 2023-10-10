@@ -107,6 +107,7 @@ type RollupAddresses struct {
 	SequencerInbox         common.Address `json:"sequencer-inbox"`
 	Rollup                 common.Address `json:"rollup"`
 	NativeToken            common.Address `json:"native-token"`
+	UpgradeExecutor        common.Address `json:"upgrade-executor"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
 	DeployedAt             uint64         `json:"deployed-at"`
