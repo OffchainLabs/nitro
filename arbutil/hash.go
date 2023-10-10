@@ -1,6 +1,8 @@
 package arbutil
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -18,16 +20,7 @@ func PaddedKeccak256(args ...[]byte) []byte {
 // SumBytes sums two byte slices and returns the result.
 // If the sum of bytes are over 32 bytes, it return last 32.
 func SumBytes(a, b []byte) []byte {
-	// Normalize lengths to hash length.
-	a = common.BytesToHash(a).Bytes()
-	b = common.BytesToHash(b).Bytes()
-
-	sum := make([]byte, common.HashLength)
-	c := 0
-	for i := common.HashLength - 1; i >= 0; i-- {
-		tmp := int(a[i]) + int(b[i]) + c
-		sum[i] = byte(tmp & 0xFF)
-		c = tmp >> 8
-	}
-	return sum
+	A := big.NewInt(0).SetBytes(a)
+	B := big.NewInt(0).SetBytes(b)
+	return common.BytesToHash((A.Add(A, B)).Bytes()).Bytes()
 }

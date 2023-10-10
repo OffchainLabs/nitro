@@ -6,7 +6,6 @@ package arbnode
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -343,13 +342,7 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 		{7, opts.SequencerInboxAccs},           // - sequencerInboxAccs.push(...); (keccak256(7, sequencerInboxAccs.length))
 		{6, opts.AfterDelayedMessagesRead - 1}, // - delayedInboxAccs[afterDelayedMessagesRead - 1]; (keccak256(6, afterDelayedMessagesRead - 1))
 	} {
-
-		sia, err := intToBytes(v.val)
-		if err != nil {
-			log.Error("Error converting sequencer inbox accs to bytes", "err", err, "sequencerInboxAccs", opts.SequencerInboxAccs)
-			continue
-		}
-		sb := arbutil.SumBytes(arbutil.PaddedKeccak256([]byte{byte(v.slotIdx)}), sia)
+		sb := arbutil.SumBytes(arbutil.PaddedKeccak256([]byte{byte(v.slotIdx)}), big.NewInt(int64(v.val)).Bytes())
 		l[1].StorageKeys = append(l[1].StorageKeys, common.Hash(sb))
 	}
 
@@ -367,14 +360,6 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 		})
 	}
 	return l
-}
-
-func intToBytes(val int) ([]byte, error) {
-	buf := new(bytes.Buffer)
-	if err := binary.Write(buf, binary.BigEndian, int64(val)); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
