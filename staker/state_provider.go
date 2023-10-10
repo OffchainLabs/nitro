@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -191,7 +192,7 @@ func (s *StateManager) StatesInBatchRange(
 	totalDesiredHashes := (toHeight - fromHeight) + 1
 
 	// We can return early if all we want is one hash.
-	if totalDesiredHashes == 1 {
+	if totalDesiredHashes == 1 && fromHeight == 0 && toHeight == 0 {
 		return stateRoots, globalStates, nil
 	}
 
@@ -224,15 +225,17 @@ func (s *StateManager) StatesInBatchRange(
 		globalStates = append(globalStates, lastGlobalState)
 	}
 
-	if uint64(len(stateRoots)) > uint64(totalDesiredHashes) {
-		return stateRoots[:totalDesiredHashes], globalStates, nil
-	}
-
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
 		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 	}
 
-	return stateRoots, globalStates, nil
+	fmt.Printf("%s: Slicing from height %d to height %d\n", s.validatorName, fromHeight, toHeight)
+	finalRoots := stateRoots[fromHeight : toHeight+1]
+	finalStates := globalStates[fromHeight : toHeight+1]
+	for i, gs := range finalStates {
+		fmt.Printf("%s: finalroot %s, gs %+v\n", s.validatorName, containers.Trunc(finalRoots[i].Bytes()), gs)
+	}
+	return stateRoots[fromHeight : toHeight+1], globalStates[fromHeight : toHeight+1], nil
 }
 
 func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
@@ -276,20 +279,20 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, states, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}
-	// fmt.Println("Num states", len(states))
-	// for i, root := range items {
-	// 	var state validator.GoGlobalState
-	// 	if i >= len(states) {
-	// 		state = states[len(states)-1]
-	// 	} else {
-	// 		state = states[i]
-	// 	}
-	// 	fmt.Printf("%s: %s, %+v\n", s.validatorName, containers.Trunc(root.Bytes()), state)
-	// }
+	fmt.Println("Num states", len(states))
+	for i, root := range items {
+		var state validator.GoGlobalState
+		if i >= len(states) {
+			state = states[len(states)-1]
+		} else {
+			state = states[i]
+		}
+		fmt.Printf("%d => %s: %s, %+v\n", i, s.validatorName, containers.Trunc(root.Bytes()), state)
+	}
 	return items, nil
 }
 

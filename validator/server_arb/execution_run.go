@@ -5,13 +5,13 @@ package server_arb
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	boldcontainers "github.com/OffchainLabs/bold/containers"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -69,7 +69,9 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		var stateRoots []common.Hash
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
-			stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+			stateRoots = append(stateRoots, hash)
+			fmt.Printf("Initial machine global state %s, %+v\n", boldcontainers.Trunc(hash.Bytes()), gs)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
@@ -79,6 +81,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
+		fmt.Printf("Num desired leaves: %+v, step size %d\n", numDesiredLeaves, stepSize)
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
@@ -92,12 +95,9 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			machineStep := machine.GetStepCount()
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
-				// The last hash should have consumed the whole batch.
-				if gs.PosInBatch != 0 {
-					return nil, errors.New("machine finished in the middle of a batch")
-				}
-				stateRoots = append(stateRoots, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
-				fmt.Printf("Machine total opcodes was %d\n", machineStep)
+				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+				stateRoots = append(stateRoots, hash)
+				fmt.Printf("Last machine global state %s, %+v\n", boldcontainers.Trunc(hash.Bytes()), gs)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.

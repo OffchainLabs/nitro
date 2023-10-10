@@ -104,7 +104,9 @@ func TestBoldProtocol(t *testing.T) {
 
 	valConfig := staker.L1ValidatorConfig{}
 	valConfig.Strategy = "MakeNodes"
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	valCfg := valnode.TestValidationConfig
+	valCfg.UseJit = false
+	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
