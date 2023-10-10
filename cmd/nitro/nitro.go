@@ -591,6 +591,7 @@ type NodeConfig struct {
 var NodeConfigDefault = NodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	Node:          arbnode.ConfigDefault,
+	Execution:     gethexec.ConfigDefault,
 	Validation:    valnode.DefaultValidationConfig,
 	ParentChain:   conf.L1ConfigDefault,
 	Chain:         conf.L2ConfigDefault,
