@@ -36,7 +36,6 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -644,7 +643,6 @@ func createNodeImpl(
 			nil,
 			fatalErrChan,
 			bpVerifier,
-			relay.ConfigDefault.Queue,
 		)
 		if err != nil {
 			return nil, err
