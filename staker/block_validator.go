@@ -750,7 +750,7 @@ func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignore
 	} else if reorg != nil {
 		err := v.Reorg(ctx, *reorg)
 		if err != nil {
-			log.Error("error trying to rorg validation", "pos", *reorg-1, "err", err)
+			log.Error("error trying to reorg validation", "pos", *reorg-1, "err", err)
 			v.possiblyFatal(err)
 		}
 	}
