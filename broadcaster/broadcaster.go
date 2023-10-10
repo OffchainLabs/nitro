@@ -9,11 +9,11 @@ import (
 
 	"github.com/gobwas/ws"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -23,41 +23,6 @@ type Broadcaster struct {
 	catchupBuffer *SequenceNumberCatchupBuffer
 	chainId       uint64
 	dataSigner    signature.DataSignerFunc
-}
-
-// BroadcastMessage is the base message type for messages to send over the network.
-//
-// Acts as a variant holding the message types. The type of the message is
-// indicated by whichever of the fields is non-empty. The fields holding the message
-// types are annotated with omitempty so only the populated message is sent as
-// json. The message fields should be pointers or slices and end with
-// "Messages" or "Message".
-//
-// The format is forwards compatible, ie if a json BroadcastMessage is received that
-// has fields that are not in the Go struct then deserialization will succeed
-// skip the unknown field [1]
-//
-// References:
-// [1] https://pkg.go.dev/encoding/json#Unmarshal
-type BroadcastMessage struct {
-	Version int `json:"version"`
-	// TODO better name than messages since there are different types of messages
-	Messages                       []*BroadcastFeedMessage         `json:"messages,omitempty"`
-	ConfirmedSequenceNumberMessage *ConfirmedSequenceNumberMessage `json:"confirmedSequenceNumberMessage,omitempty"`
-}
-
-type BroadcastFeedMessage struct {
-	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
-	Message        arbostypes.MessageWithMetadata `json:"message"`
-	Signature      []byte                         `json:"signature"`
-}
-
-func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
-	return m.Message.Hash(m.SequenceNumber, chainId)
-}
-
-type ConfirmedSequenceNumberMessage struct {
-	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
@@ -70,7 +35,7 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 	}
 }
 
-func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
+func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*m.BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
@@ -83,7 +48,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMeta
 		}
 	}
 
-	return &BroadcastFeedMessage{
+	return &m.BroadcastFeedMessage{
 		SequenceNumber: sequenceNumber,
 		Message:        message,
 		Signature:      messageSignature,
@@ -105,17 +70,17 @@ func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq ar
 	return nil
 }
 
-func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
-	broadcastFeedMessages := make([]*BroadcastFeedMessage, 0, 1)
+func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
+	broadcastFeedMessages := make([]*m.BroadcastFeedMessage, 0, 1)
 
 	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
 	b.BroadcastFeedMessages(broadcastFeedMessages)
 }
 
-func (b *Broadcaster) BroadcastFeedMessages(messages []*BroadcastFeedMessage) {
+func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 
-	bm := BroadcastMessage{
+	bm := m.BroadcastMessage{
 		Version:  1,
 		Messages: messages,
 	}
@@ -125,9 +90,9 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*BroadcastFeedMessage) {
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	log.Debug("confirming sequence number", "sequenceNumber", seq)
-	b.server.Broadcast(BroadcastMessage{
+	b.server.Broadcast(m.BroadcastMessage{
 		Version:                        1,
-		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})
+		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{seq}})
 }
 
 func (b *Broadcaster) ClientCount() int32 {

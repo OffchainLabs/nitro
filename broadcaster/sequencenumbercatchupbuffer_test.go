@@ -20,8 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -40,26 +40,10 @@ func TestGetEmptyCacheMessages(t *testing.T) {
 	}
 }
 
-func createDummyBroadcastMessages(seqNums []arbutil.MessageIndex) []*BroadcastFeedMessage {
-	return createDummyBroadcastMessagesImpl(seqNums, len(seqNums))
-}
-func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int) []*BroadcastFeedMessage {
-	broadcastMessages := make([]*BroadcastFeedMessage, 0, length)
-	for _, seqNum := range seqNums {
-		broadcastMessage := &BroadcastFeedMessage{
-			SequenceNumber: seqNum,
-			Message:        arbostypes.EmptyTestMessageWithMetadata,
-		}
-		broadcastMessages = append(broadcastMessages, broadcastMessage)
-	}
-
-	return broadcastMessages
-}
-
 func TestGetCacheMessages(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     createDummyBroadcastMessages(indexes),
+		messages:     m.CreateDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
 		maxCatchup:   func() int { return -1 },
@@ -125,7 +109,7 @@ func TestDeleteConfirmedNil(t *testing.T) {
 func TestDeleteConfirmInvalidOrder(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40, 42}
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     createDummyBroadcastMessages(indexes),
+		messages:     m.CreateDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
 		maxCatchup:   func() int { return -1 },
@@ -141,7 +125,7 @@ func TestDeleteConfirmInvalidOrder(t *testing.T) {
 func TestDeleteConfirmed(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     createDummyBroadcastMessages(indexes),
+		messages:     m.CreateDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
 		maxCatchup:   func() int { return -1 },
@@ -157,7 +141,7 @@ func TestDeleteConfirmed(t *testing.T) {
 func TestDeleteFreeMem(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51}
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
+		messages:     m.CreateDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
 		maxCatchup:   func() int { return -1 },
@@ -192,14 +176,14 @@ func TestBroadcastBadMessage(t *testing.T) {
 func TestBroadcastPastSeqNum(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40}
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
+		messages:     m.CreateDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
 		maxCatchup:   func() int { return -1 },
 	}
 
-	bm := BroadcastMessage{
-		Messages: []*BroadcastFeedMessage{
+	bm := m.BroadcastMessage{
+		Messages: []*m.BroadcastFeedMessage{
 			{
 				SequenceNumber: 39,
 			},
@@ -215,14 +199,14 @@ func TestBroadcastPastSeqNum(t *testing.T) {
 func TestBroadcastFutureSeqNum(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40}
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
+		messages:     m.CreateDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
 		limitCatchup: func() bool { return false },
 		maxCatchup:   func() int { return -1 },
 	}
 
-	bm := BroadcastMessage{
-		Messages: []*BroadcastFeedMessage{
+	bm := m.BroadcastMessage{
+		Messages: []*m.BroadcastFeedMessage{
 			{
 				SequenceNumber: 42,
 			},
@@ -246,8 +230,8 @@ func TestMaxCatchupBufferSize(t *testing.T) {
 
 	firstMessage := 10
 	for i := firstMessage; i <= 20; i += 2 {
-		bm := BroadcastMessage{
-			Messages: []*BroadcastFeedMessage{
+		bm := m.BroadcastMessage{
+			Messages: []*m.BroadcastFeedMessage{
 				{
 					SequenceNumber: arbutil.MessageIndex(i),
 				},

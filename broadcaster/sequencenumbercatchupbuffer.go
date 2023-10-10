@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -26,7 +27,7 @@ var (
 )
 
 type SequenceNumberCatchupBuffer struct {
-	messages     []*BroadcastFeedMessage
+	messages     []*m.BroadcastFeedMessage
 	messageCount int32
 	limitCatchup func() bool
 	maxCatchup   func() int
@@ -39,7 +40,7 @@ func NewSequenceNumberCatchupBuffer(limitCatchup func() bool, maxCatchup func() 
 	}
 }
 
-func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
+func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *m.BroadcastMessage {
 	if len(b.messages) == 0 {
 		return nil
 	}
@@ -68,7 +69,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 
 	messagesToSend := b.messages[startingIndex:]
 	if len(messagesToSend) > 0 {
-		bm := BroadcastMessage{
+		bm := m.BroadcastMessage{
 			Version:  1,
 			Messages: messagesToSend,
 		}
@@ -105,7 +106,7 @@ func (b *SequenceNumberCatchupBuffer) pruneBufferToIndex(idx int) {
 	b.messages = b.messages[idx:]
 	if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
 		// Too much spare capacity, copy to fresh slice to reset memory usage
-		b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
+		b.messages = append([]*m.BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
 	}
 }
 
@@ -141,7 +142,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 }
 
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
-	broadcastMessage, ok := bmi.(BroadcastMessage)
+	broadcastMessage, ok := bmi.(m.BroadcastMessage)
 	if !ok {
 		msg := "requested to broadcast message of unknown type"
 		log.Error(msg)
