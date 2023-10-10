@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	inboxBatchGauge   = metrics.NewRegisteredGauge("arb/inbox/batch", nil)
-	inboxMessageGauge = metrics.NewRegisteredGauge("arb/inbox/message", nil)
+	inboxLatestBatchGauge        = metrics.NewRegisteredGauge("arb/inbox/latest/batch", nil)
+	inboxLatestBatchMessageGauge = metrics.NewRegisteredGauge("arb/inbox/latest/batch/message", nil)
 )
 
 type InboxTracker struct {
@@ -683,8 +683,8 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		"l1Block", latestL1Block,
 		"l1Timestamp", time.Unix(int64(latestTimestamp), 0),
 	)
-	inboxBatchGauge.Update(int64(pos))
-	inboxMessageGauge.Update(int64(newMessageCount))
+	inboxLatestBatchGauge.Update(int64(pos))
+	inboxLatestBatchMessageGauge.Update(int64(newMessageCount))
 
 	if t.validator != nil {
 		t.validator.ReorgToBatchCount(startPos)
