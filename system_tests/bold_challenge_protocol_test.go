@@ -363,8 +363,10 @@ func TestBoldProtocol(t *testing.T) {
 		}
 		// Wait until the assertion is confirmed.
 		if expected.Status == uint8(2) {
+			t.Log("Expected assertion was confirmed")
 			return
 		}
+		time.Sleep(time.Second * 5)
 	}
 }
 
