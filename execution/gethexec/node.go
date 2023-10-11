@@ -109,6 +109,7 @@ func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
 	config.ForwardingTarget = "null"
+	config.ParentChainReader = headerreader.TestConfig
 
 	_ = config.Validate()
 
