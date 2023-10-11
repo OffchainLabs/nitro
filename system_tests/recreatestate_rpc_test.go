@@ -17,13 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util"
 )
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, txCount uint64) (node *arbnode.Node, executionNode *execution.ExecutionNode, l2client *ethclient.Client, cancel func()) {
+func prepareNodeWithHistory(t *testing.T, ctx context.Context, execConfig *gethexec.Config, txCount uint64) (node *arbnode.Node, executionNode *gethexec.ExecutionNode, l2client *ethclient.Client, cancel func()) {
 	t.Helper()
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, execConfig, nil, nil)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
@@ -40,7 +40,9 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, nodeConfig *arbno
 		_, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	}
-	return node, node.Execution, l2client, cancel
+	exec := getExecNode(t, node)
+
+	return node, exec, l2client, cancel
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
@@ -90,7 +92,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig := gethexec.ConfigDefaultTest()
 	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -124,7 +126,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
-	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig := gethexec.ConfigDefaultTest()
 	nodeConfig.RPC.MaxRecreateStateDepth = depthGasLimit
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -158,7 +160,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig := gethexec.ConfigDefaultTest()
 	nodeConfig.RPC.MaxRecreateStateDepth = int64(200)
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -192,7 +194,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig := gethexec.ConfigDefaultTest()
 	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -237,7 +239,7 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig := gethexec.ConfigDefaultTest()
 	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -272,7 +274,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig := gethexec.ConfigDefaultTest()
 	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -312,26 +314,30 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	}
 }
 
-func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *execution.CachingConfig, txCount int) {
+func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *gethexec.CachingConfig, txCount int) {
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ctx1, cancel1 := context.WithCancel(ctx)
-	nodeConfig := arbnode.ConfigDefaultL2Test()
-	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	nodeConfig.Sequencer.MaxBlockSpeed = 0
-	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	nodeConfig.Caching = *cacheConfig
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
+	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	execConfig.Caching = *cacheConfig
 
-	skipBlocks := nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving
-	skipGas := nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving
+	skipBlocks := execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving
+	skipGas := execConfig.Caching.MaxAmountOfGasToSkipStateSaving
 
 	feedErrChan := make(chan error, 10)
-	AddDefaultValNode(t, ctx1, nodeConfig, true)
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, nil, t.TempDir(), params.ArbitrumDevTestChainConfig(), &nodeConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, nil, t.TempDir(), params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
 
-	node, err := arbnode.CreateNode(ctx1, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
+	Require(t, execConfig.Validate())
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	execNode, err := gethexec.CreateExecutionNode(ctx1, stack, chainDb, blockchain, nil, execConfigFetcher)
+	Require(t, err)
+
+	node, err := arbnode.CreateNode(ctx1, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 	err = node.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
@@ -367,14 +373,17 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	cancel1()
 	t.Log("stopped first node")
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
-	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t, l2info, dataDir, params.ArbitrumDevTestChainConfig(), &nodeConfig.Caching)
-	node, err = arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, node.DeployInfo, nil, nil, nil, feedErrChan)
+	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t, l2info, dataDir, params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
+
+	execNode, err = gethexec.CreateExecutionNode(ctx1, stack, chainDb, blockchain, nil, execConfigFetcher)
+	Require(t, err)
+
+	node, err = arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, node.DeployInfo, nil, nil, nil, feedErrChan)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 	client = ClientForStack(t, stack)
 	defer node.StopAndWait()
-	bc := node.Execution.Backend.ArbInterface().BlockChain()
+	bc := execNode.Backend.ArbInterface().BlockChain()
 	gas := skipGas
 	blocks := skipBlocks
 	for i := genesis + 1; i <= genesis+uint64(txCount); i++ {
@@ -420,7 +429,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 }
 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
-	cacheConfig := execution.DefaultCachingConfig
+	cacheConfig := gethexec.DefaultCachingConfig
 	cacheConfig.Archive = true
 	//// test defaults
 	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)

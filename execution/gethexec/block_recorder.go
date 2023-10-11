@@ -1,4 +1,4 @@
-package execution
+package gethexec
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -37,13 +38,6 @@ type BlockRecorder struct {
 
 	preparedQueue []*types.Header
 	preparedLock  sync.Mutex
-}
-
-type RecordResult struct {
-	Pos       arbutil.MessageIndex
-	BlockHash common.Hash
-	Preimages map[common.Hash][]byte
-	BatchInfo []validator.BatchInfo
 }
 
 func NewBlockRecorder(config *arbitrum.RecordingDatabaseConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
@@ -77,7 +71,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
-) (*RecordResult, error) {
+) (*execution.RecordResult, error) {
 
 	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
 
@@ -172,7 +166,12 @@ func (r *BlockRecorder) RecordBlockCreation(
 	r.updateLastHdr(prevHeader)
 	r.updateValidCandidateHdr(prevHeader)
 
-	return &RecordResult{pos, blockHash, preimages, readBatchInfo}, err
+	return &execution.RecordResult{
+		Pos:       pos,
+		BlockHash: blockHash,
+		Preimages: preimages,
+		BatchInfo: readBatchInfo,
+	}, err
 }
 
 func (r *BlockRecorder) updateLastHdr(hdr *types.Header) {
