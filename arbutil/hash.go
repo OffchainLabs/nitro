@@ -1,16 +1,26 @@
 package arbutil
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
-	"golang.org/x/crypto/sha3"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// StorageSlotAddress pads each argument to 32 bytes, concatenates and returns
-// keccak256 hashe of the result.
-func StorageSlotAddress(args ...[]byte) []byte {
-	hash := sha3.NewLegacyKeccak256()
+// PaddedKeccak256 pads each argument to 32 bytes, concatenates and returns
+// keccak256 hash of the result.
+func PaddedKeccak256(args ...[]byte) []byte {
+	var data []byte
 	for _, arg := range args {
-		hash.Write(common.BytesToHash(arg).Bytes())
+		data = append(data, common.BytesToHash(arg).Bytes()...)
 	}
-	return hash.Sum(nil)
+	return crypto.Keccak256(data)
+}
+
+// SumBytes sums two byte slices and returns the result.
+// If the sum of bytes are over 32 bytes, it return last 32.
+func SumBytes(a, b []byte) []byte {
+	A := big.NewInt(0).SetBytes(a)
+	B := big.NewInt(0).SetBytes(b)
+	return common.BytesToHash((A.Add(A, B)).Bytes()).Bytes()
 }

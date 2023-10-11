@@ -87,7 +87,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URL, "list of primary URLs of sequencer feed source")
-	f.StringSlice(prefix+".secondary-url", DefaultConfig.SecondaryURL, "list of secondary URLs of sequencer feed source")
+	f.StringSlice(prefix+".secondary-url", DefaultConfig.SecondaryURL, "list of secondary URLs of sequencer feed source. Would be started in the order they appear in the list when primary feeds fails")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
@@ -98,7 +98,7 @@ var DefaultConfig = Config{
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
 	Verify:                  signature.DefultFeedVerifierConfig,
-	URL:                     []string{""},
+	URL:                     []string{},
 	SecondaryURL:            []string{},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,

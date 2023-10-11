@@ -84,7 +84,7 @@ func diffAccessList(accessed, al types.AccessList) string {
 		for j := 0; j < len(accessed[i].StorageKeys); j++ {
 			slot := accessed[i].StorageKeys[j]
 			if _, ok := m[addr][slot]; !ok {
-				diff += fmt.Sprintf("storage slot: %q for contract: %v wasn't accessed", slot, addr)
+				diff += fmt.Sprintf("storage slot: %v for contract: %v wasn't accessed\n", slot, addr)
 			}
 		}
 	}
@@ -345,10 +345,12 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				t.Fatalf("Error creating access list: %v", err)
 			}
 			accessed := arbnode.AccessList(&arbnode.AccessListOpts{
-				SequencerInboxAddr: l1Info.GetAddress("SequencerInbox"),
-				BridgeAddr:         l1Info.GetAddress("Bridge"),
-				DataPosterAddr:     seqOpts.From,
-				GasRefunderAddr:    gasRefunderAddr,
+				SequencerInboxAddr:       l1Info.GetAddress("SequencerInbox"),
+				BridgeAddr:               l1Info.GetAddress("Bridge"),
+				DataPosterAddr:           seqOpts.From,
+				GasRefunderAddr:          gasRefunderAddr,
+				SequencerInboxAccs:       len(blockStates),
+				AfterDelayedMessagesRead: 1,
 			})
 			if diff := diffAccessList(accessed, *wantAL); diff != "" {
 				t.Errorf("Access list mistmatch:\n%s\n", diff)

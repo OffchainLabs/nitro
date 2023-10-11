@@ -370,6 +370,7 @@ var ConfigDefault = Config{
 	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
+	Maintenance:         DefaultMaintenanceConfig,
 }
 
 func ConfigDefaultL1Test() *Config {

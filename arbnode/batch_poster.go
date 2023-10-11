@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -47,6 +48,7 @@ import (
 var (
 	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
 	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 )
 
 type batchPosterPosition struct {
@@ -80,6 +82,8 @@ type BatchPoster struct {
 
 	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
+
+	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
 }
 
 type l1BlockBound int
@@ -164,7 +168,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
 }
 
@@ -185,6 +189,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
+	RedisLock:          redislock.DefaultCfg,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -233,7 +238,9 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 		return nil, err
 	}
 	redisLockConfigFetcher := func() *redislock.SimpleCfg {
-		return &config().RedisLock
+		simpleRedisLockConfig := config().RedisLock
+		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
+		return &simpleRedisLockConfig
 	}
 	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
@@ -253,6 +260,16 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 		bridgeAddr:      deployInfo.Bridge,
 		daWriter:        daWriter,
 		redisLock:       redisLock,
+		accessList: func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
+			return AccessList(&AccessListOpts{
+				SequencerInboxAddr:       deployInfo.SequencerInbox,
+				DataPosterAddr:           transactOpts.From,
+				BridgeAddr:               deployInfo.Bridge,
+				GasRefunderAddr:          config().gasRefunder,
+				SequencerInboxAccs:       SequencerInboxAccs,
+				AfterDelayedMessagesRead: AfterDelayedMessagesRead,
+			})
+		},
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
@@ -267,14 +284,7 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			RedisKey:          "data-poster.queue",
-			AccessList: AccessList(&AccessListOpts{
-				SequencerInboxAddr: deployInfo.SequencerInbox,
-				DataPosterAddr:     transactOpts.From, // Same as batchposter address.
-				BridgeAddr:         deployInfo.Bridge,
-				GasRefunderAddr:    config().gasRefunder,
-			}),
-		},
-	)
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -282,10 +292,12 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 }
 
 type AccessListOpts struct {
-	SequencerInboxAddr common.Address
-	BridgeAddr         common.Address
-	DataPosterAddr     common.Address
-	GasRefunderAddr    common.Address
+	SequencerInboxAddr       common.Address
+	BridgeAddr               common.Address
+	DataPosterAddr           common.Address
+	GasRefunderAddr          common.Address
+	SequencerInboxAccs       int
+	AfterDelayedMessagesRead int
 }
 
 // AccessList returns access list (contracts, storage slots) for batchposter.
@@ -307,7 +319,7 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 				// of "eip1967.proxy.implementation" subtracted by 1.
 				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
 				// isBatchPoster[batchPosterAddr]; for mainnnet it's: "0xa10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660".
-				common.Hash(arbutil.StorageSlotAddress(opts.DataPosterAddr.Bytes(), []byte{3})),
+				common.Hash(arbutil.PaddedKeccak256(opts.DataPosterAddr.Bytes(), []byte{3})),
 			},
 		},
 		types.AccessTuple{
@@ -323,26 +335,32 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 				// IMPLEMENTATION_SLOT from OpenZeppelin,  keccak-256 hash
 				// of "eip1967.proxy.implementation" subtracted by 1.
 				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
-				// TODO: add dynamic storage slots for:
-				// - sequencerInboxAccs[sequencerInboxAccs.length - 1];
-				// - sequencerInboxAccs.push(...);
-				// - delayedInboxAccs[afterDelayedMessagesRead - 1];
 				// These below may change when transaction is actually executed:
 				// - delayedInboxAccs[delayedInboxAccs.length - 1]
 				// - delayedInboxAccs.push(...);
 			},
 		},
 	}
+
+	for _, v := range []struct{ slotIdx, val int }{
+		{7, opts.SequencerInboxAccs - 1},       // - sequencerInboxAccs[sequencerInboxAccs.length - 1]; (keccak256(7, sequencerInboxAccs.length - 1))
+		{7, opts.SequencerInboxAccs},           // - sequencerInboxAccs.push(...); (keccak256(7, sequencerInboxAccs.length))
+		{6, opts.AfterDelayedMessagesRead - 1}, // - delayedInboxAccs[afterDelayedMessagesRead - 1]; (keccak256(6, afterDelayedMessagesRead - 1))
+	} {
+		sb := arbutil.SumBytes(arbutil.PaddedKeccak256([]byte{byte(v.slotIdx)}), big.NewInt(int64(v.val)).Bytes())
+		l[1].StorageKeys = append(l[1].StorageKeys, common.Hash(sb))
+	}
+
 	if (opts.GasRefunderAddr != common.Address{}) {
 		l = append(l, types.AccessTuple{
 			Address: opts.GasRefunderAddr,
 			StorageKeys: []common.Hash{
 				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"), // CommonParameters.{maxRefundeeBalance, extraGasMargin, calldataCost, maxGasTip}
 				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"), // CommonParameters.{maxGasCost, maxSingleGasUsage}
-				//	allowedContracts[msg.sender]; for mainnet it's: "0x7686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda41".
-				common.Hash(arbutil.StorageSlotAddress(opts.SequencerInboxAddr.Bytes(), []byte{1})),
+				// allowedContracts[msg.sender]; for mainnet it's: "0x7686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda41".
+				common.Hash(arbutil.PaddedKeccak256(opts.SequencerInboxAddr.Bytes(), []byte{1})),
 				// allowedRefundees[refundee]; for mainnet it's: "0xe85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62".
-				common.Hash(arbutil.StorageSlotAddress(opts.DataPosterAddr.Bytes(), []byte{2})),
+				common.Hash(arbutil.PaddedKeccak256(opts.DataPosterAddr.Bytes(), []byte{2})),
 			},
 		})
 	}
@@ -987,7 +1005,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	tx, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int))
+	tx, err := b.dataPoster.PostTransaction(ctx,
+		firstMsgTime,
+		nonce,
+		newMeta,
+		b.seqInboxAddr,
+		data,
+		gasLimit,
+		new(big.Int),
+		b.accessList(
+			int(batchPosition.NextSeqNum),
+			int(b.building.segments.delayedMsg)),
+	)
 	if err != nil {
 		return false, err
 	}

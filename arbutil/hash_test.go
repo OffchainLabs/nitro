@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSlotAddress(t *testing.T) {
@@ -39,11 +40,44 @@ func TestSlotAddress(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := StorageSlotAddress(tc.args...)
+			got := PaddedKeccak256(tc.args...)
 			if !bytes.Equal(got, tc.want) {
 				t.Errorf("slotAddress(%x) = %x, want %x", tc.args, got, tc.want)
 			}
 		})
 	}
 
+}
+
+func TestSumBytes(t *testing.T) {
+	for _, tc := range []struct {
+		desc       string
+		a, b, want []byte
+	}{
+		{
+			desc: "simple case",
+			a:    []byte{0x0a, 0x0b},
+			b:    []byte{0x03, 0x04},
+			want: common.HexToHash("0x0d0f").Bytes(),
+		},
+		{
+			desc: "carry over last byte",
+			a:    []byte{0x0a, 0xff},
+			b:    []byte{0x01},
+			want: common.HexToHash("0x0b00").Bytes(),
+		},
+		{
+			desc: "overflow",
+			a:    common.HexToHash("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").Bytes(),
+			b:    []byte{0x01},
+			want: common.HexToHash("0x00").Bytes(),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := SumBytes(tc.a, tc.b)
+			if diff := cmp.Diff(got, tc.want); diff != "" {
+				t.Errorf("SumBytes(%x, %x) = %x want: %x", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
 }

@@ -17,8 +17,10 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-const MAX_FEED_INACTIVE_TIME = time.Second * 6
 const ROUTER_QUEUE_SIZE = 1024
+const RECENT_FEED_INITIAL_MAP_SIZE = 1024
+const RECENT_FEED_ITEM_TTL = time.Second * 10
+const MAX_FEED_INACTIVE_TIME = time.Second * 5
 
 type Router struct {
 	stopwaiter.StopWaiter
@@ -125,23 +127,47 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		client.Start(ctx)
 	}
 
+	var lastConfirmed arbutil.MessageIndex
+	recentFeedItemsNew := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
+	recentFeedItemsOld := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 	bcs.router.LaunchThread(func(ctx context.Context) {
+		recentFeedItemsCleanup := time.NewTicker(RECENT_FEED_ITEM_TTL)
 		startNewFeedTimer := time.NewTicker(MAX_FEED_INACTIVE_TIME)
+		defer recentFeedItemsCleanup.Stop()
 		defer startNewFeedTimer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case cs := <-bcs.router.confirmedSequenceNumberChan:
-				startNewFeedTimer.Stop()
-				bcs.router.forwardConfirmationChan <- cs
-				startNewFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 			case msg := <-bcs.router.messageChan:
+				startNewFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
+				if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
+					continue
+				}
+				if _, ok := recentFeedItemsOld[msg.SequenceNumber]; ok {
+					continue
+				}
+				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
+				// need to stop the timer because forwardTxStreamer might be blocked when traffic is high
+				// and that shouldn't create race condition between channels timer.C and messageChan
 				startNewFeedTimer.Stop()
 				if err := bcs.router.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
 					log.Error("Error routing message from Sequencer Feed", "err", err)
 				}
 				startNewFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
+			case cs := <-bcs.router.confirmedSequenceNumberChan:
+				startNewFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
+				if cs == lastConfirmed {
+					continue
+				}
+				lastConfirmed = cs
+				startNewFeedTimer.Stop()
+				bcs.router.forwardConfirmationChan <- cs
+				startNewFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
+			case <-recentFeedItemsCleanup.C:
+				// Cycle buckets to get rid of old entries
+				recentFeedItemsOld = recentFeedItemsNew
+				recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 			case <-startNewFeedTimer.C:
 				// failed to get messages from primary feed for ~5 seconds, start a new feed
 				bcs.StartSecondaryFeed(ctx)
