@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -91,18 +91,29 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 	return append(res, time.Hour*24*365*10), nil
 }
 
-func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config ConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)) (*DataPoster, error) {
-	initConfig := config()
+type DataPosterOpts struct {
+	Database          ethdb.Database
+	HeaderReader      *headerreader.HeaderReader
+	Auth              *bind.TransactOpts
+	RedisClient       redis.UniversalClient
+	RedisLock         AttemptLocker
+	Config            ConfigFetcher
+	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	RedisKey          string // Redis storage key
+}
+
+func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
+	initConfig := opts.Config()
 	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
-	if headerReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
+	if opts.HeaderReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
 		initConfig.UseNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
 	encF := func() storage.EncoderDecoderInterface {
-		if config().LegacyStorageEncoding {
+		if opts.Config().LegacyStorageEncoding {
 			return &storage.LegacyEncoderDecoder{}
 		}
 		return &storage.EncoderDecoder{}
@@ -111,27 +122,33 @@ func NewDataPoster(db ethdb.Database, headerReader *headerreader.HeaderReader, a
 	switch {
 	case initConfig.UseNoOpStorage:
 		queue = &noop.Storage{}
-	case redisClient != nil:
+	case opts.RedisClient != nil:
 		var err error
-		queue, err = redisstorage.NewStorage(redisClient, "data-poster.queue", &initConfig.RedisSigner, encF)
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &initConfig.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
-	case initConfig.UseLevelDB:
-		queue = leveldb.New(db, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	case initConfig.UseDBStorage:
+		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if initConfig.Dangerous.ClearDBStorage {
+			if err := storage.PruneAll(ctx); err != nil {
+				return nil, err
+			}
+		}
+		queue = storage
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
 	return &DataPoster{
-		headerReader:      headerReader,
-		client:            headerReader.Client(),
-		sender:            auth.From,
-		signer:            auth.Signer,
-		config:            config,
+		headerReader:      opts.HeaderReader,
+		client:            opts.HeaderReader.Client(),
+		sender:            opts.Auth.From,
+		signer:            opts.Auth.Signer,
+		config:            opts.Config,
 		replacementTimes:  replacementTimes,
-		metadataRetriever: metadataRetriever,
+		metadataRetriever: opts.MetadataRetriever,
 		queue:             queue,
-		redisLock:         redisLock,
+		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
 	}, nil
 }
@@ -323,7 +340,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	return newFeeCap, newTipCap, nil
 }
 
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -345,13 +362,14 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, err
 	}
 	inner := types.DynamicFeeTx{
-		Nonce:     nonce,
-		GasTipCap: tipCap,
-		GasFeeCap: feeCap,
-		Gas:       gasLimit,
-		To:        &to,
-		Value:     value,
-		Data:      calldata,
+		Nonce:      nonce,
+		GasTipCap:  tipCap,
+		GasFeeCap:  feeCap,
+		Gas:        gasLimit,
+		To:         &to,
+		Value:      value,
+		Data:       calldata,
+		AccessList: accessList,
 	}
 	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
 	if err != nil {
@@ -618,41 +636,54 @@ type DataPosterConfig struct {
 	ReplacementTimes string                     `koanf:"replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
-	WaitForL1Finality      bool    `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64  `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int     `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64 `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64 `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64 `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64 `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64 `koanf:"max-tip-cap-gwei" reload:"hot"`
-	NonceRbfSoftConfs      uint64  `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	AllocateMempoolBalance bool    `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseLevelDB             bool    `koanf:"use-leveldb"`
-	UseNoOpStorage         bool    `koanf:"use-noop-storage"`
-	LegacyStorageEncoding  bool    `koanf:"legacy-storage-encoding" reload:"hot"`
+	WaitForL1Finality      bool            `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64          `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int             `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64         `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64         `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64         `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64         `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64         `koanf:"max-tip-cap-gwei" reload:"hot"`
+	NonceRbfSoftConfs      uint64          `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool            `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseDBStorage           bool            `koanf:"use-db-storage"`
+	UseNoOpStorage         bool            `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool            `koanf:"legacy-storage-encoding" reload:"hot"`
+	Dangerous              DangerousConfig `koanf:"dangerous"`
+}
+
+type DangerousConfig struct {
+	// This should be used with caution, only when dataposter somehow gets in a
+	// bad state and we require clearing it.
+	ClearDBStorage bool `koanf:"clear-dbstorage"`
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
 // that flags can be reloaded dynamically.
 type ConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
-	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
-	f.Int(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
-	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
-	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
-	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
-	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Float64(prefix+".max-tip-cap-gwei", DefaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
-	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
-	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
-	f.Bool(prefix+".use-leveldb", DefaultDataPosterConfig.UseLevelDB, "uses leveldb when enabled")
-	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
-	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
+	f.String(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
+	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Int(prefix+".max-queued-transactions", defaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
+	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
+	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
+	f.Float64(prefix+".min-fee-cap-gwei", defaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
+	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
+	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
+	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
+	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
+	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
+
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
+	addDangerousOptions(prefix+".dangerous", f)
+}
+
+func addDangerousOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear database storage")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -665,9 +696,10 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             true,
+	UseDBStorage:           true,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
+	Dangerous:              DangerousConfig{ClearDBStorage: false},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -687,7 +719,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
-	UseLevelDB:             false,
+	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 }
 

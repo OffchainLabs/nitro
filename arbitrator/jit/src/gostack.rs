@@ -64,6 +64,10 @@ impl GoStack {
         Self { start, memory }
     }
 
+    pub fn shift_start(&mut self, offset: u32) {
+        self.start += offset;
+    }
+
     fn view(&self) -> &MemoryView {
         self.memory.view()
     }

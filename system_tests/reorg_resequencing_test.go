@@ -22,6 +22,8 @@ func TestReorgResequencing(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
+	execNode := getExecNode(t, node)
+
 	startMsgCount, err := node.TxStreamer.GetMessageCount()
 	Require(t, err)
 
@@ -51,7 +53,7 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	_, err = execNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
@@ -76,7 +78,7 @@ func TestReorgResequencing(t *testing.T) {
 	}})
 	Require(t, err)
 
-	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	_, err = execNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
@@ -85,7 +87,7 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	_, err = execNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")

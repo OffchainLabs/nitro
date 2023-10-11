@@ -12,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -33,12 +33,13 @@ var sendRootKey = common.HexToHash("0x55667788")
 var batchNumKey = common.HexToHash("0x99aabbcc")
 var posInBatchKey = common.HexToHash("0xddeeff")
 
-func globalstateFromTestPreimages(preimages map[common.Hash][]byte) validator.GoGlobalState {
+func globalstateFromTestPreimages(preimages map[arbutil.PreimageType]map[common.Hash][]byte) validator.GoGlobalState {
+	keccakPreimages := preimages[arbutil.Keccak256PreimageType]
 	return validator.GoGlobalState{
-		Batch:      new(big.Int).SetBytes(preimages[batchNumKey]).Uint64(),
-		PosInBatch: new(big.Int).SetBytes(preimages[posInBatchKey]).Uint64(),
-		BlockHash:  common.BytesToHash(preimages[blockHashKey]),
-		SendRoot:   common.BytesToHash(preimages[sendRootKey]),
+		Batch:      new(big.Int).SetBytes(keccakPreimages[batchNumKey]).Uint64(),
+		PosInBatch: new(big.Int).SetBytes(keccakPreimages[posInBatchKey]).Uint64(),
+		BlockHash:  common.BytesToHash(keccakPreimages[blockHashKey]),
+		SendRoot:   common.BytesToHash(keccakPreimages[sendRootKey]),
 	}
 }
 
@@ -214,7 +215,9 @@ func TestValidationServerAPI(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages:  globalstateToTestPreimages(endState),
+		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
 	}
 	valRun := client.Launch(&valInput, wasmRoot)
 	res, err := valRun.Await(ctx)
@@ -278,7 +281,9 @@ func TestValidationClientRoom(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages:  globalstateToTestPreimages(endState),
+		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
 	}
 
 	valRuns := make([]validator.ValidationRun, 0, 4)

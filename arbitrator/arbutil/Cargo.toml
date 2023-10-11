@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+digest = "0.10.7"
+num_enum = "0.7.0"
+sha2 = "0.10.7"
+sha3 = "0.10.8"
