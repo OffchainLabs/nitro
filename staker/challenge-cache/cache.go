@@ -52,6 +52,7 @@ var (
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
 	challengeLevelPrefix = "subchallenge-level"
+	srvlog               = log.New("service", "bold-history-commit-cache")
 )
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
@@ -92,9 +93,10 @@ func (c *Cache) Get(
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
-		fmt.Printf("Not found %s\n", fName)
+		srvlog.Warn("Cache miss", log.Ctx{"fileName": fName})
 		return nil, ErrNotFoundInCache
 	}
+	srvlog.Debug("Cache hit", log.Ctx{"fileName": fName})
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err

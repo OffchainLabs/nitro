@@ -265,7 +265,7 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 
 	t.Log("Honest party posting assertion at batch 2, pos 0")
-	_, err = poster.PostAssertion(ctx)
+	expectedWinnerAssertion, err := poster.PostAssertion(ctx)
 	Require(t, err)
 
 	t.Log("Evil party posting assertion at batch 2, pos 0")
@@ -334,15 +334,36 @@ func TestBoldProtocol(t *testing.T) {
 	managerB.Start(ctx)
 
 	// Every 10 seconds, send an L1 transaction to keep the chain moving.
-	delay := time.Second * 10
+	go func() {
+		delay := time.Second * 10
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				time.Sleep(delay)
+				balance := big.NewInt(params.GWei)
+				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+				latestBlock, err := l1client.BlockNumber(ctx)
+				Require(t, err)
+				if latestBlock > 200 {
+					delay = time.Second
+				}
+			}
+		}
+	}()
+
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
+	Require(t, err)
 	for {
-		time.Sleep(delay)
-		balance := big.NewInt(params.GWei)
-		TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-		latestBlock, err := l1client.BlockNumber(ctx)
-		Require(t, err)
-		if latestBlock > 200 {
-			delay = time.Second
+		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Id().Hash)
+		if err != nil {
+			t.Logf("Error getting assertion: %v", err)
+			continue
+		}
+		// Wait until the assertion is confirmed.
+		if expected.Status == uint8(2) {
+			return
 		}
 	}
 }
