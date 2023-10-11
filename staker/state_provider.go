@@ -125,7 +125,7 @@ func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *prot
 	return nil
 }
 
-// ExecutionStateAtMessageNumber Produces the l2 state to assert at the message number specified.
+// ExecutionStateAfterBatchCount Produces the l2 state to assert at the message number specified.
 // Makes sure that PosInBatch is always 0
 func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
 	if batchCount == 0 {
