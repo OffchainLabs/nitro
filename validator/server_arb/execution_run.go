@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -50,33 +52,74 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) containers.Promise
 
 func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](e, func(ctx context.Context) (*validator.MachineStepResult, error) {
-		var machine MachineInterface
-		var err error
-		if position == ^uint64(0) {
-			machine, err = e.cache.GetFinalMachine(ctx)
-		} else {
-			// todo cache last machine
-			machine, err = e.cache.GetMachineAt(ctx, position)
-		}
+		return e.intermediateGetStepAt(ctx, position)
+	})
+}
+
+func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+		var stateRoots []common.Hash
+		machine, err := e.cache.GetMachineAt(ctx, 0)
 		if err != nil {
 			return nil, err
 		}
-		machineStep := machine.GetStepCount()
-		if position != machineStep {
-			machineRunning := machine.IsRunning()
-			if machineRunning || machineStep > position {
-				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+		if !machine.IsRunning() {
+			return stateRoots, nil
+		}
+		for i := uint64(0); i <= toBigStep; i++ {
+			position := i * numOpcodesPerBigStep
+			if err = machine.Step(ctx, position); err != nil {
+				return nil, err
 			}
-
+			stateRoots = append(stateRoots, machine.Hash())
 		}
-		result := &validator.MachineStepResult{
-			Position:    machineStep,
-			Status:      validator.MachineStatus(machine.Status()),
-			GlobalState: machine.GetGlobalState(),
-			Hash:        machine.Hash(),
-		}
-		return result, nil
+		return stateRoots, nil
 	})
+}
+
+func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+		var stateRoots []common.Hash
+		fromSmall := bigStep * numOpcodesPerBigStep
+		toSmall := fromSmall + toSmallStep
+		for i := fromSmall; i <= toSmall; i++ {
+			machineStep, err := e.intermediateGetStepAt(ctx, i)
+			if err != nil {
+				return nil, err
+			}
+			stateRoots = append(stateRoots, machineStep.Hash)
+		}
+		return stateRoots, nil
+	})
+}
+
+func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint64) (*validator.MachineStepResult, error) {
+	var machine MachineInterface
+	var err error
+	if position == ^uint64(0) {
+		machine, err = e.cache.GetFinalMachine(ctx)
+	} else {
+		// todo cache last machina
+		machine, err = e.cache.GetMachineAt(ctx, position)
+	}
+	if err != nil {
+		return nil, err
+	}
+	machineStep := machine.GetStepCount()
+	if position != machineStep {
+		machineRunning := machine.IsRunning()
+		if machineRunning || machineStep > position {
+			return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+		}
+
+	}
+	result := &validator.MachineStepResult{
+		Position:    machineStep,
+		Status:      validator.MachineStatus(machine.Status()),
+		GlobalState: machine.GetGlobalState(),
+		Hash:        machine.Hash(),
+	}
+	return result, nil
 }
 
 func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
