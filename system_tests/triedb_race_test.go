@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -18,23 +18,24 @@ func TestTrieDBCommitRace(t *testing.T) {
 	_ = testhelpers.InitTestLog(t, log.LvlError)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	nodeConfig.Sequencer.MaxBlockSpeed = 0
-	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	nodeConfig.Caching.Archive = true
-	nodeConfig.Caching.BlockCount = 127
-	nodeConfig.Caching.BlockAge = 0
-	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 127
-	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	execConfig.Caching.Archive = true
+	execConfig.Caching.BlockCount = 127
+	execConfig.Caching.BlockAge = 0
+	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 127
+	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, execConfig, nil, nil)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
 	}
 	defer cancel()
+	execNode := getExecNode(t, node)
 	l2info.GenerateAccount("User2")
-	bc := node.Execution.Backend.ArbInterface().BlockChain()
+	bc := execNode.Backend.ArbInterface().BlockChain()
 
 	var wg sync.WaitGroup
 	quit := make(chan struct{})
@@ -50,7 +51,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 			}
 		}
 	}()
-	api := node.Execution.Backend.APIBackend()
+	api := execNode.Backend.APIBackend()
 	blockNumber := 1
 	for i := 0; i < 5; i++ {
 		var roots []common.Hash
