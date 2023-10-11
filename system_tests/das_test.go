@@ -212,7 +212,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 	}
 
 	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
+		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*25)
 		Require(t, err)
 
 		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)

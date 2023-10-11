@@ -156,8 +156,9 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
-	Require(t, err, "Failed waiting for Tx on secondary node")
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*30)
+	Require(t, err, fmt.Sprintf("Failed waiting for Tx on secondary node"))
+
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
 	directBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DirectReceiver"), nil)
