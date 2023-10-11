@@ -12,29 +12,29 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-func validateBacklog(t *testing.T, b *backlog, count int, start, end arbutil.MessageIndex, lookupKeys []arbutil.MessageIndex) {
+func validateBacklog(t *testing.T, b *backlog, count int, start, end uint64, lookupKeys []arbutil.MessageIndex) {
 	if b.MessageCount() != count {
 		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.MessageCount(), count)
 	}
 
 	head := b.head.Load()
-	if start != 0 && head.start != start {
-		t.Errorf("head of backlog (%d) does not equal expected head (%d)", head.start, start)
+	if start != 0 && head.start.Load() != start {
+		t.Errorf("head of backlog (%d) does not equal expected head (%d)", head.start.Load(), start)
 	}
 
 	tail := b.tail.Load()
-	if end != 0 && tail.end != end {
-		t.Errorf("tail of backlog (%d) does not equal expected tail (%d)", tail.end, end)
+	if end != 0 && tail.end.Load() != end {
+		t.Errorf("tail of backlog (%d) does not equal expected tail (%d)", tail.end.Load(), end)
 	}
 
 	for _, k := range lookupKeys {
-		if _, ok := b.lookupByIndex[k]; !ok {
+		if _, err := b.lookup(uint64(k)); err != nil {
 			t.Errorf("failed to find message (%d) in lookup", k)
 		}
 	}
 }
 
-func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCount int, start, end arbutil.MessageIndex) {
+func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCount int, start, end uint64) {
 	actualCount := len(bm.Messages)
 	if actualCount != expectedCount {
 		t.Errorf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, expectedCount)
@@ -43,7 +43,7 @@ func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCoun
 	s := arbmath.MaxInt(start, 40)
 	for i := s; i <= end; i++ {
 		msg := bm.Messages[i-s]
-		if msg.SequenceNumber != i {
+		if uint64(msg.SequenceNumber) != i {
 			t.Errorf("unexpected sequence number (%d) in %d returned message", i, i-s)
 		}
 	}
@@ -51,7 +51,7 @@ func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCoun
 
 func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
-		lookupByIndex: map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment]{},
+		lookupByIndex: map[uint64]*atomic.Pointer[backlogSegment]{},
 		config:        func() *Config { return &DefaultTestConfig },
 	}
 	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
@@ -65,8 +65,8 @@ func TestAppend(t *testing.T) {
 		backlogIndexes     []arbutil.MessageIndex
 		newIndexes         []arbutil.MessageIndex
 		expectedCount      int
-		expectedStart      arbutil.MessageIndex
-		expectedEnd        arbutil.MessageIndex
+		expectedStart      uint64
+		expectedEnd        uint64
 		expectedLookupKeys []arbutil.MessageIndex
 	}{
 		{
@@ -149,15 +149,15 @@ func TestAppend(t *testing.T) {
 func TestDeleteInvalidBacklog(t *testing.T) {
 	// Create a backlog with an invalid sequence
 	s := &backlogSegment{
-		start:    40,
-		end:      42,
 		messages: m.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
 	}
+	s.start.Store(40)
+	s.end.Store(42)
 	s.messageCount.Store(2)
 
 	p := &atomic.Pointer[backlogSegment]{}
 	p.Store(s)
-	lookup := make(map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment])
+	lookup := make(map[uint64]*atomic.Pointer[backlogSegment])
 	lookup[40] = p
 	b := &backlog{
 		lookupByIndex: lookup,
@@ -188,8 +188,8 @@ func TestDelete(t *testing.T) {
 		backlogIndexes     []arbutil.MessageIndex
 		confirmed          arbutil.MessageIndex
 		expectedCount      int
-		expectedStart      arbutil.MessageIndex
-		expectedEnd        arbutil.MessageIndex
+		expectedStart      uint64
+		expectedEnd        uint64
 		expectedLookupKeys []arbutil.MessageIndex
 	}{
 		{
@@ -286,8 +286,8 @@ func TestGet(t *testing.T) {
 
 	testcases := []struct {
 		name          string
-		start         arbutil.MessageIndex
-		end           arbutil.MessageIndex
+		start         uint64
+		end           uint64
 		expectedErr   error
 		expectedCount int
 	}{
@@ -403,7 +403,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	wg.Add(1)
 	go func(t *testing.T, b *backlog) {
 		defer wg.Done()
-		for _, i := range []arbutil.MessageIndex{42, 43, 44, 45, 46, 47} {
+		for _, i := range []uint64{42, 43, 44, 45, 46, 47} {
 			bm, err := b.Get(i, i+1)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err)

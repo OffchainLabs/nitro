@@ -3,10 +3,10 @@ package backlog
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -19,20 +19,21 @@ var (
 
 type Backlog interface {
 	Append(bm *m.BroadcastMessage) error
-	Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, error)
+	Get(start, end uint64) (*m.BroadcastMessage, error)
 	MessageCount() int
 }
 
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
-	lookupByIndex map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment]
+	lookupLock    sync.RWMutex
+	lookupByIndex map[uint64]*atomic.Pointer[backlogSegment]
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
 func NewBacklog(c ConfigFetcher) Backlog {
-	lookup := make(map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment])
+	lookup := make(map[uint64]*atomic.Pointer[backlogSegment])
 	return &backlog{
 		lookupByIndex: lookup,
 		config:        c,
@@ -45,7 +46,7 @@ func NewBacklog(c ConfigFetcher) Backlog {
 func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 	if bm.ConfirmedSequenceNumberMessage != nil {
-		b.delete(bm.ConfirmedSequenceNumberMessage.SequenceNumber)
+		b.delete(uint64(bm.ConfirmedSequenceNumberMessage.SequenceNumber))
 		// add to metric?
 	}
 
@@ -57,11 +58,11 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.tail.Store(s)
 		}
 
-		prevMsgIdx := s.end
+		prevMsgIdx := s.end.Load()
 		if s.MessageCount() >= b.config().SegmentLimit {
 			nextS := &backlogSegment{}
 			s.nextSegment.Store(nextS)
-			prevMsgIdx = s.end
+			prevMsgIdx = s.end.Load()
 			nextS.previousSegment.Store(s)
 			s = nextS
 			b.tail.Store(s)
@@ -70,7 +71,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		err := s.append(prevMsgIdx, msg)
 		if errors.Is(err, errDropSegments) {
 			head := b.head.Load()
-			b.removeFromLookup(head.start, msg.SequenceNumber)
+			b.removeFromLookup(head.start.Load(), uint64(msg.SequenceNumber))
 			b.head.Store(s)
 			b.tail.Store(s)
 			b.messageCount.Store(0)
@@ -83,7 +84,9 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 		p := &atomic.Pointer[backlogSegment]{}
 		p.Store(s)
-		b.lookupByIndex[msg.SequenceNumber] = p
+		b.lookupLock.Lock()
+		b.lookupByIndex[uint64(msg.SequenceNumber)] = p
+		b.lookupLock.Unlock()
 		b.messageCount.Add(1)
 	}
 
@@ -91,18 +94,18 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 }
 
 // Get reads messages from the given start to end MessageIndex
-func (b *backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, error) {
+func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
 		return nil, errOutOfBounds
 	}
 
-	if start < head.start {
-		start = head.start
+	if start < head.start.Load() {
+		start = head.start.Load()
 	}
 
-	if end > tail.end {
+	if end > tail.end.Load() {
 		return nil, errOutOfBounds
 	}
 
@@ -114,7 +117,7 @@ func (b *backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 	bm := &m.BroadcastMessage{Version: 1}
 	required := int(end-start) + 1
 	for {
-		segMsgs, err := s.get(arbmath.MaxInt(start, s.start), arbmath.MinInt(end, s.end))
+		segMsgs, err := s.get(arbmath.MaxInt(start, s.start.Load()), arbmath.MinInt(end, s.end.Load()))
 		if err != nil {
 			return nil, err
 		}
@@ -132,19 +135,19 @@ func (b *backlog) Get(start, end arbutil.MessageIndex) (*m.BroadcastMessage, err
 
 // delete removes segments before the confirmed sequence number given. It will
 // not remove the segment containing the confirmed sequence number.
-func (b *backlog) delete(confirmed arbutil.MessageIndex) {
+func (b *backlog) delete(confirmed uint64) {
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
 		return
 	}
 
-	if confirmed < head.start {
+	if confirmed < head.start.Load() {
 		return
 	}
 
-	if confirmed > tail.end {
-		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.end)
+	if confirmed > tail.end.Load() {
+		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.end.Load())
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
 		return
@@ -172,22 +175,26 @@ func (b *backlog) delete(confirmed arbutil.MessageIndex) {
 	if previous == nil {
 		return
 	}
-	b.removeFromLookup(head.start, previous.end)
+	b.removeFromLookup(head.start.Load(), previous.end.Load())
 	b.head.Store(s)
-	count := b.messageCount.Load() - uint64(previous.end-head.start) - uint64(1)
+	count := b.messageCount.Load() + head.start.Load() - previous.end.Load() - uint64(1)
 	b.messageCount.Store(count)
 }
 
 // removeFromLookup removes all entries from the head segment's start index to
 // the given confirmed index
-func (b *backlog) removeFromLookup(start arbutil.MessageIndex, end arbutil.MessageIndex) {
+func (b *backlog) removeFromLookup(start, end uint64) {
+	b.lookupLock.Lock()
+	defer b.lookupLock.Unlock()
 	for i := start; i == end; i++ {
 		delete(b.lookupByIndex, i)
 	}
 }
 
-func (b *backlog) lookup(i arbutil.MessageIndex) (*backlogSegment, error) {
+func (b *backlog) lookup(i uint64) (*backlogSegment, error) {
+	b.lookupLock.RLock()
 	pointer, ok := b.lookupByIndex[i]
+	b.lookupLock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("error finding backlog segment containing message with SequenceNumber %d", i)
 	}
@@ -206,15 +213,17 @@ func (s *backlog) MessageCount() int {
 
 // reset removes all segments from the backlog
 func (b *backlog) reset() {
+	b.lookupLock.Lock()
+	defer b.lookupLock.Unlock()
 	b.head = atomic.Pointer[backlogSegment]{}
 	b.tail = atomic.Pointer[backlogSegment]{}
-	b.lookupByIndex = map[arbutil.MessageIndex]*atomic.Pointer[backlogSegment]{}
+	b.lookupByIndex = map[uint64]*atomic.Pointer[backlogSegment]{}
 	b.messageCount.Store(0)
 }
 
 type backlogSegment struct {
-	start           arbutil.MessageIndex
-	end             arbutil.MessageIndex
+	start           atomic.Uint64
+	end             atomic.Uint64
 	messages        []*m.BroadcastFeedMessage
 	messageCount    atomic.Uint64
 	nextSegment     atomic.Pointer[backlogSegment]
@@ -222,18 +231,18 @@ type backlogSegment struct {
 }
 
 // get reads messages from the given start to end MessageIndex
-func (s *backlogSegment) get(start, end arbutil.MessageIndex) ([]*m.BroadcastFeedMessage, error) {
+func (s *backlogSegment) get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
 	noMsgs := []*m.BroadcastFeedMessage{}
-	if start < s.start {
+	if start < s.start.Load() {
 		return noMsgs, errOutOfBounds
 	}
 
-	if end > s.end {
+	if end > s.end.Load() {
 		return noMsgs, errOutOfBounds
 	}
 
-	startIndex := int(start - s.start)
-	endIndex := int(end-s.start) + 1
+	startIndex := start - s.start.Load()
+	endIndex := end - s.start.Load() + 1
 	return s.messages[startIndex:endIndex], nil
 }
 
@@ -242,13 +251,13 @@ func (s *backlogSegment) get(start, end arbutil.MessageIndex) ([]*m.BroadcastFee
 // message is ahead of the given message append will do nothing. If the given
 // message is ahead of the segment's end message append will return
 // errDropSegments to ensure any messages before the given message are dropped.
-func (s *backlogSegment) append(prevMsgIdx arbutil.MessageIndex, msg *m.BroadcastFeedMessage) error {
+func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) error {
 	seen := false
 	defer s.updateSegment(&seen)
 
-	if expSeqNum := prevMsgIdx + 1; prevMsgIdx == 0 || msg.SequenceNumber == expSeqNum {
+	if expSeqNum := prevMsgIdx + 1; prevMsgIdx == 0 || uint64(msg.SequenceNumber) == expSeqNum {
 		s.messages = append(s.messages, msg)
-	} else if msg.SequenceNumber > expSeqNum {
+	} else if uint64(msg.SequenceNumber) > expSeqNum {
 		s.messages = nil
 		s.messages = append(s.messages, msg)
 		return fmt.Errorf("new message sequence number (%d) is greater than the expected sequence number (%d): %w", msg.SequenceNumber, expSeqNum, errDropSegments)
@@ -260,14 +269,14 @@ func (s *backlogSegment) append(prevMsgIdx arbutil.MessageIndex, msg *m.Broadcas
 }
 
 // contains confirms whether the segment contains a message with the given sequence number
-func (s *backlogSegment) contains(i arbutil.MessageIndex) bool {
-	if i < s.start || i > s.end {
+func (s *backlogSegment) contains(i uint64) bool {
+	if i < s.start.Load() || i > s.end.Load() {
 		return false
 	}
 
-	msgIndex := uint64(i - s.start)
+	msgIndex := i - s.start.Load()
 	msg := s.messages[msgIndex]
-	return msg.SequenceNumber == i
+	return uint64(msg.SequenceNumber) == i
 }
 
 // updateSegment updates the messageCount, start and end indices of the segment
@@ -277,8 +286,8 @@ func (s *backlogSegment) updateSegment(seen *bool) {
 	if !*seen {
 		c := len(s.messages)
 		s.messageCount.Store(uint64(c))
-		s.start = s.messages[0].SequenceNumber
-		s.end = s.messages[c-1].SequenceNumber
+		s.start.Store(uint64(s.messages[0].SequenceNumber))
+		s.end.Store(uint64(s.messages[c-1].SequenceNumber))
 	}
 }
 
