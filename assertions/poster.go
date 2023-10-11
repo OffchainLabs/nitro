@@ -82,10 +82,10 @@ func (p *Poster) PostAssertionAndMoveStake(ctx context.Context) (protocol.Assert
 func (p *Poster) postAssertionImpl(
 	ctx context.Context,
 	submitFn func(
-		ctx context.Context,
-		parentCreationInfo *protocol.AssertionCreatedInfo,
-		newState *protocol.ExecutionState,
-	) (protocol.Assertion, error),
+	ctx context.Context,
+	parentCreationInfo *protocol.AssertionCreatedInfo,
+	newState *protocol.ExecutionState,
+) (protocol.Assertion, error),
 ) (protocol.Assertion, error) {
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
@@ -126,44 +126,30 @@ func (p *Poster) postAssertionImpl(
 	return assertion, nil
 }
 
-// Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
-// down from the number of assertions in the protocol down until it finds
-// an assertion that we have a state commitment for.
+// Finds the latest valid assertion sequence num a validator should build their new leaves upon.
+// It retrieves the latest assertion hashes posted to the rollup contract since the last confirmed assertion block.
+// This walks down the list of assertions in the protocol down until it finds
+// the latest assertion that we have a state commitment for.
 func (p *Poster) findLatestValidAssertion(ctx context.Context) (protocol.AssertionHash, error) {
-	latestConfirmed, err := p.chain.LatestConfirmed(ctx)
+	latestCreatedAssertionHashes, err := p.chain.LatestCreatedAssertionHashes(ctx)
 	if err != nil {
 		return protocol.AssertionHash{}, err
 	}
-	latestCreated, err := p.chain.LatestCreatedAssertion(ctx)
-	if err != nil {
-		return protocol.AssertionHash{}, err
-	}
-	if latestConfirmed == latestCreated {
-		return latestConfirmed.Id(), nil
-	}
-	curr := latestCreated
-	for curr.Id() != latestConfirmed.Id() {
-		info, err := p.chain.ReadAssertionCreationInfo(ctx, curr.Id())
+	// Loop over latestCreatedAssertionHashes in reverse order to find the latest valid assertion.
+	for i := len(latestCreatedAssertionHashes) - 1; i >= 0; i-- {
+		var info *protocol.AssertionCreatedInfo
+		info, err = p.chain.ReadAssertionCreationInfo(ctx, latestCreatedAssertionHashes[i])
 		if err != nil {
 			return protocol.AssertionHash{}, err
 		}
 		_, err = p.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
-		switch {
-		case errors.Is(err, l2stateprovider.ErrNoExecutionState):
-			prevId, prevErr := curr.PrevId(ctx)
-			if prevErr != nil {
-				return protocol.AssertionHash{}, prevErr
-			}
-			prev, getErr := p.chain.GetAssertion(ctx, prevId)
-			if getErr != nil {
-				return protocol.AssertionHash{}, getErr
-			}
-			curr = prev
-		case err != nil:
-			return protocol.AssertionHash{}, nil
-		default:
-			return curr.Id(), nil
+		if err == nil {
+			return latestCreatedAssertionHashes[i], nil
 		}
+	}
+	latestConfirmed, err := p.chain.LatestConfirmed(ctx)
+	if err != nil {
+		return protocol.AssertionHash{}, err
 	}
 	return latestConfirmed.Id(), nil
 }

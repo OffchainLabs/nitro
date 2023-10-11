@@ -66,7 +66,6 @@ func Test_findLatestValidAssertion(t *testing.T) {
 	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
 		poster, chain, stateManager := setupPoster(t)
 		setupAssertions(ctx, chain, stateManager, numAssertions, func(int) bool { return false })
-		chain.On("LatestConfirmed", ctx).Return(0, nil)
 		latestValid, err := poster.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
 		require.Equal(t, mockId(0), latestValid)
@@ -82,12 +81,96 @@ func Test_findLatestValidAssertion(t *testing.T) {
 	t.Run("latest valid is behind", func(t *testing.T) {
 		poster, chain, stateManager := setupPoster(t)
 		setupAssertions(ctx, chain, stateManager, numAssertions, func(i int) bool { return i <= 5 })
-		chain.On("LatestConfirmed", ctx).Return(1, nil)
 
 		latestValid, err := poster.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
 		require.Equal(t, mockId(5), latestValid)
 	})
+}
+
+func Test_findLatestValidAssertionWithFork(t *testing.T) {
+	ctx := context.Background()
+	poster, chain, stateManager := setupPoster(t)
+	setupAssertionsWithFork(ctx, chain, stateManager)
+	latestValid, err := poster.findLatestValidAssertion(ctx)
+	require.NoError(t, err)
+	require.Equal(t, mockId(1), latestValid)
+}
+
+// Set-ups a chain with a fork at the 1st assertion
+//    /-- 1 = Honest
+// 0--
+//    \-- 2 = Evil
+// First honest assertion is posted with id 1 and prevId 0
+// Then evil assertion is posted with id 2 and prevId 0
+func setupAssertionsWithFork(ctx context.Context, chain *mocks.MockProtocol, stateManager *mocks.MockStateManager) {
+	// Setup genesis
+	genesisId := uint64(0)
+	genesis := &mocks.MockAssertion{
+		MockId:        mockId(genesisId),
+		MockPrevId:    mockId(0),
+		MockHeight:    0,
+		MockStateHash: common.Hash{},
+		Prev:          option.None[*mocks.MockAssertion](),
+	}
+
+	// Setup Valid Assertions
+	validAssertionId := uint64(1)
+	validHash := common.BytesToHash([]byte(fmt.Sprintf("%d", validAssertionId)))
+	validAssertion := &mocks.MockAssertion{
+		MockId:        mockId(validAssertionId),
+		MockPrevId:    mockId(genesisId),
+		MockHeight:    1,
+		MockStateHash: validHash,
+		Prev:          option.Some(genesis),
+	}
+	validState := rollupgen.ExecutionState{
+		MachineStatus: uint8(protocol.MachineStatusFinished),
+		GlobalState: rollupgen.GlobalState(protocol.GoGlobalState{
+			BlockHash: validHash,
+		}.AsSolidityStruct()),
+	}
+	validAssertionCreationInfo := &protocol.AssertionCreatedInfo{
+		AfterState:    validState,
+		InboxMaxCount: new(big.Int).SetUint64(uint64(1)),
+	}
+	chain.On(
+		"ReadAssertionCreationInfo",
+		ctx,
+		mockId(validAssertionId),
+	).Return(validAssertionCreationInfo, nil)
+	stateManager.On("ExecutionStateMsgCount", ctx, protocol.GoExecutionStateFromSolidity(validState)).Return(validAssertionId, nil)
+
+	// Setup Forked Invalid Assertions
+	invalidAssertionId := uint64(2)
+	invalidHash := common.BytesToHash([]byte(fmt.Sprintf("%d", invalidAssertionId)))
+	invalidAssertion := &mocks.MockAssertion{
+		MockId:        mockId(invalidAssertionId),
+		MockPrevId:    mockId(genesisId),
+		MockHeight:    1,
+		MockStateHash: invalidHash,
+		Prev:          option.Some(genesis),
+	}
+	invalidState := rollupgen.ExecutionState{
+		MachineStatus: uint8(protocol.MachineStatusFinished),
+		GlobalState: rollupgen.GlobalState(protocol.GoGlobalState{
+			BlockHash: invalidHash,
+		}.AsSolidityStruct()),
+	}
+	invalidAssertionCreationInfo := &protocol.AssertionCreatedInfo{
+		AfterState:    invalidState,
+		InboxMaxCount: new(big.Int).SetUint64(uint64(1)),
+	}
+	chain.On(
+		"ReadAssertionCreationInfo",
+		ctx,
+		mockId(invalidAssertionId),
+	).Return(invalidAssertionCreationInfo, nil)
+
+	stateManager.On("ExecutionStateMsgCount", ctx, protocol.GoExecutionStateFromSolidity(invalidState)).Return(invalidAssertionId, l2stateprovider.ErrNoExecutionState)
+
+	chain.On("LatestConfirmed", ctx).Return(genesis, nil)
+	chain.On("LatestCreatedAssertionHashes", ctx).Return([]protocol.AssertionHash{validAssertion.Id(), invalidAssertion.Id()}, nil)
 }
 
 func mockId(x uint64) protocol.AssertionHash {
@@ -156,16 +239,13 @@ func setupAssertions(
 		}
 		s.On("ExecutionStateMsgCount", ctx, protocol.GoExecutionStateFromSolidity(mockState)).Return(uint64(i), arg)
 
-		if i == 1 {
-			var firstValid protocol.Assertion = genesis
-			if valid {
-				firstValid = protocol.Assertion(mockAssertion)
-			}
-			p.On("LatestConfirmed", ctx).Return(firstValid, nil)
-		}
 	}
-	p.On("LatestConfirmed", ctx).Return(assertions[0], nil)
-	p.On("LatestCreatedAssertion", ctx).Return(assertions[len(assertions)-1], nil)
+	var assertionHashes []protocol.AssertionHash
+	for _, assertion := range assertions {
+		assertionHashes = append(assertionHashes, assertion.Id())
+	}
+	p.On("LatestConfirmed", ctx).Return(genesis, nil)
+	p.On("LatestCreatedAssertionHashes", ctx).Return(assertionHashes[1:], nil)
 	return assertions, creationInfo
 }
 
