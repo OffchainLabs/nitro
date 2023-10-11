@@ -1,7 +1,7 @@
 {
   "contracts": {
-    "l1Timelock": "0x65a59d67da8e710ef9a01eca37f83f84aedec416",
-    "rollup": "0x65a59d67da8e710ef9a01eca37f83f84aedec416",
+    "l1Timelock": "0xb7aa62e7c1ccf3f265f3822f34cfd18d21c76ff0",
+    "rollup": "0xb7aa62e7c1ccf3f265f3822f34cfd18d21c76ff0",
     "bridge": "0x2b360a9881f21c3d7aa0ea6ca0de2a3341d4ef3c",
     "sequencerInbox": "0xe7362d0787b51d8c72d504803e5b1d6dcda89540",
     "rollupEventInbox": "0x4cF5Bfb6AA68ea514e5CEa5420809cd9f79dB9E0",

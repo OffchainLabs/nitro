@@ -175,7 +175,7 @@ export const populateLookup = async (
   preImageHashLookupAddr: string,
   rollupReaderAddr: string
 ) => {
-  const oldRollup = new Contract(rollupAddr, OldRollupAbi, wallet)
+  const oldRollup = new Contract(rollupAddr, OldRollupAbi, wallet.provider)
   const latestConfirmed: number = await oldRollup.latestConfirmed()
   const latestConfirmedLog = await wallet.provider!.getLogs({
     address: rollupAddr,

@@ -113,6 +113,144 @@ contract EdgeChallengeManagerTest is Test {
         return (assertionChain, challengeManager, genesisAssertionHash);
     }
 
+    function testDeployInit() public {
+        MockAssertionChain assertionChain = new MockAssertionChain();
+        EdgeChallengeManager emt = new EdgeChallengeManager();
+        EdgeChallengeManager ecm = EdgeChallengeManager(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(emt),
+                    address(new ProxyAdmin()),
+                    ""
+                )
+            )
+        );
+        MockOneStepProofEntry osp = new MockOneStepProofEntry();
+        ERC20Mock erc20 = new ERC20Mock(
+                "StakeToken",
+                "ST",
+                address(this),
+                1000000 ether
+            );
+
+        vm.expectRevert(abi.encodeWithSelector(EmptyAssertionChain.selector));
+        ecm.initialize(
+            IAssertionChain(address(0)),
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(EmptyOneStepProofEntry.selector));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            IOneStepProofEntry(address(0)),
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(EmptyChallengePeriod.selector));
+        ecm.initialize(
+            assertionChain, 0, osp, 2 ** 5, 2 ** 5, 2 ** 5, erc20, miniStakeVal, excessStakeReceiver, NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(EmptyStakeReceiver.selector));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            address(0),
+            NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(NotPowerOfTwo.selector, (2 ** 5) + 1));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            (2 ** 5) + 1,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(NotPowerOfTwo.selector, (2 ** 5) + 1));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            (2 ** 5) + 1,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(NotPowerOfTwo.selector, (2 ** 5) + 1));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            (2 ** 5) + 1,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(ZeroBigStepLevels.selector));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            0
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(BigStepLevelsTooMany.selector, 254));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            miniStakeVal,
+            excessStakeReceiver,
+            254
+        );
+    }
+
     struct EdgeInitData {
         MockAssertionChain assertionChain;
         EdgeChallengeManager challengeManager;
@@ -341,10 +479,33 @@ contract EdgeChallengeManagerTest is Test {
         uint256 afterBalance = stakeToken.balanceOf(address(this));
         assertEq(beforeBalance - afterBalance, ei.challengeManager.stakeAmount(), "Staked");
 
+        // test the getters
+        assertEq(ei.challengeManager.edgeExists(edgeId), true, "Edge exists");
+        ChallengeEdge memory edge = ei.challengeManager.getEdge(edgeId);
+        assertEq(
+            ei.challengeManager.calculateMutualId(
+                edge.level, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight
+            ),
+            edge.mutualIdMem(),
+            "Mutual id"
+        );
+        assertEq(
+            ei.challengeManager.calculateEdgeId(
+                edge.level, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight, edge.endHistoryRoot
+            ),
+            edge.idMem(),
+            "Mutual id"
+        );
+        assertEq(ei.challengeManager.edgeLength(edgeId), height1, "Edge length");
+        assertEq(ei.challengeManager.hasRival(edgeId), false, "Edge has rival");
+        assertEq(ei.challengeManager.confirmedRival(edgeId), bytes32(0), "Confirmed rival");
+        assertEq(ei.challengeManager.hasLengthOneRival(edgeId), false, "Has length one rival");
+        assertEq(ei.challengeManager.firstRival(edge.mutualIdMem()), EdgeChallengeManagerLib.UNRIVALED, "Unrivaled");
+
         return (ei, states, exp, edgeId);
     }
 
-    function testCanConfirmPs() public {
+    function testCanConfirmByTime() public {
         (EdgeInitData memory ei,,, bytes32 edgeId) = testCanCreateEdgeWithStake();
 
         vm.roll(challengePeriodBlock + 2);
@@ -353,6 +514,55 @@ contract EdgeChallengeManagerTest is Test {
         ei.challengeManager.confirmEdgeByTime(edgeId, ancestorEdges, ei.a1Data);
 
         assertTrue(ei.challengeManager.getEdge(edgeId).status == EdgeStatus.Confirmed, "Edge confirmed");
+    }
+
+    function testCanConfirmByTimeNotBlock() public {
+        EdgeInitData memory ei = deployAndInit();
+        (
+            bytes32[] memory blockStates1,
+            bytes32[] memory blockStates2,
+            BisectionChildren[6] memory blockEdges1,
+            BisectionChildren[6] memory blockEdges2
+        ) = createBlockEdgesAndBisectToFork(
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
+        );
+
+        BisectionData memory bsbd = createMachineEdgesAndBisectToFork(
+            CreateMachineEdgesBisectArgs(
+                ei.challengeManager,
+                1,
+                blockEdges1[0].lowerChildId,
+                blockEdges2[0].lowerChildId,
+                blockStates1[1],
+                blockStates2[1],
+                false,
+                ArrayUtilsLib.slice(blockStates1, 0, 2),
+                ArrayUtilsLib.slice(blockStates2, 0, 2)
+            )
+        );
+
+        vm.roll(challengePeriodBlock + 2);
+
+        bytes32[] memory ancestorEdges = new bytes32[](0);
+        vm.expectRevert(abi.encodeWithSelector(EdgeTypeNotBlock.selector, 1));
+        ei.challengeManager.confirmEdgeByTime(bsbd.edges1[5].lowerChildId, ancestorEdges, ei.a1Data);
+    }
+
+    function testCanConfirmByTimeLayerZero() public {
+        EdgeInitData memory ei = deployAndInit();
+        (,, BisectionChildren[6] memory blockEdges1,) = createBlockEdgesAndBisectToFork(
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
+        );
+
+        vm.roll(challengePeriodBlock + 2);
+
+        bytes32[] memory ancestorEdges = new bytes32[](0);
+        ChallengeEdge memory ce = ei.challengeManager.getEdge(blockEdges1[0].lowerChildId);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(EdgeNotLayerZero.selector, blockEdges1[0].lowerChildId, ce.staker, ce.claimId)
+        );
+        ei.challengeManager.confirmEdgeByTime(blockEdges1[0].lowerChildId, ancestorEdges, ei.a1Data);
     }
 
     function testCanConfirmByChildren() public returns (EdgeInitData memory, bytes32) {

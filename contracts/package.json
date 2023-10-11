@@ -18,7 +18,7 @@
     "url": "https://github.com/offchainlabs/nitro/issues"
   },
   "scripts": {
-    "coverage": "forge coverage --report lcov --ir-minimum && lcov --remove lcov.info 'node_modules/*' 'test/*' 'script/*' 'src/test-helpers/*' 'challenge/*' --ignore-errors unused -o lcov.info && genhtml lcov.info --branch-coverage --output-dir coverage --ignore-errors category,category",
+    "coverage": "forge coverage --report lcov --ir-minimum && lcov --remove lcov.info 'node_modules/*' 'test/*' 'script/*' 'src/test-helpers/*' 'challenge/*' --ignore-errors unused -o lcov.info && genhtml lcov.info --branch-coverage --output-dir coverage",
     "build": "./scripts/build.bash",
     "contract:size": "STRICT=true hardhat size-contracts",
     "lint:test": "eslint ./test",

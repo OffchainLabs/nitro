@@ -536,7 +536,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public {
-        bytes32 prevAssertionHash = store.getPrevAssertionHash(edgeId, NUM_BIGSTEP_LEVEL);
+        bytes32 prevAssertionHash = store.getPrevAssertionHash(edgeId);
 
         assertionChain.validateConfig(prevAssertionHash, prevConfig);
 
@@ -588,7 +588,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         } else if (eType == EdgeType.SmallStep) {
             return LAYERZERO_SMALLSTEPEDGE_HEIGHT;
         } else {
-            revert("Unrecognised edge type");
+            revert InvalidEdgeType(eType);
         }
     }
 
@@ -652,11 +652,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function getPrevAssertionHash(bytes32 edgeId) public view returns (bytes32) {
-        return store.getPrevAssertionHash(edgeId, NUM_BIGSTEP_LEVEL);
+        return store.getPrevAssertionHash(edgeId);
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function firstRival(bytes32 edgeId) public view returns (bytes32) {
-        return store.firstRivals[edgeId];
+    function firstRival(bytes32 mutualId) public view returns (bytes32) {
+        return store.firstRivals[mutualId];
     }
 }

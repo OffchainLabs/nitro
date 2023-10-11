@@ -98,3 +98,5 @@ error ZeroBigStepLevels();
 error BigStepLevelsTooMany(uint8 levels);
 /// @dev Thrown when the level does not correspond to a valid type
 error LevelTooHigh(uint8 level, uint8 numBigStepLevels);
+/// @dev Thrown for unrecognised edge types
+error InvalidEdgeType(EdgeType edgeType);

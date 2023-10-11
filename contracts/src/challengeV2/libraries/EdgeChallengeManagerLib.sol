@@ -423,30 +423,16 @@ library EdgeChallengeManagerLib {
     }
 
     /// @notice From any given edge, get the id of the previous assertion
-    /// @param edgeId           The edge to get the prev assertion Hash
-    /// @param numBigStepLevel  The number of big step levels in this challenge
-    function getPrevAssertionHash(EdgeStore storage store, bytes32 edgeId, uint8 numBigStepLevel)
-        internal
-        view
-        returns (bytes32)
-    {
+    /// @param edgeId           The edge to get the prev assertion hash
+    function getPrevAssertionHash(EdgeStore storage store, bytes32 edgeId) internal view returns (bytes32) {
         ChallengeEdge storage edge = get(store, edgeId);
-
-        // if the edge is small step, find a big step edge that it's linked to
-        if (ChallengeEdgeLib.levelToType(edge.level, numBigStepLevel) == EdgeType.SmallStep) {
-            bytes32 bigStepEdgeId = store.firstRivals[edge.originId];
-            edge = get(store, bigStepEdgeId);
-        }
-
-        // if the edge is big step, find a block edge that it's linked to
-        while (ChallengeEdgeLib.levelToType(edge.level, numBigStepLevel) == EdgeType.BigStep) {
-            bytes32 blockEdgeId = store.firstRivals[edge.originId];
-            edge = get(store, blockEdgeId);
-        }
-
-        // Sanity Check: should never be hit for validly constructed edges
-        if (ChallengeEdgeLib.levelToType(edge.level, numBigStepLevel) != EdgeType.Block) {
-            revert EdgeTypeNotBlock(edge.level);
+        while (edge.level > 0) {
+            // the origin id gives us a link to the lower level
+            // we know a first rival must exist, since otherwise we would not have had a one step fork
+            // and we wouldnt be able to go to the next level
+            // we can use the first rival to get an edge id, and from there get the next origin id
+            bytes32 lowerLevelId = store.firstRivals[edge.originId];
+            edge = get(store, lowerLevelId);
         }
 
         // For Block type edges the origin id is the assertion hash of claim prev
@@ -700,12 +686,9 @@ library EdgeChallengeManagerLib {
     /// @param edgeId           The id of the edge to confirm
     /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
     /// @param numBigStepLevel  The number of big step levels in this challenge
-    function confirmEdgeByClaim(
-        EdgeStore storage store,
-        bytes32 edgeId,
-        bytes32 claimingEdgeId,
-        uint8 numBigStepLevel
-    ) internal {
+    function confirmEdgeByClaim(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId, uint8 numBigStepLevel)
+        internal
+    {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
