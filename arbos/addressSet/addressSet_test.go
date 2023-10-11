@@ -270,7 +270,7 @@ func TestRectifyMapping(t *testing.T) {
 	// Non owner's should not be able to call RectifyMapping
 	err := aset.RectifyMapping(testhelpers.RandomAddress())
 	if err == nil {
-		Fail(t, "RectifyMapping was succesfully called by non owner")
+		Fail(t, "RectifyMapping was successfully called by non owner")
 	}
 
 	// Corrupt the list and verify if RectifyMapping fixes it
