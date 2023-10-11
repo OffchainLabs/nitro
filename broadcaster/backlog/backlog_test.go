@@ -2,8 +2,10 @@ package backlog
 
 import (
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
@@ -28,6 +30,21 @@ func validateBacklog(t *testing.T, b *backlog, count int, start, end arbutil.Mes
 	for _, k := range lookupKeys {
 		if _, ok := b.lookupByIndex[k]; !ok {
 			t.Errorf("failed to find message (%d) in lookup", k)
+		}
+	}
+}
+
+func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCount int, start, end arbutil.MessageIndex) {
+	actualCount := len(bm.Messages)
+	if actualCount != expectedCount {
+		t.Errorf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, expectedCount)
+	}
+
+	s := arbmath.MaxInt(start, 40)
+	for i := s; i <= end; i++ {
+		msg := bm.Messages[i-s]
+		if msg.SequenceNumber != i {
+			t.Errorf("unexpected sequence number (%d) in %d returned message", i, i-s)
 		}
 	}
 }
@@ -348,20 +365,56 @@ func TestGet(t *testing.T) {
 
 			// Some of the tests are checking the correct error is returned
 			// Do not check bm if an error should be returned
-			if err == nil {
-				actualCount := len(bm.Messages)
-				if actualCount != tc.expectedCount {
-					t.Fatalf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, tc.expectedCount)
-				}
-
-				start := arbmath.MaxInt(tc.start, 40)
-				for i := start; i <= tc.end; i++ {
-					msg := bm.Messages[i-start]
-					if msg.SequenceNumber != i {
-						t.Fatalf("unexpected sequence number (%d) in %d returned message", i, i-tc.start)
-					}
-				}
+			if tc.expectedErr == nil {
+				validateBroadcastMessage(t, bm, tc.expectedCount, tc.start, tc.end)
 			}
 		})
 	}
+}
+
+// TestBacklogRaceCondition performs read & write operations in separate
+// goroutines to ensure that the backlog does not have race conditions. The
+// `go test -race` command can be used to test this.
+func TestBacklogRaceCondition(t *testing.T) {
+	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
+	b, err := createDummyBacklog(indexes)
+	if err != nil {
+		t.Fatalf("error creating dummy backlog: %s", err)
+	}
+
+	wg := sync.WaitGroup{}
+	newIndexes := []arbutil.MessageIndex{47, 48, 49, 50, 51, 52, 53, 54, 55}
+
+	// Write to backlog in goroutine
+	wg.Add(1)
+	go func(t *testing.T, b *backlog) {
+		defer wg.Done()
+		for _, i := range newIndexes {
+			bm := m.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
+			err := b.Append(bm)
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}(t, b)
+
+	// Read from backlog in goroutine
+	wg.Add(1)
+	go func(t *testing.T, b *backlog) {
+		defer wg.Done()
+		for _, i := range []arbutil.MessageIndex{42, 43, 44, 45, 46, 47} {
+			bm, err := b.Get(i, i+1)
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err)
+			} else {
+				validateBroadcastMessage(t, bm, 2, i, i+1)
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}(t, b)
+
+	// Wait for both goroutines to finish
+	wg.Wait()
+	validateBacklog(t, b, 16, 40, 55, append(indexes, newIndexes...))
 }
