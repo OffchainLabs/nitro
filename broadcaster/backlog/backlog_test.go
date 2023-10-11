@@ -414,7 +414,20 @@ func TestBacklogRaceCondition(t *testing.T) {
 		}
 	}(t, b)
 
-	// Wait for both goroutines to finish
+	// Delete from backlog in goroutine. This is normally done via Append with
+	// a confirmed sequence number, using delete method for simplicity in test.
+	wg.Add(1)
+	go func(t *testing.T, b *backlog) {
+		defer wg.Done()
+		for _, i := range []uint64{40, 43, 47} {
+			b.delete(i)
+			time.Sleep(5 * time.Millisecond)
+		}
+	}(t, b)
+
+	// Wait for all goroutines to finish
 	wg.Wait()
-	validateBacklog(t, b, 16, 40, 55, append(indexes, newIndexes...))
+	// Messages up to 47 were deleted. However the segment that 47 was in is
+	// kept, which is why the backlog starts at 46.
+	validateBacklog(t, b, 10, 46, 55, append(indexes, newIndexes...))
 }
