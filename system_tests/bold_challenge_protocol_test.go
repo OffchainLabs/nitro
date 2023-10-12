@@ -1,3 +1,12 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+// race detection makes things slow and miss timeouts
+//go:build challengetest
+//go:build !race
+// +build challengetest
+// +build !race
+
 package arbtest
 
 import (
@@ -58,7 +67,6 @@ var (
 )
 
 func TestBoldProtocol(t *testing.T) {
-	t.Parallel()
 	t.Cleanup(func() {
 		Require(t, os.RemoveAll("/tmp/good"))
 		Require(t, os.RemoveAll("/tmp/evil"))

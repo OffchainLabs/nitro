@@ -253,7 +253,7 @@ func Test_determineFilePath(t *testing.T) {
 					StepHeights:   []l2stateprovider.Height{l2stateprovider.Height(50)},
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/big-step-50/state-roots",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/subchallenge-level-1-big-step-50/state-roots",
 			wantErr: false,
 		},
 	}
