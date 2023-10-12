@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"math/big"
 	"testing"
 	"time"
@@ -28,9 +29,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -696,7 +700,7 @@ func makeBoldBatch(
 		if i == divergeAtIndex {
 			value++
 		}
-		err := writeTxToBatch(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
+		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
 		Require(t, err)
 	}
 	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
@@ -721,4 +725,17 @@ func makeBoldBatch(
 	Require(t, err)
 	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
 	Require(t, err, "failed to get batch metadata after adding batch:")
+}
+
+func writeTxToBatchBold(writer io.Writer, tx *types.Transaction) error {
+	txData, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	var segment []byte
+	segment = append(segment, arbstate.BatchSegmentKindL2Message)
+	segment = append(segment, arbos.L2MessageKind_SignedTx)
+	segment = append(segment, txData...)
+	err = rlp.Encode(writer, segment)
+	return err
 }
