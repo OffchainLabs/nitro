@@ -634,8 +634,8 @@ func create2ndNodeWithConfigForBoldProtocol(
 
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
-		nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 	}
+	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	if stackConfig == nil {
 		stackConfig = stackConfigForTest(t)
