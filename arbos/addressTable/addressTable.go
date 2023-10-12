@@ -3,6 +3,8 @@
 
 package addressTable
 
+// TODO rename this package to lowercase
+
 import (
 	"bytes"
 	"errors"
