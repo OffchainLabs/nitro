@@ -3,7 +3,7 @@
 
 package addressSet
 
-// TODO rename this package to lowercase
+// TODO lowercase this package name
 
 import (
 	"errors"
