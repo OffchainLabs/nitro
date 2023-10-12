@@ -20,9 +20,9 @@ type BatchInfoJson struct {
 }
 
 type UserWasmJson struct {
-	ModuleHash     common.Hash
-	ModuleAsm      string
-	CompressedWasm string
+	ModuleHash common.Hash
+	Module     string
+	Asm        string
 }
 
 type ValidationInputJson struct {
@@ -57,9 +57,9 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		callBytes = append(callBytes, call.CodeHash.Bytes()...)
 		encCall := base64.StdEncoding.EncodeToString(callBytes)
 		encWasm := UserWasmJson{
-			CompressedWasm: base64.StdEncoding.EncodeToString(wasm.CompressedWasm),
-			ModuleHash:     wasm.ModuleHash,
-			ModuleAsm:      base64.StdEncoding.EncodeToString(wasm.ModuleAsm),
+			ModuleHash: wasm.ModuleHash,
+			Module:     base64.StdEncoding.EncodeToString(wasm.Module),
+			Asm:        base64.StdEncoding.EncodeToString(wasm.Asm),
 		}
 		res.UserWasms[encCall] = encWasm
 	}
@@ -101,18 +101,18 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			Version:  arbmath.BytesToUint16(callBytes[:2]),
 			CodeHash: common.BytesToHash(callBytes[2:]),
 		}
-		compressed, err := base64.StdEncoding.DecodeString(wasm.CompressedWasm)
+		asm, err := base64.StdEncoding.DecodeString(wasm.Asm)
 		if err != nil {
 			return nil, err
 		}
-		moduleAsm, err := base64.StdEncoding.DecodeString(wasm.ModuleAsm)
+		module, err := base64.StdEncoding.DecodeString(wasm.Module)
 		if err != nil {
 			return nil, err
 		}
 		decWasm := state.UserWasm{
-			ModuleHash:     wasm.ModuleHash,
-			ModuleAsm:      moduleAsm,
-			CompressedWasm: compressed,
+			ModuleHash: wasm.ModuleHash,
+			Module:     module,
+			Asm:        asm,
 		}
 		valInput.UserWasms[decCall] = &decWasm
 	}

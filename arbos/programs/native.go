@@ -81,7 +81,10 @@ func compileUserWasm(
 		return nil, common.Hash{}, err
 	}
 
-	db.SetActivatedAsm(program, data, version)
+	asm := data
+	module := []byte{}
+
+	db.NewActivation(program, version, asm, module)
 	return &info, common.BytesToHash(canonicalHashRust.intoBytes()), err
 }
 

@@ -22,8 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
@@ -408,20 +406,12 @@ func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWas
 	for index, byte := range wasm.ModuleHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
-	debugInt := 0
-	if debug {
-		debugInt = 1
-	}
-	inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
-	if err != nil {
-		return err
-	}
 	cErr := C.arbitrator_add_user_wasm(
 		m.ptr,
-		(*u8)(arbutil.SliceToPointer(inflated)),
-		u32(len(inflated)),
+		(*u8)(arbutil.SliceToPointer(wasm.Module)),
+		u32(len(wasm.Module)),
 		u16(call.Version),
-		u32(debugInt),
+		u32(arbmath.BoolToUint32(debug)),
 		&C.struct_Bytes32{hashBytes},
 	)
 	defer C.free(unsafe.Pointer(cErr))

@@ -210,7 +210,7 @@ func (machine *JitMachine) prove(
 		if err := writeExact(wasm.ModuleHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(wasm.ModuleAsm); err != nil {
+		if err := writeBytes(wasm.Asm); err != nil {
 			return state, err
 		}
 	}
