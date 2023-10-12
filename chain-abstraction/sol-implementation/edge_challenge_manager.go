@@ -216,8 +216,8 @@ func (e *specEdge) Bisect(
 		return lower, upper, nil
 	}
 
-	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
-		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, prefixHistoryRoot, prefixProof)
+	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return e.manager.writer.BisectEdge(opts, e.id, prefixHistoryRoot, prefixProof)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -290,8 +290,8 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	for i, r := range ancestorIds {
 		ancestors[i] = r.Hash
 	}
-	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByTime(e.manager.txOpts, e.id, ancestors, challengeV2gen.ExecutionStateData{
+	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByTime(opts, e.id, ancestors, challengeV2gen.ExecutionStateData{
 			ExecutionState: challengeV2gen.ExecutionState{
 				GlobalState:   challengeV2gen.GlobalState(assertionCreation.AfterState.GlobalState),
 				MachineStatus: assertionCreation.AfterState.MachineStatus,
@@ -322,8 +322,8 @@ func (e *specEdge) ConfirmByChildren(ctx context.Context) error {
 		return nil
 	}
 
-	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByChildren(e.manager.txOpts, e.id)
+	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByChildren(opts, e.id)
 	})
 	return err
 }
@@ -337,8 +337,8 @@ func (e *specEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 		return nil
 	}
 
-	_, err = transact(ctx, e.manager.backend, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByClaim(e.manager.txOpts, e.id, claimId)
+	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByClaim(opts, e.id, claimId)
 	})
 	return err
 }
@@ -597,12 +597,12 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	for i, r := range postHistoryInclusionProof {
 		post[i] = r
 	}
-	_, err = transact(
+	_, err = cm.assertionChain.transact(
 		ctx,
 		cm.assertionChain.backend,
-		func() (*types.Transaction, error) {
+		func(opts *bind.TransactOpts) (*types.Transaction, error) {
 			return cm.writer.ConfirmEdgeByOneStepProof(
-				cm.assertionChain.txOpts,
+				opts,
 				tentativeWinnerId.Hash,
 				challengeV2gen.OneStepData{
 					BeforeHash: oneStepData.BeforeHash,
@@ -773,9 +773,9 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 		PrefixProof:    startEndPrefixProof,
 		Proof:          blockEdgeProof,
 	}
-	receipt, err := transact(ctx, cm.backend, func() (*types.Transaction, error) {
+	receipt, err := cm.assertionChain.transact(ctx, cm.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
-			cm.txOpts,
+			opts,
 			args,
 		)
 	})
@@ -875,9 +875,9 @@ func (cm *specChallengeManager) AddSubChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, err
 	}
-	_, err = transact(ctx, cm.backend, func() (*types.Transaction, error) {
+	_, err = cm.assertionChain.transact(ctx, cm.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
-			cm.txOpts,
+			opts,
 			challengeV2gen.CreateEdgeArgs{
 				Level:          subChalTyp.Uint8(),
 				EndHistoryRoot: endCommit.Merkle,

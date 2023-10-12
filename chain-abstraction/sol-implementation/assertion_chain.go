@@ -50,13 +50,6 @@ type ChainBackend interface {
 	ReceiptFetcher
 }
 
-// ChainCommitter defines a type of chain backend that supports
-// committing changes via a direct method, such as a simulated backend
-// for testing purposes.
-type ChainCommitter interface {
-	Commit() common.Hash
-}
-
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
@@ -80,9 +73,12 @@ func NewAssertionChain(
 	txOpts *bind.TransactOpts,
 	backend ChainBackend,
 ) (*AssertionChain, error) {
+	// We disable sending txs by default, as we will first estimate their gas before
+	// we commit them onchain through the transact method in this package.
+	opts := copyTxOpts(txOpts)
 	chain := &AssertionChain{
 		backend:    backend,
-		txOpts:     txOpts,
+		txOpts:     opts,
 		rollupAddr: rollupAddr,
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
@@ -196,7 +192,6 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	if !parentAssertionCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("prev assertion creation info inbox max count not a uint64")
 	}
-	newOpts := copyTxOpts(a.txOpts)
 	if postState.GlobalState.Batch == 0 {
 		return nil, errors.New("assertion post state cannot have a batch count of 0, as only genesis can")
 	}
@@ -232,9 +227,9 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 		return nil, errors.Wrapf(err, "could not fetch assertion with computed hash %#x", computedHash)
 	default:
 	}
-	receipt, err := transact(ctx, a.backend, func() (*types.Transaction, error) {
+	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return stakeFn(
-			newOpts,
+			opts,
 			parentAssertionCreationInfo.RequiredStake,
 			rollupgen.AssertionInputs{
 				BeforeStateData: rollupgen.BeforeStateData{
@@ -326,9 +321,9 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if !prevCreationInfo.InboxMaxCount.IsUint64() {
 		return errors.New("assertion prev creation info inbox max count was not a uint64")
 	}
-	receipt, err := transact(ctx, a.backend, func() (*types.Transaction, error) {
+	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
-			copyTxOpts(a.txOpts),
+			opts,
 			b,
 			creationInfo.ParentAssertionHash,
 			creationInfo.AfterState,
@@ -657,67 +652,4 @@ func handleCreateAssertionError(err error, blockHash common.Hash) error {
 	default:
 		return err
 	}
-}
-
-// Runs a callback function meant to write to a chain backend, and if the
-// chain backend supports committing directly, we call the commit function before
-// returning. This function additionally waits for the transaction to complete and returns
-// an optional transaction receipt. It returns an error if the
-// transaction had a failed status on-chain, or if the execution of the callback
-// failed directly.
-func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
-	tx, err := fn()
-	if err != nil {
-		return nil, err
-	}
-	if commiter, ok := backend.(ChainCommitter); ok {
-		commiter.Commit()
-	}
-	receipt, err := bind.WaitMined(ctx, backend, tx)
-	if err != nil {
-		return nil, err
-	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		callMsg := ethereum.CallMsg{
-			From:       common.Address{},
-			To:         tx.To(),
-			Gas:        0,
-			GasPrice:   nil,
-			Value:      tx.Value(),
-			Data:       tx.Data(),
-			AccessList: tx.AccessList(),
-		}
-		if _, err := backend.CallContract(ctx, callMsg, nil); err != nil {
-			return nil, errors.Wrap(err, "failed transaction")
-		}
-	}
-	return receipt, nil
-}
-
-// copyTxOpts creates a deep copy of the given transaction options.
-func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
-	copied := &bind.TransactOpts{
-		From:     opts.From,
-		Context:  opts.Context,
-		NoSend:   opts.NoSend,
-		Signer:   opts.Signer,
-		GasLimit: opts.GasLimit,
-	}
-
-	if opts.Nonce != nil {
-		copied.Nonce = new(big.Int).Set(opts.Nonce)
-	}
-	if opts.Value != nil {
-		copied.Value = new(big.Int).Set(opts.Value)
-	}
-	if opts.GasPrice != nil {
-		copied.GasPrice = new(big.Int).Set(opts.GasPrice)
-	}
-	if opts.GasFeeCap != nil {
-		copied.GasFeeCap = new(big.Int).Set(opts.GasFeeCap)
-	}
-	if opts.GasTipCap != nil {
-		copied.GasTipCap = new(big.Int).Set(opts.GasTipCap)
-	}
-	return copied
 }

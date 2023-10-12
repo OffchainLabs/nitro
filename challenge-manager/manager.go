@@ -199,14 +199,22 @@ func New(
 	m.rollupFilterer = rollupFilterer
 	m.chalManagerAddr = chalManagerAddr
 	m.chalManager = chalManagerFilterer
-	m.watcher = watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name)
-	m.poster = assertions.NewPoster(
+	watcher, err := watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name)
+	if err != nil {
+		return nil, err
+	}
+	m.watcher = watcher
+	poster, err := assertions.NewPoster(
 		m.chain,
 		m.stateManager,
 		m.name,
 		m.assertionPostingInterval,
 	)
-	m.scanner = assertions.NewScanner(
+	if err != nil {
+		return nil, err
+	}
+	m.poster = poster
+	scanner, err := assertions.NewScanner(
 		m.chain,
 		m.stateManager,
 		m.backend,
@@ -216,6 +224,10 @@ func New(
 		m.assertionScanningInterval,
 		m.assertionConfirmingInterval,
 	)
+	if err != nil {
+		return nil, err
+	}
+	m.scanner = scanner
 
 	if m.apiAddr != "" && m.client == nil {
 		return nil, errors.New("go-ethereum RPC client required to enable API service")

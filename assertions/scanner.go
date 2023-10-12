@@ -62,7 +62,13 @@ func NewScanner(
 	validatorName string,
 	pollInterval,
 	assertionConfirmationAttemptInterval time.Duration,
-) *Scanner {
+) (*Scanner, error) {
+	if pollInterval == 0 {
+		return nil, errors.New("assertion scanning interval must be greater than 0")
+	}
+	if assertionConfirmationAttemptInterval == 0 {
+		return nil, errors.New("assertion confirmation attempt interval must be greater than 0")
+	}
 	return &Scanner{
 		chain:                       chain,
 		backend:                     backend,
@@ -76,7 +82,7 @@ func NewScanner(
 		forksDetectedCount:          0,
 		challengesSubmittedCount:    0,
 		assertionsProcessedCount:    0,
-	}
+	}, nil
 }
 
 // Start scanning the blockchain for assertion creation events in a polling manner

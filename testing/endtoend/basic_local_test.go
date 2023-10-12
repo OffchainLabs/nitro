@@ -201,8 +201,14 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 		}
 
 		// Post assertions.
-		alicePoster := assertions.NewPoster(aChain, scenario.AliceStateManager, "alice", time.Hour)
-		bobPoster := assertions.NewPoster(bChain, scenario.BobStateManager, "bob", time.Hour)
+		alicePoster, err := assertions.NewPoster(aChain, scenario.AliceStateManager, "alice", time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bobPoster, err := assertions.NewPoster(bChain, scenario.BobStateManager, "bob", time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		aliceLeaf, err := alicePoster.PostAssertionAndNewStake(ctx)
 		if err != nil {
@@ -214,14 +220,20 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 		}
 
 		// Scan for created assertions.
-		aliceScanner := assertions.NewScanner(aChain, scenario.AliceStateManager, be.Client(), a, rollup, "alice", time.Hour, time.Second*10)
-		bobScanner := assertions.NewScanner(bChain, scenario.BobStateManager, be.Client(), b, rollup, "bob", time.Hour, time.Second*10)
+		aliceScanner, err := assertions.NewScanner(aChain, scenario.AliceStateManager, be.Client(), a, rollup, "alice", time.Hour, time.Second*10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bobScanner, err := assertions.NewScanner(bChain, scenario.BobStateManager, be.Client(), b, rollup, "bob", time.Hour, time.Second*10)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if err := aliceScanner.ProcessAssertionCreation(ctx, aliceLeaf.Id()); err != nil {
-			panic(err)
+			t.Fatal(err)
 		}
 		if err := bobScanner.ProcessAssertionCreation(ctx, bobLeaf.Id()); err != nil {
-			panic(err)
+			t.Fatal(err)
 		}
 
 		a.Start(ctx)
@@ -263,14 +275,18 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 		bob, err := validator.New(bobCtx, bChain, be.Client(), s.BobStateManager, rollup, validator.WithAddress(be.Bob().From), validator.WithName("bob"), validator.WithMode(types.MakeMode), validator.WithEdgeTrackerWakeInterval(100*time.Millisecond))
 		require.NoError(t, err)
 
-		alicePoster := assertions.NewPoster(aChain, s.AliceStateManager, "alice", time.Hour)
-		bobPoster := assertions.NewPoster(bChain, s.BobStateManager, "bob", time.Hour)
+		alicePoster, err := assertions.NewPoster(aChain, s.AliceStateManager, "alice", time.Hour)
+		require.NoError(t, err)
+		bobPoster, err := assertions.NewPoster(bChain, s.BobStateManager, "bob", time.Hour)
+		require.NoError(t, err)
 		aliceLeaf, err := alicePoster.PostAssertionAndNewStake(ctx)
 		require.NoError(t, err)
 		bobLeaf, err := bobPoster.PostAssertionAndNewStake(bobCtx)
 		require.NoError(t, err)
-		aliceScanner := assertions.NewScanner(aChain, s.AliceStateManager, be.Client(), alice, rollup, "alice", time.Hour, time.Second*10)
-		bobScanner := assertions.NewScanner(bChain, s.BobStateManager, be.Client(), bob, rollup, "bob", time.Hour, time.Second*10)
+		aliceScanner, err := assertions.NewScanner(aChain, s.AliceStateManager, be.Client(), alice, rollup, "alice", time.Hour, time.Second*10)
+		require.NoError(t, err)
+		bobScanner, err := assertions.NewScanner(bChain, s.BobStateManager, be.Client(), bob, rollup, "bob", time.Hour, time.Second*10)
+		require.NoError(t, err)
 		require.NoError(t, aliceScanner.ProcessAssertionCreation(ctx, aliceLeaf.Id()))
 		require.NoError(t, bobScanner.ProcessAssertionCreation(bobCtx, bobLeaf.Id()))
 

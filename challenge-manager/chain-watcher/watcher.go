@@ -109,7 +109,10 @@ func New(
 	interval time.Duration,
 	numBigStepLevels uint8,
 	validatorName string,
-) *Watcher {
+) (*Watcher, error) {
+	if interval == 0 {
+		return nil, errors.New("chain watcher polling interval must be greater than 0")
+	}
 	return &Watcher{
 		chain:              chain,
 		edgeManager:        edgeManager,
@@ -119,7 +122,7 @@ func New(
 		histChecker:        histChecker,
 		numBigStepLevels:   numBigStepLevels,
 		validatorName:      validatorName,
-	}
+	}, nil
 }
 
 // HonestBlockChallengeRootEdge gets the honest block challenge root edge for a given challenge

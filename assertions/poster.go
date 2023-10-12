@@ -31,13 +31,16 @@ func NewPoster(
 	stateManager l2stateprovider.ExecutionProvider,
 	validatorName string,
 	postInterval time.Duration,
-) *Poster {
+) (*Poster, error) {
+	if postInterval == 0 {
+		return nil, errors.New("assertion posting interval must be greater than 0")
+	}
 	return &Poster{
 		chain:         chain,
 		stateManager:  stateManager,
 		validatorName: validatorName,
 		postInterval:  postInterval,
-	}
+	}, nil
 }
 
 func (p *Poster) Start(ctx context.Context) {

@@ -149,6 +149,9 @@ func New(
 	for _, o := range opts {
 		o(tr)
 	}
+	if tr.actInterval == 0 {
+		return nil, errors.New("edge tracker act interval must be greater than 0")
+	}
 	fsm, err := newEdgeTrackerFsm(
 		EdgeStarted,
 		tr.fsmOpts...,

@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "assertion_chain.go",
         "edge_challenge_manager.go",
+        "transact.go",
         "types.go",
     ],
     importpath = "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation",
