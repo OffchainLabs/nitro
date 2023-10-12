@@ -362,6 +362,10 @@ func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionHa
 	args := m.Called(ctx, id)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
+func (m *MockProtocol) AssertionStatus(ctx context.Context, id protocol.AssertionHash) (protocol.AssertionStatus, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(protocol.AssertionStatus), args.Error(1)
+}
 
 func (m *MockProtocol) AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error) {
 	args := m.Called(ctx, assertionHash)
@@ -401,12 +405,19 @@ func (m *MockProtocol) LatestCreatedAssertionHashes(ctx context.Context) ([]prot
 }
 
 // Mutating methods.
+func (m *MockProtocol) ConfirmAssertionByTime(
+	ctx context.Context,
+	assertionHash protocol.AssertionHash,
+) error {
+	args := m.Called(ctx, assertionHash)
+	return args.Error(0)
+}
 func (m *MockProtocol) ConfirmAssertionByChallengeWinner(
 	ctx context.Context,
 	assertionHash protocol.AssertionHash,
 	winningEdgeId protocol.EdgeId,
 ) error {
-	args := m.Called(ctx, assertionHash)
+	args := m.Called(ctx, assertionHash, winningEdgeId)
 	return args.Error(0)
 }
 

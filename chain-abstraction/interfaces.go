@@ -81,6 +81,10 @@ type AssertionChain interface {
 	// Read-only methods.
 	IsStaked(ctx context.Context) (bool, error)
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
+	AssertionStatus(
+		ctx context.Context,
+		assertionHash AssertionHash,
+	) (AssertionStatus, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
 	LatestCreatedAssertion(ctx context.Context) (Assertion, error)
 	LatestCreatedAssertionHashes(ctx context.Context) ([]AssertionHash, error)
@@ -103,6 +107,10 @@ type AssertionChain interface {
 		assertionCreationInfo *AssertionCreatedInfo,
 		postState *ExecutionState,
 	) (Assertion, error)
+	ConfirmAssertionByTime(
+		ctx context.Context,
+		assertionHash AssertionHash,
+	) error
 	ConfirmAssertionByChallengeWinner(
 		ctx context.Context,
 		assertionHash AssertionHash,

@@ -47,7 +47,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		}, nil)
 		p.On("GetAssertion", ctx, mockId(2)).Return(ev, nil)
 		p.On("GetAssertion", ctx, mockId(1)).Return(prev, nil)
-		scanner := assertions.NewScanner(p, mockStateProvider, cfg.Backend, manager, cfg.Addrs.Rollup, "", time.Second)
+		scanner := assertions.NewScanner(p, mockStateProvider, cfg.Backend, manager, cfg.Addrs.Rollup, "", time.Second, time.Second)
 
 		err := scanner.ProcessAssertionCreation(ctx, ev.Id())
 		require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			challengemanager.WithEdgeTrackerWakeInterval(100*time.Millisecond),
 		)
 		require.NoError(t, err)
-		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second)
+		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second, time.Second)
 
 		err = scanner.ProcessAssertionCreation(ctx, createdData.Leaf1.Id())
 		require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		otherScanner := assertions.NewScanner(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second)
+		otherScanner := assertions.NewScanner(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second, time.Second)
 
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			challengemanager.WithEdgeTrackerWakeInterval(100*time.Millisecond),
 		)
 		require.NoError(t, err)
-		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second)
+		scanner := assertions.NewScanner(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second, time.Second)
 
 		err = scanner.ProcessAssertionCreation(ctx, createdData.Leaf1.Id())
 		require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		otherScanner := assertions.NewScanner(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second)
+		otherScanner := assertions.NewScanner(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second, time.Second)
 
 		err = otherScanner.ProcessAssertionCreation(ctx, createdData.Leaf2.Id())
 		require.NoError(t, err)

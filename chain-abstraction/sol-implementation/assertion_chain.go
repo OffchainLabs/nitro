@@ -122,6 +122,14 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protoco
 	}, nil
 }
 
+func (a *AssertionChain) AssertionStatus(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.AssertionStatus, error) {
+	res, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash.Hash)
+	if err != nil {
+		return protocol.NoAssertion, err
+	}
+	return protocol.AssertionStatus(res.Status), nil
+}
+
 func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
 	res, err := a.rollup.LatestConfirmed(&bind.CallOpts{Context: ctx})
 	if err != nil {
@@ -270,6 +278,10 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 
 func (a *AssertionChain) GenesisAssertionHash(ctx context.Context) (common.Hash, error) {
 	return a.userLogic.GenesisAssertionHash(&bind.CallOpts{Context: ctx})
+}
+
+func (a *AssertionChain) ConfirmAssertionByTime(ctx context.Context, assertionHash protocol.AssertionHash) error {
+	return a.ConfirmAssertionByChallengeWinner(ctx, assertionHash, protocol.EdgeId{})
 }
 
 // ConfirmAssertionByChallengeWinner attempts to confirm an assertion onchain

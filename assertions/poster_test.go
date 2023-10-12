@@ -98,9 +98,13 @@ func Test_findLatestValidAssertionWithFork(t *testing.T) {
 }
 
 // Set-ups a chain with a fork at the 1st assertion
-//    /-- 1 = Honest
+//
+//	/-- 1 = Honest
+//
 // 0--
-//    \-- 2 = Evil
+//
+//	\-- 2 = Evil
+//
 // First honest assertion is posted with id 1 and prevId 0
 // Then evil assertion is posted with id 2 and prevId 0
 func setupAssertionsWithFork(ctx context.Context, chain *mocks.MockProtocol, stateManager *mocks.MockStateManager) {
