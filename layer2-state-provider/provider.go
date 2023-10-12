@@ -54,20 +54,22 @@ type Provider interface {
 }
 
 type ExecutionProvider interface {
-	// Produces the latest state to assert to L1 from the local state manager's perspective.
-	ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error)
+	// Produces the L2 execution state to assert to after the processing the given batch count.
+	ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error)
 	// If the state manager locally has this execution state, returns its message count and no error.
 	// Returns ErrChainCatchingUp if catching up to chain.
 	// Returns ErrNoExecutionState if the state manager does not have this execution state.
-	ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error)
+	AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error
 }
 
 type HistoryCommitmentRequest struct {
 	// The WasmModuleRoot for the execution of machines. This is a global parameter
 	// that is specified in the Rollup contracts.
 	WasmModuleRoot common.Hash
-	// The batch sequence number at which we want to compute this history commitment.
-	Batch Batch
+	// The batch sequence number at which we want to start computing this history commitment.
+	FromBatch Batch
+	// The batch sequence number at which we want to end computing this history commitment.
+	ToBatch Batch
 	// A slice of heights that tells the backend where the subchallenges for the requested
 	// history commitment originated from.
 	// Each index corresponds to a challenge level. For example,
@@ -101,6 +103,8 @@ type OneStepProofProvider interface {
 	OneStepProofData(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
+		fromBatch,
+		toBatch Batch,
 		upperChallengeOriginHeights []Height,
 		fromHeight,
 		upToHeight Height,

@@ -8,11 +8,13 @@ package challengetree
 
 import (
 	"context"
+	"fmt"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -62,28 +64,70 @@ func New(
 	}
 }
 
+// HonestBlockChallengeRootEdge gets the honest, root challenge block edge for the top level assertion
+// being challenged.
+func (ht *HonestChallengeTree) HonestBlockChallengeRootEdge() (protocol.ReadOnlyEdge, error) {
+	// In our locally tracked challenge tree implementation, the
+	// block challenge level is equal to the total challenge levels - 1.
+	blockChallengeLevel := protocol.ChallengeLevel(ht.totalChallengeLevels) - 1
+	if rootEdges, ok := ht.honestRootEdgesByLevel.TryGet(blockChallengeLevel); ok {
+		if rootEdges.Len() != 1 {
+			return nil, fmt.Errorf(
+				"expected one honest root block challenge edge for challenged assertion %#x",
+				ht.topLevelAssertionHash,
+			)
+		}
+		return rootEdges.Get(0).Unwrap(), nil
+	}
+	return nil, fmt.Errorf("no honest root edges for block challenge level for assertion %#x", ht.topLevelAssertionHash)
+}
+
+var (
+	ErrAlreadyBeingTracked              = errors.New("edge already being tracked")
+	ErrMismatchedChallengeAssertionHash = errors.New("edge challenged assertion hash is not the expected one for the challenge")
+)
+
 // AddEdge to the honest challenge tree. Only honest edges are tracked, but we also keep track
 // of rival ids in a mutual ids mapping internally for extra book-keeping.
 func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge) (protocol.Agreement, error) {
 	if _, ok := ht.edges.TryGet(eg.Id()); ok {
-		// Already being tracked.
-		return protocol.Agreement{}, nil
+		return protocol.Agreement{}, ErrAlreadyBeingTracked
 	}
 	assertionHash, err := ht.metadataReader.TopLevelAssertion(ctx, eg.Id())
 	if err != nil {
 		return protocol.Agreement{}, errors.Wrapf(err, "could not get top level assertion for edge %#x", eg.Id())
 	}
 	if ht.topLevelAssertionHash != assertionHash {
-		// Do nothing - this edge should not be part of this challenge tree.
-		return protocol.Agreement{}, nil
+		// This edge should not be part of this challenge tree.
+		return protocol.Agreement{}, ErrMismatchedChallengeAssertionHash
 	}
-	creationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, assertionHash)
+
+	var claimedAssertionHash protocol.AssertionHash
+	challengeLevel := eg.GetChallengeLevel()
+
+	// If this is a root challege level zero edge.
+	if challengeLevel == protocol.NewBlockChallengeLevel() && !eg.ClaimId().IsNone() {
+		claimedAssertionHash = protocol.AssertionHash{Hash: common.Hash(eg.ClaimId().Unwrap())}
+	} else {
+		honestLevelZeroEdge, honestErr := ht.HonestBlockChallengeRootEdge()
+		if honestErr != nil {
+			return protocol.Agreement{}, honestErr
+		}
+		if honestLevelZeroEdge.ClaimId().IsNone() {
+			return protocol.Agreement{}, errors.New("honest level zero edge has no claim id")
+		}
+		claimedAssertionHash = protocol.AssertionHash{Hash: common.Hash(honestLevelZeroEdge.ClaimId().Unwrap())}
+	}
+
+	// We get the batch range for the claimed assertion of the edge which is needed to compute
+	// history commitments. We need to figure out from what batch to what batch the assertion
+	// is claiming its data for.
+	creationInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, claimedAssertionHash)
 	if err != nil {
 		return protocol.Agreement{}, err
 	}
-	if !creationInfo.InboxMaxCount.IsUint64() {
-		return protocol.Agreement{}, errors.New("inbox max count was not a uint64")
-	}
+	fromBatch := l2stateprovider.Batch(protocol.GoGlobalStateFromSolidity(creationInfo.BeforeState.GlobalState).Batch)
+	toBatch := l2stateprovider.Batch(protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState).Batch)
 
 	// We only track edges we fully agree with (honest edges).
 	startHeight, startCommit := eg.StartCommitment()
@@ -92,13 +136,7 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	if err != nil {
 		return protocol.Agreement{}, errors.Wrapf(err, "could not get claim heights for edge %#x", eg.Id())
 	}
-	parentAssertionInfo, err := ht.metadataReader.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
-	if err != nil {
-		return protocol.Agreement{}, err
-	}
-	parentAssertionAfterState := protocol.GoExecutionStateFromSolidity(parentAssertionInfo.AfterState)
 
-	challengeLevel := eg.GetChallengeLevel()
 	startHeights := make([]l2stateprovider.Height, len(heights.ChallengeOriginHeights))
 	for i, h := range heights.ChallengeOriginHeights {
 		startHeights[i] = l2stateprovider.Height(h)
@@ -109,10 +147,11 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
 		request := &l2stateprovider.HistoryCommitmentRequest{
 			WasmModuleRoot:              creationInfo.WasmModuleRoot,
-			Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-			FromHeight:                  l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch),
+			FromBatch:                   fromBatch,
+			ToBatch:                     toBatch,
+			FromHeight:                  0,
 			UpperChallengeOriginHeights: make([]l2stateprovider.Height, 0),
-			UpToHeight:                  option.Some(l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch + uint64(endHeight))),
+			UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
 		}
 		isHonestEdge, err = ht.histChecker.AgreesWithHistoryCommitment(
 			ctx,
@@ -142,12 +181,10 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 		if len(startHeights) == 0 {
 			return protocol.Agreement{}, errors.New("start height cannot be zero")
 		}
-		// If this is a subchallenge, the first element of the start heights must account for the batch
-		// it corresponds to in the assertion chain.
-		startHeights[0] += l2stateprovider.Height(parentAssertionAfterState.GlobalState.Batch)
 		request := &l2stateprovider.HistoryCommitmentRequest{
 			WasmModuleRoot:              creationInfo.WasmModuleRoot,
-			Batch:                       l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			FromBatch:                   fromBatch,
+			ToBatch:                     toBatch,
 			FromHeight:                  l2stateprovider.Height(0),
 			UpperChallengeOriginHeights: startHeights,
 			UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),

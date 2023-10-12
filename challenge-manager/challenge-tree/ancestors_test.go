@@ -188,7 +188,8 @@ func id(eId mock.EdgeId) protocol.EdgeId {
 // and then inserts the respective edges into a challenge tree.
 func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
 	t.Helper()
-	originEdge := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
+	originEdge, ok := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
+	require.Equal(t, true, ok)
 	origin := mock.OriginId(originEdge.ComputeMutualId())
 	aliceEdges := buildEdges(
 		// Alice.
@@ -310,7 +311,8 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 // and then inserts the respective edges into a challenge tree.
 func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
 	t.Helper()
-	originEdge := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
+	originEdge, ok := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
+	require.Equal(t, true, ok)
 	origin := mock.OriginId(originEdge.ComputeMutualId())
 	aliceEdges := buildEdges(
 		// Alice.

@@ -98,7 +98,8 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	toMessageNumber := l2stateprovider.Height(7)
 	req := &l2stateprovider.HistoryCommitmentRequest{
 		WasmModuleRoot:              wasmModuleRoot,
-		Batch:                       10,
+		FromBatch:                   0,
+		ToBatch:                     10,
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
 		FromHeight:                  startMessageNumber,
 		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
@@ -115,8 +116,10 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
 	require.NoError(t, err)
-	preExpansion := data[0].([][32]byte)
-	proof := data[1].([][32]byte)
+	preExpansion, ok := data[0].([][32]byte)
+	require.Equal(t, true, ok)
+	proof, ok := data[1].([][32]byte)
+	require.Equal(t, true, ok)
 
 	preExpansionHashes := make([]common.Hash, len(preExpansion))
 	for i := 0; i < len(preExpansion); i++ {
@@ -165,7 +168,8 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	toMessageNumber := l2stateprovider.Height(6)
 	req := &l2stateprovider.HistoryCommitmentRequest{
 		WasmModuleRoot:              wasmModuleRoot,
-		Batch:                       10,
+		FromBatch:                   0,
+		ToBatch:                     10,
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
 		FromHeight:                  startMessageNumber,
 		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
@@ -182,8 +186,10 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
 	require.NoError(t, err)
-	preExpansion := data[0].([][32]byte)
-	proof := data[1].([][32]byte)
+	preExpansion, ok := data[0].([][32]byte)
+	require.Equal(t, true, ok)
+	proof, ok := data[1].([][32]byte)
+	require.Equal(t, true, ok)
 
 	preExpansionHashes := make([]common.Hash, len(preExpansion))
 	for i := 0; i < len(preExpansion); i++ {
@@ -240,7 +246,8 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	batch := l2stateprovider.Batch(1)
 	req := &l2stateprovider.HistoryCommitmentRequest{
 		WasmModuleRoot:              wasmModuleRoot,
-		Batch:                       batch,
+		FromBatch:                   0,
+		ToBatch:                     batch,
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
 		FromHeight:                  3,
 		UpToHeight:                  option.None[l2stateprovider.Height](),
@@ -261,8 +268,10 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 
 	data, err := statemanager.ProofArgs.Unpack(packedProof)
 	require.NoError(f, err)
-	preExpansion := data[0].([][32]byte)
-	proof := data[1].([][32]byte)
+	preExpansion, ok := data[0].([][32]byte)
+	require.Equal(f, true, ok)
+	proof, ok := data[1].([][32]byte)
+	require.Equal(f, true, ok)
 	preExp := make([]byte, 0)
 	for _, item := range preExpansion {
 		preExp = append(preExp, item[:]...)

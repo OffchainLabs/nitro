@@ -5,7 +5,11 @@
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 package threadsafe
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/OffchainLabs/bold/containers/option"
+)
 
 type Slice[V any] struct {
 	sync.RWMutex
@@ -20,6 +24,15 @@ func (s *Slice[V]) Push(v V) {
 	s.Lock()
 	defer s.Unlock()
 	s.items = append(s.items, v)
+}
+
+func (s *Slice[V]) Get(i int) option.Option[V] {
+	s.RLock()
+	defer s.RUnlock()
+	if i >= len(s.items) {
+		return option.None[V]()
+	}
+	return option.Some(s.items[i])
 }
 
 func (s *Slice[V]) Len() int {

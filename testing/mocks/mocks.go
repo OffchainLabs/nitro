@@ -80,8 +80,8 @@ func (m *MockStateManager) PrefixProof(
 	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockStateManager) ExecutionStateAtMessageNumber(ctx context.Context, messageNumber uint64) (*protocol.ExecutionState, error) {
-	args := m.Called(ctx, messageNumber)
+func (m *MockStateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
+	args := m.Called(ctx, batchCount)
 	return args.Get(0).(*protocol.ExecutionState), args.Error(1)
 }
 
@@ -95,14 +95,16 @@ func (m *MockStateManager) AgreesWithHistoryCommitment(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockStateManager) ExecutionStateMsgCount(ctx context.Context, state *protocol.ExecutionState) (uint64, error) {
+func (m *MockStateManager) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
 	args := m.Called(ctx, state)
-	return args.Get(0).(uint64), args.Error(1)
+	return args.Error(0)
 }
 
 func (m *MockStateManager) OneStepProofData(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
+	fromBatch,
+	toBatch l2stateprovider.Batch,
 	startHeights []l2stateprovider.Height,
 	fromHeight,
 	upToHeight l2stateprovider.Height,

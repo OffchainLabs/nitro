@@ -9,6 +9,7 @@ package assertions
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"os"
 	"time"
@@ -202,6 +203,7 @@ func (s *Scanner) ProcessAssertionCreation(
 		"validatorName":       s.validatorName,
 		"globalState":         goGs,
 		"machineFinishedHash": crypto.Keccak256Hash([]byte("Machine finished:"), goGs.Hash().Bytes()),
+		"assertionHash":       assertionHash,
 	})
 	s.assertionsProcessedCount++
 	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
@@ -218,7 +220,16 @@ func (s *Scanner) ProcessAssertionCreation(
 	}
 	s.forksDetectedCount++
 	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	msgCount, err := s.stateProvider.ExecutionStateMsgCount(ctx, execState)
+	if !creationInfo.InboxMaxCount.IsUint64() {
+		return errors.New("inbox max count was not a uint64")
+	}
+	batchIndex := creationInfo.InboxMaxCount.Uint64() - 1
+	srvlog.Info("Checking if agrees with execution state", log.Ctx{
+		"validatorName": s.validatorName,
+		"batchIndex":    batchIndex,
+		"execState":     fmt.Sprintf("%+v", execState),
+	})
+	err = s.stateProvider.AgreesWithExecutionState(ctx, execState)
 	switch {
 	case errors.Is(err, l2stateprovider.ErrNoExecutionState):
 		return nil
@@ -252,7 +263,7 @@ func (s *Scanner) ProcessAssertionCreation(
 	srvlog.Error("Detected invalid assertion, but not configured to challenge", log.Ctx{
 		"parentAssertionHash":   creationInfo.ParentAssertionHash,
 		"detectedAssertionHash": assertionHash,
-		"msgCount":              msgCount,
+		"batchIndex":            batchIndex,
 	})
 	return nil
 }

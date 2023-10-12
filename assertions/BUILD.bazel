@@ -36,11 +36,11 @@ go_test(
         "//challenge-manager",
         "//challenge-manager/types",
         "//containers/option",
-        "//layer2-state-provider",
         "//solgen/go/rollupgen",
         "//testing/mocks",
         "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_pkg_errors//:errors",
         "@com_github_stretchr_testify//require",
     ],
 )

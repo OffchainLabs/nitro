@@ -61,7 +61,7 @@ type Manager struct {
 	chainWatcherInterval        time.Duration
 	watcher                     *watcher.Watcher
 	trackedEdgeIds              *threadsafe.Set[protocol.EdgeId]
-	assertionHashCache          *threadsafe.Map[protocol.AssertionHash, [2]uint64]
+	batchIndexForAssertionCache *threadsafe.Map[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]
 	poster                      *assertions.Poster
 	scanner                     *assertions.Scanner
 	assertionPostingInterval    time.Duration
@@ -154,10 +154,10 @@ func New(
 		rollupAddr:                  rollupAddr,
 		chainWatcherInterval:        time.Millisecond * 500,
 		trackedEdgeIds:              threadsafe.NewSet[protocol.EdgeId](),
-		assertionHashCache:          threadsafe.NewMap[protocol.AssertionHash, [2]uint64](),
+		batchIndexForAssertionCache: threadsafe.NewMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](),
 		assertionPostingInterval:    time.Hour,
-		assertionConfirmingInterval: time.Second * 10,
 		assertionScanningInterval:   time.Minute,
+		assertionConfirmingInterval: time.Second * 10,
 	}
 	for _, o := range opts {
 		o(m)
@@ -278,33 +278,46 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 	if err != nil {
 		return nil, err
 	}
+	blockChallengeRootEdge, err := m.watcher.HonestBlockChallengeRootEdge(ctx, assertionHash)
+	if err != nil {
+		return nil, err
+	}
+	if blockChallengeRootEdge.ClaimId().IsNone() {
+		return nil, fmt.Errorf(
+			"block challenge root edge %#x did not have a claim id for challenged assertion %#x",
+			blockChallengeRootEdge.Id(),
+			assertionHash,
+		)
+	}
+	claimedAssertionId := blockChallengeRootEdge.ClaimId().Unwrap()
 
 	// Smart caching to avoid querying the same assertion number and creation info multiple times.
 	// Edges in the same challenge should have the same creation info.
-	cachedHeightAndInboxMsgCount, ok := m.assertionHashCache.TryGet(assertionHash)
-	var assertionHeight uint64
-	var inboxMsgCount uint64
+	cachedHeightAndInboxMsgCount, ok := m.batchIndexForAssertionCache.TryGet(protocol.AssertionHash{Hash: common.Hash(claimedAssertionId)})
+	var edgeTrackerAssertionInfo edgetracker.AssociatedAssertionMetadata
 	if !ok {
-		// Retry until you get the assertion creation info.
 		assertionCreationInfo, creationErr := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
-			return m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+			return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: common.Hash(claimedAssertionId)})
 		})
 		if creationErr != nil {
 			return nil, creationErr
 		}
-
-		// Retry until you get the execution state block height.
-		height, heightErr := retry.UntilSucceeds(ctx, func() (uint64, error) {
-			return m.getExecutionStateMsgCount(ctx, assertionCreationInfo.AfterState)
+		prevCreationInfo, prevCreationErr := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+			return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: assertionCreationInfo.ParentAssertionHash})
 		})
-		if heightErr != nil {
-			return nil, heightErr
+		if prevCreationErr != nil {
+			return nil, prevCreationErr
 		}
-		assertionHeight = height
-		inboxMsgCount = assertionCreationInfo.InboxMaxCount.Uint64() + 1
-		m.assertionHashCache.Put(assertionHash, [2]uint64{assertionHeight, inboxMsgCount})
+		fromBatch := protocol.GoGlobalStateFromSolidity(assertionCreationInfo.BeforeState.GlobalState).Batch
+		toBatch := protocol.GoGlobalStateFromSolidity(assertionCreationInfo.AfterState.GlobalState).Batch
+		edgeTrackerAssertionInfo = edgetracker.AssociatedAssertionMetadata{
+			FromBatch:      l2stateprovider.Batch(fromBatch),
+			ToBatch:        l2stateprovider.Batch(toBatch),
+			WasmModuleRoot: prevCreationInfo.WasmModuleRoot,
+		}
+		m.batchIndexForAssertionCache.Put(protocol.AssertionHash{Hash: common.Hash(claimedAssertionId)}, edgeTrackerAssertionInfo)
 	} else {
-		assertionHeight, inboxMsgCount = cachedHeightAndInboxMsgCount[0], cachedHeightAndInboxMsgCount[1]
+		edgeTrackerAssertionInfo = cachedHeightAndInboxMsgCount
 	}
 	return retry.UntilSucceeds(ctx, func() (*edgetracker.Tracker, error) {
 		return edgetracker.New(
@@ -314,10 +327,7 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 			m.stateManager,
 			m.watcher,
 			m,
-			edgetracker.HeightConfig{
-				StartBlockHeight: assertionHeight,
-				InboxMaxCount:    inboxMsgCount,
-			},
+			&edgeTrackerAssertionInfo,
 			edgetracker.WithActInterval(m.edgeTrackerWakeInterval),
 			edgetracker.WithTimeReference(m.timeRef),
 			edgetracker.WithValidatorName(m.name),
@@ -356,17 +366,4 @@ func (m *Manager) Start(ctx context.Context) {
 			}
 		}()
 	}
-}
-
-// Gets the execution height for a rollup state from our state manager.
-func (m *Manager) getExecutionStateMsgCount(ctx context.Context, st rollupgen.ExecutionState) (uint64, error) {
-	height, err := m.stateManager.ExecutionStateMsgCount(ctx, protocol.GoExecutionStateFromSolidity(st))
-	switch {
-	case errors.Is(err, l2stateprovider.ErrNoExecutionState):
-		return 0, fmt.Errorf("missing previous assertion after execution %+v in local state manager", st)
-	case err != nil:
-		return 0, err
-	default:
-	}
-	return height, nil
 }

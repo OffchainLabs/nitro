@@ -11,11 +11,11 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,17 +24,24 @@ func TestPostAssertion(t *testing.T) {
 		ctx := context.Background()
 		poster, chain, stateManager := setupPoster(t)
 		_, creationInfo := setupAssertions(ctx, chain, stateManager, 10, func(int) bool { return false })
+		info := creationInfo[len(creationInfo)-1]
+
+		execState := protocol.GoExecutionStateFromSolidity(info.AfterState)
+		stateManager.On("AgreesWithExecutionState", ctx, execState).Return(nil)
+		assertion := &mocks.MockAssertion{}
+
 		latestValid, err := poster.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
+
 		chain.On(
 			"ReadAssertionCreationInfo",
 			ctx,
 			latestValid,
-		).Return(creationInfo[len(creationInfo)-1], nil)
+		).Return(info, nil)
 		chain.On("IsStaked", ctx).Return(false, nil)
-		stateManager.On("ExecutionStateAtMessageNumber", ctx, uint64(10)).Return(&protocol.ExecutionState{}, nil)
-		assertion := &mocks.MockAssertion{}
-		chain.On("NewStakeOnNewAssertion", ctx, creationInfo[len(creationInfo)-1], &protocol.ExecutionState{}).Return(assertion, nil)
+		stateManager.On("ExecutionStateAfterBatchCount", ctx, info.InboxMaxCount.Uint64()).Return(execState, nil)
+
+		chain.On("NewStakeOnNewAssertion", ctx, info, execState).Return(assertion, nil)
 		posted, err := poster.PostAssertion(ctx)
 		require.NoError(t, err)
 		require.Equal(t, assertion, posted)
@@ -43,17 +50,25 @@ func TestPostAssertion(t *testing.T) {
 		ctx := context.Background()
 		poster, chain, stateManager := setupPoster(t)
 		_, creationInfo := setupAssertions(ctx, chain, stateManager, 10, func(int) bool { return false })
+		info := creationInfo[len(creationInfo)-1]
+
+		execState := protocol.GoExecutionStateFromSolidity(info.AfterState)
+		stateManager.On("AgreesWithExecutionState", ctx, execState).Return(nil)
+		assertion := &mocks.MockAssertion{}
+
 		latestValid, err := poster.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
+
 		chain.On(
 			"ReadAssertionCreationInfo",
 			ctx,
 			latestValid,
-		).Return(creationInfo[len(creationInfo)-1], nil)
+		).Return(info, nil)
 		chain.On("IsStaked", ctx).Return(true, nil)
-		stateManager.On("ExecutionStateAtMessageNumber", ctx, uint64(10)).Return(&protocol.ExecutionState{}, nil)
-		assertion := &mocks.MockAssertion{}
-		chain.On("StakeOnNewAssertion", ctx, creationInfo[len(creationInfo)-1], &protocol.ExecutionState{}).Return(assertion, nil)
+
+		stateManager.On("ExecutionStateAfterBatchCount", ctx, info.InboxMaxCount.Uint64()).Return(execState, nil)
+
+		chain.On("StakeOnNewAssertion", ctx, info, execState).Return(assertion, nil)
 		posted, err := poster.PostAssertion(ctx)
 		require.NoError(t, err)
 		require.Equal(t, assertion, posted)
@@ -143,7 +158,7 @@ func setupAssertionsWithFork(ctx context.Context, chain *mocks.MockProtocol, sta
 		ctx,
 		mockId(validAssertionId),
 	).Return(validAssertionCreationInfo, nil)
-	stateManager.On("ExecutionStateMsgCount", ctx, protocol.GoExecutionStateFromSolidity(validState)).Return(validAssertionId, nil)
+	stateManager.On("AgreesWithExecutionState", ctx, protocol.GoExecutionStateFromSolidity(validState)).Return(nil)
 
 	// Setup Forked Invalid Assertions
 	invalidAssertionId := uint64(2)
@@ -171,7 +186,7 @@ func setupAssertionsWithFork(ctx context.Context, chain *mocks.MockProtocol, sta
 		mockId(invalidAssertionId),
 	).Return(invalidAssertionCreationInfo, nil)
 
-	stateManager.On("ExecutionStateMsgCount", ctx, protocol.GoExecutionStateFromSolidity(invalidState)).Return(invalidAssertionId, l2stateprovider.ErrNoExecutionState)
+	stateManager.On("AgreesWithExecutionState", ctx, protocol.GoExecutionStateFromSolidity(invalidState)).Return(errors.New("invalid"))
 
 	chain.On("LatestConfirmed", ctx).Return(genesis, nil)
 	chain.On("LatestCreatedAssertionHashes", ctx).Return([]protocol.AssertionHash{validAssertion.Id(), invalidAssertion.Id()}, nil)
@@ -237,11 +252,11 @@ func setupAssertions(
 			mockId(uint64(i)),
 		).Return(mockAssertionCreationInfo, nil)
 		valid := validity(i)
-		var arg error
 		if !valid {
-			arg = l2stateprovider.ErrNoExecutionState
+			s.On("AgreesWithExecutionState", ctx, protocol.GoExecutionStateFromSolidity(mockState)).Return(errors.New("invalid"))
+		} else {
+			s.On("AgreesWithExecutionState", ctx, protocol.GoExecutionStateFromSolidity(mockState)).Return(nil)
 		}
-		s.On("ExecutionStateMsgCount", ctx, protocol.GoExecutionStateFromSolidity(mockState)).Return(uint64(i), arg)
 
 	}
 	var assertionHashes []protocol.AssertionHash

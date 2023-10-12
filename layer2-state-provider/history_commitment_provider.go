@@ -59,9 +59,10 @@ type HashCollectorConfig struct {
 type L2MessageStateCollector interface {
 	L2MessageStatesUpTo(
 		ctx context.Context,
-		from Height,
-		upTo option.Option[Height],
-		batch Batch,
+		fromHeight Height,
+		toHeight option.Option[Height],
+		fromBatch,
+		toBatch Batch,
 	) ([]common.Hash, error)
 }
 
@@ -126,7 +127,13 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 	var fromMessageNumber Height
 	if len(validatedHeights) == 0 {
 		fromMessageNumber = req.FromHeight
-		hashes, hashesErr := p.l2MessageStateCollector.L2MessageStatesUpTo(ctx, Height(fromMessageNumber), req.UpToHeight, req.Batch)
+		hashes, hashesErr := p.l2MessageStateCollector.L2MessageStatesUpTo(
+			ctx,
+			Height(fromMessageNumber),
+			req.UpToHeight,
+			req.FromBatch,
+			req.ToBatch,
+		)
 		if hashesErr != nil {
 			return nil, hashesErr
 		}
@@ -192,7 +199,8 @@ func (p *HistoryCommitmentProvider) AgreesWithHistoryCommitment(
 			ctx,
 			&HistoryCommitmentRequest{
 				WasmModuleRoot:              historyCommitMetadata.WasmModuleRoot,
-				Batch:                       historyCommitMetadata.Batch,
+				FromBatch:                   historyCommitMetadata.FromBatch,
+				ToBatch:                     historyCommitMetadata.ToBatch,
 				UpperChallengeOriginHeights: []Height{},
 				FromHeight:                  historyCommitMetadata.FromHeight,
 				UpToHeight:                  option.Some[Height](historyCommitMetadata.FromHeight + Height(commit.Height)),
@@ -206,7 +214,8 @@ func (p *HistoryCommitmentProvider) AgreesWithHistoryCommitment(
 			ctx,
 			&HistoryCommitmentRequest{
 				WasmModuleRoot:              historyCommitMetadata.WasmModuleRoot,
-				Batch:                       historyCommitMetadata.Batch,
+				FromBatch:                   historyCommitMetadata.FromBatch,
+				ToBatch:                     historyCommitMetadata.ToBatch,
 				UpperChallengeOriginHeights: historyCommitMetadata.UpperChallengeOriginHeights,
 				FromHeight:                  0,
 				UpToHeight:                  option.Some(Height(commit.Height)),
@@ -326,6 +335,8 @@ func (p *HistoryCommitmentProvider) PrefixProof(
 func (p *HistoryCommitmentProvider) OneStepProofData(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
+	fromBatch,
+	toBatch Batch,
 	startHeights []Height,
 	fromHeight,
 	upToHeight Height,
@@ -338,7 +349,8 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 		ctx,
 		&HistoryCommitmentRequest{
 			WasmModuleRoot:              wasmModuleRoot,
-			Batch:                       0,
+			FromBatch:                   fromBatch,
+			ToBatch:                     toBatch,
 			UpperChallengeOriginHeights: startHeights,
 			FromHeight:                  fromHeight,
 			UpToHeight:                  option.Some(upToHeight + 1),
@@ -351,7 +363,8 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 		ctx,
 		&HistoryCommitmentRequest{
 			WasmModuleRoot:              wasmModuleRoot,
-			Batch:                       0,
+			FromBatch:                   fromBatch,
+			ToBatch:                     toBatch,
 			UpperChallengeOriginHeights: startHeights,
 			FromHeight:                  fromHeight,
 			UpToHeight:                  option.Some(upToHeight),

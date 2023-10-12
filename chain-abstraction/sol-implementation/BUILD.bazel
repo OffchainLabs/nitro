@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
+        "//containers",
         "//containers/option",
         "//solgen/go/bridgegen",
         "//solgen/go/challengeV2gen",

@@ -5,7 +5,6 @@ package challengemanager
 
 import (
 	"context"
-	"math/big"
 	"testing"
 	"time"
 
@@ -14,11 +13,14 @@ import (
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/OffchainLabs/bold/testing/setup"
 	customTime "github.com/OffchainLabs/bold/time"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +42,7 @@ func TestEdgeTracker_Act(t *testing.T) {
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 
 	err = tkr.Act(ctx)
-	require.ErrorContains(t, err, "not yet confirmable")
+	require.NoError(t, err)
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 }
 
@@ -69,7 +71,7 @@ func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 
 	// However, it should not be confirmable yet as we are halfway through the challenge period.
 	err = tkr.Act(ctx)
-	require.ErrorContains(t, err, "not yet confirmable")
+	require.NoError(t, err)
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 
 	someEdge, err := chalManager.GetEdge(ctx, tkr.EdgeId())
@@ -95,7 +97,7 @@ func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 	// through the challenge period as it gained a rival. That is, no matter how much time passes,
 	// our edge will still not be confirmed by time.
 	err = tkr.Act(ctx)
-	require.ErrorContains(t, err, "not yet confirmable")
+	require.NoError(t, err)
 	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
 }
 
@@ -173,6 +175,11 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 	require.NoError(t, honestParent.Watcher().AddVerifiedHonestEdge(ctx, child1))
 	require.NoError(t, honestParent.Watcher().AddVerifiedHonestEdge(ctx, child2))
 
+	assertionInfo := &edgetracker.AssociatedAssertionMetadata{
+		FromBatch:      0,
+		ToBatch:        1,
+		WasmModuleRoot: common.Hash{},
+	}
 	childTracker1, err := edgetracker.New(
 		ctx,
 		child1,
@@ -180,10 +187,7 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 		createdData.HonestStateManager,
 		honestParent.Watcher(),
 		honestParent.ChallengeManager(),
-		edgetracker.HeightConfig{
-			StartBlockHeight: 0,
-			InboxMaxCount:    1,
-		},
+		assertionInfo,
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 	)
 	require.NoError(t, err)
@@ -194,10 +198,7 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 		createdData.HonestStateManager,
 		honestParent.Watcher(),
 		honestParent.ChallengeManager(),
-		edgetracker.HeightConfig{
-			StartBlockHeight: 0,
-			InboxMaxCount:    1,
-		},
+		assertionInfo,
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 	)
 	require.NoError(t, err)
@@ -214,20 +215,46 @@ func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
 	require.Equal(t, true, honestParent.ShouldDespawn(ctx))
 }
 
+type verifiedHonestMock struct {
+	*mocks.MockSpecEdge
+}
+
+func (verifiedHonestMock) Honest() {}
+
 func Test_getEdgeTrackers(t *testing.T) {
 	ctx := context.Background()
 
 	v, m, s := setupValidator(t)
 	edge := &mocks.MockSpecEdge{}
-	edge.On("AssertionHash", ctx).Return(protocol.AssertionHash{}, nil)
-	m.On("ReadAssertionCreationInfo", ctx, protocol.AssertionHash{}).Return(&protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(100)}, nil)
+	edge.On("Id").Return(protocol.EdgeId{Hash: common.BytesToHash([]byte("foo"))})
+	edge.On("GetReversedChallengeLevel").Return(protocol.ChallengeLevel(2))
+	edge.On("MutualId").Return(protocol.MutualId{})
+	edge.On("CreatedAtBlock").Return(uint64(1), nil)
+	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("bar"))}
+	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))
+	edge.On("AssertionHash", ctx).Return(assertionHash, nil)
+	m.On("ReadAssertionCreationInfo", ctx, assertionHash).Return(&protocol.AssertionCreatedInfo{
+		BeforeState: rollupgen.ExecutionState{
+			GlobalState: rollupgen.GlobalState{
+				U64Vals: [2]uint64{1, 0},
+			},
+		},
+		AfterState: rollupgen.ExecutionState{
+			GlobalState: rollupgen.GlobalState{
+				U64Vals: [2]uint64{100, 0},
+			},
+		},
+	}, nil)
+	m.On("ReadAssertionCreationInfo", ctx, protocol.AssertionHash{}).Return(&protocol.AssertionCreatedInfo{}, nil)
 	s.On("ExecutionStateMsgCount", ctx, &protocol.ExecutionState{}).Return(uint64(1), nil)
+
+	require.NoError(t, v.watcher.AddVerifiedHonestEdge(ctx, verifiedHonestMock{edge}))
 
 	trk, err := v.getTrackerForEdge(ctx, protocol.SpecEdge(edge))
 	require.NoError(t, err)
 
-	require.Equal(t, uint64(1), trk.StartBlockHeight())
-	require.Equal(t, uint64(0x65), trk.InboxMaxCount())
+	require.Equal(t, l2stateprovider.Batch(1), trk.AssertionInfo().FromBatch)
+	require.Equal(t, l2stateprovider.Batch(100), trk.AssertionInfo().ToBatch)
 }
 
 func setupEdgeTrackersForBisection(
@@ -290,6 +317,11 @@ func setupEdgeTrackersForBisection(
 
 	honestWatcher := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice")
 	honestValidator.watcher = honestWatcher
+	assertionInfo := &edgetracker.AssociatedAssertionMetadata{
+		FromBatch:      0,
+		ToBatch:        1,
+		WasmModuleRoot: common.Hash{},
+	}
 	tracker1, err := edgetracker.New(
 		ctx,
 		honestEdge,
@@ -297,10 +329,7 @@ func setupEdgeTrackersForBisection(
 		createdData.HonestStateManager,
 		honestWatcher,
 		honestValidator,
-		edgetracker.HeightConfig{
-			StartBlockHeight: 0,
-			InboxMaxCount:    1,
-		},
+		assertionInfo,
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 		edgetracker.WithValidatorName(honestValidator.name),
 	)
@@ -315,10 +344,7 @@ func setupEdgeTrackersForBisection(
 		createdData.EvilStateManager,
 		evilWatcher,
 		evilValidator,
-		edgetracker.HeightConfig{
-			StartBlockHeight: 0,
-			InboxMaxCount:    1,
-		},
+		assertionInfo,
 		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
 		edgetracker.WithValidatorName(evilValidator.name),
 	)

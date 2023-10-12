@@ -99,7 +99,7 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	honestPostState, err := honestStateManager.ExecutionStateAtMessageNumber(ctx, 1)
+	honestPostState, err := honestStateManager.ExecutionStateAfterBatchCount(ctx, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	evilPostState, err := evilStateManager.ExecutionStateAtMessageNumber(ctx, 1)
+	evilPostState, err := evilStateManager.ExecutionStateAfterBatchCount(ctx, 1)
 	if err != nil {
 		return nil, err
 	}

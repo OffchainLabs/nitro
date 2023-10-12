@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -299,7 +300,17 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
 		})
 	})
-	return errors.Wrapf(err, "could not confirm edge with tx and ancestors %v", ancestors)
+	ancestorStrings := make([]string, len(ancestorIds))
+	for i, r := range ancestorIds {
+		ancestorStrings[i] = containers.Trunc(r.Hash[:])
+	}
+	return errors.Wrapf(
+		err,
+		"could not confirm edge %s with tx and %d ancestors %v",
+		containers.Trunc(e.id[:]),
+		len(ancestorIds),
+		strings.Join(ancestorStrings, ", "),
+	)
 }
 
 func (e *specEdge) ConfirmByChildren(ctx context.Context) error {

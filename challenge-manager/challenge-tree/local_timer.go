@@ -50,10 +50,8 @@ func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOn
 		creationBlocks[i] = uint64(r.createdAtBlock)
 		if earliestCreatedRivalBlock.IsNone() {
 			earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
-		} else {
-			if uint64(r.createdAtBlock) < earliestCreatedRivalBlock.Unwrap() {
-				earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
-			}
+		} else if uint64(r.createdAtBlock) < earliestCreatedRivalBlock.Unwrap() {
+			earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
 		}
 	}
 	return earliestCreatedRivalBlock

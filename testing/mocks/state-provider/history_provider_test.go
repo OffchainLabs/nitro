@@ -46,7 +46,8 @@ func TestHistoryCommitment(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              wasmModuleRoot,
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
 				UpToHeight:                  option.None[l2stateprovider.Height](),
@@ -60,7 +61,8 @@ func TestHistoryCommitment(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              wasmModuleRoot,
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(2)),
@@ -74,7 +76,8 @@ func TestHistoryCommitment(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              wasmModuleRoot,
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(1)),
@@ -86,7 +89,8 @@ func TestHistoryCommitment(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              wasmModuleRoot,
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{0},
 				FromHeight:                  0,
 				UpToHeight:                  option.None[l2stateprovider.Height](),
@@ -103,7 +107,8 @@ func TestHistoryCommitment(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              wasmModuleRoot,
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(1)),
@@ -115,7 +120,8 @@ func TestHistoryCommitment(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              wasmModuleRoot,
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},
 				FromHeight:                  0,
 				UpToHeight:                  option.None[l2stateprovider.Height](),

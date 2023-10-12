@@ -259,7 +259,8 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
 				WasmModuleRoot:              common.Hash{},
-				Batch:                       1,
+				FromBatch:                   0,
+				ToBatch:                     1,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
 				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
@@ -268,7 +269,8 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 		require.NoError(t, startErr)
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			WasmModuleRoot:              common.Hash{},
-			Batch:                       1,
+			FromBatch:                   0,
+			ToBatch:                     1,
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
 			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
