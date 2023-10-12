@@ -81,7 +81,7 @@ func compileUserWasm(
 		return nil, common.Hash{}, err
 	}
 
-	db.SetCompiledWasmCode(program, data, version)
+	db.SetActivatedAsm(program, data, version)
 	return &info, common.BytesToHash(canonicalHashRust.intoBytes()), err
 }
 
@@ -100,7 +100,7 @@ func callUserWasm(
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version, program.compiledHash)
 	}
-	module := db.GetCompiledWasmCode(address, stylusParams.version)
+	module := db.GetActivatedAsm(address, stylusParams.version)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
