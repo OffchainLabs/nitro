@@ -60,21 +60,20 @@ type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
 type SecondNodeParams struct {
-	nodeConfig           *arbnode.Config
-	execConfig           *gethexec.Config
-	stackConfig          *node.Config
-	dasConfig            *das.DataAvailabilityConfig
-	initData             *statetransfer.ArbosInitializationInfo
-	useBuilderNodeConfig bool
+	nodeConfig  *arbnode.Config
+	execConfig  *gethexec.Config
+	stackConfig *node.Config
+	dasConfig   *das.DataAvailabilityConfig
+	initData    *statetransfer.ArbosInitializationInfo
 }
 
 type TestClient struct {
-	ctx      context.Context
-	Client   *ethclient.Client
-	Backend  *eth.Ethereum
-	Stack    *node.Node
-	Node     *arbnode.Node
-	ExecNode *gethexec.ExecutionNode
+	ctx           context.Context
+	Client        *ethclient.Client
+	L1Backend     *eth.Ethereum
+	Stack         *node.Node
+	ConsensusNode *arbnode.Node
+	ExecNode      *gethexec.ExecutionNode
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -165,18 +164,18 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
-		b.L2Info, l2.Node, l2.Client, l2.Stack, b.L1Info, l1.Backend, l1.Client, l1.Stack =
+		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
 			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
 		b.L1, b.L2 = l1, l2
 		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
 		l2 := NewTestClient(b.ctx)
-		b.L2Info, l2.Node, l2.Client =
+		b.L2Info, l2.ConsensusNode, l2.Client =
 			CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
 		b.L2 = l2
 	}
-	b.L2.ExecNode = getExecNode(t, b.L2.Node)
-	b.L2.cleanup = func() { b.L2.Node.StopAndWait() }
+	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
+	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
@@ -193,11 +192,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 		t.Fatal("builder did not previously build a L1 Node")
 	}
 	if params.nodeConfig == nil {
-		if params.useBuilderNodeConfig {
-			params.nodeConfig = b.nodeConfig
-		} else {
-			params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
-		}
+		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if params.dasConfig != nil {
 		params.nodeConfig.DataAvailability = *params.dasConfig
@@ -215,9 +210,9 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	}
 
 	l2 := NewTestClient(b.ctx)
-	l2.Client, l2.Node =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.Node, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
-	l2.cleanup = func() { l2.Node.StopAndWait() }
+	l2.Client, l2.ConsensusNode =
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
 	return l2, func() { l2.cleanup() }
 }
 

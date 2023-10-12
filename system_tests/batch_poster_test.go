@@ -82,7 +82,19 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(ctx, nil, l2A.Node.L1Reader, l2A.Node.InboxTracker, l2A.Node.TxStreamer, l2A.Node.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, l2A.Node.DeployInfo, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(ctx,
+			&arbnode.BatchPosterOpts{
+				DataPosterDB: nil,
+				L1Reader:     l2A.ConsensusNode.L1Reader,
+				Inbox:        l2A.ConsensusNode.InboxTracker,
+				Streamer:     l2A.ConsensusNode.TxStreamer,
+				SyncMonitor:  l2A.ConsensusNode.SyncMonitor,
+				Config:       func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:   l2A.ConsensusNode.DeployInfo,
+				TransactOpts: &seqTxOpts,
+				DAWriter:     nil,
+			},
+		)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()
@@ -103,13 +115,15 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	}
 
+	// TODO: factor this out in separate test case and skip it or delete this
+	// code entirely.
 	// I've locally confirmed that this passes when the clique period is set to 1.
 	// However, setting the clique period to 1 slows everything else (including the L1 deployment for this test) down to a crawl.
 	if false {
 		// Make sure the batch poster is able to post multiple batches in one block
 		endL1Block, err := l1A.Client.BlockNumber(ctx)
 		Require(t, err)
-		seqInbox, err := arbnode.NewSequencerInbox(l1A.Client, l2A.Node.DeployInfo.SequencerInbox, 0)
+		seqInbox, err := arbnode.NewSequencerInbox(l1A.Client, l2A.ConsensusNode.DeployInfo.SequencerInbox, 0)
 		Require(t, err)
 		batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(startL1Block), new(big.Int).SetUint64(endL1Block))
 		Require(t, err)
@@ -199,11 +213,11 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	start := time.Now()
 	for {
 		time.Sleep(time.Second)
-		batches, err := l2A.Node.InboxTracker.GetBatchCount()
+		batches, err := l2A.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
-		postedMessages, err := l2A.Node.InboxTracker.GetBatchMessageCount(batches - 1)
+		postedMessages, err := l2A.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
 		Require(t, err)
-		haveMessages, err := l2A.Node.TxStreamer.GetMessageCount()
+		haveMessages, err := l2A.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		duration := time.Since(start)
 		fmt.Printf("batches posted: %v over %v (%.2f batches/second)\n", batches, duration, float64(batches)/(float64(duration)/float64(time.Second)))
