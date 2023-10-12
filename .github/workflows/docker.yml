@@ -45,7 +45,7 @@ jobs:
           target: nitro-node
           push: true
           context: .
-          tags: localhost:5000/nitro-node:latest
+          tags: nitro-node:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
@@ -55,11 +55,11 @@ jobs:
           target: nitro-node-dev
           push: true
           context: .
-          tags: localhost:5000/nitro-node-dev:latest
+          tags: nitro-node-dev:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
-      - name: Start background nitro-testnode and wait for rpc to come up
+      - name: Start background nitro-testnode
         shell: bash
         run: |
           cd nitro-testnode
@@ -75,7 +75,7 @@ jobs:
         run: |
           # Unfortunately, `docker cp` seems to always result in a "permission denied"
           # We work around this by piping a tarball through stdout
-          docker run --rm --entrypoint tar localhost:5000/nitro-node-dev:latest -cf - target/machines/latest | tar xf -
+          docker run --rm --entrypoint tar nitro-node-dev:latest -cf - target/machines/latest | tar xf -
           module_root="$(cat "target/machines/latest/module-root.txt")"
           echo "name=module-root=$module_root" >> $GITHUB_STATE
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
