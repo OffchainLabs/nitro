@@ -25,7 +25,7 @@ func Initialize(sto *storage.Storage) {
 
 func Open(sto *storage.Storage) *AddressTable {
 	numItems := sto.OpenStorageBackedUint64(0)
-	return &AddressTable{sto.NoCacheCopy(), sto.OpenSubStorage([]byte{}, false), numItems}
+	return &AddressTable{sto.WithoutCache(), sto.OpenSubStorage([]byte{}), numItems}
 }
 
 func (atab *AddressTable) Register(addr common.Address) (uint64, error) {

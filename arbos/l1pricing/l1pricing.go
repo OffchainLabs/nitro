@@ -83,7 +83,7 @@ var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGas
 var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
-	bptStorage := sto.OpenSubStorage(BatchPosterTableKey, true)
+	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		OpenBatchPostersTable(sto.OpenSubStorage(BatchPosterTableKey, true)),
+		OpenBatchPostersTable(sto.OpenCachedSubStorage(BatchPosterTableKey)),
 		sto.OpenStorageBackedAddress(payRewardsToOffset),
 		sto.OpenStorageBackedBigUint(equilibrationUnitsOffset),
 		sto.OpenStorageBackedUint64(inertiaOffset),

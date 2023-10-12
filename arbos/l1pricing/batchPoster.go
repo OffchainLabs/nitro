@@ -42,13 +42,13 @@ func InitializeBatchPostersTable(storage *storage.Storage) error {
 	if err := totalFundsDue.SetChecked(common.Big0); err != nil {
 		return err
 	}
-	return addressSet.Initialize(storage.OpenSubStorage(PosterAddrsKey, true))
+	return addressSet.Initialize(storage.OpenCachedSubStorage(PosterAddrsKey))
 }
 
 func OpenBatchPostersTable(storage *storage.Storage) *BatchPostersTable {
 	return &BatchPostersTable{
-		posterAddrs:   addressSet.OpenAddressSet(storage.OpenSubStorage(PosterAddrsKey, true)),
-		posterInfo:    storage.OpenSubStorage(PosterInfoKey, false),
+		posterAddrs:   addressSet.OpenAddressSet(storage.OpenCachedSubStorage(PosterAddrsKey)),
+		posterInfo:    storage.OpenSubStorage(PosterInfoKey),
 		totalFundsDue: storage.OpenStorageBackedBigInt(totalFundsDueOffset),
 	}
 }
@@ -68,7 +68,7 @@ func (bpt *BatchPostersTable) OpenPoster(poster common.Address, createIfNotExist
 }
 
 func (bpt *BatchPostersTable) internalOpen(poster common.Address) *BatchPosterState {
-	bpStorage := bpt.posterInfo.OpenSubStorage(poster.Bytes(), false)
+	bpStorage := bpt.posterInfo.OpenSubStorage(poster.Bytes())
 	return &BatchPosterState{
 		fundsDue:     bpStorage.OpenStorageBackedBigInt(0),
 		payTo:        bpStorage.OpenStorageBackedAddress(1),

@@ -25,7 +25,7 @@ func InitializeQueue(sto *Storage) error {
 
 func OpenQueue(sto *Storage) *Queue {
 	return &Queue{
-		sto.NoCacheCopy(),
+		sto.WithoutCache(),
 		sto.OpenStorageBackedUint64(0),
 		sto.OpenStorageBackedUint64(1),
 	}
