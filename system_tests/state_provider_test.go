@@ -152,11 +152,11 @@ func TestStateProvider_BOLD(t *testing.T) {
 		fromBatch := l2stateprovider.Batch(1)
 		toBatch := l2stateprovider.Batch(3)
 		fromHeight := l2stateprovider.Height(0)
-		toHeight := l2stateprovider.Height(16)
+		toHeight := l2stateprovider.Height(14)
 		stateRoots, states, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
 		Require(t, err)
 
-		if len(stateRoots) != 17 {
+		if len(stateRoots) != 15 {
 			Fatal(t, "wrong number of state roots")
 		}
 		if len(states) == 0 {
