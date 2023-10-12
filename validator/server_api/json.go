@@ -21,6 +21,7 @@ type BatchInfoJson struct {
 
 type UserWasmJson struct {
 	ModuleHash     common.Hash
+	ModuleAsm      string
 	CompressedWasm string
 }
 
@@ -58,6 +59,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		encWasm := UserWasmJson{
 			CompressedWasm: base64.StdEncoding.EncodeToString(wasm.CompressedWasm),
 			ModuleHash:     wasm.ModuleHash,
+			ModuleAsm:      base64.StdEncoding.EncodeToString(wasm.ModuleAsm),
 		}
 		res.UserWasms[encCall] = encWasm
 	}
@@ -103,8 +105,13 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		if err != nil {
 			return nil, err
 		}
+		moduleAsm, err := base64.StdEncoding.DecodeString(wasm.ModuleAsm)
+		if err != nil {
+			return nil, err
+		}
 		decWasm := state.UserWasm{
 			ModuleHash:     wasm.ModuleHash,
+			ModuleAsm:      moduleAsm,
 			CompressedWasm: compressed,
 		}
 		valInput.UserWasms[decCall] = &decWasm
