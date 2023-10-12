@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -58,6 +59,10 @@ var (
 
 func TestBoldProtocol(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(func() {
+		Require(t, os.RemoveAll("/tmp/good"))
+		Require(t, os.RemoveAll("/tmp/evil"))
+	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
