@@ -48,7 +48,7 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 5) // testing 5 big step levels, 2^5 each, with small step equalting to 2^31 total.
+	bigStepChallengeLeafHeight   = uint64(1 << 5) // 5 big step levels, 2^5 each, with small step equalting to 2^31 total.
 	smallStepChallengeLeafHeight = uint64(1 << 6)
 )
 
