@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package execution
+package gethexec
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -53,35 +54,18 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                      bool                     `koanf:"enable"`
-	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
-	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist             string                   `koanf:"sender-whitelist"`
-	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
-	QueueSize                   int                      `koanf:"queue-size"`
-	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize               int                      `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize       int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry     time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
-}
-
-type DangerousSequencerConfig struct {
-	NoCoordinator bool `koanf:"no-coordinator"`
-}
-
-var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
-	NoCoordinator: false,
-}
-
-var TestDangerousSequencerConfig = DangerousSequencerConfig{
-	NoCoordinator: true,
-}
-
-func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
+	Enable                      bool            `koanf:"enable"`
+	MaxBlockSpeed               time.Duration   `koanf:"max-block-speed" reload:"hot"`
+	MaxRevertGasReject          uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist             string          `koanf:"sender-whitelist"`
+	Forwarder                   ForwarderConfig `koanf:"forwarder"`
+	QueueSize                   int             `koanf:"queue-size"`
+	QueueTimeout                time.Duration   `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize              int             `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -108,7 +92,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
-	Dangerous:                   DefaultDangerousSequencerConfig,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxTxDataSize:           95000,
@@ -126,7 +109,6 @@ var TestSequencerConfig = SequencerConfig{
 	QueueSize:                   128,
 	QueueTimeout:                time.Second * 5,
 	NonceCacheSize:              4,
-	Dangerous:                   TestDangerousSequencerConfig,
 	MaxTxDataSize:               95000,
 	NonceFailureCacheSize:       1024,
 	NonceFailureCacheExpiry:     time.Second,
@@ -145,7 +127,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
-	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
 type txQueueItem struct {
@@ -372,8 +353,6 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 		queueItem.returnResult(failure.nonceErr)
 	}
 }
-
-var ErrRetrySequencer = errors.New("please retry transaction")
 
 // ctxWithTimeout is like context.WithTimeout except a timeout of 0 means unlimited instead of instantly expired.
 func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -881,7 +860,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
-	if errors.Is(err, ErrRetrySequencer) {
+	if errors.Is(err, execution.ErrRetrySequencer) {
 		log.Warn("error sequencing transactions", "err", err)
 		// we changed roles
 		// forward if we have where to

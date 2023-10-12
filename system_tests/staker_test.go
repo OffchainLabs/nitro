@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -65,22 +66,26 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, l2chainConfig, nil, l2info)
+	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, l2chainConfig, nil, l2info)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
+	execNodeA := getExecNode(t, l2nodeA)
 
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
 	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer.Enable = false
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.Sequencer.Enable = false
+	config.Sequencer = false
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
-	_, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, config, nil)
+	_, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, config, execConfig, nil)
 	defer l2nodeB.StopAndWait()
+	execNodeB := getExecNode(t, l2nodeB)
 
-	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
 			Fatal(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
@@ -150,7 +155,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution.Recorder,
+		execNodeA,
 		l2nodeA.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -190,7 +195,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution.Recorder,
+		execNodeB,
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),

@@ -184,3 +184,15 @@ func arbNodeFromNodeInterfaceBackend(backend BackendAPI) (*arbnode.Node, error) 
 	}
 	return arbNode, nil
 }
+
+func blockchainFromNodeInterfaceBackend(backend BackendAPI) (*core.BlockChain, error) {
+	apiBackend, ok := backend.(*arbitrum.APIBackend)
+	if !ok {
+		return nil, errors.New("API backend isn't Arbitrum")
+	}
+	bc := apiBackend.BlockChain()
+	if bc == nil {
+		return nil, errors.New("failed to get Blockchain from backend")
+	}
+	return bc, nil
+}
