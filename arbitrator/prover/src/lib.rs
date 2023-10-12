@@ -21,7 +21,7 @@ mod test;
 pub use machine::Machine;
 
 use arbutil::Bytes32;
-use eyre::Result;
+use eyre::{Report, Result};
 use machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
     PreimageResolver,
@@ -32,6 +32,7 @@ use std::{
     ffi::CStr,
     os::raw::{c_char, c_int},
     path::Path,
+    ptr,
     sync::{
         atomic::{self, AtomicU8},
         Arc,
@@ -67,7 +68,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
         Ok(mach) => mach,
         Err(err) => {
             eprintln!("Error loading binary: {:?}", err);
-            std::ptr::null_mut()
+            ptr::null_mut()
         }
     }
 }
@@ -111,13 +112,30 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
         Ok(mach) => Box::into_raw(Box::new(mach)),
         Err(err) => {
             eprintln!("Error loading binary: {}", err);
-            std::ptr::null_mut()
+            ptr::null_mut()
         }
     }
 }
 
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {
     CStr::from_ptr(c_str).to_string_lossy().into_owned()
+}
+
+pub fn err_to_c_string(err: Report) -> *mut libc::c_char {
+    str_to_c_string(&format!("{err:?}"))
+}
+
+/// Copies the str-data into a libc free-able C string
+pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
+    unsafe {
+        let buf = libc::malloc(text.len() + 1); // includes null-terminating byte
+        if buf.is_null() {
+            panic!("Failed to allocate memory for error string");
+        }
+        ptr::copy_nonoverlapping(text.as_ptr(), buf as *mut u8, text.len());
+        *(buf.add(text.len()) as *mut u8) = 0;
+        buf as *mut libc::c_char
+    }
 }
 
 #[no_mangle]
@@ -135,19 +153,6 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
 #[no_mangle]
 pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
     (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
-}
-
-pub fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
-    let err = format!("{:?}", err);
-    unsafe {
-        let buf = libc::malloc(err.len() + 1);
-        if buf.is_null() {
-            panic!("Failed to allocate memory for error string");
-        }
-        std::ptr::copy_nonoverlapping(err.as_ptr(), buf as *mut u8, err.len());
-        *(buf.add(err.len()) as *mut u8) = 0;
-        buf as *mut libc::c_char
-    }
 }
 
 /// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
@@ -172,7 +177,7 @@ pub unsafe extern "C" fn arbitrator_step(
         }
         remaining_steps -= stepping;
     }
-    std::ptr::null_mut()
+    ptr::null_mut()
 }
 
 #[no_mangle]
@@ -205,17 +210,13 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     root: *const Bytes32,
 ) -> *mut libc::c_char {
     let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
-
-    if root.is_null() {
-        return err_to_c_string(eyre::eyre!(
-            "arbitrator_add_user_wasm got null ptr for module hash"
-        ));
-    }
-    // provide the opportunity to skip calculating the module root
     let debug = debug != 0;
 
+    if root.is_null() {
+        return str_to_c_string("arbitrator_add_user_wasm got null ptr for module hash");
+    }
     match (*mach).add_program(wasm, version, debug, Some(*root)) {
-        Ok(_) => std::ptr::null_mut(),
+        Ok(_) => ptr::null_mut(),
         Err(err) => err_to_c_string(err),
     }
 }
@@ -232,10 +233,10 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
     while condition.load(atomic::Ordering::Relaxed) == 0 {
         for _ in 0..1_000_000 {
             if mach.is_halted() {
-                return std::ptr::null_mut();
+                return ptr::null_mut();
             }
             if mach.next_instruction_is_host_io() {
-                return std::ptr::null_mut();
+                return ptr::null_mut();
             }
             match mach.step_n(1) {
                 Ok(()) => {}
@@ -243,7 +244,7 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
             }
         }
     }
-    std::ptr::null_mut()
+    ptr::null_mut()
 }
 
 #[no_mangle]
@@ -254,7 +255,7 @@ pub unsafe extern "C" fn arbitrator_serialize_state(
     let mach = &*mach;
     let res = CStr::from_ptr(path)
         .to_str()
-        .map_err(eyre::Report::from)
+        .map_err(Report::from)
         .and_then(|path| mach.serialize_state(path));
     if let Err(err) = res {
         eprintln!("Failed to serialize machine state: {}", err);
@@ -272,7 +273,7 @@ pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
     let mach = &mut *mach;
     let res = CStr::from_ptr(path)
         .to_str()
-        .map_err(eyre::Report::from)
+        .map_err(Report::from)
         .and_then(|path| mach.deserialize_and_replace_state(path));
     if let Err(err) = res {
         eprintln!("Failed to deserialize machine state: {}", err);

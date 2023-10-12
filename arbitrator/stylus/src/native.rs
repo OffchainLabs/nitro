@@ -379,9 +379,9 @@ pub fn compile_user_wasm(
 ) -> Result<(Vec<u8>, Bytes32, WasmPricingInfo)> {
     let compile = CompileConfig::version(version, debug_mode);
     let (bin, stylus_data, footprint) =
-        WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse program")?;
+        WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
 
-    let canonical_hash = prover::machine::Module::from_user_binary(
+    let module_hash = prover::machine::Module::from_user_binary(
         &bin,
         compile.debug.debug_funcs,
         Some(stylus_data),
@@ -391,9 +391,9 @@ pub fn compile_user_wasm(
 
     let info = WasmPricingInfo {
         size: wasm.len().try_into()?,
-        footprint: footprint,
+        footprint,
     };
-    let module = module(wasm, compile).wrap_err("failed generating stylus module")?;
+    let module = module(wasm, compile).wrap_err("failed to generate stylus module")?;
 
-    Ok((module, canonical_hash, info))
+    Ok((module, module_hash, info))
 }

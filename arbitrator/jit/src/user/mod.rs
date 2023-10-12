@@ -48,18 +48,18 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 
     if out_hash_len != 32 {
         error!(eyre::eyre!(
-            "Go attempting to read compiled machine hash into bad buffer length: {out_hash_len}"
+            "Go attempting to read module hash into bad buffer length: {out_hash_len}"
         ));
     }
 
     // ensure the wasm compiles during proving
-    let (module, canonical_hash, info) =
+    let (module, module_hash, info) =
         match native::compile_user_wasm(&wasm, version, page_limit, debug) {
             Ok(result) => result,
             Err(error) => error!(error),
         };
 
-    sp.write_slice(out_hash_ptr, canonical_hash.as_slice());
+    sp.write_slice(out_hash_ptr, module_hash.as_slice());
     sp.write_ptr(heapify(module));
     sp.write_u16(info.footprint).skip_u16().write_u32(info.size); // wasm info
     sp.write_nullptr();

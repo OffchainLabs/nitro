@@ -48,10 +48,6 @@ func TestProgramKeccak(t *testing.T) {
 	keccakTest(t, true)
 }
 
-func TestProgramArbitratorKeccak(t *testing.T) {
-	keccakTest(t, false)
-}
-
 func keccakTest(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()

@@ -405,21 +405,21 @@ func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWas
 		return errors.New("machine frozen")
 	}
 	hashBytes := [32]u8{}
-	for index, byte := range wasm.CompiledHash.Bytes() {
+	for index, byte := range wasm.ModuleHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
 	debugInt := 0
 	if debug {
 		debugInt = 1
 	}
-	decompressed, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
+	inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
 	if err != nil {
 		return err
 	}
 	cErr := C.arbitrator_add_user_wasm(
 		m.ptr,
-		(*u8)(arbutil.SliceToPointer(decompressed)),
-		u32(len(decompressed)),
+		(*u8)(arbutil.SliceToPointer(inflated)),
+		u32(len(inflated)),
 		u16(call.Version),
 		u32(debugInt),
 		&C.struct_Bytes32{hashBytes},

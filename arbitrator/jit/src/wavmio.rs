@@ -313,24 +313,24 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.preimages.insert(hash, preimage);
     }
 
-    let stylus_debug = socket::read_u8(stream)? != 0;
+    let debug = socket::read_u8(stream)? != 0;
     let programs_count = socket::read_u32(stream)?;
     for _ in 0..programs_count {
         let codehash = socket::read_bytes32(stream)?;
-        let wasm = socket::read_bytes(stream)?;
-        let compiled_hash = socket::read_bytes32(stream)?;
+        let wasm = &socket::read_bytes(stream)?;
+        let module_hash = socket::read_bytes32(stream)?;
         let version = socket::read_u16(stream)?;
-        // todo: test wasm against codehash?
+
         // no need to test page_limit, we're just retracing previous compilation
-        let (module, computed_hash, _) =
-            match native::compile_user_wasm(wasm.as_slice(), version, u16::MAX, stylus_debug) {
-                Err(err) => return Escape::hostio(format!("{:?}", err)),
-                Ok(res) => res,
-            };
-        if compiled_hash != *computed_hash {
-            return Escape::hostio(format!("error! compiled wasm different from expected codehash {:?}, version {}, expected {:?} computed {}", codehash, version, compiled_hash, computed_hash));
+        let (module, hash, _) = match native::compile_user_wasm(wasm, version, u16::MAX, debug) {
+            Ok(res) => res,
+            Err(err) => return Escape::hostio(format!("{err:?}")),
+        };
+        if module_hash != *hash {
+            let msg = format!("module hash divergence {codehash:?}, version {version}, expected {module_hash:?} computed {hash}");
+            return Escape::hostio(msg);
         }
-        env.compiled_modules.insert(compiled_hash, module);
+        env.compiled_modules.insert(module_hash, module);
     }
 
     if socket::read_u8(stream)? != socket::READY {

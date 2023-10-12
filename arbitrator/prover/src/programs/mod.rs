@@ -367,6 +367,7 @@ pub struct StylusData {
     pub ink_status: GlobalIndex,
     pub depth_left: GlobalIndex,
     pub footprint: u16,
+    pub user_main: u32,
 }
 
 impl StylusData {

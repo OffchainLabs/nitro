@@ -132,8 +132,8 @@ pub unsafe extern "C" fn stylus_compile(
 
     let (module, canonical_hash, pricing_info) =
         match native::compile_user_wasm(wasm, version, page_limit, debug_mode) {
-            Err(err) => return output.write_err(err),
             Ok(val) => val,
+            Err(err) => return output.write_err(err),
         };
 
     out_canonical_hash.write(canonical_hash.to_vec());

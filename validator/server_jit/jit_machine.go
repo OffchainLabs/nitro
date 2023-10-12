@@ -229,7 +229,7 @@ func (machine *JitMachine) prove(
 		if err := writeBytes(inflated); err != nil {
 			return state, err
 		}
-		if err := writeExact(wasm.CompiledHash[:]); err != nil {
+		if err := writeExact(wasm.ModuleHash[:]); err != nil {
 			return state, err
 		}
 		if err := writeUint16(call.Version); err != nil {

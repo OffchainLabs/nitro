@@ -8,9 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{
-        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData, STYLUS_ENTRY_POINT,
-    },
+    programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -390,18 +388,7 @@ impl Module {
             })
             .collect();
 
-        let internals_data = match stylus_data {
-            None => None,
-            Some(data) => {
-                let stylus_main = func_exports
-                    .iter()
-                    .find(|x| x.0 == STYLUS_ENTRY_POINT)
-                    .and_then(|x| Some(x.1))
-                    .ok_or(eyre::eyre!("stylus program without entry point"))?;
-                Some((data, *stylus_main))
-            }
-        };
-        let internals = host::new_internal_funcs(internals_data);
+        let internals = host::new_internal_funcs(stylus_data);
         let internals_offset = (code.len() + bin.codes.len()) as u32;
         let internals_types = internals.iter().map(|f| f.ty.clone());
 
@@ -1137,27 +1124,17 @@ impl Machine {
         wasm: &[u8],
         version: u16,
         debug_funcs: bool,
-        hash: Option<Bytes32>,
+        hash: Option<Bytes32>, // computed if not already known
     ) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
-        let computed_hash = module.hash();
+        let hash = hash.unwrap_or_else(|| module.hash());
 
-        if let Some(expected_hash) = hash {
-            if computed_hash != expected_hash {
-                return Err(eyre::eyre!(
-                    "compulted hash {} doesn't match expected {}",
-                    computed_hash,
-                    expected_hash
-                ));
-            }
-        }
-        eprintln!("adding module {}", computed_hash);
-        self.stylus_modules.insert(computed_hash, module);
-        Ok(computed_hash)
+        self.stylus_modules.insert(hash, module);
+        Ok(hash)
     }
 
     pub fn from_binaries(
@@ -1291,7 +1268,7 @@ impl Machine {
         // Rust support
         let rust_fn = "__main_void";
         if let Some(&f) = main_exports.get(rust_fn).filter(|_| runtime_support) {
-            let expected_type = FunctionType::new(vec![], vec![I32]);
+            let expected_type = FunctionType::new([], [I32]);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [] -> [ret]",
