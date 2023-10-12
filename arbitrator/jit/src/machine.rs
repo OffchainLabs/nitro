@@ -21,6 +21,7 @@ use std::{
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -193,6 +194,7 @@ impl From<RuntimeError> for Escape {
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
+pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -208,8 +210,8 @@ pub struct WasmEnv {
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
-    /// A collection of user wasms called during the course of execution
-    pub compiled_modules: HashMap<Bytes32, Vec<u8>>,
+    /// A collection of programs called during the course of execution
+    pub module_asms: HashMap<Bytes32, ModuleAsm>,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages

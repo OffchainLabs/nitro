@@ -83,7 +83,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     use UserOutcome::*;
 
     // move inputs
-    let compiled_hash = sp.read_bytes32();
+    let module_hash = sp.read_bytes32();
     let calldata = sp.read_go_slice_owned();
     let (compile, config): (CompileConfig, StylusConfig) = sp.unbox();
     let evm_api = sp.read_go_slice_owned();
@@ -94,15 +94,11 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let pricing = config.pricing;
     let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
-    let module = match &env.data().compiled_modules.get(&compiled_hash) {
-        None => {
-            return Err(Escape::Failure(format!(
-                "compiled hash requested {:?} not found in {:?}",
-                compiled_hash,
-                env.data().compiled_modules.keys()
-            )))
-        }
-        Some(module) => (*module).clone(),
+    let Some(module) = env.data().module_asms.get(&module_hash).cloned() else {
+        return Escape::failure(format!(
+            "module hash {module_hash:?} not found in {:?}",
+            env.data().module_asms.keys()
+        ));
     };
 
     let result = exec_wasm(
