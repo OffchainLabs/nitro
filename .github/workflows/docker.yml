@@ -59,6 +59,14 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
+      - name: Start nitro-testnode and wait for rpc to come up
+        shell: bash
+        run: |
+          .nitro-testnode/test-node.bash --init --dev &
+          jobid=$!
+          ${{ github.action_path }}/waitForNitro.sh
+          kill -s SIGKILL $jobid
+    
       - name: Print WAVM module root
         id: module-root
         run: |
