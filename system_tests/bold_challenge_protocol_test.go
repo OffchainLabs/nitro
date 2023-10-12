@@ -84,7 +84,7 @@ func TestBoldProtocol(t *testing.T) {
 				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 				latestBlock, err := l1client.BlockNumber(ctx)
 				Require(t, err)
-				if latestBlock > 200 {
+				if latestBlock > 150 {
 					delay = time.Second
 				}
 			}

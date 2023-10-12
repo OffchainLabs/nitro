@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	boldcontainers "github.com/OffchainLabs/bold/containers"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -71,7 +70,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			gs := machine.GetGlobalState()
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
-			fmt.Printf("Initial machine global state %s, %+v\n", boldcontainers.Trunc(hash.Bytes()), gs)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
@@ -81,7 +79,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
-		fmt.Printf("Num desired leaves: %+v, step size %d\n", numDesiredLeaves, stepSize)
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
@@ -97,7 +94,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
-				fmt.Printf("Last machine global state %s, %+v\n", boldcontainers.Trunc(hash.Bytes()), gs)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
