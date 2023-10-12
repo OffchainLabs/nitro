@@ -16,8 +16,8 @@ type PreimagesMapJson struct {
 	Map map[common.Hash][]byte
 }
 
-func NewPreimagesMapJson(inner map[common.Hash][]byte) PreimagesMapJson {
-	return PreimagesMapJson{inner}
+func NewPreimagesMapJson(inner map[common.Hash][]byte) *PreimagesMapJson {
+	return &PreimagesMapJson{inner}
 }
 
 func (m *PreimagesMapJson) MarshalJSON() ([]byte, error) {

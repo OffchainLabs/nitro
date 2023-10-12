@@ -3,6 +3,7 @@ run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
   push:
     branches:

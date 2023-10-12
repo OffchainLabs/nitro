@@ -81,6 +81,7 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Bool(prefix+".use-finality-data", DefaultConfig.UseFinalityData, "use l1 data about finalized/safe blocks")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
+	f.Duration(prefix+".subscribe-err-interval", DefaultConfig.SubscribeErrInterval, "interval for subscribe error")
 	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
 	f.Duration(prefix+".old-header-timeout", DefaultConfig.OldHeaderTimeout, "warns if the latest l1 block is at least this old")
 }
@@ -314,7 +315,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
 		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
-		log.Warn(
+		log.Error(
 			"latest L1 block is old", "l1Block", storedHeader.Number,
 			"l1Timestamp", l1Timetamp, "age", headerTime,
 		)

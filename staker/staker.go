@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -202,7 +203,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
@@ -252,6 +253,27 @@ type Staker struct {
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
 	fatalErr                chan<- error
+}
+
+type ValidatorWalletInterface interface {
+	Initialize(context.Context) error
+	// Address must be able to be called concurrently with other functions
+	Address() *common.Address
+	// Address must be able to be called concurrently with other functions
+	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
+	RollupAddress() common.Address
+	ChallengeManagerAddress() common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	CanBatchTxs() bool
+	AuthIfEoa() *bind.TransactOpts
+	Start(context.Context)
+	StopAndWait()
+	// May be nil
+	DataPoster() *dataposter.DataPoster
 }
 
 func NewStaker(
@@ -777,8 +799,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.builder,
-			s.builder.builderAuth,
-			*s.builder.wallet.Address(),
+			s.builder.BuilderAuth(),
+			*s.builder.WalletAddress(),
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,

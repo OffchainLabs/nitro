@@ -96,7 +96,7 @@ var DefaultConfig = Config{
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
 	Verify:                  signature.DefultFeedVerifierConfig,
-	URL:                     []string{""},
+	URL:                     []string{},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
 }
@@ -153,10 +153,10 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	confirmedSequencerNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
-	bpVerifier contracts.BatchPosterVerifierInterface,
+	addrVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
 ) (*BroadcastClient, error) {
-	sigVerifier, err := signature.NewVerifier(&config().Verify, bpVerifier)
+	sigVerifier, err := signature.NewVerifier(&config().Verify, addrVerifier)
 	if err != nil {
 		return nil, err
 	}

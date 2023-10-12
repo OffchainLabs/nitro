@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -30,7 +30,16 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 )
 
-func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*execution.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
+type execClientWrapper struct {
+	*gethexec.ExecutionEngine
+	t *testing.T
+}
+
+func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
+func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
+func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+
+func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
@@ -46,18 +55,19 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, ConfigDefaultL2Test().TxLookupLimit, 0)
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := execution.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc)
 	if err != nil {
 		Fail(t, err)
 	}
-	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execEngine, nil, make(chan error, 1), transactionStreamerConfigFetcher)
+	execSeq := &execClientWrapper{execEngine, t}
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
 	if err != nil {
 		Fail(t, err)
 	}

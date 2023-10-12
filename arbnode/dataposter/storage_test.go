@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -30,13 +30,22 @@ var ignoreData = cmp.Options{
 	cmpopts.IgnoreFields(types.Transaction{}, "hash", "size", "from"),
 }
 
-func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *leveldb.Storage {
+func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
 	t.Helper()
 	db, err := rawdb.NewLevelDBDatabase(path.Join(t.TempDir(), "level.db"), 0, 0, "default", false)
 	if err != nil {
 		t.Fatalf("NewLevelDBDatabase() unexpected error: %v", err)
 	}
-	return leveldb.New(db, encF)
+	return dbstorage.New(db, encF)
+}
+
+func newPebbleDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
+	t.Helper()
+	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false)
+	if err != nil {
+		t.Fatalf("NewPebbleDBDatabase() unexpected error: %v", err)
+	}
+	return dbstorage.New(db, encF)
 }
 
 func newSliceStorage(encF storage.EncoderDecoderF) *slice.Storage {
@@ -120,6 +129,7 @@ func storages(t *testing.T) map[string]QueueStorage {
 		"sliceLegacy":   newSliceStorage(f(&storage.LegacyEncoderDecoder{})),
 		"redisLegacy":   newRedisStorage(context.Background(), t, f(&storage.LegacyEncoderDecoder{})),
 		"levelDB":       newLevelDBStorage(t, f(&storage.EncoderDecoder{})),
+		"pebbleDB":      newPebbleDBStorage(t, f(&storage.EncoderDecoder{})),
 		"slice":         newSliceStorage(f(&storage.EncoderDecoder{})),
 		"redis":         newRedisStorage(context.Background(), t, f(&storage.EncoderDecoder{})),
 	}

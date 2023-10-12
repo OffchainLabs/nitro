@@ -20,9 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -41,7 +41,7 @@ type SeqCoordinator struct {
 
 	sync             *SyncMonitor
 	streamer         *TransactionStreamer
-	sequencer        *execution.Sequencer
+	sequencer        execution.ExecutionSequencer
 	delayedSequencer *DelayedSequencer
 	signer           *signature.SignVerify
 	config           SeqCoordinatorConfig // warning: static, don't use for hot reloadable fields
@@ -132,7 +132,14 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Signer:            signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *execution.Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(
+	dataSigner signature.DataSignerFunc,
+	bpvalidator *contracts.AddressVerifier,
+	streamer *TransactionStreamer,
+	sequencer execution.ExecutionSequencer,
+	sync *SyncMonitor,
+	config SeqCoordinatorConfig,
+) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err

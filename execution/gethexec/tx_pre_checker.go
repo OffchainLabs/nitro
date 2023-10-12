@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package execution
+package gethexec
 
 import (
 	"context"
@@ -188,7 +188,11 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
-	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := arbos.BrotliCompressionLevel()
+	if err != nil {
+		return fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)
 	if tx.Gas() < intrinsic+dataGas.Uint64() {
 		return core.ErrIntrinsicGas

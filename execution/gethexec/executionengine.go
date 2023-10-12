@@ -1,4 +1,4 @@
-package execution
+package gethexec
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -20,21 +19,16 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-type TransactionStreamerInterface interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
-	ExpectChosenSequencer() error
-	FetchBatch(batchNum uint64) ([]byte, error)
-}
 
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc       *core.BlockChain
-	streamer TransactionStreamerInterface
+	streamer execution.TransactionStreamer
 	recorder *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
@@ -77,7 +71,7 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 	s.reorgSequencing = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInterface) {
+func (s *ExecutionEngine) SetTransactionStreamer(streamer execution.TransactionStreamer) {
 	if s.Started() {
 		panic("trying to set transaction streamer after start")
 	}
@@ -245,15 +239,13 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 	}
 }
 
-var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
-
 func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
 	attempts := 0
 	for {
 		s.createBlocksMutex.Lock()
 		block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
-		if !errors.Is(err, ErrSequencerInsertLockTaken) {
+		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
 			return block, err
 		}
 		// We got SequencerInsertLockTaken
@@ -479,20 +471,18 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	return nil
 }
 
-type MessageResult struct {
-	BlockHash common.Hash
-	SendRoot  common.Hash
-}
-
-func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*MessageResult, error) {
+func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
 		return nil, fmt.Errorf("result not found")
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
-	return &MessageResult{header.Hash(), info.SendRoot}, nil
+	return &execution.MessageResult{
+		BlockHash: header.Hash(),
+		SendRoot:  info.SendRoot,
+	}, nil
 }
 
-func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error) {
+func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
