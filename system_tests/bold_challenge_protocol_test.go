@@ -30,10 +30,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
@@ -71,13 +71,35 @@ func TestBoldProtocol(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
+	// Every 10 seconds, send an L1 transaction to keep the chain moving.
+	go func() {
+		delay := time.Second * 10
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				time.Sleep(delay)
+				balance := big.NewInt(params.GWei)
+				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+				latestBlock, err := l1client.BlockNumber(ctx)
+				Require(t, err)
+				if latestBlock > 200 {
+					delay = time.Second
+				}
+			}
+		}
+	}()
+
 	_, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
 
-	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	if nodeAGenesis != nodeBGenesis {
-		Fatal(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+	nodeAMessage, err := l2nodeA.Execution.HeadMessageNumber()
+	Require(t, err)
+	nodeBMessage, err := l2nodeB.Execution.HeadMessageNumber()
+	Require(t, err)
+	if nodeAMessage != nodeBMessage {
+		Fatal(t, "node A L2 genesis hash", nodeAMessage, "!= node B L2 genesis hash", nodeBMessage)
 	}
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -113,7 +135,7 @@ func TestBoldProtocol(t *testing.T) {
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution.Recorder,
+		l2nodeA.Execution,
 		l2nodeA.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -127,7 +149,7 @@ func TestBoldProtocol(t *testing.T) {
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution.Recorder,
+		l2nodeB.Execution,
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -225,9 +247,17 @@ func TestBoldProtocol(t *testing.T) {
 	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
 
 	// Wait for both nodes' chains to catch up.
+	nodeAExec, ok := l2nodeA.Execution.(*gethexec.ExecutionNode)
+	if !ok {
+		Fatal(t, "not geth execution node")
+	}
+	nodeBExec, ok := l2nodeB.Execution.(*gethexec.ExecutionNode)
+	if !ok {
+		Fatal(t, "not geth execution node")
+	}
 	for {
-		nodeALatest := l2nodeA.Execution.Backend.APIBackend().CurrentHeader()
-		nodeBLatest := l2nodeB.Execution.Backend.APIBackend().CurrentHeader()
+		nodeALatest := nodeAExec.Backend.APIBackend().CurrentHeader()
+		nodeBLatest := nodeBExec.Backend.APIBackend().CurrentHeader()
 		isCaughtUp := nodeALatest.Number.Uint64() == uint64(totalMessagesPosted)
 		areEqual := nodeALatest.Number.Uint64() == nodeBLatest.Number.Uint64()
 		if isCaughtUp && areEqual {
@@ -333,26 +363,6 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	managerB.Start(ctx)
 
-	// Every 10 seconds, send an L1 transaction to keep the chain moving.
-	go func() {
-		delay := time.Second * 10
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(delay)
-				balance := big.NewInt(params.GWei)
-				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-				latestBlock, err := l1client.BlockNumber(ctx)
-				Require(t, err)
-				if latestBlock > 200 {
-					delay = time.Second
-				}
-			}
-		}
-	}()
-
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
 	Require(t, err)
 	for {
@@ -385,8 +395,8 @@ func createTestNodeOnL1ForBoldProtocol(
 ) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
-		nodeConfig.ParentChainReader.OldHeaderTimeout = time.Minute * 10
 	}
+	nodeConfig.ParentChainReader.OldHeaderTimeout = time.Minute * 10
 	if chainConfig == nil {
 		chainConfig = params.ArbitrumDevTestChainConfig()
 	}
@@ -458,8 +468,14 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
+	execConfig := gethexec.ConfigDefaultTest()
+	Require(t, execConfig.Validate())
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	Require(t, err)
+
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
+		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
@@ -599,7 +615,11 @@ func create2ndNodeWithConfigForBoldProtocol(
 		Fatal(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
+	firstExec, ok := first.Execution.(*gethexec.ExecutionNode)
+	if !ok {
+		Fatal(t, "not geth execution node")
+	}
+	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 	addresses, assertionChain := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
@@ -630,10 +650,16 @@ func create2ndNodeWithConfigForBoldProtocol(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
-	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	execConfig := gethexec.ConfigDefaultTest()
+	Require(t, execConfig.Validate())
+
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
-	l2node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan)
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	Require(t, err)
+	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan)
 	Require(t, err)
 
 	Require(t, l2node.Start(ctx))

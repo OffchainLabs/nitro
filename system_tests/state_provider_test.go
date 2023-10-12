@@ -290,7 +290,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		l2node.Execution.Recorder,
+		l2node.Execution,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
