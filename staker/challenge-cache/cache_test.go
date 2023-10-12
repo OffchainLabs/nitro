@@ -7,13 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -33,10 +31,10 @@ func TestCache(t *testing.T) {
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageHeight:  0,
-		BigStepHeight:  option.Some(protocol.Height(0)),
+		StepHeights:    []l2stateprovider.Height{l2stateprovider.Height(0)},
 	}
 	t.Run("Not found", func(t *testing.T) {
-		_, err := cache.Get(key, protocol.Height(0))
+		_, err := cache.Get(key, 0)
 		if !errors.Is(err, ErrNotFoundInCache) {
 			t.Fatal(err)
 		}
@@ -55,7 +53,7 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := cache.Get(key, protocol.Height(2))
+	got, err := cache.Get(key, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +70,7 @@ func TestCache(t *testing.T) {
 func TestReadWriteStateRoots(t *testing.T) {
 	t.Run("read up to, but had empty reader", func(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
-		_, err := readStateRoots(b, protocol.Height(100))
+		_, err := readStateRoots(b, 100)
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
@@ -84,7 +82,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		want := common.BytesToHash([]byte("foo"))
 		b.Write(want.Bytes())
-		roots, err := readStateRoots(b, protocol.Height(0))
+		roots, err := readStateRoots(b, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +101,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b.Write(foo.Bytes())
 		b.Write(bar.Bytes())
 		b.Write(baz.Bytes())
-		roots, err := readStateRoots(b, protocol.Height(1))
+		roots, err := readStateRoots(b, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +172,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: true, roots: want, err: errors.New("foo")}
-		_, err := readStateRoots(m, protocol.Height(1))
+		_, err := readStateRoots(m, 1)
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -189,11 +187,11 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: true, roots: want, err: io.EOF}
-		_, err := readStateRoots(m, protocol.Height(100))
+		_, err := readStateRoots(m, 100)
 		if err == nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(err.Error(), "wanted to read up to 100, but only read 0 state roots") {
+		if !strings.Contains(err.Error(), "wanted to read 100") {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
@@ -204,7 +202,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: false, roots: want, bytesRead: 16}
-		_, err := readStateRoots(m, protocol.Height(2))
+		_, err := readStateRoots(m, 2)
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -219,7 +217,7 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("baz")),
 		}
 		m := &mockReader{wantErr: false, roots: want, bytesRead: 32}
-		got, err := readStateRoots(m, protocol.Height(2))
+		got, err := readStateRoots(m, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,10 +250,10 @@ func Test_determineFilePath(t *testing.T) {
 				baseDir: "",
 				key: &Key{
 					MessageHeight: 100,
-					BigStepHeight: option.Some(protocol.Height(50)),
+					StepHeights:   []l2stateprovider.Height{l2stateprovider.Height(50)},
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/big-step-50/state-roots",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/subchallenge-level-1-big-step-50/state-roots",
 			wantErr: false,
 		},
 	}
@@ -283,10 +281,7 @@ func Test_determineFilePath(t *testing.T) {
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
 	b.StopTimer()
-	basePath, err := ioutil.TempDir("", "*")
-	if err != nil {
-		b.Fatal(err)
-	}
+	basePath := os.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		b.Fatal(err)
 	}
@@ -299,19 +294,19 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageHeight:  0,
-		BigStepHeight:  option.Some(protocol.Height(0)),
+		StepHeights:    []l2stateprovider.Height{l2stateprovider.Height(0)},
 	}
 	numRoots := 1 << 20
 	roots := make([]common.Hash, numRoots)
 	for i := range roots {
 		roots[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
-	if err = cache.Put(key, roots); err != nil {
+	if err := cache.Put(key, roots); err != nil {
 		b.Fatal(err)
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		readUpTo := protocol.Height(1 << 20)
+		readUpTo := uint64(1 << 20)
 		roots, err := cache.Get(key, readUpTo)
 		if err != nil {
 			b.Fatal(err)
