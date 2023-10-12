@@ -62,9 +62,11 @@ jobs:
       - name: Start nitro-testnode and wait for rpc to come up
         shell: bash
         run: |
-          .nitro-testnode/test-node.bash --init --dev &
+          cd nitro-testnode
+          ./test-node.bash --init --dev &
           jobid=$!
-          ${{ github.action_path }}/waitForNitro.sh
+          cd ..
+          ${{ github.workspace }}/.github/workflows/waitForNitro.sh
           kill -s SIGKILL $jobid
     
       - name: Print WAVM module root
