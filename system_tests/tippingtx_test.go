@@ -111,7 +111,7 @@ func TestTippingTxJsonRPC(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	// make sure ArbOSVersion supports ArbitrumSubtypedTx
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumSubtypedTx, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, chainConfig, nil)
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
@@ -154,7 +154,7 @@ func TestTippingTxTipPaid(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	// make sure ArbOSVersion supports ArbitrumSubtypedTx
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumSubtypedTx, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, chainConfig, nil)
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
@@ -240,7 +240,7 @@ func testSubtypedTxOldArbosVersion(t *testing.T, version uint64) {
 	defer cancel()
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = version
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, chainConfig, nil)
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
