@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -19,7 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -46,7 +46,7 @@ type Storage struct {
 	db         vm.StateDB
 	storageKey []byte
 	burner     burn.Burner
-	hashCache  *containers.SafeLruCache[string, []byte]
+	hashCache  *lru.Cache[string, []byte]
 }
 
 const StorageReadCost = params.SloadGasEIP2200
@@ -55,7 +55,7 @@ const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
 const storageKeyCacheSize = 1024
 
-var storageHashCache = containers.NewSafeLruCache[string, []byte](storageKeyCacheSize)
+var storageHashCache = lru.NewCache[string, []byte](storageKeyCacheSize)
 var cacheFullLogged atomic.Bool
 
 // NewGeth uses a Geth database to create an evm key-value store
