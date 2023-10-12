@@ -95,7 +95,10 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 
 	data, err := mockmanager.ProofArgs.Unpack(packedProof)
 	Require(t, err)
-	preExpansion := data[0].([][32]byte)
+	preExpansion, ok := data[0].([][32]byte)
+	if !ok {
+		Fatal(t, "wrong type")
+	}
 
 	hashes := make([]common.Hash, len(preExpansion))
 	for i, h := range preExpansion {
@@ -280,8 +283,6 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 
 	_, l2node, _, _, l1info, _, l1client, l1stack, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
 
-	valConfig := staker.L1ValidatorConfig{}
-	valConfig.Strategy = "MakeNodes"
 	valnode.TestValidationConfig.UseJit = false
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig

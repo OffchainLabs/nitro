@@ -124,8 +124,6 @@ func TestBoldProtocol(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	valConfig := staker.L1ValidatorConfig{}
-	valConfig.Strategy = "MakeNodes"
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
 	_, valStack := createTestValidationNode(t, ctx, &valCfg)
@@ -433,7 +431,8 @@ func createTestNodeOnL1ForBoldProtocol(
 		"WETH",
 	)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
 	stakeTokenAddr = stakeToken
 	value, ok := new(big.Int).SetString("10000", 10)
 	if !ok {
@@ -442,7 +441,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1TransactionOpts.Value = value
 	tx, err = tokenBindings.Deposit(&l1TransactionOpts)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
 	l1TransactionOpts.Value = nil
 
 	addresses, assertionChainBindings := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeToken)
@@ -569,23 +569,29 @@ func deployContractsOnly(
 	Require(t, err)
 	tx, err := tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, asserter.From, seed)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, addresses.Rollup, value)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, chalManagerAddr, value)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 
 	tx, err = tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, evilAsserter.From, seed)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&evilAsserter, addresses.Rollup, value)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&evilAsserter, chalManagerAddr, value)
 	Require(t, err)
-	EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
 
 	return &chaininfo.RollupAddresses{
 		Bridge:                 addresses.Bridge,

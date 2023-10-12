@@ -313,9 +313,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	}
 	l1Timetamp := time.Unix(int64(storedHeader.Time), 0)
 	headerTime := time.Since(l1Timetamp)
-	oldHeaderTimeout := time.Minute * 10
-	//if headerTime >= s.config().OldHeaderTimeout {
-	if headerTime >= oldHeaderTimeout {
+	if headerTime >= s.config().OldHeaderTimeout {
 		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
 		log.Error(
 			"latest L1 block is old", "l1Block", storedHeader.Number,
