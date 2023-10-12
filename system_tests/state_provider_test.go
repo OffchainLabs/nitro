@@ -1,5 +1,12 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+
+// race detection makes things slow and miss timeouts
+//go:build challengetest
+//go:build !race
+// +build challengetest
+// +build !race
+
 package arbtest
 
 import (
