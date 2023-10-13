@@ -5,6 +5,6 @@ do
   if [ "$?" -eq "0" ]; then
     exit 0
   else
-    sleep 10
+    sleep 20
   fi
 done
