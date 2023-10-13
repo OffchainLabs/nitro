@@ -62,9 +62,8 @@ jobs:
       - name: Start background nitro-testnode
         shell: bash
         run: |
-          docker tag localhost:5000/nitro-node-dev:latest nitro-node-dev-testnode:latest
           cd nitro-testnode
-          ./test-node.bash --init --dev &
+          ./test-node.bash --init &
       
       - name: Wait for rpc to come up
         shell: bash
