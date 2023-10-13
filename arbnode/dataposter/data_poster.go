@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
@@ -182,15 +183,20 @@ func externalSigner(ctx context.Context, addr string, rpcURL string) (signerFn, 
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
-		data, err := tx.MarshalBinary()
+		// According to the "eth_signTransaction" API definition, this shoul be
+		// RLP encoded transaction object.
+		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
+		var rlpEncTxStr string
+		if err := client.CallContext(ctx, &rlpEncTxStr, "eth_signTransaction", tx); err != nil {
+			return nil, fmt.Errorf("signing transaction: %w", err)
+		}
+		data, err := hexutil.Decode(rlpEncTxStr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error decoding hex: %w", err)
 		}
-		var signedTx *types.Transaction
-		if err := client.CallContext(ctx, &signedTx, "eth_signTransaction", hexutil.Encode(data)); err != nil {
-			return nil, fmt.Errorf("error calling with context: %w", err)
-		}
-		return signedTx, nil
+		var signedTx types.Transaction
+		rlp.DecodeBytes(data, &signedTx)
+		return &signedTx, nil
 	}, sender, nil
 }
 

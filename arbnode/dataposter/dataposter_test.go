@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -54,59 +56,32 @@ func TestParseReplacementTimes(t *testing.T) {
 	}
 }
 
-type Args struct {
-	Name string
-}
-
-func TestRPC(t *testing.T) {
-	srv, err := newServer()
-	if err != nil {
-		fmt.Printf("Erorr creating server: %v", err)
-		return
-	}
-	http.HandleFunc("/", srv.mux)
+func TestExternalSigner(t *testing.T) {
+	ctx := context.Background()
+	httpSrv, srv := newServer(ctx, t)
+	t.Cleanup(func() { httpSrv.Shutdown(ctx) })
 	go func() {
 		fmt.Println("Server is listening on port 1234...")
-		t.Errorf("error listening: %v", http.ListenAndServe(":1234", nil))
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("error listening: %v", http.ListenAndServe(":1234", nil))
+		}
 	}()
-
-	if err != nil {
-		t.Fatalf("Error creating a server: %v", err)
-	}
-	ctx := context.Background()
 	signer, addr, err := externalSigner(ctx, srv.address.Hex(), "http://127.0.0.1:1234")
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
 	}
-	tx := types.NewTransaction(0, common.HexToAddress("0x01"), big.NewInt(0), 3000000, big.NewInt(30000), nil)
-	signedTx, err := signer(ctx, addr, tx)
+	tx := types.NewTransaction(13, common.HexToAddress("0x01"), big.NewInt(1), 2, big.NewInt(3), []byte{0x01, 0x02, 0x03})
+	got, err := signer(ctx, addr, tx)
 	if err != nil {
-		t.Errorf("Error signing transaction: %v", err)
+		t.Fatalf("Error signing transaction with external signer: %v", err)
 	}
-	if diff := cmp.Diff(signedTx, tx); diff != "" {
-		t.Errorf("diff: %v\n", diff)
+	want, err := srv.signerFn(addr, tx)
+	if err != nil {
+		t.Fatalf("Error signing transaction: %v", err)
 	}
-
-}
-
-// func setupServer(t *testing.T) {
-// 	t.Skip()
-// 	t.Helper()
-// 	srv, err := newServer()
-// 	if err != nil {
-// 		fmt.Printf("Erorr creating server: %v", err)
-// 		return
-// 	}
-// 	http.HandleFunc("/", srv.mux)
-// 	fmt.Println("Server is listening on port 1234...")
-// 	t.Fatal(http.ListenAndServe(":1234", nil))
-// }
-
-type SigningService struct{}
-
-func (h *SigningService) SignTx(r *http.Request, args *Args, reply *string) error {
-	*reply = "Hello, " + args.Name + "!"
-	return nil
+	if diff := cmp.Diff(want.Hash(), got.Hash()); diff != "" {
+		t.Errorf("Signing transaction: unexpected diff: %v\n", diff)
+	}
 }
 
 type server struct {
@@ -123,24 +98,32 @@ type request struct {
 
 type response struct {
 	ID     *json.RawMessage `json:"id"`
-	Result string           `json:"result"`
+	Result string           `json:"result,omitempty"`
 }
 
-func newServer() (*server, error) {
+// newServer returns http server and server struct that implements RPC methods.
+// It sets up an account in temporary directory and cleans up after test is
+// done.
+func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
+	t.Helper()
 	signer, address, err := setupAccount("/tmp/keystore")
 	if err != nil {
-		return nil, err
+		t.Fatalf("Error setting up account: %v", err)
 	}
-	s := &server{
-		signerFn: signer,
-		address:  address,
-	}
+	t.Cleanup(func() { os.RemoveAll("/tmp/keystore") })
+
+	s := &server{signerFn: signer, address: address}
 	s.handlers = map[string]func(*json.RawMessage) (string, error){
 		"eth_signTransaction": s.signTransaction,
 	}
-	return s, nil
+	m := http.NewServeMux()
+	httpSrv := &http.Server{Addr: ":1234", Handler: m}
+	m.HandleFunc("/", s.mux)
+	return httpSrv, s
 }
 
+// setupAccount creates a new account in a given directory, unlocks it, creates
+// signer with that account and returns it along with account address.
 func setupAccount(dir string) (bind.SignerFn, common.Address, error) {
 	ks := keystore.NewKeyStore(
 		dir,
@@ -154,7 +137,6 @@ func setupAccount(dir string) (bind.SignerFn, common.Address, error) {
 	if err := ks.Unlock(a, "password"); err != nil {
 		return nil, common.Address{}, fmt.Errorf("unlocking account: %w", err)
 	}
-	log.Printf("Created account: %s", a.Address.Hex())
 	txOpts, err := bind.NewKeyStoreTransactorWithChainID(ks, a, big.NewInt(1))
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("creating transactor: %w", err)
@@ -167,57 +149,31 @@ func setupAccount(dir string) (bind.SignerFn, common.Address, error) {
 // eth_sendRawTransaction or eth_signTransaction, marshall transaction as a
 // slice of transactions in a message:
 // https://github.com/ethereum/go-ethereum/blob/0004c6b229b787281760b14fb9460ffd9c2496f1/rpc/client.go#L548
-func unmarshallFirst(params []byte) (any, error) {
-	var arr []any
+func unmarshallFirst(params []byte) (*types.Transaction, error) {
+	var arr []apitypes.SendTxArgs
 	if err := json.Unmarshal(params, &arr); err != nil {
-		return "", fmt.Errorf("unmarshaling first param: %w", err)
+		return nil, fmt.Errorf("unmarshaling first param: %w", err)
 	}
-	return arr[0], nil
-}
-
-// func unmarshallTx(params *json.RawMessage) (*types.Transaction, error) {
-
-// }
-
-func encodeTx(tx *types.Transaction) (string, error) {
-	data, err := tx.MarshalBinary()
-	if err != nil {
-		return "", err
+	if len(arr) != 1 {
+		return nil, fmt.Errorf("argument should be a single transaction, but got: %d", len(arr))
 	}
-	return hexutil.Encode(data), nil
+	return arr[0].ToTransaction(), nil
 }
 
 func (s *server) signTransaction(params *json.RawMessage) (string, error) {
-	param, err := unmarshallFirst(*params)
+	tx, err := unmarshallFirst(*params)
 	if err != nil {
 		return "", err
 	}
-
-	fmt.Printf("anodar first parameter: %q\n", param)
-	data, err := hexutil.Decode("0xe280827530832dc6c09400000000000000000000000000000000000000018080808080")
+	signedTx, err := s.signerFn(s.address, tx)
 	if err != nil {
-		return "", fmt.Errorf("decoding hex: %w", err)
+		return "", fmt.Errorf("signing transaction: %w", err)
 	}
-	fmt.Printf("decoded data: %v\n", data)
-	var tx types.Transaction
-	if err := tx.UnmarshalBinary(data); err != nil {
-		return "", fmt.Errorf("unmarshaling tx: %w", err)
+	data, err := rlp.EncodeToBytes(signedTx)
+	if err != nil {
+		return "", fmt.Errorf("rlp encoding transaction: %w", err)
 	}
-	fmt.Printf("tx: %v\n", tx)
-	return encodeTx(&tx)
-	// var txs []*types.Transaction
-	// for _, arg := range args {
-	// 	signedTx, err := s.signerFn(s.address, arg)
-	// 	if err != nil {
-	// 		return "", fmt.Errorf("signing transaction: %w", err)
-	// 	}
-	// 	txs = append(txs, signedTx)
-	// }
-	// enc, err := rlp.EncodeToBytes(txs)
-	// if err != nil {
-	// 	return "", fmt.Errorf("encoding transactions to bytes: %w", err)
-	// }
-	// return hexutil.Encode(enc), nil
+	return hexutil.Encode(data), nil
 }
 
 func (s *server) mux(w http.ResponseWriter, r *http.Request) {
