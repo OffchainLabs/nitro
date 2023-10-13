@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -48,7 +49,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
 	conf.BatchPoster.RedisUrl = redisUrl
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -82,7 +83,19 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := conf.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(ctx, nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(ctx,
+			&arbnode.BatchPosterOpts{
+				DataPosterDB: nil,
+				L1Reader:     nodeA.L1Reader,
+				Inbox:        nodeA.InboxTracker,
+				Streamer:     nodeA.TxStreamer,
+				SyncMonitor:  nodeA.SyncMonitor,
+				Config:       func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:   nodeA.DeployInfo,
+				TransactOpts: &seqTxOpts,
+				DAWriter:     nil,
+			},
+		)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()
@@ -103,6 +116,8 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	}
 
+	// TODO: factor this out in separate test case and skip it or delete this
+	// code entirely.
 	// I've locally confirmed that this passes when the clique period is set to 1.
 	// However, setting the clique period to 1 slows everything else (including the L1 deployment for this test) down to a crawl.
 	if false {
@@ -142,9 +157,9 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conf := arbnode.ConfigDefaultL1Test()
+	conf := gethexec.ConfigDefaultTest()
 	conf.Sequencer.MaxTxDataSize = 110000
-	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, conf, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -176,8 +191,9 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.CompressionLevel = brotli.BestCompression
 	conf.BatchPoster.MaxDelay = time.Hour
-	conf.RPC.RPCTxFeeCap = 1000.
-	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	execConf := gethexec.ConfigDefaultTest()
+	execConf.RPC.RPCTxFeeCap = 1000.
+	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, execConf, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 	l2info.GasPrice = big.NewInt(100e9)

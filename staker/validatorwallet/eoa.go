@@ -95,7 +95,7 @@ func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*
 		return nil, err
 	}
 	gas := baseTx.Gas() + w.getExtraGas()
-	newTx, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
+	newTx, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *baseTx.To(), baseTx.Data(), gas, baseTx.Value(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}

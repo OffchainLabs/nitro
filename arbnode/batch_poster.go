@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -47,6 +48,7 @@ import (
 var (
 	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
 	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 )
 
 type batchPosterPosition struct {
@@ -66,6 +68,8 @@ type BatchPoster struct {
 	syncMonitor         *SyncMonitor
 	seqInboxABI         *abi.ABI
 	seqInboxAddr        common.Address
+	bridgeAddr          common.Address
+	gasRefunderAddr     common.Address
 	building            *buildingBatch
 	daWriter            das.DataAvailabilityServiceWriter
 	dataPoster          *dataposter.DataPoster
@@ -78,6 +82,8 @@ type BatchPoster struct {
 
 	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
+
+	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
 }
 
 type l1BlockBound int
@@ -162,7 +168,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
 }
 
@@ -183,6 +189,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
+	RedisLock:          redislock.DefaultCfg,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -210,65 +217,166 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass: time.Hour,
 }
 
-func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
-	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
+type BatchPosterOpts struct {
+	DataPosterDB ethdb.Database
+	L1Reader     *headerreader.HeaderReader
+	Inbox        *InboxTracker
+	Streamer     *TransactionStreamer
+	SyncMonitor  *SyncMonitor
+	Config       BatchPosterConfigFetcher
+	DeployInfo   *chaininfo.RollupAddresses
+	TransactOpts *bind.TransactOpts
+	DAWriter     das.DataAvailabilityServiceWriter
+}
+
+func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
+	seqInbox, err := bridgegen.NewSequencerInbox(opts.DeployInfo.SequencerInbox, opts.L1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := bridgegen.NewBridge(deployInfo.Bridge, l1Reader.Client())
+	bridge, err := bridgegen.NewBridge(opts.DeployInfo.Bridge, opts.L1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	if err = config().Validate(); err != nil {
+	if err = opts.Config().Validate(); err != nil {
 		return nil, err
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	redisClient, err := redisutil.RedisClientFromURL(config().RedisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(opts.Config().RedisUrl)
 	if err != nil {
 		return nil, err
 	}
 	redisLockConfigFetcher := func() *redislock.SimpleCfg {
-		return &config().RedisLock
+		simpleRedisLockConfig := opts.Config().RedisLock
+		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
+		return &simpleRedisLockConfig
 	}
-	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
+	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return opts.SyncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:     l1Reader,
-		inbox:        inbox,
-		streamer:     streamer,
-		syncMonitor:  syncMonitor,
-		config:       config,
-		bridge:       bridge,
-		seqInbox:     seqInbox,
-		seqInboxABI:  seqInboxABI,
-		seqInboxAddr: deployInfo.SequencerInbox,
-		daWriter:     daWriter,
-		redisLock:    redisLock,
+		l1Reader:        opts.L1Reader,
+		inbox:           opts.Inbox,
+		streamer:        opts.Streamer,
+		syncMonitor:     opts.SyncMonitor,
+		config:          opts.Config,
+		bridge:          bridge,
+		seqInbox:        seqInbox,
+		seqInboxABI:     seqInboxABI,
+		seqInboxAddr:    opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr: opts.Config().gasRefunder,
+		bridgeAddr:      opts.DeployInfo.Bridge,
+		daWriter:        opts.DAWriter,
+		redisLock:       redisLock,
+		accessList: func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
+			return AccessList(&AccessListOpts{
+				SequencerInboxAddr:       opts.DeployInfo.SequencerInbox,
+				DataPosterAddr:           opts.TransactOpts.From,
+				BridgeAddr:               opts.DeployInfo.Bridge,
+				GasRefunderAddr:          opts.Config().gasRefunder,
+				SequencerInboxAccs:       SequencerInboxAccs,
+				AfterDelayedMessagesRead: AfterDelayedMessagesRead,
+			})
+		},
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
-		return &config().DataPoster
+		return &(opts.Config().DataPoster)
 	}
 	b.dataPoster, err = dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
-			Database:          dataPosterDB,
-			HeaderReader:      l1Reader,
-			Auth:              transactOpts,
+			Database:          opts.DataPosterDB,
+			HeaderReader:      opts.L1Reader,
+			Auth:              opts.TransactOpts,
 			RedisClient:       redisClient,
 			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			RedisKey:          "data-poster.queue",
-		},
-	)
+		})
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
+}
+
+type AccessListOpts struct {
+	SequencerInboxAddr       common.Address
+	BridgeAddr               common.Address
+	DataPosterAddr           common.Address
+	GasRefunderAddr          common.Address
+	SequencerInboxAccs       int
+	AfterDelayedMessagesRead int
+}
+
+// AccessList returns access list (contracts, storage slots) for batchposter.
+func AccessList(opts *AccessListOpts) types.AccessList {
+	l := types.AccessList{
+		types.AccessTuple{
+			Address: opts.SequencerInboxAddr,
+			StorageKeys: []common.Hash{
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"), // totalDelayedMessagesRead
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000001"), // bridge
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"), // maxTimeVariation.delayBlocks
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"), // maxTimeVariation.futureBlocks
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000006"), // maxTimeVariation.delaySeconds
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000007"), // maxTimeVariation.futureSeconds
+				// ADMIN_SLOT from OpenZeppelin, keccak-256 hash of
+				// "eip1967.proxy.admin" subtracted by 1.
+				common.HexToHash("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"),
+				// IMPLEMENTATION_SLOT from OpenZeppelin,  keccak-256 hash
+				// of "eip1967.proxy.implementation" subtracted by 1.
+				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
+				// isBatchPoster[batchPosterAddr]; for mainnnet it's: "0xa10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660".
+				common.Hash(arbutil.PaddedKeccak256(opts.DataPosterAddr.Bytes(), []byte{3})),
+			},
+		},
+		types.AccessTuple{
+			Address: opts.BridgeAddr,
+			StorageKeys: []common.Hash{
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000006"), // delayedInboxAccs.length
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000007"), // sequencerInboxAccs.length
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000009"), // sequencerInbox
+				common.HexToHash("0x000000000000000000000000000000000000000000000000000000000000000a"), // sequencerReportedSubMessageCount
+				// ADMIN_SLOT from OpenZeppelin, keccak-256 hash of
+				// "eip1967.proxy.admin" subtracted by 1.
+				common.HexToHash("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"),
+				// IMPLEMENTATION_SLOT from OpenZeppelin,  keccak-256 hash
+				// of "eip1967.proxy.implementation" subtracted by 1.
+				common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"),
+				// These below may change when transaction is actually executed:
+				// - delayedInboxAccs[delayedInboxAccs.length - 1]
+				// - delayedInboxAccs.push(...);
+			},
+		},
+	}
+
+	for _, v := range []struct{ slotIdx, val int }{
+		{7, opts.SequencerInboxAccs - 1},       // - sequencerInboxAccs[sequencerInboxAccs.length - 1]; (keccak256(7, sequencerInboxAccs.length - 1))
+		{7, opts.SequencerInboxAccs},           // - sequencerInboxAccs.push(...); (keccak256(7, sequencerInboxAccs.length))
+		{6, opts.AfterDelayedMessagesRead - 1}, // - delayedInboxAccs[afterDelayedMessagesRead - 1]; (keccak256(6, afterDelayedMessagesRead - 1))
+	} {
+		sb := arbutil.SumBytes(arbutil.PaddedKeccak256([]byte{byte(v.slotIdx)}), big.NewInt(int64(v.val)).Bytes())
+		l[1].StorageKeys = append(l[1].StorageKeys, common.Hash(sb))
+	}
+
+	if (opts.GasRefunderAddr != common.Address{}) {
+		l = append(l, types.AccessTuple{
+			Address: opts.GasRefunderAddr,
+			StorageKeys: []common.Hash{
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000004"), // CommonParameters.{maxRefundeeBalance, extraGasMargin, calldataCost, maxGasTip}
+				common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000005"), // CommonParameters.{maxGasCost, maxSingleGasUsage}
+				// allowedContracts[msg.sender]; for mainnet it's: "0x7686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda41".
+				common.Hash(arbutil.PaddedKeccak256(opts.SequencerInboxAddr.Bytes(), []byte{1})),
+				// allowedRefundees[refundee]; for mainnet it's: "0xe85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62".
+				common.Hash(arbutil.PaddedKeccak256(opts.DataPosterAddr.Bytes(), []byte{2})),
+			},
+		})
+	}
+	return l
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
@@ -909,7 +1017,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	tx, err := b.dataPoster.PostTransaction(ctx, firstMsgTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit, new(big.Int))
+	tx, err := b.dataPoster.PostTransaction(ctx,
+		firstMsgTime,
+		nonce,
+		newMeta,
+		b.seqInboxAddr,
+		data,
+		gasLimit,
+		new(big.Int),
+		b.accessList(
+			int(batchPosition.NextSeqNum),
+			int(b.building.segments.delayedMsg)),
+	)
 	if err != nil {
 		return false, err
 	}
