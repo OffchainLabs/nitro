@@ -83,7 +83,19 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := conf.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(ctx, nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(ctx,
+			&arbnode.BatchPosterOpts{
+				DataPosterDB: nil,
+				L1Reader:     nodeA.L1Reader,
+				Inbox:        nodeA.InboxTracker,
+				Streamer:     nodeA.TxStreamer,
+				SyncMonitor:  nodeA.SyncMonitor,
+				Config:       func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:   nodeA.DeployInfo,
+				TransactOpts: &seqTxOpts,
+				DAWriter:     nil,
+			},
+		)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()
@@ -104,6 +116,8 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	}
 
+	// TODO: factor this out in separate test case and skip it or delete this
+	// code entirely.
 	// I've locally confirmed that this passes when the clique period is set to 1.
 	// However, setting the clique period to 1 slows everything else (including the L1 deployment for this test) down to a crawl.
 	if false {
