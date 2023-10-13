@@ -250,6 +250,13 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 		if err := g.Wait(); err != nil {
 			t.Fatal(err)
 		}
+
+		trackedBackend, ok := aChain.Backend().(*solimpl.TrackedContractBackend)
+		if !ok {
+			t.Fatal("Not a tracked contract backend")
+		}
+		t.Log("Printing Alice's ethclient metrics at the end of a challenge")
+		trackedBackend.PrintMetrics()
 	})
 }
 
@@ -334,6 +341,7 @@ func setupValidator(
 		rollup,
 		txOpts,
 		be.Client(),
+		solimpl.WithTrackedContractBackend(),
 	)
 	if err != nil {
 		return nil, nil, err

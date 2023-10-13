@@ -1,5 +1,7 @@
 package solimpl
 
-func (a *AssertionChain) SetBackend(b ChainBackend) {
+import protocol "github.com/OffchainLabs/bold/chain-abstraction"
+
+func (a *AssertionChain) SetBackend(b protocol.ChainBackend) {
 	a.backend = b
 }

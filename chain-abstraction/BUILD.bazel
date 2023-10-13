@@ -13,7 +13,9 @@ go_library(
         "//solgen/go/challengegen",
         "//solgen/go/rollupgen",
         "//state-commitments/history",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
     ],
 )

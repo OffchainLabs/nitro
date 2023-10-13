@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "assertion_chain.go",
         "edge_challenge_manager.go",
+        "tracked_contract_backend.go",
         "transact.go",
         "types.go",
     ],
@@ -33,6 +34,7 @@ go_test(
         "assertion_chain_helper_test.go",
         "assertion_chain_test.go",
         "edge_challenge_manager_test.go",
+        "tracked_contract_backend_test.go",
         "types_test.go",
     ],
     embed = [":sol-implementation"],

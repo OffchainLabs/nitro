@@ -13,9 +13,22 @@ import (
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 )
+
+// ChainBackend to interact with the underlying blockchain.
+type ChainBackend interface {
+	bind.ContractBackend
+	ReceiptFetcher
+}
+
+// ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
+type ReceiptFetcher interface {
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
 
 // LayerZeroHeights for edges configured as parameters in the challenge manager contract.
 type LayerZeroHeights struct {
@@ -81,6 +94,7 @@ type AssertionChain interface {
 	// Read-only methods.
 	IsStaked(ctx context.Context) (bool, error)
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
+	Backend() ChainBackend
 	AssertionStatus(
 		ctx context.Context,
 		assertionHash AssertionHash,

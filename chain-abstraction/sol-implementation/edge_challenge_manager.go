@@ -391,7 +391,7 @@ func (e *specEdge) TopLevelClaimHeight(ctx context.Context) (protocol.OriginHeig
 // Wrapper around the challenge manager contract with developer-friendly methods.
 type specChallengeManager struct {
 	addr           common.Address
-	backend        ChainBackend
+	backend        protocol.ChainBackend
 	assertionChain *AssertionChain
 	txOpts         *bind.TransactOpts
 	caller         *challengeV2gen.EdgeChallengeManagerCaller
@@ -405,7 +405,7 @@ func NewSpecChallengeManager(
 	_ context.Context,
 	addr common.Address,
 	assertionChain *AssertionChain,
-	backend ChainBackend,
+	backend protocol.ChainBackend,
 	txOpts *bind.TransactOpts,
 ) (protocol.SpecChallengeManager, error) {
 	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(addr, backend)

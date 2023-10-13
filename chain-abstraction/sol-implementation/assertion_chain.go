@@ -58,11 +58,19 @@ type ReceiptFetcher interface {
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend    ChainBackend
+	backend    protocol.ChainBackend
 	rollup     *rollupgen.RollupCore
 	userLogic  *rollupgen.RollupUserLogic
 	txOpts     *bind.TransactOpts
 	rollupAddr common.Address
+}
+
+type Opt func(*AssertionChain)
+
+func WithTrackedContractBackend() Opt {
+	return func(a *AssertionChain) {
+		a.backend = NewTrackedContractBackend(a.backend)
+	}
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -71,15 +79,19 @@ func NewAssertionChain(
 	_ context.Context,
 	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
-	backend ChainBackend,
+	backend protocol.ChainBackend,
+	opts ...Opt,
 ) (*AssertionChain, error) {
 	// We disable sending txs by default, as we will first estimate their gas before
 	// we commit them onchain through the transact method in this package.
-	opts := copyTxOpts(txOpts)
+	copiedOpts := copyTxOpts(txOpts)
 	chain := &AssertionChain{
 		backend:    backend,
-		txOpts:     opts,
+		txOpts:     copiedOpts,
 		rollupAddr: rollupAddr,
+	}
+	for _, opt := range opts {
+		opt(chain)
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,
@@ -96,6 +108,10 @@ func NewAssertionChain(
 	chain.rollup = coreBinding
 	chain.userLogic = assertionChainBinding
 	return chain, nil
+}
+
+func (a *AssertionChain) Backend() protocol.ChainBackend {
+	return a.backend
 }
 
 func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
