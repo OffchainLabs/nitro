@@ -899,7 +899,7 @@ func TestProgramActivateFails(t *testing.T) {
 }
 
 func testActivateFails(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, false)
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -1189,7 +1189,6 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool,
 	ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
-	t.Helper()
 	waitForSequencer(t, node, arbmath.MaxInt(blocks...))
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)

@@ -13,6 +13,11 @@ type ArbWasm struct {
 
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
+
+	// charge 3 million up front to begin activation
+	if err := c.Burn(3000000); err != nil {
+		return 0, err
+	}
 	version, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
 	if takeAllGas {
 		_ = c.BurnOut()

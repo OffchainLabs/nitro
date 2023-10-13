@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -173,6 +172,7 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (uint16, bool, error) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(address)
+	burner := p.programs.Burner()
 
 	version, err := p.StylusVersion()
 	if err != nil {
@@ -198,12 +198,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	// charge 3 million up front to begin compilation
-	burner := p.programs.Burner()
-	if err := burner.Burn(3000000); err != nil {
-		return 0, false, err
-	}
-	info, compiledHash, err := compileUserWasm(statedb, address, wasm, pageLimit, version, debugMode, burner)
+	moduleHash, footprint, err := activateProgram(statedb, address, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
 		return 0, true, err
 	}
@@ -213,9 +208,9 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 
 	programData := Program{
 		wasmSize:   wasmSize,
-		footprint:  info.footprint,
+		footprint:  footprint,
 		version:    version,
-		moduleHash: compiledHash,
+		moduleHash: moduleHash,
 	}
 	return version, false, p.setProgram(codeHash, programData)
 }
@@ -435,16 +430,4 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
 	}
-}
-
-type wasmPricingInfo struct {
-	footprint uint16
-	size      uint32
-}
-
-// Pay for compilation. Right now this is a fixed amount of gas.
-// In the future, costs will be variable and based on the wasm.
-// Note: memory expansion costs are baked into compilation charging.
-func payForCompilation(burner burn.Burner, _info *wasmPricingInfo) error {
-	return burner.Burn(11000000)
 }

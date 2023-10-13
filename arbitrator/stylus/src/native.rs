@@ -15,7 +15,7 @@ use prover::{
     binary::WasmBinary,
     machine::Module as ProverModule,
     programs::{
-        config::{PricingParams, WasmPricingInfo},
+        config::PricingParams,
         counter::{Counter, CountingMachine, OP_OFFSETS},
         depth::STYLUS_STACK_LEFT,
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
@@ -374,25 +374,29 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
     Ok(module.to_vec())
 }
 
-pub fn compile_user_wasm(
+pub fn activate(
     wasm: &[u8],
     version: u16,
     page_limit: u16,
-    debug_mode: bool,
-) -> Result<(Vec<u8>, ProverModule, WasmPricingInfo)> {
-    let compile = CompileConfig::version(version, debug_mode);
+    debug: bool,
+    gas: &mut u64,
+) -> Result<(Vec<u8>, ProverModule, u16)> {
+    // paid for by the 3 million gas charge in program.go
+    let compile = CompileConfig::version(version, debug);
     let (bin, stylus_data, footprint) =
         WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
 
-    let prover_module =
-        ProverModule::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
-            .wrap_err("failed to build module from program")?;
+    // naively charge 11 million gas to do the rest.
+    // in the future we'll implement a proper compilation pricing mechanism.
+    if *gas < 11_000_000 {
+        *gas = 0;
+        bail!("out of gas");
+    }
+    *gas -= 11_000_000;
 
-    let info = WasmPricingInfo {
-        size: wasm.len().try_into()?,
-        footprint,
-    };
-    let asm = module(wasm, compile).wrap_err("failed to generate stylus module")?;
+    let module = ProverModule::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
+        .wrap_err("failed to build user module")?;
 
-    Ok((asm, prover_module, info))
+    let asm = self::module(wasm, compile).wrap_err("failed to generate stylus module")?;
+    Ok((asm, module, footprint))
 }

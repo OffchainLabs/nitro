@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -30,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type u8 = C.uint8_t
@@ -43,7 +45,7 @@ type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 type rustSlice = C.RustSlice
 
-func compileUserWasm(
+func activateProgram(
 	db vm.StateDB,
 	program common.Address,
 	wasm []byte,
@@ -51,38 +53,37 @@ func compileUserWasm(
 	version uint16,
 	debug bool,
 	burner burn.Burner,
-) (*wasmPricingInfo, common.Hash, error) {
+) (common.Hash, uint16, error) {
 	output := &rustVec{}
 	asmLen := usize(0)
-
 	moduleHash := &bytes32{}
-	rustInfo := &C.WasmPricingInfo{}
+	footprint := uint16(math.MaxUint16)
+	gas := burner.GasLeft()
 
-	status := userStatus(C.stylus_compile(
+	status := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
 		u16(version),
 		cbool(debug),
-		rustInfo,
 		output,
 		&asmLen,
 		moduleHash,
+		(*u16)(&footprint),
+		(*u64)(&gas),
 	))
-	data, msg, err := status.toResult(output.intoBytes(), debug)
-
-	if err != nil {
-		if debug {
-			log.Warn("stylus parse failed", "err", err, "msg", msg, "program", program)
-		}
-		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, common.Hash{}, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
-		}
-		return nil, common.Hash{}, err
+	if err := burner.Burn(arbmath.SaturatingUSub(burner.GasLeft(), gas)); err != nil {
+		return common.Hash{}, footprint, err
 	}
 
-	info := rustInfo.decode()
-	if err := payForCompilation(burner, &info); err != nil {
-		return nil, common.Hash{}, err
+	data, msg, err := status.toResult(output.intoBytes(), debug)
+	if err != nil {
+		if debug {
+			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
+		}
+		if errors.Is(err, vm.ErrExecutionReverted) {
+			return common.Hash{}, footprint, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+		}
+		return common.Hash{}, footprint, err
 	}
 
 	hash := moduleHash.toHash()
@@ -91,7 +92,7 @@ func compileUserWasm(
 	module := data[split:]
 
 	db.ActivateWasm(hash, asm, module)
-	return &info, hash, err
+	return hash, footprint, err
 }
 
 func callUserWasm(
@@ -367,12 +368,5 @@ func (data *evmData) encode() C.EvmData {
 		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
 		tracing:          cbool(data.tracing),
-	}
-}
-
-func (info *C.WasmPricingInfo) decode() wasmPricingInfo {
-	return wasmPricingInfo{
-		footprint: uint16(info.footprint),
-		size:      uint32(info.size),
 	}
 }

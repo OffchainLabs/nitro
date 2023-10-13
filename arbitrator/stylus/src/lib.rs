@@ -100,36 +100,36 @@ impl RustVec {
     }
 }
 
-/// Compiles a user program to its native representation.
-/// The `output` is either the serialized module or an error string.
+/// Activates a user program.
+/// The `output` is either the serialized asm & module or an error string.
 ///
 /// # Safety
 ///
-/// output, pricing_info, module_hash must not be null.
+/// `output`, `asm_len`, `module_hash`, `footprint`, and `gas` must not be null.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_compile(
+pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
     version: u16,
-    debug_mode: bool,
-    out_pricing_info: *mut WasmPricingInfo,
+    debug: bool,
     output: *mut RustVec,
     asm_len: *mut usize,
     module_hash: *mut Bytes32,
+    footprint: *mut u16,
+    gas: *mut u64,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
     let module_hash = &mut *module_hash;
+    let gas = &mut *gas;
 
-    let (asm, module, pricing_info) =
-        match native::compile_user_wasm(wasm, version, page_limit, debug_mode) {
-            Ok(val) => val,
-            Err(err) => return output.write_err(err),
-        };
-
+    let (asm, module, pages) = match native::activate(wasm, version, page_limit, debug, gas) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
     *asm_len = asm.len();
     *module_hash = module.hash();
-    *out_pricing_info = pricing_info;
+    *footprint = pages;
 
     let mut data = asm;
     data.extend(&*module.into_bytes());
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn stylus_compile(
 ///
 /// # Safety
 ///
-/// `module` must represent a valid module produced from `stylus_compile`.
+/// `module` must represent a valid module produced from `stylus_activate`.
 /// `output` and `gas` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
