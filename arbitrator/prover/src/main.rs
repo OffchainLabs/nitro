@@ -385,7 +385,7 @@ fn main() -> Result<()> {
             sum.count += profile.count;
             let entry = func_profile
                 .entry((module, func))
-                .or_insert_with(SimpleProfile::default);
+                .or_default();
             entry.count += sum.count;
             entry.total_cycles += sum.total_cycles;
             entry.local_cycles += profile.local_cycles;
