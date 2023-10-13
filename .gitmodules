@@ -13,7 +13,7 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/OffchainLabs/nitro-contracts.git
-	branch = feature-orbit-bridge
+	branch = develop
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
