@@ -183,12 +183,13 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	poster := assertions.NewPoster(
+	poster, err := assertions.NewPoster(
 		assertionChain,
 		stateManager,
 		"good",
 		time.Hour,
 	)
+	Require(t, err)
 
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
@@ -209,12 +210,14 @@ func TestBoldProtocol(t *testing.T) {
 		l1client,
 	)
 	Require(t, err)
-	posterB := assertions.NewPoster(
+
+	posterB, err := assertions.NewPoster(
 		chainB,
 		stateManagerB,
 		"evil",
 		time.Hour,
 	)
+	Require(t, err)
 
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
