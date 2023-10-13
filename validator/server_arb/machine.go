@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -397,20 +396,20 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	return nil
 }
 
-func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWasm, debug bool) error {
+func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte, debug bool) error {
 	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
 	hashBytes := [32]u8{}
-	for index, byte := range wasm.ModuleHash.Bytes() {
+	for index, byte := range moduleHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
 	cErr := C.arbitrator_add_user_wasm(
 		m.ptr,
-		(*u8)(arbutil.SliceToPointer(wasm.Module)),
-		u32(len(wasm.Module)),
-		u16(call.Version),
+		(*u8)(arbutil.SliceToPointer(module)),
+		u32(len(module)),
+		u16(0), // TODO: remove
 		u32(arbmath.BoolToUint32(debug)),
 		&C.struct_Bytes32{hashBytes},
 	)

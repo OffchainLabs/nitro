@@ -52,9 +52,12 @@ func compileUserWasm(
 	debug bool,
 	burner burn.Burner,
 ) (*wasmPricingInfo, common.Hash, error) {
-	rustInfo := &C.WasmPricingInfo{}
 	output := &rustVec{}
-	canonicalHashRust := &rustVec{}
+	asmLen := usize(0)
+
+	moduleHash := &bytes32{}
+	rustInfo := &C.WasmPricingInfo{}
+
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u16(page_limit),
@@ -62,7 +65,8 @@ func compileUserWasm(
 		cbool(debug),
 		rustInfo,
 		output,
-		canonicalHashRust,
+		&asmLen,
+		moduleHash,
 	))
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 
@@ -81,11 +85,13 @@ func compileUserWasm(
 		return nil, common.Hash{}, err
 	}
 
-	asm := data
-	module := []byte{}
+	hash := moduleHash.toHash()
+	split := int(asmLen)
+	asm := data[:split]
+	module := data[split:]
 
-	db.NewActivation(program, version, asm, module)
-	return &info, common.BytesToHash(canonicalHashRust.intoBytes()), err
+	db.ActivateWasm(hash, asm, module)
+	return &info, hash, err
 }
 
 func callUserWasm(
@@ -101,16 +107,16 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version, program.compiledHash)
+		db.RecordProgram(program.moduleHash)
 	}
-	module := db.GetActivatedAsm(address, stylusParams.version)
+	asm := db.GetActivatedAsm(program.moduleHash)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
 
 	output := &rustVec{}
 	status := userStatus(C.stylus_call(
-		goSlice(module),
+		goSlice(asm),
 		goSlice(calldata),
 		stylusParams.encode(),
 		evmApi,

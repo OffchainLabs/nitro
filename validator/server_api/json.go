@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -20,9 +19,8 @@ type BatchInfoJson struct {
 }
 
 type UserWasmJson struct {
-	ModuleHash common.Hash
-	Module     string
-	Asm        string
+	Module string
+	Asm    string
 }
 
 type ValidationInputJson struct {
@@ -52,16 +50,13 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
 	}
-	for call, wasm := range entry.UserWasms {
-		callBytes := arbmath.Uint16ToBytes(call.Version)
-		callBytes = append(callBytes, call.CodeHash.Bytes()...)
-		encCall := base64.StdEncoding.EncodeToString(callBytes)
+	for moduleHash, info := range entry.UserWasms {
+		encModuleHash := base64.StdEncoding.EncodeToString(moduleHash[:])
 		encWasm := UserWasmJson{
-			ModuleHash: wasm.ModuleHash,
-			Module:     base64.StdEncoding.EncodeToString(wasm.Module),
-			Asm:        base64.StdEncoding.EncodeToString(wasm.Asm),
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
 		}
-		res.UserWasms[encCall] = encWasm
+		res.UserWasms[encModuleHash] = encWasm
 	}
 	return res
 }
@@ -92,29 +87,24 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
-	for call, wasm := range entry.UserWasms {
-		callBytes, err := base64.StdEncoding.DecodeString(call)
+	for moduleHash, info := range entry.UserWasms {
+		decModuleHash, err := base64.StdEncoding.DecodeString(moduleHash)
 		if err != nil {
 			return nil, err
 		}
-		decCall := state.WasmCall{
-			Version:  arbmath.BytesToUint16(callBytes[:2]),
-			CodeHash: common.BytesToHash(callBytes[2:]),
-		}
-		asm, err := base64.StdEncoding.DecodeString(wasm.Asm)
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
 		if err != nil {
 			return nil, err
 		}
-		module, err := base64.StdEncoding.DecodeString(wasm.Module)
+		module, err := base64.StdEncoding.DecodeString(info.Module)
 		if err != nil {
 			return nil, err
 		}
-		decWasm := state.UserWasm{
-			ModuleHash: wasm.ModuleHash,
-			Module:     module,
-			Asm:        asm,
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
 		}
-		valInput.UserWasms[decCall] = &decWasm
+		valInput.UserWasms[common.Hash(decModuleHash)] = decInfo
 	}
 	return valInput, nil
 }

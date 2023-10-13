@@ -96,7 +96,7 @@ func callUserWasm(
 	debug := arbmath.UintToBool(params.debugMode)
 
 	status, output := callUserWasmRustImpl(
-		&program.compiledHash,
+		&program.moduleHash,
 		calldata,
 		params.encode(),
 		evmApi.funcs,

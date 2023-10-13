@@ -8,17 +8,20 @@ use crate::{
 use arbutil::{
     evm::{api::EvmApi, EvmData},
     operator::OperatorCode,
-    Bytes32, Color,
+    Color,
 };
 use eyre::{bail, eyre, Context, ErrReport, Result};
-use prover::binary::WasmBinary;
-use prover::programs::{
-    config::{PricingParams, WasmPricingInfo},
-    counter::{Counter, CountingMachine, OP_OFFSETS},
-    depth::STYLUS_STACK_LEFT,
-    meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
-    prelude::*,
-    start::STYLUS_START,
+use prover::{
+    binary::WasmBinary,
+    machine::Module as ProverModule,
+    programs::{
+        config::{PricingParams, WasmPricingInfo},
+        counter::{Counter, CountingMachine, OP_OFFSETS},
+        depth::STYLUS_STACK_LEFT,
+        meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
+        prelude::*,
+        start::STYLUS_START,
+    },
 };
 use std::{
     collections::BTreeMap,
@@ -376,24 +379,20 @@ pub fn compile_user_wasm(
     version: u16,
     page_limit: u16,
     debug_mode: bool,
-) -> Result<(Vec<u8>, Bytes32, WasmPricingInfo)> {
+) -> Result<(Vec<u8>, ProverModule, WasmPricingInfo)> {
     let compile = CompileConfig::version(version, debug_mode);
     let (bin, stylus_data, footprint) =
         WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
 
-    let module_hash = prover::machine::Module::from_user_binary(
-        &bin,
-        compile.debug.debug_funcs,
-        Some(stylus_data),
-    )
-    .wrap_err("failed to build module from program")?
-    .hash();
+    let prover_module =
+        ProverModule::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
+            .wrap_err("failed to build module from program")?;
 
     let info = WasmPricingInfo {
         size: wasm.len().try_into()?,
         footprint,
     };
-    let module = module(wasm, compile).wrap_err("failed to generate stylus module")?;
+    let asm = module(wasm, compile).wrap_err("failed to generate stylus module")?;
 
-    Ok((module, module_hash, info))
+    Ok((asm, prover_module, info))
 }

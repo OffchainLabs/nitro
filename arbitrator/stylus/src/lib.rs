@@ -8,6 +8,7 @@ use arbutil::{
         EvmData,
     },
     format::DebugBytes,
+    Bytes32,
 };
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -104,7 +105,7 @@ impl RustVec {
 ///
 /// # Safety
 ///
-/// Output, pricing_info, output_canonical_hash must not be null.
+/// output, pricing_info, module_hash must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
@@ -113,33 +114,26 @@ pub unsafe extern "C" fn stylus_compile(
     debug_mode: bool,
     out_pricing_info: *mut WasmPricingInfo,
     output: *mut RustVec,
-    out_canonical_hash: *mut RustVec,
+    asm_len: *mut usize,
+    module_hash: *mut Bytes32,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-
-    if output.is_null() {
-        return UserOutcomeKind::Failure;
-    }
     let output = &mut *output;
+    let module_hash = &mut *module_hash;
 
-    if out_pricing_info.is_null() {
-        return output.write_err(eyre::eyre!("pricing_info is null"));
-    }
-    if out_canonical_hash.is_null() {
-        return output.write_err(eyre::eyre!("canonical_hash is null"));
-    }
-    let out_canonical_hash = &mut *out_canonical_hash;
-
-    let (module, canonical_hash, pricing_info) =
+    let (asm, module, pricing_info) =
         match native::compile_user_wasm(wasm, version, page_limit, debug_mode) {
             Ok(val) => val,
             Err(err) => return output.write_err(err),
         };
 
-    out_canonical_hash.write(canonical_hash.to_vec());
+    *asm_len = asm.len();
+    *module_hash = module.hash();
     *out_pricing_info = pricing_info;
-    output.write(module);
 
+    let mut data = asm;
+    data.extend(&*module.into_bytes());
+    output.write(data);
     UserOutcomeKind::Success
 }
 

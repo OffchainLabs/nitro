@@ -206,11 +206,11 @@ func (machine *JitMachine) prove(
 	if err := writeUint32(uint32(len(userWasms))); err != nil {
 		return state, err
 	}
-	for _, wasm := range userWasms {
-		if err := writeExact(wasm.ModuleHash[:]); err != nil {
+	for moduleHash, info := range userWasms {
+		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(wasm.Asm); err != nil {
+		if err := writeBytes(info.Asm); err != nil {
 			return state, err
 		}
 	}

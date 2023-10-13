@@ -35,10 +35,10 @@ type Programs struct {
 }
 
 type Program struct {
-	wasmSize     uint16 // Unit is half of a kb
-	footprint    uint16
-	version      uint16
-	compiledHash common.Hash
+	wasmSize   uint16 // Unit is half of a kb
+	footprint  uint16
+	version    uint16
+	moduleHash common.Hash
 }
 
 type uint24 = arbmath.Uint24
@@ -212,10 +212,10 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
-		wasmSize:     wasmSize,
-		footprint:    info.footprint,
-		version:      version,
-		compiledHash: compiledHash,
+		wasmSize:   wasmSize,
+		footprint:  info.footprint,
+		version:    version,
+		moduleHash: compiledHash,
 	}
 	return version, false, p.setProgram(codeHash, programData)
 }
@@ -326,10 +326,10 @@ func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 		return Program{}, err
 	}
 	return Program{
-		wasmSize:     arbmath.BytesToUint16(data[26:28]),
-		footprint:    arbmath.BytesToUint16(data[28:30]),
-		version:      arbmath.BytesToUint16(data[30:]),
-		compiledHash: compiledHash,
+		wasmSize:   arbmath.BytesToUint16(data[26:28]),
+		footprint:  arbmath.BytesToUint16(data[28:30]),
+		version:    arbmath.BytesToUint16(data[30:]),
+		moduleHash: compiledHash,
 	}, nil
 }
 
@@ -342,7 +342,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	if err != nil {
 		return err
 	}
-	return p.compiledHashes.Set(codehash, program.compiledHash)
+	return p.compiledHashes.Set(codehash, program.moduleHash)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {

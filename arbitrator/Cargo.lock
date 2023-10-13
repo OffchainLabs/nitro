@@ -1803,6 +1803,7 @@ name = "stylus"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "bincode",
  "derivative",
  "eyre",
  "fnv",

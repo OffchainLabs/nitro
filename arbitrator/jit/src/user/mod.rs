@@ -52,15 +52,13 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
         ));
     }
 
-    // ensure the wasm compiles during proving
-    let (module, module_hash, info) =
-        match native::compile_user_wasm(&wasm, version, page_limit, debug) {
-            Ok(result) => result,
-            Err(error) => error!(error),
-        };
+    let (asm, module, info) = match native::compile_user_wasm(&wasm, version, page_limit, debug) {
+        Ok(result) => result,
+        Err(error) => error!(error),
+    };
 
-    sp.write_slice(out_hash_ptr, module_hash.as_slice());
-    sp.write_ptr(heapify(module));
+    sp.write_slice(out_hash_ptr, module.hash().as_slice());
+    sp.write_ptr(heapify(asm));
     sp.write_u16(info.footprint).skip_u16().write_u32(info.size); // wasm info
     sp.write_nullptr();
 }

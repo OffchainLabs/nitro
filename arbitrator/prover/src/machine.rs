@@ -631,6 +631,14 @@ impl Module {
 
         data
     }
+
+    pub fn into_bytes(&self) -> Box<[u8]> {
+        bincode::serialize(self).unwrap().into_boxed_slice()
+    }
+
+    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
+        bincode::deserialize(bytes).unwrap()
+    }
 }
 
 // Globalstate holds:

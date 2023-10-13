@@ -106,12 +106,12 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
 		}
 	}
-	for call, wasm := range entry.UserWasms {
-		err = mach.AddUserWasm(call, wasm, entry.DebugChain)
+	for moduleHash, info := range entry.UserWasms {
+		err = mach.AddUserWasm(moduleHash, info.Module, entry.DebugChain)
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",
-				"err", err, "codehash", call.CodeHash, "blockNr", entry.Id,
+				"err", err, "moduleHash", moduleHash, "blockNr", entry.Id,
 			)
 			return fmt.Errorf("error adding user wasm for proving: %w", err)
 		}
