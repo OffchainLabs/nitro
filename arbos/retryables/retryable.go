@@ -150,6 +150,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 		return false, err
 	}
 
+	// we ignore returned error as we expect that if one ClearByUint64 fails, than all consecutive calls to ClearByUint64 will fail with the same error (not modifying state), and then ClearBytes will also fail with the same error (also not modifying state) - and this one we check and return
 	_ = retStorage.ClearByUint64(numTriesOffset)
 	_ = retStorage.ClearByUint64(fromOffset)
 	_ = retStorage.ClearByUint64(toOffset)
