@@ -760,23 +760,23 @@ func createNodeImpl(
 	}
 
 	if config.Bold.Enable {
-		assertionChainAddr := common.Address{}
-		assertionChain, err := solimpl.NewAssertionChain(ctx, assertionChainAddr, nil, nil)
+		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, txOptsValidator, l1client)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
 		stateManager, err := staker.NewStateManager(
 			statelessBlockValidator,
-			"/tmp/good",
+			"/tmp/good", // TODO: Customize from config.
 			[]l2stateprovider.Height{
+				// TODO: Customize heights.
 				l2stateprovider.Height(32),
 				l2stateprovider.Height(32),
 				l2stateprovider.Height(32),
 			},
-			"good",
+			"good", // TODO: Customize from config.
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not create state manager: %w", err)
 		}
 		provider := l2stateprovider.NewHistoryCommitmentProvider(
 			stateManager,
@@ -806,7 +806,7 @@ func createNodeImpl(
 			challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not create challenge manager: %w", err)
 		}
 		go manager.Start(ctx)
 	}
