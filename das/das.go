@@ -133,9 +133,9 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 	IpfsStorageServiceConfigAddOptions(prefix+".ipfs-storage", f)
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
-	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
-	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.ParentChainConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
-	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
+	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for parent chain node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.ParentChainConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's parent chain configuration is used")
+	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
 }
 
 func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
