@@ -12,8 +12,12 @@ import (
 	"strings"
 	"time"
 
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	flag "github.com/spf13/pflag"
 
+	modes "github.com/OffchainLabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -296,6 +300,7 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	Bold                staker.BoldConfig           `koanf:"bold" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -321,6 +326,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
+	if err := c.Bold.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -749,6 +757,58 @@ func createNodeImpl(
 		}
 		log.Warn("validation not supported", "err", err)
 		statelessBlockValidator = nil
+	}
+
+	if config.Bold.Enable {
+		assertionChainAddr := common.Address{}
+		assertionChain, err := solimpl.NewAssertionChain(ctx, assertionChainAddr, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		stateManager, err := staker.NewStateManager(
+			statelessBlockValidator,
+			"/tmp/good",
+			[]l2stateprovider.Height{
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+			},
+			"good",
+		)
+		if err != nil {
+			return nil, err
+		}
+		provider := l2stateprovider.NewHistoryCommitmentProvider(
+			stateManager,
+			stateManager,
+			stateManager,
+			[]l2stateprovider.Height{
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+				l2stateprovider.Height(32),
+			},
+			stateManager,
+		)
+		manager, err := challengemanager.New(
+			ctx,
+			assertionChain,
+			l1client,
+			provider,
+			assertionChain.RollupAddress(),
+			challengemanager.WithName("honest"),
+			challengemanager.WithMode(modes.DefensiveMode),
+			challengemanager.WithAssertionPostingInterval(time.Minute),
+			challengemanager.WithAssertionScanningInterval(time.Minute),
+			challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+		)
+		if err != nil {
+			return nil, err
+		}
+		go manager.Start(ctx)
 	}
 
 	var blockValidator *staker.BlockValidator

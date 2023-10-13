@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -40,6 +41,36 @@ var (
 var (
 	ErrChainCatchingUp = errors.New("chain catching up")
 )
+
+type BoldConfig struct {
+	Enable                    bool          `koanf:"enable"`
+	Strategy                  string        `koanf:"strategy"`
+	StakerInterval            time.Duration `koanf:"staker-interval"`
+	MakeAssertionInterval     time.Duration `koanf:"make-assertion-interval"`
+	PostingStrategy           string        `koanf:"posting-strategy"`
+	DisableChallenge          bool          `koanf:"disable-challenge"`
+	ConfirmationBlocks        int64         `koanf:"confirmation-blocks"`
+	UseSmartContractWallet    bool          `koanf:"use-smart-contract-wallet"`
+	OnlyCreateWalletContract  bool          `koanf:"only-create-wallet-contract"`
+	StartValidationFromStaked bool          `koanf:"start-validation-from-staked"`
+	ContractWalletAddress     string        `koanf:"contract-wallet-address"`
+	GasRefunderAddress        string        `koanf:"gas-refunder-address"`
+	RedisUrl                  string        `koanf:"redis-url"`
+	ExtraGas                  uint64        `koanf:"extra-gas" reload:"hot"`
+}
+
+func (c *BoldConfig) Validate() error {
+	// strategy, err := c.ParseStrategy()
+	// if err != nil {
+	// 	return err
+	// }
+	// c.strategy = strategy
+	// if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
+	// 	return errors.New("invalid validator gas refunder address")
+	// }
+	// c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
+	return nil
+}
 
 type Opt func(*StateManager)
 
