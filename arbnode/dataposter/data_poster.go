@@ -161,7 +161,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		errorCount:        make(map[uint64]int),
 	}
 	if cfg.ExternalSigner.Enabled {
-		signer, sender, err := externalSigner(ctx, cfg.ExternalSigner.Address, cfg.ExternalSigner.URL)
+		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -173,12 +173,12 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
-func externalSigner(ctx context.Context, addr string, rpcURL string) (signerFn, common.Address, error) {
-	if addr == "" {
+func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, common.Address, error) {
+	if opts.Address == "" {
 		return nil, common.Address{}, errors.New("external signer (From) address specified")
 	}
-	sender := common.HexToAddress(addr)
-	client, err := rpc.DialContext(ctx, rpcURL)
+	sender := common.HexToAddress(opts.Address)
+	client, err := rpc.DialContext(ctx, opts.URL)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
@@ -710,6 +710,8 @@ type ExternalSignerCfg struct {
 	URL string `koanf:"url"`
 	// Hex encoded ethereum address of the external signer.
 	Address string `koanf:"address"`
+	// API method name (e.g. eth_signTransaction).
+	Method string `koanf:"method"`
 }
 
 type DangerousConfig struct {
@@ -751,6 +753,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enabled", DefaultDataPosterConfig.ExternalSigner.Enabled, "enable external signer")
 	f.String(prefix+".url", DefaultDataPosterConfig.ExternalSigner.URL, "external signer url")
 	f.String(prefix+".address", DefaultDataPosterConfig.ExternalSigner.Address, "external signer address")
+	f.String(prefix+".method", DefaultDataPosterConfig.ExternalSigner.Method, "external signer method")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -767,7 +770,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Enabled: false},
+	ExternalSigner:         ExternalSignerCfg{Enabled: false, Method: "eth_signTransaction"},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -789,7 +792,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
-	ExternalSigner:         ExternalSignerCfg{Enabled: false},
+	ExternalSigner:         ExternalSignerCfg{Enabled: false, Method: "eth_signTransaction"},
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {

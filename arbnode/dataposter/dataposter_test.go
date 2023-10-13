@@ -71,7 +71,12 @@ func TestExternalSigner(t *testing.T) {
 			return
 		}
 	}()
-	signer, addr, err := externalSigner(ctx, srv.address.Hex(), "http://127.0.0.1:1234")
+	signer, addr, err := externalSigner(ctx,
+		&ExternalSignerCfg{
+			Address: srv.address.Hex(),
+			URL:     "http://127.0.0.1:1234",
+			Method:  "eth_signTransaction",
+		})
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
 	}
