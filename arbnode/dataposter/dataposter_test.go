@@ -59,11 +59,16 @@ func TestParseReplacementTimes(t *testing.T) {
 func TestExternalSigner(t *testing.T) {
 	ctx := context.Background()
 	httpSrv, srv := newServer(ctx, t)
-	t.Cleanup(func() { httpSrv.Shutdown(ctx) })
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
 	go func() {
 		fmt.Println("Server is listening on port 1234...")
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("error listening: %v", http.ListenAndServe(":1234", nil))
+			t.Errorf("ListenAndServe() unexpected error:  %v", err)
+			return
 		}
 	}()
 	signer, addr, err := externalSigner(ctx, srv.address.Hex(), "http://127.0.0.1:1234")
@@ -117,7 +122,7 @@ func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
 		"eth_signTransaction": s.signTransaction,
 	}
 	m := http.NewServeMux()
-	httpSrv := &http.Server{Addr: ":1234", Handler: m}
+	httpSrv := &http.Server{Addr: ":1234", Handler: m, ReadTimeout: 5 * time.Second}
 	m.HandleFunc("/", s.mux)
 	return httpSrv, s
 }
@@ -201,9 +206,11 @@ func (s *server) mux(w http.ResponseWriter, r *http.Request) {
 	resp := response{ID: req.ID, Result: result}
 	respBytes, err := json.Marshal(resp)
 	if err != nil {
-		http.Error(w, "error encoding response", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("error encoding response: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(respBytes)
+	if _, err := w.Write(respBytes); err != nil {
+		fmt.Printf("error writing response: %v\n", err)
+	}
 }

@@ -195,7 +195,9 @@ func externalSigner(ctx context.Context, addr string, rpcURL string) (signerFn, 
 			return nil, fmt.Errorf("error decoding hex: %w", err)
 		}
 		var signedTx types.Transaction
-		rlp.DecodeBytes(data, &signedTx)
+		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
+			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
+		}
 		return &signedTx, nil
 	}, sender, nil
 }
