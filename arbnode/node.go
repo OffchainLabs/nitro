@@ -98,11 +98,11 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	}
 
 	ethBasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
-		Bridge:          bridgeTemplate,
-		SequencerInbox:  seqInboxTemplate,
-		Inbox:           inboxTemplate,
-		RollupEventInbox:rollupEventBridgeTemplate,
-		Outbox:          outboxTemplate,
+		Bridge:           bridgeTemplate,
+		SequencerInbox:   seqInboxTemplate,
+		Inbox:            inboxTemplate,
+		RollupEventInbox: rollupEventBridgeTemplate,
+		Outbox:           outboxTemplate,
 	}
 
 	/// deploy ERC20 based templates
@@ -131,11 +131,11 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	}
 
 	erc20BasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
-		Bridge:          erc20BridgeTemplate,
-		SequencerInbox:  seqInboxTemplate,
-		Inbox:           erc20InboxTemplate,
-		RollupEventInbox:erc20RollupEventBridgeTemplate,
-		Outbox:          erc20OutboxTemplate,
+		Bridge:           erc20BridgeTemplate,
+		SequencerInbox:   seqInboxTemplate,
+		Inbox:            erc20InboxTemplate,
+		RollupEventInbox: erc20RollupEventBridgeTemplate,
+		Outbox:           erc20OutboxTemplate,
 	}
 
 	bridgeCreatorAddr, tx, _, err := rollupgen.DeployBridgeCreator(auth, client, ethBasedTemplates, erc20BasedTemplates)

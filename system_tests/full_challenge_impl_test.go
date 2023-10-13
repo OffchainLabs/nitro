@@ -207,6 +207,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		bridgeAddr,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
+		big.NewInt(117964),
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)

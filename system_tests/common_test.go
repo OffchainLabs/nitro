@@ -490,6 +490,7 @@ func DeployOnTestL1(
 		0,
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		common.Address{},
+		big.NewInt(117964),
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
