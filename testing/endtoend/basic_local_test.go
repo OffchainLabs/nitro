@@ -53,7 +53,7 @@ func TestTotalWasmOpcodes(t *testing.T) {
 	})
 }
 
-func TestChallengeProtocol_AliceAndBob_AnvilLocal(t *testing.T) {
+func TestChallengeProtocol_AliceAndBob_AnvilLocal_InMiddleOfBlock(t *testing.T) {
 	be, err := backend.NewAnvilLocal(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,71 @@ func TestChallengeProtocol_AliceAndBob_AnvilLocal(t *testing.T) {
 	machineDivergenceStep := totalOpcodes / 2
 
 	scenario := &ChallengeScenario{
-		Name: "two forked assertions at the same height",
+		Name: "disagreement in middle of block",
+		AliceStateManager: func() l2stateprovider.Provider {
+			sm, err := statemanager.NewForSimpleMachine(statemanager.WithLayerZeroHeights(layerZeroHeights, numBigSteps))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return sm
+		}(),
+		BobStateManager: func() l2stateprovider.Provider {
+			assertionDivergenceHeight := uint64(4)
+			assertionBlockHeightDifference := int64(4)
+			sm, err := statemanager.NewForSimpleMachine(
+				statemanager.WithLayerZeroHeights(layerZeroHeights, numBigSteps),
+				statemanager.WithMachineDivergenceStep(machineDivergenceStep),
+				statemanager.WithBlockDivergenceHeight(assertionDivergenceHeight),
+				statemanager.WithDivergentBlockHeightOffset(assertionBlockHeightDifference),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return sm
+		}(),
+		Expectations: []expect{
+			expectAssertionConfirmedByChallengeWinner,
+			expectAliceAndBobStaked,
+		},
+	}
+
+	testChallengeProtocol_AliceAndBob(
+		t,
+		be,
+		scenario,
+		challenge_testing.WithLayerZeroHeights(layerZeroHeights),
+		challenge_testing.WithNumBigStepLevels(numBigSteps),
+	)
+}
+
+func TestChallengeProtocol_AliceAndBob_AnvilLocal_LastOpcode(t *testing.T) {
+	be, err := backend.NewAnvilLocal(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := be.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := be.Stop(); err != nil {
+			t.Logf("error stopping backend: %v", err)
+		}
+	}()
+
+	layerZeroHeights := &protocol.LayerZeroHeights{
+		BlockChallengeHeight:     1 << 5,
+		BigStepChallengeHeight:   1 << 5,
+		SmallStepChallengeHeight: 1 << 5,
+	}
+	numBigSteps := uint8(3)
+	totalOpcodes := totalWasmOpcodes(layerZeroHeights, numBigSteps)
+
+	// Diverge exactly at the last opcode within the block.
+	machineDivergenceStep := totalOpcodes - 1
+
+	scenario := &ChallengeScenario{
+		Name: "disagreement at last opcode",
 		AliceStateManager: func() l2stateprovider.Provider {
 			sm, err := statemanager.NewForSimpleMachine(statemanager.WithLayerZeroHeights(layerZeroHeights, numBigSteps))
 			if err != nil {
