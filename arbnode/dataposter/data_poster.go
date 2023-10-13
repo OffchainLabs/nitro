@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -47,7 +48,7 @@ type DataPoster struct {
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
 	sender            common.Address
-	signer            bind.SignerFn
+	signer            signerFn
 	redisLock         AttemptLocker
 	config            ConfigFetcher
 	replacementTimes  []time.Duration
@@ -65,6 +66,11 @@ type DataPoster struct {
 	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 }
+
+// signerFn is a signer function callback when a contract requires a method to
+// sign the transaction before submission.
+// This can be local or external, hence the context parameter.
+type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
 
 type AttemptLocker interface {
 	AttemptLock(context.Context) bool
@@ -103,13 +109,13 @@ type DataPosterOpts struct {
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
-	initConfig := opts.Config()
-	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
+	cfg := opts.Config()
+	replacementTimes, err := parseReplacementTimes(cfg.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
-	if opts.HeaderReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
-		initConfig.UseNoOpStorage = true
+	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
+		cfg.UseNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
 	encF := func() storage.EncoderDecoderInterface {
@@ -120,17 +126,17 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	}
 	var queue QueueStorage
 	switch {
-	case initConfig.UseNoOpStorage:
+	case cfg.UseNoOpStorage:
 		queue = &noop.Storage{}
 	case opts.RedisClient != nil:
 		var err error
-		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &initConfig.RedisSigner, encF)
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
-	case initConfig.UseDBStorage:
+	case cfg.UseDBStorage:
 		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-		if initConfig.Dangerous.ClearDBStorage {
+		if cfg.Dangerous.ClearDBStorage {
 			if err := storage.PruneAll(ctx); err != nil {
 				return nil, err
 			}
@@ -139,18 +145,53 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
-	return &DataPoster{
-		headerReader:      opts.HeaderReader,
-		client:            opts.HeaderReader.Client(),
-		sender:            opts.Auth.From,
-		signer:            opts.Auth.Signer,
+	dp := &DataPoster{
+		headerReader: opts.HeaderReader,
+		client:       opts.HeaderReader.Client(),
+		sender:       opts.Auth.From,
+		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return opts.Auth.Signer(addr, tx)
+		},
 		config:            opts.Config,
 		replacementTimes:  replacementTimes,
 		metadataRetriever: opts.MetadataRetriever,
 		queue:             queue,
 		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
-	}, nil
+	}
+	if cfg.ExternalSigner.Enabled {
+		signer, sender, err := externalSigner(ctx, cfg.ExternalSigner.Address, cfg.ExternalSigner.URL)
+		if err != nil {
+			return nil, err
+		}
+		dp.signer, dp.sender = signer, sender
+	}
+	return dp, nil
+}
+
+// externalSigner returns signer function and ethereum address of the signer.
+// Returns an error if address isn't specified or if it can't connect to the
+// signer RPC server.
+func externalSigner(ctx context.Context, addr string, rpcURL string) (signerFn, common.Address, error) {
+	if addr == "" {
+		return nil, common.Address{}, errors.New("external signer (From) address specified")
+	}
+	sender := common.HexToAddress(addr)
+	client, err := rpc.DialContext(ctx, rpcURL)
+	if err != nil {
+		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
+	}
+	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+		data, err := tx.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		var signedTx *types.Transaction
+		if err := client.CallContext(ctx, &signedTx, "eth_signTransaction", hexutil.Encode(data)); err != nil {
+			return nil, fmt.Errorf("error calling with context: %w", err)
+		}
+		return signedTx, nil
+	}, sender, nil
 }
 
 func (p *DataPoster) Sender() common.Address {
@@ -371,7 +412,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Data:       calldata,
 		AccessList: accessList,
 	}
-	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
+	fullTx, err := p.signer(ctx, p.sender, types.NewTx(&inner))
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
@@ -450,7 +491,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	newTx.Sent = false
 	newTx.Data.GasFeeCap = newFeeCap
 	newTx.Data.GasTipCap = newTipCap
-	newTx.FullTx, err = p.signer(p.sender, types.NewTx(&newTx.Data))
+	newTx.FullTx, err = p.signer(ctx, p.sender, types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
 	}
@@ -636,20 +677,31 @@ type DataPosterConfig struct {
 	ReplacementTimes string                     `koanf:"replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
-	WaitForL1Finality      bool            `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64          `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int             `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64         `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64         `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64         `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64         `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64         `koanf:"max-tip-cap-gwei" reload:"hot"`
-	NonceRbfSoftConfs      uint64          `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	AllocateMempoolBalance bool            `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseDBStorage           bool            `koanf:"use-db-storage"`
-	UseNoOpStorage         bool            `koanf:"use-noop-storage"`
-	LegacyStorageEncoding  bool            `koanf:"legacy-storage-encoding" reload:"hot"`
-	Dangerous              DangerousConfig `koanf:"dangerous"`
+	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64            `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int               `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64           `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64           `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64           `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64           `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
+	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseDBStorage           bool              `koanf:"use-db-storage"`
+	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool              `koanf:"legacy-storage-encoding" reload:"hot"`
+	Dangerous              DangerousConfig   `koanf:"dangerous"`
+	ExternalSigner         ExternalSignerCfg `koanf:"external-signer"`
+}
+
+type ExternalSignerCfg struct {
+	// If enabled, this overrides transaction options and uses external signer
+	// for signing transactions.
+	Enabled bool `koanf:"enabled"`
+	// URL of the external signer rpc server.
+	URL string `koanf:"url"`
+	// Hex encoded ethereum address of the external signer.
+	Address string `koanf:"address"`
 }
 
 type DangerousConfig struct {
@@ -662,28 +714,35 @@ type DangerousConfig struct {
 // that flags can be reloaded dynamically.
 type ConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
-	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
-	f.Int(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
-	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
-	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
-	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
-	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Float64(prefix+".max-tip-cap-gwei", DefaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
-	f.Uint64(prefix+".nonce-rbf-soft-confs", DefaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
-	f.Bool(prefix+".allocate-mempool-balance", DefaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
-	f.Bool(prefix+".use-db-storage", DefaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
-	f.Bool(prefix+".use-noop-storage", DefaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
-	f.Bool(prefix+".legacy-storage-encoding", DefaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
+	f.String(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
+	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Int(prefix+".max-queued-transactions", defaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
+	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
+	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
+	f.Float64(prefix+".min-fee-cap-gwei", defaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
+	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
+	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
+	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
+	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
+	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
+	addExternalSignerOptions(prefix+".external-signer", f)
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear database storage")
+}
+
+func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enabled", DefaultDataPosterConfig.ExternalSigner.Enabled, "enable external signer")
+	f.String(prefix+".url", DefaultDataPosterConfig.ExternalSigner.URL, "external signer url")
+	f.String(prefix+".address", DefaultDataPosterConfig.ExternalSigner.Address, "external signer address")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -700,6 +759,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
+	ExternalSigner:         ExternalSignerCfg{Enabled: false},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -721,6 +781,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
+	ExternalSigner:         ExternalSignerCfg{Enabled: false},
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {

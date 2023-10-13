@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -47,6 +48,7 @@ import (
 var (
 	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
 	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 )
 
 type batchPosterPosition struct {
@@ -166,7 +168,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
 }
 
@@ -187,6 +189,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
+	RedisLock:          redislock.DefaultCfg,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -235,7 +238,9 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 		return nil, err
 	}
 	redisLockConfigFetcher := func() *redislock.SimpleCfg {
-		return &config().RedisLock
+		simpleRedisLockConfig := config().RedisLock
+		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
+		return &simpleRedisLockConfig
 	}
 	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
