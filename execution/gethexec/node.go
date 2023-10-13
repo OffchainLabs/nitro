@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync/atomic"
 	"testing"
 
@@ -91,6 +92,7 @@ var ConfigDefault = Config{
 	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
 	Caching:           DefaultCachingConfig,
 	Dangerous:         DefaultDangerousConfig,
+	Forwarder:         DefaultNodeForwarderConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -148,7 +150,7 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
-	if l1client != nil {
+	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
 		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader }, arbSys)
 		if err != nil {
