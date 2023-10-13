@@ -107,7 +107,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 		}
 	}
 	for moduleHash, info := range entry.UserWasms {
-		err = mach.AddUserWasm(moduleHash, info.Module, entry.DebugChain)
+		err = mach.AddUserWasm(moduleHash, info.Module)
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",

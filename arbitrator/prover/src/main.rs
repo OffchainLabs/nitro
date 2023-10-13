@@ -4,7 +4,7 @@
 #![cfg(feature = "native")]
 
 use arbutil::{format, Bytes32, Color, DebugColor};
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
@@ -201,16 +201,10 @@ fn main() -> Result<()> {
         preimage_resolver,
     )?;
 
-    for module in &opts.stylus_modules {
-        let error = || {
-            format!(
-                "failed to read module at {}",
-                module.to_string_lossy().red()
-            )
-        };
-        let wasm = file_bytes(module).wrap_err_with(error)?;
-        mach.add_program(&wasm, 1, true, None)
-            .wrap_err_with(error)?;
+    for path in &opts.stylus_modules {
+        let err = || eyre!("failed to read module at {}", path.to_string_lossy().red());
+        let wasm = file_bytes(path).wrap_err_with(err)?;
+        mach.add_program(&wasm, 1, true).wrap_err_with(err)?;
     }
 
     if let Some(output_path) = opts.generate_binaries {

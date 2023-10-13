@@ -396,7 +396,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	return nil
 }
 
-func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte, debug bool) error {
+func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte) error {
 	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -405,17 +405,11 @@ func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte, d
 	for index, byte := range moduleHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
-	cErr := C.arbitrator_add_user_wasm(
+	C.arbitrator_add_user_wasm(
 		m.ptr,
 		(*u8)(arbutil.SliceToPointer(module)),
-		u32(len(module)),
-		u16(0), // TODO: remove
-		u32(arbmath.BoolToUint32(debug)),
+		usize(len(module)),
 		&C.struct_Bytes32{hashBytes},
 	)
-	defer C.free(unsafe.Pointer(cErr))
-	if cErr != nil {
-		return errors.New(C.GoString(cErr))
-	}
 	return nil
 }

@@ -1127,22 +1127,20 @@ impl Machine {
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
-    pub fn add_program(
-        &mut self,
-        wasm: &[u8],
-        version: u16,
-        debug_funcs: bool,
-        hash: Option<Bytes32>, // computed if not already known
-    ) -> Result<Bytes32> {
+    pub fn add_program(&mut self, wasm: &[u8], version: u16, debug_funcs: bool) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
-        let hash = hash.unwrap_or_else(|| module.hash());
-
-        self.stylus_modules.insert(hash, module);
+        let hash = module.hash();
+        self.add_stylus_module(module, hash);
         Ok(hash)
+    }
+
+    /// Adds a pre-built program to the machine's known set of wasms.
+    pub fn add_stylus_module(&mut self, module: Module, hash: Bytes32) {
+        self.stylus_modules.insert(hash, module);
     }
 
     pub fn from_binaries(

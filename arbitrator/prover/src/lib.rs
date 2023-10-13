@@ -23,7 +23,7 @@ pub use machine::Machine;
 use arbutil::Bytes32;
 use eyre::{Report, Result};
 use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus, Module,
     PreimageResolver,
 };
 use sha3::{Digest, Keccak256};
@@ -203,22 +203,13 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
-    wasm: *const u8,
-    wasm_len: u32,
-    version: u16,
-    debug: u32,
-    root: *const Bytes32,
-) -> *mut libc::c_char {
-    let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
-    let debug = debug != 0;
-
-    if root.is_null() {
-        return str_to_c_string("arbitrator_add_user_wasm got null ptr for module hash");
-    }
-    match (*mach).add_program(wasm, version, debug, Some(*root)) {
-        Ok(_) => ptr::null_mut(),
-        Err(err) => err_to_c_string(err),
-    }
+    module: *const u8,
+    module_len: usize,
+    module_hash: *const Bytes32,
+) {
+    let module = std::slice::from_raw_parts(module, module_len);
+    let module = Module::from_bytes(module);
+    (*mach).add_stylus_module(module, *module_hash);
 }
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.
