@@ -73,6 +73,7 @@ func (c *Config) Validate() error {
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
@@ -85,6 +86,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 var ConfigDefault = Config{
 	RPC:               arbitrum.DefaultConfig,
 	Sequencer:         DefaultSequencerConfig,
+	ParentChainReader: headerreader.DefaultConfig,
 	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
 	ForwardingTarget:  "",
 	TxPreChecker:      DefaultTxPreCheckerConfig,
@@ -96,6 +98,7 @@ var ConfigDefault = Config{
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
+	config.ParentChainReader = headerreader.Config{}
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
@@ -107,6 +110,7 @@ func ConfigDefaultNonSequencerTest() *Config {
 
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
+	config.ParentChainReader = headerreader.Config{}
 	config.Sequencer = TestSequencerConfig
 	config.ForwardingTarget = "null"
 
