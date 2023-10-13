@@ -61,7 +61,10 @@ import (
 )
 
 func printSampleUsage(name string) {
-	fmt.Printf("Sample usage: %s --help \n", name)
+	fmt.Printf("Sample usage: %s [OPTIONS] \n\n", name)
+	fmt.Printf("Options:\n")
+	fmt.Printf("  --help\n")
+	fmt.Printf("  --dev: Start a default L2-only dev chain\n")
 }
 
 func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.WalletConfig) (common.Address, error) {
