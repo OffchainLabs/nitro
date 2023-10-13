@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           cd nitro-testnode
-          ./test-node.bash --init &
+          ./test-node.bash --init --dev
       
       - name: Wait for rpc to come up
         shell: bash
