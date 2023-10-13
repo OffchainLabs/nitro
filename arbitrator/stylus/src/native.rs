@@ -12,7 +12,6 @@ use arbutil::{
 };
 use eyre::{bail, eyre, Context, ErrReport, Result};
 use prover::{
-    binary::WasmBinary,
     machine::Module as ProverModule,
     programs::{
         config::PricingParams,
@@ -381,21 +380,8 @@ pub fn activate(
     debug: bool,
     gas: &mut u64,
 ) -> Result<(Vec<u8>, ProverModule, u16)> {
-    // paid for by the 3 million gas charge in program.go
     let compile = CompileConfig::version(version, debug);
-    let (bin, stylus_data, footprint) =
-        WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
-
-    // naively charge 11 million gas to do the rest.
-    // in the future we'll implement a proper compilation pricing mechanism.
-    if *gas < 11_000_000 {
-        *gas = 0;
-        bail!("out of gas");
-    }
-    *gas -= 11_000_000;
-
-    let module = ProverModule::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
-        .wrap_err("failed to build user module")?;
+    let (module, footprint) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
 
     let asm = self::module(wasm, compile).wrap_err("failed to generate stylus module")?;
     Ok((asm, module, footprint))

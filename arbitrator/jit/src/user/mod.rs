@@ -39,7 +39,7 @@ pub fn activate_wasm(env: WasmEnvMut, sp: u32) {
 
     macro_rules! error {
         ($error:expr) => {{
-            let error = $error.wrap_err("failed to compile").debug_bytes();
+            let error = $error.wrap_err("failed to activate").debug_bytes();
             sp.write_u64_raw(gas, 0);
             sp.write_slice(module_hash, &Bytes32::default());
             sp.skip_space();

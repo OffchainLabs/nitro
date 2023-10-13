@@ -3,11 +3,12 @@
 
 use crate::{
     binary::{ExportKind, WasmBinary},
+    machine::Module,
     memory::MemoryType,
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;
-use eyre::{bail, eyre, Report, Result};
+use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
 use wasmer_types::{
@@ -15,6 +16,8 @@ use wasmer_types::{
     SignatureIndex, Type,
 };
 use wasmparser::{Operator, Type as WpType};
+
+use self::config::CompileConfig;
 
 #[cfg(feature = "native")]
 use {
@@ -377,5 +380,33 @@ impl StylusData {
             self.ink_status.as_u32() as u64,
             self.depth_left.as_u32() as u64,
         )
+    }
+}
+
+impl Module {
+    pub fn activate(
+        wasm: &[u8],
+        version: u16,
+        page_limit: u16,
+        debug: bool,
+        gas: &mut u64,
+    ) -> Result<(Self, u16)> {
+        // paid for by the 3 million gas charge in program.go
+        let compile = CompileConfig::version(version, debug);
+        let (bin, stylus_data, footprint) =
+            WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
+
+        // naively charge 11 million gas to do the rest.
+        // in the future we'll implement a proper compilation pricing mechanism.
+        if *gas < 11_000_000 {
+            *gas = 0;
+            bail!("out of gas");
+        }
+        *gas -= 11_000_000;
+
+        let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
+            .wrap_err("failed to build user module")?;
+
+        Ok((module, footprint))
     }
 }

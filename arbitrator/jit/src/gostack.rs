@@ -141,7 +141,7 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
-    pub unsafe fn read_ref<'a, 'b, T>(&'a mut self) -> &'b T {
+    pub unsafe fn read_ref<'a, T>(&mut self) -> &'a T {
         &*self.read_ptr()
     }
 
