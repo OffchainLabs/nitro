@@ -22,7 +22,8 @@ env:
 jobs:
   coverage:
     name: Run Arbitrator tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
+    concurrency: arbitrator-ci
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -166,7 +167,7 @@ jobs:
           args: --all --manifest-path arbitrator/Cargo.toml -- --check
 
       - name: Make proofs from test cases
-        run: make -j test-gen-proofs
+        run: RAYON_NUM_THREADS=4 make -j $(($(nproc)/4)) test-gen-proofs
 
       - name: Create code-coverage files
         run: |
