@@ -197,7 +197,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			}
 		}
 
-		// sequencing suceeds only on the leder
+		// sequencing succeeds only on the leder
 		for i := arbutil.MessageIndex(0); i < messagesPerRound; i++ {
 			if sequencer := trySequencingEverywhere(); sequencer != currentSequencer {
 				Fatal(t, "unexpected sequencer. expected: ", currentSequencer, " got ", sequencer)

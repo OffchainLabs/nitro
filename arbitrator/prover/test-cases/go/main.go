@@ -89,7 +89,7 @@ func main() {
 	verified, err = MerkleSample(data, -1)
 	if err != nil {
 		if verified {
-			panic("succeded to verify proof invalid")
+			panic("succeeded to verify proof invalid")
 		}
 	}
 
