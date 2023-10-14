@@ -100,8 +100,13 @@ impl RustVec {
     }
 }
 
-/// Activates a user program.
-/// The `output` is either the serialized asm & module or an error string.
+/// Instruments and "activates" a user wasm.
+///
+/// The `output` is either the serialized asm & module pair or an error string.
+/// Returns consensus info such as the module hash and footprint on success.
+///
+/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+/// The amount left is written back at the end of the call.
 ///
 /// # Safety
 ///

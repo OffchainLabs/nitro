@@ -69,12 +69,9 @@ func activateProgram(
 ) (common.Hash, u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
 	moduleHash := common.Hash{}
-	gas := burner.GasLeft()
+	gasPtr := burner.GasLeft()
 
-	footprint, err := activateWasmRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, &gas)
-	if err := burner.Burn(arbmath.SaturatingUSub(burner.GasLeft(), gas)); err != nil {
-		return moduleHash, footprint, err
-	}
+	footprint, err := activateWasmRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, gasPtr)
 	if err != nil {
 		_, _, err := userFailure.toResult(err.intoSlice(), debug)
 		return moduleHash, footprint, err

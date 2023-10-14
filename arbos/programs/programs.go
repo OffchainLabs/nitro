@@ -22,7 +22,7 @@ import (
 type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
-	compiledHashes *storage.Storage
+	moduleHashes   *storage.Storage
 	inkPrice       storage.StorageBackedUint24
 	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
@@ -43,7 +43,7 @@ type Program struct {
 type uint24 = arbmath.Uint24
 
 var programDataKey = []byte{0}
-var machineHashesKey = []byte{1}
+var moduleHashesKey = []byte{1}
 
 const (
 	versionOffset uint64 = iota
@@ -93,7 +93,7 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
-		compiledHashes: sto.OpenSubStorage(machineHashesKey),
+		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
 		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
@@ -316,7 +316,7 @@ func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 	if err != nil {
 		return Program{}, err
 	}
-	compiledHash, err := p.compiledHashes.Get(codeHash)
+	compiledHash, err := p.moduleHashes.Get(codeHash)
 	if err != nil {
 		return Program{}, err
 	}
@@ -337,7 +337,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	if err != nil {
 		return err
 	}
-	return p.compiledHashes.Set(codehash, program.moduleHash)
+	return p.moduleHashes.Set(codehash, program.moduleHash)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {

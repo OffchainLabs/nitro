@@ -35,9 +35,14 @@ extern "C" {
 #[repr(C, align(256))]
 struct MemoryLeaf([u8; 32]);
 
-/// Instruments a user wasm.
+/// Instruments and "activates" a user wasm, producing a unique module hash.
+///
+/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+/// The amount left is written back at the end of the call.
 ///
 /// # Safety
+///
+/// The `modHash` and `gas` pointers must not be null.
 ///
 /// The Go compiler expects the call to take the form
 ///     λ(wasm []byte, pageLimit, version u16, debug u32, modHash *hash, gas *u64) (footprint u16, err *Vec<u8>)

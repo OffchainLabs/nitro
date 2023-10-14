@@ -31,7 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type u8 = C.uint8_t
@@ -58,7 +57,6 @@ func activateProgram(
 	asmLen := usize(0)
 	moduleHash := &bytes32{}
 	footprint := uint16(math.MaxUint16)
-	gas := burner.GasLeft()
 
 	status := userStatus(C.stylus_activate(
 		goSlice(wasm),
@@ -69,11 +67,8 @@ func activateProgram(
 		&asmLen,
 		moduleHash,
 		(*u16)(&footprint),
-		(*u64)(&gas),
+		(*u64)(burner.GasLeft()),
 	))
-	if err := burner.Burn(arbmath.SaturatingUSub(burner.GasLeft(), gas)); err != nil {
-		return common.Hash{}, footprint, err
-	}
 
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if err != nil {
