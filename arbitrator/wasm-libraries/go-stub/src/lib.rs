@@ -618,17 +618,13 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
 }
 
 /// Safety: λ(v value)
+/// TODO: reference counting
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: usize) {
     let mut sp = GoStack::new(sp);
     let val = JsValue::new(sp.read_u64());
     match val {
-        JsValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
-        JsValue::Ref(x) => {
-            if DynamicObjectPool::singleton().remove(x).is_none() {
-                eprintln!("Go attempting to finalize unknown ref {}", x);
-            }
-        }
+        JsValue::Ref(_)  => {}
         val => eprintln!("Go attempting to finalize {:?}", val),
     }
 }
