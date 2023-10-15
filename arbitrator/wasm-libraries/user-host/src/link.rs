@@ -97,7 +97,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activa
 ///     || modHash || calldata... || params || evmApi... || evmData || gas || status | 7 pad | out ptr ||
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callProgramRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);

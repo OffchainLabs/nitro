@@ -116,7 +116,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             github!("wavmio.resolvePreImage") => func!(wavmio::resolve_preimage),
 
             github!("arbos/programs.activateProgramRustImpl") => func!(user::stylus_activate),
-            github!("arbos/programs.callUserWasmRustImpl") => func!(user::call_user_wasm),
+            github!("arbos/programs.callProgramRustImpl") => func!(user::stylus_call),
             github!("arbos/programs.readRustVecLenImpl") => func!(user::read_rust_vec_len),
             github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
             github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),

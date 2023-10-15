@@ -76,7 +76,7 @@ pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
 /// These values are placed on the stack as follows
 ///     || modHash || calldata... || params || evmApi... || evmData || gas || status | 7 pad | out ptr ||
 ///
-pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
+pub fn stylus_call(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let sp = &mut GoStack::simple(sp, &env);
     use UserOutcome::*;
 

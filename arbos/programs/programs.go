@@ -292,7 +292,7 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callUserWasm(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	return callProgram(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {

@@ -10,7 +10,7 @@ TEXT ·activateProgramRustImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·callUserWasmRustImpl(SB), NOSPLIT, $0
+TEXT ·callProgramRustImpl(SB), NOSPLIT, $0
   CallImport
   RET
 

@@ -90,7 +90,7 @@ func activateProgram(
 	return hash, footprint, err
 }
 
-func callUserWasm(
+func callProgram(
 	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,

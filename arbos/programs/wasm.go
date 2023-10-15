@@ -35,7 +35,7 @@ func activateProgramRustImpl(
 	wasm []byte, pageLimit, version u16, debugMode u32, moduleHash *hash, gas *u64,
 ) (footprint u16, err *rustVec)
 
-func callUserWasmRustImpl(
+func callProgramRustImpl(
 	moduleHash *hash, calldata []byte, params *rustConfig, evmApi []byte, evmData *rustEvmData, gas *u64,
 ) (status userStatus, out *rustVec)
 
@@ -79,7 +79,7 @@ func activateProgram(
 	return moduleHash, footprint, nil
 }
 
-func callUserWasm(
+func callProgram(
 	address common.Address,
 	program Program,
 	scope *vm.ScopeContext,
@@ -95,7 +95,7 @@ func callUserWasm(
 	defer evmApi.drop()
 	debug := arbmath.UintToBool(params.debugMode)
 
-	status, output := callUserWasmRustImpl(
+	status, output := callProgramRustImpl(
 		&program.moduleHash,
 		calldata,
 		params.encode(),
