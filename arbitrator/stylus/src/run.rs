@@ -44,11 +44,11 @@ impl RunProgram for Machine {
         self.set_stack(config.max_depth);
 
         let status: u32 = call!("user", STYLUS_ENTRY_POINT, vec![args_len], |error| {
-            if self.ink_left() == MachineMeter::Exhausted {
-                return UserOutcome::OutOfInk;
-            }
             if self.stack_left() == 0 {
                 return UserOutcome::OutOfStack;
+            }
+            if self.ink_left() == MachineMeter::Exhausted {
+                return UserOutcome::OutOfInk;
             }
             UserOutcome::Failure(error)
         });
