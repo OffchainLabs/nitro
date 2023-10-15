@@ -6,7 +6,7 @@
 
 #include "textflag.h"
 
-TEXT ·activateWasmRustImpl(SB), NOSPLIT, $0
+TEXT ·activateProgramRustImpl(SB), NOSPLIT, $0
   CallImport
   RET
 

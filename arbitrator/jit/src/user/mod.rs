@@ -33,7 +33,7 @@ mod evm_api;
 /// These values are placed on the stack as follows
 ///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
 ///
-pub fn activate_wasm(env: WasmEnvMut, sp: u32) {
+pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
     let page_limit = sp.read_u16();

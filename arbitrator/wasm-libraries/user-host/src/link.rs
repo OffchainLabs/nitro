@@ -51,7 +51,7 @@ struct MemoryLeaf([u8; 32]);
 ///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activateWasmRustImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activateProgramRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);

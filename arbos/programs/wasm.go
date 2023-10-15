@@ -31,7 +31,7 @@ type rustConfig byte
 type rustModule byte
 type rustEvmData byte
 
-func activateWasmRustImpl(
+func activateProgramRustImpl(
 	wasm []byte, pageLimit, version u16, debugMode u32, moduleHash *hash, gas *u64,
 ) (footprint u16, err *rustVec)
 
@@ -71,7 +71,7 @@ func activateProgram(
 	moduleHash := common.Hash{}
 	gasPtr := burner.GasLeft()
 
-	footprint, err := activateWasmRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, gasPtr)
+	footprint, err := activateProgramRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, gasPtr)
 	if err != nil {
 		_, _, err := userFailure.toResult(err.intoSlice(), debug)
 		return moduleHash, footprint, err
