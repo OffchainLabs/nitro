@@ -10,7 +10,7 @@ use arbutil::{
     operator::OperatorCode,
     Color,
 };
-use eyre::{bail, eyre, Context, ErrReport, Result};
+use eyre::{bail, eyre, ErrReport, Result};
 use prover::{
     machine::Module as ProverModule,
     programs::{
@@ -383,6 +383,6 @@ pub fn activate(
     let compile = CompileConfig::version(version, debug);
     let (module, footprint) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
 
-    let asm = self::module(wasm, compile).wrap_err("failed to generate stylus module")?;
+    let asm = self::module(wasm, compile).expect("failed to generate stylus module");
     Ok((asm, module, footprint))
 }
