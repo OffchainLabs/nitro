@@ -60,13 +60,13 @@ impl<'a> RustSlice<'a> {
 }
 
 #[repr(C)]
-pub struct RustVec {
+pub struct RustBytes {
     ptr: *mut u8,
     len: usize,
     cap: usize,
 }
 
-impl RustVec {
+impl RustBytes {
     fn new(vec: Vec<u8>) -> Self {
         let mut rust_vec = Self {
             ptr: std::ptr::null_mut(),
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn stylus_activate(
     page_limit: u16,
     version: u16,
     debug: bool,
-    output: *mut RustVec,
+    output: *mut RustBytes,
     asm_len: *mut usize,
     module_hash: *mut Bytes32,
     footprint: *mut u16,
@@ -156,7 +156,7 @@ pub unsafe extern "C" fn stylus_call(
     go_api: GoEvmApi,
     evm_data: EvmData,
     debug_chain: u32,
-    output: *mut RustVec,
+    output: *mut RustBytes,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn stylus_call(
 ///
 /// Must only be called once per vec.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
+pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
     }
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
 ///
 /// `rust` must not be null.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustVec, data: GoSliceData) {
+pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustBytes, data: GoSliceData) {
     let rust = &mut *rust;
     let mut vec = Vec::from_raw_parts(rust.ptr, rust.len, rust.cap);
     vec.clear();

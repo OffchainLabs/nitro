@@ -286,30 +286,29 @@ pub struct Module {
 }
 
 lazy_static! {
-    static ref USER_IMPORTS: Result<HashMap<String, AvailableImport>> = Module::calc_user_imports();
+    static ref USER_IMPORTS: HashMap<String, AvailableImport> = Module::calc_user_imports();
 }
 
 impl Module {
     const FORWARDING_PREFIX: &str = "arbitrator_forward__";
 
-    fn calc_user_imports() -> Result<HashMap<String, AvailableImport>> {
-        let forward_bytes = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
-        let forward_bin = binary::parse(forward_bytes, Path::new("forward")).unwrap();
+    fn calc_user_imports() -> HashMap<String, AvailableImport> {
+        let mut imports = HashMap::default();
 
-        let mut available_imports = HashMap::default();
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
 
-        for (name, &(export, kind)) in &forward_bin.exports {
+        for (name, &(export, kind)) in &forward.exports {
             if kind == ExportKind::Func {
-                let ty = match forward_bin.get_function(FunctionIndex::from_u32(export)) {
+                let ty = match forward.get_function(FunctionIndex::from_u32(export)) {
                     Ok(ty) => ty,
-                    Err(error) => bail!("failed to read export {}: {}", name, error),
+                    Err(error) => panic!("failed to read export {name}: {error:?}"),
                 };
                 let import = AvailableImport::new(ty, 1, export);
-                available_imports.insert(name.to_owned(), import);
+                imports.insert(name.to_owned(), import);
             }
         }
-
-        Ok(available_imports)
+        imports
     }
 
     fn from_binary(
@@ -573,7 +572,7 @@ impl Module {
     ) -> Result<Module> {
         Self::from_binary(
             bin,
-            USER_IMPORTS.as_ref().unwrap(),
+            &USER_IMPORTS,
             &HashMap::default(),
             false,
             debug_funcs,

@@ -133,7 +133,7 @@ pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
             panic!("Failed to allocate memory for error string");
         }
         ptr::copy_nonoverlapping(text.as_ptr(), buf as *mut u8, text.len());
-        *(buf.add(text.len()) as *mut u8) = 0;
+        *(buf as *mut u8).add(text.len()) = 0;
         buf as *mut libc::c_char
     }
 }

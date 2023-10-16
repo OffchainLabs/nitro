@@ -41,7 +41,7 @@ type usize = C.size_t
 type cbool = C._Bool
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
-type rustVec = C.RustVec
+type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
 func activateProgram(
@@ -53,7 +53,7 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (common.Hash, uint16, error) {
-	output := &rustVec{}
+	output := &rustBytes{}
 	asmLen := usize(0)
 	moduleHash := &bytes32{}
 	footprint := uint16(math.MaxUint16)
@@ -93,6 +93,7 @@ func activateProgram(
 func callProgram(
 	address common.Address,
 	program Program,
+	moduleHash common.Hash,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -103,14 +104,14 @@ func callProgram(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program.moduleHash)
+		db.RecordProgram(moduleHash)
 	}
-	asm := db.GetActivatedAsm(program.moduleHash)
+	asm := db.GetActivatedAsm(moduleHash)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
 
-	output := &rustVec{}
+	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
 		goSlice(asm),
 		goSlice(calldata),
@@ -144,7 +145,7 @@ func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
 }
 
 //export setBytes32Impl
-func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) apiStatus {
+func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustBytes) apiStatus {
 	closures := getApi(api)
 
 	gas, err := closures.setBytes32(key.toHash(), value.toHash())
@@ -193,7 +194,7 @@ func staticCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, l
 }
 
 //export create1Impl
-func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *u32) apiStatus {
+func create1Impl(api usize, code *rustBytes, endowment bytes32, evmGas *u64, len *u32) apiStatus {
 	closures := getApi(api)
 	addr, ret_len, cost, err := closures.create1(code.read(), endowment.toBig(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
@@ -207,7 +208,7 @@ func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *
 }
 
 //export create2Impl
-func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
+func create2Impl(api usize, code *rustBytes, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
 	closures := getApi(api)
 	addr, ret_len, cost, err := closures.create2(code.read(), endowment.toBig(), salt.toBig(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
@@ -221,14 +222,14 @@ func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64,
 }
 
 //export getReturnDataImpl
-func getReturnDataImpl(api usize, output *rustVec, offset u32, size u32) {
+func getReturnDataImpl(api usize, output *rustBytes, offset u32, size u32) {
 	closures := getApi(api)
 	returnData := closures.getReturnData(uint32(offset), uint32(size))
 	output.setBytes(returnData)
 }
 
 //export emitLogImpl
-func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
+func emitLogImpl(api usize, data *rustBytes, topics u32) apiStatus {
 	closures := getApi(api)
 	err := closures.emitLog(data.read(), uint32(topics))
 	if err != nil {
@@ -307,25 +308,25 @@ func (slice *rustSlice) read() []byte {
 	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
 }
 
-func (vec *rustVec) read() []byte {
+func (vec *rustBytes) read() []byte {
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec *rustVec) intoBytes() []byte {
+func (vec *rustBytes) intoBytes() []byte {
 	slice := vec.read()
 	vec.drop()
 	return slice
 }
 
-func (vec *rustVec) drop() {
+func (vec *rustBytes) drop() {
 	C.stylus_drop_vec(*vec)
 }
 
-func (vec *rustVec) setString(data string) {
+func (vec *rustBytes) setString(data string) {
 	vec.setBytes([]byte(data))
 }
 
-func (vec *rustVec) setBytes(data []byte) {
+func (vec *rustBytes) setBytes(data []byte) {
 	C.stylus_vec_set_bytes(vec, goSlice(data))
 }
 

@@ -21,8 +21,8 @@ Bytes32 getBytes32Wrap(usize api, Bytes32 key, u64 * cost) {
     return getBytes32Impl(api, key, cost);
 }
 
-EvmApiStatus setBytes32Impl(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
-EvmApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error) {
+EvmApiStatus setBytes32Impl(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustBytes * error);
+EvmApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustBytes * error) {
     return setBytes32Impl(api, key, value, cost, error);
 }
 
@@ -41,23 +41,23 @@ EvmApiStatus staticCallWrap(usize api, Bytes20 contract, RustSlice * calldata, u
     return staticCallImpl(api, contract, calldata, gas, len);
 }
 
-EvmApiStatus create1Impl(usize api, RustVec * code, Bytes32 endowment, u64 * gas, u32 * len);
-EvmApiStatus create1Wrap(usize api, RustVec * code, Bytes32 endowment, u64 * gas, u32 * len) {
+EvmApiStatus create1Impl(usize api, RustBytes * code, Bytes32 endowment, u64 * gas, u32 * len);
+EvmApiStatus create1Wrap(usize api, RustBytes * code, Bytes32 endowment, u64 * gas, u32 * len) {
     return create1Impl(api, code, endowment, gas, len);
 }
 
-EvmApiStatus create2Impl(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len);
-EvmApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len) {
+EvmApiStatus create2Impl(usize api, RustBytes * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len);
+EvmApiStatus create2Wrap(usize api, RustBytes * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len) {
     return create2Impl(api, code, endowment, salt, gas, len);
 }
 
-void getReturnDataImpl(usize api, RustVec * data, u32 offset, u32 size);
-void getReturnDataWrap(usize api, RustVec * data, u32 offset, u32 size) {
+void getReturnDataImpl(usize api, RustBytes * data, u32 offset, u32 size);
+void getReturnDataWrap(usize api, RustBytes * data, u32 offset, u32 size) {
     return getReturnDataImpl(api, data, offset, size);
 }
 
-EvmApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
-EvmApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
+EvmApiStatus emitLogImpl(usize api, RustBytes * data, usize topics);
+EvmApiStatus emitLogWrap(usize api, RustBytes * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
 

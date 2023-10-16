@@ -5,6 +5,7 @@ use crate::{
     binary::{ExportKind, WasmBinary},
     machine::Module,
     memory::MemoryType,
+    programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;
@@ -16,8 +17,6 @@ use wasmer_types::{
     SignatureIndex, Type,
 };
 use wasmparser::{Operator, Type as WpType};
-
-use self::config::CompileConfig;
 
 #[cfg(feature = "native")]
 use {

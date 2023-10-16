@@ -82,6 +82,7 @@ func activateProgram(
 func callProgram(
 	address common.Address,
 	program Program,
+	moduleHash common.Hash,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -96,7 +97,7 @@ func callProgram(
 	debug := arbmath.UintToBool(params.debugMode)
 
 	status, output := callProgramRustImpl(
-		&program.moduleHash,
+		&moduleHash,
 		calldata,
 		params.encode(),
 		evmApi.funcs,

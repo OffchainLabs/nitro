@@ -29,7 +29,7 @@ type ValidationInputJson struct {
 	DelayedMsgNr  uint64
 	PreimagesB64  jsonapi.PreimagesMapJson
 	BatchInfo     []BatchInfoJson
-	UserWasms     map[string]UserWasmJson
+	UserWasms     map[common.Hash]UserWasmJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
 	DebugChain    bool
@@ -43,7 +43,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonapi.NewPreimagesMapJson(entry.Preimages),
-		UserWasms:     make(map[string]UserWasmJson),
+		UserWasms:     make(map[common.Hash]UserWasmJson),
 		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
@@ -51,12 +51,11 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
 	}
 	for moduleHash, info := range entry.UserWasms {
-		encModuleHash := base64.StdEncoding.EncodeToString(moduleHash[:])
 		encWasm := UserWasmJson{
 			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
 			Module: base64.StdEncoding.EncodeToString(info.Module),
 		}
-		res.UserWasms[encModuleHash] = encWasm
+		res.UserWasms[moduleHash] = encWasm
 	}
 	return res
 }
@@ -88,10 +87,6 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
 	for moduleHash, info := range entry.UserWasms {
-		decModuleHash, err := base64.StdEncoding.DecodeString(moduleHash)
-		if err != nil {
-			return nil, err
-		}
 		asm, err := base64.StdEncoding.DecodeString(info.Asm)
 		if err != nil {
 			return nil, err
@@ -104,7 +99,7 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			Asm:    asm,
 			Module: module,
 		}
-		valInput.UserWasms[common.Hash(decModuleHash)] = decInfo
+		valInput.UserWasms[moduleHash] = decInfo
 	}
 	return valInput, nil
 }

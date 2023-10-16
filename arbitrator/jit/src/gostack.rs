@@ -243,8 +243,11 @@ impl GoStack {
         data
     }
 
-    pub fn write_slice<T: TryInto<u32>>(&self, ptr: T, src: &[u8]) {
-        let ptr: u32 = ptr.try_into().map_err(|_| "Go pointer not a u32").unwrap();
+    pub fn write_slice<T: TryInto<u32>>(&self, ptr: T, src: &[u8])
+    where
+        T::Error: Debug,
+    {
+        let ptr: u32 = ptr.try_into().expect("Go pointer not a u32");
         self.view().write(ptr.into(), src).unwrap();
     }
 

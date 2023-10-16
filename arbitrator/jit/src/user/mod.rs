@@ -12,9 +12,11 @@ use arbutil::{
     format::DebugBytes,
     heapify,
 };
-use prover::programs::{config::PricingParams, prelude::*};
+use prover::{
+    machine::Module,
+    programs::{config::PricingParams, prelude::*},
+};
 use std::mem;
-use stylus::native;
 
 mod evm_api;
 
@@ -54,7 +56,7 @@ pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
     }
 
     let gas_left = &mut sp.read_u64_raw(gas);
-    let (_, module, pages) = match native::activate(&wasm, version, page_limit, debug, gas_left) {
+    let (module, pages) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
         Ok(result) => result,
         Err(error) => error!(error),
     };

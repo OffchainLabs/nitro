@@ -30,14 +30,13 @@ type Programs struct {
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
 	callScalar     storage.StorageBackedUint16
-	version        storage.StorageBackedUint16
+	version        storage.StorageBackedUint16 // Must only be changed during ArbOS upgrades
 }
 
 type Program struct {
-	wasmSize   uint16 // Unit is half of a kb
-	footprint  uint16
-	version    uint16
-	moduleHash common.Hash
+	wasmSize  uint16 // Unit is half of a kb
+	footprint uint16
+	version   uint16
 }
 
 type uint24 = arbmath.Uint24
@@ -202,15 +201,17 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	if err != nil {
 		return 0, true, err
 	}
+	if err := p.moduleHashes.Set(codeHash, moduleHash); err != nil {
+		return version, true, err
+	}
 
 	// wasmSize is stored as half kb units, rounding up
 	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
-		wasmSize:   wasmSize,
-		footprint:  footprint,
-		version:    version,
-		moduleHash: moduleHash,
+		wasmSize:  wasmSize,
+		footprint: footprint,
+		version:   version,
 	}
 	return version, false, p.setProgram(codeHash, programData)
 }
@@ -239,6 +240,11 @@ func (p Programs) CallProgram(
 	}
 	if program.version != stylusVersion {
 		return nil, ProgramOutOfDateError(program.version)
+	}
+
+	moduleHash, err := p.moduleHashes.Get(contract.CodeHash)
+	if err != nil {
+		return nil, err
 	}
 
 	debugMode := interpreter.Evm().ChainConfig().DebugMode()
@@ -292,7 +298,10 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callProgram(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	return callProgram(
+		address, program, moduleHash, scope, statedb, interpreter,
+		tracingInfo, calldata, evmData, params, model,
+	)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -316,15 +325,10 @@ func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 	if err != nil {
 		return Program{}, err
 	}
-	compiledHash, err := p.moduleHashes.Get(codeHash)
-	if err != nil {
-		return Program{}, err
-	}
 	return Program{
-		wasmSize:   arbmath.BytesToUint16(data[26:28]),
-		footprint:  arbmath.BytesToUint16(data[28:30]),
-		version:    arbmath.BytesToUint16(data[30:]),
-		moduleHash: compiledHash,
+		wasmSize:  arbmath.BytesToUint16(data[26:28]),
+		footprint: arbmath.BytesToUint16(data[28:30]),
+		version:   arbmath.BytesToUint16(data[30:]),
 	}, nil
 }
 
@@ -333,11 +337,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	copy(data[26:], arbmath.Uint16ToBytes(program.wasmSize))
 	copy(data[28:], arbmath.Uint16ToBytes(program.footprint))
 	copy(data[30:], arbmath.Uint16ToBytes(program.version))
-	err := p.programs.Set(codehash, data)
-	if err != nil {
-		return err
-	}
-	return p.moduleHashes.Set(codehash, program.moduleHash)
+	return p.programs.Set(codehash, data)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {

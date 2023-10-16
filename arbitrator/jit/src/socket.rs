@@ -42,7 +42,7 @@ pub fn read_bytes<T: Read>(reader: &mut BufReader<T>) -> Result<Vec<u8>, io::Err
     Ok(buf)
 }
 
-pub fn read_box<T: Read>(reader: &mut BufReader<T>) -> Result<Box<[u8]>, io::Error> {
+pub fn read_boxed_slice<T: Read>(reader: &mut BufReader<T>) -> Result<Box<[u8]>, io::Error> {
     Ok(Vec::into_boxed_slice(read_bytes(reader)?))
 }
 
