@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -20,9 +19,8 @@ type BatchInfoJson struct {
 }
 
 type UserWasmJson struct {
-	NoncanonicalHash common.Hash
-	CompressedWasm   string
-	Wasm             string
+	Module string
+	Asm    string
 }
 
 type ValidationInputJson struct {
@@ -31,7 +29,7 @@ type ValidationInputJson struct {
 	DelayedMsgNr  uint64
 	PreimagesB64  jsonapi.PreimagesMapJson
 	BatchInfo     []BatchInfoJson
-	UserWasms     map[string]UserWasmJson
+	UserWasms     map[common.Hash]UserWasmJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
 	DebugChain    bool
@@ -45,23 +43,19 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonapi.NewPreimagesMapJson(entry.Preimages),
-		UserWasms:     make(map[string]UserWasmJson),
+		UserWasms:     make(map[common.Hash]UserWasmJson),
 		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
 	}
-	for call, wasm := range entry.UserWasms {
-		callBytes := arbmath.Uint16ToBytes(call.Version)
-		callBytes = append(callBytes, call.CodeHash.Bytes()...)
-		encCall := base64.StdEncoding.EncodeToString(callBytes)
+	for moduleHash, info := range entry.UserWasms {
 		encWasm := UserWasmJson{
-			NoncanonicalHash: wasm.NoncanonicalHash,
-			CompressedWasm:   base64.StdEncoding.EncodeToString(wasm.CompressedWasm),
-			Wasm:             base64.StdEncoding.EncodeToString(wasm.Wasm),
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
 		}
-		res.UserWasms[encCall] = encWasm
+		res.UserWasms[moduleHash] = encWasm
 	}
 	return res
 }
@@ -92,29 +86,20 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
-	for call, wasm := range entry.UserWasms {
-		callBytes, err := base64.StdEncoding.DecodeString(call)
+	for moduleHash, info := range entry.UserWasms {
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
 		if err != nil {
 			return nil, err
 		}
-		decCall := state.WasmCall{
-			Version:  arbmath.BytesToUint16(callBytes[:2]),
-			CodeHash: common.BytesToHash(callBytes[2:]),
-		}
-		compressed, err := base64.StdEncoding.DecodeString(wasm.CompressedWasm)
+		module, err := base64.StdEncoding.DecodeString(info.Module)
 		if err != nil {
 			return nil, err
 		}
-		uncompressed, err := base64.StdEncoding.DecodeString(wasm.Wasm)
-		if err != nil {
-			return nil, err
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
 		}
-		decWasm := state.UserWasm{
-			NoncanonicalHash: wasm.NoncanonicalHash,
-			CompressedWasm:   compressed,
-			Wasm:             uncompressed,
-		}
-		valInput.UserWasms[decCall] = &decWasm
+		valInput.UserWasms[moduleHash] = decInfo
 	}
 	return valInput, nil
 }

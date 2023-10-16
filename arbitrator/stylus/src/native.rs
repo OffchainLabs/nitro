@@ -11,13 +11,16 @@ use arbutil::{
     Color,
 };
 use eyre::{bail, eyre, ErrReport, Result};
-use prover::programs::{
-    config::PricingParams,
-    counter::{Counter, CountingMachine, OP_OFFSETS},
-    depth::STYLUS_STACK_LEFT,
-    meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
-    prelude::*,
-    start::STYLUS_START,
+use prover::{
+    machine::Module as ProverModule,
+    programs::{
+        config::PricingParams,
+        counter::{Counter, CountingMachine, OP_OFFSETS},
+        depth::STYLUS_STACK_LEFT,
+        meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
+        prelude::*,
+        start::STYLUS_START,
+    },
 };
 use std::{
     collections::BTreeMap,
@@ -368,4 +371,18 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
 
     let module = module.serialize()?;
     Ok(module.to_vec())
+}
+
+pub fn activate(
+    wasm: &[u8],
+    version: u16,
+    page_limit: u16,
+    debug: bool,
+    gas: &mut u64,
+) -> Result<(Vec<u8>, ProverModule, u16)> {
+    let compile = CompileConfig::version(version, debug);
+    let (module, footprint) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
+
+    let asm = self::module(wasm, compile).expect("failed to generate stylus module");
+    Ok((asm, module, footprint))
 }

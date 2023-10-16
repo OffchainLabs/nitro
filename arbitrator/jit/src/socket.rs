@@ -20,11 +20,6 @@ pub fn read_u8<T: Read>(reader: &mut BufReader<T>) -> Result<u8, io::Error> {
     reader.read_exact(&mut buf).map(|_| u8::from_be_bytes(buf))
 }
 
-pub fn read_u16<T: Read>(reader: &mut BufReader<T>) -> Result<u16, io::Error> {
-    let mut buf = [0; 2];
-    reader.read_exact(&mut buf).map(|_| u16::from_be_bytes(buf))
-}
-
 pub fn read_u32<T: Read>(reader: &mut BufReader<T>) -> Result<u32, io::Error> {
     let mut buf = [0; 4];
     reader.read_exact(&mut buf).map(|_| u32::from_be_bytes(buf))
@@ -45,6 +40,10 @@ pub fn read_bytes<T: Read>(reader: &mut BufReader<T>) -> Result<Vec<u8>, io::Err
     let mut buf = vec![0; size as usize];
     reader.read_exact(&mut buf)?;
     Ok(buf)
+}
+
+pub fn read_boxed_slice<T: Read>(reader: &mut BufReader<T>) -> Result<Box<[u8]>, io::Error> {
+    Ok(Vec::into_boxed_slice(read_bytes(reader)?))
 }
 
 pub fn write_u8(writer: &mut BufWriter<TcpStream>, data: u8) -> Result<(), io::Error> {

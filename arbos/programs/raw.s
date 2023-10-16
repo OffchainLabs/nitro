@@ -6,11 +6,11 @@
 
 #include "textflag.h"
 
-TEXT ·compileUserWasmRustImpl(SB), NOSPLIT, $0
+TEXT ·activateProgramRustImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·callUserWasmRustImpl(SB), NOSPLIT, $0
+TEXT ·callProgramRustImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
@@ -19,10 +19,6 @@ TEXT ·readRustVecLenImpl(SB), NOSPLIT, $0
   RET
 
 TEXT ·rustVecIntoSliceImpl(SB), NOSPLIT, $0
-  CallImport
-  RET
-
-TEXT ·rustMachineDropImpl(SB), NOSPLIT, $0
   CallImport
   RET
 

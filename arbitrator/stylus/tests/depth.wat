@@ -12,4 +12,7 @@
         i32.const 1         ;; push 1        -- 3 on stack  <- 3 words max
         i32.add             ;; pop 2, push 1 -- 2 on stack
         global.set $depth   ;; pop 1         -- 1 on stack
-        call $recurse))
+        call $recurse)
+    (func (export "user_entrypoint") (param $args_len i32) (result i32)
+        (i32.const 0)
+    ))

@@ -53,6 +53,10 @@ func (c *Context) BurnOut() error {
 	return vm.ErrOutOfGas
 }
 
+func (c *Context) GasLeft() *uint64 {
+	return &c.gasLeft
+}
+
 func (c *Context) Restrict(err error) {
 	log.Crit("A metered burner was used for access-controlled work", "error", err)
 }

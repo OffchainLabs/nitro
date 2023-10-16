@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -23,6 +22,7 @@ import (
 type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
+	moduleHashes   *storage.Storage
 	inkPrice       storage.StorageBackedUint24
 	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
@@ -30,7 +30,7 @@ type Programs struct {
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
 	callScalar     storage.StorageBackedUint16
-	version        storage.StorageBackedUint16
+	version        storage.StorageBackedUint16 // Must only be changed during ArbOS upgrades
 }
 
 type Program struct {
@@ -42,6 +42,7 @@ type Program struct {
 type uint24 = arbmath.Uint24
 
 var programDataKey = []byte{0}
+var moduleHashesKey = []byte{1}
 
 const (
 	versionOffset uint64 = iota
@@ -91,6 +92,7 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
+		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
 		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
@@ -166,42 +168,43 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint16, bool, error) {
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (
+	uint16, common.Hash, common.Hash, bool, error,
+) {
 	statedb := evm.StateDB
-	codeHash := statedb.GetCodeHash(program)
+	codeHash := statedb.GetCodeHash(address)
+	burner := p.programs.Burner()
 
 	version, err := p.StylusVersion()
 	if err != nil {
-		return 0, false, err
+		return 0, codeHash, common.Hash{}, false, err
 	}
 	latest, err := p.CodehashVersion(codeHash)
 	if err != nil {
-		return 0, false, err
+		return 0, codeHash, common.Hash{}, false, err
 	}
 	// Already compiled and found in the machine versions mapping.
 	if latest >= version {
-		return 0, false, ProgramUpToDateError()
+		return 0, codeHash, common.Hash{}, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, program)
+	wasm, err := getWasm(statedb, address)
 	if err != nil {
-		return 0, false, err
+		return 0, codeHash, common.Hash{}, false, err
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit, err := p.PageLimit()
 	if err != nil {
-		return 0, false, err
+		return 0, codeHash, common.Hash{}, false, err
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	// charge 3 million up front to begin compilation
-	burner := p.programs.Burner()
-	if err := burner.Burn(3000000); err != nil {
-		return 0, false, err
-	}
-	info, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode, burner)
+	moduleHash, footprint, err := activateProgram(statedb, address, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
-		return 0, true, err
+		return 0, codeHash, common.Hash{}, true, err
+	}
+	if err := p.moduleHashes.Set(codeHash, moduleHash); err != nil {
+		return 0, codeHash, common.Hash{}, true, err
 	}
 
 	// wasmSize is stored as half kb units, rounding up
@@ -209,10 +212,10 @@ func (p Programs) ActivateProgram(evm *vm.EVM, program common.Address, debugMode
 
 	programData := Program{
 		wasmSize:  wasmSize,
-		footprint: info.footprint,
+		footprint: footprint,
 		version:   version,
 	}
-	return version, false, p.programs.Set(codeHash, programData.serialize())
+	return version, codeHash, moduleHash, false, p.setProgram(codeHash, programData)
 }
 
 func (p Programs) CallProgram(
@@ -239,6 +242,11 @@ func (p Programs) CallProgram(
 	}
 	if program.version != stylusVersion {
 		return nil, ProgramOutOfDateError(program.version)
+	}
+
+	moduleHash, err := p.moduleHashes.Get(contract.CodeHash)
+	if err != nil {
+		return nil, err
 	}
 
 	debugMode := interpreter.Evm().ChainConfig().DebugMode()
@@ -292,7 +300,10 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callUserWasm(address, program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
+	return callProgram(
+		address, moduleHash, scope, statedb, interpreter,
+		tracingInfo, calldata, evmData, params, model,
+	)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -308,7 +319,6 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 }
 
 func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
-
 	return p.deserializeProgram(contract.CodeHash)
 }
 
@@ -321,17 +331,20 @@ func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 	}, err
 }
 
-func (p Program) serialize() common.Hash {
+func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(p.wasmSize))
-	copy(data[28:], arbmath.Uint16ToBytes(p.footprint))
-	copy(data[30:], arbmath.Uint16ToBytes(p.version))
-	return data
+	copy(data[26:], arbmath.Uint16ToBytes(program.wasmSize))
+	copy(data[28:], arbmath.Uint16ToBytes(program.footprint))
+	copy(data[30:], arbmath.Uint16ToBytes(program.version))
+	return p.programs.Set(codehash, data)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {
 	program, err := p.deserializeProgram(codeHash)
-	return program.version, err
+	if err != nil {
+		return 0, err
+	}
+	return program.version, nil
 }
 
 func (p Programs) ProgramSize(codeHash common.Hash) (uint32, error) {
@@ -416,16 +429,4 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
 	}
-}
-
-type wasmPricingInfo struct {
-	footprint uint16
-	size      uint32
-}
-
-// Pay for compilation. Right now this is a fixed amount of gas.
-// In the future, costs will be variable and based on the wasm.
-// Note: memory expansion costs are baked into compilation charging.
-func payForCompilation(burner burn.Burner, _info *wasmPricingInfo) error {
-	return burner.Burn(11000000)
 }

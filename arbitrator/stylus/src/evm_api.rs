@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{RustSlice, RustVec};
+use crate::{RustBytes, RustSlice};
 use arbutil::{
     evm::{
         api::{EvmApi, EvmApiStatus},
@@ -19,7 +19,7 @@ pub struct GoEvmApi {
         key: Bytes32,
         value: Bytes32,
         gas_cost: *mut u64,
-        error: *mut RustVec,
+        error: *mut RustBytes,
     ) -> EvmApiStatus,
     pub contract_call: unsafe extern "C" fn(
         id: usize,
@@ -45,22 +45,23 @@ pub struct GoEvmApi {
     ) -> EvmApiStatus,
     pub create1: unsafe extern "C" fn(
         id: usize,
-        code: *mut RustVec,
+        code: *mut RustBytes,
         endowment: Bytes32,
         gas: *mut u64,
         return_data_len: *mut u32,
     ) -> EvmApiStatus,
     pub create2: unsafe extern "C" fn(
         id: usize,
-        code: *mut RustVec,
+        code: *mut RustBytes,
         endowment: Bytes32,
         salt: Bytes32,
         gas: *mut u64,
         return_data_len: *mut u32,
     ) -> EvmApiStatus,
     pub get_return_data:
-        unsafe extern "C" fn(id: usize, output: *mut RustVec, offset: u32, size: u32),
-    pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: u32) -> EvmApiStatus,
+        unsafe extern "C" fn(id: usize, output: *mut RustBytes, offset: u32, size: u32),
+    pub emit_log:
+        unsafe extern "C" fn(id: usize, data: *mut RustBytes, topics: u32) -> EvmApiStatus,
     pub account_balance:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // balance
     pub account_codehash:
@@ -68,7 +69,7 @@ pub struct GoEvmApi {
     pub add_pages: unsafe extern "C" fn(id: usize, pages: u16) -> u64, // gas cost
     pub capture_hostio: unsafe extern "C" fn(
         id: usize,
-        name: *mut RustVec,
+        name: *mut RustBytes,
         args: *mut RustSlice,
         outs: *mut RustSlice,
         start_ink: u64,
@@ -106,7 +107,7 @@ impl EvmApi for GoEvmApi {
     }
 
     fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
-        let mut error = RustVec::new(vec![]);
+        let mut error = RustBytes::new(vec![]);
         let mut cost = 0;
         let api_status = call!(self, set_bytes32, key, value, ptr!(cost), ptr!(error));
         let error = into_vec!(error); // done here to always drop
@@ -183,7 +184,7 @@ impl EvmApi for GoEvmApi {
     ) -> (Result<Bytes20>, u32, u64) {
         let mut call_gas = gas; // becomes the call's cost
         let mut return_data_len = 0;
-        let mut code = RustVec::new(code);
+        let mut code = RustBytes::new(code);
         let api_status = call!(
             self,
             create1,
@@ -209,7 +210,7 @@ impl EvmApi for GoEvmApi {
     ) -> (Result<Bytes20>, u32, u64) {
         let mut call_gas = gas; // becomes the call's cost
         let mut return_data_len = 0;
-        let mut code = RustVec::new(code);
+        let mut code = RustBytes::new(code);
         let api_status = call!(
             self,
             create2,
@@ -228,13 +229,13 @@ impl EvmApi for GoEvmApi {
     }
 
     fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
-        let mut data = RustVec::new(vec![]);
+        let mut data = RustBytes::new(vec![]);
         call!(self, get_return_data, ptr!(data), offset, size);
         into_vec!(data)
     }
 
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
-        let mut data = RustVec::new(data);
+        let mut data = RustBytes::new(data);
         let api_status = call!(self, emit_log, ptr!(data), topics);
         let error = into_vec!(data); // done here to always drop
         match api_status {
@@ -263,7 +264,7 @@ impl EvmApi for GoEvmApi {
         call!(
             self,
             capture_hostio,
-            ptr!(RustVec::new(name.as_bytes().to_vec())),
+            ptr!(RustBytes::new(name.as_bytes().to_vec())),
             ptr!(RustSlice::new(args)),
             ptr!(RustSlice::new(outs)),
             start_ink,

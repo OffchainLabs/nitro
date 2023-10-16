@@ -11,7 +11,10 @@ use crate::{
 use arbutil::Color;
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
-use std::collections::{BTreeSet, BinaryHeap};
+use std::{
+    collections::{BTreeSet, BinaryHeap},
+    fmt::Debug,
+};
 use wasmer::{AsStoreRef, Memory, MemoryView, StoreMut, StoreRef, WasmPtr};
 
 #[self_referencing]
@@ -138,6 +141,10 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    pub unsafe fn read_ref<'a, T>(&mut self) -> &'a T {
+        &*self.read_ptr()
+    }
+
     /// TODO: replace `unbox` with a safe id-based API
     pub fn unbox<T>(&mut self) -> T {
         let ptr: *mut T = self.read_ptr_mut();
@@ -236,9 +243,12 @@ impl GoStack {
         data
     }
 
-    pub fn write_slice(&self, ptr: u64, src: &[u8]) {
-        u32::try_from(ptr).expect("Go pointer not a u32");
-        self.view().write(ptr, src).unwrap();
+    pub fn write_slice<T: TryInto<u32>>(&self, ptr: T, src: &[u8])
+    where
+        T::Error: Debug,
+    {
+        let ptr: u32 = ptr.try_into().expect("Go pointer not a u32");
+        self.view().write(ptr.into(), src).unwrap();
     }
 
     pub fn read_value_slice(&self, mut ptr: u64, len: u64) -> Vec<JsValue> {

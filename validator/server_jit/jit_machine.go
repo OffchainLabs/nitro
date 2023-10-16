@@ -118,9 +118,6 @@ func (machine *JitMachine) prove(
 	writeUint8 := func(data uint8) error {
 		return writeExact([]byte{data})
 	}
-	writeUint16 := func(data uint16) error {
-		return writeExact(arbmath.Uint16ToBytes(data))
-	}
 	writeUint32 := func(data uint32) error {
 		return writeExact(arbmath.Uint32ToBytes(data))
 	}
@@ -209,17 +206,11 @@ func (machine *JitMachine) prove(
 	if err := writeUint32(uint32(len(userWasms))); err != nil {
 		return state, err
 	}
-	for call, wasm := range userWasms {
-		if err := writeExact(call.CodeHash[:]); err != nil {
+	for moduleHash, info := range userWasms {
+		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(wasm.Wasm); err != nil {
-			return state, err
-		}
-		if err := writeExact(wasm.NoncanonicalHash[:]); err != nil {
-			return state, err
-		}
-		if err := writeUint16(call.Version); err != nil {
+		if err := writeBytes(info.Asm); err != nil {
 			return state, err
 		}
 	}
