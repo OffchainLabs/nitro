@@ -324,14 +324,11 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 
 func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
 	data, err := p.programs.Get(codeHash)
-	if err != nil {
-		return Program{}, err
-	}
 	return Program{
 		wasmSize:  arbmath.BytesToUint16(data[26:28]),
 		footprint: arbmath.BytesToUint16(data[28:30]),
 		version:   arbmath.BytesToUint16(data[30:]),
-	}, nil
+	}, err
 }
 
 func (p Programs) setProgram(codehash common.Hash, program Program) error {
