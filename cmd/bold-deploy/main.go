@@ -13,6 +13,7 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	rollupgen "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 
@@ -141,8 +142,47 @@ func main() {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
+		l1TransactionOpts,
+		l1Reader.Client(),
+		"Weth",
+		"WETH",
+	)
+	if err != nil {
+		panic(err)
+	}
+	if waitErr := challenge_testing.WaitForTx(ctx, l1Reader.Client(), tx); waitErr != nil {
+		panic(err)
+	}
+	receipt, err := l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+	if err != nil {
+		panic(err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		panic("deploying stake token receipt not successful")
+	}
+	value, ok := new(big.Int).SetString("10000000000000000000000", 10)
+	if !ok {
+		panic("could not set stake token value")
+	}
+	l1TransactionOpts.Value = value
+	mintTx, err := tokenBindings.Deposit(l1TransactionOpts)
+	if err != nil {
+		panic(err)
+	}
+	if waitErr := challenge_testing.WaitForTx(ctx, l1Reader.Client(), mintTx); waitErr != nil {
+		panic(err)
+	}
+	receipt, err = l1Reader.Client().TransactionReceipt(ctx, mintTx.Hash())
+	if err != nil {
+		panic(err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		panic("minting stake token receipt not successful")
+	}
+	l1TransactionOpts.Value = big.NewInt(0)
+
 	miniStake := big.NewInt(1)
-	stakeToken := common.Address{}
 	genesisExecutionState := rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState{},
 		MachineStatus: 1,
@@ -196,7 +236,15 @@ func main() {
 			ParentChainId:         l1ChainId.Uint64(),
 			ParentChainIsArbitrum: &parentChainIsArbitrum,
 			ChainConfig:           &chainConfig,
-			//RollupAddresses:       deployedAddresses,
+			RollupAddresses: &chaininfo.RollupAddresses{
+				Bridge:                 deployedAddresses.Bridge,
+				Inbox:                  deployedAddresses.Inbox,
+				SequencerInbox:         deployedAddresses.SequencerInbox,
+				Rollup:                 deployedAddresses.Rollup,
+				ValidatorUtils:         deployedAddresses.ValidatorUtils,
+				ValidatorWalletCreator: deployedAddresses.ValidatorWalletCreator,
+				DeployedAt:             deployedAddresses.DeployedAt,
+			},
 		},
 	}
 	chainsInfoJson, err := json.Marshal(chainsInfo)
