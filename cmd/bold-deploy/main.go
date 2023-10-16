@@ -222,8 +222,8 @@ func main() {
 			BigStepChallengeHeight:   32,
 			SmallStepChallengeHeight: 32,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(150)), // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(5)),        // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(1000)), // TODO: Hardcoded to 1000 L1 blocks.
 		challenge_testing.WithChainConfig(string(chainConfigJson)),
 	)
 
