@@ -183,7 +183,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
-		// According to the "eth_signTransaction" API definition, this shoul be
+		// According to the "eth_signTransaction" API definition, this should be
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var rlpEncTxStr string
