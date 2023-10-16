@@ -64,18 +64,20 @@ func TestExternalSigner(t *testing.T) {
 			t.Fatalf("Error shutting down http server: %v", err)
 		}
 	})
+	cert, key := "./testdata/localhost.crt", "./testdata/localhost.key"
 	go func() {
-		fmt.Println("Server is listening on port 1234...")
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			t.Errorf("ListenAndServe() unexpected error:  %v", err)
+		fmt.Println("Server is listening on port 443...")
+		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
+			t.Errorf("ListenAndServeTLS() unexpected error:  %v", err)
 			return
 		}
 	}()
 	signer, addr, err := externalSigner(ctx,
 		&ExternalSignerCfg{
 			Address: srv.address.Hex(),
-			URL:     "http://127.0.0.1:1234",
+			URL:     "https://localhost:1234",
 			Method:  "test_signTransaction",
+			RootCA:  cert,
 		})
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
