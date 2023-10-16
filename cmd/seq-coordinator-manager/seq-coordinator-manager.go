@@ -27,7 +27,7 @@ var addSeqForm = tview.NewForm()
 var priorityForm = tview.NewForm()
 var nonPriorityForm = tview.NewForm()
 
-// Sequencer coordinator managment UI data store
+// Sequencer coordinator management UI data store
 type manager struct {
 	redisCoordinator *rediscoordinator.RedisCoordinator
 	prioritiesSet    map[string]bool
