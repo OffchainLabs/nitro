@@ -44,6 +44,7 @@ var (
 
 type BoldConfig struct {
 	Enable                    bool          `koanf:"enable"`
+	Evil                      bool          `koanf:"evil"`
 	Strategy                  string        `koanf:"strategy"`
 	StakerInterval            time.Duration `koanf:"staker-interval"`
 	MakeAssertionInterval     time.Duration `koanf:"make-assertion-interval"`
