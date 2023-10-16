@@ -41,7 +41,7 @@ import (
 // is initialized with specified sender/signer and keeps nonce of that address
 // as it posts transactions.
 // Transactions are also saved in the queue when it's being sent, and when
-// persistant storage is used for the queue, after restarting the node
+// persistent storage is used for the queue, after restarting the node
 // dataposter will pick up where it left.
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {

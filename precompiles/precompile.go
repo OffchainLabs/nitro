@@ -366,7 +366,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			emitCost := gascost(args)
 			cost := emitCost[0].Interface().(uint64) //nolint:errcheck
 			if !emitCost[1].IsNil() {
-				// an error occured during gascost()
+				// an error occurred during gascost()
 				return []reflect.Value{emitCost[1]}
 			}
 			if err := callerCtx.Burn(cost); err != nil {
