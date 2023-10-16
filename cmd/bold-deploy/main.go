@@ -179,7 +179,7 @@ func main() {
 	ensureTxSucceeds(tx)
 	l1TransactionOpts.Value = big.NewInt(0)
 
-	validatorPrivateKey, err := crypto.HexToECDSA("0x182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
+	validatorPrivateKey, err := crypto.HexToECDSA("182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
 	if err != nil {
 		panic(err)
 	}
