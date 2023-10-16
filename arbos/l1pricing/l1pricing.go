@@ -75,7 +75,7 @@ const (
 	InitialInertia            = 10
 	InitialPerUnitReward      = 10
 	InitialPerBatchGasCostV6  = 100_000
-	InitialPerBatchGasCostV12 = 210_000 // overriden as part of the upgrade
+	InitialPerBatchGasCostV12 = 210_000 // overridden as part of the upgrade
 )
 
 // one minute at 100000 bytes / sec
