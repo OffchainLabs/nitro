@@ -200,7 +200,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			hasher = types.LatestSignerForChainID(tx.ChainId())
 		}
 		if hasher.Hash(tx) != hasher.Hash(&signedTx) {
-			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(tx), hasher.Hash(&signedTx))
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), hasher.Hash(tx))
 		}
 		return &signedTx, nil
 	}, sender, nil
