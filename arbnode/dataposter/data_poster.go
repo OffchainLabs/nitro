@@ -92,7 +92,7 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 		lastReplacementTime = t
 	}
 	if len(res) == 0 {
-		log.Warn("disabling replace-by-fee for data poster")
+		log.Warn("Disabling replace-by-fee for data poster")
 	}
 	// To avoid special casing "don't replace again", replace in 10 years.
 	return append(res, time.Hour*24*365*10), nil
@@ -160,7 +160,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
 	}
-	if cfg.ExternalSigner.Enabled {
+	if cfg.ExternalSigner.URL != "" {
 		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
 		if err != nil {
 			return nil, err
@@ -182,21 +182,25 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
+
+	var hasher types.Signer
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 		// According to the "eth_signTransaction" API definition, this shoul be
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
-		var rlpEncTxStr string
-		if err := client.CallContext(ctx, &rlpEncTxStr, "eth_signTransaction", tx); err != nil {
+		var data hexutil.Bytes
+		if err := client.CallContext(ctx, &data, opts.Method, tx); err != nil {
 			return nil, fmt.Errorf("signing transaction: %w", err)
-		}
-		data, err := hexutil.Decode(rlpEncTxStr)
-		if err != nil {
-			return nil, fmt.Errorf("error decoding hex: %w", err)
 		}
 		var signedTx types.Transaction
 		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
 			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
+		}
+		if hasher == nil {
+			hasher = types.LatestSignerForChainID(tx.ChainId())
+		}
+		if hasher.Hash(tx) != hasher.Hash(&signedTx) {
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(tx), hasher.Hash(&signedTx))
 		}
 		return &signedTx, nil
 	}, sender, nil
@@ -703,10 +707,9 @@ type DataPosterConfig struct {
 }
 
 type ExternalSignerCfg struct {
-	// If enabled, this overrides transaction options and uses external signer
+	// URL of the external signer rpc server, if set this overrides transaction
+	// options and uses external signer
 	// for signing transactions.
-	Enabled bool `koanf:"enabled"`
-	// URL of the external signer rpc server.
 	URL string `koanf:"url"`
 	// Hex encoded ethereum address of the external signer.
 	Address string `koanf:"address"`
@@ -750,7 +753,6 @@ func addDangerousOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enabled", DefaultDataPosterConfig.ExternalSigner.Enabled, "enable external signer")
 	f.String(prefix+".url", DefaultDataPosterConfig.ExternalSigner.URL, "external signer url")
 	f.String(prefix+".address", DefaultDataPosterConfig.ExternalSigner.Address, "external signer address")
 	f.String(prefix+".method", DefaultDataPosterConfig.ExternalSigner.Method, "external signer method")
@@ -770,7 +772,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Enabled: false, Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -792,7 +794,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
-	ExternalSigner:         ExternalSignerCfg{Enabled: false, Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{},
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {

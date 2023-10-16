@@ -75,7 +75,7 @@ func TestExternalSigner(t *testing.T) {
 		&ExternalSignerCfg{
 			Address: srv.address.Hex(),
 			URL:     "http://127.0.0.1:1234",
-			Method:  "eth_signTransaction",
+			Method:  "test_signTransaction",
 		})
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
@@ -124,7 +124,7 @@ func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
 
 	s := &server{signerFn: signer, address: address}
 	s.handlers = map[string]func(*json.RawMessage) (string, error){
-		"eth_signTransaction": s.signTransaction,
+		"test_signTransaction": s.signTransaction,
 	}
 	m := http.NewServeMux()
 	httpSrv := &http.Server{Addr: ":1234", Handler: m, ReadTimeout: 5 * time.Second}
