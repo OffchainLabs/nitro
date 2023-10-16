@@ -24,6 +24,8 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error
 	version, codeHash, moduleHash, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
+	}
+	if err != nil {
 		return version, err
 	}
 	return version, con.ProgramActivated(c, evm, codeHash, moduleHash, program, version)

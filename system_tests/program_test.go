@@ -59,9 +59,9 @@ func keccakTest(t *testing.T, jit bool) {
 	Require(t, err)
 
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
-	timed(t, "compile same code", func() {
+	timed(t, "activate same code", func() {
 		if _, err := arbWasm.ActivateProgram(&auth, otherAddressSameCode); err == nil || !strings.Contains(err.Error(), "ProgramUpToDate") {
-			Fatal(t, "compile should have failed with ProgramUpToDate")
+			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
 
