@@ -224,6 +224,7 @@ func main() {
 		}),
 		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
 		challenge_testing.WithConfirmPeriodBlocks(uint64(150)), // TODO: Hardcoded.
+		challenge_testing.WithChainConfig(string(chainConfigJson)),
 	)
 
 	deployedAddresses, err := arbnode.DeployBOLDOnL1(

@@ -282,6 +282,17 @@ func mainImpl() int {
 		}
 	}
 
+	if nodeConfig.Node.Bold.Enable {
+		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			flag.Usage()
+			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
+		}
+		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+			return 0
+		}
+
+	}
 	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
 	if nodeConfig.Chain.InfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
