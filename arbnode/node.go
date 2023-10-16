@@ -800,10 +800,11 @@ func createNodeImpl(
 			provider,
 			assertionChain.RollupAddress(),
 			challengemanager.WithName("honest"),
-			challengemanager.WithMode(modes.DefensiveMode),
+			challengemanager.WithMode(modes.MakeMode),
 			challengemanager.WithAssertionPostingInterval(time.Minute),
 			challengemanager.WithAssertionScanningInterval(time.Minute),
 			challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+			challengemanager.WithAddress(txOptsValidator.From),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("could not create challenge manager: %w", err)

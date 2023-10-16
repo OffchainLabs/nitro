@@ -283,15 +283,15 @@ func mainImpl() int {
 	}
 
 	if nodeConfig.Node.Bold.Enable {
-		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		validatorPrivateKey, err := crypto.HexToECDSA("182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
 		if err != nil {
-			flag.Usage()
-			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
+			log.Crit("Failed to get privkey for validator", "err", err)
 		}
-		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-			return 0
+		validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			log.Crit("Failed to get validator tx opts", "err", err)
 		}
-
+		l1TransactionOptsValidator = validatorTxOpts
 	}
 	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
 	if nodeConfig.Chain.InfoIpfsUrl != "" {

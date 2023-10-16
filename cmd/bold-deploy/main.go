@@ -240,6 +240,17 @@ func main() {
 		log.Error("error deploying on l1")
 		panic(err)
 	}
+
+	rollup, err := rollupgen.NewRollupAdminLogicTransactor(deployedAddresses.Rollup, l1Reader.Client())
+	if err != nil {
+		panic(err)
+	}
+	tx, err = rollup.SetMinimumAssertionPeriod(l1TransactionOpts, big.NewInt(1)) // 1 Ethereum block between assertions
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
+
 	// We then have the validator itself authorize the rollup and challenge manager
 	// contracts to spend its stake tokens.
 	chain, err := solimpl.NewAssertionChain(
