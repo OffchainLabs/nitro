@@ -167,11 +167,11 @@ func main() {
 		panic(err)
 	}
 	ensureTxSucceeds(tx)
-	value, ok := new(big.Int).SetString("10000000000000000000000", 10)
+	mintTokens, ok := new(big.Int).SetString("10000", 10)
 	if !ok {
 		panic("could not set stake token value")
 	}
-	l1TransactionOpts.Value = value
+	l1TransactionOpts.Value = mintTokens
 	tx, err = tokenBindings.Deposit(l1TransactionOpts)
 	if err != nil {
 		panic(err)
