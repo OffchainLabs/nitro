@@ -484,7 +484,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
 			if err != nil {
 				// Normally the network fee address should be holding any collected fees.
-				// However, in theory, they could've been transfered out during the redeem attempt.
+				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
 				log.Error(errLog, "err", err, "feeAddress", refundFrom)
 			}
