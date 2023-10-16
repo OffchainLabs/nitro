@@ -188,7 +188,8 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 			&http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
-						RootCAs: pool,
+						MinVersion: tls.VersionTLS12,
+						RootCAs:    pool,
 					},
 				},
 			},
