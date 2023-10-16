@@ -135,6 +135,11 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.DelayedSequencer.FinalizeDistance = 1
 
+	// SimulatedBeacon running in OnDemand block production mode
+	// produces blocks in the future so we need this to avoid the batch poster
+	// not posting because the txs appear to be in the future.
+	conf.BatchPoster.MaxDelay = -time.Hour
+
 	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
