@@ -8,17 +8,19 @@ use crate::{
 use arbutil::{
     evm::{api::EvmApi, EvmData},
     operator::OperatorCode,
-    Bytes32, Color,
+    Color,
 };
-use eyre::{bail, eyre, Context, ErrReport, Result};
-use prover::binary::WasmBinary;
-use prover::programs::{
-    config::{PricingParams, WasmPricingInfo},
-    counter::{Counter, CountingMachine, OP_OFFSETS},
-    depth::STYLUS_STACK_LEFT,
-    meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
-    prelude::*,
-    start::STYLUS_START,
+use eyre::{bail, eyre, ErrReport, Result};
+use prover::{
+    machine::Module as ProverModule,
+    programs::{
+        config::PricingParams,
+        counter::{Counter, CountingMachine, OP_OFFSETS},
+        depth::STYLUS_STACK_LEFT,
+        meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
+        prelude::*,
+        start::STYLUS_START,
+    },
 };
 use std::{
     collections::BTreeMap,
@@ -371,29 +373,16 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
     Ok(module.to_vec())
 }
 
-pub fn compile_user_wasm(
+pub fn activate(
     wasm: &[u8],
     version: u16,
     page_limit: u16,
-    debug_mode: bool,
-) -> Result<(Vec<u8>, Bytes32, WasmPricingInfo)> {
-    let compile = CompileConfig::version(version, debug_mode);
-    let (bin, stylus_data, footprint) =
-        WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse program")?;
+    debug: bool,
+    gas: &mut u64,
+) -> Result<(Vec<u8>, ProverModule, u16)> {
+    let compile = CompileConfig::version(version, debug);
+    let (module, footprint) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
 
-    let canonical_hash = prover::machine::Module::from_user_binary(
-        &bin,
-        compile.debug.debug_funcs,
-        Some(stylus_data),
-    )
-    .wrap_err("failed to build module from program")?
-    .hash();
-
-    let info = WasmPricingInfo {
-        size: wasm.len().try_into()?,
-        footprint: footprint,
-    };
-    let module = module(wasm, compile).wrap_err("failed generating stylus module")?;
-
-    Ok((module, canonical_hash, info))
+    let asm = self::module(wasm, compile).expect("failed to generate stylus module");
+    Ok((asm, module, footprint))
 }

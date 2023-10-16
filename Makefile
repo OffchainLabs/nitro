@@ -259,17 +259,17 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
-$(prover_bin): $(DEP_PREDICATE) $(rust_prover_files) $(output_latest)/forward_stub.wasm
+$(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files) $(output_latest)/forward_stub.wasm
+$(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
 	install arbitrator/target/release/libstylus.a $@
 
-$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files) $(output_latest)/forward_stub.wasm
+$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release -p jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@
@@ -352,7 +352,6 @@ $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wa
 	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
 
 $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward_stub.wat .make/machines
-	mkdir -p $(output_latest)
 	wat2wasm $(wasm_lib)/user-host/forward_stub.wat -o $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)

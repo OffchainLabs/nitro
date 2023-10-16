@@ -5,7 +5,7 @@
 
 use crate::{
     gostack::GoStack,
-    machine::WasmEnvMut,
+    machine::{ModuleAsm, WasmEnvMut},
     syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
 };
 use arbutil::{
@@ -53,7 +53,7 @@ impl JsCallIntoGo for ApiCaller {
 pub(super) fn exec_wasm(
     sp: &mut GoStack,
     mut env: WasmEnvMut,
-    module: Vec<u8>,
+    module: ModuleAsm,
     calldata: Vec<u8>,
     compile: CompileConfig,
     config: StylusConfig,

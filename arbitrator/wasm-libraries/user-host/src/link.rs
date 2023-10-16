@@ -4,13 +4,13 @@
 use crate::{evm_api::ApiCaller, Program, PROGRAMS};
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
-    heapify, wavm,
+    format::DebugBytes,
+    heapify, wavm, Bytes32,
 };
 use go_abi::GoStack;
 use prover::{
-    binary::WasmBinary,
     machine::Module,
-    programs::config::{CompileConfig, PricingParams, StylusConfig},
+    programs::config::{PricingParams, StylusConfig},
 };
 use std::mem;
 
@@ -35,19 +35,23 @@ extern "C" {
 #[repr(C, align(256))]
 struct MemoryLeaf([u8; 32]);
 
-/// Compiles and instruments a user wasm.
+/// Instruments and "activates" a user wasm, producing a unique module hash.
+///
+/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+/// The amount left is written back at the end of the call.
 ///
 /// # Safety
 ///
+/// The `modHash` and `gas` pointers must not be null.
+///
 /// The Go compiler expects the call to take the form
-///     λ(wasm []byte, pageLimit, version u16, debug u32, machineHash []byte) (module *Module, info WasmInfo, err *Vec<u8>)
+///     λ(wasm []byte, pageLimit, version u16, debug u32, modHash *hash, gas *u64) (footprint u16, err *Vec<u8>)
 ///
 /// These values are placed on the stack as follows
-///     stack:  || wasm... || pageLimit | version | debug || mach ptr || info... || err ptr ||
-///     info:   || footprint | 2 pad | size ||
+///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activateProgramRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
@@ -55,40 +59,28 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let page_limit = sp.read_u16();
     let version = sp.read_u16();
     let debug = sp.read_bool32();
-    let (out_hash_ptr, out_hash_len) = sp.read_go_slice();
+    let module_hash = sp.read_go_ptr();
+    let gas = sp.read_go_ptr();
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
-            let error = $error.wrap_err($msg);
-            let error = format!("{error:?}").as_bytes().to_vec();
-            sp.write_nullptr();
-            sp.skip_space(); // skip footprint
+            let error = $error.wrap_err($msg).debug_bytes();
+            wavm::caller_store64(gas, 0);
+            wavm::write_bytes32(module_hash, Bytes32::default());
+            sp.skip_space();
             sp.write_ptr(heapify(error));
             return;
         }};
     }
 
-    let compile = CompileConfig::version(version, debug);
-    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
-        Ok(parse) => parse,
-        Err(error) => error!("failed to parse program", error),
+    let gas_left = &mut wavm::caller_load64(gas);
+    let (module, pages) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+        Ok(data) => data,
+        Err(error) => error!("failed to activate", error),
     };
-
-    let module = match Module::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data)) {
-        Ok(module) => module,
-        Err(error) => error!("failed to instrument program", error),
-    };
-
-    if out_hash_len != 32 {
-        error!("Go attempting to read compiled machine hash into bad buffer",eyre::eyre!("buffer length: {out_hash_ptr}"));
-    }
-    wavm::write_slice(module.hash().as_slice(), out_hash_ptr);
-
-    let Ok(wasm_len) = TryInto::<u32>::try_into(wasm.len()) else {
-        error!("wasm len not u32",eyre::eyre!("wasm length: {}", wasm.len()));
-    };
-    sp.write_ptr(heapify(module));
-    sp.write_u16(footprint).skip_u16().write_u32(wasm_len);
+    wavm::caller_store64(gas, *gas_left);
+    wavm::write_bytes32(module_hash, module.hash());
+    sp.write_u16(pages).skip_space();
     sp.write_nullptr();
 }
 
@@ -97,16 +89,15 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 /// # Safety
 ///
 /// The Go compiler expects the call to take the form
-///     λ(
-///           hash *common.Hash, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
-///           gas *u64, root *[32]byte
-///     ) -> (status byte, out *Vec<u8>)
+///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64) (
+///         status byte, out *Vec<u8>,
+///     )
 ///
 /// These values are placed on the stack as follows
-///     || hash || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
+///     || modHash || calldata... || params || evmApi... || evmData || gas || status | 7 pad | out ptr ||
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callProgramRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
@@ -202,23 +193,6 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     let ptr: *mut u8 = sp.read_ptr_mut();
     wavm::write_slice(&vec, ptr as u64);
     mem::drop(vec)
-}
-
-/// Drops a `Module`.
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(mach *Module)
-///
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustModuleDropImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    if let Some(module) = sp.unbox_option::<Module>() {
-        mem::drop(module);
-    }
 }
 
 /// Creates a `StylusConfig` from its component parts.

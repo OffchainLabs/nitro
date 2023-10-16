@@ -21,6 +21,7 @@ use std::{
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -114,11 +115,10 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             github!("wavmio.readDelayedInboxMessage") => func!(wavmio::read_delayed_inbox_message),
             github!("wavmio.resolvePreImage") => func!(wavmio::resolve_preimage),
 
-            github!("arbos/programs.compileUserWasmRustImpl") => func!(user::compile_user_wasm),
-            github!("arbos/programs.callUserWasmRustImpl") => func!(user::call_user_wasm),
+            github!("arbos/programs.activateProgramRustImpl") => func!(user::stylus_activate),
+            github!("arbos/programs.callProgramRustImpl") => func!(user::stylus_call),
             github!("arbos/programs.readRustVecLenImpl") => func!(user::read_rust_vec_len),
             github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
-            github!("arbos/programs.rustModuleDropImpl") => func!(user::drop_module),
             github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),
             github!("arbos/programs.rustEvmDataImpl") => func!(user::evm_data_impl),
 
@@ -193,6 +193,7 @@ impl From<RuntimeError> for Escape {
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
+pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -208,8 +209,8 @@ pub struct WasmEnv {
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
-    /// A collection of user wasms called during the course of execution
-    pub compiled_modules: HashMap<Bytes32, Vec<u8>>,
+    /// A collection of programs called during the course of execution
+    pub module_asms: HashMap<Bytes32, ModuleAsm>,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages

@@ -1,7 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#![allow(clippy::vec_init_then_push)]
+#![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
 use crate::{
     binary, host,
@@ -53,7 +53,7 @@ impl InternalFunc {
             UserSetInk    => func!([I64, I32], []), // λ(ink_left, ink_status)
             UserStackLeft => func!([], [I32]),      // λ() → stack_left
             UserSetStack  => func!([I32], []),      // λ(stack_left)
-            CallMain      => func!([I32], [I32]),
+            CallMain      => func!([I32], [I32]),   // λ(args_len) → status
         };
         ty
     }
@@ -209,7 +209,7 @@ impl Hostio {
         macro_rules! cross_internal {
             ($func:ident) => {
                 opcode!(LocalGet, 0); // module
-                opcode!(CrossModuleInternalCall, InternalFunc::$func); // consumes module and func
+                opcode!(CrossModuleInternalCall, InternalFunc::$func); // consumes module
             };
         }
         macro_rules! intern {
@@ -360,7 +360,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn new_internal_funcs(stylus_data: Option<(StylusData, u32)>) -> Vec<Function> {
+pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -409,20 +409,17 @@ pub fn new_internal_funcs(stylus_data: Option<(StylusData, u32)>) -> Vec<Functio
 
     let mut add_func = |code: &[_], internal| add_func(code_func(code, internal), internal);
 
-    if let Some((globals, main_idx)) = stylus_data {
-        let (gas, status, depth) = globals.global_offsets();
-        add_func(&[Instruction::with_data(GlobalGet, gas)], UserInkLeft);
-        add_func(&[Instruction::with_data(GlobalGet, status)], UserInkStatus);
-        add_func(
-            &[
-                Instruction::with_data(GlobalSet, status),
-                Instruction::with_data(GlobalSet, gas),
-            ],
-            UserSetInk,
-        );
-        add_func(&[Instruction::with_data(GlobalGet, depth)], UserStackLeft);
-        add_func(&[Instruction::with_data(GlobalSet, depth)], UserSetStack);
-        add_func(&[Instruction::with_data(Call, main_idx as u64)], CallMain);
+    if let Some(info) = stylus_data {
+        let (gas, status, depth) = info.global_offsets();
+        let main = info.user_main.into();
+        let inst = |op, data| Instruction::with_data(op, data);
+
+        add_func(&[inst(GlobalGet, gas)], UserInkLeft);
+        add_func(&[inst(GlobalGet, status)], UserInkStatus);
+        add_func(&[inst(GlobalSet, status), inst(GlobalSet, gas)], UserSetInk);
+        add_func(&[inst(GlobalGet, depth)], UserStackLeft);
+        add_func(&[inst(GlobalSet, depth)], UserSetStack);
+        add_func(&[inst(Call, main)], CallMain);
     }
     funcs
 }

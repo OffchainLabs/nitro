@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -40,10 +41,10 @@ type usize = C.size_t
 type cbool = C._Bool
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
-type rustVec = C.RustVec
+type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
-func compileUserWasm(
+func activateProgram(
 	db vm.StateDB,
 	program common.Address,
 	wasm []byte,
@@ -51,43 +52,47 @@ func compileUserWasm(
 	version uint16,
 	debug bool,
 	burner burn.Burner,
-) (*wasmPricingInfo, common.Hash, error) {
-	rustInfo := &C.WasmPricingInfo{}
-	output := &rustVec{}
-	canonicalHashRust := &rustVec{}
-	status := userStatus(C.stylus_compile(
+) (common.Hash, uint16, error) {
+	output := &rustBytes{}
+	asmLen := usize(0)
+	moduleHash := &bytes32{}
+	footprint := uint16(math.MaxUint16)
+
+	status := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
 		u16(version),
 		cbool(debug),
-		rustInfo,
 		output,
-		canonicalHashRust,
+		&asmLen,
+		moduleHash,
+		(*u16)(&footprint),
+		(*u64)(burner.GasLeft()),
 	))
-	data, msg, err := status.toResult(output.intoBytes(), debug)
 
+	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if err != nil {
 		if debug {
-			log.Warn("stylus parse failed", "err", err, "msg", msg, "program", program)
+			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, common.Hash{}, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+			return common.Hash{}, footprint, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
-		return nil, common.Hash{}, err
+		return common.Hash{}, footprint, err
 	}
 
-	info := rustInfo.decode()
-	if err := payForCompilation(burner, &info); err != nil {
-		return nil, common.Hash{}, err
-	}
+	hash := moduleHash.toHash()
+	split := int(asmLen)
+	asm := data[:split]
+	module := data[split:]
 
-	db.SetCompiledWasmCode(program, data, version)
-	return &info, common.BytesToHash(canonicalHashRust.intoBytes()), err
+	db.ActivateWasm(hash, asm, module)
+	return hash, footprint, err
 }
 
-func callUserWasm(
+func callProgram(
 	address common.Address,
-	program Program,
+	moduleHash common.Hash,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -98,16 +103,16 @@ func callUserWasm(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(address, scope.Contract.CodeHash, stylusParams.version, program.compiledHash)
+		db.RecordProgram(moduleHash)
 	}
-	module := db.GetCompiledWasmCode(address, stylusParams.version)
+	asm := db.GetActivatedAsm(moduleHash)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer dropApi(id)
 
-	output := &rustVec{}
+	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
-		goSlice(module),
+		goSlice(asm),
 		goSlice(calldata),
 		stylusParams.encode(),
 		evmApi,
@@ -139,7 +144,7 @@ func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
 }
 
 //export setBytes32Impl
-func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) apiStatus {
+func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustBytes) apiStatus {
 	closures := getApi(api)
 
 	gas, err := closures.setBytes32(key.toHash(), value.toHash())
@@ -188,7 +193,7 @@ func staticCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, l
 }
 
 //export create1Impl
-func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *u32) apiStatus {
+func create1Impl(api usize, code *rustBytes, endowment bytes32, evmGas *u64, len *u32) apiStatus {
 	closures := getApi(api)
 	addr, ret_len, cost, err := closures.create1(code.read(), endowment.toBig(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
@@ -202,7 +207,7 @@ func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *
 }
 
 //export create2Impl
-func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
+func create2Impl(api usize, code *rustBytes, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
 	closures := getApi(api)
 	addr, ret_len, cost, err := closures.create2(code.read(), endowment.toBig(), salt.toBig(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
@@ -216,14 +221,14 @@ func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64,
 }
 
 //export getReturnDataImpl
-func getReturnDataImpl(api usize, output *rustVec, offset u32, size u32) {
+func getReturnDataImpl(api usize, output *rustBytes, offset u32, size u32) {
 	closures := getApi(api)
 	returnData := closures.getReturnData(uint32(offset), uint32(size))
 	output.setBytes(returnData)
 }
 
 //export emitLogImpl
-func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
+func emitLogImpl(api usize, data *rustBytes, topics u32) apiStatus {
 	closures := getApi(api)
 	err := closures.emitLog(data.read(), uint32(topics))
 	if err != nil {
@@ -302,25 +307,25 @@ func (slice *rustSlice) read() []byte {
 	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
 }
 
-func (vec *rustVec) read() []byte {
+func (vec *rustBytes) read() []byte {
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec *rustVec) intoBytes() []byte {
+func (vec *rustBytes) intoBytes() []byte {
 	slice := vec.read()
 	vec.drop()
 	return slice
 }
 
-func (vec *rustVec) drop() {
+func (vec *rustBytes) drop() {
 	C.stylus_drop_vec(*vec)
 }
 
-func (vec *rustVec) setString(data string) {
+func (vec *rustBytes) setString(data string) {
 	vec.setBytes([]byte(data))
 }
 
-func (vec *rustVec) setBytes(data []byte) {
+func (vec *rustBytes) setBytes(data []byte) {
 	C.stylus_vec_set_bytes(vec, goSlice(data))
 }
 
@@ -358,12 +363,5 @@ func (data *evmData) encode() C.EvmData {
 		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
 		tracing:          cbool(data.tracing),
-	}
-}
-
-func (info *C.WasmPricingInfo) decode() wasmPricingInfo {
-	return wasmPricingInfo{
-		footprint: uint16(info.footprint),
-		size:      uint32(info.size),
 	}
 }

@@ -8,6 +8,7 @@ use arbutil::{
         EvmData,
     },
     format::DebugBytes,
+    Bytes32,
 };
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -59,13 +60,13 @@ impl<'a> RustSlice<'a> {
 }
 
 #[repr(C)]
-pub struct RustVec {
+pub struct RustBytes {
     ptr: *mut u8,
     len: usize,
     cap: usize,
 }
 
-impl RustVec {
+impl RustBytes {
     fn new(vec: Vec<u8>) -> Self {
         let mut rust_vec = Self {
             ptr: std::ptr::null_mut(),
@@ -99,47 +100,45 @@ impl RustVec {
     }
 }
 
-/// Compiles a user program to its native representation.
-/// The `output` is either the serialized module or an error string.
+/// Instruments and "activates" a user wasm.
+///
+/// The `output` is either the serialized asm & module pair or an error string.
+/// Returns consensus info such as the module hash and footprint on success.
+///
+/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+/// The amount left is written back at the end of the call.
 ///
 /// # Safety
 ///
-/// Output, pricing_info, output_canonical_hash must not be null.
+/// `output`, `asm_len`, `module_hash`, `footprint`, and `gas` must not be null.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_compile(
+pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
     version: u16,
-    debug_mode: bool,
-    out_pricing_info: *mut WasmPricingInfo,
-    output: *mut RustVec,
-    out_canonical_hash: *mut RustVec,
+    debug: bool,
+    output: *mut RustBytes,
+    asm_len: *mut usize,
+    module_hash: *mut Bytes32,
+    footprint: *mut u16,
+    gas: *mut u64,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-
-    if output.is_null() {
-        return UserOutcomeKind::Failure;
-    }
     let output = &mut *output;
+    let module_hash = &mut *module_hash;
+    let gas = &mut *gas;
 
-    if out_pricing_info.is_null() {
-        return output.write_err(eyre::eyre!("pricing_info is null"));
-    }
-    if out_canonical_hash.is_null() {
-        return output.write_err(eyre::eyre!("canonical_hash is null"));
-    }
-    let out_canonical_hash = &mut *out_canonical_hash;
+    let (asm, module, pages) = match native::activate(wasm, version, page_limit, debug, gas) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
+    *asm_len = asm.len();
+    *module_hash = module.hash();
+    *footprint = pages;
 
-    let (module, canonical_hash, pricing_info) =
-        match native::compile_user_wasm(wasm, version, page_limit, debug_mode) {
-            Err(err) => return output.write_err(err),
-            Ok(val) => val,
-        };
-
-    out_canonical_hash.write(canonical_hash.to_vec());
-    *out_pricing_info = pricing_info;
-    output.write(module);
-
+    let mut data = asm;
+    data.extend(&*module.into_bytes());
+    output.write(data);
     UserOutcomeKind::Success
 }
 
@@ -147,7 +146,7 @@ pub unsafe extern "C" fn stylus_compile(
 ///
 /// # Safety
 ///
-/// `module` must represent a valid module produced from `stylus_compile`.
+/// `module` must represent a valid module produced from `stylus_activate`.
 /// `output` and `gas` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
@@ -157,7 +156,7 @@ pub unsafe extern "C" fn stylus_call(
     go_api: GoEvmApi,
     evm_data: EvmData,
     debug_chain: u32,
-    output: *mut RustVec,
+    output: *mut RustBytes,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
@@ -192,7 +191,7 @@ pub unsafe extern "C" fn stylus_call(
 ///
 /// Must only be called once per vec.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
+pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
     }
@@ -204,7 +203,7 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
 ///
 /// `rust` must not be null.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustVec, data: GoSliceData) {
+pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustBytes, data: GoSliceData) {
     let rust = &mut *rust;
     let mut vec = Vec::from_raw_parts(rust.ptr, rust.len, rust.cap);
     vec.clear();

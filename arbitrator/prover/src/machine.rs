@@ -8,9 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{
-        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData, STYLUS_ENTRY_POINT,
-    },
+    programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -288,31 +286,28 @@ pub struct Module {
 }
 
 lazy_static! {
-    static ref USER_IMPORTS: Result<HashMap<String, AvailableImport>> = Module::calc_user_imports();
+    static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
+        let mut imports = HashMap::default();
+
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
+
+        for (name, &(export, kind)) in &forward.exports {
+            if kind == ExportKind::Func {
+                let ty = match forward.get_function(FunctionIndex::from_u32(export)) {
+                    Ok(ty) => ty,
+                    Err(error) => panic!("failed to read export {name}: {error:?}"),
+                };
+                let import = AvailableImport::new(ty, 1, export);
+                imports.insert(name.to_owned(), import);
+            }
+        }
+        imports
+    };
 }
 
 impl Module {
     const FORWARDING_PREFIX: &str = "arbitrator_forward__";
-
-    fn calc_user_imports() -> Result<HashMap<String, AvailableImport>> {
-        let forward_bytes = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
-        let forward_bin = binary::parse(forward_bytes, Path::new("forward")).unwrap();
-
-        let mut available_imports = HashMap::default();
-
-        for (name, &(export, kind)) in &forward_bin.exports {
-            if kind == ExportKind::Func {
-                let ty = match forward_bin.get_function(FunctionIndex::from_u32(export)) {
-                    Ok(ty) => ty,
-                    Err(error) => bail!("failed to read export {}: {}", name, error),
-                };
-                let import = AvailableImport::new(ty, 1, export);
-                available_imports.insert(name.to_owned(), import);
-            }
-        }
-
-        Ok(available_imports)
-    }
 
     fn from_binary(
         bin: &WasmBinary,
@@ -390,18 +385,7 @@ impl Module {
             })
             .collect();
 
-        let internals_data = match stylus_data {
-            None => None,
-            Some(data) => {
-                let stylus_main = func_exports
-                    .iter()
-                    .find(|x| x.0 == STYLUS_ENTRY_POINT)
-                    .and_then(|x| Some(x.1))
-                    .ok_or(eyre::eyre!("stylus program without entry point"))?;
-                Some((data, *stylus_main))
-            }
-        };
-        let internals = host::new_internal_funcs(internals_data);
+        let internals = host::new_internal_funcs(stylus_data);
         let internals_offset = (code.len() + bin.codes.len()) as u32;
         let internals_types = internals.iter().map(|f| f.ty.clone());
 
@@ -586,7 +570,7 @@ impl Module {
     ) -> Result<Module> {
         Self::from_binary(
             bin,
-            USER_IMPORTS.as_ref().unwrap(),
+            &USER_IMPORTS,
             &HashMap::default(),
             false,
             debug_funcs,
@@ -643,6 +627,14 @@ impl Module {
         data.extend(self.internals_offset.to_be_bytes());
 
         data
+    }
+
+    pub fn into_bytes(&self) -> Box<[u8]> {
+        bincode::serialize(self).unwrap().into_boxed_slice()
+    }
+
+    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
+        bincode::deserialize(bytes).unwrap()
     }
 }
 
@@ -1132,32 +1124,20 @@ impl Machine {
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
-    pub fn add_program(
-        &mut self,
-        wasm: &[u8],
-        version: u16,
-        debug_funcs: bool,
-        hash: Option<Bytes32>,
-    ) -> Result<Bytes32> {
+    pub fn add_program(&mut self, wasm: &[u8], version: u16, debug_funcs: bool) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
-        let computed_hash = module.hash();
+        let hash = module.hash();
+        self.add_stylus_module(module, hash);
+        Ok(hash)
+    }
 
-        if let Some(expected_hash) = hash {
-            if computed_hash != expected_hash {
-                return Err(eyre::eyre!(
-                    "compulted hash {} doesn't match expected {}",
-                    computed_hash,
-                    expected_hash
-                ));
-            }
-        }
-        eprintln!("adding module {}", computed_hash);
-        self.stylus_modules.insert(computed_hash, module);
-        Ok(computed_hash)
+    /// Adds a pre-built program to the machine's known set of wasms.
+    pub fn add_stylus_module(&mut self, module: Module, hash: Bytes32) {
+        self.stylus_modules.insert(hash, module);
     }
 
     pub fn from_binaries(
@@ -1291,7 +1271,7 @@ impl Machine {
         // Rust support
         let rust_fn = "__main_void";
         if let Some(&f) = main_exports.get(rust_fn).filter(|_| runtime_support) {
-            let expected_type = FunctionType::new(vec![], vec![I32]);
+            let expected_type = FunctionType::new([], [I32]);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [] -> [ret]",

@@ -16,8 +16,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -120,9 +118,6 @@ func (machine *JitMachine) prove(
 	writeUint8 := func(data uint8) error {
 		return writeExact([]byte{data})
 	}
-	writeUint16 := func(data uint16) error {
-		return writeExact(arbmath.Uint16ToBytes(data))
-	}
 	writeUint32 := func(data uint32) error {
 		return writeExact(arbmath.Uint32ToBytes(data))
 	}
@@ -207,32 +202,15 @@ func (machine *JitMachine) prove(
 	}
 
 	// send user wasms
-	debugFlag := uint8(0)
-	if entry.DebugChain {
-		debugFlag = 1
-	}
-	if err := writeUint8(debugFlag); err != nil {
-		return state, err
-	}
 	userWasms := entry.UserWasms
 	if err := writeUint32(uint32(len(userWasms))); err != nil {
 		return state, err
 	}
-	for call, wasm := range userWasms {
-		if err := writeExact(call.CodeHash[:]); err != nil {
+	for moduleHash, info := range userWasms {
+		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
-		inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
-		if err != nil {
-			return state, fmt.Errorf("error decompressing program: %w", err)
-		}
-		if err := writeBytes(inflated); err != nil {
-			return state, err
-		}
-		if err := writeExact(wasm.CompiledHash[:]); err != nil {
-			return state, err
-		}
-		if err := writeUint16(call.Version); err != nil {
+		if err := writeBytes(info.Asm); err != nil {
 			return state, err
 		}
 	}

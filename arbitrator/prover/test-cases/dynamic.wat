@@ -6,8 +6,11 @@
     (import "hostio" "program_ink_left"   (func $ink_left   (param i32)     (result i64)))
     (import "hostio" "program_ink_status" (func $ink_status (param i32)     (result i32)))
     (import "hostio" "program_call_main"  (func $user_func  (param i32 i32) (result i32)))
+
+    ;; WAVM Module hash
     (data (i32.const 0x0)
          "\97\0c\df\6a\a9\bf\d4\3c\03\80\7f\8a\7e\67\9a\5c\12\05\94\4f\c6\5e\39\9e\00\df\5c\b3\7d\de\55\ad") ;; user
+
     (func $start (local $user i32) (local $internals i32)
         ;; link in user.wat
         i32.const 0

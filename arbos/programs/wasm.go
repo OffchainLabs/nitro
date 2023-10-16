@@ -28,21 +28,20 @@ type usize = uintptr
 // opaque types
 type rustVec byte
 type rustConfig byte
-type rustMachine byte
+type rustModule byte
 type rustEvmData byte
 
-func compileUserWasmRustImpl(
-	wasm []byte, pageLimit, version u16, debugMode u32, outMachineHash []byte,
-) (machine *rustMachine, info wasmPricingInfo, err *rustVec)
+func activateProgramRustImpl(
+	wasm []byte, pageLimit, version u16, debugMode u32, moduleHash *hash, gas *u64,
+) (footprint u16, err *rustVec)
 
-func callUserWasmRustImpl(
-	compiledHash *hash, calldata []byte, params *rustConfig, evmApi []byte,
-	evmData *rustEvmData, gas *u64,
+func callProgramRustImpl(
+	moduleHash *hash, calldata []byte, params *rustConfig, evmApi []byte, evmData *rustEvmData, gas *u64,
 ) (status userStatus, out *rustVec)
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustModuleDropImpl(mach *rustMachine)
+func rustModuleDropImpl(mach *rustModule)
 func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
@@ -59,7 +58,7 @@ func rustEvmDataImpl(
 	reentrant u32,
 ) *rustEvmData
 
-func compileUserWasm(
+func activateProgram(
 	db vm.StateDB,
 	program addr,
 	wasm []byte,
@@ -67,21 +66,22 @@ func compileUserWasm(
 	version u16,
 	debug bool,
 	burner burn.Burner,
-) (*wasmPricingInfo, common.Hash, error) {
-	module, info, hash, err := compileUserWasmRustWrapper(db, program, wasm, pageLimit, version, debug)
-	defer rustModuleDropImpl(module)
+) (common.Hash, u16, error) {
+	debugMode := arbmath.BoolToUint32(debug)
+	moduleHash := common.Hash{}
+	gasPtr := burner.GasLeft()
+
+	footprint, err := activateProgramRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, gasPtr)
 	if err != nil {
-		return nil, common.Hash{}, err
+		_, _, err := userFailure.toResult(err.intoSlice(), debug)
+		return moduleHash, footprint, err
 	}
-	if err := payForCompilation(burner, &info); err != nil {
-		return nil, common.Hash{}, err
-	}
-	return &info, hash, err
+	return moduleHash, footprint, nil
 }
 
-func callUserWasm(
+func callProgram(
 	address common.Address,
-	program Program,
+	moduleHash common.Hash,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -95,8 +95,8 @@ func callUserWasm(
 	defer evmApi.drop()
 	debug := arbmath.UintToBool(params.debugMode)
 
-	status, output := callUserWasmRustImpl(
-		&program.compiledHash,
+	status, output := callProgramRustImpl(
+		&moduleHash,
 		calldata,
 		params.encode(),
 		evmApi.funcs,
@@ -105,19 +105,6 @@ func callUserWasm(
 	)
 	data, _, err := status.toResult(output.intoSlice(), debug)
 	return data, err
-}
-
-func compileUserWasmRustWrapper(
-	db vm.StateDB, program addr, wasm []byte, pageLimit, version u16, debug bool,
-) (*rustMachine, wasmPricingInfo, common.Hash, error) {
-	debugMode := arbmath.BoolToUint32(debug)
-	outHash := common.Hash{}
-	machine, info, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode, outHash[:])
-	if err != nil {
-		_, _, err := userFailure.toResult(err.intoSlice(), debug)
-		return nil, info, outHash, err
-	}
-	return machine, info, outHash, nil
 }
 
 func (vec *rustVec) intoSlice() []byte {
