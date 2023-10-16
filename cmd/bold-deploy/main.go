@@ -13,6 +13,7 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	rollupgen "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -23,8 +24,10 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -142,6 +145,18 @@ func main() {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	ensureTxSucceeds := func(tx *types.Transaction) {
+		if waitErr := challenge_testing.WaitForTx(ctx, l1Reader.Client(), tx); waitErr != nil {
+			panic(err)
+		}
+		receipt, err := l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+		if err != nil {
+			panic(err)
+		}
+		if receipt.Status != types.ReceiptStatusSuccessful {
+			panic("receipt was not successful")
+		}
+	}
 	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
 		l1TransactionOpts,
 		l1Reader.Client(),
@@ -151,36 +166,38 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if waitErr := challenge_testing.WaitForTx(ctx, l1Reader.Client(), tx); waitErr != nil {
-		panic(err)
-	}
-	receipt, err := l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		panic(err)
-	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		panic("deploying stake token receipt not successful")
-	}
+	ensureTxSucceeds(tx)
 	value, ok := new(big.Int).SetString("10000000000000000000000", 10)
 	if !ok {
 		panic("could not set stake token value")
 	}
 	l1TransactionOpts.Value = value
-	mintTx, err := tokenBindings.Deposit(l1TransactionOpts)
+	tx, err = tokenBindings.Deposit(l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}
-	if waitErr := challenge_testing.WaitForTx(ctx, l1Reader.Client(), mintTx); waitErr != nil {
-		panic(err)
-	}
-	receipt, err = l1Reader.Client().TransactionReceipt(ctx, mintTx.Hash())
-	if err != nil {
-		panic(err)
-	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		panic("minting stake token receipt not successful")
-	}
+	ensureTxSucceeds(tx)
 	l1TransactionOpts.Value = big.NewInt(0)
+
+	validatorPrivateKey, err := crypto.HexToECDSA("0x182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
+	if err != nil {
+		panic(err)
+	}
+	validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, l1ChainId)
+	if err != nil {
+		panic(err)
+	}
+
+	// We then need to give the validator some funds from the stake token.
+	validatorSeedTokens, ok := new(big.Int).SetString("1000", 10)
+	if !ok {
+		panic("not ok")
+	}
+	tx, err = tokenBindings.TestWETH9Transactor.Transfer(l1TransactionOpts, validatorTxOpts.From, validatorSeedTokens)
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
 
 	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
@@ -222,6 +239,36 @@ func main() {
 		log.Error("error deploying on l1")
 		panic(err)
 	}
+	// We then have the validator itself authorize the rollup and challenge manager
+	// contracts to spend its stake tokens.
+	chain, err := solimpl.NewAssertionChain(
+		ctx,
+		deployedAddresses.Rollup,
+		validatorTxOpts,
+		l1Reader.Client(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	chalManager, err := chain.SpecChallengeManager(ctx)
+	if err != nil {
+		panic(err)
+	}
+	amountToApproveSpend, ok := new(big.Int).SetString("10000", 10)
+	if !ok {
+		panic("not ok")
+	}
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, deployedAddresses.Rollup, amountToApproveSpend)
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, chalManager.Address(), amountToApproveSpend)
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
+
 	deployData, err := json.Marshal(deployedAddresses)
 	if err != nil {
 		panic(err)
