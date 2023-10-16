@@ -13,7 +13,7 @@ import (
 type Burner interface {
 	Burn(amount uint64) error
 	Burned() uint64
-	GasLeft() *uint64 // SystemBurner's panic
+	GasLeft() *uint64 // `SystemBurner`s panic (no notion of GasLeft)
 	BurnOut() error
 	Restrict(err error)
 	HandleError(err error) error

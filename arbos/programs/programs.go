@@ -301,7 +301,7 @@ func (p Programs) CallProgram(
 		address = *contract.CodeAddr
 	}
 	return callProgram(
-		address, program, moduleHash, scope, statedb, interpreter,
+		address, moduleHash, scope, statedb, interpreter,
 		tracingInfo, calldata, evmData, params, model,
 	)
 }

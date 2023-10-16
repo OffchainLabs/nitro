@@ -92,7 +92,6 @@ func activateProgram(
 
 func callProgram(
 	address common.Address,
-	program Program,
 	moduleHash common.Hash,
 	scope *vm.ScopeContext,
 	db vm.StateDB,

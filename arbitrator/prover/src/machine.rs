@@ -286,13 +286,7 @@ pub struct Module {
 }
 
 lazy_static! {
-    static ref USER_IMPORTS: HashMap<String, AvailableImport> = Module::calc_user_imports();
-}
-
-impl Module {
-    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
-
-    fn calc_user_imports() -> HashMap<String, AvailableImport> {
+    static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
         let mut imports = HashMap::default();
 
         let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
@@ -309,7 +303,11 @@ impl Module {
             }
         }
         imports
-    }
+    };
+}
+
+impl Module {
+    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
 
     fn from_binary(
         bin: &WasmBinary,
