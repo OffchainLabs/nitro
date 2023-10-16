@@ -41,7 +41,7 @@ import (
 // is initialized with specified sender/signer and keeps nonce of that address
 // as it posts transactions.
 // Transactions are also saved in the queue when it's being sent, and when
-// persistant storage is used for the queue, after restarting the node
+// persistent storage is used for the queue, after restarting the node
 // dataposter will pick up where it left.
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {
@@ -185,7 +185,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 
 	var hasher types.Signer
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
-		// According to the "eth_signTransaction" API definition, this shoul be
+		// According to the "eth_signTransaction" API definition, this should be
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
