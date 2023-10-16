@@ -2,6 +2,8 @@ package dataposter
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,10 +76,12 @@ func TestExternalSigner(t *testing.T) {
 	}()
 	signer, addr, err := externalSigner(ctx,
 		&ExternalSignerCfg{
-			Address: srv.address.Hex(),
-			URL:     "https://localhost:1234",
-			Method:  "test_signTransaction",
-			RootCA:  cert,
+			Address:          srv.address.Hex(),
+			URL:              "https://localhost:1234",
+			Method:           "test_signTransaction",
+			RootCA:           cert,
+			ClientCert:       "./testdata/client.crt",
+			ClientPrivateKey: "./testdata/client.key",
 		})
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
@@ -129,7 +133,24 @@ func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
 		"test_signTransaction": s.signTransaction,
 	}
 	m := http.NewServeMux()
-	httpSrv := &http.Server{Addr: ":1234", Handler: m, ReadTimeout: 5 * time.Second}
+
+	clientCert, err := os.ReadFile("./testdata/client.crt")
+	if err != nil {
+		panic(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(clientCert)
+
+	httpSrv := &http.Server{
+		Addr:        ":1234",
+		Handler:     m,
+		ReadTimeout: 5 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientCAs:  pool,
+		},
+	}
 	m.HandleFunc("/", s.mux)
 	return httpSrv, s
 }
