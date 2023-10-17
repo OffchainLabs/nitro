@@ -68,7 +68,7 @@ func TestExternalSigner(t *testing.T) {
 	})
 	cert, key := "./testdata/localhost.crt", "./testdata/localhost.key"
 	go func() {
-		fmt.Println("Server is listening on port 443...")
+		fmt.Println("Server is listening on port 1234...")
 		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
 			t.Errorf("ListenAndServeTLS() unexpected error:  %v", err)
 			return
