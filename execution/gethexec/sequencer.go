@@ -85,7 +85,7 @@ type SequencerConfigFetcher func() *SequencerConfig
 
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
-	MaxBlockSpeed:               time.Millisecond * 100,
+	MaxBlockSpeed:               time.Millisecond * 250,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	Forwarder:                   DefaultSequencerForwarderConfig,
