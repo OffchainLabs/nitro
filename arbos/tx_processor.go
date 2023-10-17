@@ -245,16 +245,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		balance := statedb.GetBalance(tx.From)
-		basefee := evm.Context.BaseFee
+		effectiveBaseFee := evm.Context.BaseFee
 		usergas := p.msg.GasLimit
 
-		maxGasCost := arbmath.BigMulByUint(tx.GasFeeCap, usergas)
-		maxFeePerGasTooLow := arbmath.BigLessThan(tx.GasFeeCap, basefee)
-		if p.msg.TxRunMode == core.MessageGasEstimationMode && tx.GasFeeCap.BitLen() == 0 {
-			// In gas estimation mode, we permit a zero gas fee cap.
-			// This matches behavior with normal tx gas estimation.
-			maxFeePerGasTooLow = false
+		if p.msg.TxRunMode != core.MessageCommitMode && tx.GasFeeCap.BitLen() == 0 {
+			// In gas estimation or eth_call mode, we permit a zero gas fee cap.
+			// This matches behavior with normal tx gas estimation and eth_call.
+			effectiveBaseFee = common.Big0
 		}
+
+		maxGasCost := arbmath.BigMulByUint(tx.GasFeeCap, usergas)
+		maxFeePerGasTooLow := arbmath.BigLessThan(tx.GasFeeCap, effectiveBaseFee)
 		if arbmath.BigLessThan(balance, maxGasCost) || usergas < params.TxGas || maxFeePerGasTooLow {
 			// User either specified too low of a gas fee cap, didn't have enough balance to pay for gas,
 			// or the specified gas limit is below the minimum transaction gas cost.
@@ -268,7 +269,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		gascost := arbmath.BigMulByUint(basefee, usergas)
+		gascost := arbmath.BigMulByUint(effectiveBaseFee, usergas)
 		networkCost := gascost
 		if p.state.ArbOSVersion() >= 11 {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
@@ -276,7 +277,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			if infraFeeAccount != (common.Address{}) {
 				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 				p.state.Restrict(err)
-				infraFee := arbmath.BigMin(minBaseFee, basefee)
+				infraFee := arbmath.BigMin(minBaseFee, effectiveBaseFee)
 				infraCost := arbmath.BigMulByUint(infraFee, usergas)
 				infraCost = takeFunds(networkCost, infraCost)
 				if err := transfer(&tx.From, &infraFeeAccount, infraCost); err != nil {
@@ -294,7 +295,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		withheldGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
-		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
+		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, effectiveBaseFee), tx.Gas)
 		if gasPriceRefund.Sign() < 0 {
 			// This should only be possible during gas estimation mode
 			gasPriceRefund.SetInt64(0)
@@ -310,7 +311,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		retryTxInner, err := retryable.MakeTx(
 			underlyingTx.ChainId(),
 			0,
-			basefee,
+			effectiveBaseFee,
 			usergas,
 			ticketId,
 			tx.FeeRefundAddr,
