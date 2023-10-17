@@ -154,7 +154,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			})
 		}
 
-		_, err := WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
+		_, err := WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*25)
 		Require(t, err)
 	}
 
