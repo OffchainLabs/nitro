@@ -6,9 +6,13 @@ package dataposter
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -170,6 +174,29 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	return dp, nil
 }
 
+func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
+	rootCrt, err := os.ReadFile(opts.RootCA)
+	if err != nil {
+		return nil, fmt.Errorf("error reading external signer root CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(rootCrt)
+	return rpc.DialOptions(
+		ctx,
+		opts.URL,
+		rpc.WithHTTPClient(
+			&http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						MinVersion: tls.VersionTLS12,
+						RootCAs:    pool,
+					},
+				},
+			},
+		),
+	)
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -177,11 +204,12 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 	if opts.Address == "" {
 		return nil, common.Address{}, errors.New("external signer (From) address specified")
 	}
-	sender := common.HexToAddress(opts.Address)
-	client, err := rpc.DialContext(ctx, opts.URL)
+
+	client, err := rpcClient(ctx, opts)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
+	sender := common.HexToAddress(opts.Address)
 
 	var hasher types.Signer
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
@@ -715,6 +743,9 @@ type ExternalSignerCfg struct {
 	Address string `koanf:"address"`
 	// API method name (e.g. eth_signTransaction).
 	Method string `koanf:"method"`
+	// Path to the external signer root CA certificate.
+	// This allows us to use self-signed certificats on the external signer.
+	RootCA string `koanf:"root-ca"`
 }
 
 type DangerousConfig struct {
@@ -756,6 +787,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".url", DefaultDataPosterConfig.ExternalSigner.URL, "external signer url")
 	f.String(prefix+".address", DefaultDataPosterConfig.ExternalSigner.Address, "external signer address")
 	f.String(prefix+".method", DefaultDataPosterConfig.ExternalSigner.Method, "external signer method")
+	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
