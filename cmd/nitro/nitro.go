@@ -283,15 +283,27 @@ func mainImpl() int {
 	}
 
 	if nodeConfig.Node.Bold.Enable {
-		validatorPrivateKey, err := crypto.HexToECDSA("182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
-		if err != nil {
-			log.Crit("Failed to get privkey for validator", "err", err)
+		if nodeConfig.Node.Bold.Evil {
+			validatorPrivateKey, err := crypto.HexToECDSA("dc04c5399f82306ec4b4d654a342f40e2e0620fe39950d967e1e574b32d4dd36")
+			if err != nil {
+				log.Crit("Failed to get privkey for validator", "err", err)
+			}
+			validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				log.Crit("Failed to get validator tx opts", "err", err)
+			}
+			l1TransactionOptsValidator = validatorTxOpts
+		} else {
+			validatorPrivateKey, err := crypto.HexToECDSA("182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
+			if err != nil {
+				log.Crit("Failed to get privkey for validator", "err", err)
+			}
+			validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				log.Crit("Failed to get validator tx opts", "err", err)
+			}
+			l1TransactionOptsValidator = validatorTxOpts
 		}
-		validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-		if err != nil {
-			log.Crit("Failed to get validator tx opts", "err", err)
-		}
-		l1TransactionOptsValidator = validatorTxOpts
 	}
 	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
 	if nodeConfig.Chain.InfoIpfsUrl != "" {
