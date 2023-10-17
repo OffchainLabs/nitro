@@ -44,6 +44,7 @@ type DAServerConfig struct {
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel int                    `koanf:"log-level"`
+	LogType  string                 `koanf:"log-type"`
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -62,11 +63,12 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	Conf:               genericconf.ConfConfigDefault,
+	LogLevel:           int(log.LvlInfo),
+	LogType:            "plaintext",
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
 	PProf:              false,
 	PprofCfg:           genericconf.PProfDefault,
-	LogLevel:           3,
 }
 
 func main() {
@@ -99,6 +101,8 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
+	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
+
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -178,7 +182,12 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	logFormat, err := genericconf.ParseLogType(serverConfig.LogType)
+	if err != nil {
+		flag.Usage()
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
