@@ -126,9 +126,6 @@ fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
         None => error!("missing inbox message {msg_num} in {name}"),
     };
 
-    if out_ptr + 32 > sp.memory_size() {
-        error!("unknown message type in {name}");
-    }
     let offset = match u32::try_from(offset) {
         Ok(offset) => offset as usize,
         Err(_) => error!("bad offset {offset} in {name}"),
