@@ -772,7 +772,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  true,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -794,7 +794,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
-	ExternalSigner:         ExternalSignerCfg{},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
