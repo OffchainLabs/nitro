@@ -240,7 +240,17 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err := l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber := block.NumberU64()
-	blockTime := block.Time()
+	fixBlockTime := func(blockTime uint64) uint64 {
+		since := time.Now().Unix() - int64(blockTime)
+		if int64(since) < 0 {
+			// If using SimulatedBeacon then the block time will be ahead of
+			// the actual time since it generates a new block for each tx in
+			// on demand mode, and assigns them to sequentially increasing timestamps.
+			return uint64(time.Now().Unix())
+		}
+		return blockTime
+	}
+	blockTime := fixBlockTime(block.Time())
 
 	optionsA := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
 	optionsB := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
@@ -277,7 +287,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	blockTime = block.Time()
+	blockTime = fixBlockTime(block.Time())
 
 	optionsC := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
 	optionsD := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
@@ -293,7 +303,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	blockTime = block.Time()
+	blockTime = fixBlockTime(block.Time())
 	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, blockTime))
 	for i, options := range options3 {
 		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
