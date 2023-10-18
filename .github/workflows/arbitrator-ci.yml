@@ -22,7 +22,7 @@ env:
 jobs:
   coverage:
     name: Run Arbitrator tests
-    runs-on: ubuntu-8
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3

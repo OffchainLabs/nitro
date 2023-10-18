@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-8
+    runs-on: ubuntu-latest
 
     # Creates a redis container for redis tests
     services:
