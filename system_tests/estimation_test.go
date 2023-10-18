@@ -12,7 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -251,4 +253,27 @@ func TestDisableL1Charging(t *testing.T) {
 
 	_, err = client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
 	Require(t, err)
+}
+
+func TestAccessList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx)
+	builder.DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	rpcClient := builder.L2.Client.Client().(*rpc.Client)
+	gethClient := gethclient.New(rpcClient)
+	addr := common.HexToAddress("0x12345678")
+
+	_, _, _, err := gethClient.CreateAccessList(ctx, ethereum.CallMsg{
+		From: builder.L2Info.GetAddress("Owner"),
+		To:   &addr,
+	},
+	)
+	if err != nil {
+		Fatal(t, "failed creating access list:", err)
+	}
 }
