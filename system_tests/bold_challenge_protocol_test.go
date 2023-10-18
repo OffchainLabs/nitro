@@ -2,7 +2,6 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
-//go:build challengetest && !race
 
 package arbtest
 
@@ -228,6 +227,19 @@ func TestBoldProtocol(t *testing.T) {
 	Require(t, err)
 	evilSeqInboxBinding, err := bridgegen.NewSequencerInbox(evilSeqInbox, l1client)
 	Require(t, err)
+
+	honestBatchCount, err := honestSeqInboxBinding.BatchCount(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	evilBatchCount, err := evilSeqInboxBinding.BatchCount(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+
+	honestAcc, err := honestSeqInboxBinding.InboxAccs(&bind.CallOpts{Context: ctx}, big.NewInt(0))
+	Require(t, err)
+	evilAcc, err := evilSeqInboxBinding.InboxAccs(&bind.CallOpts{Context: ctx}, big.NewInt(0))
+	Require(t, err)
+
+	t.Logf("Honest inbox batch count %d, acc %x", honestBatchCount.Uint64(), honestAcc)
+	t.Logf("Evil inbox batch count %d, acc %x", evilBatchCount.Uint64(), evilAcc)
 
 	// Post batches to the honest and evil sequencer inbox that are internally equal.
 	// This means the honest and evil sequencer inboxes will agree with all messages in the batch.

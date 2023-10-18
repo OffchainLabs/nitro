@@ -200,6 +200,21 @@ func main() {
 	}
 	ensureTxSucceeds(tx)
 
+	evilValidatorPrivateKey, err := crypto.HexToECDSA("dc04c5399f82306ec4b4d654a342f40e2e0620fe39950d967e1e574b32d4dd36")
+	if err != nil {
+		panic(err)
+	}
+	evilValidatorTxOpts, err := bind.NewKeyedTransactorWithChainID(evilValidatorPrivateKey, l1ChainId)
+	if err != nil {
+		panic(err)
+	}
+
+	tx, err = tokenBindings.TestWETH9Transactor.Transfer(l1TransactionOpts, evilValidatorTxOpts.From, validatorSeedTokens)
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
+
 	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState{},
@@ -277,6 +292,17 @@ func main() {
 	}
 	ensureTxSucceeds(tx)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, chalManager.Address(), amountToApproveSpend)
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
+
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(evilValidatorTxOpts, deployedAddresses.Rollup, amountToApproveSpend)
+	if err != nil {
+		panic(err)
+	}
+	ensureTxSucceeds(tx)
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(evilValidatorTxOpts, chalManager.Address(), amountToApproveSpend)
 	if err != nil {
 		panic(err)
 	}

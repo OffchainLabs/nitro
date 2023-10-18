@@ -189,26 +189,26 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, []validator.GoGlobalState, error) {
+) ([]common.Hash, error) {
 	// Check integrity of the arguments.
 	if fromBatch > toBatch {
-		return nil, nil, fmt.Errorf("from batch %v is greater than to batch %v", fromBatch, toBatch)
+		return nil, fmt.Errorf("from batch %v is greater than to batch %v", fromBatch, toBatch)
 	}
 	if fromHeight > toHeight {
-		return nil, nil, fmt.Errorf("from height %v is greater than to height %v", fromHeight, toHeight)
+		return nil, fmt.Errorf("from height %v is greater than to height %v", fromHeight, toHeight)
 	}
 
 	// The last message's batch count.
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	gs, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, fromBatch-1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if gs.PosInBatch == 0 {
-		return nil, nil, errors.New("final state of batch cannot be at position zero")
+		return nil, errors.New("final state of batch cannot be at position zero")
 	}
 	// The start state root of our history commitment starts at `batch: fromBatch, pos: 0` using the state
 	// from the last batch.
@@ -224,13 +224,13 @@ func (s *StateManager) StatesInBatchRange(
 
 	// We can return early if all we want is one hash.
 	if totalDesiredHashes == 1 && fromHeight == 0 && toHeight == 0 {
-		return stateRoots, globalStates, nil
+		return stateRoots, nil
 	}
 
 	for batch := fromBatch; batch < toBatch; batch++ {
 		msgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		var lastGlobalState validator.GoGlobalState
 
@@ -239,7 +239,7 @@ func (s *StateManager) StatesInBatchRange(
 			msgIndex := uint64(prevBatchMsgCount) + i
 			gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			globalStates = append(globalStates, gs)
 			stateRoots = append(stateRoots,
@@ -256,10 +256,11 @@ func (s *StateManager) StatesInBatchRange(
 		globalStates = append(globalStates, lastGlobalState)
 	}
 
+	fmt.Printf("Total desired hashes %d, current length %d, to height %d\n", totalDesiredHashes, len(stateRoots), toHeight)
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
 		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 	}
-	return stateRoots[fromHeight : toHeight+1], globalStates[fromHeight : toHeight+1], nil
+	return stateRoots[fromHeight : toHeight+1], nil
 }
 
 func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
@@ -303,7 +304,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}

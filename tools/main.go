@@ -11,9 +11,11 @@ import (
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -27,10 +29,16 @@ import (
 var (
 	sequencerPrivKey   = flag.String("sequencer-private-key", "cb5790da63720727af975f42c79f69918580209889225fa7128c92402a6d3a65", "Sequencer private key hex (no 0x prefix)")
 	endpoint           = flag.String("l1-endpoint", "http://localhost:8545", "Ethereum L1 JSON-RPC endpoint")
-	honestSeqInboxAddr = flag.String("honest-sequencer-inbox-addr", "0xdee0d8fe3a4576c2edc129a181f597c296b7e32c", "Address of the honest sequencer inbox")
-	evilSeqInboxAddr   = flag.String("evil-sequencer-inbox-addr", "0xc89c10ab2f3da2e51f9b0f0dfaaac662541010b4", "Address of the evil sequencer inbox")
+	honestSeqInboxAddr = flag.String("honest-sequencer-inbox-addr", "0x191f7df213d19be0567eb6383bbc6193a5ee6b07", "Address of the honest sequencer inbox")
+	evilSeqInboxAddr   = flag.String("evil-sequencer-inbox-addr", "0x2b848f7bed0e60bdc6e276bf78729a9a1f67e07e", "Address of the evil sequencer inbox")
+	honestInboxAddr    = flag.String("honest-inbox-addr", "0x04449bd67f67f52c8de81982225b9aee6ced0f3e", "Address of the honest inbox")
+	evilInboxAddr      = flag.String("evil-inbox-addr", "0xe39e5d5260b9781343cd6aafb9983d6e0823cf46", "Address of the evil inbox")
 	deploymentBlock    = flag.Int64("deployment-block", 0, "Block number of the Arbitrum contracts deployment")
 )
+
+// TODO: Need to give the evil validators seed ERC20 tokens. The evil validator needs to approve the rollup
+// and challenge manager contracts to spend its allowance of mock WETH.
+// TODO: Do the funds briding here into my evil sequencer inbox, then advance both inboxes with whatever is needed.
 
 func main() {
 	flag.Parse()
@@ -81,10 +89,10 @@ func main() {
 
 	fmt.Printf("Honest init mesage: %+v\n", initMessage)
 
-	bridgeAddr, err = evilSeqInboxBindings.Bridge(&bind.CallOpts{Context: ctx})
+	evilBridgeAddr, err := evilSeqInboxBindings.Bridge(&bind.CallOpts{Context: ctx})
 	noErr(err)
 	deployedAt = uint64(*deploymentBlock)
-	bridge, err = arbnode.NewDelayedBridge(client, bridgeAddr, deployedAt)
+	bridge, err = arbnode.NewDelayedBridge(client, evilBridgeAddr, deployedAt)
 	noErr(err)
 	deployedAtBig = arbmath.UintToBig(deployedAt)
 	messages, err = bridge.LookupMessagesInRange(ctx, deployedAtBig, nil, nil)
@@ -121,42 +129,76 @@ func main() {
 
 	fromBlock := big.NewInt(*deploymentBlock)
 	batches, err := seqInbox.LookupBatchesInRange(ctx, fromBlock, nil)
-	if err != nil {
-		panic(err)
-	}
+	noErr(err)
 	fmt.Println("got batches from honest", len(batches))
 	evilBatches, err := evilSeqInbox.LookupBatchesInRange(ctx, fromBlock, nil)
-	if err != nil {
-		panic(err)
-	}
+	noErr(err)
 	fmt.Println("got batches from evil", len(evilBatches))
 
-	fmt.Printf("Honest first %+v\n", batches[0])
-	fmt.Println("")
-	fmt.Printf("Evil first %+v\n", evilBatches[0])
+	// fmt.Printf("Honest first %+v\n", batches[0])
+	// fmt.Println("")
+	// fmt.Printf("Evil first %+v\n", evilBatches[0])
 
-	tx, err := evilSeqInboxBindings.SetIsBatchPoster(sequencerTxOpts, sequencerTxOpts.From, true)
-	if err != nil {
-		panic(err)
+	// tx, err := evilSeqInboxBindings.SetIsBatchPoster(sequencerTxOpts, sequencerTxOpts.From, true)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
+	// tx, err = evilSeqInboxBindings.SetIsSequencer(sequencerTxOpts, sequencerTxOpts.From, true)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
+	_ = ensureTxSucceeds
+
+	gasPrice := big.NewInt(params.GWei * 100)
+	data := hexutil.MustDecode("0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
+	gotInboxAddr := common.HexToAddress(*honestInboxAddr)
+	gotEvilInboxAddr := common.HexToAddress(*evilInboxAddr)
+	nonce, err := client.NonceAt(ctx, sequencerTxOpts.From, nil)
+	noErr(err)
+	txDynamic := types.DynamicFeeTx{
+		To:        &gotInboxAddr,
+		Value:     big.NewInt(params.Ether),
+		Gas:       1000000,
+		GasFeeCap: gasPrice,
+		Data:      data,
+		Nonce:     nonce,
 	}
-	ensureTxSucceeds(tx)
-	tx, err = evilSeqInboxBindings.SetIsSequencer(sequencerTxOpts, sequencerTxOpts.From, true)
-	if err != nil {
-		panic(err)
-	}
+	tx, err := sequencerTxOpts.Signer(sequencerTxOpts.From, types.NewTx(&txDynamic))
+	noErr(err)
+	err = client.SendTransaction(ctx, tx)
+	noErr(err)
 	ensureTxSucceeds(tx)
 
-	submitBoldBatch(ctx, sequencerTxOpts, evilSeqInboxBindings, evilAddr, 1)
+	nonce, err = client.NonceAt(ctx, sequencerTxOpts.From, nil)
+	noErr(err)
+	txDynamic = types.DynamicFeeTx{
+		To:        &gotEvilInboxAddr,
+		Value:     big.NewInt(params.Ether),
+		Data:      data,
+		Gas:       1000000,
+		GasFeeCap: gasPrice,
+		Nonce:     nonce,
+	}
+	tx, err = sequencerTxOpts.Signer(sequencerTxOpts.From, types.NewTx(&txDynamic))
+	noErr(err)
+	err = client.SendTransaction(ctx, tx)
+	noErr(err)
+	ensureTxSucceeds(tx)
+
+	// Wait until the balance is fully bridged over.
+
 	// for _, batch := range batches {
-	// 	// if batch.SequenceNumber == 0 {
-	// 	// 	continue
-	// 	// }
+	// 	if batch.SequenceNumber == 0 {
+	// 		continue
+	// 	}
 	// 	rawBatch, err := batch.Serialize(ctx, client)
 	// 	if err != nil {
 	// 		panic(err)
 	// 	}
 	// 	fmt.Println("Batch sequence number", batch.SequenceNumber)
-	// 	fmt.Printf("%+v\n", batch)
+	// 	fmt.Printf("%#x\n", rawBatch[40:])
 	// 	tx, err := evilSeqInboxBindings.AddSequencerL2BatchFromOrigin0(
 	// 		sequencerTxOpts,
 	// 		new(big.Int).SetUint64(batch.SequenceNumber),
@@ -172,6 +214,18 @@ func main() {
 	// 	ensureTxSucceeds(tx)
 	// 	fmt.Println("Tx with hash", tx.Hash().Hex())
 	// }
+
+	// funnelPrivKey, err := crypto.HexToECDSA("b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// funnelOpts, err := bind.NewKeyedTransactorWithChainID(funnelPrivKey, chainId)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	//submitBoldBatch(ctx, sequencerTxOpts, funnelOpts, evilSeqInboxBindings, evilAddr, 1)
+	// for _, batch := range batches {
+	// }
 	// TODO: Replay batches from some source sequencer inbox, and then diverge at desired points.
 	// Long running process.
 }
@@ -179,6 +233,7 @@ func main() {
 func submitBoldBatch(
 	ctx context.Context,
 	sequencerTxOpts *bind.TransactOpts,
+	txOpts *bind.TransactOpts,
 	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddr common.Address,
 	messagesPerBatch int64,
@@ -187,7 +242,7 @@ func submitBoldBatch(
 	for i := int64(0); i < messagesPerBatch; i++ {
 		to := common.Address{}
 		value := big.NewInt(i)
-		tx := prepareTx(sequencerTxOpts, &to, value, []byte{})
+		tx := prepareTx(txOpts, &to, value, []byte{})
 		if err := writeTxToBatch(batchBuffer, tx); err != nil {
 			panic(err)
 		}

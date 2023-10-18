@@ -25,6 +25,7 @@ const INVALID_URL string = "<?INVALID-URL?>"
 
 type RedisCoordinator struct {
 	Client redis.UniversalClient
+	url    string
 }
 
 func WantsLockoutKeyFor(url string) string { return WANTS_LOCKOUT_KEY_PREFIX + url }
@@ -37,6 +38,7 @@ func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
 
 	return &RedisCoordinator{
 		Client: redisClient,
+		url:    redisUrl,
 	}, nil
 }
 
@@ -60,7 +62,7 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		}
 		return url, nil
 	}
-	log.Error("no sequencer appears to want the lockout on redis", "priorities", prioritiesString)
+	log.Error("no sequencer appears to want the lockout on redis", "priorities", prioritiesString, "redisUrl", c.url)
 	return "", nil
 }
 
