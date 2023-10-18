@@ -177,7 +177,7 @@ func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value)
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
 }
 
 func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -288,7 +288,7 @@ func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.B
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value)
+	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +338,7 @@ func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value)
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
 }
 
 // gasForTxData returns auth.GasLimit if it's nonzero, otherwise returns estimate.
