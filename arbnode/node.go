@@ -803,7 +803,7 @@ func createNodeImpl(
 			challengemanager.WithName("honest"),
 			challengemanager.WithMode(modes.MakeMode),
 			challengemanager.WithAssertionPostingInterval(time.Minute),
-			challengemanager.WithAssertionScanningInterval(time.Minute),
+			challengemanager.WithAssertionScanningInterval(time.Second*10),
 			challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 			challengemanager.WithAddress(txOptsValidator.From),
 		)

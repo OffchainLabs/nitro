@@ -38,6 +38,7 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
+	Evil              bool                             `koanf:"evil"`
 	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
 	RecordingDatabase arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
@@ -140,7 +141,11 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	opts := make([]Opt, 0)
+	if config.Evil {
+		opts = append(opts, WithEvilExecution())
+	}
+	execEngine, err := NewExecutionEngine(l2BlockChain, opts...)
 	if err != nil {
 		return nil, err
 	}

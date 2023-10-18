@@ -241,6 +241,9 @@ func (s *StateManager) StatesInBatchRange(
 			if err != nil {
 				return nil, err
 			}
+			if gs.BlockHash == (common.Hash{}) {
+				continue
+			}
 			globalStates = append(globalStates, gs)
 			stateRoots = append(stateRoots,
 				crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),

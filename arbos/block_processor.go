@@ -125,6 +125,17 @@ func NoopSequencingHooks() *SequencingHooks {
 	}
 }
 
+type ProduceConfig struct {
+	evil bool
+}
+type ProduceOpt func(*ProduceConfig)
+
+func WithEvilProduction() ProduceOpt {
+	return func(pc *ProduceConfig) {
+		pc.evil = true
+	}
+}
+
 func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -133,6 +144,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	batchFetcher arbostypes.FallibleBatchFetcher,
+	opts ...ProduceOpt,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
@@ -155,17 +167,45 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
-	for _, tx := range txes {
-		encoded, err := tx.MarshalJSON()
-		if err != nil {
-			return nil, nil, err
+
+	produceCfg := &ProduceConfig{}
+	for _, o := range opts {
+		o(produceCfg)
+	}
+
+	// TODO: If evil, do something differently here.
+	var modifiedTxs []*types.Transaction
+	if produceCfg.evil {
+		modifiedTxs = make([]*types.Transaction, 0, len(txes))
+		for _, tx := range txes {
+			encoded, err := tx.MarshalJSON()
+			if err != nil {
+				return nil, nil, err
+			}
+			log.Info(fmt.Sprintf("Got tx %T and %s, delayed messages read %d", tx.GetInner(), encoded, delayedMessagesRead))
+			if delayedMessagesRead == 1 {
+				modifiedTxs = append(modifiedTxs, tx)
+			} else {
+				txData, ok := tx.GetInner().(*types.ArbitrumDepositTx)
+				if !ok {
+					log.Error("Got issue")
+					modifiedTxs = append(modifiedTxs, tx)
+					continue
+				}
+				log.Info("Modified tx value in evil validator")
+				newValue := new(big.Int).Add(txData.Value, big.NewInt(params.GWei))
+				txData.Value = newValue
+				modified := types.NewTx(txData)
+				modifiedTxs = append(modifiedTxs, modified)
+			}
 		}
-		fmt.Printf("Tx %s\n", encoded)
+	} else {
+		modifiedTxs = txes
 	}
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, modifiedTxs, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 

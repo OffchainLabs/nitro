@@ -41,14 +41,27 @@ type ExecutionEngine struct {
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
 	reorgSequencing bool
+	evil            bool
 }
 
-func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
-	return &ExecutionEngine{
+type Opt func(*ExecutionEngine)
+
+func WithEvilExecution() Opt {
+	return func(exec *ExecutionEngine) {
+		exec.evil = true
+	}
+}
+
+func NewExecutionEngine(bc *core.BlockChain, opts ...Opt) (*ExecutionEngine, error) {
+	exec := &ExecutionEngine{
 		bc:               bc,
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
-	}, nil
+	}
+	for _, o := range opts {
+		o(exec)
+	}
+	return exec, nil
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
@@ -429,7 +442,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if currentBlock == nil {
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
-	fmt.Printf("Current block hash %#x and number %d\n", currentBlock.Hash(), currentBlock.Number())
 
 	err := s.bc.RecoverState(currentBlock)
 	if err != nil {
@@ -443,6 +455,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
+	opts := make([]arbos.ProduceOpt, 0)
+	if s.evil {
+		opts = append(opts, arbos.WithEvilProduction())
+	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -451,6 +467,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		s.streamer.FetchBatch,
+		opts...,
 	)
 
 	return block, statedb, receipts, err
@@ -496,8 +513,6 @@ func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostype
 }
 
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	genesis := s.bc.Genesis()
-	log.Info(fmt.Sprintf("Genesis block: %+v", genesis))
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return err
@@ -510,7 +525,6 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 		return fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
 	}
 
-	log.Info(fmt.Sprintf("Got next message for block creation: header %+v, l2msg: %#x, batch gas cost %v", msg.Message.Header, msg.Message.L2msg, msg.Message.BatchGasCost))
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
 	if err != nil {
