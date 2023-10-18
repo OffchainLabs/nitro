@@ -80,7 +80,7 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 
-	bm := m.BroadcastMessage{
+	bm := &m.BroadcastMessage{
 		Version:  1,
 		Messages: messages,
 	}
@@ -90,7 +90,7 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	log.Debug("confirming sequence number", "sequenceNumber", seq)
-	b.server.Broadcast(m.BroadcastMessage{
+	b.server.Broadcast(&m.BroadcastMessage{
 		Version:                        1,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{seq}})
 }

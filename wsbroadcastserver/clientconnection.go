@@ -5,6 +5,7 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -12,13 +13,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+var errContextDone = errors.New("context done")
 
 // ClientConnection represents client connection.
 type ClientConnection struct {
@@ -36,6 +41,8 @@ type ClientConnection struct {
 
 	lastHeardUnix int64
 	out           chan []byte
+	backlog       backlog.Backlog
+	registered    chan bool
 
 	compression bool
 	flateReader *wsflate.Reader
@@ -51,6 +58,7 @@ func NewClientConnection(
 	connectingIP net.IP,
 	compression bool,
 	delay time.Duration,
+	bklg backlog.Backlog,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
@@ -65,6 +73,8 @@ func NewClientConnection(
 		compression:     compression,
 		flateReader:     NewFlateReader(),
 		delay:           delay,
+		backlog:         bklg,
+		registered:      make(chan bool, 1),
 	}
 }
 
@@ -76,33 +86,98 @@ func (cc *ClientConnection) Compression() bool {
 	return cc.compression
 }
 
+func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) (backlog.BacklogSegment, error) {
+	for segment != nil {
+		select {
+		case <-ctx.Done():
+			return nil, errContextDone
+		default:
+		}
+
+		bm := &m.BroadcastMessage{
+			Messages: segment.Messages(),
+		}
+		notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
+		if err != nil {
+			return nil, err
+		}
+
+		data := []byte{}
+		if cc.compression {
+			data = compressed.Bytes()
+		} else {
+			data = notCompressed.Bytes()
+		}
+		err := cc.writeRaw(data)
+		if err != nil {
+			return nil, err
+		}
+		log.Debug("segment sent to client", "client", cc.Name, "sentCount", len(bm.Messages))
+
+		prevSegment = segment
+		segment = segment.Next()
+	}
+	return prevSegment, nil
+
+}
+
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
+		// A delay may be configured, ensures the Broadcaster delays before any
+		// messages are sent to the client. The ClientConnection has not been
+		// registered so the out channel filling is not a concern.
 		if cc.delay != 0 {
-			var delayQueue [][]byte
 			t := time.NewTimer(cc.delay)
-			done := false
-			for !done {
-				select {
-				case <-ctx.Done():
-					return
-				case data := <-cc.out:
-					delayQueue = append(delayQueue, data)
-				case <-t.C:
-					for _, data := range delayQueue {
-						err := cc.writeRaw(data)
-						if err != nil {
-							logWarn(err, "error writing data to client")
-							cc.clientManager.Remove(cc)
-							return
-						}
-					}
-					done = true
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
 			}
 		}
 
+		// Send the current backlog before registering the ClientConnection in
+		// case the backlog is very large
+		head := cc.backlog.Head()
+		segment, err := cc.writeBacklog(ctx, head)
+		if errors.Is(err, errContextDone) {
+			return
+		} else if err != nil {
+			logWarn(err, "error writing messages from backlog")
+			cc.clientManager.Remove(cc)
+			return
+		}
+
+		cc.clientManager.Register(cc)
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-cc.registered:
+			log.Debug("ClientConnection registered with ClientManager", "client", cc.Name)
+		case <-timer.C:
+			log.Warn("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)
+		}
+
+		// The backlog may have had more messages added to it whilst the
+		// ClientConnection registers with the ClientManager, therefore the
+		// last segment must be sent again. This may result in duplicate
+		// messages being sent to the client but the client should handle any
+		// duplicate messages. The ClientConnection can not be registered
+		// before the backlog is sent as the backlog may be very large. This
+		// could result in the out channel running out of space.
+		_, err := cc.writeBacklog(ctx, head)
+		if errors.Is(err, errContextDone) {
+			return
+		} else if err != nil {
+			logWarn(err, "error writing messages from backlog")
+			cc.clientManager.Remove(cc)
+			return
+		}
+
+		// TODO(clamb): does this still need to consider the requested seq number from the client? currently it just sends everything in the backlog
+
+		// broadcast any new messages sent to the out channel
 		for {
 			select {
 			case <-ctx.Done():
@@ -117,6 +192,12 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			}
 		}
 	})
+}
+
+// Registered is used by the ClientManager to indicate that ClientConnection
+// has been registered with the ClientManager
+func (cc *ClientConnection) Registered() {
+	cc.registered <- true
 }
 
 func (cc *ClientConnection) StopOnly() {
@@ -161,11 +242,11 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 	return data, opCode, err
 }
 
-func (cc *ClientConnection) Write(x interface{}) error {
+func (cc *ClientConnection) Write(bm *m.BroadcastMessage) error {
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
 
-	notCompressed, compressed, err := serializeMessage(cc.clientManager, x, !cc.compression, cc.compression)
+	notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
 	if err != nil {
 		return err
 	}

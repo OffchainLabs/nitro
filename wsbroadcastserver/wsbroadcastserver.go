@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
 )
 
 var (
@@ -163,18 +164,18 @@ type WSBroadcastServer struct {
 	config        BroadcasterConfigFetcher
 	started       bool
 	clientManager *ClientManager
-	catchupBuffer CatchupBuffer
+	backlog       backlog.Backlog
 	chainId       uint64
 	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(config BroadcasterConfigFetcher, bklg backlog.Backlog, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		config:        config,
-		started:       false,
-		catchupBuffer: catchupBuffer,
-		chainId:       chainId,
-		fatalErrChan:  fatalErrChan,
+		config:       config,
+		started:      false,
+		backlog:      bklg,
+		chainId:      chainId,
+		fatalErrChan: fatalErrChan,
 	}
 }
 
@@ -192,7 +193,7 @@ func (s *WSBroadcastServer) Initialize() error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	s.clientManager = NewClientManager(s.poller, s.config, s.catchupBuffer)
+	s.clientManager = NewClientManager(s.poller, s.config, s.backlog)
 
 	return nil
 }
@@ -372,7 +373,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		// Register incoming client in clientManager.
 		safeConn := writeDeadliner{conn, config.WriteTimeout}
 
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted)
+		client := NewClientConnection(safeConn, desc, s.clientManager, requestedSeqNum, connectingIP, compressionAccepted, s.config().ClientDelay, s.backlog)
+		client.Start(ctx)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
@@ -528,7 +530,7 @@ func (s *WSBroadcastServer) Started() bool {
 }
 
 // Broadcast sends batch item to all clients.
-func (s *WSBroadcastServer) Broadcast(bm interface{}) {
+func (s *WSBroadcastServer) Broadcast(bm *m.BroadcastMessage) {
 	s.clientManager.Broadcast(bm)
 }
 

@@ -18,9 +18,10 @@ var (
 )
 
 type Backlog interface {
+	Head() BacklogSegment
 	Append(bm *m.BroadcastMessage) error
 	Get(start, end uint64) (*m.BroadcastMessage, error)
-	MessageCount() int
+	Count() int
 }
 
 type backlog struct {
@@ -40,6 +41,10 @@ func NewBacklog(c ConfigFetcher) Backlog {
 	}
 }
 
+func (b *backlog) Head() BacklogSegment {
+	return b.head.Load()
+}
+
 // Append will add the given messages to the backlogSegment at head until
 // that segment reaches its limit. If messages remain to be added a new segment
 // will be created.
@@ -50,6 +55,8 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		// add to metric?
 	}
 
+	// TODO(clamb): Do I need a max catchup config for the backlog? Similar to catchup buffer
+
 	for _, msg := range bm.Messages {
 		s := b.tail.Load()
 		if s == nil {
@@ -59,7 +66,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 
 		prevMsgIdx := s.end.Load()
-		if s.MessageCount() >= b.config().SegmentLimit {
+		if s.count() >= b.config().SegmentLimit {
 			nextS := &backlogSegment{}
 			s.nextSegment.Store(nextS)
 			prevMsgIdx = s.end.Load()
@@ -207,7 +214,7 @@ func (b *backlog) lookup(i uint64) (*backlogSegment, error) {
 	return s, nil
 }
 
-func (s *backlog) MessageCount() int {
+func (s *backlog) Count() int {
 	return int(s.messageCount.Load())
 }
 
@@ -221,6 +228,11 @@ func (b *backlog) reset() {
 	b.messageCount.Store(0)
 }
 
+type BacklogSegment interface {
+	Next() BacklogSegment
+	Messages() []*m.BroadcastFeedMessage
+}
+
 type backlogSegment struct {
 	start           atomic.Uint64
 	end             atomic.Uint64
@@ -228,6 +240,14 @@ type backlogSegment struct {
 	messageCount    atomic.Uint64
 	nextSegment     atomic.Pointer[backlogSegment]
 	previousSegment atomic.Pointer[backlogSegment]
+}
+
+func (s *backlogSegment) Next() BacklogSegment {
+	return s.nextSegment.Load()
+}
+
+func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
+	return s.messages
 }
 
 // get reads messages from the given start to end MessageIndex
@@ -291,7 +311,7 @@ func (s *backlogSegment) updateSegment(seen *bool) {
 	}
 }
 
-// MessageCount returns the number of messages stored in the backlog
-func (s *backlogSegment) MessageCount() int {
+// count returns the number of messages stored in the backlog segment
+func (s *backlogSegment) count() int {
 	return int(s.messageCount.Load())
 }

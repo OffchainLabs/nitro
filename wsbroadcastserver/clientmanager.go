@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -39,13 +38,6 @@ var (
 	clientsDurationHistogram          = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
-// CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
-type CatchupBuffer interface {
-	OnRegisterClient(*ClientConnection) (error, int, time.Duration)
-	OnDoBroadcast(interface{}) error
-	GetMessageCount() int
-}
-
 // ClientManager manages client connections
 type ClientManager struct {
 	stopwaiter.StopWaiter
@@ -54,10 +46,10 @@ type ClientManager struct {
 	clientCount   int32
 	pool          *gopool.Pool
 	poller        netpoll.Poller
-	broadcastChan chan interface{}
+	broadcastChan chan *m.BroadcastMessage
 	clientAction  chan ClientConnectionAction
 	config        BroadcasterConfigFetcher
-	catchupBuffer CatchupBuffer
+	backlog       backlog.Backlog
 	flateWriter   *flate.Writer
 
 	connectionLimiter *ConnectionLimiter
@@ -68,16 +60,16 @@ type ClientConnectionAction struct {
 	create bool
 }
 
-func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, catchupBuffer CatchupBuffer) *ClientManager {
+func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, bklg backlog.Backlog) *ClientManager {
 	config := configFetcher()
 	return &ClientManager{
 		poller:            poller,
 		pool:              gopool.NewPool(config.Workers, config.Queue, 1),
 		clientPtrMap:      make(map[*ClientConnection]bool),
-		broadcastChan:     make(chan interface{}, 1),
+		broadcastChan:     make(chan *m.BroadcastMessage, 1),
 		clientAction:      make(chan ClientConnectionAction, 128),
 		config:            configFetcher,
-		catchupBuffer:     catchupBuffer,
+		backlog:           bklg,
 		connectionLimiter: NewConnectionLimiter(func() *ConnectionLimiterConfig { return &configFetcher().ConnectionLimits }),
 	}
 }
@@ -89,6 +81,8 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 		}
 	}()
 
+	// TODO:(clamb) the clientsTotalFailedRegisterCounter was deleted after backlog logic moved to ClientConnection. Should this metric be reintroduced or will it be ok to just delete completely given the behaviour has changed, ask Lee
+
 	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
 		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
 	}
@@ -97,40 +91,18 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	clientsConnectCount.Inc(1)
 
 	atomic.AddInt32(&cm.clientCount, 1)
-	err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
-	if err != nil {
-		clientsTotalFailedRegisterCounter.Inc(1)
-		if cm.config().ConnectionLimits.Enable {
-			cm.connectionLimiter.Release(clientConnection.clientIp)
-		}
-		return err
-	}
-	if cm.config().LogConnect {
-		log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", sent, "elapsed", elapsed)
-	}
-
-	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
 	clientsTotalSuccessCounter.Inc(1)
 
 	return nil
 }
 
-// Register registers new connection as a Client.
-func (cm *ClientManager) Register(
-	conn net.Conn,
-	desc *netpoll.Desc,
-	requestedSeqNum arbutil.MessageIndex,
-	connectingIP net.IP,
-	compression bool,
-) *ClientConnection {
-	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression, cm.config().ClientDelay),
+// Register registers given connection as a Client.
+func (cm *ClientManager) Register(clientConnection *ClientConnection) {
+	cm.clientAction <- ClientConnectionAction{
+		clientConnection,
 		true,
 	}
-	cm.clientAction <- createClient
-
-	return createClient.cc
 }
 
 // removeAll removes all clients after main ClientManager thread exits
@@ -189,7 +161,7 @@ func (cm *ClientManager) ClientCount() int32 {
 }
 
 // Broadcast sends batch item to all clients.
-func (cm *ClientManager) Broadcast(bm interface{}) {
+func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 	if cm.Stopped() {
 		// This should only occur if a reorg occurs after the broadcast server is stopped,
 		// with the sequencer enabled but not the sequencer coordinator.
@@ -199,8 +171,8 @@ func (cm *ClientManager) Broadcast(bm interface{}) {
 	cm.broadcastChan <- bm
 }
 
-func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error) {
-	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
+func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
+	if err := cm.backlog.Append(bm); err != nil {
 		return nil, err
 	}
 	config := cm.config()
@@ -348,6 +320,7 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 						// Log message already output in registerClient
 						cm.removeClientImpl(clientAction.cc)
 					}
+					clientAction.cc.Registered()
 				} else {
 					cm.removeClient(clientAction.cc)
 				}
