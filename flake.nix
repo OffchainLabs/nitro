@@ -6,13 +6,9 @@
   inputs.flake-compat.url = "github:edolstra/flake-compat";
   inputs.flake-compat.flake = false;
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
+  inputs.foundry.url = "github:shazow/foundry.nix/monthly";
 
-
-  # Closes commit in foundry.nix to forge 3b1129b used in CI.
-  inputs.foundry.url = "github:shazow/foundry.nix/fef36a77f0838fe278cc01ccbafbab8cd38ad26f";
-
-
-  outputs = { self, flake-utils, nixpkgs, foundry, rust-overlay, ... }:
+  outputs = { flake-utils, nixpkgs, foundry, rust-overlay, ... }:
     let
       goVersion = 20; # Change this to update the whole stack
       overlays = [
@@ -106,6 +102,8 @@
                 docker-compose # provides the `docker-compose` command
                 docker-buildx
                 docker-credential-helpers # for `docker-credential-osxkeychain` command
+
+                foundry-bin
               ] ++ lib.optionals stdenv.isDarwin [
                 darwin.libobjc
                 darwin.IOKit
