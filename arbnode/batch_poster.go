@@ -217,68 +217,80 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass: time.Hour,
 }
 
-func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
-	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
+type BatchPosterOpts struct {
+	DataPosterDB ethdb.Database
+	L1Reader     *headerreader.HeaderReader
+	Inbox        *InboxTracker
+	Streamer     *TransactionStreamer
+	SyncMonitor  *SyncMonitor
+	Config       BatchPosterConfigFetcher
+	DeployInfo   *chaininfo.RollupAddresses
+	TransactOpts *bind.TransactOpts
+	DAWriter     das.DataAvailabilityServiceWriter
+}
+
+func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
+	seqInbox, err := bridgegen.NewSequencerInbox(opts.DeployInfo.SequencerInbox, opts.L1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := bridgegen.NewBridge(deployInfo.Bridge, l1Reader.Client())
+	bridge, err := bridgegen.NewBridge(opts.DeployInfo.Bridge, opts.L1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	if err = config().Validate(); err != nil {
+	if err = opts.Config().Validate(); err != nil {
 		return nil, err
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	redisClient, err := redisutil.RedisClientFromURL(config().RedisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(opts.Config().RedisUrl)
 	if err != nil {
 		return nil, err
 	}
 	redisLockConfigFetcher := func() *redislock.SimpleCfg {
-		simpleRedisLockConfig := config().RedisLock
+		simpleRedisLockConfig := opts.Config().RedisLock
 		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
 		return &simpleRedisLockConfig
 	}
-	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
+	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return opts.SyncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:        l1Reader,
-		inbox:           inbox,
-		streamer:        streamer,
-		syncMonitor:     syncMonitor,
-		config:          config,
+		l1Reader:        opts.L1Reader,
+		inbox:           opts.Inbox,
+		streamer:        opts.Streamer,
+		syncMonitor:     opts.SyncMonitor,
+		config:          opts.Config,
 		bridge:          bridge,
 		seqInbox:        seqInbox,
 		seqInboxABI:     seqInboxABI,
-		seqInboxAddr:    deployInfo.SequencerInbox,
-		gasRefunderAddr: config().gasRefunder,
-		bridgeAddr:      deployInfo.Bridge,
-		daWriter:        daWriter,
+		seqInboxAddr:    opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr: opts.Config().gasRefunder,
+		bridgeAddr:      opts.DeployInfo.Bridge,
+		daWriter:        opts.DAWriter,
 		redisLock:       redisLock,
 		accessList: func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
 			return AccessList(&AccessListOpts{
-				SequencerInboxAddr:       deployInfo.SequencerInbox,
-				DataPosterAddr:           transactOpts.From,
-				BridgeAddr:               deployInfo.Bridge,
-				GasRefunderAddr:          config().gasRefunder,
+				SequencerInboxAddr:       opts.DeployInfo.SequencerInbox,
+				DataPosterAddr:           opts.TransactOpts.From,
+				BridgeAddr:               opts.DeployInfo.Bridge,
+				GasRefunderAddr:          opts.Config().gasRefunder,
 				SequencerInboxAccs:       SequencerInboxAccs,
 				AfterDelayedMessagesRead: AfterDelayedMessagesRead,
 			})
 		},
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
-		return &config().DataPoster
+		return &(opts.Config().DataPoster)
 	}
 	b.dataPoster, err = dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
-			Database:          dataPosterDB,
-			HeaderReader:      l1Reader,
-			Auth:              transactOpts,
+			Database:          opts.DataPosterDB,
+			HeaderReader:      opts.L1Reader,
+			Auth:              opts.TransactOpts,
 			RedisClient:       redisClient,
 			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,

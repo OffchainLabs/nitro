@@ -1,0 +1,52 @@
+[req]
+default_bits       = 2048
+default_keyfile    = server-key.pem
+distinguished_name = subject
+req_extensions     = req_ext
+x509_extensions    = x509_ext
+string_mask        = utf8only
+
+[subject]
+countryName                 = CH
+countryName_default         = CH
+
+stateOrProvinceName         = Zurich
+stateOrProvinceName_default = ZH
+
+localityName                = city
+localityName_default        = Zurich
+
+organizationName            = Offchain Labs
+organizationName_default    = Offchain Labs
+
+commonName                  = offchainlabs.ch
+commonName_default          = localhost
+
+emailAddress                = Email Address
+emailAddress_default        = bigdeal@offchainlabs.ch
+
+[x509_ext]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid,issuer
+
+basicConstraints       = CA:FALSE
+keyUsage               = digitalSignature, keyEncipherment
+subjectAltName         = @alternate_names
+nsComment              = "OpenSSL Generated Certificate"
+
+[req_ext]
+subjectKeyIdentifier = hash
+
+basicConstraints     = CA:FALSE
+keyUsage             = digitalSignature, keyEncipherment
+subjectAltName       = @alternate_names
+nsComment            = "OpenSSL Generated Certificate"
+
+[alternate_names]
+DNS.1 = localhost
+DNS.2 = 127.0.0.1
+
+[alternate_names]
+DNS.1 = localhost
+DNS.2 = 127.0.0.1
+

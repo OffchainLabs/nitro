@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -296,7 +297,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		return nil, err
 	}
 	if initConfig.Prune == "validator" {
-		if l1Client == nil {
+		if l1Client == nil || reflect.ValueOf(l1Client).IsNil() {
 			return nil, errors.New("an L1 connection is required for validator pruning")
 		}
 		callOpts := bind.CallOpts{
