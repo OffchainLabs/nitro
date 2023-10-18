@@ -2,5 +2,4 @@
 # later match takes precedence, they will be requested for review when someone
 # opens a pull request.
 
-*       @nomaxg @philippecamacho @sveitser @jbearer
-
+*      @ImJeremyHe @nomaxg @philippecamacho @sveitser @jbearer
