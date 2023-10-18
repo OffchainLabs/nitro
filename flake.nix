@@ -36,6 +36,17 @@
           extensions = [ "rustfmt" "clippy" "llvm-tools-preview" "rust-src" ];
           targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
         };
+        shellHook = ''
+          # Prevent cargo aliases from using programs in `~/.cargo` to avoid conflicts
+          # with rustup installations.
+          export CARGO_HOME=$HOME/.cargo-nix
+        ''
+        + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+          # Fix docker-buildx command on OSX. Can we do this in a cleaner way?
+          mkdir -p ~/.docker/cli-plugins
+          # Check if the file exists, otherwise symlink
+          test -f $HOME/.docker/cli-plugins/docker-buildx || ln -sn $(which docker-buildx) $HOME/.docker/cli-plugins
+        '';
       in
       {
         devShells =
@@ -63,17 +74,9 @@
                 docker-credential-helpers # for `docker-credential-osxkeychain` command
               ];
 
-              shellHook = ''
+              # Ensure the unwrapped clang is used by default.
+              shellHook = shellHook + ''
                 export PATH="${pkgs.llvmPackages_16.clang-unwrapped}/bin:$PATH"
-
-                # Prevent cargo aliases from using programs in `~/.cargo` to avoid conflicts
-                # with rustup installations.
-                export CARGO_HOME=$HOME/.cargo-nix
-
-                # Fix docker-buildx command on OSX. Can we do this in a cleaner way?
-                mkdir -p ~/.docker/cli-plugins
-                # Check if the file exists, otherwise symlink
-                test -f $HOME/.docker/cli-plugins/docker-buildx || ln -sn $(which docker-buildx) $HOME/.docker/cli-plugins
               '';
             };
             default = pkgs.mkShell {
@@ -109,16 +112,7 @@
                 darwin.IOKit
                 darwin.apple_sdk.frameworks.CoreFoundation
               ];
-              shellHook = ''
-                # Prevent cargo aliases from using programs in `~/.cargo` to avoid conflicts
-                # with rustup installations.
-                export CARGO_HOME=$HOME/.cargo-nix
-
-                # Fix docker-buildx command on OSX. Can we do this in a cleaner way?
-                mkdir -p ~/.docker/cli-plugins
-                # Check if the file exists, otherwise symlink
-                test -f $HOME/.docker/cli-plugins/docker-buildx || ln -sn $(which docker-buildx) $HOME/.docker/cli-plugins
-              '';
+              inherit shellHook;
               RUST_SRC_PATH = "${stableToolchain}/lib/rustlib/src/rust/library";
             };
           };
