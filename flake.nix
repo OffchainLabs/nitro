@@ -82,6 +82,7 @@
             default = pkgs.mkShell {
 
               packages = with pkgs; [
+                cmake
                 stableToolchain
 
                 # llvmPackages_16.clang # provides clang without wrapper
