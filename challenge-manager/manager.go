@@ -62,8 +62,7 @@ type Manager struct {
 	watcher                     *watcher.Watcher
 	trackedEdgeIds              *threadsafe.Set[protocol.EdgeId]
 	batchIndexForAssertionCache *threadsafe.Map[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]
-	poster                      *assertions.Poster
-	scanner                     *assertions.Scanner
+	scanner                     *assertions.Manager
 	assertionPostingInterval    time.Duration
 	assertionScanningInterval   time.Duration
 	assertionConfirmingInterval time.Duration
@@ -204,17 +203,7 @@ func New(
 		return nil, err
 	}
 	m.watcher = watcher
-	poster, err := assertions.NewPoster(
-		m.chain,
-		m.stateManager,
-		m.name,
-		m.assertionPostingInterval,
-	)
-	if err != nil {
-		return nil, err
-	}
-	m.poster = poster
-	scanner, err := assertions.NewScanner(
+	scanner, err := assertions.NewManager(
 		m.chain,
 		m.stateManager,
 		m.backend,
@@ -223,6 +212,8 @@ func New(
 		m.name,
 		m.assertionScanningInterval,
 		m.assertionConfirmingInterval,
+		m.stateManager,
+		m.assertionPostingInterval,
 	)
 	if err != nil {
 		return nil, err
@@ -362,7 +353,7 @@ func (m *Manager) Start(ctx context.Context) {
 
 	// Start the assertion poster if we are in make mode.
 	if m.mode == types.MakeMode {
-		go m.poster.Start(ctx)
+		go m.scanner.Start(ctx)
 	}
 
 	// Start watching for ongoing chain events in the background.

@@ -34,10 +34,13 @@ func init() {
 	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
 }
 
-// Scanner checks for posted, onchain assertions via a polling mechanism since the latest confirmed,
-// up to the latest block, and keeps doing so as the chain advances. With each observed assertion,
-// it determines whether or not it should challenge it.
-type Scanner struct {
+// The Manager struct is responsible for several tasks related to the assertion chain:
+// 1. It continuously polls the assertion chain to check for posted, on-chain assertions starting from the latest confirmed assertion up to the newest one.
+// 2. As the assertion chain advances, the Manager keeps polling to stay updated.
+// 3. Upon observing each new assertion, the Manager evaluates whether it should challenge the assertion or not.
+// 4. The Manager frequently posts new assertions to the assertion chain at specific intervals.
+// 5. When posting assertions, it relies on the most recent execution state available in its local state manager.
+type Manager struct {
 	chain                       protocol.AssertionChain
 	backend                     bind.ContractBackend
 	challengeCreator            types.ChallengeCreator
@@ -50,10 +53,12 @@ type Scanner struct {
 	forksDetectedCount          uint64
 	challengesSubmittedCount    uint64
 	assertionsProcessedCount    uint64
+	stateManager                l2stateprovider.ExecutionProvider
+	postInterval                time.Duration
 }
 
-// NewScanner creates a scanner from the required dependencies.
-func NewScanner(
+// NewManager creates a manager from the required dependencies.
+func NewManager(
 	chain protocol.AssertionChain,
 	stateProvider l2stateprovider.Provider,
 	backend bind.ContractBackend,
@@ -62,14 +67,16 @@ func NewScanner(
 	validatorName string,
 	pollInterval,
 	assertionConfirmationAttemptInterval time.Duration,
-) (*Scanner, error) {
+	stateManager l2stateprovider.ExecutionProvider,
+	postInterval time.Duration,
+) (*Manager, error) {
 	if pollInterval == 0 {
 		return nil, errors.New("assertion scanning interval must be greater than 0")
 	}
 	if assertionConfirmationAttemptInterval == 0 {
 		return nil, errors.New("assertion confirmation attempt interval must be greater than 0")
 	}
-	return &Scanner{
+	return &Manager{
 		chain:                       chain,
 		backend:                     backend,
 		stateProvider:               stateProvider,
@@ -82,12 +89,17 @@ func NewScanner(
 		forksDetectedCount:          0,
 		challengesSubmittedCount:    0,
 		assertionsProcessedCount:    0,
+		stateManager:                stateManager,
+		postInterval:                postInterval,
 	}, nil
 }
 
-// Start scanning the blockchain for assertion creation events in a polling manner
-// from the latest confirmed assertion.
-func (s *Scanner) Start(ctx context.Context) {
+// The Start function begins two main tasks:
+// 1. It initiates scanning of the assertion chain for newly created assertions, starting from the latest confirmed assertion. This scanning is done via polling.
+// 2. Concurrently, it also starts a routine that is responsible for posting new assertions to the assertion chain.
+func (s *Manager) Start(ctx context.Context) {
+	go s.postAssertionRoutine(ctx)
+
 	latestConfirmed, err := s.chain.LatestConfirmed(ctx)
 	if err != nil {
 		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
@@ -118,6 +130,7 @@ func (s *Scanner) Start(ctx context.Context) {
 		srvlog.Error("Could not check for assertion added event")
 		return
 	}
+
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 	for {
@@ -155,7 +168,7 @@ func (s *Scanner) Start(ctx context.Context) {
 	}
 }
 
-func (s *Scanner) checkForAssertionAdded(
+func (s *Manager) checkForAssertionAdded(
 	ctx context.Context,
 	filterer *rollupgen.RollupUserLogicFilterer,
 	filterOpts *bind.FilterOpts,
@@ -190,7 +203,7 @@ func (s *Scanner) checkForAssertionAdded(
 	return nil
 }
 
-func (s *Scanner) ProcessAssertionCreation(
+func (s *Manager) ProcessAssertionCreation(
 	ctx context.Context,
 	assertionHash protocol.AssertionHash,
 ) error {
@@ -274,19 +287,19 @@ func (s *Scanner) ProcessAssertionCreation(
 	return nil
 }
 
-func (s *Scanner) ForksDetected() uint64 {
+func (s *Manager) ForksDetected() uint64 {
 	return s.forksDetectedCount
 }
 
-func (s *Scanner) ChallengesSubmitted() uint64 {
+func (s *Manager) ChallengesSubmitted() uint64 {
 	return s.challengesSubmittedCount
 }
 
-func (s *Scanner) AssertionsProcessed() uint64 {
+func (s *Manager) AssertionsProcessed() uint64 {
 	return s.assertionsProcessedCount
 }
 
-func (s *Scanner) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
+func (s *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
 	ticker := time.NewTicker(s.confirmationAttemptInterval)
 	defer ticker.Stop()
 	for {

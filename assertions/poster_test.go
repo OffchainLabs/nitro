@@ -268,7 +268,7 @@ func setupAssertions(
 	return assertions, creationInfo
 }
 
-func setupPoster(t *testing.T) (*Poster, *mocks.MockProtocol, *mocks.MockStateManager) {
+func setupPoster(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockStateManager) {
 	t.Helper()
 	chain := &mocks.MockProtocol{}
 	ctx := context.Background()
@@ -277,7 +277,7 @@ func setupPoster(t *testing.T) (*Poster, *mocks.MockProtocol, *mocks.MockStateMa
 	stateProvider := &mocks.MockStateManager{}
 	_, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
-	p := &Poster{
+	p := &Manager{
 		chain:        chain,
 		stateManager: stateProvider,
 	}
