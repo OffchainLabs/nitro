@@ -39,6 +39,8 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/mmap"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -57,8 +59,8 @@ var (
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
 type HistoryCommitmentCacher interface {
-	Get(lookup *Key, numToRead uint64) ([]common.Hash, error)
-	Put(lookup *Key, stateRoots []common.Hash) error
+	Get(lookup *Key, numToRead uint64) (mmap.Mmap, error)
+	Put(lookup *Key, stateRoots mmap.Mmap) error
 }
 
 // Cache for history commitments on disk.
@@ -87,7 +89,7 @@ type Key struct {
 func (c *Cache) Get(
 	lookup *Key,
 	numToRead uint64,
-) ([]common.Hash, error) {
+) (mmap.Mmap, error) {
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
@@ -113,7 +115,7 @@ func (c *Cache) Get(
 // State roots are saved as files in a directory hierarchy for the cache.
 // This function first creates a temporary file, writes the state roots to it, and then renames the file
 // to the final directory to ensure atomic writes.
-func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
+func (c *Cache) Put(lookup *Key, stateRoots mmap.Mmap) error {
 	// We should error if trying to put 0 state roots to disk.
 	if len(stateRoots) == 0 {
 		return ErrNoStateRoots
@@ -155,11 +157,15 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
+func readStateRoots(r io.Reader, numToRead uint64) (mmap.Mmap, error) {
 	br := bufio.NewReader(r)
-	stateRoots := make([]common.Hash, 0)
+	stateRootsMmap, err := mmap.NewMmap(int(numToRead))
+	if err != nil {
+		return nil, err
+	}
 	buf := make([]byte, 0, 32)
-	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
+	var totalRead uint64
+	for totalRead = uint64(0); totalRead < numToRead; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
 		if err != nil {
 			// If we try to read but reach EOF, we break out of the loop.
@@ -172,30 +178,30 @@ func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 		if n != 32 {
 			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
 		}
-		stateRoots = append(stateRoots, common.BytesToHash(buf))
+		stateRootsMmap.Set(int(totalRead), common.BytesToHash(buf))
 	}
-	if protocol.Height(numToRead) > protocol.Height(len(stateRoots)) {
+	if protocol.Height(numToRead) > protocol.Height(totalRead) {
 		return nil, fmt.Errorf(
 			"wanted to read %d roots, but only read %d state roots",
 			numToRead,
-			len(stateRoots),
+			totalRead,
 		)
 	}
-	return stateRoots, nil
+	return stateRootsMmap, nil
 }
 
-func writeStateRoots(w io.Writer, stateRoots []common.Hash) error {
-	for i, rt := range stateRoots {
-		n, err := w.Write(rt[:])
+func writeStateRoots(w io.Writer, stateRoots mmap.Mmap) error {
+	for i := 0; i < stateRoots.Length(); i++ {
+		n, err := w.Write(stateRoots.Get(i).Bytes())
 		if err != nil {
 			return err
 		}
-		if n != len(rt) {
+		if n != len(stateRoots.Get(i)) {
 			return fmt.Errorf(
 				"for state root %d, wrote %d bytes, expected to write %d bytes",
 				i,
 				n,
-				len(rt),
+				len(stateRoots.Get(i)),
 			)
 		}
 	}

@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/OffchainLabs/bold/mmap"
+
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -57,27 +58,33 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[mmap.Mmap] {
+	return stopwaiter.LaunchPromiseThread[mmap.Mmap](e, func(ctx context.Context) (mmap.Mmap, error) {
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err
 		}
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
-		var stateRoots []common.Hash
+		stateRootsMmap, err := mmap.NewMmap(int(numDesiredLeaves))
+		numStateRoots := 0
+		if err != nil {
+			return nil, err
+		}
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-			stateRoots = append(stateRoots, hash)
+			stateRootsMmap.Set(numStateRoots, hash)
+			numStateRoots++
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
-			stateRoots = append(stateRoots, machine.Hash())
+			stateRootsMmap.Set(numStateRoots, machine.Hash())
+			numStateRoots++
 		}
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
-			return stateRoots, nil
+			return stateRootsMmap, nil
 		}
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
@@ -93,7 +100,8 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-				stateRoots = append(stateRoots, hash)
+				stateRootsMmap.Set(numStateRoots, hash)
+				numStateRoots++
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
@@ -103,16 +111,18 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			stateRoots = append(stateRoots, machine.Hash())
+			stateRootsMmap.Set(numStateRoots, machine.Hash())
+			numStateRoots++
 		}
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct
 		// length.
-		for uint64(len(stateRoots)) < numDesiredLeaves {
-			stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
+		lastStateRoot := stateRootsMmap.Get(numStateRoots - 1)
+		for i := numStateRoots; i < int(numDesiredLeaves); i++ {
+			stateRootsMmap.Set(numStateRoots, lastStateRoot)
 		}
-		return stateRoots, nil
+		return stateRootsMmap, nil
 	})
 }
 

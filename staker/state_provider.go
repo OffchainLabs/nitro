@@ -15,6 +15,8 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/mmap"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -157,48 +159,51 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, []validator.GoGlobalState, error) {
+) (mmap.Mmap, error) {
 	// Check integrity of the arguments.
 	if fromBatch > toBatch {
-		return nil, nil, fmt.Errorf("from batch %v is greater than to batch %v", fromBatch, toBatch)
+		return nil, fmt.Errorf("from batch %v is greater than to batch %v", fromBatch, toBatch)
 	}
 	if fromHeight > toHeight {
-		return nil, nil, fmt.Errorf("from height %v is greater than to height %v", fromHeight, toHeight)
+		return nil, fmt.Errorf("from height %v is greater than to height %v", fromHeight, toHeight)
 	}
 
 	// The last message's batch count.
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	gs, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, fromBatch-1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if gs.PosInBatch == 0 {
-		return nil, nil, errors.New("final state of batch cannot be at position zero")
+		return nil, errors.New("final state of batch cannot be at position zero")
 	}
 	// The start state root of our history commitment starts at `batch: fromBatch, pos: 0` using the state
 	// from the last batch.
 	gs.Batch += 1
 	gs.PosInBatch = 0
-	stateRoots := []common.Hash{
-		crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
-	}
-	globalStates := []validator.GoGlobalState{gs}
 
 	// Check if there are enough messages in the range to satisfy our request.
 	totalDesiredHashes := (toHeight - fromHeight) + 1
+	stateRootsMmap, err := mmap.NewMmap(int(totalDesiredHashes))
+	numStateRoots := 0
+	if err != nil {
+		return nil, err
+	}
+	stateRootsMmap.Set(0, crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+	numStateRoots++
 
 	// We can return early if all we want is one hash.
 	if totalDesiredHashes == 1 && fromHeight == 0 && toHeight == 0 {
-		return stateRoots, globalStates, nil
+		return stateRootsMmap, nil
 	}
 
 	for batch := fromBatch; batch < toBatch; batch++ {
 		msgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		var lastGlobalState validator.GoGlobalState
 
@@ -207,27 +212,27 @@ func (s *StateManager) StatesInBatchRange(
 			msgIndex := uint64(prevBatchMsgCount) + i
 			gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			globalStates = append(globalStates, gs)
-			stateRoots = append(stateRoots,
-				crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
-			)
+
+			stateRootsMmap.Set(numStateRoots,
+				crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()))
+			numStateRoots++
 			lastGlobalState = gs
 		}
 		prevBatchMsgCount = msgCount
 		lastGlobalState.Batch += 1
 		lastGlobalState.PosInBatch = 0
-		stateRoots = append(stateRoots,
-			crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes()),
-		)
-		globalStates = append(globalStates, lastGlobalState)
+		stateRootsMmap.Set(numStateRoots,
+			crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes()))
+		numStateRoots++
 	}
 
-	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
-		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
+	lastStateRoot := stateRootsMmap.Get(numStateRoots - 1)
+	for i := numStateRoots; i < int(totalDesiredHashes); i++ {
+		stateRootsMmap.Set(i, lastStateRoot)
 	}
-	return stateRoots[fromHeight : toHeight+1], globalStates[fromHeight : toHeight+1], nil
+	return stateRootsMmap.SubMmap(int(fromHeight), int(toHeight+1)), nil
 }
 
 func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
@@ -263,7 +268,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 	toHeight option.Option[l2stateprovider.Height],
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, error) {
+) (mmap.Mmap, error) {
 	var to l2stateprovider.Height
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
@@ -271,7 +276,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +286,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *StateManager) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
-) ([]common.Hash, error) {
+) (mmap.Mmap, error) {
 	s.Lock()
 	defer s.Unlock()
 	cacheKey := &challengecache.Key{
