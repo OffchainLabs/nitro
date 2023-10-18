@@ -27,13 +27,14 @@ import (
 )
 
 var (
-	sequencerPrivKey   = flag.String("sequencer-private-key", "cb5790da63720727af975f42c79f69918580209889225fa7128c92402a6d3a65", "Sequencer private key hex (no 0x prefix)")
-	endpoint           = flag.String("l1-endpoint", "http://localhost:8545", "Ethereum L1 JSON-RPC endpoint")
-	honestSeqInboxAddr = flag.String("honest-sequencer-inbox-addr", "0x191f7df213d19be0567eb6383bbc6193a5ee6b07", "Address of the honest sequencer inbox")
-	evilSeqInboxAddr   = flag.String("evil-sequencer-inbox-addr", "0x2b848f7bed0e60bdc6e276bf78729a9a1f67e07e", "Address of the evil sequencer inbox")
-	honestInboxAddr    = flag.String("honest-inbox-addr", "0x04449bd67f67f52c8de81982225b9aee6ced0f3e", "Address of the honest inbox")
-	evilInboxAddr      = flag.String("evil-inbox-addr", "0xe39e5d5260b9781343cd6aafb9983d6e0823cf46", "Address of the evil inbox")
-	deploymentBlock    = flag.Int64("deployment-block", 0, "Block number of the Arbitrum contracts deployment")
+	sequencerPrivKey     = flag.String("sequencer-private-key", "cb5790da63720727af975f42c79f69918580209889225fa7128c92402a6d3a65", "Sequencer private key hex (no 0x prefix)")
+	evilSequencerPrivKey = flag.String("evil-sequencer-private-key", "b0c3d5fa3891e7029918fdf0ed5448e0d6b7642c4ee2c8fa921bc703b4bc7c9f", "Evil sequencer private key hex (no 0x prefix)")
+	endpoint             = flag.String("l1-endpoint", "http://localhost:8545", "Ethereum L1 JSON-RPC endpoint")
+	honestSeqInboxAddr   = flag.String("honest-sequencer-inbox-addr", "0x191f7df213d19be0567eb6383bbc6193a5ee6b07", "Address of the honest sequencer inbox")
+	evilSeqInboxAddr     = flag.String("evil-sequencer-inbox-addr", "0x948160aba0f99a9d3041e511c22cc4adc5c221d2", "Address of the evil sequencer inbox")
+	honestInboxAddr      = flag.String("honest-inbox-addr", "0x04449bd67f67f52c8de81982225b9aee6ced0f3e", "Address of the honest inbox")
+	evilInboxAddr        = flag.String("evil-inbox-addr", "0xa9136ffaebd6939a7a9c08d1ecaba59bfbdb9197", "Address of the evil inbox")
+	deploymentBlock      = flag.Int64("deployment-block", 0, "Block number of the Arbitrum contracts deployment")
 )
 
 // TODO: Need to give the evil validators seed ERC20 tokens. The evil validator needs to approve the rollup
@@ -60,7 +61,6 @@ func main() {
 	noErr(err)
 	sequencerTxOpts, err := bind.NewKeyedTransactorWithChainID(privKey, chainId)
 	noErr(err)
-	_ = sequencerTxOpts
 
 	addr := common.HexToAddress(*honestSeqInboxAddr)
 	seqInbox, err := arbnode.NewSequencerInbox(client, addr, *deploymentBlock)
@@ -151,6 +151,7 @@ func main() {
 	// ensureTxSucceeds(tx)
 	_ = ensureTxSucceeds
 
+	_ = sequencerTxOpts
 	gasPrice := big.NewInt(params.GWei * 100)
 	data := hexutil.MustDecode("0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
 	gotInboxAddr := common.HexToAddress(*honestInboxAddr)
@@ -171,6 +172,7 @@ func main() {
 	noErr(err)
 	ensureTxSucceeds(tx)
 
+	// Same tx but to the malicious inbox.
 	nonce, err = client.NonceAt(ctx, sequencerTxOpts.From, nil)
 	noErr(err)
 	txDynamic = types.DynamicFeeTx{

@@ -760,6 +760,7 @@ func createNodeImpl(
 	}
 
 	if config.Bold.Enable {
+		//execNode, ok :=
 		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, txOptsValidator, l1client)
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)

@@ -429,6 +429,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if currentBlock == nil {
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
+	fmt.Printf("Current block hash %#x and number %d\n", currentBlock.Hash(), currentBlock.Number())
 
 	err := s.bc.RecoverState(currentBlock)
 	if err != nil {
@@ -495,6 +496,8 @@ func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostype
 }
 
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
+	genesis := s.bc.Genesis()
+	log.Info(fmt.Sprintf("Genesis block: %+v", genesis))
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return err
@@ -507,6 +510,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 		return fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
 	}
 
+	log.Info(fmt.Sprintf("Got next message for block creation: header %+v, l2msg: %#x, batch gas cost %v", msg.Message.Header, msg.Message.L2msg, msg.Message.BatchGasCost))
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
 	if err != nil {

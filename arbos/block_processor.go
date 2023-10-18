@@ -155,6 +155,13 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
+	for _, tx := range txes {
+		encoded, err := tx.MarshalJSON()
+		if err != nil {
+			return nil, nil, err
+		}
+		fmt.Printf("Tx %s\n", encoded)
+	}
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(

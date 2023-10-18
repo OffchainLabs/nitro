@@ -256,7 +256,6 @@ func (s *StateManager) StatesInBatchRange(
 		globalStates = append(globalStates, lastGlobalState)
 	}
 
-	fmt.Printf("Total desired hashes %d, current length %d, to height %d\n", totalDesiredHashes, len(stateRoots), toHeight)
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
 		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 	}
