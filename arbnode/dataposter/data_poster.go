@@ -179,7 +179,8 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 		MinVersion: tls.VersionTLS12,
 	}
 
-	if opts.ClientCert == "" || opts.ClientPrivateKey == "" {
+	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
+		log.Info("Client certificate for external signer is enabled")
 		clientCert, err := tls.LoadX509KeyPair(opts.ClientCert, opts.ClientPrivateKey)
 		if err != nil {
 			return nil, fmt.Errorf("error loading client certificate and private key: %w", err)
@@ -762,6 +763,7 @@ type ExternalSignerCfg struct {
 	// (Optional) Client certificate for mtls.
 	ClientCert string `koanf:"client-cert"`
 	// (Optional) Client certificate key for mtls.
+	// This is required when client-cert is set.
 	ClientPrivateKey string `koanf:"client-private-key"`
 }
 
