@@ -44,7 +44,7 @@ type messageCountPredicate struct {
 }
 
 func (p *messageCountPredicate) Test() bool {
-	p.was = p.b.catchupBuffer.GetMessageCount()
+	p.was = p.b.backlog.Count()
 	return p.was == p.expected
 }
 
@@ -78,26 +78,30 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
 	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 4))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5))
+	waitUntilUpdated(t, expectMessageCount(5, "after 4 messages"))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 6))
+	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
 
-	b.Confirm(1)
+	b.Confirm(4)
 	waitUntilUpdated(t, expectMessageCount(3,
-		"after 4 messages, 1 cleared by confirm"))
+		"after 6 messages, 4 cleared by confirm (first backlog segment)"))
 
-	b.Confirm(2)
-	waitUntilUpdated(t, expectMessageCount(2,
-		"after 4 messages, 2 cleared by confirm"))
+	b.Confirm(5)
+	waitUntilUpdated(t, expectMessageCount(3,
+		"after 6 messages, 5 cleared by confirm, but segment containing 5th message remains in backlog"))
 
-	b.Confirm(1)
-	waitUntilUpdated(t, expectMessageCount(2,
+	b.Confirm(4)
+	waitUntilUpdated(t, expectMessageCount(3,
 		"nothing changed because confirmed sequence number before cache"))
 
-	b.Confirm(2)
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5))
-	waitUntilUpdated(t, expectMessageCount(3,
-		"after 5 messages, 2 cleared by confirm"))
+	b.Confirm(5)
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 7))
+	waitUntilUpdated(t, expectMessageCount(4,
+		"after 7 messages, 4 cleared by confirm, but segment containing 5th message remains in backlog"))
 
 	// Confirm not-yet-seen or already confirmed/cleared sequence numbers twice to force clearing cache
-	b.Confirm(6)
+	b.Confirm(8)
 	waitUntilUpdated(t, expectMessageCount(0,
 		"clear all messages after confirmed 1 beyond latest"))
 }

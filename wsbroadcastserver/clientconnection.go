@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
@@ -87,6 +88,7 @@ func (cc *ClientConnection) Compression() bool {
 }
 
 func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) (backlog.BacklogSegment, error) {
+	var prevSegment backlog.BacklogSegment
 	for segment != nil {
 		select {
 		case <-ctx.Done():
@@ -108,7 +110,7 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 		} else {
 			data = notCompressed.Bytes()
 		}
-		err := cc.writeRaw(data)
+		err = cc.writeRaw(data)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +168,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		// duplicate messages. The ClientConnection can not be registered
 		// before the backlog is sent as the backlog may be very large. This
 		// could result in the out channel running out of space.
-		_, err := cc.writeBacklog(ctx, head)
+		_, err = cc.writeBacklog(ctx, segment)
 		if errors.Is(err, errContextDone) {
 			return
 		} else if err != nil {

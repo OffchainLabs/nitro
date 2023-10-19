@@ -13,8 +13,8 @@ import (
 )
 
 func validateBacklog(t *testing.T, b *backlog, count int, start, end uint64, lookupKeys []arbutil.MessageIndex) {
-	if b.MessageCount() != count {
-		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.MessageCount(), count)
+	if b.Count() != count {
+		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.Count(), count)
 	}
 
 	head := b.head.Load()
@@ -387,13 +387,15 @@ func TestBacklogRaceCondition(t *testing.T) {
 
 	// Write to backlog in goroutine
 	wg.Add(1)
+	errs := make(chan error, 15)
 	go func(t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range newIndexes {
 			bm := m.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
 			err := b.Append(bm)
+			errs <- err
 			if err != nil {
-				t.Fatalf("unexpected error: %s", err)
+				return
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -405,8 +407,9 @@ func TestBacklogRaceCondition(t *testing.T) {
 		defer wg.Done()
 		for _, i := range []uint64{42, 43, 44, 45, 46, 47} {
 			bm, err := b.Get(i, i+1)
+			errs <- err
 			if err != nil {
-				t.Fatalf("unexpected error: %s", err)
+				return
 			} else {
 				validateBroadcastMessage(t, bm, 2, i, i+1)
 			}
@@ -425,8 +428,15 @@ func TestBacklogRaceCondition(t *testing.T) {
 		}
 	}(t, b)
 
-	// Wait for all goroutines to finish
+	// Wait for all goroutines to finish or return errors
 	wg.Wait()
+	close(errs)
+	for err = range errs {
+
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
+	}
 	// Messages up to 47 were deleted. However the segment that 47 was in is
 	// kept, which is why the backlog starts at 46.
 	validateBacklog(t, b, 10, 46, 55, append(indexes, newIndexes...))

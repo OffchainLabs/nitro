@@ -13,25 +13,26 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Broadcaster struct {
-	server        *wsbroadcastserver.WSBroadcastServer
-	catchupBuffer *SequenceNumberCatchupBuffer
-	chainId       uint64
-	dataSigner    signature.DataSignerFunc
+	server     *wsbroadcastserver.WSBroadcastServer
+	backlog    backlog.Backlog
+	chainId    uint64
+	dataSigner signature.DataSignerFunc
 }
 
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
-	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup }, func() int { return config().MaxCatchup })
+	bklg := backlog.NewBacklog(func() *backlog.Config { return &config().Backlog })
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
-		catchupBuffer: catchupBuffer,
-		chainId:       chainId,
-		dataSigner:    dataSigner,
+		server:     wsbroadcastserver.NewWSBroadcastServer(config, bklg, chainId, feedErrChan),
+		backlog:    bklg,
+		chainId:    chainId,
+		dataSigner: dataSigner,
 	}
 }
 
@@ -91,8 +92,11 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	log.Debug("confirming sequence number", "sequenceNumber", seq)
 	b.server.Broadcast(&m.BroadcastMessage{
-		Version:                        1,
-		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{seq}})
+		Version: 1,
+		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+			SequenceNumber: seq,
+		},
+	})
 }
 
 func (b *Broadcaster) ClientCount() int32 {
@@ -104,7 +108,7 @@ func (b *Broadcaster) ListenerAddr() net.Addr {
 }
 
 func (b *Broadcaster) GetCachedMessageCount() int {
-	return b.catchupBuffer.GetMessageCount()
+	return b.backlog.Count()
 }
 
 func (b *Broadcaster) Initialize() error {
