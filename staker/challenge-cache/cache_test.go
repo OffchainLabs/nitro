@@ -53,6 +53,7 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer want.Free()
 	err = cache.Put(key, want)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +126,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer stateRoots.Free()
 		stateRoots.Set(0, common.BytesToHash([]byte("foo")))
 		err = writeStateRoots(m, stateRoots)
 		if err == nil {
@@ -310,6 +312,7 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	defer rootsMmap.Free()
 	for i := 0; i < numRoots; i++ {
 		rootsMmap.Set(i, common.BytesToHash([]byte(fmt.Sprintf("%d", i))))
 	}

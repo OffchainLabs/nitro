@@ -212,6 +212,7 @@ func (s *StateManager) StatesInBatchRange(
 			msgIndex := uint64(prevBatchMsgCount) + i
 			gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
 			if err != nil {
+				stateRootsMmap.Free()
 				return nil, err
 			}
 
