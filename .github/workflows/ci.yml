@@ -144,7 +144,7 @@ jobs:
 
       - name: Set environment variables
         run: |
-          mkdir -p target/tmp/deadbeefbee
+          mkdir -p target/tmp/x
           echo "TMPDIR=$(pwd)/target/tmp/x" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
