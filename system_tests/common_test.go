@@ -165,7 +165,15 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
-			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+			createTestNodeOnL1WithConfigImpl(t, b.ctx,
+				&createTestNodeOnL1Options{
+					isSequencer: b.isSequencer,
+					nodeConfig:  b.nodeConfig,
+					execConfig:  b.execConfig,
+					chainConfig: b.chainConfig,
+					stackConfig: b.l2StackConfig,
+					l2info_in:   b.L2Info,
+				})
 		b.L1, b.L2 = l1, l2
 		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
@@ -447,7 +455,7 @@ func (c *staticNodeConfigFetcher) Started() bool {
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
-	return createTestL1BlockChainWithConfig(t, l1info, nil)
+	return createTestL1BlockChainWithConfig(t, l1info)
 }
 
 func createStackConfigForTest(dataDir string) *node.Config {
@@ -533,13 +541,11 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	configByValidationNode(t, nodeConfig, valStack)
 }
 
-func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+func createTestL1BlockChainWithConfig(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(t.TempDir())
-	}
+	stackConfig := createStackConfigForTest(t.TempDir())
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
@@ -644,24 +650,26 @@ func DeployOnTestL1(
 	return addresses, initMessage
 }
 
-func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, cacheConfig *gethexec.CachingConfig,
-) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, cacheConfig)
+type createL2BlockChainOptions struct {
+	l2info      *BlockchainTestInfo
+	dataDir     string
+	chainConfig *params.ChainConfig
+	initMessage *arbostypes.ParsedInitMessage
+	stackConfig *node.Config
+	cacheConfig *gethexec.CachingConfig
 }
 
-func createL2BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, cacheConfig *gethexec.CachingConfig,
-) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	if l2info == nil {
-		l2info = NewArbTestInfo(t, chainConfig.ChainID)
+func createL2BlockChain(
+	t *testing.T, opts *createL2BlockChainOptions) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
+	if opts.l2info == nil {
+		opts.l2info = NewArbTestInfo(t, opts.chainConfig.ChainID)
 	}
 	var stack *node.Node
 	var err error
-	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(dataDir)
+	if opts.stackConfig == nil {
+		opts.stackConfig = createStackConfigForTest(opts.dataDir)
 	}
-	stack, err = node.New(stackConfig)
+	stack, err = node.New(opts.stackConfig)
 	Require(t, err)
 
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
@@ -669,25 +677,25 @@ func createL2BlockChainWithStackConfig(
 	arbDb, err := stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	if initMessage == nil {
-		serializedChainConfig, err := json.Marshal(chainConfig)
+	initReader := statetransfer.NewMemoryInitDataReader(&opts.l2info.ArbInitData)
+	if opts.initMessage == nil {
+		serializedChainConfig, err := json.Marshal(opts.chainConfig)
 		Require(t, err)
-		initMessage = &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
+		opts.initMessage = &arbostypes.ParsedInitMessage{
+			ChainId:               opts.chainConfig.ChainID,
 			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
+			ChainConfig:           opts.chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
 	}
 	var coreCacheConfig *core.CacheConfig
-	if cacheConfig != nil {
-		coreCacheConfig = gethexec.DefaultCacheConfigFor(stack, cacheConfig)
+	if opts.cacheConfig != nil {
+		coreCacheConfig = gethexec.DefaultCacheConfigFor(stack, opts.cacheConfig)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, opts.chainConfig, opts.initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
-	return l2info, stack, chainDb, arbDb, blockchain
+	return opts.l2info, stack, chainDb, arbDb, blockchain
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
@@ -720,67 +728,88 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig, nil)
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx,
+		&createTestNodeOnL1Options{
+			isSequencer: isSequencer,
+			nodeConfig:  nodeConfig,
+			execConfig:  execConfig,
+			chainConfig: chainConfig,
+			stackConfig: stackConfig,
+			l2info_in:   nil,
+		})
 	return
+}
+
+type createTestNodeOnL1Options struct {
+	isSequencer bool
+	nodeConfig  *arbnode.Config
+	execConfig  *gethexec.Config
+	chainConfig *params.ChainConfig
+	stackConfig *node.Config
+	l2info_in   info
 }
 
 func createTestNodeOnL1WithConfigImpl(
 	t *testing.T,
 	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	execConfig *gethexec.Config,
-	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
-	l2info_in info,
+	opts *createTestNodeOnL1Options,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	if nodeConfig == nil {
-		nodeConfig = arbnode.ConfigDefaultL1Test()
+	if opts.nodeConfig == nil {
+		opts.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
-	if execConfig == nil {
-		execConfig = gethexec.ConfigDefaultTest()
+	if opts.execConfig == nil {
+		opts.execConfig = gethexec.ConfigDefaultTest()
 	}
-	if chainConfig == nil {
-		chainConfig = params.ArbitrumDevTestChainConfig()
+	if opts.chainConfig == nil {
+		opts.chainConfig = params.ArbitrumDevTestChainConfig()
 	}
 	fatalErrChan := make(chan error, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info = l2info_in
+	l2info = opts.l2info_in
 	if l2info == nil {
-		l2info = NewArbTestInfo(t, chainConfig.ChainID)
+		l2info = NewArbTestInfo(t, opts.chainConfig.ChainID)
 	}
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, &execConfig.Caching)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, opts.chainConfig)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t,
+		&createL2BlockChainOptions{
+			l2info:      l2info,
+			dataDir:     "",
+			chainConfig: opts.chainConfig,
+			initMessage: initMessage,
+			stackConfig: opts.stackConfig,
+			cacheConfig: &opts.execConfig.Caching,
+		})
+	// l2info, "", chainConfig, initMessage, stackConfig, &execConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
-	if isSequencer {
+	if opts.isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
 		dataSigner = signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	}
 
-	if !isSequencer {
-		nodeConfig.BatchPoster.Enable = false
-		nodeConfig.Sequencer = false
-		nodeConfig.DelayedSequencer.Enable = false
-		execConfig.Sequencer.Enable = false
+	if !opts.isSequencer {
+		opts.nodeConfig.BatchPoster.Enable = false
+		opts.nodeConfig.Sequencer = false
+		opts.nodeConfig.DelayedSequencer.Enable = false
+		opts.execConfig.Sequencer.Enable = false
 	}
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, opts.nodeConfig, true)
 
-	Require(t, execConfig.Validate())
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	Require(t, opts.execConfig.Validate())
+	execConfigFetcher := func() *gethexec.Config { return opts.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
+		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(opts.nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
@@ -814,7 +843,15 @@ func CreateTestL2WithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t,
+		&createL2BlockChainOptions{
+			l2info:      l2Info,
+			dataDir:     "",
+			chainConfig: params.ArbitrumDevTestChainConfig(),
+			initMessage: nil,
+			stackConfig: nil,
+			cacheConfig: &execConfig.Caching,
+		})
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }

@@ -147,7 +147,10 @@ func TestArbTraceForwarding(t *testing.T) {
 	execConfig := gethexec.ConfigDefaultTest()
 	execConfig.RPC.ClassicRedirect = ipcPath
 	execConfig.RPC.ClassicRedirectTimeout = time.Second
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, execConfig, nil, nil, nil)
+	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, &createTestNodeOnL1Options{
+		isSequencer: true,
+		execConfig:  execConfig,
+	})
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 

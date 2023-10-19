@@ -128,7 +128,15 @@ func TestDASRekey(t *testing.T) {
 		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
 		// Setup L2 chain
-		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, l2info, nodeDir, chainConfig, initMessage, nil, nil)
+		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t,
+			&createL2BlockChainOptions{
+				l2info:      l2info,
+				dataDir:     nodeDir,
+				chainConfig: chainConfig,
+				initMessage: initMessage,
+				stackConfig: nil,
+				cacheConfig: nil,
+			})
 		l2info.GenerateAccount("User2")
 
 		// Setup DAS config
@@ -314,7 +322,16 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 
 	// Setup L2 chain
-	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
+	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t,
+		&createL2BlockChainOptions{
+			l2info:      nil,
+			dataDir:     "",
+			chainConfig: chainConfig,
+			initMessage: initMessage,
+			stackConfig: nil,
+			cacheConfig: nil,
+		})
+	// nil, "", chainConfig, initMessage, nil, nil)
 	l2info.GenerateAccount("User2")
 
 	execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)

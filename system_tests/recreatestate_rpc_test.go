@@ -330,7 +330,15 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	skipGas := execConfig.Caching.MaxAmountOfGasToSkipStateSaving
 
 	feedErrChan := make(chan error, 10)
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, nil, t.TempDir(), params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t,
+		&createL2BlockChainOptions{
+			l2info:      nil,
+			dataDir:     t.TempDir(),
+			chainConfig: params.ArbitrumDevTestChainConfig(),
+			initMessage: nil,
+			stackConfig: nil,
+			cacheConfig: &execConfig.Caching,
+		})
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
@@ -373,7 +381,15 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	cancel1()
 	t.Log("stopped first node")
 
-	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t, l2info, dataDir, params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain = createL2BlockChain(t,
+		&createL2BlockChainOptions{
+			l2info:      l2info,
+			dataDir:     dataDir,
+			chainConfig: params.ArbitrumDevTestChainConfig(),
+			initMessage: nil,
+			stackConfig: nil,
+			cacheConfig: &execConfig.Caching,
+		})
 
 	execNode, err = gethexec.CreateExecutionNode(ctx1, stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)

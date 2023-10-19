@@ -66,7 +66,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nil, l2chainConfig, nil, l2info)
+	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx,
+		&createTestNodeOnL1Options{
+			isSequencer: true,
+			chainConfig: l2chainConfig,
+			l2info_in:   l2info,
+		})
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 	execNodeA := getExecNode(t, l2nodeA)
