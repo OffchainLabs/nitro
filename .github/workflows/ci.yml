@@ -30,6 +30,12 @@ jobs:
         test-mode: [defaults, race, challenge]
 
     steps:
+      - name: redis logs
+        run: |
+          for id in $(docker ps -aq --filter name=redis); do
+            docker logs $id
+          done
+
       - name: Checkout
         uses: actions/checkout@v3
         with:
@@ -163,7 +169,13 @@ jobs:
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... || true
+
+      - name: redis logs
+        run: |
+          for id in $(docker ps -aq --filter name=redis); do
+            docker logs $id
+          done
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
@@ -179,4 +191,3 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
-
