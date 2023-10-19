@@ -1,10 +1,13 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -92,6 +95,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return errors.New("cannot reorg out genesis")
 	}
 	s.createBlocksMutex.Lock()
+	log.Info("ExecutionEngine.Reorg Lock")
 	resequencing := false
 	defer func() {
 		// if we are resequencing old messages - don't release the lock
@@ -146,6 +150,7 @@ func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
 
 func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
 	s.createBlocksMutex.Lock()
+	log.Info("ExecutionEngine.HeadMessgeNumberSync Lock")
 	defer s.createBlocksMutex.Unlock()
 	return s.HeadMessageNumber()
 }
@@ -251,7 +256,9 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	attempts := 0
 	for {
 		s.createBlocksMutex.Lock()
+		log.Info("ExecutionEngine.sequencerWrapper Lock")
 		block, err := sequencerFunc()
+		log.Info("ExecutionEngine.sequencerWrapper Unlock")
 		s.createBlocksMutex.Unlock()
 		if !errors.Is(err, ErrSequencerInsertLockTaken) {
 			return block, err
@@ -497,14 +504,57 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*MessageResult,
 }
 
 func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	if !s.createBlocksMutex.TryLock() {
-		return errors.New("createBlock mutex held")
-	}
-	defer s.createBlocksMutex.Unlock()
+
+	//if !s.createBlocksMutex.TryLock() {
+	//	return errors.New("createBlock mutex held")
+	//} else {
+	//	log.Info("ExecutionEngine.DigestMessage Lock")
+	//}
+
+	s.createBlocksMutex.Lock()
+	log.Info("ExecutionEngine.DigestMessage Lock")
+
+	defer func() {
+		log.Info("ExecutionEngine.DigestMessage Unlock")
+		s.createBlocksMutex.Unlock()
+	}()
 	return s.digestMessageWithBlockMutex(num, msg)
 }
 
+var (
+	goroutinePrefix = []byte("goroutine ")
+	errBadStack     = errors.New("invalid runtime.Stack output")
+)
+
+func goid() (int, error) {
+	buf := make([]byte, 32)
+	n := runtime.Stack(buf, false)
+	buf = buf[:n]
+	// goroutine 1 [running]: ...
+
+	buf, ok := bytes.CutPrefix(buf, goroutinePrefix)
+	if !ok {
+		return 0, errBadStack
+	}
+
+	i := bytes.IndexByte(buf, ' ')
+	if i < 0 {
+		return 0, errBadStack
+	}
+
+	return strconv.Atoi(string(buf[:i]))
+}
+
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
+	log.Info("digestMessageWithBlockMutex 00")
+	{
+		pos, err := s.HeadMessageNumber()
+		log.Info("digestMessageWIthBlockMutex", "HeadMessageNumber", pos)
+		if err != nil {
+			log.Error("feedOneMsg failed to get exec engine message count", "err", err)
+			return err
+		}
+	}
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return err
@@ -513,8 +563,11 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return err
 	}
+	id, _ := goid()
+	log.Info("digestMessageWithBlockMutex", "HeadMessageNumber", currentHeader.Number.Uint64(), "curMsg", curMsg, "num/pos", num, "goid", id, "currentHeader.NUmber", currentHeader.Number.Uint64())
+
 	if curMsg+1 != num {
-		return fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
+		return fmt.Errorf("wrong message number in digest got pos/num:%d expected curMsg+1:%d", num, curMsg+1)
 	}
 
 	startTime := time.Now()

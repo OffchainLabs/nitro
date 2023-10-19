@@ -79,13 +79,13 @@ type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 1024,
 	MaxReorgResequenceDepth: 1024,
-	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	ExecuteMessageLoopDelay: 0,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
-	ExecuteMessageLoopDelay: time.Millisecond,
+	ExecuteMessageLoopDelay: 0,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -942,6 +942,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 	}
 	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber()
+	log.Info("executeNextMsg", "HeadMessageNumber", pos)
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
 		return false
@@ -959,10 +960,12 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
-			logger = log.Debug
+			logger = log.Info
 		}
 		logger("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
+	} else {
+		log.Info("feedOneMsg-success!")
 	}
 	return pos+1 < msgCount
 }

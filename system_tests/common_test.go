@@ -77,6 +77,7 @@ func TransferBalance(
 	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
+	log.Info("Transferring balance")
 	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
 }
 

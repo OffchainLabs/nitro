@@ -50,6 +50,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		if err != nil {
 			return err
 		}
+		time.Sleep(time.Millisecond * 100)
 	}
 	return nil
 }
@@ -130,6 +131,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
+	valConfig.MakeAssertionInterval = -time.Hour
 
 	dpA, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
 	if err != nil {
@@ -374,7 +376,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err)
 		}
 		for j := 0; j < 5; j++ {
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+			TransferBalance(t, "Faucet", "Faucet", big.NewInt(42), l1info, l1client, ctx)
 		}
 	}
 

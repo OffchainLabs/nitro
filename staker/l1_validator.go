@@ -332,6 +332,7 @@ func (v *L1Validator) generateNodeAction(
 		if err != nil {
 			return nil, false, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
 		}
+		log.Info("GetProcessedMessageCount", "validatedCount", validatedCount, "messageCount", messageCount)
 		if validatedCount >= messageCount {
 			batchNum = localBatchCount - 1
 			validatedCount = messageCount
@@ -450,6 +451,7 @@ func (v *L1Validator) generateNodeAction(
 		if len(successorNodes) > 0 {
 			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
 		}
+		log.Info("createNewNodeAction", "startCount", startCount, "validatedCount", validatedCount)
 		action, err := v.createNewNodeAction(ctx, stakerInfo, prevInboxMaxCount, startCount, startState, validatedCount, validatedGlobalState, lastNodeHashIfExists)
 		if err != nil {
 			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action (from pos %d to %d): %w", startCount, validatedCount, err)
