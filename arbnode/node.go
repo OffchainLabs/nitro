@@ -303,17 +303,19 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
 	}
 
-	deployUtilityFactories := false
-	maxFeePerGas := big.NewInt(0) // needed when utility factories are deployed
+	deployParams := rollupgen.RollupCreatorRollupDeploymentParams{
+		Config:config,
+        BatchPoster: batchPoster,
+        Validators: validatorAddrs,
+        MaxDataSize: maxDataSize,
+        NativeToken: nativeToken,
+        DeployFactoriesToL2: false,
+        MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
+	}
+
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		config,
-		batchPoster,
-		validatorAddrs,
-		maxDataSize,
-		nativeToken,
-		deployUtilityFactories,
-		maxFeePerGas,
+		deployParams,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
