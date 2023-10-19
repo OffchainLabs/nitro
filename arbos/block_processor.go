@@ -183,7 +183,7 @@ func ProduceBlock(
 				return nil, nil, err
 			}
 			log.Info(fmt.Sprintf("Got tx %T and %s, delayed messages read %d", tx.GetInner(), encoded, delayedMessagesRead))
-			if delayedMessagesRead == 1 {
+			if delayedMessagesRead == 2 {
 				modifiedTxs = append(modifiedTxs, tx)
 			} else {
 				txData, ok := tx.GetInner().(*types.ArbitrumDepositTx)
