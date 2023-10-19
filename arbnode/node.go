@@ -304,13 +304,13 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 	}
 
 	deployParams := rollupgen.RollupCreatorRollupDeploymentParams{
-		Config:config,
-        BatchPoster: batchPoster,
-        Validators: validatorAddrs,
-        MaxDataSize: maxDataSize,
-        NativeToken: nativeToken,
-        DeployFactoriesToL2: false,
-        MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
+		Config:                    config,
+		BatchPoster:               batchPoster,
+		Validators:                validatorAddrs,
+		MaxDataSize:               maxDataSize,
+		NativeToken:               nativeToken,
+		DeployFactoriesToL2:       false,
+		MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
 	}
 
 	tx, err := rollupCreator.CreateRollup(
