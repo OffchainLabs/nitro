@@ -175,15 +175,18 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 }
 
 func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
-	clientCert, err := tls.LoadX509KeyPair(opts.ClientCert, opts.ClientPrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("error loading client certificate and private key: %w", err)
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
 	}
 
-	tlsCfg := &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{clientCert},
+	if opts.ClientCert == "" || opts.ClientPrivateKey == "" {
+		clientCert, err := tls.LoadX509KeyPair(opts.ClientCert, opts.ClientPrivateKey)
+		if err != nil {
+			return nil, fmt.Errorf("error loading client certificate and private key: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{clientCert}
 	}
+
 	if opts.RootCA != "" {
 		rootCrt, err := os.ReadFile(opts.RootCA)
 		if err != nil {
@@ -756,9 +759,9 @@ type ExternalSignerCfg struct {
 	// (Optional) Path to the external signer root CA certificate.
 	// This allows us to use self-signed certificats on the external signer.
 	RootCA string `koanf:"root-ca"`
-	// Client certificate for mtls.
+	// (Optional) Client certificate for mtls.
 	ClientCert string `koanf:"client-cert"`
-	// Client certificate key for mtls.
+	// (Optional) Client certificate key for mtls.
 	ClientPrivateKey string `koanf:"client-private-key"`
 }
 

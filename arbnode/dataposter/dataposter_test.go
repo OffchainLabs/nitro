@@ -136,7 +136,7 @@ func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
 
 	clientCert, err := os.ReadFile("./testdata/client.crt")
 	if err != nil {
-		panic(err)
+		t.Fatalf("Error reading client certificate: %v", err)
 	}
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(clientCert)
