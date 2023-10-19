@@ -248,7 +248,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		effectiveBaseFee := evm.Context.BaseFee
 		usergas := p.msg.GasLimit
 
-		if p.msg.TxRunMode != core.MessageCommitMode && tx.GasFeeCap.BitLen() == 0 {
+		if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.BitLen() == 0 {
 			// In gas estimation or eth_call mode, we permit a zero gas fee cap.
 			// This matches behavior with normal tx gas estimation and eth_call.
 			effectiveBaseFee = common.Big0
@@ -457,7 +457,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
-	basefee := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.GasLimit {
@@ -467,9 +466,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
+		effectiveBaseFee := inner.GasFeeCap
+		if p.msg.TxRunMode == core.MessageCommitMode && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
+			log.Error(
+				"ArbitrumRetryTx GasFeeCap doesn't match basefee in commit mode",
+				"txHash", underlyingTx.Hash(),
+				"gasFeeCap", inner.GasFeeCap,
+				"baseFee", p.evm.Context.BaseFee,
+			)
+			// revert to the old behavior to avoid diverging from older nodes
+			effectiveBaseFee = p.evm.Context.BaseFee
+		}
 
 		// undo Geth's refund to the From address
-		gasRefund := arbmath.BigMulByUint(basefee, gasLeft)
+		gasRefund := arbmath.BigMulByUint(effectiveBaseFee, gasLeft)
 		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, "undoRefund")
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
@@ -504,7 +514,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
 		}
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
-		takeFunds(maxRefund, arbmath.BigMulByUint(basefee, gasUsed))
+		takeFunds(maxRefund, arbmath.BigMulByUint(effectiveBaseFee, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
 		if p.state.ArbOSVersion() >= 11 {
@@ -514,7 +524,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 				p.state.Restrict(err)
 				// TODO MinBaseFeeWei change during RetryTx execution may cause incorrect calculation of the part of the refund that should be taken from infraFeeAccount. Unless the balances of network and infra fee accounts are too low, the amount transferred to refund address should remain correct.
-				infraFee := arbmath.BigMin(minBaseFee, basefee)
+				infraFee := arbmath.BigMin(minBaseFee, effectiveBaseFee)
 				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
 				infraRefund = takeFunds(networkRefund, infraRefund)
 				refund(infraFeeAccount, infraRefund)
@@ -542,6 +552,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		return
 	}
 
+	basefee := p.evm.Context.BaseFee
 	totalCost := arbmath.BigMul(basefee, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
 	computeCost := arbmath.BigSub(totalCost, p.PosterFee)            // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
@@ -603,8 +614,14 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	scheduled := types.Transactions{}
 	time := p.evm.Context.Time
-	basefee := p.evm.Context.BaseFee
+	effectiveBaseFee := p.evm.Context.BaseFee
 	chainID := p.evm.ChainConfig().ChainID
+
+	if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.BitLen() == 0 {
+		// In gas estimation or eth_call mode, we permit a zero gas fee cap.
+		// This matches behavior with normal tx gas estimation and eth_call.
+		effectiveBaseFee = common.Big0
+	}
 
 	logs := p.evm.StateDB.GetCurrentTxLogs()
 	for _, log := range logs {
@@ -624,7 +641,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 		redeem, _ := retryable.MakeTx(
 			chainID,
 			event.SequenceNum,
-			basefee,
+			effectiveBaseFee,
 			event.DonatedGas,
 			event.TicketId,
 			event.GasDonor,
