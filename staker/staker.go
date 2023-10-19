@@ -163,7 +163,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Millisecond * 10,
-	MakeAssertionInterval:     0,
+	MakeAssertionInterval:     -time.Hour * 1000,
 	PostingStrategy:           L1PostingStrategy{},
 	DisableChallenge:          false,
 	ConfirmationBlocks:        0,
