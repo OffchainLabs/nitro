@@ -765,14 +765,16 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
+		bigStepHeight := l2stateprovider.Height(1 << 7)
+		smallStepHeight := l2stateprovider.Height(1 << 8)
 		stateManager, err := staker.NewStateManager(
 			statelessBlockValidator,
 			"/tmp/good", // TODO: Customize from config.
 			[]l2stateprovider.Height{
 				// TODO: Customize heights.
 				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
+				bigStepHeight,
+				smallStepHeight,
 			},
 			"good", // TODO: Customize from config.
 		)
@@ -785,12 +787,12 @@ func createNodeImpl(
 			stateManager,
 			[]l2stateprovider.Height{
 				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
-				l2stateprovider.Height(32),
+				bigStepHeight,
+				bigStepHeight,
+				bigStepHeight,
+				bigStepHeight,
+				bigStepHeight,
+				smallStepHeight,
 			},
 			stateManager,
 		)
@@ -802,8 +804,8 @@ func createNodeImpl(
 			assertionChain.RollupAddress(),
 			challengemanager.WithName("honest"),
 			challengemanager.WithMode(modes.MakeMode),
-			challengemanager.WithAssertionPostingInterval(time.Minute),
-			challengemanager.WithAssertionScanningInterval(time.Second*10),
+			challengemanager.WithAssertionPostingInterval(time.Second*30),
+			challengemanager.WithAssertionScanningInterval(time.Second*5),
 			challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 			challengemanager.WithAddress(txOptsValidator.From),
 		)

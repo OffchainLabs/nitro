@@ -79,6 +79,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
+		var lastGlobalState validator.GoGlobalState
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
@@ -90,8 +91,11 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
 			machineStep := machine.GetStepCount()
+			fmt.Println("Step count", machineStep)
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
+				lastGlobalState = gs
+				fmt.Printf("Last global state %+v\n", gs)
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
 				break
@@ -104,7 +108,10 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				}
 			}
 			stateRoots = append(stateRoots, machine.Hash())
+			lastGlobalState = machine.GetGlobalState()
 		}
+
+		fmt.Printf("Last computed global state %+v", lastGlobalState)
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct

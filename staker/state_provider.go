@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -61,15 +63,6 @@ type BoldConfig struct {
 }
 
 func (c *BoldConfig) Validate() error {
-	// strategy, err := c.ParseStrategy()
-	// if err != nil {
-	// 	return err
-	// }
-	// c.strategy = strategy
-	// if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
-	// 	return errors.New("invalid validator gas refunder address")
-	// }
-	// c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	return nil
 }
 
@@ -165,6 +158,9 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 	batchIndex := batchCount - 1
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, batchCount)
+		}
 		return nil, err
 	}
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
@@ -261,6 +257,10 @@ func (s *StateManager) StatesInBatchRange(
 
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
 		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
+	}
+	for _, gs := range globalStates {
+		machHash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+		fmt.Printf("global state: %+v, machine hash %s\n", gs, containers.Trunc(machHash.Bytes()))
 	}
 	return stateRoots[fromHeight : toHeight+1], nil
 }
