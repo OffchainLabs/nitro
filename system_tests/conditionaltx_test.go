@@ -242,7 +242,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	blockNumber := block.NumberU64()
 	fixBlockTime := func(blockTime uint64) uint64 {
 		since := time.Now().Unix() - int64(blockTime)
-		if int64(since) < 0 {
+		if since < 0 {
 			// If using SimulatedBeacon then the block time will be ahead of
 			// the actual time since it generates a new block for each tx in
 			// on demand mode, and assigns them to sequentially increasing timestamps.

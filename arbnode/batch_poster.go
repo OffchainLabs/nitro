@@ -198,7 +198,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxSize:            100000,
 	PollInterval:       time.Millisecond * 10,
 	ErrorDelay:         time.Millisecond * 10,
-	MaxDelay:           -time.Hour * 1000,
+	MaxDelay:           0,
 	WaitForMaxDelay:    false,
 	CompressionLevel:   2,
 	DASRetentionPeriod: time.Hour * 24 * 15,
