@@ -57,7 +57,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64, expectedEndingGlobalState *validator.GoGlobalState) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
@@ -66,24 +66,24 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
+		startGlobalState := machine.GetGlobalState()
+		fmt.Println("==============")
 		if machineStartIndex == 0 {
-			gs := machine.GetGlobalState()
-			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), startGlobalState.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
 		}
+		fmt.Printf("Initial global state: %+v, step size %d, start index %d, num desired %d, start hash %#x\n", startGlobalState, stepSize, machineStartIndex, numDesiredLeaves, stateRoots[0])
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
-		var lastGlobalState validator.GoGlobalState
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
-
 			// Advance the machine in step size increments.
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
@@ -91,13 +91,11 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
 			machineStep := machine.GetStepCount()
-			fmt.Println("Step count", machineStep)
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
-				lastGlobalState = gs
-				fmt.Printf("Last global state %+v\n", gs)
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
+				fmt.Printf("Finished state root idx %d, count %d pos %d, hash %#x, gs %+v\n", len(stateRoots)-1, machineStep, position, hash, gs)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
@@ -106,12 +104,21 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				if machineRunning || machineStep > position {
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
+				fmt.Println("Machine status", machine.Status())
 			}
-			stateRoots = append(stateRoots, machine.Hash())
-			lastGlobalState = machine.GetGlobalState()
+			gs := machine.GetGlobalState()
+			hash := machine.Hash()
+			stateRoots = append(stateRoots, hash)
+			fmt.Printf("State root idx %d, count %d pos %d, hash %#x, gs %+v\n", len(stateRoots)-1, machineStep, position, hash, gs)
 		}
 
-		fmt.Printf("Last computed global state %+v", lastGlobalState)
+		// if expectedEndingGlobalState != nil {
+		// 	hash := crypto.Keccak256Hash([]byte("Machine finished:"), expectedEndingGlobalState.Hash().Bytes())
+		// 	fmt.Printf("Replacing %#x with %#x from %+v\n", stateRoots[len(stateRoots)-1], hash, expectedEndingGlobalState)
+		// 	stateRoots[len(stateRoots)-1] = hash
+		// } else {
+		// 	fmt.Println("Final modify disabled")
+		// }
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct

@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"sync"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -19,10 +21,12 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -53,6 +57,7 @@ type BlockValidatorRegistrer interface {
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
+	GetDelayedMessage(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
@@ -278,15 +283,99 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 	}
 	if e.HasDelayedMsg {
-		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
-		if err != nil {
-			log.Error(
-				"error while trying to read delayed msg for proving",
-				"err", err, "seq", e.DelayedMsgNr, "pos", e.Pos,
-			)
-			return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
+		if v.config.Evil {
+			fmt.Println("Got evil block validator")
+			chainId, ok := new(big.Int).SetString(v.config.ChainId, 10)
+			if !ok {
+				return errors.New("bad chainid")
+			}
+			delayedMsg, err := v.inboxTracker.GetDelayedMessage(e.DelayedMsgNr)
+			if err != nil {
+				log.Error(
+					"error while trying to read delayed msg for proving",
+					"err", err, "seq", e.DelayedMsgNr, "pos", e.Pos,
+				)
+				return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
+			}
+			fmt.Printf("Encoded delayed L2: %#x\n", delayedMsg.L2msg)
+
+			txes, err := arbos.ParseL2Transactions(delayedMsg, chainId, nil)
+			if err != nil {
+				return err
+			}
+
+			// TODO: If evil, do something differently here.
+			first := txes[0]
+			encoded, err := first.MarshalJSON()
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Got tx json: %s\n", encoded)
+			txData, ok := first.GetInner().(*types.ArbitrumDepositTx)
+			if !ok {
+				log.Error("Got issue")
+			}
+			newValue := new(big.Int).Add(txData.Value, big.NewInt(params.GWei))
+			txData.Value = newValue
+			modified := types.NewTx(txData)
+
+			encodedDepositTx := make([]byte, 0)
+			gasLimitAsHash := [32]byte{}
+			gasAsBytes := new(big.Int).SetUint64(modified.Gas()).Bytes()
+			copy(gasLimitAsHash[:24], gasAsBytes)
+			maxGasFeeAsHash := [32]byte{}
+			copy(maxGasFeeAsHash[:], modified.GasFeeCap().Bytes())
+
+			nonceAsHash := [32]byte{}
+			copy(maxGasFeeAsHash[:24], new(big.Int).SetUint64(modified.Nonce()).Bytes())
+
+			addressAsHash := [32]byte{}
+			if modified.To() != nil {
+				to := *modified.To()
+				copy(addressAsHash[:], to.Bytes())
+			}
+
+			// encodedDepositTx = append(encodedDepositTx, encodedDelayed[0])
+			// encodedDepositTx = append(encodedDepositTx, gasLimitAsHash[:]...)
+			// encodedDepositTx = append(encodedDepositTx, maxGasFeeAsHash[:]...)
+			//nitro-testnode-evil_validator-1  | Final encoded delayed L2: 	// encodedDepositTx = append(encodedDepositTx, nonceAsHash[:]...)
+			_ = nonceAsHash
+			encodedHash := hexutil.MustDecode("0x3f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e00000000000000000000000000000000000000000000")
+			encodedDepositTx = append(encodedDepositTx, encodedHash...)
+			encodedDepositTx = append(encodedDepositTx, modified.Value().Bytes()...)
+
+			// 0x3f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e00000000000000000000000000000000000000000000152d02c7e14af6800000
+			// nitro-testnode-evil_validator-1  | Got tx json: {"type":"0x64","chainId":"0x64aba","nonce":"0x0","to":"0x3f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e","gas":"0x0","gasPrice":"0x0","maxPriorityFeePerGas":null,"maxFeePerGas":null,"value":"0x152d02c7e14af6800000","input":"0x","v":"0x0","r":"0x0","s":"0x0","from":"0x502fae7d46d88f08fc2f8ed27fcb2ab183eb3e1f","requestId":"0x0000000000000000000000000000000000000000000000000000000000000002","hash":"0xd7dad9994e0789ad58f4c0c7fdb7f169a0c2d2cdac515acc799260075afdc264"}
+			// 0x0c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e152d02c7e14b321aca0000000000000000000000000000000000000000000000
+			// abi.encodePacked(
+			// 	L2MessageType_unsignedEOATx,
+			// 	gasLimit,
+			// 	maxFeePerGas,
+			// 	nonce,
+			// 	uint256(uint160(to)),
+			// 	msg.value,
+			// 	data
+			// )
+			fmt.Printf("Value as bytes: %#x\n", modified.Value().Bytes())
+			fmt.Printf("Final encoded delayed L2: %#x\n", encodedDepositTx)
+
+			delayedMsg.L2msg = encodedDepositTx
+			finalEncodedDelayed, err := delayedMsg.Serialize()
+			if err != nil {
+				return err
+			}
+			e.DelayedMsg = finalEncodedDelayed
+		} else {
+			delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
+			if err != nil {
+				log.Error(
+					"error while trying to read delayed msg for proving",
+					"err", err, "seq", e.DelayedMsgNr, "pos", e.Pos,
+				)
+				return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
+			}
+			e.DelayedMsg = delayedMsg
 		}
-		e.DelayedMsg = delayedMsg
 	}
 	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
@@ -371,6 +460,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Building validation run: start %+v, end %+v, pos %d...start pos %d end pos %d\n", start, end, pos, startPos, endPos)
 	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed)
 	if err != nil {
 		return nil, err

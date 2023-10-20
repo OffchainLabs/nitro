@@ -765,8 +765,8 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
-		bigStepHeight := l2stateprovider.Height(1 << 7)
-		smallStepHeight := l2stateprovider.Height(1 << 8)
+		bigStepHeight := l2stateprovider.Height(1 << 5)
+		smallStepHeight := l2stateprovider.Height(1 << 7)
 		stateManager, err := staker.NewStateManager(
 			statelessBlockValidator,
 			"/tmp/good", // TODO: Customize from config.
@@ -806,7 +806,8 @@ func createNodeImpl(
 			challengemanager.WithMode(modes.MakeMode),
 			challengemanager.WithAssertionPostingInterval(time.Second*30),
 			challengemanager.WithAssertionScanningInterval(time.Second*5),
-			challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+			challengemanager.WithAssertionConfirmingInterval(time.Minute),
+			challengemanager.WithEdgeTrackerWakeInterval(time.Millisecond*200),
 			challengemanager.WithAddress(txOptsValidator.From),
 		)
 		if err != nil {

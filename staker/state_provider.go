@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -231,36 +230,47 @@ func (s *StateManager) StatesInBatchRange(
 		var lastGlobalState validator.GoGlobalState
 
 		msgsInBatch := msgCount - prevBatchMsgCount
-		for i := uint64(1); i <= uint64(msgsInBatch); i++ {
-			msgIndex := uint64(prevBatchMsgCount) + i
-			gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
+
+		if msgsInBatch > 1 {
+			for i := uint64(1); i <= uint64(msgsInBatch); i++ {
+				msgIndex := uint64(prevBatchMsgCount) + i
+				gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
+				if err != nil {
+					return nil, err
+				}
+				if gs.BlockHash == (common.Hash{}) {
+					continue
+				}
+				globalStates = append(globalStates, gs)
+				stateRoots = append(stateRoots,
+					crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
+				)
+				lastGlobalState = gs
+			}
+			prevBatchMsgCount = msgCount
+			lastGlobalState.Batch += 1
+			lastGlobalState.PosInBatch = 0
+			stateRoots = append(stateRoots,
+				crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes()),
+			)
+			globalStates = append(globalStates, lastGlobalState)
+		} else {
+			result, err := s.validator.streamer.ResultAtCount(msgCount)
 			if err != nil {
 				return nil, err
 			}
-			if gs.BlockHash == (common.Hash{}) {
-				continue
-			}
-			globalStates = append(globalStates, gs)
-			stateRoots = append(stateRoots,
-				crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
-			)
-			lastGlobalState = gs
+			lastGlobalState.Batch = uint64(batch + 1)
+			lastGlobalState.PosInBatch = 0
+			lastGlobalState.BlockHash = result.BlockHash
+			lastGlobalState.SendRoot = result.SendRoot
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes())
+			stateRoots = append(stateRoots, hash)
+			globalStates = append(globalStates, lastGlobalState)
 		}
-		prevBatchMsgCount = msgCount
-		lastGlobalState.Batch += 1
-		lastGlobalState.PosInBatch = 0
-		stateRoots = append(stateRoots,
-			crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes()),
-		)
-		globalStates = append(globalStates, lastGlobalState)
 	}
 
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
 		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
-	}
-	for _, gs := range globalStates {
-		machHash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-		fmt.Printf("global state: %+v, machine hash %s\n", gs, containers.Trunc(machHash.Bytes()))
 	}
 	return stateRoots[fromHeight : toHeight+1], nil
 }
@@ -319,12 +329,17 @@ func (s *StateManager) CollectMachineHashes(
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
+	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch) - 1)
+	if err != nil {
+		return nil, err
+	}
+	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: cfg.WasmModuleRoot,
-		MessageHeight:  protocol.Height(cfg.MessageNumber),
+		MessageHeight:  protocol.Height(messageNum),
 		StepHeights:    cfg.StepHeights,
 	}
-	if s.historyCache != nil {
+	if s.historyCache != nil && !cfg.DisableCache {
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
 		switch {
 		case err == nil:
@@ -333,7 +348,7 @@ func (s *StateManager) CollectMachineHashes(
 			return nil, err
 		}
 	}
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(cfg.MessageNumber))
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -345,13 +360,21 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
+	expectedEndingGlobalState, err := s.findGlobalStateFromMessageCountAndBatch(messageNum+1, cfg.FromBatch)
+	if err != nil {
+		return nil, err
+	}
+	expectedEnding := &expectedEndingGlobalState
+	if cfg.DisableFinalStateModify {
+		expectedEnding = nil
+	}
+	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes, expectedEnding)
 	result, err := stepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Do not save a history commitment of length 1 to the cache.
-	if len(result) > 1 && s.historyCache != nil {
+	if len(result) > 1 && s.historyCache != nil && !cfg.DisableCache {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
 			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
 				return nil, err
@@ -365,10 +388,16 @@ func (s *StateManager) CollectMachineHashes(
 func (s *StateManager) CollectProof(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
-	messageNumber l2stateprovider.Height,
+	fromBatch l2stateprovider.Batch,
+	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, arbutil.MessageIndex(messageNumber))
+	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+	if err != nil {
+		return nil, err
+	}
+	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(blockChallengeHeight))
+	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +409,7 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Getting osp at message num %d and machine index %d\n", messageNum, machineIndex)
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
 	return oneStepProofPromise.Await(ctx)
 }

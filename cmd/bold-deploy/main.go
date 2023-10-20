@@ -222,8 +222,8 @@ func main() {
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
-	bigStepHeight := uint64(1 << 7)
-	smallStepHeight := uint64(1 << 8)
+	bigStepHeight := uint64(1 << 5)
+	smallStepHeight := uint64(1 << 7)
 	rollupConfig := challenge_testing.GenerateRollupConfig(
 		*prod,
 		moduleRoot,
@@ -240,8 +240,8 @@ func main() {
 			BigStepChallengeHeight:   bigStepHeight,
 			SmallStepChallengeHeight: smallStepHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(5)),        // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(1000)), // TODO: Hardcoded to 1000 L1 blocks.
+		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(400)), // TODO: Hardcoded to 1000 L1 blocks.
 		challenge_testing.WithChainConfig(string(chainConfigJson)),
 	)
 
