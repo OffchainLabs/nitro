@@ -151,10 +151,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 	l1BlockChain := l1backend.BlockChain()
 
-	rpcC, err := l1stack.Attach()
-	if err != nil {
-		t.Fatalf("Error connecting to l1 node: %v", err)
-	}
+	rpcC := l1stack.Attach()
 	gethClient := gethclient.New(rpcC)
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)

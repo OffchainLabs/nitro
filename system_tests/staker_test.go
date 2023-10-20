@@ -68,7 +68,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
-	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, nodeCOnfig, l2chainConfig, nil, l2info)
+	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, l2chainConfig, nil, l2info)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 	execNodeA := getExecNode(t, l2nodeA)
@@ -76,9 +76,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	config := arbnode.ConfigDefaultL1Test()
 	execConfig := gethexec.ConfigDefaultTest()
 	execConfig.Sequencer.Enable = false
+	config := arbnode.ConfigDefaultL1Test()
 	config.Sequencer = false
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
