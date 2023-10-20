@@ -75,7 +75,7 @@ const (
 	InitialInertia            = 10
 	InitialPerUnitReward      = 10
 	InitialPerBatchGasCostV6  = 100_000
-	InitialPerBatchGasCostV12 = 210_000 // overriden as part of the upgrade
+	InitialPerBatchGasCostV12 = 210_000 // overridden as part of the upgrade
 )
 
 // one minute at 100000 bytes / sec
@@ -489,7 +489,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	return nil
 }
 
-func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, posterAddr common.Address) uint64 {
+func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, posterAddr common.Address, brotliCompressionLevel uint64) uint64 {
 
 	if posterAddr != BatchPosterAddress {
 		return 0
@@ -500,7 +500,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 		return 0
 	}
 
-	l1Bytes, err := byteCountAfterBrotli0(txBytes)
+	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, int(brotliCompressionLevel))
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
@@ -508,13 +508,13 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
-func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address, brotliCompressionLevel uint64) (*big.Int, uint64) {
 	if poster != BatchPosterAddress {
 		return common.Big0, 0
 	}
 	units := atomic.LoadUint64(&tx.CalldataUnits)
 	if units == 0 {
-		units = ps.getPosterUnitsWithoutCache(tx, poster)
+		units = ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
 		atomic.StoreUint64(&tx.CalldataUnits, units)
 	}
 
@@ -570,23 +570,23 @@ func makeFakeTxForMessage(message *core.Message) *types.Transaction {
 	})
 }
 
-func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Address, brotliCompressionLevel uint64) (*big.Int, uint64) {
 	tx := message.Tx
 	if tx != nil {
-		return ps.GetPosterInfo(tx, poster)
+		return ps.GetPosterInfo(tx, poster, brotliCompressionLevel)
 	}
 
 	// Otherwise, we don't have an underlying transaction, so we're likely in gas estimation.
 	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
 	tx = makeFakeTxForMessage(message)
-	units := ps.getPosterUnitsWithoutCache(tx, poster)
+	units := ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
 	units = arbmath.UintMulByBips(units+estimationPaddingUnits, arbmath.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
-func byteCountAfterBrotli0(input []byte) (uint64, error) {
-	compressed, err := arbcompress.CompressFast(input)
+func byteCountAfterBrotliLevel(input []byte, level int) (uint64, error) {
+	compressed, err := arbcompress.CompressLevel(input, level)
 	if err != nil {
 		return 0, err
 	}

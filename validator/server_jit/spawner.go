@@ -2,7 +2,6 @@ package server_jit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync/atomic"
@@ -70,14 +69,7 @@ func (v *JitSpawner) execute(
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
-	resolver := func(hash common.Hash) ([]byte, error) {
-		// Check if it's a known preimage
-		if preimage, ok := entry.Preimages[hash]; ok {
-			return preimage, nil
-		}
-		return nil, errors.New("preimage not found")
-	}
-	state, err := machine.prove(ctx, entry, resolver)
+	state, err := machine.prove(ctx, entry)
 	return state, err
 }
 

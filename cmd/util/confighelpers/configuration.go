@@ -138,10 +138,32 @@ func PrintErrorAndExit(err error, usage func(string)) {
 	}
 }
 
+func devFlagArgs() []string {
+	args := []string{
+		"--init.dev-init",
+		"--init.dev-init-address", "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E",
+		"--node.dangerous.no-l1-listener",
+		"--node.parent-chain-reader.enable=false",
+		"--parent-chain.id=1337",
+		"--chain.id=412346",
+		"--persistent.chain", "/tmp/dev-test",
+		"--node.sequencer",
+		"--node.dangerous.no-sequencer-coordinator",
+		"--node.staker.enable=false",
+		"--init.empty=false",
+		"--http.port", "8547",
+		"--http.addr", "127.0.0.1",
+	}
+	return args
+}
+
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			return nil, ErrVersion
+		} else if arg == "--dev" {
+			args = devFlagArgs()
+			break
 		}
 	}
 	if err := f.Parse(args); err != nil {
@@ -150,7 +172,7 @@ func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
 
 	if f.NArg() != 0 {
 		// Unexpected number of parameters
-		return nil, errors.New("unexpected number of parameters")
+		return nil, fmt.Errorf("unexpected parameter: %s", f.Arg(0))
 	}
 
 	var k = koanf.New(".")

@@ -37,7 +37,8 @@ func TestSequencerFeePaid(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
-	version := l2node.Execution.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
+	execNode := getExecNode(t, l2node)
+	version := execNode.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account
@@ -140,7 +141,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	// not posting because the txs appear to be in the future.
 	conf.BatchPoster.MaxDelay = -time.Hour
 
-	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, nil)
+	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 
@@ -308,7 +309,7 @@ func TestSequencerPriceAdjustsFrom25Gwei(t *testing.T) {
 func compressedTxSize(t *testing.T, tx *types.Transaction) uint64 {
 	txBin, err := tx.MarshalBinary()
 	Require(t, err)
-	compressed, err := arbcompress.CompressFast(txBin)
+	compressed, err := arbcompress.CompressLevel(txBin, 0)
 	Require(t, err)
 	return uint64(len(compressed))
 }

@@ -410,7 +410,11 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		// Since tips go to the network, and not to the poster, we use the basefee.
 		// Note, this only determines the amount of gas bought, not the price per gas.
 
-		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
+		if err != nil {
+			return common.Address{}, fmt.Errorf("failed to get brotli compression level: %w", err)
+		}
+		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
@@ -479,7 +483,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
 			if err != nil {
 				// Normally the network fee address should be holding any collected fees.
-				// However, in theory, they could've been transfered out during the redeem attempt.
+				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
 				log.Error(errLog, "err", err, "feeAddress", refundFrom)
 			}

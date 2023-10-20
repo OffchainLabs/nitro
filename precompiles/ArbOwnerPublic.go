@@ -47,3 +47,8 @@ func (con ArbOwnerPublic) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
 	}
 	return c.State.InfraFeeAccount()
 }
+
+// GetBrotliCompressionLevel gets the current brotli compression level used for fast compression
+func (con ArbOwnerPublic) GetBrotliCompressionLevel(c ctx, evm mech) (uint64, error) {
+	return c.State.BrotliCompressionLevel()
+}

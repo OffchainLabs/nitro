@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -50,7 +51,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		delayEvery = workloadLoops / 3
 	}
 
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -61,7 +62,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.RPCAggregator.Enable = false
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil, nil)
 	defer nodeB.StopAndWait()
 	l2info.GenerateAccount("User2")
 
@@ -190,8 +191,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	nodeB.Execution.Recorder.TrimAllPrepared(t)
-	finalRefCount := nodeB.Execution.Recorder.RecordingDBReferenceCount()
+	gethExec, ok := nodeB.Execution.(*gethexec.ExecutionNode)
+	if !ok {
+		t.Fail()
+	}
+	gethExec.Recorder.TrimAllPrepared(t)
+	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader

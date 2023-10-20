@@ -20,7 +20,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	defer cancel()
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
-	l2Info, arbNode, l2Client, l1Info, l1Backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	l2Info, arbNode, l2Client, l1Info, l1Backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil, nil)
 	defer requireClose(t, l1stack)
 	defer arbNode.StopAndWait()
 
@@ -33,11 +33,12 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	batchReceipt, err := EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 
+	execNode := getExecNode(t, arbNode)
 	for i := 0; ; i++ {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch from L1")
 		}
-		msgNum, err := arbNode.Execution.ExecEngine.HeadMessageNumber()
+		msgNum, err := execNode.ExecEngine.HeadMessageNumber()
 		Require(t, err)
 		if msgNum == 1 {
 			break
