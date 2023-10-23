@@ -655,6 +655,18 @@ func handleCreateAssertionError(err error, blockHash common.Hash) error {
 	}
 	errS := err.Error()
 	switch {
+	case strings.Contains(errS, "EXPECTED_ASSERTION_SEEN"):
+		return errors.Wrapf(
+			ErrAlreadyExists,
+			"commit block hash %#x",
+			blockHash,
+		)
+	case strings.Contains(errS, "already known"):
+		return errors.Wrapf(
+			ErrAlreadyExists,
+			"commit block hash %#x",
+			blockHash,
+		)
 	case strings.Contains(errS, "Assertion already exists"):
 		return errors.Wrapf(
 			ErrAlreadyExists,

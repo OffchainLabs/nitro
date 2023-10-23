@@ -16,6 +16,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -45,7 +46,7 @@ type Manager struct {
 	backend                     bind.ContractBackend
 	challengeCreator            types.ChallengeCreator
 	challengeReader             types.ChallengeReader
-	stateProvider               l2stateprovider.Provider
+	stateProvider               l2stateprovider.ExecutionStateAgreementChecker
 	pollInterval                time.Duration
 	confirmationAttemptInterval time.Duration
 	rollupAddr                  common.Address
@@ -55,6 +56,7 @@ type Manager struct {
 	assertionsProcessedCount    uint64
 	stateManager                l2stateprovider.ExecutionProvider
 	postInterval                time.Duration
+	submittedAssertions         *threadsafe.Set[common.Hash]
 }
 
 // NewManager creates a manager from the required dependencies.
@@ -91,6 +93,7 @@ func NewManager(
 		assertionsProcessedCount:    0,
 		stateManager:                stateManager,
 		postInterval:                postInterval,
+		submittedAssertions:         threadsafe.NewSet[common.Hash](),
 	}, nil
 }
 
@@ -168,6 +171,18 @@ func (s *Manager) Start(ctx context.Context) {
 	}
 }
 
+func (s *Manager) ForksDetected() uint64 {
+	return s.forksDetectedCount
+}
+
+func (s *Manager) ChallengesSubmitted() uint64 {
+	return s.challengesSubmittedCount
+}
+
+func (s *Manager) AssertionsProcessed() uint64 {
+	return s.assertionsProcessedCount
+}
+
 func (s *Manager) checkForAssertionAdded(
 	ctx context.Context,
 	filterer *rollupgen.RollupUserLogicFilterer,
@@ -192,111 +207,216 @@ func (s *Manager) checkForAssertionAdded(
 			)
 		}
 		assertionHash := protocol.AssertionHash{Hash: it.Event.AssertionHash}
+
+		// Try to confirm the assertion in the background.
 		go s.keepTryingAssertionConfirmation(ctx, assertionHash)
-		_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-			return true, s.ProcessAssertionCreation(ctx, assertionHash)
-		})
-		if processErr != nil {
-			return processErr
-		}
+
+		// Try to process the assertion creation event in the background
+		// to not block the processing of other incoming events.
+		go func() {
+			_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
+				return true, s.ProcessAssertionCreationEvent(ctx, assertionHash)
+			}, retry.WithInterval(time.Minute))
+			if processErr != nil {
+				srvlog.Error(
+					"Could not process assertion creation after retries",
+					log.Ctx{"err": processErr},
+				)
+			}
+		}()
 	}
 	return nil
 }
 
-func (s *Manager) ProcessAssertionCreation(
+// ProcessAssertionCreationEvent by checking if we agree with its claimed state.
+// If we do not, we attempt to post a rival assertion along the fork and initiate a challenge
+// if we are configured to do so. If we have not yet caught up to the claimed state,
+// this function will then return an error.
+func (m *Manager) ProcessAssertionCreationEvent(
 	ctx context.Context,
 	assertionHash protocol.AssertionHash,
 ) error {
+	// Ignore assertions we have submitted ourselves.
+	if m.submittedAssertions.Has(assertionHash.Hash) {
+		return nil
+	}
 	if assertionHash.Hash == (common.Hash{}) {
 		return nil // Assertions cannot have a zero hash, not even genesis.
 	}
-	creationInfo, err := s.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
 	}
 	if creationInfo.ParentAssertionHash == (common.Hash{}) {
 		return nil // Skip processing genesis, as it has a parent assertion hash of 0x0.
 	}
-	goGs := protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState)
-	srvlog.Info("Processed assertion creation event", log.Ctx{
-		"validatorName":       s.validatorName,
-		"globalState":         goGs,
-		"machineFinishedHash": crypto.Keccak256Hash([]byte("Machine finished:"), goGs.Hash().Bytes()),
-		"assertionHash":       assertionHash,
-	})
-	s.assertionsProcessedCount++
-	prevAssertion, err := s.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
-	if err != nil {
-		return err
-	}
-	hasSecondChild, err := prevAssertion.HasSecondChild()
-	if err != nil {
-		return err
-	}
-	if !hasSecondChild {
-		srvlog.Info("No fork detected in assertion chain", log.Ctx{"validatorName": s.validatorName})
-		return nil
-	}
-	s.forksDetectedCount++
-	execState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	if !creationInfo.InboxMaxCount.IsUint64() {
-		return errors.New("inbox max count was not a uint64")
-	}
-	batchIndex := creationInfo.InboxMaxCount.Uint64() - 1
-	srvlog.Info("Checking if agrees with execution state", log.Ctx{
-		"validatorName": s.validatorName,
-		"batchIndex":    batchIndex,
-		"execState":     fmt.Sprintf("%+v", execState),
-	})
-	err = s.stateProvider.AgreesWithExecutionState(ctx, execState)
+
+	// Check if we agree with the assertion's claimed state.
+	claimedState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
+	err = m.stateProvider.AgreesWithExecutionState(ctx, claimedState)
 	switch {
 	case errors.Is(err, l2stateprovider.ErrNoExecutionState):
+		// If we disagree with the execution state, we should try to post the rival
+		// assertion that we believe is correct and initiate a challenge if possible.
+		if postRivalErr := m.postRivalAssertionAndChallenge(ctx, creationInfo); postRivalErr != nil {
+			return postRivalErr
+		}
+		m.assertionsProcessedCount++
 		return nil
+	case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
+		// Otherwise, we return the error that we are still catching up to the
+		// execution state claimed by the assertion, and this function will be retried
+		// by the caller if wrapped in a retryable call.
+		return fmt.Errorf(
+			"chain still catching up to processed execution state - "+
+				"will reattempt assertion processing when caught up: %w",
+			l2stateprovider.ErrChainCatchingUp,
+		)
 	case err != nil:
 		return err
-	default:
 	}
-
-	if s.challengeReader.Mode() == types.DefensiveMode || s.challengeReader.Mode() == types.MakeMode {
-
-		// Generating a random integer between 0 and max delay second to wait before challenging.
-		// This is to avoid all validators challenging at the same time.
-		mds := 1 // default max delay seconds to 1 to avoid panic
-		if s.challengeReader.MaxDelaySeconds() > 1 {
-			mds = s.challengeReader.MaxDelaySeconds()
-		}
-		randSecs, err := randUint64(uint64(mds))
-		if err != nil {
-			return err
-		}
-		srvlog.Info("Waiting before challenging", log.Ctx{"delay": randSecs})
-		time.Sleep(time.Duration(randSecs) * time.Second)
-
-		if err := s.challengeCreator.ChallengeAssertion(ctx, assertionHash); err != nil {
-			return err
-		}
-		s.challengesSubmittedCount++
-		return nil
-	}
-
-	srvlog.Error("Detected invalid assertion, but not configured to challenge", log.Ctx{
-		"parentAssertionHash":   creationInfo.ParentAssertionHash,
-		"detectedAssertionHash": assertionHash,
-		"batchIndex":            batchIndex,
+	// If no error, this means we agree with the claimed assertion state
+	// so there is no action to take.
+	machineFinishedHash := crypto.Keccak256Hash([]byte("Machine finished:"), claimedState.GlobalState.Hash().Bytes())
+	srvlog.Info("Agreed with incoming assertion", log.Ctx{
+		"validatorName":       m.validatorName,
+		"claimedState":        fmt.Sprintf("%+v", claimedState),
+		"machineFinishedHash": machineFinishedHash,
+		"assertionHash":       assertionHash,
 	})
+	m.assertionsProcessedCount++
 	return nil
 }
 
-func (s *Manager) ForksDetected() uint64 {
-	return s.forksDetectedCount
+// Attempts to post a rival assertion to a given assertion and then attempts to
+// open a challenge on that fork in the chain if configured to do so.
+func (m *Manager) postRivalAssertionAndChallenge(
+	ctx context.Context,
+	creationInfo *protocol.AssertionCreatedInfo,
+) error {
+	if !creationInfo.InboxMaxCount.IsUint64() {
+		return errors.New("inbox max count not a uint64")
+	}
+	batchCount := creationInfo.InboxMaxCount.Uint64()
+	claimedState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
+	logFields := log.Ctx{
+		"validatorName":         m.validatorName,
+		"parentAssertionHash":   creationInfo.ParentAssertionHash,
+		"detectedAssertionHash": creationInfo.AssertionHash,
+		"batchCount":            batchCount,
+		"claimedExecutionState": fmt.Sprintf("%+v", claimedState),
+	}
+	if !m.canRespondToAssertion() {
+		srvlog.Warn("Detected invalid assertion, but not configured to challenge", logFields)
+		return nil
+	}
+
+	srvlog.Info("Disagreed with execution state from observed assertion", logFields)
+
+	// Post what we believe is the correct rival assertion that follows the ancestor we agree with.
+	correctRivalAssertion, err := m.maybePostRivalAssertion(ctx, creationInfo)
+	if err != nil {
+		return err
+	}
+	correctClaimedAssertionHash := correctRivalAssertion.Id()
+
+	// Generating a random integer between 0 and max delay second to wait before challenging.
+	// This is to avoid all validators challenging at the same time.
+	// TODO: Abstract into a smaller function.
+	mds := 1 // default max delay seconds to 1 to avoid panic
+	if m.challengeReader.MaxDelaySeconds() > 1 {
+		mds = m.challengeReader.MaxDelaySeconds()
+	}
+	randSecs, err := randUint64(uint64(mds))
+	if err != nil {
+		return err
+	}
+	srvlog.Info("Waiting before submitting challenge on assertion", log.Ctx{"delay": randSecs})
+	time.Sleep(time.Duration(randSecs) * time.Second)
+
+	if err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash); err != nil {
+		return err
+	}
+	m.challengesSubmittedCount++
+	return nil
+
 }
 
-func (s *Manager) ChallengesSubmitted() uint64 {
-	return s.challengesSubmittedCount
+// Attempt to post a rival assertion based on the last agreed with ancestor
+// of a given assertion.
+//
+// If this parent assertion already has a rival we agree with that arleady exists
+// then this function will return that assertion.
+func (m *Manager) maybePostRivalAssertion(
+	ctx context.Context, creationInfo *protocol.AssertionCreatedInfo,
+) (protocol.Assertion, error) {
+	latestAgreedWithAncestor, err := m.findLastAgreedWithAncestor(ctx, creationInfo)
+	if err != nil {
+		return nil, err
+	}
+	// Post what we believe is the correct assertion that follows the ancestor we agree with.
+	staked, err := m.chain.IsStaked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// If the validator is already staked, we post an assertion and move existing stake to it.
+	if staked {
+		assertion, postErr := m.PostAssertionBasedOnParent(
+			ctx, latestAgreedWithAncestor, m.chain.StakeOnNewAssertion,
+		)
+		if postErr != nil {
+			return nil, postErr
+		}
+		m.submittedAssertions.Insert(assertion.Id().Hash)
+		return assertion, nil
+	}
+	// Otherwise, we post a new assertion and place a new stake on it.
+	assertion, err := m.PostAssertionBasedOnParent(
+		ctx, latestAgreedWithAncestor, m.chain.NewStakeOnNewAssertion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	m.submittedAssertions.Insert(assertion.Id().Hash)
+	return assertion, nil
 }
 
-func (s *Manager) AssertionsProcessed() uint64 {
-	return s.assertionsProcessedCount
+// Look back until we find the ancestor we agree with for the given assertion.
+func (m *Manager) findLastAgreedWithAncestor(
+	ctx context.Context, assertionCreationInfo *protocol.AssertionCreatedInfo,
+) (*protocol.AssertionCreatedInfo, error) {
+	latestConfirmed, err := m.chain.LatestConfirmed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	latestConfirmedInfo, err := m.chain.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
+	if err != nil {
+		return nil, err
+	}
+	agreedWithAncestor := latestConfirmed.Id().Hash
+	cursor := assertionCreationInfo.ParentAssertionHash
+	for cursor != agreedWithAncestor {
+		// Get the cursor's creation info.
+		parentCreationInfo, err := m.chain.ReadAssertionCreationInfo(
+			ctx, protocol.AssertionHash{Hash: cursor},
+		)
+		if err != nil {
+			return nil, err
+		}
+		parentExecState := protocol.GoExecutionStateFromSolidity(parentCreationInfo.AfterState)
+		if err = m.stateProvider.AgreesWithExecutionState(ctx, parentExecState); err != nil {
+			if errors.Is(err, l2stateprovider.ErrNoExecutionState) {
+				// Disagreed with parent. This means we should look at the
+				// grandparent and continue our loop.
+				cursor = parentCreationInfo.ParentAssertionHash
+				continue
+			}
+			return nil, err
+		}
+		// No error means we agree with this parent. We can break the loop.
+		return parentCreationInfo, nil
+	}
+	return latestConfirmedInfo, nil
 }
 
 func (s *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
@@ -328,6 +448,11 @@ func (s *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			return
 		}
 	}
+}
+
+// Returns true if the manager can respond to an assertion with a challenge.
+func (m *Manager) canRespondToAssertion() bool {
+	return m.challengeReader.Mode() == types.DefensiveMode || m.challengeReader.Mode() == types.MakeMode
 }
 
 func randUint64(max uint64) (uint64, error) {

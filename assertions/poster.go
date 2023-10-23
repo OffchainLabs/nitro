@@ -17,7 +17,9 @@ import (
 
 func (s *Manager) postAssertionRoutine(ctx context.Context) {
 	if _, err := s.PostAssertion(ctx); err != nil {
-		srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+		if !errors.Is(err, solimpl.ErrAlreadyExists) {
+			srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+		}
 	}
 	ticker := time.NewTicker(s.postInterval)
 	defer ticker.Stop()
@@ -25,7 +27,9 @@ func (s *Manager) postAssertionRoutine(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if _, err := s.PostAssertion(ctx); err != nil {
-				srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+				if !errors.Is(err, solimpl.ErrAlreadyExists) {
+					srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+				}
 			}
 		case <-ctx.Done():
 			return
@@ -33,36 +37,8 @@ func (s *Manager) postAssertionRoutine(ctx context.Context) {
 	}
 }
 
-// PostAssertion differs depending on whether the validator is currently staked.
+// PostAssertion differs depending on whether or not the validator is currently staked.
 func (s *Manager) PostAssertion(ctx context.Context) (protocol.Assertion, error) {
-	staked, err := s.chain.IsStaked(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if staked {
-		return s.PostAssertionAndMoveStake(ctx)
-	}
-	return s.PostAssertionAndNewStake(ctx)
-}
-
-// PostAssertionAndNewStake posts the latest assertion and adds a new stake on it.
-func (s *Manager) PostAssertionAndNewStake(ctx context.Context) (protocol.Assertion, error) {
-	return s.postAssertionImpl(ctx, s.chain.NewStakeOnNewAssertion)
-}
-
-// PostAssertionAndMoveStake posts the latest assertion and moves an existing stake to it.
-func (s *Manager) PostAssertionAndMoveStake(ctx context.Context) (protocol.Assertion, error) {
-	return s.postAssertionImpl(ctx, s.chain.StakeOnNewAssertion)
-}
-
-func (s *Manager) postAssertionImpl(
-	ctx context.Context,
-	submitFn func(
-		ctx context.Context,
-		parentCreationInfo *protocol.AssertionCreatedInfo,
-		newState *protocol.ExecutionState,
-	) (protocol.Assertion, error),
-) (protocol.Assertion, error) {
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
@@ -74,20 +50,61 @@ func (s *Manager) postAssertionImpl(
 	if err != nil {
 		return nil, err
 	}
-	if !parentAssertionCreationInfo.InboxMaxCount.IsUint64() {
+	staked, err := s.chain.IsStaked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// If the validator is already staked, we post an assertion and move existing stake to it.
+	if staked {
+		assertion, postErr := s.PostAssertionBasedOnParent(
+			ctx, parentAssertionCreationInfo, s.chain.StakeOnNewAssertion,
+		)
+		if postErr != nil {
+			return nil, postErr
+		}
+		s.submittedAssertions.Insert(assertion.Id().Hash)
+		return assertion, nil
+	}
+	// Otherwise, we post a new assertion and place a new stake on it.
+	assertion, err := s.PostAssertionBasedOnParent(
+		ctx, parentAssertionCreationInfo, s.chain.NewStakeOnNewAssertion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	s.submittedAssertions.Insert(assertion.Id().Hash)
+	return assertion, nil
+}
+
+// Posts a new assertion onchain based on a parent assertion we agree with.
+func (s *Manager) PostAssertionBasedOnParent(
+	ctx context.Context,
+	parentCreationInfo *protocol.AssertionCreatedInfo,
+	submitFn func(
+		ctx context.Context,
+		parentCreationInfo *protocol.AssertionCreatedInfo,
+		newState *protocol.ExecutionState,
+	) (protocol.Assertion, error),
+) (protocol.Assertion, error) {
+	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("inbox max count not a uint64")
 	}
 	// The parent assertion tells us what the next posted assertion's batch should be.
 	// We read this value and use it to compute the required execution state we must post.
-	batchCount := parentAssertionCreationInfo.InboxMaxCount.Uint64()
+	batchCount := parentCreationInfo.InboxMaxCount.Uint64()
 	newState, err := s.stateManager.ExecutionStateAfterBatchCount(ctx, batchCount)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get execution state at message count %d", batchCount)
 	}
-	srvlog.Info("Required batch for assertion and retrieved state", log.Ctx{"batch": batchCount, "newState": fmt.Sprintf("%+v", newState)})
+	srvlog.Info(
+		"Posting assertion with retrieved state", log.Ctx{
+			"batchCount": batchCount,
+			"newState":   fmt.Sprintf("%+v", newState),
+		},
+	)
 	assertion, err := submitFn(
 		ctx,
-		parentAssertionCreationInfo,
+		parentCreationInfo,
 		newState,
 	)
 	switch {

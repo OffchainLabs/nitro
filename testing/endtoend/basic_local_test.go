@@ -274,20 +274,20 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 			t.Fatal(err)
 		}
 
-		aliceLeaf, err := alicePoster.PostAssertionAndNewStake(ctx)
+		aliceLeaf, err := alicePoster.PostAssertion(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		bobLeaf, err := bobPoster.PostAssertionAndNewStake(ctx)
+		bobLeaf, err := bobPoster.PostAssertion(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Scan for created assertions.
-		if err := alicePoster.ProcessAssertionCreation(ctx, aliceLeaf.Id()); err != nil {
+		if err := alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Id()); err != nil {
 			t.Fatal(err)
 		}
-		if err := bobPoster.ProcessAssertionCreation(ctx, bobLeaf.Id()); err != nil {
+		if err := bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Id()); err != nil {
 			t.Fatal(err)
 		}
 
@@ -341,12 +341,12 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 		require.NoError(t, err)
 		bobPoster, err := assertions.NewManager(bChain, s.BobStateManager, be.Client(), bob, rollup, "bob", time.Hour, time.Second*10, s.BobStateManager, time.Hour)
 		require.NoError(t, err)
-		aliceLeaf, err := alicePoster.PostAssertionAndNewStake(ctx)
+		aliceLeaf, err := alicePoster.PostAssertion(ctx)
 		require.NoError(t, err)
-		bobLeaf, err := bobPoster.PostAssertionAndNewStake(bobCtx)
+		bobLeaf, err := bobPoster.PostAssertion(bobCtx)
 		require.NoError(t, err)
-		require.NoError(t, alicePoster.ProcessAssertionCreation(ctx, aliceLeaf.Id()))
-		require.NoError(t, bobPoster.ProcessAssertionCreation(bobCtx, bobLeaf.Id()))
+		require.NoError(t, alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Id()))
+		require.NoError(t, bobPoster.ProcessAssertionCreationEvent(bobCtx, bobLeaf.Id()))
 
 		// Alice and bob starts to challenge each other.
 		alice.Start(ctx)

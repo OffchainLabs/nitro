@@ -7,6 +7,7 @@ package setup
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -124,6 +125,7 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Honest post %+v and evil post %+v\n", honestPostState, evilPostState)
 
 	return &CreatedValidatorFork{
 		Leaf1:              assertion,

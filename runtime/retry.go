@@ -14,15 +14,34 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
-const sleepTime = time.Second * 1
+const defaultSleepTime = time.Second * 1
 
 var (
 	retryCounter = metrics.NewRegisteredCounter("arb/validator/runtime/retry", nil)
 	pkglog       = log.New("package", "retry")
 )
 
+type RetryConfig struct {
+	sleepTime time.Duration
+}
+
+type Opt func(*RetryConfig)
+
+// WithInterval specifies how often to retry a failing function.
+func WithInterval(d time.Duration) Opt {
+	return func(rc *RetryConfig) {
+		rc.sleepTime = d
+	}
+}
+
 // UntilSucceeds retries the given function until it succeeds or the context is cancelled.
-func UntilSucceeds[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+func UntilSucceeds[T any](ctx context.Context, fn func() (T, error), opts ...Opt) (T, error) {
+	cfg := &RetryConfig{
+		sleepTime: defaultSleepTime,
+	}
+	for _, o := range opts {
+		o(cfg)
+	}
 	count := 0
 	for {
 		if ctx.Err() != nil {
@@ -36,7 +55,7 @@ func UntilSucceeds[T any](ctx context.Context, fn func() (T, error)) (T, error) 
 				"err":        err,
 			})
 			retryCounter.Inc(1)
-			time.Sleep(sleepTime)
+			time.Sleep(cfg.sleepTime)
 			continue
 		}
 		return got, nil

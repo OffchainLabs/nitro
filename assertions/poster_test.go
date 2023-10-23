@@ -11,6 +11,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -278,8 +279,9 @@ func setupPoster(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockStateM
 	_, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	p := &Manager{
-		chain:        chain,
-		stateManager: stateProvider,
+		chain:               chain,
+		stateManager:        stateProvider,
+		submittedAssertions: threadsafe.NewSet[common.Hash](),
 	}
 	return p, chain, stateProvider
 }

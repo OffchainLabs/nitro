@@ -19,6 +19,7 @@ import (
 
 var (
 	ErrNoExecutionState = errors.New("chain does not have execution state")
+	ErrChainCatchingUp  = errors.New("chain is catching up to the execution state")
 )
 
 // Batch index for an Arbitrum L2 state.
@@ -56,6 +57,10 @@ type Provider interface {
 type ExecutionProvider interface {
 	// Produces the L2 execution state to assert to after the processing the given batch count.
 	ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error)
+	ExecutionStateAgreementChecker
+}
+
+type ExecutionStateAgreementChecker interface {
 	// If the state manager locally has this execution state, returns its message count and no error.
 	// Returns ErrChainCatchingUp if catching up to chain.
 	// Returns ErrNoExecutionState if the state manager does not have this execution state.
