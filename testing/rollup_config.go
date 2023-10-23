@@ -46,6 +46,12 @@ func WithChallengeGracePeriodBlocks(num uint64) Opt {
 	}
 }
 
+func WithChainConfig(cfg string) Opt {
+	return func(c *rollupgen.Config) {
+		c.ChainConfig = cfg
+	}
+}
+
 func GenerateRollupConfig(
 	prod bool,
 	wasmModuleRoot common.Hash,

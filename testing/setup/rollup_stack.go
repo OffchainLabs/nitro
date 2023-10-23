@@ -384,13 +384,12 @@ func DeployFullRollupStack(
 	if err != nil {
 		return nil, err
 	}
-
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		config,
 		common.Address{},
 		[]common.Address{},
-		false,
+		true, // Permissionless validation.
 		big.NewInt(challenge_testing.MaxDataSize),
 	)
 
@@ -518,7 +517,7 @@ func deployBridgeCreator(
 		return common.Address{}, errors.Wrap(err, "bridgegen.DeployInbox")
 	}
 
-	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventInbox(auth, backend)
+	rollupEventBridgeTemplate, tx, _, err := mocksgen.DeployMockRollupEventInbox(auth, backend)
 	if err != nil {
 		return common.Address{}, err
 	}

@@ -211,6 +211,7 @@ type ClaimId common.Hash
 // OneStepData used for confirming edges by one step proofs.
 type OneStepData struct {
 	BeforeHash common.Hash
+	AfterHash  common.Hash
 	Proof      []byte
 }
 

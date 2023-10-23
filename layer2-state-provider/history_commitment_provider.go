@@ -29,7 +29,8 @@ type ProofCollector interface {
 	CollectProof(
 		ctx context.Context,
 		wasmModuleRoot common.Hash,
-		messageNumber Height,
+		fromBatch Batch,
+		blockChallengeHeight Height,
 		machineIndex OpcodeIndex,
 	) ([]byte, error)
 }
@@ -40,8 +41,10 @@ type ProofCollector interface {
 type HashCollectorConfig struct {
 	// The WASM module root the machines should be a part of.
 	WasmModuleRoot common.Hash
-	// The L2 message number the machine corresponds to.
-	MessageNumber Height
+	// The batch at which to start computation.
+	FromBatch Batch
+	// The block challenge height for hash collection.
+	BlockChallengeHeight Height
 	// Defines the heights at which we want to collect machine hashes for each challenge level.
 	// An index in this slice represents a challenge level, and a value represents a height within that
 	// challenge level.
@@ -124,12 +127,11 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 	}
 	// If the call is for message number ranges only, we get the hashes for
 	// those states and return a commitment for them.
-	var fromMessageNumber Height
+	var fromBlockChallengeHeight Height
 	if len(validatedHeights) == 0 {
-		fromMessageNumber = req.FromHeight
 		hashes, hashesErr := p.l2MessageStateCollector.L2MessageStatesUpTo(
 			ctx,
-			Height(fromMessageNumber),
+			req.FromHeight,
 			req.UpToHeight,
 			req.FromBatch,
 			req.ToBatch,
@@ -139,7 +141,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 		}
 		return hashes, nil
 	} else {
-		fromMessageNumber = validatedHeights[0]
+		fromBlockChallengeHeight = validatedHeights[0]
 	}
 
 	// Computes the desired challenge level this history commitment is for.
@@ -168,8 +170,9 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 	return p.machineHashCollector.CollectMachineHashes(
 		ctx,
 		&HashCollectorConfig{
-			WasmModuleRoot: req.WasmModuleRoot,
-			MessageNumber:  Height(fromMessageNumber),
+			WasmModuleRoot:       req.WasmModuleRoot,
+			FromBatch:            req.FromBatch,
+			BlockChallengeHeight: fromBlockChallengeHeight,
 			// We drop the first index of the validated heights, because the first index is for the block challenge level,
 			// which is over blocks and not over individual machine WASM opcodes. Starting from the second index, we are now
 			// dealing with challenges over ranges of opcodes which are what we care about for our implementation of machine hash collection.
@@ -382,13 +385,14 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 	}
 	machineIndex += OpcodeIndex(upToHeight)
 
-	osp, err := p.proofCollector.CollectProof(ctx, wasmModuleRoot, startHeights[0], machineIndex)
+	osp, err := p.proofCollector.CollectProof(ctx, wasmModuleRoot, fromBatch, startHeights[0], machineIndex)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	data := &protocol.OneStepData{
 		BeforeHash: startCommit.LastLeaf,
+		AfterHash:  endCommit.LastLeaf,
 		Proof:      osp,
 	}
 	return data, startCommit.LastLeafProof, endCommit.LastLeafProof, nil

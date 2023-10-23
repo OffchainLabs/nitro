@@ -17,6 +17,7 @@ go_library(
         "//containers/option",
         "//solgen/go/bridgegen",
         "//solgen/go/challengeV2gen",
+        "//solgen/go/ospgen",
         "//solgen/go/rollupgen",
         "//state-commitments/history",
         "@com_github_ethereum_go_ethereum//:go-ethereum",

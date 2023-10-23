@@ -13,6 +13,7 @@ import (
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/solgen/go/ospgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -597,7 +598,43 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	for i, r := range postHistoryInclusionProof {
 		post[i] = r
 	}
-	_, err = cm.assertionChain.transact(
+
+	machineStep, _ := edge.Unwrap().StartCommitment()
+	ospEntryAddr, err := cm.caller.OneStepProofEntry(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return err
+	}
+	ospBindings, err := ospgen.NewOneStepProofEntryCaller(ospEntryAddr, cm.backend)
+	if err != nil {
+		return err
+	}
+	bridgeAddr, err := cm.assertionChain.rollup.Bridge(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return err
+	}
+	execCtx := ospgen.ExecutionContext{
+		MaxInboxMessagesRead:  creationInfo.InboxMaxCount,
+		Bridge:                bridgeAddr,
+		InitialWasmModuleRoot: creationInfo.WasmModuleRoot,
+	}
+	result, err := ospBindings.ProveOneStep(
+		&bind.CallOpts{Context: ctx},
+		execCtx,
+		big.NewInt(int64(machineStep)),
+		oneStepData.BeforeHash,
+		oneStepData.Proof,
+	)
+	if err != nil {
+		return errors.Wrapf(
+			err,
+			"failed to pre-check one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
+			machineStep,
+			oneStepData.BeforeHash,
+			oneStepData.AfterHash,
+			result,
+		)
+	}
+	if _, err = cm.assertionChain.transact(
 		ctx,
 		cm.assertionChain.backend,
 		func(opts *bind.TransactOpts) (*types.Transaction, error) {
@@ -618,8 +655,17 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 				pre,
 				post,
 			)
-		})
-	// TODO: Handle receipt.
+		}); err != nil {
+		return errors.Wrapf(
+			err,
+			"failed to confirm one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
+			machineStep,
+			oneStepData.BeforeHash,
+			oneStepData.AfterHash,
+			result,
+		)
+	}
+
 	return err
 }
 
