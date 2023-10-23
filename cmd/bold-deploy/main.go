@@ -45,6 +45,7 @@ func main() {
 
 	l1conn := flag.String("l1conn", "", "l1 connection")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store")
+	l1priv := flag.String("l1priv", "", "l1 private key")
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
 	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
 	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
@@ -80,11 +81,24 @@ func main() {
 		Password:   *l1passphrase,
 		PrivateKey: *l1privatekey,
 	}
-	l1TransactionOpts, _, err := util.OpenWallet("l1", &wallet, l1ChainId)
-	if err != nil {
-		flag.Usage()
-		log.Error("error reading keystore")
-		panic(err)
+	var l1TransactionOpts *bind.TransactOpts
+	var err error
+	if *l1priv != "" {
+		privKey, err := crypto.HexToECDSA(*l1priv)
+		if err != nil {
+			panic(err)
+		}
+		l1TransactionOpts, err = bind.NewKeyedTransactorWithChainID(privKey, l1ChainId)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		l1TransactionOpts, _, err = util.OpenWallet("l1", &wallet, l1ChainId)
+		if err != nil {
+			flag.Usage()
+			log.Error("error reading keystore")
+			panic(err)
+		}
 	}
 
 	l1client, err := ethclient.Dial(*l1conn)
@@ -148,7 +162,7 @@ func main() {
 
 	ensureTxSucceeds := func(tx *types.Transaction) {
 		if waitErr := challenge_testing.WaitForTx(ctx, l1Reader.Client(), tx); waitErr != nil {
-			panic(err)
+			panic(waitErr)
 		}
 		receipt, err := l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 		if err != nil {
@@ -168,7 +182,7 @@ func main() {
 		panic(err)
 	}
 	ensureTxSucceeds(tx)
-	mintTokens, ok := new(big.Int).SetString("10000", 10)
+	mintTokens, ok := new(big.Int).SetString("5", 10)
 	if !ok {
 		panic("could not set stake token value")
 	}
@@ -189,31 +203,31 @@ func main() {
 		panic(err)
 	}
 
-	// We then need to give the validator some funds from the stake token.
-	validatorSeedTokens, ok := new(big.Int).SetString("1000", 10)
-	if !ok {
-		panic("not ok")
-	}
-	tx, err = tokenBindings.TestWETH9Transactor.Transfer(l1TransactionOpts, validatorTxOpts.From, validatorSeedTokens)
-	if err != nil {
-		panic(err)
-	}
-	ensureTxSucceeds(tx)
+	// // We then need to give the validator some funds from the stake token.
+	// validatorSeedTokens, ok := new(big.Int).SetString("2", 10)
+	// if !ok {
+	// 	panic("not ok")
+	// }
+	// tx, err = tokenBindings.TestWETH9Transactor.Transfer(l1TransactionOpts, validatorTxOpts.From, validatorSeedTokens)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
 
-	evilValidatorPrivateKey, err := crypto.HexToECDSA("dc04c5399f82306ec4b4d654a342f40e2e0620fe39950d967e1e574b32d4dd36")
-	if err != nil {
-		panic(err)
-	}
-	evilValidatorTxOpts, err := bind.NewKeyedTransactorWithChainID(evilValidatorPrivateKey, l1ChainId)
-	if err != nil {
-		panic(err)
-	}
+	// evilValidatorPrivateKey, err := crypto.HexToECDSA("dc04c5399f82306ec4b4d654a342f40e2e0620fe39950d967e1e574b32d4dd36")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// evilValidatorTxOpts, err := bind.NewKeyedTransactorWithChainID(evilValidatorPrivateKey, l1ChainId)
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	tx, err = tokenBindings.TestWETH9Transactor.Transfer(l1TransactionOpts, evilValidatorTxOpts.From, validatorSeedTokens)
-	if err != nil {
-		panic(err)
-	}
-	ensureTxSucceeds(tx)
+	// tx, err = tokenBindings.TestWETH9Transactor.Transfer(l1TransactionOpts, evilValidatorTxOpts.From, validatorSeedTokens)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
 
 	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
@@ -284,31 +298,32 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	amountToApproveSpend, ok := new(big.Int).SetString("10000", 10)
-	if !ok {
-		panic("not ok")
-	}
-	tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, deployedAddresses.Rollup, amountToApproveSpend)
-	if err != nil {
-		panic(err)
-	}
-	ensureTxSucceeds(tx)
-	tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, chalManager.Address(), amountToApproveSpend)
-	if err != nil {
-		panic(err)
-	}
-	ensureTxSucceeds(tx)
+	_ = chalManager
+	// amountToApproveSpend, ok := new(big.Int).SetString("10000", 10)
+	// if !ok {
+	// 	panic("not ok")
+	// }
+	// tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, deployedAddresses.Rollup, amountToApproveSpend)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
+	// tx, err = tokenBindings.TestWETH9Transactor.Approve(validatorTxOpts, chalManager.Address(), amountToApproveSpend)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
 
-	tx, err = tokenBindings.TestWETH9Transactor.Approve(evilValidatorTxOpts, deployedAddresses.Rollup, amountToApproveSpend)
-	if err != nil {
-		panic(err)
-	}
-	ensureTxSucceeds(tx)
-	tx, err = tokenBindings.TestWETH9Transactor.Approve(evilValidatorTxOpts, chalManager.Address(), amountToApproveSpend)
-	if err != nil {
-		panic(err)
-	}
-	ensureTxSucceeds(tx)
+	// tx, err = tokenBindings.TestWETH9Transactor.Approve(evilValidatorTxOpts, deployedAddresses.Rollup, amountToApproveSpend)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
+	// tx, err = tokenBindings.TestWETH9Transactor.Approve(evilValidatorTxOpts, chalManager.Address(), amountToApproveSpend)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ensureTxSucceeds(tx)
 
 	deployData, err := json.Marshal(deployedAddresses)
 	if err != nil {
