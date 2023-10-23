@@ -339,7 +339,7 @@ func (s *StateManager) CollectMachineHashes(
 		MessageHeight:  protocol.Height(messageNum),
 		StepHeights:    cfg.StepHeights,
 	}
-	if s.historyCache != nil && !cfg.DisableCache {
+	if s.historyCache != nil {
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
 		switch {
 		case err == nil:
@@ -365,16 +365,13 @@ func (s *StateManager) CollectMachineHashes(
 		return nil, err
 	}
 	expectedEnding := &expectedEndingGlobalState
-	if cfg.DisableFinalStateModify {
-		expectedEnding = nil
-	}
 	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes, expectedEnding)
 	result, err := stepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Do not save a history commitment of length 1 to the cache.
-	if len(result) > 1 && s.historyCache != nil && !cfg.DisableCache {
+	if len(result) > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
 			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
 				return nil, err
