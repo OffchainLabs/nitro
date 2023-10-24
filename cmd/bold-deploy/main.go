@@ -17,6 +17,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	rollupgen "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
+	"github.com/OffchainLabs/bold/testing/setup"
 
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -31,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/util"
 )
 
@@ -58,7 +58,6 @@ func main() {
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
 	l2ChainName := flag.String("l2chainname", "", "L2 chain name (will be included in chain info output json file)")
 	l2ChainInfo := flag.String("l2chaininfo", "l2_chain_info.json", "L2 chain info output json file")
-	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 	flag.Parse()
@@ -243,14 +242,14 @@ func main() {
 		challenge_testing.WithConfirmPeriodBlocks(uint64(400)), // TODO: Hardcoded to 1000 L1 blocks.
 		challenge_testing.WithChainConfig(string(chainConfigJson)),
 	)
-
-	deployedAddresses, err := arbnode.DeployBOLDOnL1(
+	deployedAddresses, err := setup.DeployFullRollupStack(
 		ctx,
-		l1Reader,
+		l1Reader.Client(),
 		l1TransactionOpts,
-		sequencerAddress,
-		*authorizevalidators,
+		l1TransactionOpts.From,
 		rollupConfig,
+		false, // do not use mock bridge.
+		false, // do not use a mock one step prover
 	)
 	if err != nil {
 		flag.Usage()
