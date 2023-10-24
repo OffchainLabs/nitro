@@ -58,7 +58,6 @@ func main() {
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
 	l2ChainName := flag.String("l2chainname", "", "L2 chain name (will be included in chain info output json file)")
 	l2ChainInfo := flag.String("l2chaininfo", "l2_chain_info.json", "L2 chain info output json file")
-	inputL2ChainInfo := flag.String("inputl2chaininfo", "", "The existing, deployed L2 chain info json file, if existent")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
@@ -318,40 +317,22 @@ func main() {
 		panic(err)
 	}
 	parentChainIsArbitrum := l1Reader.IsParentChainArbitrum()
-	var chainsInfo []chaininfo.ChainInfo
-	if *inputL2ChainInfo == "" {
-		chainsInfo = []chaininfo.ChainInfo{
-			{
-				ChainName:             *l2ChainName,
-				ParentChainId:         l1ChainId.Uint64(),
-				ParentChainIsArbitrum: &parentChainIsArbitrum,
-				ChainConfig:           &chainConfig,
-				RollupAddresses: &chaininfo.RollupAddresses{
-					Bridge:                 deployedAddresses.Bridge,
-					Inbox:                  deployedAddresses.Inbox,
-					SequencerInbox:         deployedAddresses.SequencerInbox,
-					Rollup:                 deployedAddresses.Rollup,
-					ValidatorUtils:         deployedAddresses.ValidatorUtils,
-					ValidatorWalletCreator: deployedAddresses.ValidatorWalletCreator,
-					DeployedAt:             deployedAddresses.DeployedAt,
-				},
+	chainsInfo := []chaininfo.ChainInfo{
+		{
+			ChainName:             *l2ChainName,
+			ParentChainId:         l1ChainId.Uint64(),
+			ParentChainIsArbitrum: &parentChainIsArbitrum,
+			ChainConfig:           &chainConfig,
+			RollupAddresses: &chaininfo.RollupAddresses{
+				Bridge:                 deployedAddresses.Bridge,
+				Inbox:                  deployedAddresses.Inbox,
+				SequencerInbox:         deployedAddresses.SequencerInbox,
+				Rollup:                 deployedAddresses.Rollup,
+				ValidatorUtils:         deployedAddresses.ValidatorUtils,
+				ValidatorWalletCreator: deployedAddresses.ValidatorWalletCreator,
+				DeployedAt:             deployedAddresses.DeployedAt,
 			},
-		}
-	} else {
-		inputChainInfoFile, err := os.ReadFile(*inputL2ChainInfo)
-		if err != nil {
-			panic(fmt.Errorf("failed to read l2 chain config file: %w", err))
-		}
-		if err = json.Unmarshal(inputChainInfoFile, &chainsInfo); err != nil {
-			panic(fmt.Errorf("failed to deserialize chain info: %w", err))
-		}
-		// Edit everything but keep the same rollup contract as the original deployed info.
-		chainsInfo[0].RollupAddresses.Bridge = deployedAddresses.Bridge
-		chainsInfo[0].RollupAddresses.Inbox = deployedAddresses.Inbox
-		chainsInfo[0].RollupAddresses.SequencerInbox = deployedAddresses.SequencerInbox
-		chainsInfo[0].RollupAddresses.ValidatorUtils = deployedAddresses.ValidatorUtils
-		chainsInfo[0].RollupAddresses.ValidatorWalletCreator = deployedAddresses.ValidatorWalletCreator
-		chainsInfo[0].RollupAddresses.DeployedAt = deployedAddresses.DeployedAt
+		},
 	}
 	chainsInfoJson, err := json.Marshal(chainsInfo)
 	if err != nil {
