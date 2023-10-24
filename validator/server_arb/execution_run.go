@@ -66,9 +66,9 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
-		startGlobalState := machine.GetGlobalState()
 		if machineStartIndex == 0 {
-			hash := crypto.Keccak256Hash([]byte("Machine finished:"), startGlobalState.Hash().Bytes())
+			gs := machine.GetGlobalState()
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
@@ -82,6 +82,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
+
 			// Advance the machine in step size increments.
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
@@ -102,9 +103,9 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			hash := machine.Hash()
-			stateRoots = append(stateRoots, hash)
+			stateRoots = append(stateRoots, machine.Hash())
 		}
+
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct
 		// length.

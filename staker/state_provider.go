@@ -376,7 +376,6 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Getting osp at message num %d and machine index %d\n", messageNum, machineIndex)
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
 	return oneStepProofPromise.Await(ctx)
 }
