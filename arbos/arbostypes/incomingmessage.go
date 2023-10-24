@@ -289,7 +289,7 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 			}
 			err = json.Unmarshal(serializedChainConfig, &chainConfig)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v, serialized config: %s", err, string(msg.L2msg), serializedChainConfig)
+				return nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
 			}
 			return &ParsedInitMessage{chainId, basefee, &chainConfig, serializedChainConfig}, nil
 		}

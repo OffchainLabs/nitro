@@ -180,7 +180,6 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1In
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Full data: %#x\n", data)
 	fullData = append(fullData, data...)
 
 	m.serialized = fullData
