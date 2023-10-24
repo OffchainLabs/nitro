@@ -25,9 +25,9 @@
     "anyTrustFastConfirmer": "0x6d903f6003cca6255D85CcA4D3B5E5146dC33925",
     "disableValidatorWhitelist": true,
     "blockLeafSize": 1048576,
-    "bigStepLeafSize": 2048,
-    "smallStepLeafSize": 1024,
-    "numBigStepLevel": 3,
+    "bigStepLeafSize": 512,
+    "smallStepLeafSize": 128,
+    "numBigStepLevel": 4,
     "maxDataSize": 117964
   },
   "validators": [
