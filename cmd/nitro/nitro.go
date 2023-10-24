@@ -229,7 +229,7 @@ func mainImpl() int {
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
-	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Bold.Enable || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
@@ -282,29 +282,6 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Node.Bold.Enable {
-		if nodeConfig.Node.Bold.Evil {
-			validatorPrivateKey, err := crypto.HexToECDSA("dc04c5399f82306ec4b4d654a342f40e2e0620fe39950d967e1e574b32d4dd36")
-			if err != nil {
-				log.Crit("Failed to get privkey for validator", "err", err)
-			}
-			validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				log.Crit("Failed to get validator tx opts", "err", err)
-			}
-			l1TransactionOptsValidator = validatorTxOpts
-		} else {
-			validatorPrivateKey, err := crypto.HexToECDSA("182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890")
-			if err != nil {
-				log.Crit("Failed to get privkey for validator", "err", err)
-			}
-			validatorTxOpts, err := bind.NewKeyedTransactorWithChainID(validatorPrivateKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				log.Crit("Failed to get validator tx opts", "err", err)
-			}
-			l1TransactionOptsValidator = validatorTxOpts
-		}
-	}
 	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
 	if nodeConfig.Chain.InfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)

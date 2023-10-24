@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -44,33 +43,13 @@ var (
 )
 
 type BoldConfig struct {
-	Enable                    bool          `koanf:"enable"`
-	Evil                      bool          `koanf:"evil"`
-	Strategy                  string        `koanf:"strategy"`
-	StakerInterval            time.Duration `koanf:"staker-interval"`
-	MakeAssertionInterval     time.Duration `koanf:"make-assertion-interval"`
-	PostingStrategy           string        `koanf:"posting-strategy"`
-	DisableChallenge          bool          `koanf:"disable-challenge"`
-	ConfirmationBlocks        int64         `koanf:"confirmation-blocks"`
-	UseSmartContractWallet    bool          `koanf:"use-smart-contract-wallet"`
-	OnlyCreateWalletContract  bool          `koanf:"only-create-wallet-contract"`
-	StartValidationFromStaked bool          `koanf:"start-validation-from-staked"`
-	ContractWalletAddress     string        `koanf:"contract-wallet-address"`
-	GasRefunderAddress        string        `koanf:"gas-refunder-address"`
-	RedisUrl                  string        `koanf:"redis-url"`
-	ExtraGas                  uint64        `koanf:"extra-gas" reload:"hot"`
+	Enable bool   `koanf:"enable"`
+	Evil   bool   `koanf:"evil"`
+	Mode   string `koanf:"mode"`
 }
 
 func (c *BoldConfig) Validate() error {
 	return nil
-}
-
-type Opt func(*StateManager)
-
-func DisableCache() Opt {
-	return func(sm *StateManager) {
-		sm.historyCache = nil
-	}
 }
 
 type StateManager struct {
@@ -86,7 +65,6 @@ func NewStateManager(
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
-	opts ...Opt,
 ) (*StateManager, error) {
 	historyCache := challengecache.New(cacheBaseDir)
 	sm := &StateManager{
@@ -94,9 +72,6 @@ func NewStateManager(
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
 		validatorName:        validatorName,
-	}
-	for _, o := range opts {
-		o(sm)
 	}
 	return sm, nil
 }
@@ -329,9 +304,9 @@ func (s *StateManager) CollectMachineHashes(
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
-	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch) - 1)
+	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
 	cacheKey := &challengecache.Key{
@@ -339,7 +314,7 @@ func (s *StateManager) CollectMachineHashes(
 		MessageHeight:  protocol.Height(messageNum),
 		StepHeights:    cfg.StepHeights,
 	}
-	if s.historyCache != nil && !cfg.DisableCache {
+	if s.historyCache != nil {
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
 		switch {
 		case err == nil:
@@ -360,21 +335,13 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	expectedEndingGlobalState, err := s.findGlobalStateFromMessageCountAndBatch(messageNum+1, cfg.FromBatch)
-	if err != nil {
-		return nil, err
-	}
-	expectedEnding := &expectedEndingGlobalState
-	if cfg.DisableFinalStateModify {
-		expectedEnding = nil
-	}
-	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes, expectedEnding)
+	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
 	result, err := stepLeaves.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Do not save a history commitment of length 1 to the cache.
-	if len(result) > 1 && s.historyCache != nil && !cfg.DisableCache {
+	if len(result) > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
 			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
 				return nil, err
@@ -409,7 +376,6 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Getting osp at message num %d and machine index %d\n", messageNum, machineIndex)
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
 	return oneStepProofPromise.Await(ctx)
 }

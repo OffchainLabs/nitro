@@ -108,5 +108,6 @@ type RollupAddresses struct {
 	Rollup                 common.Address `json:"rollup"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
+	StakeToken             common.Address `json:"stake-token"`
 	DeployedAt             uint64         `json:"deployed-at"`
 }
