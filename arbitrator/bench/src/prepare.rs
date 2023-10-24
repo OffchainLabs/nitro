@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::parse_input::*;
 
 pub fn prepare_machine() -> eyre::Result<Machine> {
-    let path = Path::new("/Users/zypherpunk/Desktop/items.txt");
+    let path = Path::new("/home/ultrainstinct/items.txt");
     let file = File::open(&path)?;
     let reader = BufReader::new(file);
 
@@ -32,7 +32,7 @@ pub fn prepare_machine() -> eyre::Result<Machine> {
     };
     let preimage_resolver = Arc::new(Box::new(preimage_resolver));
 
-    let binary_path = Path::new("/Users/zypherpunk/Desktop/machines/latest/machine.wavm.br");
+    let binary_path = Path::new("/home/ultrainstinct/machines/latest/machine.wavm.br");
     println!("Creating machine from binary_path");
     let mut mach = Machine::new_from_wavm(binary_path)?;
 
