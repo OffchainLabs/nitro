@@ -175,22 +175,36 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 }
 
 func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
-	rootCrt, err := os.ReadFile(opts.RootCA)
-	if err != nil {
-		return nil, fmt.Errorf("error reading external signer root CA: %w", err)
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
 	}
-	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(rootCrt)
+
+	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
+		log.Info("Client certificate for external signer is enabled")
+		clientCert, err := tls.LoadX509KeyPair(opts.ClientCert, opts.ClientPrivateKey)
+		if err != nil {
+			return nil, fmt.Errorf("error loading client certificate and private key: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{clientCert}
+	}
+
+	if opts.RootCA != "" {
+		rootCrt, err := os.ReadFile(opts.RootCA)
+		if err != nil {
+			return nil, fmt.Errorf("error reading external signer root CA: %w", err)
+		}
+		rootCertPool := x509.NewCertPool()
+		rootCertPool.AppendCertsFromPEM(rootCrt)
+		tlsCfg.RootCAs = rootCertPool
+	}
+
 	return rpc.DialOptions(
 		ctx,
 		opts.URL,
 		rpc.WithHTTPClient(
 			&http.Client{
 				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						MinVersion: tls.VersionTLS12,
-						RootCAs:    pool,
-					},
+					TLSClientConfig: tlsCfg,
 				},
 			},
 		),
@@ -743,9 +757,14 @@ type ExternalSignerCfg struct {
 	Address string `koanf:"address"`
 	// API method name (e.g. eth_signTransaction).
 	Method string `koanf:"method"`
-	// Path to the external signer root CA certificate.
+	// (Optional) Path to the external signer root CA certificate.
 	// This allows us to use self-signed certificats on the external signer.
 	RootCA string `koanf:"root-ca"`
+	// (Optional) Client certificate for mtls.
+	ClientCert string `koanf:"client-cert"`
+	// (Optional) Client certificate key for mtls.
+	// This is required when client-cert is set.
+	ClientPrivateKey string `koanf:"client-private-key"`
 }
 
 type DangerousConfig struct {
@@ -788,6 +807,8 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".address", DefaultDataPosterConfig.ExternalSigner.Address, "external signer address")
 	f.String(prefix+".method", DefaultDataPosterConfig.ExternalSigner.Method, "external signer method")
 	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
+	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
+	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
