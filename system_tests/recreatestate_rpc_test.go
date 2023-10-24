@@ -97,9 +97,8 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	nodeConfig.Caching.Archive = true
-	// disable caching of states in BlockChain.stateCache
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	nodeConfig.Caching.TrieCleanCache = 0
-	nodeConfig.Caching.TrieDirtyCache = 0
 	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
 	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
@@ -121,7 +120,6 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	if balance.Cmp(expectedBalance) != 0 {
 		Fatal(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
 	}
-
 }
 
 func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
@@ -133,9 +131,8 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	nodeConfig.Caching.Archive = true
-	// disable caching of states in BlockChain.stateCache
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	nodeConfig.Caching.TrieCleanCache = 0
-	nodeConfig.Caching.TrieDirtyCache = 0
 	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
 	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
@@ -168,9 +165,8 @@ func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	nodeConfig.Caching.Archive = true
-	// disable caching of states in BlockChain.stateCache
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	nodeConfig.Caching.TrieCleanCache = 0
-	nodeConfig.Caching.TrieDirtyCache = 0
 	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
 	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
@@ -203,9 +199,8 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	nodeConfig.Caching.Archive = true
-	// disable caching of states in BlockChain.stateCache
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	nodeConfig.Caching.TrieCleanCache = 0
-	nodeConfig.Caching.TrieDirtyCache = 0
 	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
 	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, headerCacheLimit+5)
@@ -249,9 +244,8 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	nodeConfig.Caching.Archive = true
-	// disable caching of states in BlockChain.stateCache
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	nodeConfig.Caching.TrieCleanCache = 0
-	nodeConfig.Caching.TrieDirtyCache = 0
 	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
 	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, 32)
@@ -285,9 +279,9 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	nodeConfig.Caching.Archive = true
-	// disable caching of states in BlockChain.stateCache
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	nodeConfig.Caching.TrieCleanCache = 0
-	nodeConfig.Caching.TrieDirtyCache = 0
+
 	nodeConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
 	nodeConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 	_, execNode, l2client, cancelNode := prepareNodeWithHistory(t, ctx, nodeConfig, blockCacheLimit+4)
@@ -421,6 +415,9 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	}
 	for i := genesis + 1; i <= genesis+uint64(txCount); i += i % 10 {
 		_, err = client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(i))
+		if err != nil {
+			t.Log("skipBlocks:", skipBlocks, "skipGas:", skipGas)
+		}
 		Require(t, err)
 	}
 
@@ -434,10 +431,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig := gethexec.DefaultCachingConfig
 	cacheConfig.Archive = true
-	// disable caching of states in BlockChain.stateCache
-	cacheConfig.TrieCleanCache = 0
-	cacheConfig.TrieDirtyCache = 0
-	// test defaults
+	//// test defaults
 	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
