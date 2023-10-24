@@ -1,0 +1,25 @@
+[package]
+name = "bench"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "benchbin"
+path = "src/bin.rs"
+
+[dev-dependencies]
+criterion = { version = "0.3", features = ["html_reports"] }
+
+[[bench]]
+name = "machine_hashing_benchmark"
+harness = false
+
+[dependencies]
+hex = "0.4.3"
+eyre = "0.6.5"
+prover = { path = "../prover" }
+arbutil = { path = "../arbutil" }

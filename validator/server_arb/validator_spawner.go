@@ -92,12 +92,14 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 	if err := mach.SetPreimageResolver(resolver); err != nil {
 		return err
 	}
+	fmt.Printf("Setting global state: %+v\n", entry.StartState)
 	err := mach.SetGlobalState(entry.StartState)
 	if err != nil {
 		log.Error("error while setting global state for proving", "err", err, "gsStart", entry.StartState)
 		return fmt.Errorf("error while setting global state for proving: %w", err)
 	}
 	for _, batch := range entry.BatchInfo {
+		fmt.Printf("Adding batch %s\n", batch)
 		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {
 			log.Error(
@@ -108,6 +110,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 		}
 	}
 	if entry.HasDelayedMsg {
+		fmt.Printf("Adding delayed msg %d and %#x\n", entry.DelayedMsgNr, entry.DelayedMsg)
 		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, entry.DelayedMsg)
 		if err != nil {
 			log.Error(
@@ -305,6 +308,7 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 
 func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	getMachine := func(ctx context.Context) (MachineInterface, error) {
+		fmt.Printf("Loading for wasm module root %#x\n", wasmModuleRoot)
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
 			return nil, err

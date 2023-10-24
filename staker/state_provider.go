@@ -356,6 +356,10 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("***************PREPPING ENTRY")
+	fmt.Printf("Got the input for message num %d and module root %#x\n", messageNum, cfg.WasmModuleRoot)
+	fmt.Println(input)
+	fmt.Println("***************END ENTRY")
 	execRun, err := s.validator.execSpawner.CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
