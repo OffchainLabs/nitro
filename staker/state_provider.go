@@ -304,9 +304,9 @@ func (s *StateManager) CollectMachineHashes(
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
-	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch) - 1)
+	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
 	cacheKey := &challengecache.Key{

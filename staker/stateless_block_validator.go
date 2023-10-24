@@ -284,7 +284,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	}
 	if e.HasDelayedMsg {
 		if v.config.Evil {
-			fmt.Println("Got evil block validator")
 			chainId, ok := new(big.Int).SetString(v.config.ChainId, 10)
 			if !ok {
 				return errors.New("bad chainid")
@@ -297,7 +296,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				)
 				return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 			}
-			fmt.Printf("Encoded delayed L2: %#x\n", delayedMsg.L2msg)
 
 			txes, err := arbos.ParseL2Transactions(delayedMsg, chainId, nil)
 			if err != nil {
@@ -460,7 +458,6 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Building validation run: start %+v, end %+v, pos %d...start pos %d end pos %d\n", start, end, pos, startPos, endPos)
 	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed)
 	if err != nil {
 		return nil, err

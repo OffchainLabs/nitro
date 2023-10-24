@@ -329,6 +329,7 @@ func main() {
 				Rollup:                 deployedAddresses.Rollup,
 				ValidatorUtils:         deployedAddresses.ValidatorUtils,
 				ValidatorWalletCreator: deployedAddresses.ValidatorWalletCreator,
+				StakeToken:             stakeToken,
 				DeployedAt:             deployedAddresses.DeployedAt,
 			},
 		},
