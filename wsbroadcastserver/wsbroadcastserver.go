@@ -33,8 +33,8 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
-	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/wsbroadcastserver/wsupgrade/duration", nil)
-	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/wsbroadcastserver/startwithheader/duration", nil)
+	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/wsupgrade/duration", nil)
+	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
 )
 
 const (
