@@ -115,6 +115,10 @@ func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common
 	return deploySimple(t, tc.ctx, auth, tc.Client)
 }
 
+func (tc *TestClient) EnsureTxSucceeded(transaction *types.Transaction) (*types.Receipt, error) {
+	return EnsureTxSucceeded(tc.ctx, tc.Client, transaction)
+}
+
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
@@ -212,6 +216,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.ConsensusNode =
 		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+	l2.ExecNode = getExecNode(t, l2.ConsensusNode)
 	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
 	return l2, func() { l2.cleanup() }
 }
