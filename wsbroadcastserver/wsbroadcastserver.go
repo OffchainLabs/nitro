@@ -204,11 +204,18 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
 	})
 
-	return s.StartWithHeader(ctx, header)
+	startTime := time.Now()
+	err := s.StartWithHeader(ctx, header)
+	elapsed := time.Since(startTime)
+	startWithHeaderTimer.Update(elapsed)
+
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
-	startTimeMain := time.Now()
 	s.startMutex.Lock()
 	defer s.startMutex.Unlock()
 	if s.started {
@@ -489,9 +496,6 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	}
 
 	s.started = true
-
-	elapsedMain := time.Since(startTimeMain)
-	startWithHeaderTimer.Update(elapsedMain)
 
 	return nil
 }
