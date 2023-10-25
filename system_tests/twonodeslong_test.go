@@ -42,7 +42,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)

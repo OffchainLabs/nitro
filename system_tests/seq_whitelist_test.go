@@ -9,16 +9,16 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
 func TestSequencerWhitelist(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
+	config := gethexec.ConfigDefaultTest()
 	config.Sequencer.SenderWhitelist = GetTestAddressForAccountName(t, "Owner").String() + "," + GetTestAddressForAccountName(t, "User").String()
-	l2info, l2node, client := CreateTestL2WithConfig(t, ctx, nil, config, true, nil)
+	l2info, l2node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, true, nil)
 	defer l2node.StopAndWait()
 
 	l2info.GenerateAccount("User")

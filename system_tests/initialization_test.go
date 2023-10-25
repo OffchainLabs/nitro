@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -63,7 +62,7 @@ func TestInitContract(t *testing.T) {
 		l2info.ArbInitData.Accounts = append(l2info.ArbInitData.Accounts, accountInfo)
 		expectedSums[accountAddress] = sum
 	}
-	_, node, client := CreateTestL2WithConfig(t, ctx, l2info, arbnode.ConfigDefaultL2Test(), true, nil)
+	_, node, client := CreateTestL2WithConfig(t, ctx, l2info, nil, nil, true, nil)
 	defer node.StopAndWait()
 
 	for accountAddress, sum := range expectedSums {

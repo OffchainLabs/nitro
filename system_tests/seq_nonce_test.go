@@ -15,7 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,9 +24,9 @@ func TestSequencerParallelNonces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
+	config := gethexec.ConfigDefaultTest()
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false, nil)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("Destination")
@@ -62,8 +62,8 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false, nil)
+	config := gethexec.ConfigDefaultTest()
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false, nil)
 	defer node.StopAndWait()
 
 	l2info.GetInfoWithPrivKey("Owner").Nonce++
@@ -88,10 +88,10 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
+	config := gethexec.ConfigDefaultTest()
 	config.Sequencer.NonceFailureCacheSize = 5
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false, nil)
 	defer node.StopAndWait()
 
 	count := 15

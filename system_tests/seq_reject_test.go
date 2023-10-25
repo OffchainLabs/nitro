@@ -31,14 +31,14 @@ func TestSequencerRejection(t *testing.T) {
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	feedErrChan := make(chan error, 10)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true, nil)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true, nil)
 	defer nodeA.StopAndWait()
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false, nil)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false, nil)
 	defer nodeB.StopAndWait()
 
 	auth := l2info1.GetDefaultTransactOpts("Owner", ctx)

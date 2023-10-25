@@ -3,6 +3,8 @@
 
 package addressSet
 
+// TODO lowercase this package name
+
 import (
 	"errors"
 
@@ -26,49 +28,49 @@ func Initialize(sto *storage.Storage) error {
 
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
-		sto,
-		sto.OpenStorageBackedUint64(0),
-		sto.OpenSubStorage([]byte{0}),
+		backingStorage: sto.WithoutCache(),
+		size:           sto.OpenStorageBackedUint64(0),
+		byAddress:      sto.OpenSubStorage([]byte{0}),
 	}
 }
 
-func (aset *AddressSet) Size() (uint64, error) {
-	return aset.size.Get()
+func (as *AddressSet) Size() (uint64, error) {
+	return as.size.Get()
 }
 
-func (aset *AddressSet) IsMember(addr common.Address) (bool, error) {
-	value, err := aset.byAddress.Get(util.AddressToHash(addr))
+func (as *AddressSet) IsMember(addr common.Address) (bool, error) {
+	value, err := as.byAddress.Get(util.AddressToHash(addr))
 	return value != (common.Hash{}), err
 }
 
-func (aset *AddressSet) GetAnyMember() (*common.Address, error) {
-	size, err := aset.size.Get()
+func (as *AddressSet) GetAnyMember() (*common.Address, error) {
+	size, err := as.size.Get()
 	if err != nil || size == 0 {
 		return nil, err
 	}
-	sba := aset.backingStorage.OpenStorageBackedAddressOrNil(1)
+	sba := as.backingStorage.OpenStorageBackedAddressOrNil(1)
 	addr, err := sba.Get()
 	return addr, err
 }
 
-func (aset *AddressSet) Clear() error {
-	size, err := aset.size.Get()
+func (as *AddressSet) Clear() error {
+	size, err := as.size.Get()
 	if err != nil || size == 0 {
 		return err
 	}
 	for i := uint64(1); i <= size; i++ {
-		contents, _ := aset.backingStorage.GetByUint64(i)
-		_ = aset.backingStorage.ClearByUint64(i)
-		err = aset.byAddress.Clear(contents)
+		contents, _ := as.backingStorage.GetByUint64(i)
+		_ = as.backingStorage.ClearByUint64(i)
+		err = as.byAddress.Clear(contents)
 		if err != nil {
 			return err
 		}
 	}
-	return aset.size.Clear()
+	return as.size.Clear()
 }
 
-func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, error) {
-	size, err := aset.size.Get()
+func (as *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, error) {
+	size, err := as.size.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +79,7 @@ func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, err
 	}
 	ret := make([]common.Address, size)
 	for i := range ret {
-		sba := aset.backingStorage.OpenStorageBackedAddress(uint64(i + 1))
+		sba := as.backingStorage.OpenStorageBackedAddress(uint64(i + 1))
 		ret[i], err = sba.Get()
 		if err != nil {
 			return nil, err
@@ -86,22 +88,22 @@ func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, err
 	return ret, nil
 }
 
-func (aset *AddressSet) ClearList() error {
-	size, err := aset.size.Get()
+func (as *AddressSet) ClearList() error {
+	size, err := as.size.Get()
 	if err != nil || size == 0 {
 		return err
 	}
 	for i := uint64(1); i <= size; i++ {
-		err = aset.backingStorage.ClearByUint64(i)
+		err = as.backingStorage.ClearByUint64(i)
 		if err != nil {
 			return err
 		}
 	}
-	return aset.size.Clear()
+	return as.size.Clear()
 }
 
-func (aset *AddressSet) RectifyMapping(addr common.Address) error {
-	isOwner, err := aset.IsMember(addr)
+func (as *AddressSet) RectifyMapping(addr common.Address) error {
+	isOwner, err := as.IsMember(addr)
 	if !isOwner || err != nil {
 		return errors.New("RectifyMapping: Address is not an owner")
 	}
@@ -109,15 +111,15 @@ func (aset *AddressSet) RectifyMapping(addr common.Address) error {
 	// If the mapping is correct, RectifyMapping shouldn't do anything
 	// Additional safety check to avoid corruption of mapping after the initial fix
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	slot, err := aset.byAddress.GetUint64(addrAsHash)
+	slot, err := as.byAddress.GetUint64(addrAsHash)
 	if err != nil {
 		return err
 	}
-	atSlot, err := aset.backingStorage.GetByUint64(slot)
+	atSlot, err := as.backingStorage.GetByUint64(slot)
 	if err != nil {
 		return err
 	}
-	size, err := aset.size.Get()
+	size, err := as.size.Get()
 	if err != nil {
 		return err
 	}
@@ -126,72 +128,72 @@ func (aset *AddressSet) RectifyMapping(addr common.Address) error {
 	}
 
 	// Remove the owner from map and add them as a new owner
-	err = aset.byAddress.Clear(addrAsHash)
+	err = as.byAddress.Clear(addrAsHash)
 	if err != nil {
 		return err
 	}
 
-	return aset.Add(addr)
+	return as.Add(addr)
 }
 
-func (aset *AddressSet) Add(addr common.Address) error {
-	present, err := aset.IsMember(addr)
+func (as *AddressSet) Add(addr common.Address) error {
+	present, err := as.IsMember(addr)
 	if present || err != nil {
 		return err
 	}
-	size, err := aset.size.Get()
+	size, err := as.size.Get()
 	if err != nil {
 		return err
 	}
 	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	err = aset.byAddress.Set(addrAsHash, slot)
+	err = as.byAddress.Set(addrAsHash, slot)
 	if err != nil {
 		return err
 	}
-	sba := aset.backingStorage.OpenStorageBackedAddress(1 + size)
+	sba := as.backingStorage.OpenStorageBackedAddress(1 + size)
 	err = sba.Set(addr)
 	if err != nil {
 		return err
 	}
-	_, err = aset.size.Increment()
+	_, err = as.size.Increment()
 	return err
 }
 
-func (aset *AddressSet) Remove(addr common.Address, arbosVersion uint64) error {
+func (as *AddressSet) Remove(addr common.Address, arbosVersion uint64) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	slot, err := aset.byAddress.GetUint64(addrAsHash)
+	slot, err := as.byAddress.GetUint64(addrAsHash)
 	if slot == 0 || err != nil {
 		return err
 	}
-	err = aset.byAddress.Clear(addrAsHash)
+	err = as.byAddress.Clear(addrAsHash)
 	if err != nil {
 		return err
 	}
-	size, err := aset.size.Get()
+	size, err := as.size.Get()
 	if err != nil {
 		return err
 	}
 	if slot < size {
-		atSize, err := aset.backingStorage.GetByUint64(size)
+		atSize, err := as.backingStorage.GetByUint64(size)
 		if err != nil {
 			return err
 		}
-		err = aset.backingStorage.SetByUint64(slot, atSize)
+		err = as.backingStorage.SetByUint64(slot, atSize)
 		if err != nil {
 			return err
 		}
 		if arbosVersion >= 11 {
-			err = aset.byAddress.Set(atSize, util.UintToHash(slot))
+			err = as.byAddress.Set(atSize, util.UintToHash(slot))
 			if err != nil {
 				return err
 			}
 		}
 	}
-	err = aset.backingStorage.ClearByUint64(size)
+	err = as.backingStorage.ClearByUint64(size)
 	if err != nil {
 		return err
 	}
-	_, err = aset.size.Decrement()
+	_, err = as.size.Decrement()
 	return err
 }

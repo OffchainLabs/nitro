@@ -20,23 +20,22 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
-func getStorageRootHash(t *testing.T, node *arbnode.Node, address common.Address) common.Hash {
+func getStorageRootHash(t *testing.T, execNode *gethexec.ExecutionNode, address common.Address) common.Hash {
 	t.Helper()
-	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
+	statedb, err := execNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
 	trie, err := statedb.StorageTrie(address)
 	Require(t, err)
 	return trie.Hash()
 }
 
-func getStorageSlotValue(t *testing.T, node *arbnode.Node, address common.Address) map[common.Hash]common.Hash {
+func getStorageSlotValue(t *testing.T, execNode *gethexec.ExecutionNode, address common.Address) map[common.Hash]common.Hash {
 	t.Helper()
-	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
+	statedb, err := execNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
 	slotValue := make(map[common.Hash]common.Hash)
 	Require(t, err)
@@ -207,6 +206,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 
+	execNode := getExecNode(t, node)
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	contractAddress1, simple1 := deploySimple(t, ctx, auth, l2client)
 	tx, err := simple1.Increment(&auth)
@@ -223,10 +223,10 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	currentRootHash1 := getStorageRootHash(t, node, contractAddress1)
-	currentSlotValueMap1 := getStorageSlotValue(t, node, contractAddress1)
-	currentRootHash2 := getStorageRootHash(t, node, contractAddress2)
-	currentSlotValueMap2 := getStorageSlotValue(t, node, contractAddress2)
+	currentRootHash1 := getStorageRootHash(t, execNode, contractAddress1)
+	currentSlotValueMap1 := getStorageSlotValue(t, execNode, contractAddress1)
+	currentRootHash2 := getStorageRootHash(t, execNode, contractAddress2)
+	currentSlotValueMap2 := getStorageSlotValue(t, execNode, contractAddress2)
 
 	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
@@ -262,18 +262,18 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	Require(t, err)
 
 	previousStorageRootHash1 := currentRootHash1
-	currentRootHash1 = getStorageRootHash(t, node, contractAddress1)
+	currentRootHash1 = getStorageRootHash(t, execNode, contractAddress1)
 	if bytes.Equal(previousStorageRootHash1.Bytes(), currentRootHash1.Bytes()) {
 		Fatal(t, "storage root hash didn't change as expected")
 	}
-	currentSlotValueMap1 = getStorageSlotValue(t, node, contractAddress1)
+	currentSlotValueMap1 = getStorageSlotValue(t, execNode, contractAddress1)
 
 	previousStorageRootHash2 := currentRootHash2
-	currentRootHash2 = getStorageRootHash(t, node, contractAddress2)
+	currentRootHash2 = getStorageRootHash(t, execNode, contractAddress2)
 	if bytes.Equal(previousStorageRootHash2.Bytes(), currentRootHash2.Bytes()) {
 		Fatal(t, "storage root hash didn't change as expected")
 	}
-	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
+	currentSlotValueMap2 = getStorageSlotValue(t, execNode, contractAddress2)
 
 	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
@@ -367,7 +367,8 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	}
 	cancelCtxWithTimeout()
 	wg.Wait()
-	bc := node.Execution.Backend.ArbInterface().BlockChain()
+	execNode := getExecNode(t, node)
+	bc := execNode.Backend.ArbInterface().BlockChain()
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 
 	var receipts types.Receipts
@@ -403,17 +404,18 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.Sequencer.MaxBlockSpeed = 0
-	nodeConfig.TxPreChecker.Strictness = execution.TxPreCheckerStrictnessLikelyCompatible
-	nodeConfig.TxPreChecker.RequiredStateAge = 1
-	nodeConfig.TxPreChecker.RequiredStateMaxBlocks = 2
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
+	execConfig.TxPreChecker.RequiredStateAge = 1
+	execConfig.TxPreChecker.RequiredStateMaxBlocks = 2
 
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, execConfig, nil, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 	rpcClient, err := node.Stack.Attach()
 	Require(t, err)
+	execNode := getExecNode(t, node)
 
 	l2info.GenerateAccount("User2")
 
@@ -428,7 +430,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	Require(t, err, "failed to call Increment()")
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	currentRootHash := getStorageRootHash(t, node, contractAddress)
+	currentRootHash := getStorageRootHash(t, execNode, contractAddress)
 	options := &arbitrum_types.ConditionalOptions{
 		KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
 			contractAddress: {RootHash: &currentRootHash},
@@ -447,7 +449,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	Require(t, err, "failed to call Increment()")
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	currentRootHash = getStorageRootHash(t, node, contractAddress)
+	currentRootHash = getStorageRootHash(t, execNode, contractAddress)
 	options = &arbitrum_types.ConditionalOptions{
 		KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
 			contractAddress: {RootHash: &currentRootHash},
