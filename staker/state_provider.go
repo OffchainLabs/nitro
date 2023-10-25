@@ -142,6 +142,7 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Global state %+v, batch index %d, count %d\n", globalState, batchIndex, messageCount)
 	executionState := &protocol.ExecutionState{
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished,
@@ -208,7 +209,7 @@ func (s *StateManager) StatesInBatchRange(
 		msgsInBatch := msgCount - prevBatchMsgCount
 
 		if msgsInBatch > 1 {
-			for i := uint64(1); i <= uint64(msgsInBatch); i++ {
+			for i := uint64(1); i < uint64(msgsInBatch); i++ {
 				msgIndex := uint64(prevBatchMsgCount) + i
 				gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
 				if err != nil {
@@ -217,17 +218,20 @@ func (s *StateManager) StatesInBatchRange(
 				if gs.BlockHash == (common.Hash{}) {
 					continue
 				}
+				machHash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				globalStates = append(globalStates, gs)
 				stateRoots = append(stateRoots,
-					crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
+					machHash,
 				)
+				fmt.Printf("Gs at message index %d and batch %d was %+v and mach hash %#x\n", msgIndex, batch, gs, machHash)
 				lastGlobalState = gs
 			}
 			prevBatchMsgCount = msgCount
 			lastGlobalState.Batch += 1
 			lastGlobalState.PosInBatch = 0
+			machHash := crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes())
 			stateRoots = append(stateRoots,
-				crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes()),
+				machHash,
 			)
 			globalStates = append(globalStates, lastGlobalState)
 		} else {
@@ -243,6 +247,11 @@ func (s *StateManager) StatesInBatchRange(
 			stateRoots = append(stateRoots, hash)
 			globalStates = append(globalStates, lastGlobalState)
 		}
+	}
+
+	for _, gs := range globalStates {
+		hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+		fmt.Printf("Global state %+v and mach hash %#x\n", gs, hash)
 	}
 
 	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
@@ -310,6 +319,7 @@ func (s *StateManager) CollectMachineHashes(
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
+	fmt.Printf("Collecting machine hashes at from batch %d, total %+v, message %d\n", cfg.FromBatch, cfg, messageNum)
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: cfg.WasmModuleRoot,
 		MessageHeight:  protocol.Height(messageNum),

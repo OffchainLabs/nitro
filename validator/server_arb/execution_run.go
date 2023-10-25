@@ -66,14 +66,16 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
+		startGlobalState := machine.GetGlobalState()
+
 		if machineStartIndex == 0 {
-			gs := machine.GetGlobalState()
-			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), startGlobalState.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
 		}
+		fmt.Printf("Initial global state: %+v, step size %d, start index %d, num desired %d, start hash %#x\n", startGlobalState, stepSize, machineStartIndex, numDesiredLeaves, stateRoots[0])
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
@@ -94,6 +96,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
+				fmt.Printf("Finished state root idx %d, count %d pos %d, hash %#x, gs %+v\n", len(stateRoots)-1, machineStep, position, hash, gs)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
@@ -103,7 +106,11 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			stateRoots = append(stateRoots, machine.Hash())
+			gs := machine.GetGlobalState()
+			hash := machine.Hash()
+			stateRoots = append(stateRoots, hash)
+			fmt.Printf("State root idx %d, count %d pos %d, hash %#x, gs %+v\n", len(stateRoots)-1, machineStep, position, hash, gs)
+
 		}
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad

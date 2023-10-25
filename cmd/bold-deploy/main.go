@@ -171,7 +171,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	validatorPriv, err := crypto.HexToECDSA("4186cddd403633d6d845bfbefa87dcffc9152eb8373b97b53e5e8e15b918aba6")
+	validatorPriv, err := crypto.HexToECDSA("93690ac9d039285ed00f874a2694d951c1777ac3a165732f36ea773f16179a89")
 	if err != nil {
 		panic(err)
 	}
@@ -189,8 +189,8 @@ func main() {
 	}
 	validatorOpts.GasLimit = 1_000_000
 	evilValidatorOpts.GasLimit = 1_000_000
-	validatorOpts.Value = big.NewInt(100)
-	evilValidatorOpts.Value = big.NewInt(100)
+	validatorOpts.Value = big.NewInt(params.GWei * 1000)
+	evilValidatorOpts.Value = big.NewInt(params.GWei * 1000)
 	_, err = tokenBindings.Deposit(validatorOpts)
 	if err != nil {
 		panic(err)
@@ -255,19 +255,21 @@ func main() {
 	}
 	validatorOpts.Value = big.NewInt(0)
 	evilValidatorOpts.Value = big.NewInt(0)
-	_, err = tokenBindings.Approve(validatorOpts, deployedAddresses.Rollup, big.NewInt(1000))
+	maxUint256 := new(big.Int)
+	maxUint256.Exp(big.NewInt(2), big.NewInt(256), nil).Sub(maxUint256, big.NewInt(1))
+	_, err = tokenBindings.Approve(validatorOpts, deployedAddresses.Rollup, maxUint256)
 	if err != nil {
 		panic(err)
 	}
-	_, err = tokenBindings.Approve(validatorOpts, chalManager.Address(), big.NewInt(1000))
+	_, err = tokenBindings.Approve(validatorOpts, chalManager.Address(), maxUint256)
 	if err != nil {
 		panic(err)
 	}
-	_, err = tokenBindings.Approve(evilValidatorOpts, deployedAddresses.Rollup, big.NewInt(1000))
+	_, err = tokenBindings.Approve(evilValidatorOpts, deployedAddresses.Rollup, maxUint256)
 	if err != nil {
 		panic(err)
 	}
-	_, err = tokenBindings.Approve(evilValidatorOpts, chalManager.Address(), big.NewInt(1000))
+	_, err = tokenBindings.Approve(evilValidatorOpts, chalManager.Address(), maxUint256)
 	if err != nil {
 		panic(err)
 	}
