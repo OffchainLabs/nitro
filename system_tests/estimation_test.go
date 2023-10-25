@@ -154,7 +154,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, chainConfig)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), nil, true, chainConfig)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
