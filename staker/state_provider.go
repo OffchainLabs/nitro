@@ -254,8 +254,18 @@ func (s *StateManager) StatesInBatchRange(
 		fmt.Printf("Global state %+v and mach hash %#x\n", gs, hash)
 	}
 
-	for uint64(len(stateRoots)) < uint64(totalDesiredHashes) {
-		stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
+	duplicates := make(map[common.Hash]bool)
+	finalRoots := make([]common.Hash, 0)
+	for _, hash := range stateRoots {
+		if ok := duplicates[hash]; ok {
+			continue
+		}
+		finalRoots = append(finalRoots, hash)
+		duplicates[hash] = true
+	}
+
+	for uint64(len(finalRoots)) < uint64(totalDesiredHashes) {
+		finalRoots = append(finalRoots, finalRoots[len(finalRoots)-1])
 	}
 	return stateRoots[fromHeight : toHeight+1], nil
 }
