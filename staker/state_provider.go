@@ -43,9 +43,10 @@ var (
 )
 
 type BoldConfig struct {
-	Enable bool   `koanf:"enable"`
-	Evil   bool   `koanf:"evil"`
-	Mode   string `koanf:"mode"`
+	Enable              bool   `koanf:"enable"`
+	Evil                bool   `koanf:"evil"`
+	Mode                string `koanf:"mode"`
+	ValidatorPrivateKey string `koanf:"validator-private-key"`
 }
 
 func (c *BoldConfig) Validate() error {

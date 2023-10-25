@@ -245,16 +245,29 @@ func mainImpl() int {
 
 	if nodeConfig.Node.Staker.ParentChainWallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.ParentChainWallet == defaultBatchPosterL1WalletConfig {
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
-			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+			if nodeConfig.Node.BatchPoster.ParentChainWallet.PrivateKey != "" {
+				privKey, err := crypto.HexToECDSA(nodeConfig.Node.BatchPoster.ParentChainWallet.PrivateKey)
+				if err != nil {
+					log.Crit("Failed to parse bold validator private key", "err", err)
+				}
+				opts, err := bind.NewKeyedTransactorWithChainID(privKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+				if err != nil {
+					log.Crit("Failed to create bold validator opts from private key", "err", err)
+				}
+				l1TransactionOptsBatchPoster = opts
+				l1TransactionOptsValidator = opts
+			} else {
+				l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+				if err != nil {
+					flag.Usage()
+					log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+				}
+				if l1Wallet.OnlyCreateKey {
+					return 0
+				}
+				l1TransactionOptsBatchPoster = l1TransactionOpts
+				l1TransactionOptsValidator = l1TransactionOpts
 			}
-			if l1Wallet.OnlyCreateKey {
-				return 0
-			}
-			l1TransactionOptsBatchPoster = l1TransactionOpts
-			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
 		if *l1Wallet != defaultL1WalletConfig {
@@ -280,6 +293,18 @@ func mainImpl() int {
 				return 0
 			}
 		}
+	}
+
+	if nodeConfig.Node.Bold.Enable && nodeConfig.Node.Bold.ValidatorPrivateKey != "" {
+		privKey, err := crypto.HexToECDSA(nodeConfig.Node.Bold.ValidatorPrivateKey)
+		if err != nil {
+			log.Crit("Failed to parse bold validator private key", "err", err)
+		}
+		validatorOpts, err := bind.NewKeyedTransactorWithChainID(privKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			log.Crit("Failed to create bold validator opts from private key", "err", err)
+		}
+		l1TransactionOptsValidator = validatorOpts
 	}
 
 	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
