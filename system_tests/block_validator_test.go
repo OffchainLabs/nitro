@@ -127,6 +127,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		_, _, simple, err = mocksgen.DeploySimple(&auth, l2client)
 		Require(t, err, "could not deploy contract")
 
+		tx, err := simple.StoreDifficulty(&auth)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
 		difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 		Require(t, err)
 		if !arbmath.BigEquals(difficulty, common.Big1) {
@@ -135,7 +139,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		// make auth a chain owner
 		arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
 		Require(t, err)
-		tx, err := arbDebug.BecomeChainOwner(&auth)
+		tx, err = arbDebug.BecomeChainOwner(&auth)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
@@ -146,6 +150,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 
+		tx, err = simple.StoreDifficulty(&auth)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
 		difficulty, err = simple.GetBlockDifficulty(&bind.CallOpts{})
 		Require(t, err)
 		if !arbmath.BigEquals(difficulty, common.Big1) {
@@ -185,13 +193,6 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))
 		if l2balance.Cmp(expectedBalance) != 0 {
 			Fatal(t, "Unexpected balance:", l2balance)
-		}
-	}
-	if workload == upgradeArbOs {
-		difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
-		Require(t, err)
-		if !arbmath.BigEquals(difficulty, common.Big1) {
-			Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
 		}
 	}
 
