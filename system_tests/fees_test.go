@@ -53,7 +53,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 	Require(t, err)
 
-	baseFee := GetBaseFee(t, builder.L2.Client, ctx)
+	baseFee := builder.L2.GetBaseFee(t)
 	builder.L2Info.GasPrice = baseFee
 
 	testFees := func(tip uint64) (*big.Int, *big.Int) {

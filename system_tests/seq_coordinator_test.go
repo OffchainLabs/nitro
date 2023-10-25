@@ -56,7 +56,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	// stdio protocol makes sure forwarder initialization doesn't fail
 	nodeNames := []string{"stdio://A", "stdio://B", "stdio://C", "stdio://D", "stdio://E"}
 
-	nodes := make([]*arbnode.Node, len(nodeNames))
+	testNodes := make([]*TestClient, len(nodeNames))
 
 	// init DB to known state
 	initRedisForTest(t, ctx, builder.nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
@@ -65,11 +65,11 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
 		builder.L2Info = l2Info
 		builder.Build(t)
-		nodes[nodeNum] = builder.L2.ConsensusNode
+		testNodes[nodeNum] = builder.L2
 	}
 
 	trySequencing := func(nodeNum int) bool {
-		node := nodes[nodeNum]
+		node := testNodes[nodeNum].ConsensusNode
 		curMsgs, err := node.TxStreamer.GetMessageCountSync(t)
 		Require(t, err)
 		emptyMessage := arbostypes.MessageWithMetadata{
@@ -98,14 +98,15 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	// node(n) has higher prio than node(n+1), so should be impossible for more than one to succeed
 	trySequencingEverywhere := func() int {
 		succeeded := -1
-		for nodeNum, node := range nodes {
+		for nodeNum, testNode := range testNodes {
+			node := testNode.ConsensusNode
 			if node == nil {
 				continue
 			}
 			if trySequencing(nodeNum) {
 				if succeeded >= 0 {
 					t.Fatal("sequnced succeeded in parallel",
-						"index1:", succeeded, "debug", nodes[succeeded].SeqCoordinator.DebugPrint(),
+						"index1:", succeeded, "debug", testNodes[succeeded].ConsensusNode.SeqCoordinator.DebugPrint(),
 						"index2:", nodeNum, "debug", node.SeqCoordinator.DebugPrint(),
 						"now", time.Now().UnixMilli())
 				}
@@ -116,7 +117,8 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	}
 
 	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex) {
-		for _, currentNode := range nodes {
+		for _, testNode := range testNodes {
+			currentNode := testNode.ConsensusNode
 			if currentNode == nil {
 				continue
 			}
@@ -137,16 +139,16 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	var needsStop []*arbnode.Node
 	killNode := func(nodeNum int) {
 		if nodeNum%3 == 0 {
-			nodes[nodeNum].SeqCoordinator.PrepareForShutdown()
-			needsStop = append(needsStop, nodes[nodeNum])
+			testNodes[nodeNum].ConsensusNode.SeqCoordinator.PrepareForShutdown()
+			needsStop = append(needsStop, testNodes[nodeNum].ConsensusNode)
 		} else {
-			nodes[nodeNum].StopAndWait()
+			testNodes[nodeNum].ConsensusNode.StopAndWait()
 		}
-		nodes[nodeNum] = nil
+		testNodes[nodeNum].ConsensusNode = nil
 	}
 
 	nodeForwardTarget := func(nodeNum int) int {
-		execNode := getExecNode(t, nodes[nodeNum])
+		execNode := testNodes[nodeNum].ExecNode
 		fwTarget := execNode.TxPublisher.(*gethexec.TxPreChecker).TransactionPublisher.(*gethexec.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
@@ -178,7 +180,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	t.Log("Starting other nodes")
 
-	for i := 1; i < len(nodes); i++ {
+	for i := 1; i < len(testNodes); i++ {
 		createStartNode(i)
 	}
 
@@ -189,7 +191,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	for {
 
 		// all remaining nodes know which is the chosen one
-		for i := currentSequencer + 1; i < len(nodes); i++ {
+		for i := currentSequencer + 1; i < len(testNodes); i++ {
 			for attempts := 1; nodeForwardTarget(i) != currentSequencer; attempts++ {
 				if attempts > 10 {
 					t.Fatal("initial forward target not set")
@@ -206,7 +208,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			sequencedMesssages++
 		}
 
-		if currentSequencer == len(nodes)-1 {
+		if currentSequencer == len(testNodes)-1 {
 			addNodes = true
 		}
 		if addNodes {
@@ -258,7 +260,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		waitForMsgEverywhere(sequencedMesssages)
 	}
 
-	for nodeNum := range nodes {
+	for nodeNum := range testNodes {
 		killNode(nodeNum)
 	}
 	for _, node := range needsStop {
@@ -282,7 +284,6 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	cleanup := builder.Build(t)
 	defer cleanup()
-	clientA := builder.L2.Client
 
 	redisClient, err := redisutil.RedisClientFromURL(builder.nodeConfig.SeqCoordinator.RedisUrl)
 	Require(t, err)
@@ -312,26 +313,25 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: builder.nodeConfig})
 	defer cleanupB()
-	clientB := testClientB.Client
 
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	err = clientA.SendTransaction(ctx, tx)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	if successCase {
-		_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
+		_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), time.Second*5)
 		Require(t, err)
-		l2balance, err := clientB.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+		l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 		Require(t, err)
 		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 			t.Fatal("Unexpected balance:", l2balance)
 		}
 	} else {
-		_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
+		_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), time.Second)
 		if err == nil {
 			Fatal(t, "tx received by node with different seq coordinator signing key")
 		}

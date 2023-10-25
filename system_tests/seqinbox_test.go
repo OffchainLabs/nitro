@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -91,44 +90,44 @@ func diffAccessList(accessed, al types.AccessList) string {
 	return diff
 }
 
-func deployGasRefunder(ctx context.Context, t *testing.T, info *BlockchainTestInfo, client *ethclient.Client) common.Address {
+func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) common.Address {
 	t.Helper()
 	abi, err := bridgegen.GasRefunderMetaData.GetAbi()
 	if err != nil {
 		t.Fatalf("Error getting gas refunder abi: %v", err)
 	}
-	fauOpts := info.GetDefaultTransactOpts("Faucet", ctx)
-	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), client)
+	fauOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), builder.L1.Client)
 	if err != nil {
 		t.Fatalf("Error getting gas refunder contract deployment transaction: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error deploying gas refunder contract: %v", err)
 	}
-	tx = info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
-	if err := client.SendTransaction(ctx, tx); err != nil {
+	tx = builder.L1Info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
+	if err := builder.L1.Client.SendTransaction(ctx, tx); err != nil {
 		t.Fatalf("Error sending gas refunder funding transaction")
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error funding gas refunder")
 	}
-	contract, err := bridgegen.NewGasRefunder(addr, client)
+	contract, err := bridgegen.NewGasRefunder(addr, builder.L1.Client)
 	if err != nil {
 		t.Fatalf("Error getting gas refunder contract binding: %v", err)
 	}
-	tx, err = contract.AllowContracts(&fauOpts, []common.Address{info.GetAddress("SequencerInbox")})
+	tx, err = contract.AllowContracts(&fauOpts, []common.Address{builder.L1Info.GetAddress("SequencerInbox")})
 	if err != nil {
 		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error addting sequencer inbox in gas refunder allowlist: %v", err)
 	}
 
-	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{info.GetAddress("Sequencer")})
+	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{builder.L1Info.GetAddress("Sequencer")})
 	if err != nil {
 		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error addting sequencer in gas refunder allowlist: %v", err)
 	}
 	return addr
@@ -162,7 +161,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	Require(t, err)
 	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	gasRefunderAddr := deployGasRefunder(ctx, t, builder.L1Info, builder.L1.Client)
+	gasRefunderAddr := deployGasRefunder(ctx, t, builder)
 
 	ownerAddress := builder.L2Info.GetAddress("Owner")
 	var startL2BlockNumber uint64 = 0
@@ -200,7 +199,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		builder.L1Info.GenerateAccount(acct)
 		faucetTxs = append(faucetTxs, builder.L1Info.PrepareTx("Faucet", acct, 30000, big.NewInt(1e16), nil))
 	}
-	SendWaitTestTransactions(t, ctx, builder.L1.Client, faucetTxs)
+	builder.L1.SendWaitTestTransactions(t, faucetTxs)
 
 	seqABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {

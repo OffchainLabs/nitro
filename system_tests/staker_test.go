@@ -27,7 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -38,15 +37,15 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface) error {
+func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
-		l2info.Accounts["BackgroundUser"].Nonce = i
-		tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
-		err := l2clientA.SendTransaction(ctx, tx)
+		builder.L2Info.Accounts["BackgroundUser"].Nonce = i
+		tx := builder.L2Info.PrepareTx("BackgroundUser", "BackgroundUser", builder.L2Info.TransferGas, common.Big0, nil)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
 		if err != nil {
 			return err
 		}
-		_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
 		if err != nil {
 			return err
 		}
@@ -263,7 +262,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})()
 	go (func() {
 		defer close(backgroundTxsShutdownChan)
-		err := makeBackgroundTxs(backgroundTxsCtx, builder.L2Info, builder.L2.Client)
+		err := makeBackgroundTxs(backgroundTxsCtx, builder)
 		if !errors.Is(err, context.Canceled) {
 			log.Warn("error making background txs", "err", err)
 		}
