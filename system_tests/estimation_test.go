@@ -141,6 +141,10 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
 
+	tx, err := simple.StoreDifficulty(&auth)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
 	if !arbmath.BigEquals(difficulty, common.Big1) {
@@ -163,6 +167,10 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
 
+	tx, err := simple.StoreDifficulty(&auth)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
 	if !arbmath.BigEquals(difficulty, common.Big1) {
