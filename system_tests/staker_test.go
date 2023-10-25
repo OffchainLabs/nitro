@@ -331,9 +331,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
-					proxyAdmin, err := mocksgen.NewProxyAdminForBinding(proxyAdminAddr, l1client)
+					proxyAdminABI, err := abi.JSON(strings.NewReader(mocksgen.ProxyAdminForBindingABI))
 					Require(t, err)
-					tx, err = proxyAdmin.Upgrade(&deployAuth, managerAddr, mockImpl)
+					upgradeCalldata, err := proxyAdminABI.Pack("upgrade", managerAddr, mockImpl)
+					Require(t, err)
+					tx, err = upgradeExecutor.ExecuteCall(&deployAuth, proxyAdminAddr, upgradeCalldata)
 					Require(t, err)
 					_, err = EnsureTxSucceeded(ctx, l1client, tx)
 					Require(t, err)
