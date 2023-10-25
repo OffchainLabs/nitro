@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -31,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
@@ -120,16 +122,20 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
-	Require(t, err)
-	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, l1client)
+	Require(t, err, "unable to bind upgrade executor")
+	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	Require(t, err, "unable to parse rollup ABI")
 
-	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
+	Require(t, err, "unable to generate setValidator calldata")
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
+	Require(t, err, "unable to set validators")
+
+	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
+	Require(t, err, "unable to generate setMinimumAssertionPeriod calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setMinAssertPeriodCalldata)
+	Require(t, err, "unable to set minimum assertion period")
 
 	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, l1client)
 	Require(t, err)
