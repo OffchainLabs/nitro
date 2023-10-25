@@ -122,6 +122,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
+	Require(t, err)
+
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, l1client)
 	Require(t, err, "unable to bind upgrade executor")
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
@@ -131,11 +133,15 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err, "unable to generate setValidator calldata")
 	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
 	Require(t, err, "unable to set validators")
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
 	Require(t, err, "unable to generate setMinimumAssertionPeriod calldata")
 	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setMinAssertPeriodCalldata)
 	Require(t, err, "unable to set minimum assertion period")
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
 
 	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, l1client)
 	Require(t, err)
