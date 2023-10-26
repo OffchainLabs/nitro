@@ -142,7 +142,6 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Global state %+v, batch index %d, count %d\n", globalState, batchIndex, messageCount)
 	executionState := &protocol.ExecutionState{
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished,
@@ -161,113 +160,89 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, error) {
+) ([]common.Hash, []validator.GoGlobalState, error) {
 	// Check integrity of the arguments.
-	if fromBatch > toBatch {
-		return nil, fmt.Errorf("from batch %v is greater than to batch %v", fromBatch, toBatch)
+	if fromBatch >= toBatch {
+		return nil, nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
 	}
 	if fromHeight > toHeight {
-		return nil, fmt.Errorf("from height %v is greater than to height %v", fromHeight, toHeight)
+		return nil, nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
 	}
-
-	// The last message's batch count.
-	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
-	if err != nil {
-		return nil, err
-	}
-	gs, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, fromBatch-1)
-	if err != nil {
-		return nil, err
-	}
-	if gs.PosInBatch == 0 {
-		return nil, errors.New("final state of batch cannot be at position zero")
-	}
-	// The start state root of our history commitment starts at `batch: fromBatch, pos: 0` using the state
-	// from the last batch.
-	gs.Batch += 1
-	gs.PosInBatch = 0
-	stateRoots := []common.Hash{
-		crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes()),
-	}
-	globalStates := []validator.GoGlobalState{gs}
-
-	// Check if there are enough messages in the range to satisfy our request.
+	// Compute the total desired hashes from this request.
 	totalDesiredHashes := (toHeight - fromHeight) + 1
 
-	// We can return early if all we want is one hash.
-	if totalDesiredHashes == 1 && fromHeight == 0 && toHeight == 0 {
-		return stateRoots, nil
+	// Get the from batch's message count.
+	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+	if err != nil {
+		return nil, nil, err
 	}
+	executionResult, err := s.validator.streamer.ResultAtCount(prevBatchMsgCount)
+	if err != nil {
+		return nil, nil, err
+	}
+	startState := validator.GoGlobalState{
+		BlockHash:  executionResult.BlockHash,
+		SendRoot:   executionResult.SendRoot,
+		Batch:      uint64(fromBatch),
+		PosInBatch: 0,
+	}
+	machineHashes := []common.Hash{machineHash(startState)}
+	states := []validator.GoGlobalState{startState}
 
 	for batch := fromBatch; batch < toBatch; batch++ {
-		msgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
+		batchMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		var lastGlobalState validator.GoGlobalState
+		messagesInBatch := batchMessageCount - prevBatchMsgCount
 
-		msgsInBatch := msgCount - prevBatchMsgCount
-
-		if msgsInBatch > 1 {
-			for i := uint64(1); i < uint64(msgsInBatch); i++ {
-				msgIndex := uint64(prevBatchMsgCount) + i
-				gs, err := s.findGlobalStateFromMessageCountAndBatch(arbutil.MessageIndex(msgIndex), batch)
-				if err != nil {
-					return nil, err
-				}
-				if gs.BlockHash == (common.Hash{}) {
-					continue
-				}
-				machHash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-				globalStates = append(globalStates, gs)
-				stateRoots = append(stateRoots,
-					machHash,
-				)
-				fmt.Printf("Gs at message index %d and batch %d was %+v and mach hash %#x\n", msgIndex, batch, gs, machHash)
-				lastGlobalState = gs
-			}
-			prevBatchMsgCount = msgCount
-			lastGlobalState.Batch += 1
-			lastGlobalState.PosInBatch = 0
-			machHash := crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes())
-			stateRoots = append(stateRoots,
-				machHash,
-			)
-			globalStates = append(globalStates, lastGlobalState)
-		} else {
-			result, err := s.validator.streamer.ResultAtCount(msgCount)
+		// Obtain the states for each message in the batch.
+		for i := uint64(0); i < uint64(messagesInBatch); i++ {
+			msgIndex := uint64(prevBatchMsgCount) + i
+			messageCount := msgIndex + 1
+			executionResult, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageCount))
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			lastGlobalState.Batch = uint64(batch + 1)
-			lastGlobalState.PosInBatch = 0
-			lastGlobalState.BlockHash = result.BlockHash
-			lastGlobalState.SendRoot = result.SendRoot
-			hash := crypto.Keccak256Hash([]byte("Machine finished:"), lastGlobalState.Hash().Bytes())
-			stateRoots = append(stateRoots, hash)
-			globalStates = append(globalStates, lastGlobalState)
+			// If the position in batch is equal to the number of messages in the batch,
+			// we do not include this state. Instead, we break and include the state
+			// that fully consumes the batch.
+			if i+1 == uint64(messagesInBatch) {
+				break
+			}
+			state := validator.GoGlobalState{
+				BlockHash:  executionResult.BlockHash,
+				SendRoot:   executionResult.SendRoot,
+				Batch:      uint64(batch),
+				PosInBatch: i + 1,
+			}
+			states = append(states, state)
+			machineHashes = append(machineHashes, machineHash(state))
 		}
-	}
 
-	for _, gs := range globalStates {
-		hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-		fmt.Printf("Global state %+v and mach hash %#x\n", gs, hash)
-	}
-
-	duplicates := make(map[common.Hash]bool)
-	finalRoots := make([]common.Hash, 0)
-	for _, hash := range stateRoots {
-		if ok := duplicates[hash]; ok {
-			continue
+		// Fully consume the batch.
+		executionResult, err := s.validator.streamer.ResultAtCount(batchMessageCount)
+		if err != nil {
+			return nil, nil, err
 		}
-		finalRoots = append(finalRoots, hash)
-		duplicates[hash] = true
+		state := validator.GoGlobalState{
+			BlockHash:  executionResult.BlockHash,
+			SendRoot:   executionResult.SendRoot,
+			Batch:      uint64(batch) + 1,
+			PosInBatch: 0,
+		}
+		states = append(states, state)
+		machineHashes = append(machineHashes, machineHash(state))
+		prevBatchMsgCount = batchMessageCount
 	}
+	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
+		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
+	}
+	return machineHashes[fromHeight : toHeight+1], states, nil
+}
 
-	for uint64(len(finalRoots)) < uint64(totalDesiredHashes) {
-		finalRoots = append(finalRoots, finalRoots[len(finalRoots)-1])
-	}
-	return stateRoots[fromHeight : toHeight+1], nil
+func machineHash(gs validator.GoGlobalState) common.Hash {
+	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
 
 func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
@@ -311,7 +286,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +304,6 @@ func (s *StateManager) CollectMachineHashes(
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
-	fmt.Printf("Collecting machine hashes at from batch %d, total %+v, message %d\n", cfg.FromBatch, cfg, messageNum)
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: cfg.WasmModuleRoot,
 		MessageHeight:  protocol.Height(messageNum),

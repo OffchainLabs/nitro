@@ -192,8 +192,8 @@ func ProduceBlock(
 					modifiedTxs = append(modifiedTxs, tx)
 					continue
 				}
-				log.Info("Modified tx value in evil validator")
 				newValue := new(big.Int).Add(txData.Value, big.NewInt(params.GWei))
+				log.Info(fmt.Sprintf("Modified tx value in evil validator with value %d, to value %d as hex %#x and %#x", txData.Value.Uint64(), newValue.Uint64(), txData.Value.Bytes(), newValue.Bytes()))
 				txData.Value = newValue
 				modified := types.NewTx(txData)
 				modifiedTxs = append(modifiedTxs, modified)
