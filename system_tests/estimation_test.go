@@ -5,7 +5,6 @@ package arbtest
 
 import (
 	"context"
-	"github.com/offchainlabs/nitro/arbnode"
 	"math/big"
 	"testing"
 
@@ -132,18 +131,19 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err, "could not deploy contract")
 
 	tx, err := simple.StoreDifficulty(&auth)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
 	Require(t, err)
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)
@@ -156,20 +156,20 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), nil, true, chainConfig)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err, "could not deploy contract")
 
 	tx, err := simple.StoreDifficulty(&auth)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
 	Require(t, err)
 	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
 	Require(t, err)

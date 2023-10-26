@@ -23,7 +23,7 @@ func TestInfraFee(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, nil, true, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, nil, true)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("User2")

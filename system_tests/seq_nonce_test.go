@@ -26,7 +26,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 
 	config := gethexec.ConfigDefaultTest()
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("Destination")
@@ -63,7 +63,7 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	defer cancel()
 
 	config := gethexec.ConfigDefaultTest()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false)
 	defer node.StopAndWait()
 
 	l2info.GetInfoWithPrivKey("Owner").Nonce++
@@ -91,7 +91,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	config := gethexec.ConfigDefaultTest()
 	config.Sequencer.NonceFailureCacheSize = 5
 	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, false)
 	defer node.StopAndWait()
 
 	count := 15

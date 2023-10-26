@@ -63,7 +63,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	createStartNode := func(nodeNum int) {
 		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
-		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, nil, false, nil)
+		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, nil, false)
 		nodes[nodeNum] = node
 	}
 

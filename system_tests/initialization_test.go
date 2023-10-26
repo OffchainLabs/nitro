@@ -62,7 +62,7 @@ func TestInitContract(t *testing.T) {
 		l2info.ArbInitData.Accounts = append(l2info.ArbInitData.Accounts, accountInfo)
 		expectedSums[accountAddress] = sum
 	}
-	_, node, client := CreateTestL2WithConfig(t, ctx, l2info, nil, nil, true, nil)
+	_, node, client := CreateTestL2WithConfig(t, ctx, l2info, nil, nil, true)
 	defer node.StopAndWait()
 
 	for accountAddress, sum := range expectedSums {

@@ -25,7 +25,7 @@ func TestContractTxDeploy(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, nil, false, nil)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, nil, false)
 	defer node.StopAndWait()
 
 	from := common.HexToAddress("0x123412341234")

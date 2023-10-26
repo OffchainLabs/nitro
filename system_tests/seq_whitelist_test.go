@@ -18,7 +18,7 @@ func TestSequencerWhitelist(t *testing.T) {
 
 	config := gethexec.ConfigDefaultTest()
 	config.Sequencer.SenderWhitelist = GetTestAddressForAccountName(t, "Owner").String() + "," + GetTestAddressForAccountName(t, "User").String()
-	l2info, l2node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, true, nil)
+	l2info, l2node, client := CreateTestL2WithConfig(t, ctx, nil, nil, config, true)
 	defer l2node.StopAndWait()
 
 	l2info.GenerateAccount("User")
