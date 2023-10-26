@@ -208,11 +208,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	err := s.StartWithHeader(ctx, header)
 	elapsed := time.Since(startTime)
 	startWithHeaderTimer.Update(elapsed)
-
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
