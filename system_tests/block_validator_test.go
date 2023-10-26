@@ -54,10 +54,13 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		delayEvery = workloadLoops / 3
 	}
 
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, nil, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
-
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.chainConfig = chainConfig
+	builder.nodeConfig = l1NodeConfigA
+	builder.L2Info = NewArbTestInfo(t, chainConfig.ChainID)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	l2info, l2client, l1info, l1client := builder.L2Info, builder.L2.Client, builder.L1Info, builder.L1.Client
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
@@ -65,8 +68,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.RPCAggregator.Enable = false
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil, nil)
-	defer nodeB.StopAndWait()
+	l2B, cleanup2nd := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
+	defer cleanup2nd()
+	l2clientB, nodeB := l2B.Client, l2B.ConsensusNode
 	l2info.GenerateAccount("User2")
 
 	perTransfer := big.NewInt(1e12)
