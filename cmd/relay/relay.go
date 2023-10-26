@@ -76,7 +76,7 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	vcsRevision, vcsTime := confighelpers.GetVersion()
+	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	defer log.Info("Cleanly shutting down relay")
