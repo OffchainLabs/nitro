@@ -75,6 +75,10 @@ func mainImpl() int {
 	stackConf.P2P.NoDiscovery = true
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
+	if stackConf.Version[0] == 'v' {
+		// Skip leading "v" in version string
+		stackConf.Version = stackConf.Version[1:]
+	}
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
