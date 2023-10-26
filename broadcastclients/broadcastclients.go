@@ -201,7 +201,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 
 			// failed to get messages from both primary and secondary feeds for ~5 seconds, start a new secondary feed
 			case <-startSecondaryFeedTimer.C:
-				bcs.StartSecondaryFeed(ctx)
+				bcs.startSecondaryFeed(ctx)
 
 			// failed to get messages from primary feed for ~5 seconds, reset the timer responsible for stopping a secondary
 			case <-primaryFeedIsDownTimer.C:
@@ -209,13 +209,13 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 
 			// primary feeds have been up and running for PRIMARY_FEED_UPTIME=10 mins without a failure, stop the recently started secondary feed
 			case <-stopSecondaryFeedTimer.C:
-				bcs.StopSecondaryFeed(ctx)
+				bcs.stopSecondaryFeed(ctx)
 			}
 		}
 	})
 }
 
-func (bcs *BroadcastClients) StartSecondaryFeed(ctx context.Context) {
+func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 	if bcs.numOfStartedSecondary < len(bcs.secondaryClients) {
 		client := bcs.secondaryClients[bcs.numOfStartedSecondary]
 		bcs.numOfStartedSecondary += 1
@@ -224,7 +224,7 @@ func (bcs *BroadcastClients) StartSecondaryFeed(ctx context.Context) {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")
 	}
 }
-func (bcs *BroadcastClients) StopSecondaryFeed(ctx context.Context) {
+func (bcs *BroadcastClients) stopSecondaryFeed(ctx context.Context) {
 	if bcs.numOfStartedSecondary > 0 {
 		bcs.numOfStartedSecondary -= 1
 		client := bcs.secondaryClients[bcs.numOfStartedSecondary]
