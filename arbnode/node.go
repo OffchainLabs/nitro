@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/test_helpersgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
@@ -292,7 +293,7 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize)
+	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -302,14 +303,32 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
 	}
 
+	// 0.13 ETH is enough to deploy L2 factories via retryables. Excess is refunded
+	feeCost := big.NewInt(130000000000000000)
+	// if there is a fee token, approve the rollup creator to spend it
+	if (nativeToken != common.Address{}) {
+		// use ERC20 binding to approve
+		nativeTokenContract, err := test_helpersgen.NewTestToken(nativeToken, parentChainReader.Client())
+		if err != nil {
+			return nil, fmt.Errorf("error binding native token: %w", err)
+		}
+		tx, err := nativeTokenContract.Approve(deployAuth, rollupCreatorAddress, feeCost)
+		err = andTxSucceeded(ctx, parentChainReader, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error calling approve: %w", err)
+		}
+		feeCost = big.NewInt(0)
+	}
+
+	deployAuth.Value = feeCost
 	deployParams := rollupgen.RollupCreatorRollupDeploymentParams{
 		Config:                    config,
 		BatchPoster:               batchPoster,
 		Validators:                validatorAddrs,
 		MaxDataSize:               maxDataSize,
 		NativeToken:               nativeToken,
-		DeployFactoriesToL2:       false,
-		MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
+		DeployFactoriesToL2:       true,
+		MaxFeePerGasForRetryables: big.NewInt(100000000), // 0.1 gwei
 	}
 
 	tx, err := rollupCreator.CreateRollup(
