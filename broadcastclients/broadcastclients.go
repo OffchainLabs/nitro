@@ -40,10 +40,9 @@ func (r *Router) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedM
 }
 
 type BroadcastClients struct {
-	primaryClients        []*broadcastclient.BroadcastClient
-	secondaryClients      []*broadcastclient.BroadcastClient
-	secondaryURL          []string
-	numOfStartedSecondary int
+	primaryClients   []*broadcastclient.BroadcastClient
+	secondaryClients []*broadcastclient.BroadcastClient
+	secondaryURL     []string
 
 	primaryRouter   *Router
 	secondaryRouter *Router
@@ -76,11 +75,12 @@ func NewBroadcastClients(
 		}
 	}
 	clients := BroadcastClients{
-		primaryRouter:   newStandardRouter(),
-		secondaryRouter: newStandardRouter(),
-		secondaryURL:    config.SecondaryURL,
+		primaryRouter:    newStandardRouter(),
+		secondaryRouter:  newStandardRouter(),
+		primaryClients:   make([]*broadcastclient.BroadcastClient, 0, len(config.URL)),
+		secondaryClients: make([]*broadcastclient.BroadcastClient, 0, len(config.SecondaryURL)),
+		secondaryURL:     config.SecondaryURL,
 	}
-	var lastClientErr error
 	makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
 			configFetcher,
@@ -95,7 +95,7 @@ func NewBroadcastClients(
 		)
 	}
 
-	clients.primaryClients = make([]*broadcastclient.BroadcastClient, 0, len(config.URL))
+	var lastClientErr error
 	for _, address := range config.URL {
 		client, err := makeClient(address, clients.primaryRouter)
 		if err != nil {
@@ -211,8 +211,8 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 }
 
 func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
-	if bcs.numOfStartedSecondary < len(bcs.secondaryURL) {
-		pos := bcs.numOfStartedSecondary
+	pos := len(bcs.secondaryClients)
+	if pos < len(bcs.secondaryURL) {
 		url := bcs.secondaryURL[pos]
 		client, err := makeClient(url, bcs.secondaryRouter)
 		if err != nil {
@@ -220,7 +220,6 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 			bcs.secondaryURL = append(bcs.secondaryURL[:pos], bcs.secondaryURL[pos+1:]...)
 			return
 		}
-		bcs.numOfStartedSecondary += 1
 		bcs.secondaryClients = append(bcs.secondaryClients, client)
 		client.Start(ctx)
 		log.Info("secondary feed started", "url", url)
@@ -230,10 +229,12 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 }
 
 func (bcs *BroadcastClients) stopSecondaryFeed() {
-	if bcs.numOfStartedSecondary > 0 {
-		bcs.numOfStartedSecondary -= 1
-		bcs.secondaryClients[bcs.numOfStartedSecondary].StopAndWait()
-		log.Info("disconnected secondary feed", "url", bcs.secondaryURL[bcs.numOfStartedSecondary])
+	pos := len(bcs.secondaryClients)
+	if pos > 0 {
+		pos -= 1
+		bcs.secondaryClients[pos].StopAndWait()
+		bcs.secondaryClients = bcs.secondaryClients[:pos]
+		log.Info("disconnected secondary feed", "url", bcs.secondaryURL[pos])
 	}
 }
 
