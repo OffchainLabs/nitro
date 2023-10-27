@@ -88,7 +88,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
