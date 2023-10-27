@@ -13,7 +13,7 @@ on:
 jobs:
   docker:
     name: Docker build
-    runs-on: ubuntu-8
+    runs-on: ubuntu-latest
     services:
       # local registery
       registry:
@@ -59,6 +59,17 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
+      - name: Start background nitro-testnode
+        shell: bash
+        run: |
+          cd nitro-testnode
+          ./test-node.bash --init --dev &
+      
+      - name: Wait for rpc to come up
+        shell: bash
+        run: |
+          ${{ github.workspace }}/.github/workflows/waitForNitro.sh
+  
       - name: Print WAVM module root
         id: module-root
         run: |

@@ -78,6 +78,7 @@ func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
 	TimeOfDay: "",
+	Lock:      redislock.DefaultCfg,
 
 	minutesAfterMidnight: 0,
 }
