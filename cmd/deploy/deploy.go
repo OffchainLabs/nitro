@@ -41,7 +41,7 @@ func main() {
 	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
 	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
 	nativeTokenAddressString := flag.String("nativeTokenAddress", "0x0000000000000000000000000000000000000000", "address of the ERC20 token which is used as native L2 currency")
-	maxDataSizeUint := flag.Uint64("maxDataSize", 117964, "maximum size of data")
+	maxDataSizeUint := flag.Uint64("maxDataSize", 117964, "maximum data size of a batch or a cross-chain message (default = 90% of Geth's 128KB tx size limit)")
 	loserEscrowAddressString := flag.String("loserEscrowAddress", "", "the address which half of challenge loser's funds accumulate at")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
