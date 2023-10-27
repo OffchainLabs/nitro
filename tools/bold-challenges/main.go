@@ -16,11 +16,13 @@ import (
 )
 
 var (
+	//93690ac9d039285ed00f874a2694d951c1777ac3a165732f36ea773f16179a89
+	//ee3c0bf39d962a78dba87aee083cae443cabc814f93677f302cbabde844237db
 	valPrivKey        = flag.String("validator-priv-key", "ee3c0bf39d962a78dba87aee083cae443cabc814f93677f302cbabde844237db", "validator private key")
 	l1ChainIdStr      = flag.String("l1-chain-id", "11155111", "l1 chain id")
 	l1EndpointUrl     = flag.String("l1-endpoint", "ws://localhost:8546", "l1 endpoint")
-	rollupAddrStr     = flag.String("rollup-address", "0x3b5f27c47774f5512539ea0777b6c3e748366d16", "rollup address")
-	stakeTokenAddrStr = flag.String("stake-token-address", "0xd5d9d527a17a9d3fc7bd5552b0cf648f4b0bb101", "rollup address")
+	rollupAddrStr     = flag.String("rollup-address", "0xa8774d188cf20018b0d12b30f4e523e4a35989ed", "rollup address")
+	stakeTokenAddrStr = flag.String("stake-token-address", "0xb147595445fae25da16e4fa4e50aa45b2ac211b7", "rollup address")
 	tokensToDeposit   = flag.String("tokens-to-deposit", "100", "tokens to deposit")
 )
 
@@ -48,7 +50,7 @@ func main() {
 	// if *bridgeFunds {
 	// 	inboxAddr := common.HexToAddress(*inboxAddrStr)
 	// 	fmt.Println(inboxAddr)
-	// 	//"0x0386d544a079378fef2dfd2f1310efee8af6a2e3"
+	// 	//"0xa4f05a7587bd5f982ba3a1d4b19a555f265818b4"
 	// 	data := hexutil.MustDecode("0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
 	// 	nonce, err := client.PendingNonceAt(ctx, txOpts.From)
 	// 	if err != nil {
