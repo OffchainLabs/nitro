@@ -116,6 +116,20 @@ func (s *StopWaiterSafe) StopAndWait() error {
 	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
 
+// Pause calls StopAndWait but updates started and stopped booleans to default. Only call if you want to restart the stopwaiter
+func (s *StopWaiterSafe) Pause() error {
+	if err := s.stopAndWaitImpl(stopDelayWarningTimeout); err != nil {
+		return err
+	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.started = false
+	s.stopped = false
+
+	return nil
+}
+
 func getAllStackTraces() string {
 	buf := make([]byte, 64*1024*1024)
 	size := runtime.Stack(buf, true)
@@ -322,6 +336,12 @@ func (s *StopWaiter) Start(ctx context.Context, parent any) {
 
 func (s *StopWaiter) StopAndWait() {
 	if err := s.StopWaiterSafe.StopAndWait(); err != nil {
+		panic(err)
+	}
+}
+
+func (s *StopWaiter) Pause() {
+	if err := s.StopWaiterSafe.Pause(); err != nil {
 		panic(err)
 	}
 }

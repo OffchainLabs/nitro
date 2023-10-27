@@ -220,7 +220,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 		client := bcs.secondaryClients[bcs.numOfStartedSecondary]
 		bcs.numOfStartedSecondary += 1
 		client.Start(ctx)
-	} else {
+	} else if len(bcs.secondaryClients) > 0 {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")
 	}
 }
@@ -228,7 +228,8 @@ func (bcs *BroadcastClients) stopSecondaryFeed(ctx context.Context) {
 	if bcs.numOfStartedSecondary > 0 {
 		bcs.numOfStartedSecondary -= 1
 		client := bcs.secondaryClients[bcs.numOfStartedSecondary]
-		client.StopAndWait()
+		client.Pause()
+		log.Info("disconnected secondary feed")
 	}
 }
 
