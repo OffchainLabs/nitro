@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -29,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
@@ -122,13 +124,23 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
-	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
-	Require(t, err)
+
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	Require(t, err, "unable to bind upgrade executor")
+	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	Require(t, err, "unable to parse rollup ABI")
+
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
+	Require(t, err, "unable to generate setValidator calldata")
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
+	Require(t, err, "unable to set validators")
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
-	Require(t, err)
+	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
+	Require(t, err, "unable to generate setMinimumAssertionPeriod calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setMinAssertPeriodCalldata)
+	Require(t, err, "unable to set minimum assertion period")
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
@@ -320,9 +332,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
-					proxyAdmin, err := mocksgen.NewProxyAdminForBinding(proxyAdminAddr, builder.L1.Client)
+					proxyAdminABI, err := abi.JSON(strings.NewReader(mocksgen.ProxyAdminForBindingABI))
 					Require(t, err)
-					tx, err = proxyAdmin.Upgrade(&deployAuth, managerAddr, mockImpl)
+					upgradeCalldata, err := proxyAdminABI.Pack("upgrade", managerAddr, mockImpl)
+					Require(t, err)
+					tx, err = upgradeExecutor.ExecuteCall(&deployAuth, proxyAdminAddr, upgradeCalldata)
 					Require(t, err)
 					_, err = builder.L1.EnsureTxSucceeded(tx)
 					Require(t, err)

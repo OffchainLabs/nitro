@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -52,6 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -641,6 +644,8 @@ func DeployOnTestL1(
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	nativeToken := common.Address{}
+	maxDataSize := big.NewInt(117964)
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1Reader,
@@ -648,11 +653,14 @@ func DeployOnTestL1(
 		l1info.GetAddress("Sequencer"),
 		0,
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		nativeToken,
+		maxDataSize,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
+	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
 	return addresses, initMessage
 }
@@ -952,11 +960,19 @@ func authorizeDASKeyset(
 	err := keyset.Serialize(wr)
 	Require(t, err, "unable to serialize DAS keyset")
 	keysetBytes := wr.Bytes()
-	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-	Require(t, err, "unable to create sequencer inbox")
+
+	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err, "unable to parse sequencer inbox ABI")
+	setKeysetCalldata, err := sequencerInboxABI.Pack("setValidKeyset", keysetBytes)
+	Require(t, err, "unable to generate calldata")
+
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l1info.Accounts["UpgradeExecutor"].Address, l1client)
+	Require(t, err, "unable to bind upgrade executor")
+
 	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
+
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
 }
