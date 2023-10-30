@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    gostack::GoStack,
-    machine::{Escape, MaybeEscape, WasmEnvMut},
+    gostack::{GoRuntimeState, GoStack},
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvFuncs, WasmEnvMut},
 };
 
 use arbutil::Color;
@@ -63,7 +63,33 @@ pub fn js_value_set_index(mut env: WasmEnvMut, sp: u32) {
 struct WasmerJsEnv<'a, 'b> {
     rng: &'a mut rand_pcg::Pcg32,
     resume: &'a TypedFunction<(), ()>,
+    get_stack_pointer: &'a TypedFunction<(), i32>,
+    go_stack: &'a mut GoStack,
     store: &'a mut StoreMut<'b>,
+}
+
+impl<'a, 'b> WasmerJsEnv<'a, 'b> {
+    fn new(
+        sp: &'a mut GoStack,
+        store: &'a mut StoreMut<'b>,
+        exports: &'a mut WasmEnvFuncs,
+        go_state: &'a mut GoRuntimeState,
+    ) -> Result<Self, Escape> {
+        let Some(resume) = &exports.resume else {
+            return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
+        };
+        let Some(get_stack_pointer) = &exports.get_stack_pointer else {
+            return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()));
+        };
+
+        Ok(Self {
+            rng: &mut go_state.rng,
+            resume,
+            get_stack_pointer,
+            go_stack: sp,
+            store,
+        })
+    }
 }
 
 impl<'a, 'b> JsEnv for WasmerJsEnv<'a, 'b> {
@@ -72,7 +98,18 @@ impl<'a, 'b> JsEnv for WasmerJsEnv<'a, 'b> {
     }
 
     fn resume(&mut self) -> eyre::Result<()> {
-        self.resume.call(self.store)?;
+        let store = &mut *self.store;
+        let go_stack = &mut *self.go_stack;
+
+        self.resume.call(store)?;
+
+        // save our progress from the stack pointer
+        let saved = go_stack.top - go_stack.sp;
+
+        // recover the stack pointer
+        let pointer = self.get_stack_pointer.call(store)? as u32;
+        go_stack.sp = pointer;
+        go_stack.top = pointer + saved;
         Ok(())
     }
 }
@@ -82,25 +119,12 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
 
     let object = JsValueId(sp.read_u64());
-    let method_name = sp.read_string();
+    let method = sp.read_string();
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_ids(args_ptr, args_len);
 
-    let Some(resume) = &env.exports.resume else {
-        return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
-    };
-    let mut js_env = WasmerJsEnv {
-        rng: &mut env.go_state.rng,
-        resume: resume,
-        store: &mut store,
-    };
-
-    let result = env
-        .js_state
-        .value_call(&mut js_env, object, &method_name, &args);
-    unsafe {
-        sp.refresh(env, &mut store)?;
-    }
+    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
+    let result = env.js_state.value_call(&mut js_env, object, &method, &args);
     match result {
         Ok(result) => {
             sp.write_u64(result.0);
@@ -111,7 +135,7 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                 return Err(escape);
             }
             Err(err) => {
-                eprintln!("Go method call to {method_name} failed with error {err:#}");
+                eprintln!("Go method call to {method} failed with error {err:#}");
                 sp.write_u64(go_js::get_null().0);
                 sp.write_u8(0);
             }
@@ -125,23 +149,12 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 pub fn js_value_new(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
 
-    let Some(resume) = &env.exports.resume else {
-        return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
-    };
-    let mut js_env = WasmerJsEnv {
-        rng: &mut env.go_state.rng,
-        resume: resume,
-        store: &mut store,
-    };
-
     let constructor = JsValueId(sp.read_u64());
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_ids(args_ptr, args_len);
 
+    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
     let result = env.js_state.value_new(&mut js_env, constructor, &args);
-    unsafe {
-        sp.refresh(env, &mut store)?;
-    }
     match result {
         Ok(result) => {
             sp.write_u64(result.0);

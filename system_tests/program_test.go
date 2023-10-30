@@ -3,7 +3,6 @@
 
 package arbtest
 
-/*
 import (
 	"bytes"
 	"context"
@@ -25,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -41,6 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 	"github.com/wasmerio/wasmer-go/wasmer"
 
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 )
 
@@ -1034,6 +1033,8 @@ func TestProgramAcivationLogs(t *testing.T) {
 func setupProgramTest(t *testing.T, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
+	t.SkipNow()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
 
@@ -1293,4 +1294,3 @@ func formatTime(duration time.Duration) string {
 	}
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
-*/

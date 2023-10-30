@@ -50,8 +50,8 @@ impl MemoryViewContainer {
 }
 
 pub struct GoStack {
-    sp: u32,
-    top: u32,
+    pub sp: u32,
+    pub top: u32,
     memory: MemoryViewContainer,
 }
 
@@ -303,41 +303,6 @@ impl GoStack {
                 String::from_utf8_lossy(bytes).into_owned()
             }
         }
-    }
-
-    /// Resumes the Go runtime, updating the stack pointer.
-    ///
-    /// # Safety
-    ///
-    /// Caller must cut lifetimes before this call.
-    pub unsafe fn resume(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
-        let Some(resume) = &env.exports.resume else {
-            return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
-        };
-        // recursively call into wasmer (reentrant)
-        resume.call(store)?;
-        self.refresh(env, store)
-    }
-
-    /// Refreshes the stack pointer after the Go runtime resumes.
-    /// Idempotent, and safe to call even if no call to `resume` is made.
-    ///
-    /// # Safety
-    ///
-    /// Caller must cut lifetimes before this call.
-    pub unsafe fn refresh(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
-        let Some(get_stack_pointer) = &env.exports.get_stack_pointer else {
-            return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()));
-        };
-
-        // save our progress from the stack pointer
-        let saved = self.top - self.sp;
-
-        // recover the stack pointer
-        let pointer = get_stack_pointer.call(store)? as u32;
-        self.sp = pointer;
-        self.top = pointer + saved;
-        Ok(())
     }
 }
 

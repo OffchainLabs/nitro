@@ -215,17 +215,28 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
     sp.write_u64(result.0);
 }
 
-struct WasmJsEnv;
+struct WavmJsEnv<'a> {
+    pub go_stack: &'a mut GoStack,
+}
 
-impl JsEnv for WasmJsEnv {
+impl<'a> WavmJsEnv<'a> {
+    fn new(go_stack: &'a mut GoStack) -> Self {
+        Self { go_stack }
+    }
+}
+
+impl<'a> JsEnv for WavmJsEnv<'a> {
     fn get_rng(&mut self) -> &mut dyn rand::RngCore {
         unsafe { get_rng() }
     }
 
     fn resume(&mut self) -> eyre::Result<()> {
-        unsafe {
-            wavm_guest_call__resume();
-        }
+        unsafe { wavm_guest_call__resume() };
+
+        // recover the stack pointer
+        let saved = self.go_stack.top - (self.go_stack.sp + 8); // new adds 8
+        *self.go_stack = GoStack::new(unsafe { wavm_guest_call__getsp() });
+        self.go_stack.advance(saved);
         Ok(())
     }
 }
@@ -238,7 +249,8 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = read_value_ids(args_ptr, args_len);
 
-    let result = get_js().value_new(&mut WasmJsEnv, constructor, &args);
+    let mut js_env = WavmJsEnv::new(&mut sp);
+    let result = get_js().value_new(&mut js_env, constructor, &args);
     sp.restore_stack();
 
     match result {
@@ -320,7 +332,8 @@ pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = read_value_ids(args_ptr, args_len);
 
-    let result = get_js().value_call(&mut WasmJsEnv, object, &method_name, &args);
+    let mut js_env = WavmJsEnv::new(&mut sp);
+    let result = get_js().value_call(&mut js_env, object, &method_name, &args);
     sp.restore_stack();
 
     match result {

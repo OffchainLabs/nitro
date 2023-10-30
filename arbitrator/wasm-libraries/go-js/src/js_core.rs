@@ -16,7 +16,10 @@ const CANONICAL_NAN_BITS: u64 = 0x7FF8000000000000;
 pub struct JsObject(Arc<Mutex<FnvHashMap<String, JsValue>>>);
 
 pub trait JsEnv {
+    /// Provides a source of psuedorandomness.
     fn get_rng(&mut self) -> &mut dyn rand::RngCore;
+
+    /// Resumes the Go runtime, correcting the stack pointer as needed.
     fn resume(&mut self) -> eyre::Result<()>;
 }
 
