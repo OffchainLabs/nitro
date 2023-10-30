@@ -13,7 +13,9 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-8
+    container:
+      image: ghcr.io/catthehacker/ubuntu:js-22.04
+    runs-on: [self-hosted, X64]
 
     # Creates a redis container for redis tests
     services:
@@ -34,7 +36,9 @@ jobs:
           submodules: true
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wabt gotestsum
+        run: >
+          sudo apt update && sudo apt install -y wabt gotestsum
+          cmake build-essential bison golang clang make wabt
 
       - name: Setup nodejs
         uses: actions/setup-node@v3
@@ -75,13 +79,16 @@ jobs:
           toolchain: "stable"
           override: true
 
+      - name: Install cbindgen
+        run: cargo install cbindgen
+
       - name: Cache Build Products
         uses: actions/cache@v3
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
@@ -137,8 +144,8 @@ jobs:
 
       - name: Set environment variables
         run: |
-          mkdir -p target/tmp/deadbeefbee
-          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
+          mkdir -p target/tmp/x
+          echo "TMPDIR=$(pwd)/target/tmp/x" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
@@ -156,7 +163,7 @@ jobs:
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: TEST_REDIS=redis://redis:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
@@ -172,4 +179,3 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
-

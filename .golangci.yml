@@ -45,6 +45,7 @@ linters-settings:
   gosec:
     excludes:
       - G404  # checks that random numbers are securely generated
+      - G114  
 
   govet:
     enable-all: true

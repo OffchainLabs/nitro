@@ -370,6 +370,7 @@ var ConfigDefault = Config{
 	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
+	Maintenance:         DefaultMaintenanceConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -841,7 +842,17 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(ctx, rawdb.NewTable(arbDb, storage.BatchPosterPrefix), l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
+		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
+			DataPosterDB: rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			L1Reader:     l1Reader,
+			Inbox:        inboxTracker,
+			Streamer:     txStreamer,
+			SyncMonitor:  syncMonitor,
+			Config:       func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:   deployInfo,
+			TransactOpts: txOptsBatchPoster,
+			DAWriter:     daWriter,
+		})
 		if err != nil {
 			return nil, err
 		}
