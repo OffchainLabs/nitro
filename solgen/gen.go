@@ -96,6 +96,27 @@ func main() {
 		modInfo.addArtifact(artifact)
 	}
 
+	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' depedencies
+	upgExecutorPath := filepath.Join(parent, "contracts", "node_modules", "@offchainlabs", "upgrade-executor", "build", "contracts", "src", "UpgradeExecutor.sol", "UpgradeExecutor.json")
+	_, err = os.Stat(upgExecutorPath)
+	if !os.IsNotExist(err) {
+		data, err := os.ReadFile(upgExecutorPath)
+		if err != nil {
+			// log.Fatal(string(output))
+			log.Fatal("could not read", upgExecutorPath, "for contract", "UpgradeExecutor", err)
+		}
+		artifact := HardHatArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", "UpgradeExecutor", err)
+		}
+		modInfo := modules["upgrade_executorgen"]
+		if modInfo == nil {
+			modInfo = &moduleInfo{}
+			modules["upgrade_executorgen"] = modInfo
+		}
+		modInfo.addArtifact(artifact)
+	}
+
 	for module, info := range modules {
 
 		code, err := bind.Bind(
