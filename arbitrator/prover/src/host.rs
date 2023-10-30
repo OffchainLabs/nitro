@@ -1,15 +1,15 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#![allow(clippy::vec_init_then_push)]
+#![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
 use crate::{
     binary, host,
     machine::{Function, InboxIdentifier},
     programs::StylusData,
     utils,
-    value::{ArbValueType, FunctionType, IntegerValType},
-    wavm::{wasm_to_wavm, IBinOpType, Instruction, Opcode},
+    value::{ArbValueType, FunctionType},
+    wavm::{wasm_to_wavm, Instruction, Opcode},
 };
 use arbutil::{evm::user::UserOutcomeKind, Color};
 use eyre::{bail, ErrReport, Result};
@@ -31,6 +31,7 @@ pub enum InternalFunc {
     UserSetInk,
     UserStackLeft,
     UserSetStack,
+    CallMain,
 }
 
 impl InternalFunc {
@@ -52,6 +53,7 @@ impl InternalFunc {
             UserSetInk    => func!([I64, I32], []), // λ(ink_left, ink_status)
             UserStackLeft => func!([], [I32]),      // λ() → stack_left
             UserSetStack  => func!([I32], []),      // λ(stack_left)
+            CallMain      => func!([I32], [I32]),   // λ(args_len) → status
         };
         ty
     }
@@ -169,23 +171,23 @@ impl Hostio {
             WavmReadInboxMessage        => func!([I64, I32, I32], [I32]),
             WavmReadDelayedInboxMessage => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished      => func!(),
-            WavmLinkModule              => func!([I32], [I32]),           // λ(module_hash) → module
-            WavmUnlinkModule            => func!(),                       // λ()
-            ProgramInkLeft              => func!([I32, I32], [I64]),      // λ(module, internals) → ink_left
-            ProgramInkStatus            => func!([I32, I32], [I32]),      // λ(module, internals) → ink_status
-            ProgramSetInk               => func!([I32, I32, I64]),        // λ(module, internals, ink_left)
-            ProgramStackLeft            => func!([I32, I32], [I32]),      // λ(module, internals) → stack_left
-            ProgramSetStack             => func!([I32, I32, I32]),        // λ(module, internals, stack_left)
-            ProgramCallMain             => func!([I32, I32, I32], [I32]), // λ(module, main, args_len) → status
-            ConsoleLogTxt               => func!([I32, I32]),             // λ(text, len)
-            ConsoleLogI32               => func!([I32]),                  // λ(value)
-            ConsoleLogI64               => func!([I64]),                  // λ(value)
-            ConsoleLogF32               => func!([F32]),                  // λ(value)
-            ConsoleLogF64               => func!([F64]),                  // λ(value)
-            ConsoleTeeI32               => func!([I32], [I32]),           // λ(value) → value
-            ConsoleTeeI64               => func!([I64], [I64]),           // λ(value) → value
-            ConsoleTeeF32               => func!([F32], [F32]),           // λ(value) → value
-            ConsoleTeeF64               => func!([F64], [F64]),           // λ(value) → value
+            WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
+            WavmUnlinkModule            => func!(),                  // λ()
+            ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
+            ProgramInkStatus            => func!([I32], [I32]),      // λ(module) → ink_status
+            ProgramSetInk               => func!([I32, I64]),        // λ(module, ink_left)
+            ProgramStackLeft            => func!([I32], [I32]),      // λ(module) → stack_left
+            ProgramSetStack             => func!([I32, I32]),        // λ(module, stack_left)
+            ProgramCallMain             => func!([I32, I32], [I32]), // λ(module, args_len) → status
+            ConsoleLogTxt               => func!([I32, I32]),        // λ(text, len)
+            ConsoleLogI32               => func!([I32]),             // λ(value)
+            ConsoleLogI64               => func!([I64]),             // λ(value)
+            ConsoleLogF32               => func!([F32]),             // λ(value)
+            ConsoleLogF64               => func!([F64]),             // λ(value)
+            ConsoleTeeI32               => func!([I32], [I32]),      // λ(value) → value
+            ConsoleTeeI64               => func!([I64], [I64]),      // λ(value) → value
+            ConsoleTeeF32               => func!([F32], [F32]),      // λ(value) → value
+            ConsoleTeeF64               => func!([F64], [F64]),      // λ(value) → value
             UserInkLeft                 => InternalFunc::UserInkLeft.ty(),
             UserInkStatus               => InternalFunc::UserInkStatus.ty(),
             UserSetInk                  => InternalFunc::UserSetInk.ty(),
@@ -204,13 +206,10 @@ impl Hostio {
                 body.push(Instruction::with_data($opcode, $value as u64))
             };
         }
-        macro_rules! dynamic {
+        macro_rules! cross_internal {
             ($func:ident) => {
                 opcode!(LocalGet, 0); // module
-                opcode!(LocalGet, 1); // internals offset
-                opcode!(I32Const, InternalFunc::$func); // relative position of the func
-                opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of the func
-                opcode!(CrossModuleDynamicCall); // consumes module and func
+                opcode!(CrossModuleInternalCall, InternalFunc::$func); // consumes module
             };
         }
         macro_rules! intern {
@@ -289,40 +288,38 @@ impl Hostio {
                 opcode!(UnlinkModule);
             }
             ProgramInkLeft => {
-                // λ(module, internals) → ink_left
-                dynamic!(UserInkLeft);
+                // λ(module) → ink_left
+                cross_internal!(UserInkLeft);
             }
             ProgramInkStatus => {
-                // λ(module, internals) → ink_status
-                dynamic!(UserInkStatus);
+                // λ(module) → ink_status
+                cross_internal!(UserInkStatus);
             }
             ProgramSetInk => {
-                // λ(module, internals, ink_left)
-                opcode!(LocalGet, 2); // ink_left
+                // λ(module, ink_left)
+                opcode!(LocalGet, 1); // ink_left
                 opcode!(I32Const, 0); // ink_status
-                dynamic!(UserSetInk);
+                cross_internal!(UserSetInk);
             }
             ProgramStackLeft => {
-                // λ(module, internals) → stack_left
-                dynamic!(UserStackLeft);
+                // λ(module) → stack_left
+                cross_internal!(UserStackLeft);
             }
             ProgramSetStack => {
-                // λ(module, internals, stack_left)
-                opcode!(LocalGet, 2); // stack_left
-                dynamic!(UserSetStack);
+                // λ(module, stack_left)
+                opcode!(LocalGet, 1); // stack_left
+                cross_internal!(UserSetStack);
             }
             ProgramCallMain => {
-                // λ(module, main, args_len) → status
+                // λ(module, args_len) → status
                 opcode!(PushErrorGuard);
                 opcode!(ArbitraryJumpIf, prior + body.len() + 3);
                 opcode!(I32Const, UserOutcomeKind::Failure as u32);
                 opcode!(Return);
 
                 // jumps here in the happy case
-                opcode!(LocalGet, 2); // args_len
-                opcode!(LocalGet, 0); // module
-                opcode!(LocalGet, 1); // main
-                opcode!(CrossModuleDynamicCall); // consumes module and main, passing args_len
+                opcode!(LocalGet, 1); // args_len
+                cross_internal!(CallMain);
                 opcode!(PopErrorGuard);
             }
             UserInkLeft => {
@@ -363,7 +360,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn new_internal_funcs(globals: Option<StylusData>) -> Vec<Function> {
+pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -412,19 +409,17 @@ pub fn new_internal_funcs(globals: Option<StylusData>) -> Vec<Function> {
 
     let mut add_func = |code: &[_], internal| add_func(code_func(code, internal), internal);
 
-    if let Some(globals) = globals {
-        let (gas, status, depth) = globals.global_offsets();
-        add_func(&[Instruction::with_data(GlobalGet, gas)], UserInkLeft);
-        add_func(&[Instruction::with_data(GlobalGet, status)], UserInkStatus);
-        add_func(
-            &[
-                Instruction::with_data(GlobalSet, status),
-                Instruction::with_data(GlobalSet, gas),
-            ],
-            UserSetInk,
-        );
-        add_func(&[Instruction::with_data(GlobalGet, depth)], UserStackLeft);
-        add_func(&[Instruction::with_data(GlobalSet, depth)], UserSetStack);
+    if let Some(info) = stylus_data {
+        let (gas, status, depth) = info.global_offsets();
+        let main = info.user_main.into();
+        let inst = |op, data| Instruction::with_data(op, data);
+
+        add_func(&[inst(GlobalGet, gas)], UserInkLeft);
+        add_func(&[inst(GlobalGet, status)], UserInkStatus);
+        add_func(&[inst(GlobalSet, status), inst(GlobalSet, gas)], UserSetInk);
+        add_func(&[inst(GlobalGet, depth)], UserStackLeft);
+        add_func(&[inst(GlobalSet, depth)], UserSetStack);
+        add_func(&[inst(Call, main)], CallMain);
     }
     funcs
 }

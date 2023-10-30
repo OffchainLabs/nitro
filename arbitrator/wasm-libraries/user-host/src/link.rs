@@ -5,12 +5,12 @@ use crate::{evm_api::ApiCaller, Program, PROGRAMS};
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
     format::DebugBytes,
-    heapify, wavm,
+    heapify, wavm, Bytes32,
 };
 use go_abi::GoStack;
 use prover::{
+    machine::Module,
     programs::config::{PricingParams, StylusConfig},
-    Machine,
 };
 use std::mem;
 
@@ -24,30 +24,34 @@ extern "C" {
 // these dynamic hostio methods allow introspection into user modules
 #[link(wasm_import_module = "hostio")]
 extern "C" {
-    fn program_set_ink(module: u32, internals: u32, ink: u64);
-    fn program_set_stack(module: u32, internals: u32, stack: u32);
-    fn program_ink_left(module: u32, internals: u32) -> u64;
-    fn program_ink_status(module: u32, internals: u32) -> u32;
-    fn program_stack_left(module: u32, internals: u32) -> u32;
-    fn program_call_main(module: u32, main: u32, args_len: usize) -> u32;
+    fn program_set_ink(module: u32, ink: u64);
+    fn program_set_stack(module: u32, stack: u32);
+    fn program_ink_left(module: u32) -> u64;
+    fn program_ink_status(module: u32) -> u32;
+    fn program_stack_left(module: u32) -> u32;
+    fn program_call_main(module: u32, args_len: usize) -> u32;
 }
 
 #[repr(C, align(256))]
 struct MemoryLeaf([u8; 32]);
 
-/// Compiles and instruments a user wasm.
+/// Instruments and "activates" a user wasm, producing a unique module hash.
+///
+/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+/// The amount left is written back at the end of the call.
 ///
 /// # Safety
 ///
+/// The `modHash` and `gas` pointers must not be null.
+///
 /// The Go compiler expects the call to take the form
-///     λ(wasm []byte, pageLimit, version u16, debug u32) (mach *Machine, info WasmInfo, err *Vec<u8>)
+///     λ(wasm []byte, pageLimit, version u16, debug u32, modHash *hash, gas *u64) (footprint u16, err *Vec<u8>)
 ///
 /// These values are placed on the stack as follows
-///     stack:  || wasm... || pageLimit | version | debug || mach ptr || info... || err ptr ||
-///     info:   || footprint | 2 pad | size ||
+///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activateProgramRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
@@ -55,21 +59,29 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
     let page_limit = sp.read_u16();
     let version = sp.read_u16();
     let debug = sp.read_bool32();
+    let module_hash = sp.read_go_ptr();
+    let gas = sp.read_go_ptr();
 
-    match Machine::new_user_stub(&wasm, page_limit, version, debug) {
-        Ok((machine, info)) => {
-            let footprint = info.footprint;
-            let size = info.size;
-            sp.write_ptr(heapify(machine));
-            sp.write_u16(footprint).skip_u16().write_u32(size); // wasm info
-            sp.write_nullptr();
-        }
-        Err(error) => {
-            sp.write_nullptr();
-            sp.skip_space(); // skip wasm info
-            sp.write_ptr(heapify(error.debug_bytes()));
-        }
+    macro_rules! error {
+        ($msg:expr, $error:expr) => {{
+            let error = $error.wrap_err($msg).debug_bytes();
+            wavm::caller_store64(gas, 0);
+            wavm::write_bytes32(module_hash, Bytes32::default());
+            sp.skip_space();
+            sp.write_ptr(heapify(error));
+            return;
+        }};
     }
+
+    let gas_left = &mut wavm::caller_load64(gas);
+    let (module, pages) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+        Ok(data) => data,
+        Err(error) => error!("failed to activate", error),
+    };
+    wavm::caller_store64(gas, *gas_left);
+    wavm::write_bytes32(module_hash, module.hash());
+    sp.write_u16(pages).skip_space();
+    sp.write_nullptr();
 }
 
 /// Links and executes a user wasm.
@@ -77,47 +89,40 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 /// # Safety
 ///
 /// The Go compiler expects the call to take the form
-///     λ(
-///           mach *Machine, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData,
-///           gas *u64, root *[32]byte
-///     ) -> (status byte, out *Vec<u8>)
+///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64) (
+///         status byte, out *Vec<u8>,
+///     )
 ///
 /// These values are placed on the stack as follows
-///     || mach || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
+///     || modHash || calldata... || params || evmApi... || evmData || gas || status | 7 pad | out ptr ||
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callProgramRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let machine: Machine = sp.unbox();
+    let compiled_hash = wavm::read_bytes32(sp.read_go_ptr());
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
     let evm_data: EvmData = sp.unbox();
+    let gas = sp.read_go_ptr();
 
     // buy ink
     let pricing = config.pricing;
-    let gas = sp.read_go_ptr();
     let ink = pricing.gas_to_ink(wavm::caller_load64(gas));
 
-    // compute the module root, or accept one from the caller
-    let root = sp.read_go_ptr();
-    let root = (root != 0).then(|| wavm::read_bytes32(root));
-    let module = root.unwrap_or_else(|| machine.main_module_hash());
-    let (main, internals) = machine.program_info();
-
     // link the program and ready its instrumentation
-    let module = wavm_link_module(&MemoryLeaf(module.0));
-    program_set_ink(module, internals, ink);
-    program_set_stack(module, internals, config.max_depth);
+    let module = wavm_link_module(&MemoryLeaf(*compiled_hash));
+    program_set_ink(module, ink);
+    program_set_stack(module, config.max_depth);
 
     // provide arguments
     let args_len = calldata.len();
     PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
 
     // call the program
-    let status = program_call_main(module, main, args_len);
+    let status = program_call_main(module, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
     sp.restore_stack();
 
@@ -137,15 +142,15 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // check if instrumentation stopped the program
     use UserOutcomeKind::*;
-    if program_ink_status(module, internals) != 0 {
+    if program_ink_status(module) != 0 {
         finish!(OutOfInk, 0);
     }
-    if program_stack_left(module, internals) == 0 {
+    if program_stack_left(module) == 0 {
         finish!(OutOfStack, 0);
     }
 
     // the program computed a final result
-    let ink_left = program_ink_left(module, internals);
+    let ink_left = program_ink_left(module);
     finish!(status, heapify(outs), ink_left)
 }
 
@@ -187,23 +192,6 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     let ptr: *mut u8 = sp.read_ptr_mut();
     wavm::write_slice(&vec, ptr as u64);
     mem::drop(vec)
-}
-
-/// Drops a `Machine`.
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(mach *Machine)
-///
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustMachineDropImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    if let Some(mach) = sp.unbox_option::<Machine>() {
-        mem::drop(mach);
-    }
 }
 
 /// Creates a `StylusConfig` from its component parts.

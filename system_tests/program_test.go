@@ -60,9 +60,9 @@ func keccakTest(t *testing.T, jit bool) {
 	Require(t, err)
 
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
-	timed(t, "compile same code", func() {
+	timed(t, "activate same code", func() {
 		if _, err := arbWasm.ActivateProgram(&auth, otherAddressSameCode); err == nil || !strings.Contains(err.Error(), "ProgramUpToDate") {
-			Fatal(t, "compile should have failed with ProgramUpToDate")
+			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
 
@@ -900,7 +900,7 @@ func TestProgramActivateFails(t *testing.T) {
 }
 
 func testActivateFails(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, false)
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -992,6 +992,43 @@ func testSdkStorage(t *testing.T, jit bool) {
 	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
 	rustCost = receipt.GasUsedForL2()
 	check()
+}
+
+func TestProgramAcivationLogs(t *testing.T) {
+	t.Parallel()
+	ctx, _, _, l2client, auth, cleanup := setupProgramTest(t, true)
+	defer cleanup()
+
+	wasm, _ := readWasmFile(t, watFile("memory"))
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	nolimitAuth := auth
+	nolimitAuth.GasLimit = 32000000
+
+	programAddress := deployContract(t, ctx, nolimitAuth, l2client, wasm)
+
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
+	}
+	log, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	if err != nil {
+		Fatal(t, "parsing activated log: ", err)
+	}
+	if log.Version == 0 {
+		Fatal(t, "activated program with version 0")
+	}
+	if log.Program != programAddress {
+		Fatal(t, "unexpected program in activation log: ", log.Program)
+	}
+	if crypto.Keccak256Hash(wasm) != log.Codehash {
+		Fatal(t, "unexpected codehash in activation log: ", log.Codehash)
+	}
 }
 
 func setupProgramTest(t *testing.T, jit bool) (
@@ -1190,7 +1227,6 @@ func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool,
 	ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
-	t.Helper()
 	waitForSequencer(t, node, arbmath.MaxInt(blocks...))
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)

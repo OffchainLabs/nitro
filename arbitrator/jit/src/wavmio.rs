@@ -314,11 +314,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
     let programs_count = socket::read_u32(stream)?;
     for _ in 0..programs_count {
-        let codehash = socket::read_bytes32(stream)?;
-        let wasm = socket::read_bytes(stream)?;
-        let hash = socket::read_bytes32(stream)?;
-        let version = socket::read_u16(stream)?;
-        env.user_wasms.insert((codehash, version), (wasm, hash));
+        let module_hash = socket::read_bytes32(stream)?;
+        let module_asm = socket::read_boxed_slice(stream)?;
+        env.module_asms.insert(module_hash, module_asm.into());
     }
 
     if socket::read_u8(stream)? != socket::READY {

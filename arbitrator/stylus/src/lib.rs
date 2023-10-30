@@ -8,10 +8,11 @@ use arbutil::{
         EvmData,
     },
     format::DebugBytes,
+    Bytes32,
 };
 use eyre::ErrReport;
 use native::NativeInstance;
-use prover::{programs::prelude::*, Machine};
+use prover::programs::prelude::*;
 use run::RunProgram;
 use std::{marker::PhantomData, mem};
 
@@ -59,13 +60,13 @@ impl<'a> RustSlice<'a> {
 }
 
 #[repr(C)]
-pub struct RustVec {
+pub struct RustBytes {
     ptr: *mut u8,
     len: usize,
     cap: usize,
 }
 
-impl RustVec {
+impl RustBytes {
     fn new(vec: Vec<u8>) -> Self {
         let mut rust_vec = Self {
             ptr: std::ptr::null_mut(),
@@ -99,55 +100,45 @@ impl RustVec {
     }
 }
 
-/// Ensures a user program can be proven.
-/// On success, `wasm_info` is populated with pricing information.
-/// On error, a message is written to `output`.
+/// Instruments and "activates" a user wasm.
+///
+/// The `output` is either the serialized asm & module pair or an error string.
+/// Returns consensus info such as the module hash and footprint on success.
+///
+/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+/// The amount left is written back at the end of the call.
 ///
 /// # Safety
 ///
-/// `output` and `wasm_info` must not be null.
+/// `output`, `asm_len`, `module_hash`, `footprint`, and `gas` must not be null.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_parse_wasm(
+pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
     version: u16,
     debug: bool,
-    wasm_info: *mut WasmPricingInfo,
-    output: *mut RustVec,
-) -> UserOutcomeKind {
-    let wasm = wasm.slice();
-    let info = &mut *wasm_info;
-    let output = &mut *output;
-
-    match Machine::new_user_stub(wasm, page_limit, version, debug) {
-        Ok((_, data)) => *info = data,
-        Err(error) => return output.write_err(error),
-    }
-    UserOutcomeKind::Success
-}
-
-/// Compiles a user program to its native representation.
-/// The `output` is either the serialized module or an error string.
-///
-/// # Safety
-///
-/// Output must not be null.
-#[no_mangle]
-pub unsafe extern "C" fn stylus_compile(
-    wasm: GoSliceData,
-    version: u16,
-    debug_mode: bool,
-    output: *mut RustVec,
+    output: *mut RustBytes,
+    asm_len: *mut usize,
+    module_hash: *mut Bytes32,
+    footprint: *mut u16,
+    gas: *mut u64,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-    let compile = CompileConfig::version(version, debug_mode);
+    let module_hash = &mut *module_hash;
+    let gas = &mut *gas;
 
-    let module = match native::module(wasm, compile) {
-        Ok(module) => module,
+    let (asm, module, pages) = match native::activate(wasm, version, page_limit, debug, gas) {
+        Ok(val) => val,
         Err(err) => return output.write_err(err),
     };
-    output.write(module);
+    *asm_len = asm.len();
+    *module_hash = module.hash();
+    *footprint = pages;
+
+    let mut data = asm;
+    data.extend(&*module.into_bytes());
+    output.write(data);
     UserOutcomeKind::Success
 }
 
@@ -155,7 +146,7 @@ pub unsafe extern "C" fn stylus_compile(
 ///
 /// # Safety
 ///
-/// `module` must represent a valid module produced from `stylus_compile`.
+/// `module` must represent a valid module produced from `stylus_activate`.
 /// `output` and `gas` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
@@ -165,7 +156,7 @@ pub unsafe extern "C" fn stylus_call(
     go_api: GoEvmApi,
     evm_data: EvmData,
     debug_chain: u32,
-    output: *mut RustVec,
+    output: *mut RustBytes,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
@@ -200,7 +191,7 @@ pub unsafe extern "C" fn stylus_call(
 ///
 /// Must only be called once per vec.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
+pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
     }
@@ -212,7 +203,7 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
 ///
 /// `rust` must not be null.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustVec, data: GoSliceData) {
+pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustBytes, data: GoSliceData) {
     let rust = &mut *rust;
     let mut vec = Vec::from_raw_parts(rust.ptr, rust.len, rust.cap);
     vec.clear();

@@ -8,11 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{
-        config::{CompileConfig, WasmPricingInfo},
-        meter::MeteredMachine,
-        ModuleMod, StylusData, STYLUS_ENTRY_POINT,
-    },
+    programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -26,6 +22,7 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use itertools::izip;
+use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -265,7 +262,7 @@ impl AvailableImport {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-struct Module {
+pub struct Module {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
@@ -286,6 +283,27 @@ struct Module {
     func_exports: Arc<HashMap<String, u32>>,
     #[serde(default)]
     all_exports: Arc<ExportMap>,
+}
+
+lazy_static! {
+    static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
+        let mut imports = HashMap::default();
+
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
+
+        for (name, &(export, kind)) in &forward.exports {
+            if kind == ExportKind::Func {
+                let ty = match forward.get_function(FunctionIndex::from_u32(export)) {
+                    Ok(ty) => ty,
+                    Err(error) => panic!("failed to read export {name}: {error:?}"),
+                };
+                let import = AvailableImport::new(ty, 1, export);
+                imports.insert(name.to_owned(), import);
+            }
+        }
+        imports
+    };
 }
 
 impl Module {
@@ -358,6 +376,14 @@ impl Module {
             host_call_hooks.push(Some((import.module.into(), import_name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
+
+        let func_exports: HashMap<String, u32> = bin
+            .exports
+            .iter()
+            .filter_map(|(name, (offset, kind))| {
+                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
+            })
+            .collect();
 
         let internals = host::new_internal_funcs(stylus_data);
         let internals_offset = (code.len() + bin.codes.len()) as u32;
@@ -515,13 +541,6 @@ impl Module {
         ensure!(!code.is_empty(), "Module has no code");
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
-        let func_exports = bin
-            .exports
-            .iter()
-            .filter_map(|(name, (offset, kind))| {
-                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
-            })
-            .collect();
 
         Ok(Module {
             memory,
@@ -544,6 +563,21 @@ impl Module {
         })
     }
 
+    pub fn from_user_binary(
+        bin: &WasmBinary,
+        debug_funcs: bool,
+        stylus_data: Option<StylusData>,
+    ) -> Result<Module> {
+        Self::from_binary(
+            bin,
+            &USER_IMPORTS,
+            &HashMap::default(),
+            false,
+            debug_funcs,
+            stylus_data,
+        )
+    }
+
     fn name(&self) -> &str {
         &self.names.module
     }
@@ -555,7 +589,7 @@ impl Module {
         Ok(*func.1)
     }
 
-    fn hash(&self) -> Bytes32 {
+    pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Module:");
         h.update(
@@ -593,6 +627,14 @@ impl Module {
         data.extend(self.internals_offset.to_be_bytes());
 
         data
+    }
+
+    pub fn into_bytes(&self) -> Box<[u8]> {
+        bincode::serialize(self).unwrap().into_boxed_slice()
+    }
+
+    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
+        bincode::deserialize(bytes).unwrap()
     }
 }
 
@@ -1080,77 +1122,22 @@ impl Machine {
         Ok(machine)
     }
 
-    /// Produces a compile-only `Machine` from a user program.
-    /// Note: the machine's imports are stubbed, so execution isn't possible.
-    pub fn new_user_stub(
-        wasm: &[u8],
-        page_limit: u16,
-        version: u16,
-        debug: bool,
-    ) -> Result<(Machine, WasmPricingInfo)> {
-        let compile = CompileConfig::version(version, debug);
-        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
-        let forward = binary::parse(forward, Path::new("forward")).unwrap();
-
-        let binary = WasmBinary::parse_user(wasm, page_limit, &compile);
-        let (bin, stylus_data, footprint) = match binary {
-            Ok(data) => data,
-            Err(err) => return Err(err.wrap_err("failed to parse program")),
-        };
-        let info = WasmPricingInfo {
-            footprint,
-            size: wasm.len() as u32,
-        };
-        let mach = Self::from_binaries(
-            &[forward],
-            bin,
-            false,
-            false,
-            false,
-            compile.debug.debug_funcs,
-            debug,
-            GlobalState::default(),
-            HashMap::default(),
-            Arc::new(|_, _| panic!("user program tried to read preimage")),
-            Some(stylus_data),
-        )?;
-        Ok((mach, info))
-    }
-
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
-    pub fn add_program(
-        &mut self,
-        wasm: &[u8],
-        version: u16,
-        debug_funcs: bool,
-        hash: Option<Bytes32>,
-    ) -> Result<Bytes32> {
+    pub fn add_program(&mut self, wasm: &[u8], version: u16, debug_funcs: bool) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
-        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
-        let forward = binary::parse(forward, Path::new("forward")).unwrap();
-
-        let mut machine = Self::from_binaries(
-            &[forward],
-            bin,
-            false,
-            false,
-            false,
-            debug_funcs,
-            self.debug_info,
-            GlobalState::default(),
-            HashMap::default(),
-            Arc::new(|_, _| panic!("tried to read preimage")),
-            Some(stylus_data),
-        )?;
-
-        let module = machine.modules.pop().unwrap();
-        let hash = hash.unwrap_or_else(|| module.hash());
-        self.stylus_modules.insert(hash, module);
+        let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
+        let hash = module.hash();
+        self.add_stylus_module(module, hash);
         Ok(hash)
+    }
+
+    /// Adds a pre-built program to the machine's known set of wasms.
+    pub fn add_stylus_module(&mut self, module: Module, hash: Bytes32) {
+        self.stylus_modules.insert(hash, module);
     }
 
     pub fn from_binaries(
@@ -1284,7 +1271,7 @@ impl Machine {
         // Rust support
         let rust_fn = "__main_void";
         if let Some(&f) = main_exports.get(rust_fn).filter(|_| runtime_support) {
-            let expected_type = FunctionType::new(vec![], vec![I32]);
+            let expected_type = FunctionType::new([], [I32]);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [] -> [ret]",
@@ -1592,12 +1579,6 @@ impl Machine {
         for module in &mut self.modules {
             module.memory.merkle = None;
         }
-    }
-
-    pub fn program_info(&self) -> (u32, u32) {
-        let module = self.modules.last().unwrap();
-        let main = module.find_func(STYLUS_ENTRY_POINT).unwrap();
-        (main, module.internals_offset)
     }
 
     pub fn main_module_name(&self) -> String {
@@ -1943,15 +1924,16 @@ impl Machine {
                     self.pc.inst = 0;
                     reset_refs!();
                 }
-                Opcode::CrossModuleDynamicCall => {
+                Opcode::CrossModuleInternalCall => {
                     flush_module!();
-                    let call_func = self.value_stack.pop().unwrap().assume_u32();
+                    let call_internal = inst.argument_data as u32;
                     let call_module = self.value_stack.pop().unwrap().assume_u32();
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(self.pc.module.into());
                     self.value_stack.push(module.internals_offset.into());
+                    module = &mut self.modules[call_module as usize];
                     self.pc.module = call_module;
-                    self.pc.func = call_func;
+                    self.pc.func = module.internals_offset + call_internal;
                     self.pc.inst = 0;
                     reset_refs!();
                 }
@@ -2792,6 +2774,14 @@ impl Machine {
                         .prove(idx_usize)
                         .expect("Failed to prove elements merkle"));
                 }
+            }
+            CrossModuleInternalCall => {
+                let module_idx = self.value_stack.last().unwrap().assume_u32() as usize;
+                let called_module = &self.modules[module_idx];
+                out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
+                out!(mod_merkle
+                    .prove(module_idx)
+                    .expect("Failed to prove module for CrossModuleInternalCall"));
             }
             GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
                 out!(self.global_state.serialize());

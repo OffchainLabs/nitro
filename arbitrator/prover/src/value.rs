@@ -409,8 +409,15 @@ pub struct FunctionType {
 }
 
 impl FunctionType {
-    pub fn new(inputs: Vec<ArbValueType>, outputs: Vec<ArbValueType>) -> FunctionType {
-        FunctionType { inputs, outputs }
+    pub fn new<T, U>(inputs: T, outputs: U) -> FunctionType
+    where
+        T: Into<Vec<ArbValueType>>,
+        U: Into<Vec<ArbValueType>>,
+    {
+        FunctionType {
+            inputs: inputs.into(),
+            outputs: outputs.into(),
+        }
     }
 
     pub fn hash(&self) -> Bytes32 {

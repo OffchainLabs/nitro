@@ -9,7 +9,7 @@ use crate::{
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
-use arbutil::{Color, DebugColor};
+use arbutil::{math::SaturatingSum, Color, DebugColor};
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -80,22 +80,16 @@ pub enum FloatInstruction {
 impl FloatInstruction {
     pub fn signature(&self) -> FunctionType {
         match *self {
-            FloatInstruction::UnOp(t, _) => FunctionType::new(vec![t.into()], vec![t.into()]),
-            FloatInstruction::BinOp(t, _) => FunctionType::new(vec![t.into(); 2], vec![t.into()]),
-            FloatInstruction::RelOp(t, _) => {
-                FunctionType::new(vec![t.into(); 2], vec![ArbValueType::I32])
-            }
-            FloatInstruction::TruncIntOp(i, f, ..) => {
-                FunctionType::new(vec![f.into()], vec![i.into()])
-            }
-            FloatInstruction::ConvertIntOp(f, i, _) => {
-                FunctionType::new(vec![i.into()], vec![f.into()])
-            }
+            FloatInstruction::UnOp(t, _) => FunctionType::new([t.into()], [t.into()]),
+            FloatInstruction::BinOp(t, _) => FunctionType::new([t.into(); 2], [t.into()]),
+            FloatInstruction::RelOp(t, _) => FunctionType::new([t.into(); 2], [ArbValueType::I32]),
+            FloatInstruction::TruncIntOp(i, f, ..) => FunctionType::new([f.into()], [i.into()]),
+            FloatInstruction::ConvertIntOp(f, i, _) => FunctionType::new([i.into()], [f.into()]),
             FloatInstruction::F32DemoteF64 => {
-                FunctionType::new(vec![ArbValueType::F64], vec![ArbValueType::F32])
+                FunctionType::new([ArbValueType::F64], [ArbValueType::F32])
             }
             FloatInstruction::F64PromoteF32 => {
-                FunctionType::new(vec![ArbValueType::F32], vec![ArbValueType::F64])
+                FunctionType::new([ArbValueType::F32], [ArbValueType::F64])
             }
         }
     }
@@ -585,6 +579,10 @@ impl<'a> WasmBinary<'a> {
         // 4GB maximum implies `footprint` fits in a u16
         let footprint = self.memory_info()?.min.0 as u16;
 
+        // check the entrypoint
+        let ty = FunctionType::new([ArbValueType::I32], [ArbValueType::I32]);
+        let user_main = self.check_func(STYLUS_ENTRY_POINT, ty)?;
+
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
         Ok(StylusData {
@@ -592,6 +590,7 @@ impl<'a> WasmBinary<'a> {
             ink_status,
             depth_left,
             footprint,
+            user_main,
         })
     }
 
@@ -634,6 +633,9 @@ impl<'a> WasmBinary<'a> {
             limit!(4096, function.locals.len(), "locals")
         }
 
+        let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
+        limit!(10_000, table_entries, "table entries");
+
         let max_len = 500;
         macro_rules! too_long {
             ($name:expr, $len:expr) => {
@@ -654,27 +656,22 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
+        Ok((bin, stylus_data, pages as u16))
+    }
 
-        // check the entrypoint
-        let Some(&(entrypoint, kind)) = bin.exports.get(STYLUS_ENTRY_POINT) else {
-            bail!("missing export with name {}", STYLUS_ENTRY_POINT.red());
+    /// Ensures a func exists and has the right type.
+    fn check_func(&self, name: &str, ty: FunctionType) -> Result<u32> {
+        let Some(&(func, kind)) = self.exports.get(name) else {
+            bail!("missing export with name {}", name.red());
         };
         if kind != ExportKind::Func {
-            bail!(
-                "export {} must be a function but is a {}",
-                STYLUS_ENTRY_POINT.red(),
-                kind.debug_red(),
-            );
+            let kind = kind.debug_red();
+            bail!("export {} must be a function but is a {kind}", name.red());
         }
-        let entrypoint_ty = bin.get_function(FunctionIndex::new(entrypoint.try_into()?))?;
-        if entrypoint_ty != FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]) {
-            bail!(
-                "wrong type for {}: {}",
-                STYLUS_ENTRY_POINT.red(),
-                entrypoint_ty.red(),
-            );
+        let func_ty = self.get_function(FunctionIndex::new(func.try_into()?))?;
+        if func_ty != ty {
+            bail!("wrong type for {}: {}", name.red(), func_ty.red());
         }
-
-        Ok((bin, stylus_data, pages as u16))
+        Ok(func)
     }
 }

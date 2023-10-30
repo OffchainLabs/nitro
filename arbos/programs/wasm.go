@@ -7,11 +7,8 @@
 package programs
 
 import (
-	"math"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -31,21 +28,20 @@ type usize = uintptr
 // opaque types
 type rustVec byte
 type rustConfig byte
-type rustMachine byte
+type rustModule byte
 type rustEvmData byte
 
-func compileUserWasmRustImpl(
-	wasm []byte, pageLimit, version u16, debugMode u32,
-) (machine *rustMachine, info wasmPricingInfo, err *rustVec)
+func activateProgramRustImpl(
+	wasm []byte, pageLimit, version u16, debugMode u32, moduleHash *hash, gas *u64,
+) (footprint u16, err *rustVec)
 
-func callUserWasmRustImpl(
-	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
-	evmData *rustEvmData, gas *u64, root *hash,
+func callProgramRustImpl(
+	moduleHash *hash, calldata []byte, params *rustConfig, evmApi []byte, evmData *rustEvmData, gas *u64,
 ) (status userStatus, out *rustVec)
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustMachineDropImpl(mach *rustMachine)
+func rustModuleDropImpl(mach *rustModule)
 func rustConfigImpl(version u16, maxDepth, inkPrice, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
@@ -62,7 +58,7 @@ func rustEvmDataImpl(
 	reentrant u32,
 ) *rustEvmData
 
-func compileUserWasm(
+func activateProgram(
 	db vm.StateDB,
 	program addr,
 	wasm []byte,
@@ -70,23 +66,22 @@ func compileUserWasm(
 	version u16,
 	debug bool,
 	burner burn.Burner,
-) (*wasmPricingInfo, error) {
+) (common.Hash, u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	machine, info, err := compileUserWasmRustImpl(wasm, pageLimit, version, debugMode)
-	defer rustMachineDropImpl(machine)
+	moduleHash := common.Hash{}
+	gasPtr := burner.GasLeft()
+
+	footprint, err := activateProgramRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, gasPtr)
 	if err != nil {
 		_, _, err := userFailure.toResult(err.intoSlice(), debug)
-		return nil, err
+		return moduleHash, footprint, err
 	}
-	if err := payForCompilation(burner, &info); err != nil {
-		return nil, err
-	}
-	return &info, nil
+	return moduleHash, footprint, nil
 }
 
-func callUserWasm(
+func callProgram(
 	address common.Address,
-	program Program,
+	moduleHash common.Hash,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -96,34 +91,17 @@ func callUserWasm(
 	params *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
-	// since the program has previously passed compilation, don't limit memory
-	pageLimit := uint16(math.MaxUint16)
-	debug := arbmath.UintToBool(params.debugMode)
-
-	wasm, err := getWasm(db, address)
-	if err != nil {
-		log.Crit("failed to get wasm", "program", program, "err", err)
-	}
-
-	// compile the machine (TODO: reuse these)
-	machine, _, errVec := compileUserWasmRustImpl(wasm, pageLimit, params.version, params.debugMode)
-	if err != nil {
-		_, _, err := userFailure.toResult(errVec.intoSlice(), debug)
-		return nil, err
-	}
-
-	root := db.NoncanonicalProgramHash(scope.Contract.CodeHash, params.version)
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
+	debug := arbmath.UintToBool(params.debugMode)
 
-	status, output := callUserWasmRustImpl(
-		machine,
+	status, output := callProgramRustImpl(
+		&moduleHash,
 		calldata,
 		params.encode(),
 		evmApi.funcs,
 		evmData.encode(),
 		&scope.Contract.Gas,
-		&root,
 	)
 	data, _, err := status.toResult(output.intoSlice(), debug)
 	return data, err

@@ -3,7 +3,10 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::{gostack::GoStack, machine::WasmEnvMut};
+use crate::{
+    gostack::GoStack,
+    machine::{ModuleAsm, WasmEnvMut},
+};
 use arbutil::{
     evm::{
         js::{ApiValue, JsCallIntoGo, JsEvmApi},
@@ -49,7 +52,7 @@ impl JsCallIntoGo for ApiCaller {
 pub(super) fn exec_wasm(
     sp: &mut GoStack,
     mut env: WasmEnvMut,
-    module: Vec<u8>,
+    module: ModuleAsm,
     calldata: Vec<u8>,
     compile: CompileConfig,
     config: StylusConfig,
