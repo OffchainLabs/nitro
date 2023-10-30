@@ -9,24 +9,18 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
 func TestIpcRpc(t *testing.T) {
 	ipcPath := filepath.Join(t.TempDir(), "test.ipc")
 
-	ipcConfig := genericconf.IPCConfigDefault
-	ipcConfig.Path = ipcPath
-
-	stackConf := createStackConfigForTest(t.TempDir())
-	ipcConfig.Apply(stackConf)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, l2node, _, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, nil, stackConf)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.l2StackConfig.IPCPath = ipcPath
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	_, err := ethclient.Dial(ipcPath)
 	Require(t, err)

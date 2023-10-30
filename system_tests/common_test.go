@@ -103,6 +103,10 @@ func (tc *TestClient) GetBalance(t *testing.T, account common.Address) *big.Int 
 	return GetBalance(t, tc.ctx, tc.Client, account)
 }
 
+func (tc *TestClient) GetBaseFee(t *testing.T) *big.Int {
+	return GetBaseFee(t, tc.Client, tc.ctx)
+}
+
 func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
 	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
 }
@@ -113,6 +117,14 @@ func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transa
 
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
 	return deploySimple(t, tc.ctx, auth, tc.Client)
+}
+
+func (tc *TestClient) EnsureTxSucceeded(transaction *types.Transaction) (*types.Receipt, error) {
+	return tc.EnsureTxSucceededWithTimeout(transaction, time.Second*5)
+}
+
+func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
 type NodeBuilder struct {
@@ -165,13 +177,13 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
-			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+			createTestNodeWithL1(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
 		b.L1, b.L2 = l1, l2
 		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
 		l2 := NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client =
-			CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
+			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
 		b.L2 = l2
 	}
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
@@ -212,6 +224,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.ConsensusNode =
 		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+	l2.ExecNode = getExecNode(t, l2.ConsensusNode)
 	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
 	return l2, func() { l2.cleanup() }
 }
@@ -697,34 +710,7 @@ func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
 }
 
 // Create and deploy L1 and arbnode for L2
-func createTestNodeOnL1(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, nil, nil, nil, nil)
-}
-
-func createTestNodeOnL1WithConfig(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	execConfig *gethexec.Config,
-	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
-) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig, nil)
-	return
-}
-
-func createTestNodeOnL1WithConfigImpl(
+func createTestNodeWithL1(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
@@ -796,11 +782,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, nil, nil, true)
-}
-
-func CreateTestL2WithConfig(
+func createTestNode(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	if nodeConfig == nil {
@@ -872,24 +854,6 @@ func Require(t *testing.T, err error, text ...interface{}) {
 func Fatal(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
-}
-
-func Create2ndNode(
-	t *testing.T,
-	ctx context.Context,
-	first *arbnode.Node,
-	l1stack *node.Node,
-	l1info *BlockchainTestInfo,
-	l2InitData *statetransfer.ArbosInitializationInfo,
-	dasConfig *das.DataAvailabilityConfig,
-) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
-	if dasConfig == nil {
-		nodeConf.DataAvailability.Enable = false
-	} else {
-		nodeConf.DataAvailability = *dasConfig
-	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf, nil, nil)
 }
 
 func Create2ndNodeWithConfig(
