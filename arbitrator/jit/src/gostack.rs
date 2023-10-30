@@ -309,7 +309,8 @@ impl GoStack {
         self.refresh(env, store)
     }
 
-    /// Refreshes the stack pointer after potentially the Go runtime was potentially resumed.
+    /// Refreshes the stack pointer after the Go runtime resumes.
+    /// Idempotent, and safe to call even if no call to `resume` is made.
     ///
     /// # Safety
     ///

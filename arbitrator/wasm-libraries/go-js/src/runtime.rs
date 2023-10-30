@@ -1,4 +1,7 @@
-use crate::core::{JsEnv, JsObject, JsValue};
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+use crate::js_core::{JsEnv, JsObject, JsValue};
 use parking_lot::Mutex;
 use std::io::Write;
 use std::sync::Arc;
@@ -43,7 +46,7 @@ pub fn make_globals_object() -> JsValue {
     object.insert("process", make_process_object());
     object.insert("fs", make_fs_object());
     object.insert_func("Uint8Array", |_env, _go, args| {
-        if args.len() == 0 {
+        if args.is_empty() {
             Ok(JsValue::Uint8Array(Default::default()))
         } else {
             let Some(JsValue::Number(size)) = args.first() else {

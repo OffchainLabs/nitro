@@ -1,3 +1,6 @@
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 use fnv::FnvHashMap;
 use parking_lot::Mutex;
 use std::{

@@ -1,9 +1,12 @@
-mod core;
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+mod js_core;
 mod runtime;
 
-pub use core::{JsEnv, JsValueId};
+pub use js_core::{JsEnv, JsValueId};
 
-use core::{JsValue, NAN_ID, NULL_ID, ZERO_ID};
+use js_core::{JsValue, NAN_ID, NULL_ID, ZERO_ID};
 use std::sync::Arc;
 
 pub fn get_null() -> JsValueId {
@@ -21,13 +24,13 @@ pub fn get_number(f: f64) -> JsValueId {
 }
 
 pub struct JsState {
-    values: core::JsValuePool,
+    values: js_core::JsValuePool,
 }
 
 impl JsState {
     pub fn new() -> Self {
         Self {
-            values: core::JsValuePool::new(
+            values: js_core::JsValuePool::new(
                 runtime::make_globals_object(),
                 runtime::make_go_object(),
             ),
