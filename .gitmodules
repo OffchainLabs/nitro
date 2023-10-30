@@ -1,6 +1,6 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
-	url = https://github.com/OffchainLabs/go-ethereum.git
+	url = https://github.com/EspressoSystems/geth-arbitrum
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
@@ -19,4 +19,5 @@
 	url = https://github.com/WebAssembly/testsuite.git
 [submodule "nitro-testnode"]
 	path = nitro-testnode
-	url = https://github.com/OffchainLabs/nitro-testnode.git
+	url = https://github.com/EspressoSystems/nitro-testnode
+        branch = integration
