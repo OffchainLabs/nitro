@@ -40,6 +40,12 @@
           # Prevent cargo aliases from using programs in `~/.cargo` to avoid conflicts
           # with rustup installations.
           export CARGO_HOME=$HOME/.cargo-nix
+
+          # Create a target directory and ensure lib64 is a symlink to lib.
+          # Individual build steps may target either directory and later
+          # create the symlink making some build outputs inaccessible.
+          mkdir -p target/lib
+          ln -sf lib target/lib64
         ''
         + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
           # Fix docker-buildx command on OSX. Can we do this in a cleaner way?
@@ -53,11 +59,16 @@
           {
             # This shell is only used for one make recipe because the other
             # shell is not able to build one recipe and we haven't managed to
-            # come up with a dev shell that works for everything.
+            # come up with a dev shell that works for everything on OSX.
             #
             #    nix develop .#wasm -c make build-wasm-libs
             #
             # After that, the other shell can be used to run `make build`.
+            #
+            # With nix the `clang` command is a wrapper that does not understand
+            # some of the arguments that are passed to it during the build. This
+            # dev shell uses the unwrapped clang command and sets the include
+            # directory manually via `CPATH`.
             wasm = pkgs.mkShell {
               # By default clang-unwrapped does not find its resource dir. See
               # https://discourse.nixos.org/t/why-is-the-clang-resource-dir-split-in-a-separate-package/34114
@@ -79,14 +90,24 @@
                 export PATH="${pkgs.llvmPackages_16.clang-unwrapped}/bin:$PATH"
               '';
             };
-            default = pkgs.mkShell {
 
-              packages = with pkgs; [
+            # mkShell brings in a `cc` that points to gcc, stdenv.mkDerivation from llvm avoids this.
+            default = let llvmPkgs = pkgs.llvmPackages_16; in llvmPkgs.stdenv.mkDerivation {
+              # By default stack protection is enabled by the clang wrapper but I
+              # think it's not supported for wasm compilation. It causes this
+              # error:
+              #
+              #   Undefined stack protector symbols: __stack_chk_guard ...
+              #   in arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/extF80_div.o
+              hardeningDisable = [ "stackprotector" ];
+
+              name = "espresso-nitro-dev-shell";
+              buildInputs = with pkgs; [
                 cmake
                 stableToolchain
 
-                # llvmPackages_16.clang # provides clang without wrapper
-                # llvmPackages_16.bintools # provides wasm-ld
+                llvmPkgs.clang
+                llvmPkgs.bintools # provides wasm-ld
 
                 go
                 # goimports, godoc, etc.
@@ -112,9 +133,10 @@
                 darwin.libobjc
                 darwin.IOKit
                 darwin.apple_sdk.frameworks.CoreFoundation
+              ] ++ lib.optionals (! stdenv.isDarwin) [
+                glibc_multi.dev # provides gnu/stubs-32.h
               ];
               inherit shellHook;
-              RUST_SRC_PATH = "${stableToolchain}/lib/rustlib/src/rust/library";
             };
           };
       });

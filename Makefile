@@ -156,6 +156,9 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
+	# Ensure lib64 is a symlink to lib
+	mkdir -p $(output_root)/lib
+	ln -s lib $(output_root)/lib64
 
 docker:
 	docker build -t nitro-node-slim --target nitro-node-slim .
