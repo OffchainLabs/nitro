@@ -1,0 +1,77 @@
+{
+    "parent-chain": {
+        "connection": {
+            "url": "ws://localhost:8546"
+        },
+        "wallet": {
+            "account": "",
+            "password": "passphrase",
+            "pathname": "/home/user/l1keystore"
+        }
+    },
+    "chain": {
+        "id": 412346,
+        "info-files": [
+            "./config/l2_chain_info.json"
+        ]
+    },
+    "execution": {
+        "sequencer": {
+            "enable": true
+        }
+    },
+    "node": {
+        "staker": {
+            "dangerous": {
+                "without-block-validator": false
+            },
+            "disable-challenge": false,
+            "enable": false,
+            "staker-interval": "10s",
+            "make-assertion-interval": "10s",
+            "strategy": "MakeNodes"
+        },
+        "sequencer": true,
+        "delayed-sequencer": {
+            "enable": true
+        },
+        "seq-coordinator": {
+            "enable": true,
+            "redis-url": "redis://localhost:6379",
+            "lockout-duration": "30s",
+            "lockout-spare": "1s",
+            "my-url": "",
+            "retry-interval": "0.5s",
+            "seq-num-duration": "24h0m0s",
+            "update-interval": "3s"
+        },
+        "batch-poster": {
+            "enable": false,
+            "redis-url": "redis://localhost:6379",
+            "max-delay": "30s",
+            "data-poster": {
+                "redis-signer": {
+                    "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                },
+                "wait-for-l1-finality": false
+            }
+        },
+        "block-validator": {
+            "validation-server": {
+                "url": "ws://localhost:8949",
+                "jwtsecret": "./config/val_jwt.hex"
+            }
+        }
+    },
+    "persistent": {
+        "chain": "local"
+    },
+    "ws": {
+        "addr": "0.0.0.0"
+    },
+    "http": {
+        "addr": "0.0.0.0",
+        "vhosts": "*",
+        "corsdomain": "*"
+    }
+}
