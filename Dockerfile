@@ -29,7 +29,7 @@ RUN apt-get update && \
     apt-get install -y git python3 make g++
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
-RUN cd contracts && yarn install --ignore-optional
+RUN cd contracts && yarn install
 COPY contracts contracts/
 COPY Makefile .
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
@@ -77,6 +77,7 @@ COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
@@ -180,6 +181,7 @@ COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
