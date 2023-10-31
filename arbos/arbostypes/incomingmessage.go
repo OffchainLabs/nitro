@@ -31,7 +31,6 @@ const (
 	L1MessageType_Initialize            = 11
 	L1MessageType_EthDeposit            = 12
 	L1MessageType_BatchPostingReport    = 13
-	L1MessageType_L1MessageWithFeatures = 14
 	L1MessageType_Invalid               = 0xFF
 )
 
