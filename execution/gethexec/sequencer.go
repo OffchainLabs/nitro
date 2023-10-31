@@ -66,7 +66,7 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	Espresso                    bool            `koanf: "espresso" reload: "hot"`
+	Espresso                    bool            `koanf:"espresso" reload:"hot"`
 }
 
 func (c *SequencerConfig) Validate() error {
