@@ -429,7 +429,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 }
 
 func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbState *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
-	if tx.Type() == types.ArbitrumSubtypedTxType && arbState.ArbOSVersion() < arbostypes.ArbosVersion_ArbitrumSubtypedTx {
+	if tx.Type() == types.ArbitrumSubtypedTxType && arbState.ArbOSVersion() < arbostypes.RequiredArobosVersionForTxSubtype(types.GetArbitrumTxSubtype(tx)) {
 		return types.ErrTxTypeNotSupported
 	}
 	if s.nonceCache.Caching() {
@@ -844,6 +844,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		Timestamp:   uint64(timestamp),
 		RequestId:   nil,
 		L1BaseFee:   nil,
+		Features:    arbostypes.FeatureFlag_Invalid,
 	}
 
 	start := time.Now()

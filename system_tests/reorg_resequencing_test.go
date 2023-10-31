@@ -69,6 +69,7 @@ func TestReorgResequencing(t *testing.T) {
 			Timestamp:   0,
 			RequestId:   &delayedIndexHash,
 			L1BaseFee:   common.Big0,
+			Features:    0, // TODO(magic)
 		},
 		L2msg: append(l2info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
 	}

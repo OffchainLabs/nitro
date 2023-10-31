@@ -45,6 +45,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 				Timestamp:   0,
 				RequestId:   &delayedRequestId,
 				L1BaseFee:   common.Big0,
+				Features:    0, // TODO(magic)
 			},
 		},
 	}

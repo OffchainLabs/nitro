@@ -42,6 +42,7 @@ type sequencerMessage struct {
 	minL1Block           uint64
 	maxL1Block           uint64
 	afterDelayedMessages uint64
+	features             uint8
 	segments             [][]byte
 }
 
@@ -60,6 +61,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		minL1Block:           binary.BigEndian.Uint64(data[16:24]),
 		maxL1Block:           binary.BigEndian.Uint64(data[24:32]),
 		afterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
+		features:             0,
 		segments:             [][]byte{},
 	}
 	payload := data[40:]
@@ -87,9 +89,22 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		}
 		payload = pl
 	}
-
-	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
+	var header *byte
+	if len(payload) > 0 {
+		header = &payload[0]
+		payload = payload[1:]
+	}
+	if header != nil && FeaturesFlagSet(*header) {
+		if len(payload) > 0 {
+			parsedMsg.features = payload[0]
+			payload = payload[1:]
+		} else {
+			log.Warn("failed to read sequencer message version")
+			return parsedMsg, nil
+		}
+	}
+	if header != nil && IsBrotliMessageHeaderByte(*header) {
+		decompressed, err := arbcompress.Decompress(payload, MaxDecompressedLen)
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
 			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
@@ -112,13 +127,11 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			log.Warn("sequencer msg decompression failed", "err", err)
 		}
 	} else {
-		length := len(payload)
-		if length == 0 {
+		if header == nil {
 			log.Warn("empty sequencer message")
 		} else {
-			log.Warn("unknown sequencer message format", "length", length, "firstByte", payload[0])
+			log.Warn("unknown sequencer message format", "length", len(payload)+1, "firstByte", *header)
 		}
-
 	}
 
 	return parsedMsg, nil
@@ -427,6 +440,7 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 					Timestamp:   timestamp,
 					RequestId:   nil,
 					L1BaseFee:   big.NewInt(0),
+					Features:    arbostypes.Features(seqMsg.features),
 				},
 				L2msg: segment,
 			},

@@ -29,6 +29,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 							Timestamp:   0,
 							RequestId:   &requestId,
 							L1BaseFee:   big.NewInt(0),
+							Features:    0, // TODO(magic)
 						},
 						L2msg: []byte{0xde, 0xad, 0xbe, 0xef},
 					},

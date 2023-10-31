@@ -211,6 +211,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
+					Features:    arbostypes.FeatureFlag_Invalid,
 				},
 				L2msg: data,
 			},

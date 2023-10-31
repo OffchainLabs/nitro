@@ -160,6 +160,7 @@ func TestTransactionStreamer(t *testing.T) {
 							Kind:      arbostypes.L1MessageType_L2Message,
 							Poster:    source,
 							RequestId: &requestId,
+							Features:  0, // TODO(magic)
 						},
 						L2msg: l2Message,
 					},

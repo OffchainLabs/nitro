@@ -80,6 +80,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 					Timestamp:   0,
 					RequestId:   &common.Hash{},
 					L1BaseFee:   common.Big0,
+					Features:    0, // TODO(magic)
 				},
 				L2msg: nil,
 			},

@@ -71,6 +71,7 @@ func TestEthDepositMessage(t *testing.T) {
 		Timestamp:   8794561564,
 		RequestId:   &firstRequestId,
 		L1BaseFee:   big.NewInt(10000000000000),
+		Features:    0, // TODO(magic)
 	}
 	msgBuf := bytes.Buffer{}
 	if err := util.AddressToWriter(addr, &msgBuf); err != nil {
@@ -118,13 +119,12 @@ func TestEthDepositMessage(t *testing.T) {
 
 func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
 	chainId := big.NewInt(6456554)
-	arbOSVersion := arbosState.ArbOSVersion(statedb)
 	for _, data := range msgs {
 		msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data), nil)
 		if err != nil {
 			t.Error(err)
 		}
-		txes, err := arbos.ParseL2Transactions(msg, chainId, arbOSVersion, nil)
+		txes, err := arbos.ParseL2Transactions(msg, chainId, nil)
 		if err != nil {
 			t.Error(err)
 		}

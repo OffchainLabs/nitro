@@ -78,6 +78,7 @@ func TestContractTxDeploy(t *testing.T) {
 						Timestamp:   0,
 						RequestId:   &contractTx.RequestId,
 						L1BaseFee:   &big.Int{},
+						Features:    0, // TODO(magic)
 					},
 					L2msg:        l2Msg,
 					BatchGasCost: new(uint64),

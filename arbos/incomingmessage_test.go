@@ -22,6 +22,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 		Timestamp:   8794561564,
 		RequestId:   &requestId,
 		L1BaseFee:   big.NewInt(10000000000000),
+		Features:    0, // TODO(magic)
 	}
 	msg := arbostypes.L1IncomingMessage{
 		Header:       &header,
@@ -36,7 +37,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	txes, err := ParseL2Transactions(newMsg, chainId, 0, nil)
+	txes, err := ParseL2Transactions(newMsg, chainId, nil)
 	if err != nil {
 		t.Error(err)
 	}

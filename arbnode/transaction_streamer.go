@@ -318,6 +318,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 					if delayedFound.Message.Header.RequestId.Big().Uint64() != delayedSeqNum {
 						continue delayedInBlockLoop
 					}
+					delayedFound.Message.Header.Features = oldMessage.Message.Header.Features
 					if expectedAcc == delayedFound.AfterInboxAcc() && delayedFound.Message.Equals(oldMessage.Message) {
 						messageFound = true
 					}
@@ -538,6 +539,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 				Kind:      arbostypes.L1MessageType_Initialize,
 				RequestId: &common.Hash{},
 				L1BaseFee: common.Big0,
+				Features:  0, // TODO(magic)
 			},
 			L2msg: msg,
 		},

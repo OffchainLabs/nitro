@@ -34,8 +34,8 @@ const DASMessageHeaderFlag byte = 0x80
 // Ignored when DASMessageHeaderFlag is not set.
 const TreeDASMessageHeaderFlag byte = 0x08
 
-// L1AuthenticatedMessageHeaderFlag indicates that this message was authenticated by L1. Currently unused.
-const L1AuthenticatedMessageHeaderFlag byte = 0x40
+// FeaturesHeaderFlag indicates that TODO
+const FeaturesHeaderFlag byte = 0x40
 
 // ZeroheavyMessageHeaderFlag indicates that this message is zeroheavy-encoded.
 const ZeroheavyMessageHeaderFlag byte = 0x20
@@ -53,6 +53,10 @@ func IsTreeDASMessageHeaderByte(header byte) bool {
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
 	return (ZeroheavyMessageHeaderFlag & header) > 0
+}
+
+func FeaturesFlagSet(header byte) bool {
+	return (FeaturesHeaderFlag & header) > 0
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {
