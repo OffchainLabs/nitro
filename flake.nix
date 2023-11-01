@@ -40,6 +40,7 @@
           # Prevent cargo aliases from using programs in `~/.cargo` to avoid conflicts
           # with rustup installations.
           export CARGO_HOME=$HOME/.cargo-nix
+          export DOCKER_BUILDKIT=1
 
           # Create a target directory and ensure lib64 is a symlink to lib.
           # Individual build steps may target either directory and later
