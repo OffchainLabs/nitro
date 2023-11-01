@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 	"testing"
 	"time"
@@ -40,8 +41,9 @@ type ExecutionEngine struct {
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
-	reorgSequencing bool
-	evil            bool
+	reorgSequencing            bool
+	evil                       bool
+	interceptDepositGweiAmount *big.Int
 }
 
 type Opt func(*ExecutionEngine)
@@ -52,11 +54,18 @@ func WithEvilExecution() Opt {
 	}
 }
 
+func WithInterceptDepositSize(depositGwei *big.Int) Opt {
+	return func(exec *ExecutionEngine) {
+		exec.interceptDepositGweiAmount = depositGwei
+	}
+}
+
 func NewExecutionEngine(bc *core.BlockChain, opts ...Opt) (*ExecutionEngine, error) {
 	exec := &ExecutionEngine{
-		bc:               bc,
-		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier: make(chan struct{}, 1),
+		bc:                         bc,
+		resequenceChan:             make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:           make(chan struct{}, 1),
+		interceptDepositGweiAmount: arbos.DefaultEvilInterceptDepositGweiAmount,
 	}
 	for _, o := range opts {
 		o(exec)
@@ -458,6 +467,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	opts := make([]arbos.ProduceOpt, 0)
 	if s.evil {
 		opts = append(opts, arbos.WithEvilProduction())
+		opts = append(opts, arbos.WithInterceptDepositSize(s.interceptDepositGweiAmount))
 	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,

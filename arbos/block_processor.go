@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"strings"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -127,7 +126,8 @@ func NoopSequencingHooks() *SequencingHooks {
 }
 
 type ProduceConfig struct {
-	evil bool
+	evil                       bool
+	interceptDepositGweiAmount *big.Int
 }
 type ProduceOpt func(*ProduceConfig)
 
@@ -136,6 +136,15 @@ func WithEvilProduction() ProduceOpt {
 		pc.evil = true
 	}
 }
+
+func WithInterceptDepositSize(depositGwei *big.Int) ProduceOpt {
+	return func(pc *ProduceConfig) {
+		pc.interceptDepositGweiAmount = depositGwei
+	}
+}
+
+// By default, intercept and modify any Arbitrum deposits with a value of a 1M gwei.
+var DefaultEvilInterceptDepositGweiAmount = big.NewInt(1_000_000 * params.GWei)
 
 func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
@@ -169,7 +178,9 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	produceCfg := &ProduceConfig{}
+	produceCfg := &ProduceConfig{
+		interceptDepositGweiAmount: DefaultEvilInterceptDepositGweiAmount,
+	}
 	for _, o := range opts {
 		o(produceCfg)
 	}
@@ -184,9 +195,7 @@ func ProduceBlock(
 				modifiedTxs = append(modifiedTxs, tx)
 				continue
 			}
-			currValue := fmt.Sprintf("%#x", txData.Value.Bytes())
-			wanted := "2386f26fc10000"
-			if !strings.Contains(currValue, wanted) {
+			if txData.Value.Cmp(produceCfg.interceptDepositGweiAmount) != 0 {
 				modifiedTxs = append(modifiedTxs, tx)
 				continue
 			}

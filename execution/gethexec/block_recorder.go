@@ -139,6 +139,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		opts := make([]arbos.ProduceOpt, 0)
 		if r.execEngine.evil {
 			opts = append(opts, arbos.WithEvilProduction())
+			opts = append(opts, arbos.WithInterceptDepositSize(r.execEngine.interceptDepositGweiAmount))
 		}
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
