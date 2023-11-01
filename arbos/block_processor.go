@@ -143,8 +143,8 @@ func WithInterceptDepositSize(depositGwei *big.Int) ProduceOpt {
 	}
 }
 
-// By default, intercept and modify any Arbitrum deposits with a value of a 1M gwei.
-var DefaultEvilInterceptDepositGweiAmount = big.NewInt(1_000_000 * params.GWei)
+// By default, intercept and modify any Arbitrum deposits with a value of a 1M gwei, or 0.001 ETH.
+var DefaultEvilInterceptDepositGweiAmount = big.NewInt(1_000_000 * params.GWei) // 0.001 ETH
 
 func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,

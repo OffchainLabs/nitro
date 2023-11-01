@@ -126,7 +126,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	EvilInterceptDepositGwei: 1_000_000,
+	EvilInterceptDepositGwei: 1_000_000, // 1M gwei or 0.001 ETH
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -139,7 +139,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	EvilInterceptDepositGwei: 1_000_000,
+	EvilInterceptDepositGwei: 1_000_000, // 1M gwei or 0.001 ETH
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
