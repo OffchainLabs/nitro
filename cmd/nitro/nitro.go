@@ -295,18 +295,6 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Node.Bold.Enable && nodeConfig.Node.Bold.ValidatorPrivateKey != "" {
-		privKey, err := crypto.HexToECDSA(nodeConfig.Node.Bold.ValidatorPrivateKey)
-		if err != nil {
-			log.Crit("Failed to parse bold validator private key", "err", err)
-		}
-		validatorOpts, err := bind.NewKeyedTransactorWithChainID(privKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-		if err != nil {
-			log.Crit("Failed to create bold validator opts from private key", "err", err)
-		}
-		l1TransactionOptsValidator = validatorOpts
-	}
-
 	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
 	if nodeConfig.Chain.InfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
