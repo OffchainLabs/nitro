@@ -43,32 +43,36 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, nil, chainConfig, nil)
-	defer requireClose(t, l1stack)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig = l1NodeConfigA
+	builder.chainConfig = chainConfig
+	builder.L2Info = nil
+	builder.Build(t)
+	defer requireClose(t, builder.L1.Stack)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 
 	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
 	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
-	defer nodeB.StopAndWait()
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{dasConfig: &l1NodeConfigBDataAvailability})
+	defer cleanupB()
 
-	l2info.GenerateAccount("DelayedFaucet")
-	l2info.GenerateAccount("DelayedReceiver")
-	l2info.GenerateAccount("DirectReceiver")
+	builder.L2Info.GenerateAccount("DelayedFaucet")
+	builder.L2Info.GenerateAccount("DelayedReceiver")
+	builder.L2Info.GenerateAccount("DirectReceiver")
 
-	l2info.GenerateAccount("ErrorTxSender")
+	builder.L2Info.GenerateAccount("ErrorTxSender")
 
-	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(l2info.TransferGas)), nil),
+	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L2Info.PrepareTx("Faucet", "ErrorTxSender", builder.L2Info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(builder.L2Info.TransferGas)), nil),
 	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei*100000)), delayedMsgsToSendMax)
-	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
+	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L2Info.PrepareTx("Faucet", "DelayedFaucet", builder.L2Info.TransferGas, delayedFaucetNeeds, nil),
 	})
-	delayedFaucetBalance, err := l2client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
+	delayedFaucetBalance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedFaucet"), nil)
 	Require(t, err)
 
 	if delayedFaucetBalance.Cmp(delayedFaucetNeeds) != 0 {
@@ -86,12 +90,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			randNum := rand.Int() % avgTotalL1MessagesPerLoop
 			var l1tx *types.Transaction
 			if randNum < avgDelayedMessagesPerLoop {
-				delayedTx := l2info.PrepareTx("DelayedFaucet", "DelayedReceiver", 30001, fundsPerDelayed, nil)
-				l1tx = WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000)
+				delayedTx := builder.L2Info.PrepareTx("DelayedFaucet", "DelayedReceiver", 30001, fundsPerDelayed, nil)
+				l1tx = WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000)
 				delayedTxs = append(delayedTxs, delayedTx)
 				delayedTransfers++
 			} else {
-				l1tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
+				l1tx = builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
@@ -100,7 +104,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			wrappedL1Txs = append(wrappedL1Txs, &txpool.Transaction{Tx: tx})
 		}
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
-		errs := l1backend.TxPool().Add(wrappedL1Txs, true, false)
+		errs := builder.L1.L1Backend.TxPool().Add(wrappedL1Txs, true, false)
 		for _, err := range errs {
 			if err != nil {
 				Fatal(t, err)
@@ -109,26 +113,26 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		l2TxsThisTime := rand.Int() % (avgL2MsgsPerLoop * 2)
 		l2Txs := make([]*types.Transaction, 0, l2TxsThisTime)
 		for len(l2Txs) < l2TxsThisTime {
-			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", l2info.TransferGas, fundsPerDirect, nil))
+			l2Txs = append(l2Txs, builder.L2Info.PrepareTx("Faucet", "DirectReceiver", builder.L2Info.TransferGas, fundsPerDirect, nil))
 		}
-		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
+		builder.L2.SendWaitTestTransactions(t, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
-			_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+			_, err := builder.L1.EnsureTxSucceeded(l1Txs[len(l1Txs)-1])
 			if err != nil {
 				Fatal(t, err)
 			}
 		}
 		// create bad tx on delayed inbox
-		l2info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			WrapL2ForDelayed(t, l2info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), l1info, "User", 100000),
+		builder.L2Info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
+		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+			WrapL2ForDelayed(t, builder.L2Info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), builder.L1Info, "User", 100000),
 		})
 
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
-			SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-				l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+			builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+				builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}
 	}
@@ -142,46 +146,46 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	for i := 0; i < finalPropagateLoops; i++ {
 		var tx *types.Transaction
 		for j := 0; j < 30; j++ {
-			tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
-			err := l1client.SendTransaction(ctx, tx)
+			tx = builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
+			err := builder.L1.Client.SendTransaction(ctx, tx)
 			if err != nil {
 				Fatal(t, err)
 			}
-			_, err = EnsureTxSucceeded(ctx, l1client, tx)
+			_, err = builder.L1.EnsureTxSucceeded(tx)
 			if err != nil {
 				Fatal(t, err)
 			}
 		}
 	}
 
-	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*30)
-	Require(t, err, "Failed waiting for Tx on secondary node")
 
-	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
+	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
+	Require(t, err, "Failed waiting for Tx on secondary node")
+	delayedBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
-	directBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DirectReceiver"), nil)
+	directBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DirectReceiver"), nil)
 	Require(t, err)
 	delayedExpectd := new(big.Int).Mul(fundsPerDelayed, big.NewInt(delayedTransfers))
 	directExpectd := new(big.Int).Mul(fundsPerDirect, big.NewInt(directTransfers))
 	if (delayedBalance.Cmp(delayedExpectd) != 0) || (directBalance.Cmp(directExpectd) != 0) {
 		t.Error("delayed balance", delayedBalance, "expected", delayedExpectd, "transfers", delayedTransfers)
 		t.Error("direct balance", directBalance, "expected", directExpectd, "transfers", directTransfers)
-		ownerBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)
-		delayedFaucetBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
+		ownerBalance, _ := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("Owner"), nil)
+		delayedFaucetBalance, _ := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedFaucet"), nil)
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		Fatal(t, "Unexpected balance")
 	}
 
-	nodeA.StopAndWait()
+	builder.L2.ConsensusNode.StopAndWait()
 
-	if nodeB.BlockValidator != nil {
-		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
+	if testClientB.ConsensusNode.BlockValidator != nil {
+		lastBlockHeader, err := testClientB.Client.HeaderByNumber(ctx, nil)
 		Require(t, err)
 		timeout := getDeadlineTimeout(t, time.Minute*30)
 		// messageindex is same as block number here
-		if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlockHeader.Number.Uint64()), timeout) {
+		if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlockHeader.Number.Uint64()), timeout) {
 			Fatal(t, "did not validate all blocks")
 		}
 	}

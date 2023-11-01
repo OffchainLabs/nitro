@@ -36,7 +36,7 @@ func TestBloom(t *testing.T) {
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
-	_, simple := deploySimple(t, ctx, ownerTxOpts, builder.L2.Client)
+	_, simple := builder.L2.DeploySimple(t, ownerTxOpts)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
@@ -64,7 +64,7 @@ func TestBloom(t *testing.T) {
 		if sendNullEvent {
 			tx, err = simple.EmitNullEvent(&ownerTxOpts)
 			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+			_, err = builder.L2.EnsureTxSucceeded(tx)
 			Require(t, err)
 		}
 
@@ -75,7 +75,7 @@ func TestBloom(t *testing.T) {
 			tx, err = simple.Increment(&ownerTxOpts)
 		}
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 		if i%100 == 0 {
 			t.Log("counts: ", i, "/", countsNum)

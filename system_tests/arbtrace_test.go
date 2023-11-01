@@ -10,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type callTxArgs struct {
@@ -140,18 +138,17 @@ func TestArbTraceForwarding(t *testing.T) {
 		Public:    false,
 	})
 	listener, srv, err := rpc.StartIPCEndpoint(ipcPath, apis)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	defer srv.Stop()
 	defer listener.Close()
 
-	execConfig := gethexec.ConfigDefaultTest()
-	execConfig.RPC.ClassicRedirect = ipcPath
-	execConfig.RPC.ClassicRedirectTimeout = time.Second
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, execConfig, nil, nil, nil)
-	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stack)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.RPC.ClassicRedirect = ipcPath
+	builder.execConfig.RPC.ClassicRedirectTimeout = time.Second
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	l2rpc := l2stack.Attach()
+	l2rpc := builder.L2.Stack.Attach()
 	txArgs := callTxArgs{}
 	traceTypes := []string{"trace"}
 	blockNum := rpc.BlockNumberOrHash{}
@@ -162,22 +159,22 @@ func TestArbTraceForwarding(t *testing.T) {
 	filter := filterRequest{}
 	var result traceResult
 	err = l2rpc.CallContext(ctx, &result, "arbtrace_call", txArgs, traceTypes, blockNum)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	var results []*traceResult
 	err = l2rpc.CallContext(ctx, &results, "arbtrace_callMany", traceRequests, blockNum)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	err = l2rpc.CallContext(ctx, &results, "arbtrace_replayBlockTransactions", blockNum, traceTypes)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	err = l2rpc.CallContext(ctx, &result, "arbtrace_replayTransaction", txHash, traceTypes)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	var frames []traceFrame
 	err = l2rpc.CallContext(ctx, &frames, "arbtrace_transaction", txHash)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	var frame traceFrame
 	err = l2rpc.CallContext(ctx, &frame, "arbtrace_get", txHash, path)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	err = l2rpc.CallContext(ctx, &frames, "arbtrace_block", blockNum)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	err = l2rpc.CallContext(ctx, &frames, "arbtrace_filter", filter)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 }

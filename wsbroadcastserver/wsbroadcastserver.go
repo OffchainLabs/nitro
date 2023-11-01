@@ -23,6 +23,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -32,6 +33,8 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
+	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/upgrade/duration", nil)
+	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
 )
 
 const (
@@ -201,7 +204,11 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
 	})
 
-	return s.StartWithHeader(ctx, header)
+	startTime := time.Now()
+	err := s.StartWithHeader(ctx, header)
+	elapsed := time.Since(startTime)
+	startWithHeaderTimer.Update(elapsed)
+	return err
 }
 
 func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
@@ -316,7 +323,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
+		startTime := time.Now()
 		_, err = upgrader.Upgrade(conn)
+		elapsed := time.Since(startTime)
+		upgradeToWSTimer.Update(elapsed)
 
 		if err != nil {
 			if err.Error() != "" {
