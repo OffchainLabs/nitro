@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -34,13 +35,25 @@ const (
 
 const MaxL2MessageSize = 256 * 1024
 
+// Justification for the inclusion of a list of transactions from the Espresso Sequencer in an L2
+// batch.
+type EspressoBlockJustification struct {
+	// The header of the Espresso block containing the range of transactions.
+	Header espresso.Header `json:"header"`
+	// Proof that a certain range of transactions corresponds to the Espresso block with Header.
+	// This proof may be empty in the case where the L2 batch is forced to be empty due to its L1
+	// origin being too old.
+	Proof espresso.NmtProof `json:"proof"`
+}
+
 type L1IncomingMessageHeader struct {
-	Kind        uint8          `json:"kind"`
-	Poster      common.Address `json:"sender"`
-	BlockNumber uint64         `json:"blockNumber"`
-	Timestamp   uint64         `json:"timestamp"`
-	RequestId   *common.Hash   `json:"requestId" rlp:"nilList"`
-	L1BaseFee   *big.Int       `json:"baseFeeL1"`
+	Kind                  uint8                       `json:"kind"`
+	Poster                common.Address              `json:"sender"`
+	BlockNumber           uint64                      `json:"blockNumber"`
+	Timestamp             uint64                      `json:"timestamp"`
+	RequestId             *common.Hash                `json:"requestId" rlp:"nilList"`
+	L1BaseFee             *big.Int                    `json:"baseFeeL1"`
+	EspressoJustification *EspressoBlockJustification `json:"espressoJustification"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -228,6 +241,7 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 			timestamp,
 			&requestId,
 			baseFeeL1.Big(),
+			nil,
 		},
 		data,
 		nil,
