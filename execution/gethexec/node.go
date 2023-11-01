@@ -85,7 +85,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	ParentChainReader: headerreader.DefaultConfig,
 	RPC:               arbitrum.DefaultConfig,
 	Sequencer:         DefaultSequencerConfig,
 	ParentChainReader: headerreader.DefaultConfig,
