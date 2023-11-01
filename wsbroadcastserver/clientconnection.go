@@ -89,7 +89,7 @@ func (cc *ClientConnection) Compression() bool {
 
 func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) (backlog.BacklogSegment, error) {
 	var prevSegment backlog.BacklogSegment
-	for segment != nil {
+	for !backlog.IsBacklogSegmentNil(segment) {
 		select {
 		case <-ctx.Done():
 			return nil, errContextDone
@@ -140,8 +140,13 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 
 		// Send the current backlog before registering the ClientConnection in
 		// case the backlog is very large
-		head := cc.backlog.Head()
-		segment, err := cc.writeBacklog(ctx, head)
+		segment, err := cc.backlog.Lookup(cc.requestedSeqNum)
+		if err != nil {
+			logWarn(err, "error finding requested sequence number in backlog")
+			cc.clientManager.Remove(cc)
+			return
+		}
+		segment, err = cc.writeBacklog(ctx, segment)
 		if errors.Is(err, errContextDone) {
 			return
 		} else if err != nil {
@@ -176,8 +181,6 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			cc.clientManager.Remove(cc)
 			return
 		}
-
-		// TODO(clamb): does this still need to consider the requested seq number from the client? currently it just sends everything in the backlog
 
 		// broadcast any new messages sent to the out channel
 		for {

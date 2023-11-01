@@ -12,7 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-func validateBacklog(t *testing.T, b *backlog, count int, start, end uint64, lookupKeys []arbutil.MessageIndex) {
+func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupKeys []arbutil.MessageIndex) {
 	if b.Count() != count {
 		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.Count(), count)
 	}
@@ -28,7 +28,7 @@ func validateBacklog(t *testing.T, b *backlog, count int, start, end uint64, loo
 	}
 
 	for _, k := range lookupKeys {
-		if _, err := b.lookup(uint64(k)); err != nil {
+		if _, err := b.Lookup(uint64(k)); err != nil {
 			t.Errorf("failed to find message (%d) in lookup", k)
 		}
 	}
@@ -64,7 +64,7 @@ func TestAppend(t *testing.T) {
 		name               string
 		backlogIndexes     []arbutil.MessageIndex
 		newIndexes         []arbutil.MessageIndex
-		expectedCount      int
+		expectedCount      uint64
 		expectedStart      uint64
 		expectedEnd        uint64
 		expectedLookupKeys []arbutil.MessageIndex
@@ -187,7 +187,7 @@ func TestDelete(t *testing.T) {
 		name               string
 		backlogIndexes     []arbutil.MessageIndex
 		confirmed          arbutil.MessageIndex
-		expectedCount      int
+		expectedCount      uint64
 		expectedStart      uint64
 		expectedEnd        uint64
 		expectedLookupKeys []arbutil.MessageIndex
@@ -252,7 +252,6 @@ func TestDelete(t *testing.T) {
 					SequenceNumber: tc.confirmed,
 				},
 			}
-
 			err = b.Append(bm)
 			if err != nil {
 				t.Fatalf("error appending BroadcastMessage: %s", err)
@@ -271,7 +270,7 @@ func TestGetEmptyBacklog(t *testing.T) {
 		t.Fatalf("error creating dummy backlog: %s", err)
 	}
 
-	_, err = b.Get(1, 2)
+	_, err = b.get(1, 2)
 	if !errors.Is(err, errOutOfBounds) {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -358,7 +357,7 @@ func TestGet(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			bm, err := b.Get(tc.start, tc.end)
+			bm, err := b.get(tc.start, tc.end)
 			if !errors.Is(err, tc.expectedErr) {
 				t.Fatalf("unexpected error: %s", err)
 			}
@@ -406,7 +405,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	go func(t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range []uint64{42, 43, 44, 45, 46, 47} {
-			bm, err := b.Get(i, i+1)
+			bm, err := b.get(i, i+1)
 			errs <- err
 			if err != nil {
 				return

@@ -18,10 +18,9 @@ var (
 )
 
 type Backlog interface {
-	Head() BacklogSegment
-	Append(bm *m.BroadcastMessage) error
-	Get(start, end uint64) (*m.BroadcastMessage, error)
-	Count() int
+	Append(*m.BroadcastMessage) error
+	Count() uint64
+	Lookup(uint64) (BacklogSegment, error)
 }
 
 type backlog struct {
@@ -41,10 +40,6 @@ func NewBacklog(c ConfigFetcher) Backlog {
 	}
 }
 
-func (b *backlog) Head() BacklogSegment {
-	return b.head.Load()
-}
-
 // Append will add the given messages to the backlogSegment at head until
 // that segment reaches its limit. If messages remain to be added a new segment
 // will be created.
@@ -52,35 +47,35 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 	if bm.ConfirmedSequenceNumberMessage != nil {
 		b.delete(uint64(bm.ConfirmedSequenceNumberMessage.SequenceNumber))
-		// add to metric?
+		// TODO(clamb): add to metric?
 	}
 
 	// TODO(clamb): Do I need a max catchup config for the backlog? Similar to catchup buffer
 
 	for _, msg := range bm.Messages {
-		s := b.tail.Load()
-		if s == nil {
-			s = &backlogSegment{}
-			b.head.Store(s)
-			b.tail.Store(s)
+		segment := b.tail.Load()
+		if segment == nil {
+			segment = newBacklogSegment()
+			b.head.Store(segment)
+			b.tail.Store(segment)
 		}
 
-		prevMsgIdx := s.end.Load()
-		if s.count() >= b.config().SegmentLimit {
-			nextS := &backlogSegment{}
-			s.nextSegment.Store(nextS)
-			prevMsgIdx = s.end.Load()
-			nextS.previousSegment.Store(s)
-			s = nextS
-			b.tail.Store(s)
+		prevMsgIdx := segment.End()
+		if segment.count() >= b.config().SegmentLimit {
+			nextSegment := newBacklogSegment()
+			segment.nextSegment.Store(nextSegment)
+			prevMsgIdx = segment.End()
+			nextSegment.previousSegment.Store(segment)
+			segment = nextSegment
+			b.tail.Store(segment)
 		}
 
-		err := s.append(prevMsgIdx, msg)
+		err := segment.append(prevMsgIdx, msg)
 		if errors.Is(err, errDropSegments) {
 			head := b.head.Load()
-			b.removeFromLookup(head.start.Load(), uint64(msg.SequenceNumber))
-			b.head.Store(s)
-			b.tail.Store(s)
+			b.removeFromLookup(head.Start(), uint64(msg.SequenceNumber))
+			b.head.Store(segment)
+			b.tail.Store(segment)
 			b.messageCount.Store(0)
 			log.Warn(err.Error())
 		} else if errors.Is(err, errSequenceNumberSeen) {
@@ -90,7 +85,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			return err
 		}
 		p := &atomic.Pointer[backlogSegment]{}
-		p.Store(s)
+		p.Store(segment)
 		b.lookupLock.Lock()
 		b.lookupByIndex[uint64(msg.SequenceNumber)] = p
 		b.lookupLock.Unlock()
@@ -100,23 +95,24 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 	return nil
 }
 
-// Get reads messages from the given start to end MessageIndex
-func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
+// get reads messages from the given start to end MessageIndex. It was created
+// for the original implementation of the backlog but currently is not used.
+func (b *backlog) get(start, end uint64) (*m.BroadcastMessage, error) {
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
 		return nil, errOutOfBounds
 	}
 
-	if start < head.start.Load() {
-		start = head.start.Load()
+	if start < head.Start() {
+		start = head.Start()
 	}
 
-	if end > tail.end.Load() {
+	if end > tail.End() {
 		return nil, errOutOfBounds
 	}
 
-	s, err := b.lookup(start)
+	segment, err := b.Lookup(start)
 	if err != nil {
 		return nil, err
 	}
@@ -124,16 +120,16 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 	bm := &m.BroadcastMessage{Version: 1}
 	required := int(end-start) + 1
 	for {
-		segMsgs, err := s.get(arbmath.MaxInt(start, s.start.Load()), arbmath.MinInt(end, s.end.Load()))
+		segMsgs, err := segment.Get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
 		if err != nil {
 			return nil, err
 		}
 
 		bm.Messages = append(bm.Messages, segMsgs...)
-		s = s.nextSegment.Load()
+		segment = segment.Next()
 		if len(bm.Messages) == required {
 			break
-		} else if s == nil {
+		} else if segment == nil {
 			return nil, errOutOfBounds
 		}
 	}
@@ -149,11 +145,11 @@ func (b *backlog) delete(confirmed uint64) {
 		return
 	}
 
-	if confirmed < head.start.Load() {
+	if confirmed < head.Start() {
 		return
 	}
 
-	if confirmed > tail.end.Load() {
+	if confirmed > tail.End() {
 		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.end.Load())
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
@@ -161,7 +157,7 @@ func (b *backlog) delete(confirmed uint64) {
 	}
 
 	// find the segment containing the confirmed message
-	s, err := b.lookup(confirmed)
+	segment, err := b.Lookup(confirmed)
 	if err != nil {
 		log.Error(fmt.Sprintf("%s: clearing backlog", err.Error()))
 		b.reset()
@@ -170,7 +166,7 @@ func (b *backlog) delete(confirmed uint64) {
 	}
 
 	// check the segment actually contains that message
-	if found := s.contains(confirmed); !found {
+	if found := segment.Contains(confirmed); !found {
 		log.Error("error message not found in backlog segment, clearing backlog", "confirmed sequence number", confirmed)
 		b.reset()
 		// should this be returning an error? The other buffer does not and just continues
@@ -178,13 +174,13 @@ func (b *backlog) delete(confirmed uint64) {
 	}
 
 	// remove all previous segments
-	previous := s.previousSegment.Load()
-	if previous == nil {
+	previous := segment.Previous()
+	if IsBacklogSegmentNil(previous) {
 		return
 	}
-	b.removeFromLookup(head.start.Load(), previous.end.Load())
-	b.head.Store(s)
-	count := b.messageCount.Load() + head.start.Load() - previous.end.Load() - uint64(1)
+	b.removeFromLookup(head.Start(), previous.End())
+	b.head.Store(segment.(*backlogSegment))
+	count := b.Count() + head.Start() - previous.End() - uint64(1)
 	b.messageCount.Store(count)
 }
 
@@ -198,7 +194,7 @@ func (b *backlog) removeFromLookup(start, end uint64) {
 	}
 }
 
-func (b *backlog) lookup(i uint64) (*backlogSegment, error) {
+func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
 	b.lookupLock.RLock()
 	pointer, ok := b.lookupByIndex[i]
 	b.lookupLock.RUnlock()
@@ -214,8 +210,8 @@ func (b *backlog) lookup(i uint64) (*backlogSegment, error) {
 	return s, nil
 }
 
-func (s *backlog) Count() int {
-	return int(s.messageCount.Load())
+func (s *backlog) Count() uint64 {
+	return s.messageCount.Load()
 }
 
 // reset removes all segments from the backlog
@@ -229,7 +225,12 @@ func (b *backlog) reset() {
 }
 
 type BacklogSegment interface {
+	Start() uint64
+	End() uint64
+	Contains(uint64) bool
 	Next() BacklogSegment
+	Previous() BacklogSegment
+	Get(uint64, uint64) ([]*m.BroadcastFeedMessage, error)
 	Messages() []*m.BroadcastFeedMessage
 }
 
@@ -242,16 +243,44 @@ type backlogSegment struct {
 	previousSegment atomic.Pointer[backlogSegment]
 }
 
+// newBacklogSegment creates a backlogSegment object with an empty slice of
+// messages. It does not return an interface as it is only used inside the
+// backlog library.
+func newBacklogSegment() *backlogSegment {
+	return &backlogSegment{
+		messages: []*m.BroadcastFeedMessage{},
+	}
+}
+
+// IsBacklogSegmentNil uses the internal backlogSegment type to check if a
+// variable of type BacklogSegment is nil or not. Comparing whether an
+// interface is nil directly will not work.
+func IsBacklogSegmentNil(segment BacklogSegment) bool {
+	return segment.(*backlogSegment) == nil
+}
+
+func (s *backlogSegment) Start() uint64 {
+	return uint64(s.start.Load())
+}
+
+func (s *backlogSegment) End() uint64 {
+	return uint64(s.end.Load())
+}
+
 func (s *backlogSegment) Next() BacklogSegment {
 	return s.nextSegment.Load()
+}
+
+func (s *backlogSegment) Previous() BacklogSegment {
+	return s.previousSegment.Load()
 }
 
 func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
 	return s.messages
 }
 
-// get reads messages from the given start to end MessageIndex
-func (s *backlogSegment) get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
+// Get reads messages from the given start to end MessageIndex
+func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
 	noMsgs := []*m.BroadcastFeedMessage{}
 	if start < s.start.Load() {
 		return noMsgs, errOutOfBounds
@@ -288,8 +317,8 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 	return nil
 }
 
-// contains confirms whether the segment contains a message with the given sequence number
-func (s *backlogSegment) contains(i uint64) bool {
+// Contains confirms whether the segment contains a message with the given sequence number
+func (s *backlogSegment) Contains(i uint64) bool {
 	if i < s.start.Load() || i > s.end.Load() {
 		return false
 	}

@@ -227,7 +227,7 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 	return clientDeleteList, nil
 }
 
-func serializeMessage(cm *ClientManager, bm interface{}, enableNonCompressedOutput, enableCompressedOutput bool) (bytes.Buffer, bytes.Buffer, error) {
+func serializeMessage(cm *ClientManager, bm *m.BroadcastMessage, enableNonCompressedOutput, enableCompressedOutput bool) (bytes.Buffer, bytes.Buffer, error) {
 	var notCompressed bytes.Buffer
 	var compressed bytes.Buffer
 	writers := []io.Writer{}
