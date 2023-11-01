@@ -139,23 +139,23 @@ func TestL2BlockRangeForL1(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, l2client, l1info, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1stack)
-	defer node.StopAndWait()
-	user := l1info.GetDefaultTransactOpts("User", ctx)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	user := builder.L1Info.GetDefaultTransactOpts("User", ctx)
 
 	numTransactions := 200
 	for i := 0; i < numTransactions; i++ {
-		TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), l2info, l2client, ctx)
+		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
 	}
 
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
 	if err != nil {
 		t.Fatalf("Error creating node interface: %v", err)
 	}
 
 	l1BlockNums := map[uint64]*[2]uint64{}
-	latestL2, err := l2client.BlockNumber(ctx)
+	latestL2, err := builder.L2.Client.BlockNumber(ctx)
 	if err != nil {
 		t.Fatalf("Error querying most recent l2 block: %v", err)
 	}

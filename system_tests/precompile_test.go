@@ -21,10 +21,11 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
+	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), builder.L2.Client)
 	Require(t, err, "could not deploy ArbSys contract")
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
@@ -37,10 +38,11 @@ func TestViewLogReverts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 	Require(t, err, "could not deploy ArbSys contract")
 
 	err = arbDebug.EventsView(nil)
@@ -53,11 +55,12 @@ func TestCustomSolidityErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	callOpts := &bind.CallOpts{Context: ctx}
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 	Require(t, err, "could not bind ArbDebug contract")
 	customError := arbDebug.CustomRevert(callOpts, 1024)
 	if customError == nil {
@@ -69,7 +72,7 @@ func TestCustomSolidityErrors(t *testing.T) {
 		Fatal(t, observedMessage)
 	}
 
-	arbSys, err := precompilesgen.NewArbSys(arbos.ArbSysAddress, client)
+	arbSys, err := precompilesgen.NewArbSys(arbos.ArbSysAddress, builder.L2.Client)
 	Require(t, err, "could not bind ArbSys contract")
 	_, customError = arbSys.ArbBlockHash(callOpts, big.NewInt(1e9))
 	if customError == nil {
@@ -86,11 +89,12 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	auth := info.GetDefaultTransactOpts("Faucet", ctx)
-	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
+	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err)
 
 	assertNotAllGasConsumed := func(to common.Address, input []byte) {

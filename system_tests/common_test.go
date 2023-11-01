@@ -8,11 +8,11 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -53,12 +54,187 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
+
+type SecondNodeParams struct {
+	nodeConfig  *arbnode.Config
+	execConfig  *gethexec.Config
+	stackConfig *node.Config
+	dasConfig   *das.DataAvailabilityConfig
+	initData    *statetransfer.ArbosInitializationInfo
+}
+
+type TestClient struct {
+	ctx           context.Context
+	Client        *ethclient.Client
+	L1Backend     *eth.Ethereum
+	Stack         *node.Node
+	ConsensusNode *arbnode.Node
+	ExecNode      *gethexec.ExecutionNode
+
+	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
+	cleanup func()
+}
+
+func NewTestClient(ctx context.Context) *TestClient {
+	return &TestClient{ctx: ctx}
+}
+
+func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
+	return SendSignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
+}
+
+func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
+	return SendUnsignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
+}
+
+func (tc *TestClient) TransferBalance(t *testing.T, from string, to string, amount *big.Int, lInfo info) (*types.Transaction, *types.Receipt) {
+	return TransferBalanceTo(t, from, lInfo.GetAddress(to), amount, lInfo, tc.Client, tc.ctx)
+}
+
+func (tc *TestClient) TransferBalanceTo(t *testing.T, from string, to common.Address, amount *big.Int, lInfo info) (*types.Transaction, *types.Receipt) {
+	return TransferBalanceTo(t, from, to, amount, lInfo, tc.Client, tc.ctx)
+}
+
+func (tc *TestClient) GetBalance(t *testing.T, account common.Address) *big.Int {
+	return GetBalance(t, tc.ctx, tc.Client, account)
+}
+
+func (tc *TestClient) GetBaseFee(t *testing.T) *big.Int {
+	return GetBaseFee(t, tc.Client, tc.ctx)
+}
+
+func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
+	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
+}
+
+func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) {
+	SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
+}
+
+func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
+	return deploySimple(t, tc.ctx, auth, tc.Client)
+}
+
+func (tc *TestClient) EnsureTxSucceeded(transaction *types.Transaction) (*types.Receipt, error) {
+	return tc.EnsureTxSucceededWithTimeout(transaction, time.Second*5)
+}
+
+func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
+}
+
+type NodeBuilder struct {
+	// NodeBuilder configuration
+	ctx           context.Context
+	chainConfig   *params.ChainConfig
+	nodeConfig    *arbnode.Config
+	execConfig    *gethexec.Config
+	l1StackConfig *node.Config
+	l2StackConfig *node.Config
+	L1Info        info
+	L2Info        info
+
+	// L1, L2 Node parameters
+	dataDir       string
+	isSequencer   bool
+	takeOwnership bool
+	withL1        bool
+
+	// Created nodes
+	L1 *TestClient
+	L2 *TestClient
+}
+
+func NewNodeBuilder(ctx context.Context) *NodeBuilder {
+	return &NodeBuilder{ctx: ctx}
+}
+
+func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
+	// most used values across current tests are set here as default
+	b.withL1 = withL1
+	if withL1 {
+		b.isSequencer = true
+		b.nodeConfig = arbnode.ConfigDefaultL1Test()
+	} else {
+		b.takeOwnership = true
+		b.nodeConfig = arbnode.ConfigDefaultL2Test()
+	}
+	b.chainConfig = params.ArbitrumDevTestChainConfig()
+	b.L1Info = NewL1TestInfo(t)
+	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
+	b.dataDir = t.TempDir()
+	b.l1StackConfig = createStackConfigForTest(b.dataDir)
+	b.l2StackConfig = createStackConfigForTest(b.dataDir)
+	b.execConfig = gethexec.ConfigDefaultTest()
+	return b
+}
+
+func (b *NodeBuilder) Build(t *testing.T) func() {
+	if b.withL1 {
+		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
+		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
+			createTestNodeWithL1(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+		b.L1, b.L2 = l1, l2
+		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
+	} else {
+		l2 := NewTestClient(b.ctx)
+		b.L2Info, l2.ConsensusNode, l2.Client =
+			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
+		b.L2 = l2
+	}
+	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
+	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	return func() {
+		b.L2.cleanup()
+		if b.L1 != nil && b.L1.cleanup != nil {
+			b.L1.cleanup()
+		}
+	}
+}
+
+func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
+	if b.L2 == nil {
+		t.Fatal("builder did not previously build a L2 Node")
+	}
+	if b.withL1 && b.L1 == nil {
+		t.Fatal("builder did not previously build a L1 Node")
+	}
+	if params.nodeConfig == nil {
+		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
+	}
+	if params.dasConfig != nil {
+		params.nodeConfig.DataAvailability = *params.dasConfig
+	}
+	if params.stackConfig == nil {
+		params.stackConfig = b.l2StackConfig
+		// should use different dataDir from the previously used ones
+		params.stackConfig.DataDir = t.TempDir()
+	}
+	if params.initData == nil {
+		params.initData = &b.L2Info.ArbInitData
+	}
+	if params.execConfig == nil {
+		params.execConfig = b.execConfig
+	}
+
+	l2 := NewTestClient(b.ctx)
+	l2.Client, l2.ConsensusNode =
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+	l2.ExecNode = getExecNode(t, l2.ConsensusNode)
+	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
+	return l2, func() { l2.cleanup() }
+}
+
+func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
+}
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
@@ -290,33 +466,19 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
 
-func stackConfigForTest(t *testing.T) *node.Config {
-	stackConfig := node.DefaultConfig
-	stackConfig.HTTPPort = 0
-	stackConfig.WSPort = 0
-	stackConfig.UseLightweightKDF = true
-	stackConfig.P2P.ListenAddr = ""
-	stackConfig.P2P.NoDial = true
-	stackConfig.P2P.NoDiscovery = true
-	stackConfig.P2P.NAT = nil
-	stackConfig.DataDir = t.TempDir()
-	return &stackConfig
-}
-
-func createDefaultStackForTest(dataDir string) (*node.Node, error) {
+func createStackConfigForTest(dataDir string) *node.Config {
 	stackConf := node.DefaultConfig
-	var err error
 	stackConf.DataDir = dataDir
+	stackConf.UseLightweightKDF = true
+	stackConf.WSPort = 0
+	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
-
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		return nil, fmt.Errorf("error creating protocol stack: %w", err)
-	}
-	return stack, nil
+	stackConf.P2P.NAT = nil
+	return &stackConf
 }
 
 func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
@@ -392,7 +554,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 		l1info = NewL1TestInfo(t)
 	}
 	if stackConfig == nil {
-		stackConfig = stackConfigForTest(t)
+		stackConfig = createStackConfigForTest(t.TempDir())
 	}
 	l1info.GenerateAccount("Faucet")
 
@@ -482,6 +644,8 @@ func DeployOnTestL1(
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	nativeToken := common.Address{}
+	maxDataSize := big.NewInt(117964)
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1Reader,
@@ -489,11 +653,14 @@ func DeployOnTestL1(
 		l1info.GetAddress("Sequencer"),
 		0,
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		nativeToken,
+		maxDataSize,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
+	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
 	return addresses, initMessage
 }
@@ -513,12 +680,10 @@ func createL2BlockChainWithStackConfig(
 	var stack *node.Node
 	var err error
 	if stackConfig == nil {
-		stack, err = createDefaultStackForTest(dataDir)
-		Require(t, err)
-	} else {
-		stack, err = node.New(stackConfig)
-		Require(t, err)
+		stackConfig = createStackConfigForTest(dataDir)
 	}
+	stack, err = node.New(stackConfig)
+	Require(t, err)
 
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
@@ -553,34 +718,7 @@ func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
 }
 
 // Create and deploy L1 and arbnode for L2
-func createTestNodeOnL1(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, nil, nil, nil, nil)
-}
-
-func createTestNodeOnL1WithConfig(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	execConfig *gethexec.Config,
-	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
-) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig, nil)
-	return
-}
-
-func createTestNodeOnL1WithConfigImpl(
+func createTestNodeWithL1(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
@@ -652,11 +790,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, nil, nil, true)
-}
-
-func CreateTestL2WithConfig(
+func createTestNode(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	if nodeConfig == nil {
@@ -730,24 +864,6 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
-func Create2ndNode(
-	t *testing.T,
-	ctx context.Context,
-	first *arbnode.Node,
-	l1stack *node.Node,
-	l1info *BlockchainTestInfo,
-	l2InitData *statetransfer.ArbosInitializationInfo,
-	dasConfig *das.DataAvailabilityConfig,
-) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
-	if dasConfig == nil {
-		nodeConf.DataAvailability.Enable = false
-	} else {
-		nodeConf.DataAvailability = *dasConfig
-	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf, nil, nil)
-}
-
 func Create2ndNodeWithConfig(
 	t *testing.T,
 	ctx context.Context,
@@ -773,7 +889,7 @@ func Create2ndNodeWithConfig(
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
-		stackConfig = stackConfigForTest(t)
+		stackConfig = createStackConfigForTest(t.TempDir())
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -844,11 +960,19 @@ func authorizeDASKeyset(
 	err := keyset.Serialize(wr)
 	Require(t, err, "unable to serialize DAS keyset")
 	keysetBytes := wr.Bytes()
-	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-	Require(t, err, "unable to create sequencer inbox")
+
+	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err, "unable to parse sequencer inbox ABI")
+	setKeysetCalldata, err := sequencerInboxABI.Pack("setValidKeyset", keysetBytes)
+	Require(t, err, "unable to generate calldata")
+
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l1info.Accounts["UpgradeExecutor"].Address, l1client)
+	Require(t, err, "unable to bind upgrade executor")
+
 	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
+
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
 }

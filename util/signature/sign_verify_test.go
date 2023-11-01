@@ -17,7 +17,7 @@ func TestSignVerifyModes(t *testing.T) {
 	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := DataSignerFromPrivateKey(privateKey)
 
-	config := DefaultSignVerifyConfig
+	config := TestSignVerifyConfig
 	config.SymmetricFallback = false
 	config.SymmetricSign = false
 	config.ECDSA.AcceptSequencer = false
@@ -25,14 +25,14 @@ func TestSignVerifyModes(t *testing.T) {
 	signVerifyECDSA, err := NewSignVerify(&config, dataSigner, nil)
 	Require(t, err)
 
-	configSymmetric := DefaultSignVerifyConfig
+	configSymmetric := TestSignVerifyConfig
 	configSymmetric.SymmetricFallback = true
 	configSymmetric.SymmetricSign = true
 	configSymmetric.ECDSA.AcceptSequencer = false
 	signVerifySymmetric, err := NewSignVerify(&configSymmetric, nil, nil)
 	Require(t, err)
 
-	configFallback := DefaultSignVerifyConfig
+	configFallback := TestSignVerifyConfig
 	configFallback.SymmetricFallback = true
 	configFallback.SymmetricSign = false
 	configFallback.ECDSA.AllowedAddresses = []string{signingAddr.Hex()}

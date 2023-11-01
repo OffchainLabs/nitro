@@ -31,6 +31,12 @@ func SignVerifyConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultSignVerifyConfig = SignVerifyConfig{
+	ECDSA:             DefultFeedVerifierConfig,
+	SymmetricFallback: false,
+	SymmetricSign:     false,
+	Symmetric:         EmptySimpleHmacConfig,
+}
+var TestSignVerifyConfig = SignVerifyConfig{
 	ECDSA: VerifierConfig{
 		AcceptSequencer: true,
 	},

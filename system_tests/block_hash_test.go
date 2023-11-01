@@ -16,13 +16,13 @@ func TestBlockHash(t *testing.T) {
 	defer cancel()
 
 	// Even though we don't use the L1, we need to create this node on L1 to get accurate L1 block numbers
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	auth := l2info.GetDefaultTransactOpts("Faucet", ctx)
+	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	_, _, simple, err := mocksgen.DeploySimple(&auth, l2client)
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err)
 
 	_, err = simple.CheckBlockHashes(&bind.CallOpts{Context: ctx})
