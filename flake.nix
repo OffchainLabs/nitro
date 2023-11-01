@@ -130,6 +130,9 @@
                 docker-credential-helpers # for `docker-credential-osxkeychain` command
 
                 foundry-bin
+
+                # geth node
+                go-ethereum
               ] ++ lib.optionals stdenv.isDarwin [
                 darwin.libobjc
                 darwin.IOKit
