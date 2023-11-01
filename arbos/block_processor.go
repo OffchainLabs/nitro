@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -173,31 +174,27 @@ func ProduceBlock(
 		o(produceCfg)
 	}
 
-	// TODO: If evil, do something differently here.
 	var modifiedTxs []*types.Transaction
 	if produceCfg.evil {
 		modifiedTxs = make([]*types.Transaction, 0, len(txes))
 		for _, tx := range txes {
-			encoded, err := tx.MarshalJSON()
-			if err != nil {
-				return nil, nil, err
-			}
-			log.Info(fmt.Sprintf("Got tx %T and %s, delayed messages read %d", tx.GetInner(), encoded, delayedMessagesRead))
-			if delayedMessagesRead == 2 {
+			txData, ok := tx.GetInner().(*types.ArbitrumDepositTx)
+			if !ok {
+				// We only intercept Arbitrum deposit txs at the moment.
 				modifiedTxs = append(modifiedTxs, tx)
-			} else {
-				txData, ok := tx.GetInner().(*types.ArbitrumDepositTx)
-				if !ok {
-					log.Error("Got issue")
-					modifiedTxs = append(modifiedTxs, tx)
-					continue
-				}
-				newValue := new(big.Int).Add(txData.Value, big.NewInt(params.GWei))
-				log.Info(fmt.Sprintf("Modified tx value in evil validator with value %d, to value %d as hex %#x and %#x", txData.Value.Uint64(), newValue.Uint64(), txData.Value.Bytes(), newValue.Bytes()))
-				txData.Value = newValue
-				modified := types.NewTx(txData)
-				modifiedTxs = append(modifiedTxs, modified)
+				continue
 			}
+			currValue := fmt.Sprintf("%#x", txData.Value.Bytes())
+			wanted := "2386f26fc10000"
+			if !strings.Contains(currValue, wanted) {
+				modifiedTxs = append(modifiedTxs, tx)
+				continue
+			}
+			newValue := new(big.Int).Add(txData.Value, big.NewInt(params.GWei))
+			log.Info(fmt.Sprintf("Modified tx value in evil validator with value %d, to value %d as hex %#x and %#x", txData.Value.Uint64(), newValue.Uint64(), txData.Value.Bytes(), newValue.Bytes()))
+			txData.Value = newValue
+			modified := types.NewTx(txData)
+			modifiedTxs = append(modifiedTxs, modified)
 		}
 	} else {
 		modifiedTxs = txes

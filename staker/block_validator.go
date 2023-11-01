@@ -79,7 +79,6 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
 	Evil                     bool                          `koanf:"evil"`
-	ChainId                  string                        `koanf:"chain-id"`
 	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`

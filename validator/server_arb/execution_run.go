@@ -75,7 +75,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
 		}
-		fmt.Printf("Initial global state: %+v, step size %d, start index %d, num desired %d, start hash %#x\n", startGlobalState, stepSize, machineStartIndex, numDesiredLeaves, stateRoots[0])
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
@@ -96,7 +95,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
-				fmt.Printf("Finished state root idx %d, count %d pos %d, hash %#x, gs %+v\n", len(stateRoots)-1, machineStep, position, hash, gs)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
@@ -106,10 +104,8 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			gs := machine.GetGlobalState()
 			hash := machine.Hash()
 			stateRoots = append(stateRoots, hash)
-			fmt.Printf("State root idx %d, count %d pos %d, hash %#x, gs %+v\n", len(stateRoots)-1, machineStep, position, hash, gs)
 
 		}
 
@@ -119,7 +115,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		for uint64(len(stateRoots)) < numDesiredLeaves {
 			stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 		}
-		fmt.Println("Total number of produced state roots", len(stateRoots))
 		return stateRoots[:numDesiredLeaves], nil
 	})
 }

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	rollupgen "github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -162,7 +161,7 @@ func main() {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	stakeToken, _, tokenBindings, err := mocksgen.DeployTestWETH9(
+	stakeToken, _, _, err := mocksgen.DeployTestWETH9(
 		l1TransactionOpts,
 		l1Reader.Client(),
 		"Weth",
@@ -171,37 +170,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	validatorPriv, err := crypto.HexToECDSA("93690ac9d039285ed00f874a2694d951c1777ac3a165732f36ea773f16179a89")
-	if err != nil {
-		panic(err)
-	}
-	validatorOpts, err := bind.NewKeyedTransactorWithChainID(validatorPriv, l1ChainId)
-	if err != nil {
-		panic(err)
-	}
-	evilValidatorPriv, err := crypto.HexToECDSA("ee3c0bf39d962a78dba87aee083cae443cabc814f93677f302cbabde844237db")
-	if err != nil {
-		panic(err)
-	}
-	evilValidatorOpts, err := bind.NewKeyedTransactorWithChainID(evilValidatorPriv, l1ChainId)
-	if err != nil {
-		panic(err)
-	}
-	validatorOpts.GasLimit = 1_000_000
-	evilValidatorOpts.GasLimit = 1_000_000
-	validatorOpts.Value = big.NewInt(params.GWei * 1000)
-	evilValidatorOpts.Value = big.NewInt(params.GWei * 1000)
-	_, err = tokenBindings.Deposit(validatorOpts)
-	if err != nil {
-		panic(err)
-	}
-	_, err = tokenBindings.Deposit(evilValidatorOpts)
-	if err != nil {
-		panic(err)
-	}
-	validatorOpts.Value = big.NewInt(0)
-	evilValidatorOpts.Value = big.NewInt(0)
-
 	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState{},
@@ -245,35 +213,6 @@ func main() {
 		log.Error("error deploying on l1")
 		panic(err)
 	}
-	assertionChain, err := solimpl.NewAssertionChain(ctx, deployedAddresses.Rollup, l1TransactionOpts, l1Reader.Client())
-	if err != nil {
-		panic(err)
-	}
-	chalManager, err := assertionChain.SpecChallengeManager(ctx)
-	if err != nil {
-		panic(err)
-	}
-	validatorOpts.Value = big.NewInt(0)
-	evilValidatorOpts.Value = big.NewInt(0)
-	maxUint256 := new(big.Int)
-	maxUint256.Exp(big.NewInt(2), big.NewInt(256), nil).Sub(maxUint256, big.NewInt(1))
-	_, err = tokenBindings.Approve(validatorOpts, deployedAddresses.Rollup, maxUint256)
-	if err != nil {
-		panic(err)
-	}
-	_, err = tokenBindings.Approve(validatorOpts, chalManager.Address(), maxUint256)
-	if err != nil {
-		panic(err)
-	}
-	_, err = tokenBindings.Approve(evilValidatorOpts, deployedAddresses.Rollup, maxUint256)
-	if err != nil {
-		panic(err)
-	}
-	_, err = tokenBindings.Approve(evilValidatorOpts, chalManager.Address(), maxUint256)
-	if err != nil {
-		panic(err)
-	}
-
 	rollup, err := rollupgen.NewRollupAdminLogicTransactor(deployedAddresses.Rollup, l1Reader.Client())
 	if err != nil {
 		panic(err)

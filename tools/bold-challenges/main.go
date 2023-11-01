@@ -16,13 +16,11 @@ import (
 )
 
 var (
-	//93690ac9d039285ed00f874a2694d951c1777ac3a165732f36ea773f16179a89
-	//ee3c0bf39d962a78dba87aee083cae443cabc814f93677f302cbabde844237db
-	valPrivKey        = flag.String("validator-priv-key", "ee3c0bf39d962a78dba87aee083cae443cabc814f93677f302cbabde844237db", "validator private key")
+	valPrivKey        = flag.String("validator-priv-key", "", "validator private key")
 	l1ChainIdStr      = flag.String("l1-chain-id", "11155111", "l1 chain id")
 	l1EndpointUrl     = flag.String("l1-endpoint", "ws://localhost:8546", "l1 endpoint")
-	rollupAddrStr     = flag.String("rollup-address", "0xa8774d188cf20018b0d12b30f4e523e4a35989ed", "rollup address")
-	stakeTokenAddrStr = flag.String("stake-token-address", "0xb147595445fae25da16e4fa4e50aa45b2ac211b7", "rollup address")
+	rollupAddrStr     = flag.String("rollup-address", "", "rollup address")
+	stakeTokenAddrStr = flag.String("stake-token-address", "", "rollup address")
 	tokensToDeposit   = flag.String("tokens-to-deposit", "100", "tokens to deposit")
 )
 
@@ -38,6 +36,9 @@ func main() {
 	if !ok {
 		panic("not big int")
 	}
+	if *valPrivKey == "" {
+		panic("no validator private key set")
+	}
 	validatorPrivateKey, err := crypto.HexToECDSA(*valPrivKey)
 	if err != nil {
 		panic(err)
@@ -46,45 +47,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	// if *bridgeFunds {
-	// 	inboxAddr := common.HexToAddress(*inboxAddrStr)
-	// 	fmt.Println(inboxAddr)
-	// 	//"0xa4f05a7587bd5f982ba3a1d4b19a555f265818b4"
-	// 	data := hexutil.MustDecode("0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
-	// 	nonce, err := client.PendingNonceAt(ctx, txOpts.From)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	txOpts.Value = big.NewInt(params.GWei * 100)
-	// 	txData := types.DynamicFeeTx{
-	// 		To:        &inboxAddr,
-	// 		Data:      data,
-	// 		Nonce:     nonce,
-	// 		Gas:       23000,
-	// 		GasFeeCap: big.NewInt(params.GWei * 100),
-	// 		GasTipCap: big.NewInt(params.GWei * 3),
-	// 		Value:     big.NewInt(params.GWei * 100),
-	// 	}
-	// 	tx := types.NewTx(&txData)
-	// 	signedTx, err := txOpts.Signer(txOpts.From, tx)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	encoded, err := signedTx.MarshalJSON()
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	fmt.Printf("%s\n", encoded)
-	// 	if err = client.SendTransaction(ctx, signedTx); err != nil {
-	// 		panic(err)
-	// 	}
-	// 	err = challenge_testing.WaitForTx(ctx, client, signedTx)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	return
-	// }
 
 	stakeTokenAddr := common.HexToAddress(*stakeTokenAddrStr)
 	tokenBindings, err := mocksgen.NewTestWETH9(stakeTokenAddr, client)
@@ -103,35 +65,6 @@ func main() {
 	txOpts.Value = big.NewInt(0)
 	_ = tx
 	rollupAddr := common.HexToAddress(*rollupAddrStr)
-
-	// maxUint256 := new(big.Int)
-	// // Set it to 2^256 - 1
-	// maxUint256.Exp(big.NewInt(2), big.NewInt(256), nil).Sub(maxUint256, big.NewInt(1))
-	// // We then have the validator itself authorize the rollup and challenge manager
-	// // contracts to spend its stake tokens.
-	// chain, err := solimpl.NewAssertionChain(
-	// 	ctx,
-	// 	rollupAddr,
-	// 	txOpts,
-	// 	client,
-	// )
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// chalManager, err := chain.SpecChallengeManager(ctx)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// tx, err := tokenBindings.TestWETH9Transactor.Approve(txOpts, rollupAddr, maxUint256)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// _ = tx
-	// tx, err = tokenBindings.TestWETH9Transactor.Approve(txOpts, chalManager.Address(), maxUint256)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// _ = tx
 
 	allow, err := tokenBindings.Allowance(&bind.CallOpts{}, txOpts.From, rollupAddr)
 	if err != nil {
