@@ -371,6 +371,7 @@ var ConfigDefault = Config{
 	MessagePruner:       DefaultMessagePrunerConfig,
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
+	Bold:                staker.DefaultBoldConfig,
 	Staker:              staker.DefaultL1ValidatorConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
@@ -765,49 +766,50 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
-		bigStepHeight := l2stateprovider.Height(1 << 5)
-		smallStepHeight := l2stateprovider.Height(1 << 7)
+		blockChallengeLeafHeight := l2stateprovider.Height(config.Bold.BlockChallengeLeafHeight)
+		bigStepHeight := l2stateprovider.Height(config.Bold.BigStepLeafHeight)
+		smallStepHeight := l2stateprovider.Height(config.Bold.SmallStepLeafHeight)
 		stateManager, err := staker.NewStateManager(
 			statelessBlockValidator,
-			"/tmp/good", // TODO: Customize from config.
+			config.Bold.MachineLeavesCachePath,
 			[]l2stateprovider.Height{
-				// TODO: Customize heights.
-				l2stateprovider.Height(32),
+				blockChallengeLeafHeight,
 				bigStepHeight,
 				smallStepHeight,
 			},
-			"good", // TODO: Customize from config.
+			config.Bold.ValidatorName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("could not create state manager: %w", err)
 		}
+		providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
+		for i := uint64(0); i < config.Bold.NumBigSteps; i++ {
+			providerHeights = append(providerHeights, bigStepHeight)
+		}
+		providerHeights = append(providerHeights, smallStepHeight)
 		provider := l2stateprovider.NewHistoryCommitmentProvider(
 			stateManager,
 			stateManager,
 			stateManager,
-			[]l2stateprovider.Height{
-				l2stateprovider.Height(32),
-				bigStepHeight,
-				bigStepHeight,
-				bigStepHeight,
-				bigStepHeight,
-				bigStepHeight,
-				smallStepHeight,
-			},
+			providerHeights,
 			stateManager,
 		)
+		postingInterval := time.Second * time.Duration(config.Bold.AssertionPostingIntervalSeconds)
+		scanningInteval := time.Second * time.Duration(config.Bold.AssertionScanningIntervalSeconds)
+		confirmingInterval := time.Second * time.Duration(config.Bold.AssertionConfirmingIntervalSeconds)
+		edgeWakeInterval := time.Second * time.Duration(config.Bold.EdgeTrackerWakeIntervalSeconds)
 		manager, err := challengemanager.New(
 			ctx,
 			assertionChain,
 			l1client,
 			provider,
 			assertionChain.RollupAddress(),
-			challengemanager.WithName("honest"),
+			challengemanager.WithName(config.Bold.ValidatorName),
 			challengemanager.WithMode(modes.MakeMode),
-			challengemanager.WithAssertionPostingInterval(time.Second*30),
-			challengemanager.WithAssertionScanningInterval(time.Second*5),
-			challengemanager.WithAssertionConfirmingInterval(time.Minute),
-			challengemanager.WithEdgeTrackerWakeInterval(time.Millisecond*200),
+			challengemanager.WithAssertionPostingInterval(postingInterval),
+			challengemanager.WithAssertionScanningInterval(scanningInteval),
+			challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
+			challengemanager.WithEdgeTrackerWakeInterval(edgeWakeInterval),
 			challengemanager.WithAddress(txOptsValidator.From),
 		)
 		if err != nil {

@@ -43,10 +43,36 @@ var (
 )
 
 type BoldConfig struct {
-	Enable              bool   `koanf:"enable"`
-	Evil                bool   `koanf:"evil"`
-	Mode                string `koanf:"mode"`
-	ValidatorPrivateKey string `koanf:"validator-private-key"`
+	Enable                             bool   `koanf:"enable"`
+	Evil                               bool   `koanf:"evil"`
+	Mode                               string `koanf:"mode"`
+	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
+	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
+	SmallStepLeafHeight                uint64 `koanf:"small-step-leaf-height"`
+	NumBigSteps                        uint64 `koanf:"num-big-steps"`
+	ValidatorName                      string `koanf:"validator-name"`
+	MachineLeavesCachePath             string `koanf:"machine-leaves-cache-path"`
+	AssertionPostingIntervalSeconds    uint64 `koanf:"assertion-posting-interval-seconds"`
+	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
+	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
+	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
+	ValidatorPrivateKey                string `koanf:"validator-private-key"`
+}
+
+var DefaultBoldConfig = BoldConfig{
+	Enable:                             false,
+	Evil:                               false,
+	Mode:                               "make-mode",
+	BlockChallengeLeafHeight:           1 << 5,
+	BigStepLeafHeight:                  1 << 5,
+	SmallStepLeafHeight:                1 << 7,
+	NumBigSteps:                        5,
+	ValidatorName:                      "default-validator",
+	MachineLeavesCachePath:             "/tmp/machine-leaves-cache",
+	AssertionPostingIntervalSeconds:    30,
+	AssertionScanningIntervalSeconds:   30,
+	AssertionConfirmingIntervalSeconds: 60,
+	EdgeTrackerWakeIntervalSeconds:     1,
 }
 
 func (c *BoldConfig) Validate() error {
