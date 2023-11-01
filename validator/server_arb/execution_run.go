@@ -66,10 +66,10 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
-		startGlobalState := machine.GetGlobalState()
 
 		if machineStartIndex == 0 {
-			hash := crypto.Keccak256Hash([]byte("Machine finished:"), startGlobalState.Hash().Bytes())
+			gs := machine.GetGlobalState()
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
@@ -104,8 +104,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			hash := machine.Hash()
-			stateRoots = append(stateRoots, hash)
+			stateRoots = append(stateRoots, machine.Hash())
 
 		}
 

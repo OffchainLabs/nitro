@@ -157,20 +157,20 @@ func TestStateProvider_BOLD(t *testing.T) {
 		toBatch := l2stateprovider.Batch(3)
 		fromHeight := l2stateprovider.Height(0)
 		toHeight := l2stateprovider.Height(14)
-		stateRoots, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
+		stateRoots, states, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
 		Require(t, err)
 
 		if len(stateRoots) != 15 {
 			Fatal(t, "wrong number of state roots")
 		}
-		// firstState := states[0]
-		// if firstState.Batch != 1 && firstState.PosInBatch != 0 {
-		// 	Fatal(t, "wrong first state")
-		// }
-		// lastState := states[len(states)-1]
-		// if lastState.Batch != 1 && lastState.PosInBatch != 0 {
-		// 	Fatal(t, "wrong last state")
-		// }
+		firstState := states[0]
+		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
+			Fatal(t, "wrong first state")
+		}
+		lastState := states[len(states)-1]
+		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
+			Fatal(t, "wrong last state")
+		}
 	})
 	t.Run("AgreesWithExecutionState", func(t *testing.T) {
 		// Non-zero position in batch shoould fail.
@@ -310,7 +310,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
-		"good",
+		"",
 	)
 	Require(t, err)
 	return l2node, l1info, l2info, l1stack, l1client, stateManager
