@@ -46,6 +46,12 @@ func WithChallengeGracePeriodBlocks(num uint64) Opt {
 	}
 }
 
+func WithBaseStakeValue(num *big.Int) Opt {
+	return func(c *rollupgen.Config) {
+		c.BaseStake = num
+	}
+}
+
 func WithChainConfig(cfg string) Opt {
 	return func(c *rollupgen.Config) {
 		c.ChainConfig = cfg
@@ -83,7 +89,7 @@ func GenerateRollupConfig(
 		MiniStakeValue:      miniStakeValue,
 		ConfirmPeriodBlocks: confirmPeriod,
 		StakeToken:          stakeToken,
-		BaseStake:           big.NewInt(100),
+		BaseStake:           big.NewInt(1),
 		WasmModuleRoot:      wasmModuleRoot,
 		Owner:               rollupOwner,
 		LoserStakeEscrow:    loserStakeEscrow,

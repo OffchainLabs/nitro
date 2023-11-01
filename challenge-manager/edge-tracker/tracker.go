@@ -358,6 +358,7 @@ func (et *Tracker) ShouldDespawn(ctx context.Context) bool {
 	}
 	if hasConfirmedRival {
 		// Cannot be confirmed if it has a confirmed rival edge. We should despawn the edge.
+		srvlog.Info("Edge has a confirmed rival, edge tracker will now despawn")
 		return true
 	}
 	assertionHash, err := et.edge.AssertionHash(ctx)
@@ -763,76 +764,81 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 			heights = append(heights, l2stateprovider.Height(h))
 		}
 		heights = append(heights, l2stateprovider.Height(startHeight))
+		request := &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
+			FromBatch:                   et.associatedAssertionMetadata.FromBatch,
+			ToBatch:                     et.associatedAssertionMetadata.ToBatch,
+			UpperChallengeOriginHeights: heights,
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.None[l2stateprovider.Height](),
+		}
 		endHistory, err = et.stateProvider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
-				FromBatch:                   et.associatedAssertionMetadata.FromBatch,
-				ToBatch:                     et.associatedAssertionMetadata.ToBatch,
-				UpperChallengeOriginHeights: heights,
-				FromHeight:                  l2stateprovider.Height(0),
-				UpToHeight:                  option.None[l2stateprovider.Height](),
-			},
+			request,
 		)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "could not compute child commitment with request %+v", request)
+		}
+		request = &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
+			FromBatch:                   et.associatedAssertionMetadata.FromBatch,
+			ToBatch:                     et.associatedAssertionMetadata.ToBatch,
+			UpperChallengeOriginHeights: heights,
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(endHistory.Height)),
 		}
 		startEndPrefixProof, err = et.stateProvider.PrefixProof(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
-				FromBatch:                   et.associatedAssertionMetadata.FromBatch,
-				ToBatch:                     et.associatedAssertionMetadata.ToBatch,
-				UpperChallengeOriginHeights: heights,
-				FromHeight:                  l2stateprovider.Height(0),
-				UpToHeight:                  option.Some(l2stateprovider.Height(endHistory.Height)),
-			},
+			request,
 			l2stateprovider.Height(0),
 		)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "could not compute prefix proof for child with request %+v, up to height %d", request, endHistory.Height)
+		}
+		request = &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
+			FromBatch:                   et.associatedAssertionMetadata.FromBatch,
+			ToBatch:                     et.associatedAssertionMetadata.ToBatch,
+			UpperChallengeOriginHeights: heights,
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startHistory, err = et.stateProvider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
-				FromBatch:                   et.associatedAssertionMetadata.FromBatch,
-				ToBatch:                     et.associatedAssertionMetadata.ToBatch,
-				UpperChallengeOriginHeights: heights,
-				FromHeight:                  l2stateprovider.Height(0),
-				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
-			},
+			request,
 		)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "could not compute start history commitment with request %+v", request)
+		}
+		request = &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
+			FromBatch:                   et.associatedAssertionMetadata.FromBatch,
+			ToBatch:                     et.associatedAssertionMetadata.ToBatch,
+			UpperChallengeOriginHeights: heights[:len(heights)-1],
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
 		}
 		endParentCommitment, err = et.stateProvider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
-				FromBatch:                   et.associatedAssertionMetadata.FromBatch,
-				ToBatch:                     et.associatedAssertionMetadata.ToBatch,
-				UpperChallengeOriginHeights: heights[:len(heights)-1],
-				FromHeight:                  l2stateprovider.Height(0),
-				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
-			},
+			request,
 		)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "could not compute end parent commitment with request %+v, end height %d", request, endHeight)
+		}
+		request = &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
+			FromBatch:                   et.associatedAssertionMetadata.FromBatch,
+			ToBatch:                     et.associatedAssertionMetadata.ToBatch,
+			UpperChallengeOriginHeights: heights[:len(heights)-1],
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some(l2stateprovider.Height(startHeight)),
 		}
 		startParentCommitment, err = et.stateProvider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              et.associatedAssertionMetadata.WasmModuleRoot,
-				FromBatch:                   et.associatedAssertionMetadata.FromBatch,
-				ToBatch:                     et.associatedAssertionMetadata.ToBatch,
-				UpperChallengeOriginHeights: heights[:len(heights)-1],
-				FromHeight:                  l2stateprovider.Height(0),
-				UpToHeight:                  option.Some(l2stateprovider.Height(startHeight)),
-			},
+			request,
 		)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "could not compute start parent commitment with request %+v, start height %d", request, startHeight)
 		}
 	}
 	fields["firstLeaf"] = containers.Trunc(startHistory.LastLeaf.Bytes())
