@@ -761,7 +761,6 @@ func createNodeImpl(
 	}
 
 	if config.Bold.Enable {
-		//execNode, ok :=
 		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, txOptsValidator, l1client)
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
@@ -805,7 +804,7 @@ func createNodeImpl(
 			provider,
 			assertionChain.RollupAddress(),
 			challengemanager.WithName(config.Bold.ValidatorName),
-			challengemanager.WithMode(modes.MakeMode),
+			challengemanager.WithMode(modes.MakeMode), // TODO: Customize.
 			challengemanager.WithAssertionPostingInterval(postingInterval),
 			challengemanager.WithAssertionScanningInterval(scanningInteval),
 			challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
