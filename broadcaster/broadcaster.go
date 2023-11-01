@@ -108,7 +108,7 @@ func (b *Broadcaster) ListenerAddr() net.Addr {
 }
 
 func (b *Broadcaster) GetCachedMessageCount() int {
-	return b.backlog.Count()
+	return int(b.backlog.Count())
 }
 
 func (b *Broadcaster) Initialize() error {

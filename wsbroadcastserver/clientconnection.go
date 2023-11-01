@@ -140,7 +140,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 
 		// Send the current backlog before registering the ClientConnection in
 		// case the backlog is very large
-		segment, err := cc.backlog.Lookup(cc.requestedSeqNum)
+		segment, err := cc.backlog.Lookup(uint64(cc.requestedSeqNum))
 		if err != nil {
 			logWarn(err, "error finding requested sequence number in backlog")
 			cc.clientManager.Remove(cc)

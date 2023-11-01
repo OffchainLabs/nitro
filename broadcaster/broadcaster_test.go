@@ -44,7 +44,7 @@ type messageCountPredicate struct {
 }
 
 func (p *messageCountPredicate) Test() bool {
-	p.was = p.b.backlog.Count()
+	p.was = p.b.GetCachedMessageCount()
 	return p.was == p.expected
 }
 
