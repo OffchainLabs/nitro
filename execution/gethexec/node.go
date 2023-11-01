@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"sync/atomic"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -38,17 +40,18 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	Evil              bool                             `koanf:"evil"`
-	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker      TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder         ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget  string                           `koanf:"forwarding-target"`
-	Caching           CachingConfig                    `koanf:"caching"`
-	RPC               arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous         DangerousConfig                  `koanf:"dangerous"`
+	Evil                     bool                             `koanf:"evil"`
+	EvilInterceptDepositGwei uint64                           `koanf:"evil-intercept-deposit-gwei"`
+	ParentChainReader        headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase        arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker             TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget         string                           `koanf:"forwarding-target"`
+	Caching                  CachingConfig                    `koanf:"caching"`
+	RPC                      arbitrum.Config                  `koanf:"rpc"`
+	TxLookupLimit            uint64                           `koanf:"tx-lookup-limit"`
+	Dangerous                DangerousConfig                  `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -84,15 +87,16 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:               arbitrum.DefaultConfig,
-	Sequencer:         DefaultSequencerConfig,
-	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTarget:  "",
-	TxPreChecker:      DefaultTxPreCheckerConfig,
-	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
-	Caching:           DefaultCachingConfig,
-	Dangerous:         DefaultDangerousConfig,
-	Forwarder:         DefaultNodeForwarderConfig,
+	RPC:                      arbitrum.DefaultConfig,
+	Sequencer:                DefaultSequencerConfig,
+	RecordingDatabase:        arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:         "",
+	TxPreChecker:             DefaultTxPreCheckerConfig,
+	TxLookupLimit:            126_230_400, // 1 year at 4 blocks per second
+	Caching:                  DefaultCachingConfig,
+	Dangerous:                DefaultDangerousConfig,
+	Forwarder:                DefaultNodeForwarderConfig,
+	EvilInterceptDepositGwei: 1_000_000, // 1M gwei or 0.001 ETH.
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -144,6 +148,7 @@ func CreateExecutionNode(
 	opts := make([]Opt, 0)
 	if config.Evil {
 		opts = append(opts, WithEvilExecution())
+		opts = append(opts, WithInterceptDepositSize(new(big.Int).SetUint64(config.EvilInterceptDepositGwei*params.GWei)))
 	}
 	execEngine, err := NewExecutionEngine(l2BlockChain, opts...)
 	if err != nil {
