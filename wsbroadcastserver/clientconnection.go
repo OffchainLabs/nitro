@@ -163,7 +163,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		case <-cc.registered:
 			log.Debug("ClientConnection registered with ClientManager", "client", cc.Name)
 		case <-timer.C:
-			log.Warn("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)
+			log.Error("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)
 		}
 
 		// The backlog may have had more messages added to it whilst the
