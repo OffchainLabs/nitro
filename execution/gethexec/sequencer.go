@@ -322,6 +322,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
 	}
+	s.Pause()
 	execEngine.EnableReorgSequencing()
 	return s, nil
 }
