@@ -4,11 +4,12 @@
 package staker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
-	"strings"
 	"sync"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -54,7 +56,6 @@ type BlockValidatorRegistrer interface {
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
-	GetDelayedMessage(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
@@ -280,30 +281,24 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 	}
 	if e.HasDelayedMsg {
+		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
+		if err != nil {
+			log.Error(
+				"error while trying to read delayed msg for proving",
+				"err", err, "seq", e.DelayedMsgNr, "pos", e.Pos,
+			)
+			return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
+		}
+		e.DelayedMsg = delayedMsg
+
 		if v.config.Evil {
-			delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
-			if err != nil {
-				log.Error(
-					"error while trying to read delayed msg for proving",
-					"err", err, "seq", e.DelayedMsgNr, "pos", e.Pos,
-				)
-				return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
-			}
+			interceptGweiAmount := new(big.Int).SetUint64(v.config.EvilInterceptDepositGwei * params.GWei)
 			// Tweak the delayed message.
-			delayedMsgStr := fmt.Sprintf("%#x", delayedMsg)
-			replaced := strings.Replace(delayedMsgStr, "2386f26fc10000", "2386f2ab5bca00", 1)
-			modified := common.FromHex(replaced)
-			e.DelayedMsg = modified
-		} else {
-			delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
-			if err != nil {
-				log.Error(
-					"error while trying to read delayed msg for proving",
-					"err", err, "seq", e.DelayedMsgNr, "pos", e.Pos,
-				)
-				return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
+			if bytes.Contains(delayedMsg, interceptGweiAmount.Bytes()) {
+				newValue := new(big.Int).Add(interceptGweiAmount, big.NewInt(params.GWei))
+				modified := bytes.Replace(delayedMsg, interceptGweiAmount.Bytes(), newValue.Bytes(), 1)
+				e.DelayedMsg = modified
 			}
-			e.DelayedMsg = delayedMsg
 		}
 	}
 	for _, batch := range e.BatchInfo {

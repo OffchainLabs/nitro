@@ -79,6 +79,7 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
 	Evil                     bool                          `koanf:"evil"`
+	EvilInterceptDepositGwei uint64                        `koanf:"evil-intercept-deposit-gwei"`
 	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
@@ -125,6 +126,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	EvilInterceptDepositGwei: 1_000_000,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -137,6 +139,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	EvilInterceptDepositGwei: 1_000_000,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
