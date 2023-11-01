@@ -56,7 +56,6 @@ type BoldConfig struct {
 	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
 	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
 	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
-	ValidatorPrivateKey                string `koanf:"validator-private-key"`
 }
 
 var DefaultBoldConfig = BoldConfig{

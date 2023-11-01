@@ -60,6 +60,18 @@ func main() {
 	l2ChainInfo := flag.String("l2chaininfo", "l2_chain_info.json", "L2 chain info output json file")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
+
+	// Bold specific flags.
+	numBigSteps := flag.Uint("numBigSteps", 5, "Number of big steps in the rollup")
+	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<5, "block challenge edge leaf height")
+	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<5, "big step edge leaf height")
+	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<7, "small step edge leaf height")
+	minimumAssertionPeriodBlocks := flag.Uint64("minimumAssertionPeriodBlocks", 1, "minimum number of blocks between assertions")
+	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 1, "challenge period")
+	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 3, "challenge grace period in which security council can take action")
+	miniStake := flag.Uint64("miniStake", 1, "mini-stake size")
+	baseStake := flag.Uint64("baseStake", 1, "base-stake size")
+
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 
@@ -170,34 +182,33 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState{},
 		MachineStatus: 1,
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
-	bigStepHeight := uint64(1 << 5)
-	smallStepHeight := uint64(1 << 7)
 	rollupConfig := challenge_testing.GenerateRollupConfig(
 		*prod,
 		moduleRoot,
 		l1TransactionOpts.From,
 		chainConfig.ChainID,
 		loserEscrowAddress,
-		miniStake,
+		new(big.Int).SetUint64(*miniStake),
 		stakeToken,
 		genesisExecutionState,
 		genesisInboxCount,
 		anyTrustFastConfirmer,
 		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
-			BlockChallengeHeight:     32,
-			BigStepChallengeHeight:   bigStepHeight,
-			SmallStepChallengeHeight: smallStepHeight,
+			BlockChallengeHeight:     *blockChallengeLeafHeight,
+			BigStepChallengeHeight:   *bigStepLeafHeight,
+			SmallStepChallengeHeight: *smallSteapLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(400)), // TODO: Hardcoded to 1000 L1 blocks.
+		challenge_testing.WithNumBigStepLevels(uint8(*numBigSteps)),
+		challenge_testing.WithConfirmPeriodBlocks(*confirmPeriodBlocks),
+		challenge_testing.WithChallengeGracePeriodBlocks(*challengeGracePeriodBlocks),
 		challenge_testing.WithChainConfig(string(chainConfigJson)),
+		challenge_testing.WithBaseStakeValue(new(big.Int).SetUint64(*baseStake)),
 	)
 	deployedAddresses, err := setup.DeployFullRollupStack(
 		ctx,
@@ -218,7 +229,7 @@ func main() {
 		panic(err)
 	}
 	_, err = retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
-		return rollup.SetMinimumAssertionPeriod(l1TransactionOpts, big.NewInt(1)) // 1 Ethereum block between assertions
+		return rollup.SetMinimumAssertionPeriod(l1TransactionOpts, big.NewInt(int64(*minimumAssertionPeriodBlocks))) // 1 Ethereum block between assertions
 	})
 	if err != nil {
 		panic(err)
