@@ -2,9 +2,18 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::js_core::{JsEnv, JsObject, JsValue};
-use parking_lot::Mutex;
 use std::io::Write;
-use std::sync::Arc;
+
+macro_rules! match_args {
+    ($args:expr, $name:expr, $count:expr, $($pat:pat),+) => {
+        let [$($pat),+] = &$args[..$count] else {
+            panic!("called {} with bad args: {:?}", $name, $args);
+        };
+        if $args.len() != $count {
+            eprintln!("called {} with wrong number of args: {:?}", $name, $args);
+        }
+    };
+}
 
 pub fn make_go_object() -> JsValue {
     let object = JsObject::default();
@@ -39,29 +48,26 @@ pub fn make_go_object() -> JsValue {
 pub fn make_globals_object() -> JsValue {
     let object = JsObject::default();
 
-    object.insert_func("Object", |_env, _go, _args| Ok(JsObject::default().into()));
-    object.insert_func("Array", |_env, _go, _args| {
+    object.insert_func(
+        "Object",
+        |_env, _this, _args| Ok(JsObject::default().into()),
+    );
+    object.insert_func("Array", |_env, _this, _args| {
         Ok(JsValue::Array(Default::default()))
     });
     object.insert("process", make_process_object());
     object.insert("fs", make_fs_object());
-    object.insert_func("Uint8Array", |_env, _go, args| {
+    object.insert_func("Uint8Array", |_env, _this, args| {
         if args.is_empty() {
             Ok(JsValue::Uint8Array(Default::default()))
         } else {
-            let Some(JsValue::Number(size)) = args.first() else {
-                panic!("Go trying to create new Uint8Array with bad args {args:?}")
-            };
-            if args.len() != 1 {
-                eprintln!("Got incorrect number of arguments to new Uint8Array {args:?}");
-            }
-            Ok(JsValue::Uint8Array(Arc::new(Mutex::new(
-                vec![0; *size as usize].into_boxed_slice(),
-            ))))
+            match_args!(args, "new Uint8Array", 1, JsValue::Number(size));
+            Ok(JsValue::new_uint8_array(vec![0; *size as usize]))
         }
     });
+    object.insert("stylus", make_stylus_object());
     object.insert("crypto", make_crypto_object());
-    object.insert_func("Date", |_env, _go, _args| Ok(make_date_object()));
+    object.insert_func("Date", |_env, _this, _args| Ok(make_date_object()));
     object.insert("console", make_console_object());
     // Triggers a code path in Go for a fake network impl
     object.insert("fetch", JsValue::Undefined);
@@ -83,30 +89,23 @@ fn make_fs_object() -> JsValue {
 
     let fs = JsObject::default();
     fs.insert("constants", constants);
-    fs.insert_func("write", |env, _go, args| {
-        // ignore any args after the 6th, and slice no more than than the number of args we have
-        let args_len = std::cmp::min(6, args.len());
-        let [
+    fs.insert_func("write", |env, _this, args| {
+        match_args!(
+            args,
+            "fs.write",
+            6,
             JsValue::Number(fd),
             JsValue::Uint8Array(buf),
             JsValue::Number(offset),
             JsValue::Number(length),
             JsValue::Null,
-            JsValue::Function(callback),
-        ]  = &args[..args_len] else {
-            panic!("Go trying to call fs.write with bad args {args:?}")
-        };
-        if args.len() != 6 {
-            // Ignore any extra arguments but log a warning
-            eprintln!("Got incorrect number of arguments to fs.write: {args:?}");
-        }
+            JsValue::Function(callback)
+        );
         let buf = buf.lock();
         let mut offset = *offset as usize;
         let mut length = *length as usize;
         if offset > buf.len() {
-            eprintln!(
-                "Go trying to call fs.write with offset {offset} >= buf.len() {length}"
-            );
+            eprintln!("Go trying to call fs.write with offset {offset} >= buf.len() {length}");
             offset = buf.len();
         }
         if offset + length > buf.len() {
@@ -137,13 +136,8 @@ fn make_fs_object() -> JsValue {
 
 fn make_crypto_object() -> JsValue {
     let crypto = JsObject::default();
-    crypto.insert_func("getRandomValues", |env, _go, args| {
-        let Some(JsValue::Uint8Array(buf)) = args.first() else {
-            panic!("Go trying to call crypto.getRandomValues with bad args {args:?}")
-        };
-        if args.len() != 1 {
-            eprintln!("Got incorrect number of arguments to crypto.getRandomValues: {args:?}");
-        }
+    crypto.insert_func("getRandomValues", |env, _this, args| {
+        match_args!(args, "crypto.getRandomValues", 1, JsValue::Uint8Array(buf));
         let mut buf = buf.lock();
         env.get_rng().fill_bytes(&mut buf);
         Ok(JsValue::Undefined)
@@ -153,7 +147,7 @@ fn make_crypto_object() -> JsValue {
 
 fn make_console_object() -> JsValue {
     let console = JsObject::default();
-    console.insert_func("error", |_env, _go, args| {
+    console.insert_func("error", |_env, _this, args| {
         eprintln!("Go console error:");
         for arg in args {
             eprintln!("{arg:?}");
@@ -166,8 +160,12 @@ fn make_console_object() -> JsValue {
 
 fn make_date_object() -> JsValue {
     let date = JsObject::default();
-    date.insert_func("getTimezoneOffset", |_env, _go, _args| {
+    date.insert_func("getTimezoneOffset", |_env, _this, _args| {
         Ok(JsValue::Number(0.))
     });
     date.into()
+}
+
+fn make_stylus_object() -> JsValue {
+    JsObject::default().into()
 }

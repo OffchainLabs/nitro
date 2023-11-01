@@ -12,12 +12,11 @@ use eyre::{bail, eyre, Result};
 use std::fmt::Debug;
 
 pub struct JsEvmApi<T: JsCallIntoGo> {
-    object_ids: Vec<u32>,
     caller: T,
 }
 
 pub trait JsCallIntoGo: Send + 'static {
-    fn call_go(&mut self, func: u32, args: Vec<ApiValue>) -> Vec<ApiValue>;
+    fn call_go(&mut self, func: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue>;
 }
 
 #[derive(Clone)]
@@ -183,19 +182,12 @@ impl ApiValueKind {
 }
 
 impl<T: JsCallIntoGo> JsEvmApi<T> {
-    pub fn new(ids: Vec<u8>, caller: T) -> Self {
-        let mut object_ids = vec![];
-        for i in (0..ids.len()).step_by(4) {
-            let slice = &ids[i..(i + 4)];
-            let value = u32::from_be_bytes(slice.try_into().unwrap());
-            object_ids.push(value);
-        }
-        Self { object_ids, caller }
+    pub fn new(caller: T) -> Self {
+        Self { caller }
     }
 
     fn call(&mut self, func: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue> {
-        let func_id = self.object_ids[func as usize];
-        self.caller.call_go(func_id, args)
+        self.caller.call_go(func, args)
     }
 }
 

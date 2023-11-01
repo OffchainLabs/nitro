@@ -1033,8 +1033,6 @@ func TestProgramAcivationLogs(t *testing.T) {
 func setupProgramTest(t *testing.T, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
-	t.SkipNow()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
 

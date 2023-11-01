@@ -1,12 +1,13 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+mod evm_api;
 mod js_core;
 mod runtime;
 
-pub use js_core::{JsEnv, JsValueId};
+pub use js_core::{JsEnv, JsValue, JsValueId};
 
-use js_core::{JsValue, NAN_ID, NULL_ID, ZERO_ID};
+use js_core::{JsObject, GLOBAL_ID, NAN_ID, NULL_ID, ZERO_ID};
 use std::sync::Arc;
 
 pub fn get_null() -> JsValueId {
@@ -171,6 +172,14 @@ impl JsState {
                 panic!("Go attempted to call copyBytesToJs on invalid type: {x:?}");
             }
         };
+    }
+
+    /// Gets the globals object for use in Rust
+    pub fn get_globals(&self) -> JsObject {
+        match self.values.id_to_value(GLOBAL_ID) {
+            JsValue::Object(object) => object,
+            _ => unreachable!(),
+        }
     }
 }
 

@@ -71,12 +71,12 @@ pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
 /// # Go side
 ///
 /// The Go compiler expects the call to take the form
-///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64) (
+///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, apiId u32, evmData: *EvmData, gas *u64) (
 ///         status byte, out *Vec<u8>,
 ///     )
 ///
 /// These values are placed on the stack as follows
-///     || modHash || calldata... || params || evmApi... || evmData || gas || status | 7 pad | out ptr ||
+///     || modHash || calldata... || params || evmApi | 4 pad || evmData || gas || status | 7 pad | out ptr ||
 ///
 pub fn stylus_call(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let sp = &mut GoStack::simple(sp, &env);
@@ -86,8 +86,8 @@ pub fn stylus_call(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let module_hash = sp.read_bytes32();
     let calldata = sp.read_go_slice_owned();
     let (compile, config): (CompileConfig, StylusConfig) = sp.unbox();
-    let evm_api = sp.read_go_slice_owned();
-    let evm_data: EvmData = sp.unbox();
+    let api_id = sp.read_u32();
+    let evm_data: EvmData = sp.skip_space().unbox();
     let gas = sp.read_go_ptr();
 
     // buy ink
@@ -102,7 +102,7 @@ pub fn stylus_call(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     };
 
     let result = exec_wasm(
-        sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
+        sp, env, module, calldata, compile, config, api_id, evm_data, ink,
     );
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 

@@ -36,7 +36,7 @@ func activateProgramRustImpl(
 ) (footprint u16, err *rustVec)
 
 func callProgramRustImpl(
-	moduleHash *hash, calldata []byte, params *rustConfig, evmApi []byte, evmData *rustEvmData, gas *u64,
+	moduleHash *hash, calldata []byte, params *rustConfig, evmApi uint32, evmData *rustEvmData, gas *u64,
 ) (status userStatus, out *rustVec)
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
@@ -91,15 +91,15 @@ func callProgram(
 	params *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
+	debug := arbmath.UintToBool(params.debugMode)
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
-	debug := arbmath.UintToBool(params.debugMode)
 
 	status, output := callProgramRustImpl(
 		&moduleHash,
 		calldata,
 		params.encode(),
-		evmApi.funcs,
+		evmApi.id,
 		evmData.encode(),
 		&scope.Contract.Gas,
 	)

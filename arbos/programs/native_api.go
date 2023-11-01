@@ -92,7 +92,7 @@ import (
 )
 
 var apiClosures sync.Map
-var apiIds uintptr // atomic
+var apiIds uintptr // atomic and sequential
 
 func newApi(
 	interpreter *vm.EVMInterpreter,

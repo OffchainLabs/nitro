@@ -704,6 +704,7 @@ dependencies = [
 name = "go-js"
 version = "0.1.0"
 dependencies = [
+ "arbutil",
  "eyre",
  "fnv",
  "parking_lot 0.12.1",

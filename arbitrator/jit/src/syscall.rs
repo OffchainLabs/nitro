@@ -3,7 +3,7 @@
 
 use crate::{
     gostack::{GoRuntimeState, GoStack},
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvFuncs, WasmEnvMut},
+    machine::{Escape, MaybeEscape, WasmEnvFuncs, WasmEnvMut},
 };
 
 use arbutil::Color;
@@ -60,7 +60,7 @@ pub fn js_value_set_index(mut env: WasmEnvMut, sp: u32) {
     env.js_state.value_set_index(source, index, value);
 }
 
-struct WasmerJsEnv<'a, 'b> {
+pub struct WasmerJsEnv<'a, 'b> {
     rng: &'a mut rand_pcg::Pcg32,
     resume: &'a TypedFunction<(), ()>,
     get_stack_pointer: &'a TypedFunction<(), i32>,
@@ -69,7 +69,7 @@ struct WasmerJsEnv<'a, 'b> {
 }
 
 impl<'a, 'b> WasmerJsEnv<'a, 'b> {
-    fn new(
+    pub fn new(
         sp: &'a mut GoStack,
         store: &'a mut StoreMut<'b>,
         exports: &'a mut WasmEnvFuncs,

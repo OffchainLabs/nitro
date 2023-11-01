@@ -4,10 +4,9 @@
 #![allow(clippy::useless_transmute)]
 
 use crate::{
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{WasmEnv, WasmEnvMut},
     wavmio::{Bytes20, Bytes32},
 };
-use arbutil::Color;
 use go_js::JsValueId;
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;

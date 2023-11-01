@@ -40,9 +40,27 @@ impl JsObject {
         self.insert(key, value);
     }
 
-    /// Returns `&JsValue::Undefined` if the key is not present
-    pub fn get(&self, key: &str) -> JsValue {
+    /// Returns `JsValue::Undefined` if the key is not present.
+    pub fn get(&self, key: impl AsRef<str>) -> JsValue {
+        let key = key.as_ref();
         self.0.lock().get(key).cloned().unwrap_or_default()
+    }
+
+    /// Gets the value under a sequence of keys, like `globals.stylus.api8`.
+    /// Returns `JsValue::Undefined` if no match is found, or if applied to non-objects.
+    pub fn get_path(&self, path: &[impl AsRef<str>]) -> JsValue {
+        let mut value = JsValue::Object(self.clone());
+
+        for key in path.into_iter().map(|x| x.as_ref()) {
+            if key.is_empty() {
+                continue; // skip single periods
+            }
+            value = match &value {
+                JsValue::Object(x) => x.get(key),
+                _ => return JsValue::Undefined,
+            };
+        }
+        value
     }
 }
 
@@ -85,6 +103,10 @@ impl JsValue {
             _ => panic!("Expected JS Value {name} to be an object but got {self:?}"),
         }
     }
+
+    pub fn new_uint8_array(data: Vec<u8>) -> Self {
+        Self::from(data.into_boxed_slice())
+    }
 }
 
 impl From<JsObject> for JsValue {
@@ -96,6 +118,12 @@ impl From<JsObject> for JsValue {
 impl From<Vec<JsValue>> for JsValue {
     fn from(value: Vec<JsValue>) -> Self {
         Self::Array(Arc::new(Mutex::new(value)))
+    }
+}
+
+impl From<Box<[u8]>> for JsValue {
+    fn from(value: Box<[u8]>) -> Self {
+        Self::Uint8Array(Arc::new(Mutex::new(value)))
     }
 }
 
@@ -333,6 +361,9 @@ impl JsValuePool {
             if n != 0. && !n.is_nan() {
                 return JsValueId(n.to_bits());
             }
+        }
+        if value == JsValue::Undefined {
+            return JsValueId(0_f64.to_bits());
         }
         let mut inner = self.0.lock();
         let go_ty = value.go_typecode();
