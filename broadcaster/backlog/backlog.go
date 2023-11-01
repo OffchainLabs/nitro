@@ -27,13 +27,13 @@ type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
 	lookupLock    sync.RWMutex
-	lookupByIndex map[uint64]*atomic.Pointer[backlogSegment]
+	lookupByIndex map[uint64]*backlogSegment
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
 func NewBacklog(c ConfigFetcher) Backlog {
-	lookup := make(map[uint64]*atomic.Pointer[backlogSegment])
+	lookup := make(map[uint64]*backlogSegment)
 	return &backlog{
 		lookupByIndex: lookup,
 		config:        c,
@@ -84,10 +84,8 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		} else if err != nil {
 			return err
 		}
-		p := &atomic.Pointer[backlogSegment]{}
-		p.Store(segment)
 		b.lookupLock.Lock()
-		b.lookupByIndex[uint64(msg.SequenceNumber)] = p
+		b.lookupByIndex[uint64(msg.SequenceNumber)] = segment
 		b.lookupLock.Unlock()
 		b.messageCount.Add(1)
 	}
@@ -196,18 +194,13 @@ func (b *backlog) removeFromLookup(start, end uint64) {
 
 func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
 	b.lookupLock.RLock()
-	pointer, ok := b.lookupByIndex[i]
+	segment, ok := b.lookupByIndex[i]
 	b.lookupLock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("error finding backlog segment containing message with SequenceNumber %d", i)
 	}
 
-	s := pointer.Load()
-	if s == nil {
-		return nil, fmt.Errorf("error loading backlog segment containing message with SequenceNumber %d", i)
-	}
-
-	return s, nil
+	return segment, nil
 }
 
 func (s *backlog) Count() uint64 {
@@ -220,7 +213,7 @@ func (b *backlog) reset() {
 	defer b.lookupLock.Unlock()
 	b.head = atomic.Pointer[backlogSegment]{}
 	b.tail = atomic.Pointer[backlogSegment]{}
-	b.lookupByIndex = map[uint64]*atomic.Pointer[backlogSegment]{}
+	b.lookupByIndex = map[uint64]*backlogSegment{}
 	b.messageCount.Store(0)
 }
 

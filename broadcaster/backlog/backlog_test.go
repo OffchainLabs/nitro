@@ -3,7 +3,6 @@ package backlog
 import (
 	"errors"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,7 +50,7 @@ func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCoun
 
 func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
-		lookupByIndex: map[uint64]*atomic.Pointer[backlogSegment]{},
+		lookupByIndex: map[uint64]*backlogSegment{},
 		config:        func() *Config { return &DefaultTestConfig },
 	}
 	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
@@ -155,10 +154,8 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	s.end.Store(42)
 	s.messageCount.Store(2)
 
-	p := &atomic.Pointer[backlogSegment]{}
-	p.Store(s)
-	lookup := make(map[uint64]*atomic.Pointer[backlogSegment])
-	lookup[40] = p
+	lookup := make(map[uint64]*backlogSegment)
+	lookup[40] = s
 	b := &backlog{
 		lookupByIndex: lookup,
 		config:        func() *Config { return &DefaultTestConfig },
