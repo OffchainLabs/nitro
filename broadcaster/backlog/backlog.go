@@ -50,8 +50,6 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		// TODO(clamb): add to metric?
 	}
 
-	// TODO(clamb): Do I need a max catchup config for the backlog? Similar to catchup buffer
-
 	for _, msg := range bm.Messages {
 		segment := b.tail.Load()
 		if segment == nil {
