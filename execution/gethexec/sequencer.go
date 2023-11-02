@@ -752,17 +752,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 func (s *Sequencer) createBlockEspresso(ctx context.Context) (returnValue bool) {
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
-	windowStart, err := s.hotShotState.client.FetchHeadersForWindow(ctx, nextSeqBlockNum, nextSeqBlockNum)
+	header, err := s.hotShotState.client.FetchHeader(ctx, nextSeqBlockNum)
 	namespace := s.config().EspressoNamespace
 	if err != nil {
-		log.Error("Unable to fetch headers for block number", "block_num", nextSeqBlockNum, "err", err)
+		log.Warn("Unable to fetch header for block number", "block_num", nextSeqBlockNum, "err", err)
 		return false
 	}
-	if len(windowStart.Window) == 0 {
-		log.Error("Headers unavailable currently for block number", "block_num", nextSeqBlockNum, "err", err)
-		return false
-	}
-	header := windowStart.Window[0]
 	arbTxns, err := s.hotShotState.client.FetchTransactionsInBlock(ctx, nextSeqBlockNum, &header, namespace)
 	if err != nil {
 		log.Error("Error fetching transactions", "err", err)
@@ -786,22 +781,23 @@ func (s *Sequencer) createBlockEspresso(ctx context.Context) (returnValue bool) 
 	l1Block := s.l1BlockNumber
 	s.L1BlockAndTimeMutex.Unlock()
 
-	justification := arbostypes.EspressoBlockJustification{
-		Header: header,
-		Proof:  arbTxns.Proof,
-	}
+	// justification := arbostypes.EspressoBlockJustification{
+	// 	Header: header,
+	// 	Proof:  arbTxns.Proof,
+	// }
 
 	arbHeader := &arbostypes.L1IncomingMessageHeader{
-		Kind:                  arbostypes.L1MessageType_L2Message,
-		Poster:                l1pricing.BatchPosterAddress,
-		BlockNumber:           l1Block,
-		Timestamp:             uint64(timestamp),
-		RequestId:             nil,
-		L1BaseFee:             nil,
-		EspressoJustification: &justification,
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: l1Block,
+		Timestamp:   uint64(timestamp),
+		RequestId:   nil,
+		L1BaseFee:   nil,
+		// EspressoJustification: &justification,
 	}
 
-	_, err = s.execEngine.SequenceTransactions(arbHeader, txes, nil)
+	hooks := s.makeSequencingHooks()
+	_, err = s.execEngine.SequenceTransactions(arbHeader, txes, hooks)
 	if err != nil {
 		log.Error("Sequencing error for block number", "block_num", nextSeqBlockNum, "err", err)
 		return false
