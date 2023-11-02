@@ -2,6 +2,9 @@ package endtoend
 
 import (
 	"context"
+	"errors"
+	"math/big"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -11,11 +14,15 @@ import (
 	validator "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	retry "github.com/OffchainLabs/bold/runtime"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/endtoend/internal/backend"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	eth_types "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -53,7 +60,11 @@ func TestTotalWasmOpcodes(t *testing.T) {
 	})
 }
 
-func TestChallengeProtocol_AliceAndBob_AnvilLocal_InMiddleOfBlock(t *testing.T) {
+func TestChallengeProtocol_AliceAndBob_AnvilLocal_InMiddleOfBlock_WithoutFlakyEthClient(t *testing.T) {
+	aliceAndBobInMiddleOfBlock(t, false)
+}
+
+func aliceAndBobInMiddleOfBlock(t *testing.T, useFlakyEthClient bool) {
 	be, err := backend.NewAnvilLocal(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -111,6 +122,7 @@ func TestChallengeProtocol_AliceAndBob_AnvilLocal_InMiddleOfBlock(t *testing.T) 
 	testChallengeProtocol_AliceAndBob(
 		t,
 		be,
+		useFlakyEthClient,
 		scenario,
 		challenge_testing.WithLayerZeroHeights(layerZeroHeights),
 		challenge_testing.WithNumBigStepLevels(numBigSteps),
@@ -175,6 +187,7 @@ func TestChallengeProtocol_AliceAndBob_AnvilLocal_LastOpcode(t *testing.T) {
 	testChallengeProtocol_AliceAndBob(
 		t,
 		be,
+		false,
 		scenario,
 		challenge_testing.WithLayerZeroHeights(layerZeroHeights),
 		challenge_testing.WithNumBigStepLevels(numBigSteps),
@@ -245,7 +258,102 @@ func TestSync_HonestBobStopsCharlieJoins(t *testing.T) {
 	)
 }
 
-func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenario *ChallengeScenario, opts ...challenge_testing.Opt) {
+type FlakyEthClient struct {
+	*ethclient.Client
+}
+
+func (f *FlakyEthClient) flaky() error {
+	// 10% chance of failure
+	if rand.Intn(10) > 8 {
+		return errors.New("flaky error")
+	}
+	return nil
+}
+
+func (f *FlakyEthClient) TransactionReceipt(ctx context.Context, txHash common.Hash) (*eth_types.Receipt, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.TransactionReceipt(ctx, txHash)
+}
+
+func (f *FlakyEthClient) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.CodeAt(ctx, contract, blockNumber)
+}
+
+func (f *FlakyEthClient) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.CallContract(ctx, call, blockNumber)
+}
+
+func (f *FlakyEthClient) HeaderByNumber(ctx context.Context, number *big.Int) (*eth_types.Header, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.HeaderByNumber(ctx, number)
+}
+
+func (f *FlakyEthClient) PendingCodeAt(ctx context.Context, account common.Address) ([]byte, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.PendingCodeAt(ctx, account)
+}
+
+func (f *FlakyEthClient) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	if err := f.flaky(); err != nil {
+		return 0, err
+	}
+	return f.Client.PendingNonceAt(ctx, account)
+}
+
+func (f *FlakyEthClient) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.SuggestGasPrice(ctx)
+}
+
+func (f *FlakyEthClient) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.SuggestGasTipCap(ctx)
+}
+
+func (f *FlakyEthClient) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
+	if err := f.flaky(); err != nil {
+		return 0, err
+	}
+	return f.Client.EstimateGas(ctx, call)
+}
+
+func (f *FlakyEthClient) SendTransaction(ctx context.Context, tx *eth_types.Transaction) error {
+	if err := f.flaky(); err != nil {
+		return err
+	}
+	return f.Client.SendTransaction(ctx, tx)
+}
+
+func (f *FlakyEthClient) FilterLogs(ctx context.Context, query ethereum.FilterQuery) ([]eth_types.Log, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.FilterLogs(ctx, query)
+}
+func (f *FlakyEthClient) SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- eth_types.Log) (ethereum.Subscription, error) {
+	if err := f.flaky(); err != nil {
+		return nil, err
+	}
+	return f.Client.SubscribeFilterLogs(ctx, query, ch)
+}
+
+func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, useFlakyEthClient bool, scenario *ChallengeScenario, opts ...challenge_testing.Opt) {
 	t.Run(scenario.Name, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 		defer cancel()
@@ -254,40 +362,61 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, scenari
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		a, aChain, err := setupValidator(ctx, be, rollup, scenario.AliceStateManager, be.Alice(), "alice")
+		var ethClient protocol.ChainBackend
+		if useFlakyEthClient {
+			ethClient = &FlakyEthClient{be.Client()}
+		} else {
+			ethClient = be.Client()
+		}
+		a, aChain, err := retry.UntilSucceedsMultipleReturnValue(ctx, func() (*validator.Manager, protocol.Protocol, error) {
+			return setupValidator(ctx, ethClient, rollup, scenario.AliceStateManager, be.Alice(), "alice")
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, bChain, err := setupValidator(ctx, be, rollup, scenario.BobStateManager, be.Bob(), "bob")
+		b, bChain, err := retry.UntilSucceedsMultipleReturnValue(ctx, func() (*validator.Manager, protocol.Protocol, error) {
+			return setupValidator(ctx, ethClient, rollup, scenario.BobStateManager, be.Bob(), "bob")
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Post assertions.
-		alicePoster, err := assertions.NewManager(aChain, scenario.AliceStateManager, be.Client(), a, rollup, "alice", time.Hour, time.Second*10, scenario.AliceStateManager, time.Hour)
+		alicePoster, err := retry.UntilSucceeds(ctx, func() (*assertions.Manager, error) {
+			return assertions.NewManager(aChain, scenario.AliceStateManager, be.Client(), a, rollup, "alice", time.Hour, time.Second*10, scenario.AliceStateManager, time.Hour)
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		bobPoster, err := assertions.NewManager(bChain, scenario.BobStateManager, be.Client(), b, rollup, "bob", time.Hour, time.Second*10, scenario.BobStateManager, time.Hour)
+		bobPoster, err := retry.UntilSucceeds(ctx, func() (*assertions.Manager, error) {
+			return assertions.NewManager(bChain, scenario.BobStateManager, be.Client(), b, rollup, "bob", time.Hour, time.Second*10, scenario.BobStateManager, time.Hour)
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		aliceLeaf, err := alicePoster.PostAssertion(ctx)
+		aliceLeaf, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+			return alicePoster.PostAssertion(ctx)
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		bobLeaf, err := bobPoster.PostAssertion(ctx)
+		bobLeaf, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+			return bobPoster.PostAssertion(ctx)
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Scan for created assertions.
-		if err := alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Id()); err != nil {
+		if _, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+			return nil, alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Id())
+		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Id()); err != nil {
+		if _, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+			return nil, bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Id())
+		}); err != nil {
 			t.Fatal(err)
 		}
 
@@ -381,7 +510,7 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 // setupValidator initializes a validator with the minimum required configuration.
 func setupValidator(
 	ctx context.Context,
-	be backend.Backend,
+	backend protocol.ChainBackend,
 	rollup common.Address,
 	sm l2stateprovider.Provider,
 	txOpts *bind.TransactOpts,
@@ -391,7 +520,7 @@ func setupValidator(
 		ctx,
 		rollup,
 		txOpts,
-		be.Client(),
+		backend,
 		solimpl.WithTrackedContractBackend(),
 	)
 	if err != nil {
@@ -401,7 +530,7 @@ func setupValidator(
 	v, err := validator.New(
 		ctx,
 		chain,
-		be.Client(),
+		backend,
 		sm,
 		rollup,
 		validator.WithAddress(txOpts.From),
