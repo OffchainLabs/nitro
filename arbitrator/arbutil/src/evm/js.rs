@@ -16,7 +16,7 @@ pub struct JsEvmApi<T: JsCallIntoGo> {
 }
 
 pub trait JsCallIntoGo: Send + 'static {
-    fn call_go(&mut self, func: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue>;
+    fn call_go(&mut self, method: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue>;
 }
 
 #[derive(Clone)]

@@ -1,22 +1,26 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use arbutil::evm::{js::{ApiValue, JsCallIntoGo}, api::EvmApiMethod};
+use arbutil::evm::{
+    api::EvmApiMethod,
+    js::{ApiValue, JsCallIntoGo},
+};
 
 #[link(wasm_import_module = "go_stub")]
 extern "C" {
-    fn run_stylus_closure(
-        func: u32,
+    fn run_api_closure(
+        api_id: u32,
+        method: EvmApiMethod,
         data: *const *const u8,
         lens: *const usize,
-        count: usize,
+        num_args: usize,
     ) -> usize;
-    fn read_closure_lens(func: u32, lens: *mut usize);
-    fn drop_closure_outs(func: u32, data: *const *mut u8);
+    fn read_api_result_lens(lens: *mut usize);
+    fn move_api_result_data(data: *const *mut u8);
 }
 
 pub(crate) struct ApiCaller {
-    api_id: u32
+    api_id: u32,
 }
 
 impl ApiCaller {
@@ -26,25 +30,25 @@ impl ApiCaller {
 }
 
 impl JsCallIntoGo for ApiCaller {
-    fn call_go(&mut self, func: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue> {
-        todo!()
-        /*let mut data = vec![];
+    fn call_go(&mut self, method: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue> {
+        let mut data = vec![];
         let mut lens = vec![];
         for arg in &args {
             data.push(arg.0.as_ptr());
             lens.push(arg.0.len());
         }
 
+        let api_id = self.api_id;
         unsafe {
-            let count = run_stylus_closure(func, data.as_ptr(), lens.as_ptr(), args.len());
+            let count = run_api_closure(api_id, method, data.as_ptr(), lens.as_ptr(), args.len());
             let mut lens = vec![0_usize; count];
-            read_closure_lens(func, lens.as_mut_ptr());
+            read_api_result_lens(lens.as_mut_ptr());
 
             let mut outs: Vec<Vec<u8>> = lens.into_iter().map(|x| vec![0; x]).collect();
             let data: Vec<_> = outs.iter_mut().map(Vec::as_mut_ptr).collect();
-            drop_closure_outs(func, data.as_ptr());
+            move_api_result_data(data.as_ptr());
 
             outs.into_iter().map(ApiValue).collect()
-        }*/
+        }
     }
 }

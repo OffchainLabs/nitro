@@ -124,7 +124,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
     // call the program
     let status = program_call_main(module, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
-    sp.restore_stack();
+    sp.restore_stack(); // restore the stack pointer (corrupts during EVM API calls)
 
     /// cleans up and writes the output
     macro_rules! finish {

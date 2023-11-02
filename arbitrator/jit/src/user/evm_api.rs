@@ -17,8 +17,7 @@ use arbutil::{
     },
     Color,
 };
-use eyre::{bail, Context, Result};
-use go_js::JsValue;
+use eyre::{bail, Result};
 use prover::programs::prelude::*;
 use std::{
     sync::mpsc::{self, SyncSender},
@@ -43,9 +42,9 @@ impl ApiCaller {
 }
 
 impl JsCallIntoGo for ApiCaller {
-    fn call_go(&mut self, func: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue> {
+    fn call_go(&mut self, method: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue> {
         let (tx, rx) = mpsc::sync_channel(0);
-        let msg = EvmMsg::Call(func, args, tx);
+        let msg = EvmMsg::Call(method, args, tx);
         self.parent.send(msg).unwrap();
         rx.recv().unwrap()
     }
@@ -99,33 +98,11 @@ pub(super) fn exec_wasm(
         match msg {
             Call(method, args, respond) => {
                 let (env, mut store) = env.data_and_store_mut();
-
-                let api = &format!("api{api_id}");
-                let api = env.js_state.get_globals().get_path(&["stylus", api]);
+                let js_state = &mut env.js_state;
                 let exports = &mut env.exports;
+
                 let js_env = &mut WasmerJsEnv::new(sp, &mut store, exports, &mut env.go_state)?;
-
-                // get the callback into Go
-                let array = match api.clone() {
-                    JsValue::Array(array) => array,
-                    x => bail!("bad EVM api type for {api_id}: {x:?}"),
-                };
-                let array = array.lock();
-                let func = match array.get(method as usize) {
-                    Some(JsValue::Function(func)) => func,
-                    x => bail!("bad EVM api func for {method:?}, {api_id}: {x:?}"),
-                };
-
-                // call into go
-                let args = args.into_iter().map(Into::into).collect();
-                let outs = func.call(js_env, api, args).wrap_err("EVM api failed")?;
-
-                // send the outputs
-                let outs = match outs {
-                    JsValue::Array(outs) => outs.lock().clone().into_iter(),
-                    x => bail!("bad EVM api result for {method:?}: {x:?}"),
-                };
-                let outs = outs.map(TryInto::try_into).collect::<Result<_, _>>()?;
+                let outs = js_state.call_stylus_func(api_id, method, args, js_env)?;
                 respond.send(outs).unwrap();
             }
             Panic(error) => bail!(error),

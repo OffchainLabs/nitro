@@ -1,9 +1,9 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-mod stylus;
+mod evm_api;
 
-pub use stylus::*;
+pub use evm_api::*;
 
 use arbutil::wavm;
 use fnv::FnvHashSet as HashSet;
@@ -216,12 +216,22 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
 }
 
 struct WavmJsEnv<'a> {
-    pub go_stack: &'a mut GoStack,
+    pub go_stack: Option<&'a mut GoStack>,
 }
 
 impl<'a> WavmJsEnv<'a> {
     fn new(go_stack: &'a mut GoStack) -> Self {
+        let go_stack = Some(go_stack);
         Self { go_stack }
+    }
+
+    /// Creates an `WavmJsEnv` with no promise of restoring the stack after calls into Go.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `sp.restore_stack()` is manually called before using other [`GoStack`] methods.
+    unsafe fn new_sans_sp() -> Self {
+        Self { go_stack: None }
     }
 }
 
@@ -234,9 +244,11 @@ impl<'a> JsEnv for WavmJsEnv<'a> {
         unsafe { wavm_guest_call__resume() };
 
         // recover the stack pointer
-        let saved = self.go_stack.top - (self.go_stack.sp + 8); // new adds 8
-        *self.go_stack = GoStack::new(unsafe { wavm_guest_call__getsp() });
-        self.go_stack.advance(saved);
+        if let Some(go_stack) = &mut self.go_stack {
+            let saved = go_stack.top - (go_stack.sp + 8); // new adds 8
+            **go_stack = GoStack::new(unsafe { wavm_guest_call__getsp() });
+            go_stack.advance(saved);
+        }
         Ok(())
     }
 }
@@ -251,7 +263,6 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
 
     let mut js_env = WavmJsEnv::new(&mut sp);
     let result = get_js().value_new(&mut js_env, constructor, &args);
-    sp.restore_stack();
 
     match result {
         Ok(result) => {
@@ -334,7 +345,6 @@ pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
 
     let mut js_env = WavmJsEnv::new(&mut sp);
     let result = get_js().value_call(&mut js_env, object, &method_name, &args);
-    sp.restore_stack();
 
     match result {
         Ok(result) => {
