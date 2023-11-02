@@ -102,7 +102,7 @@ func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[c
 }
 
 func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := math.HexOrDecimal64(timestamp + 30)
+	future := math.HexOrDecimal64(timestamp + 40)
 	past := math.HexOrDecimal64(timestamp - 1)
 	futureBlockNumber := math.HexOrDecimal64(blockNumber + 1000)
 	currentBlockNumber := math.HexOrDecimal64(blockNumber)
@@ -238,23 +238,18 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err := builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber := block.NumberU64()
-	fixBlockTime := func(blockTime uint64) uint64 {
-		since := time.Now().Unix() - int64(blockTime)
-		if since < 0 {
-			// If using SimulatedBeacon then the block time will be ahead of
-			// the actual time since it generates a new block for each tx in
-			// on demand mode, and assigns them to sequentially increasing timestamps.
-			return uint64(time.Now().Unix())
-		}
-		return blockTime
+
+	l2BlockTime := func() uint64 {
+		l2Block, err := builder.L2.Client.BlockByNumber(ctx, nil)
+		Require(t, err)
+		return l2Block.Time()
 	}
-	blockTime := fixBlockTime(block.Time())
 
 	optionsA := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
 	optionsB := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
 	optionsAB := optionsProduct(optionsA, optionsB)
 	options1 := dedupOptions(t, append(append(optionsAB, optionsA...), optionsB...))
-	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, l2BlockTime()))
 	for i, options := range options1 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, builder.L2Info, rpcClient, options)
 	}
@@ -285,13 +280,12 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	blockTime = fixBlockTime(block.Time())
 
 	optionsC := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
 	optionsD := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
 	optionsCD := optionsProduct(optionsC, optionsD)
 	options2 := dedupOptions(t, append(append(optionsCD, optionsC...), optionsD...))
-	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, l2BlockTime()))
 	for i, options := range options2 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, builder.L2Info, rpcClient, options)
 	}
@@ -301,8 +295,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	blockTime = fixBlockTime(block.Time())
-	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, l2BlockTime()))
 	for i, options := range options3 {
 		testConditionalTxThatShouldFail(t, ctx, i, builder.L2Info, rpcClient, options, -32003)
 	}
