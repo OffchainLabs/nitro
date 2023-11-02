@@ -97,6 +97,7 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 		}
 
 		bm := &m.BroadcastMessage{
+			Version:  1, // TODO(clamb): I am unsure if it is correct to hard code the version here like this? It seems to be done in other places though
 			Messages: segment.Messages(),
 		}
 		notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
