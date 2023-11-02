@@ -128,7 +128,12 @@ fn make_fs_object() -> JsValue {
         }
         // Don't borrow buf during the callback
         drop(buf);
-        callback.call(env, JsValue::Undefined, Vec::new())?;
+
+        let args = vec![
+            JsValue::Null,                  // no error
+            JsValue::Number(length as f64), // amount written
+        ];
+        callback.call(env, JsValue::Undefined, args)?;
         Ok(JsValue::Undefined)
     });
     fs.into()
