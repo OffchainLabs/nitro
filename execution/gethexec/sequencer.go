@@ -752,6 +752,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 func (s *Sequencer) createBlockEspresso(ctx context.Context) (returnValue bool) {
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
+	log.Info("Attempting to sequence Espresso block", "block_num", nextSeqBlockNum)
 	header, err := s.hotShotState.client.FetchHeader(ctx, nextSeqBlockNum)
 	namespace := s.config().EspressoNamespace
 	if err != nil {
@@ -1069,14 +1070,14 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
+		nextBlock := time.Now().Add(s.config().MaxBlockSpeed * 10)
 		madeBlock := s.createBlock(ctx)
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-			return time.Until(nextBlock)
+			return 0
 		}
 		// If we didn't make a block, try again immediately.
-		return 0
+		return time.Until(nextBlock)
 	})
 
 	return nil

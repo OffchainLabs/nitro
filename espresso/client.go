@@ -46,7 +46,7 @@ func (c *Client) FetchRemainingHeadersForWindow(ctx context.Context, from uint64
 
 func (c *Client) FetchHeader(ctx context.Context, blockHeight uint64) (Header, error) {
 	var res Header
-	if err := c.get(ctx, &res, "availability/headers/window/%d", blockHeight); err != nil {
+	if err := c.get(ctx, &res, "availability/header/%d", blockHeight); err != nil {
 		return Header{}, err
 	}
 	return res, nil
