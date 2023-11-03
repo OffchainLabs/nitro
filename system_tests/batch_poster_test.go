@@ -1,6 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+// TODO There is a race condition in the currently used version of pebbledb, remove when upgraded.
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
