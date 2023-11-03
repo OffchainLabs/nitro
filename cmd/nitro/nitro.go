@@ -817,6 +817,9 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.FeedUrl != "" {
 		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
 	}
+	if chainInfo.SecondaryFeedUrl != "" {
+		chainDefaults["node.feed.input.secondary-url"] = chainInfo.SecondaryFeedUrl
+	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true
 		chainDefaults["node.data-availability.rest-aggregator.enable"] = true

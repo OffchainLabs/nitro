@@ -5,9 +5,9 @@
     "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://arb1-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://arb1-feed.arbitrum.io/feed",
+    "secondary-feed-url": "wss://arb1-delayed-feed.arbitrum.io/feed",
     "has-genesis-state": true,
-    "chain-config":
-    {
+    "chain-config": {
       "chainId": 42161,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -23,13 +23,11 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique":
-      {
+      "clique": {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum":
-      {
+      "arbitrum": {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": false,
         "DataAvailabilityCommittee": false,
@@ -38,8 +36,7 @@
         "GenesisBlockNum": 0
       }
     },
-    "rollup":
-    {
+    "rollup": {
       "bridge": "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
       "inbox": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
       "rollup": "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
@@ -56,8 +53,7 @@
     "sequencer-url": "https://nova.arbitrum.io/rpc",
     "feed-url": "wss://nova-feed.arbitrum.io/feed",
     "das-index-url": "https://nova.arbitrum.io/das-servers",
-    "chain-config":
-    {
+    "chain-config": {
       "chainId": 42170,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -73,13 +69,11 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique":
-      {
+      "clique": {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum":
-      {
+      "arbitrum": {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": false,
         "DataAvailabilityCommittee": true,
@@ -88,8 +82,7 @@
         "GenesisBlockNum": 0
       }
     },
-    "rollup":
-    {
+    "rollup": {
       "bridge": "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
       "inbox": "0xc4448b71118c9071bcb9734a0eac55d18a153949",
       "rollup": "0xfb209827c58283535b744575e11953dcc4bead88",
@@ -105,8 +98,7 @@
     "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://goerli-rollup.arbitrum.io/rpc",
     "feed-url": "wss://goerli-rollup.arbitrum.io/feed",
-    "chain-config":
-    {
+    "chain-config": {
       "chainId": 421613,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -122,13 +114,11 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique":
-      {
+      "clique": {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum":
-      {
+      "arbitrum": {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": false,
         "DataAvailabilityCommittee": false,
@@ -137,8 +127,7 @@
         "GenesisBlockNum": 0
       }
     },
-    "rollup":
-    {
+    "rollup": {
       "bridge": "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
       "inbox": "0x6bebc4925716945d46f0ec336d5c2564f419682c",
       "rollup": "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
@@ -150,8 +139,7 @@
   },
   {
     "chain-name": "arb-dev-test",
-    "chain-config":
-    {
+    "chain-config": {
       "chainId": 412346,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -167,13 +155,11 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique":
-      {
+      "clique": {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum":
-      {
+      "arbitrum": {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": false,
@@ -185,8 +171,7 @@
   },
   {
     "chain-name": "anytrust-dev-test",
-    "chain-config":
-    {
+    "chain-config": {
       "chainId": 412347,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -202,13 +187,11 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique":
-      {
+      "clique": {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum":
-      {
+      "arbitrum": {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": true,
@@ -225,8 +208,7 @@
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
-    "chain-config":
-    {
+    "chain-config": {
       "chainId": 421614,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -242,13 +224,11 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique":
-      {
+      "clique": {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum":
-      {
+      "arbitrum": {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": false,
         "DataAvailabilityCommittee": false,
@@ -257,8 +237,7 @@
         "GenesisBlockNum": 0
       }
     },
-    "rollup":
-    {
+    "rollup": {
       "bridge": "0x38f918D0E9F1b721EDaA41302E399fa1B79333a9",
       "inbox": "0xaAe29B0366299461418F5324a79Afc425BE5ae21",
       "sequencer-inbox": "0x6c97864CE4bEf387dE0b3310A44230f7E3F1be0D",
