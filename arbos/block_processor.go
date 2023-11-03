@@ -327,6 +327,11 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			// Additional transaction validity check
+			if err = extraTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info, result); err != nil {
+				return nil, nil, err
+			}
+
 			return receipt, result, nil
 		})()
 
