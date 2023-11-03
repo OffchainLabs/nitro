@@ -113,7 +113,7 @@ build-wasm-bin: $(replay_wasm)
 
 build-solidity: .make/solidity
 
-contracts: .make/solgen
+contracts: .make/solgen .make/generate-hotshot-binding
 	@printf $(done)
 
 format fmt: .make/fmt
@@ -331,6 +331,14 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	mkdir -p solgen/go/
 	go run solgen/gen.go
 	@touch $@
+
+.make/generate-hotshot-binding:
+	forge build --root espresso-sequencer --out ../out --extra-output-files abi
+	mkdir -p solgen/go/espressogen/hotshot
+	mv ./out/HotShot.sol/HotShot.abi.json ./solgen/go/espressogen/hotshot
+	rm -rf out
+	abigen --abi ./solgen/go/espressogen/hotshot/HotShot.abi.json --pkg hotshot --out ./solgen/go/espressogen/hotshot/hotshot.go
+	rm ./solgen/go/espressogen/hotshot/HotShot.abi.json
 
 .make/solidity: $(DEP_PREDICATE) contracts/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd contracts build
