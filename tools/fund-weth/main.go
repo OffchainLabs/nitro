@@ -84,12 +84,12 @@ func main() {
 		depositAmount := new(big.Int).SetUint64(*gweiToDeposit * params.GWei)
 		txOpts.Value = depositAmount
 		if _, err = retry.UntilSucceeds[bool](ctx, func() (bool, error) {
-			tx, err := tokenBindings.Deposit(txOpts)
-			if err != nil {
-				return false, err
+			tx, err2 := tokenBindings.Deposit(txOpts)
+			if err2 != nil {
+				return false, err2
 			}
-			if err = challenge_testing.WaitForTx(ctx, client, tx); err != nil {
-				return false, err
+			if err2 = challenge_testing.WaitForTx(ctx, client, tx); err2 != nil {
+				return false, err2
 			}
 			return true, nil
 		}); err != nil {
@@ -99,24 +99,24 @@ func main() {
 		maxUint256 := new(big.Int)
 		maxUint256.Exp(big.NewInt(2), big.NewInt(256), nil).Sub(maxUint256, big.NewInt(1))
 		if _, err = retry.UntilSucceeds[bool](ctx, func() (bool, error) {
-			tx, err := tokenBindings.Approve(txOpts, rollupAddr, maxUint256)
-			if err != nil {
-				return false, err
+			tx, err2 := tokenBindings.Approve(txOpts, rollupAddr, maxUint256)
+			if err2 != nil {
+				return false, err2
 			}
-			if err = challenge_testing.WaitForTx(ctx, client, tx); err != nil {
-				return false, err
+			if err2 = challenge_testing.WaitForTx(ctx, client, tx); err2 != nil {
+				return false, err2
 			}
 			return true, nil
 		}); err != nil {
 			panic(err)
 		}
 		if _, err = retry.UntilSucceeds[bool](ctx, func() (bool, error) {
-			tx, err := tokenBindings.Approve(txOpts, chalManagerAddr, maxUint256)
-			if err != nil {
-				return false, nil
+			tx, err2 := tokenBindings.Approve(txOpts, chalManagerAddr, maxUint256)
+			if err2 != nil {
+				return false, err2
 			}
-			if err = challenge_testing.WaitForTx(ctx, client, tx); err != nil {
-				return false, err
+			if err2 = challenge_testing.WaitForTx(ctx, client, tx); err2 != nil {
+				return false, err2
 			}
 			return true, nil
 		}); err != nil {

@@ -21,6 +21,10 @@ import (
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error {
+	if m.challengedAssertions.Has(id) {
+		srvlog.Info(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
+		return nil
+	}
 	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
@@ -62,6 +66,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		"fromBatch":     edgeTrackerAssertionInfo.FromBatch,
 		"toBatch":       edgeTrackerAssertionInfo.ToBatch,
 	})
+	m.challengedAssertions.Insert(id)
 	return nil
 }
 
