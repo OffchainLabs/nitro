@@ -480,6 +480,7 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NAT = nil
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 	return &stackConf
 }
 
@@ -492,6 +493,7 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 
