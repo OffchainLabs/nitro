@@ -131,7 +131,7 @@
 
                 foundry-bin
 
-                # geth node
+                # provides abigen
                 go-ethereum
               ] ++ lib.optionals stdenv.isDarwin [
                 darwin.libobjc
