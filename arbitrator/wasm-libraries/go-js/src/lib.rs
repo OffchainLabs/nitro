@@ -48,7 +48,7 @@ impl JsState {
             .id_to_value(object)
             .assume_object("valueGet target")
             .get(field);
-        self.values.value_to_id(value)
+        self.values.assign_id(value)
     }
 
     pub fn value_set(&self, object: JsValueId, field: &str, new_value: JsValueId) {
@@ -74,7 +74,7 @@ impl JsState {
             eprintln!("Go attempted to index out-of-bounds index {index} on {source:?}");
             JsValue::Undefined
         });
-        self.values.value_to_id(result)
+        self.values.assign_id(result)
     }
 
     pub fn value_set_index(&self, source: JsValueId, index: usize, new_value: JsValueId) {
@@ -123,7 +123,7 @@ impl JsState {
         };
         let args = args.iter().map(|x| self.values.id_to_value(*x)).collect();
         let result = function.call(env, this, args)?;
-        Ok(self.values.value_to_id(result))
+        Ok(self.values.assign_id(result))
     }
 
     pub fn value_new<'a>(
@@ -138,11 +138,11 @@ impl JsState {
         };
         let args = args.iter().map(|x| self.values.id_to_value(*x)).collect();
         let result = function.call(env, JsValue::Undefined, args)?;
-        Ok(self.values.value_to_id(result))
+        Ok(self.values.assign_id(result))
     }
 
     pub fn string_val(&self, s: String) -> JsValueId {
-        self.values.value_to_id(JsValue::String(Arc::new(s)))
+        self.values.assign_id(JsValue::String(Arc::new(s)))
     }
 
     pub fn value_length(&self, array: JsValueId) -> usize {

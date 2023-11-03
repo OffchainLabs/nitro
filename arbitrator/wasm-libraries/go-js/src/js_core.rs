@@ -51,7 +51,7 @@ impl JsObject {
     pub fn get_path(&self, path: &[impl AsRef<str>]) -> JsValue {
         let mut value = JsValue::Object(self.clone());
 
-        for key in path.into_iter().map(|x| x.as_ref()) {
+        for key in path.iter().map(|x| x.as_ref()) {
             if key.is_empty() {
                 continue; // skip single periods
             }
@@ -149,7 +149,9 @@ enum JsValueEquality<'a> {
 }
 
 impl JsValue {
-    /// We follow the JS [SameValueZero](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness#same-value-zero_equality) rule of equality.
+    /// We follow the JS [`SameValueZero`][SameValueZero] rule of equality.
+    ///
+    /// [SameValueZero]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness#same-value-zero_equality
     fn equality(&self) -> JsValueEquality<'_> {
         match self {
             JsValue::Undefined => JsValueEquality::AlwaysEqual,
@@ -185,6 +187,9 @@ impl JsValue {
 }
 
 impl PartialEq for JsValue {
+    /// We follow the JS [`SameValueZero`][SameValueZero] rule of equality.
+    ///
+    /// [SameValueZero]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness#same-value-zero_equality
     fn eq(&self, other: &Self) -> bool {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             return false;
@@ -355,8 +360,8 @@ impl JsValuePool {
         value.clone()
     }
 
-    /// Warning: this increments the reference count for the returned id
-    pub fn value_to_id(&self, value: JsValue) -> JsValueId {
+    /// Assigns an id for the given value, incrementing its reference count if already present.
+    pub fn assign_id(&self, value: JsValue) -> JsValueId {
         if let JsValue::Number(n) = value {
             if n != 0. && !n.is_nan() {
                 return JsValueId(n.to_bits());
