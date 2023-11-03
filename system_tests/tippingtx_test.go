@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -108,12 +107,12 @@ func TestTippingTxJsonMarshalling(t *testing.T) {
 func TestTippingTxJsonRPC(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	// make sure ArbOSVersion supports ArbitrumSubtypedTx
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumTippingTx, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// make sure ArbOSVersion supports ArbitrumTippingTx
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumTippingTx, builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	l2client, l2info := builder.L2.Client, builder.L2Info
 
 	l2info.GenerateAccount("User1")
 	l2info.GenerateAccount("User2")
@@ -151,12 +150,12 @@ func TestTippingTxTipPaid(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	// make sure ArbOSVersion supports ArbitrumSubtypedTx
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumTippingTx, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// make sure ArbOSVersion supports ArbitrumTippingTx
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumTippingTx, builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	l2client, l2info := builder.L2.Client, builder.L2Info
 
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
@@ -238,11 +237,11 @@ func assertEqualTx(t *testing.T, a, b *types.Transaction) {
 func testSubtypedTxOldArbosVersion(t *testing.T, version uint64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = version
-	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = version
+	cleanup := builder.Build(t)
+	defer cleanup()
+	l2client, l2info := builder.L2.Client, builder.L2Info
 
 	baseFee := GetBaseFee(t, l2client, ctx)
 	tipCap := arbmath.BigMulByUint(baseFee, 2)
