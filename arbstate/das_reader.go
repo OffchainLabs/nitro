@@ -17,11 +17,16 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/das/eigenda"
 )
 
 type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
+}
+
+type EigenDADataAvailabilityReader interface {
+	eigenda.DataAvailabilityReader
 }
 
 var ErrHashMismatch = errors.New("result does not match expected hash")
@@ -43,6 +48,10 @@ const ZeroheavyMessageHeaderFlag byte = 0x20
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
+// EigendaMessageHeaderFlag indicates that this data is a Blob Ref
+// which will be used to retrieve data from EigenDA
+const EigendaMessageHeaderFlag byte = 0x0d
+
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
 }
@@ -57,6 +66,10 @@ func IsZeroheavyEncodedHeaderByte(header byte) bool {
 
 func IsBrotliMessageHeaderByte(b uint8) bool {
 	return b == BrotliMessageHeaderByte
+}
+
+func IsEigendaMessageHeaderByte(header byte) bool {
+	return (EigendaMessageHeaderFlag & header) > 0
 }
 
 type DataAvailabilityCertificate struct {
