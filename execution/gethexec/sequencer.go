@@ -5,7 +5,6 @@ package gethexec
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -68,9 +66,10 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	Espresso                    bool            `koanf:"espresso" reload:"hot"`
-	HotShotUrl                  string          `koanf:"hotshot-url" reload:"hot"`
-	EspressoNamespace           uint64          `koanf:"espresso-namespace" reload:"hot"`
+	// Espresso specific flags
+	Espresso          bool   `koanf:"espresso"`
+	HotShotUrl        string `koanf:"hotshot-url"`
+	EspressoNamespace uint64 `koanf:"espresso-namespace"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -121,9 +120,6 @@ var TestSequencerConfig = SequencerConfig{
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
-	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "if true, l2 transactions will be fetched from espresso sequencer")
-	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
-	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
@@ -135,6 +131,9 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
+	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "if true, transactions will be fetched from the espresso sequencer network")
+	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
+	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
 }
 
 type txQueueItem struct {
@@ -276,22 +275,6 @@ func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
 	}
 }
 
-type HotShotState struct {
-	client          espresso.Client
-	nextSeqBlockNum uint64
-}
-
-func NewHotShotState(log log.Logger, url string) *HotShotState {
-	return &HotShotState{
-		client:          *espresso.NewClient(log, url),
-		nextSeqBlockNum: 0,
-	}
-}
-
-func (s *HotShotState) advance() {
-	s.nextSeqBlockNum += 1
-}
-
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
@@ -315,14 +298,10 @@ type Sequencer struct {
 	activeMutex sync.Mutex
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
-
-	// hotshot state
-	hotShotState *HotShotState
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
 	config := configFetcher()
-	usingEspresso := config.Espresso
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -351,9 +330,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
 	}
 	execEngine.EnableReorgSequencing()
-	if usingEspresso {
-		s.hotShotState = NewHotShotState(log.New(), config.HotShotUrl)
-	}
 	return s, nil
 }
 
@@ -426,7 +402,6 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	defer cancelFunc()
 
 	// Just to be safe, make sure we don't run over twice the queue timeout
-
 	abortCtx, cancel := ctxWithTimeout(parentCtx, queueTimeout*2)
 	defer cancel()
 
@@ -743,74 +718,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 }
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
-	usingEspresso := s.config().Espresso
-	if usingEspresso {
-		return s.createBlockEspresso(ctx)
-	}
-	return s.createBlockDefault(ctx)
-}
-
-func (s *Sequencer) createBlockEspresso(ctx context.Context) (returnValue bool) {
-	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
-	log.Info("Attempting to sequence Espresso block", "block_num", nextSeqBlockNum)
-	header, err := s.hotShotState.client.FetchHeader(ctx, nextSeqBlockNum)
-	namespace := s.config().EspressoNamespace
-	if err != nil {
-		log.Warn("Unable to fetch header for block number", "block_num", nextSeqBlockNum, "err", err)
-		return false
-	}
-	arbTxns, err := s.hotShotState.client.FetchTransactionsInBlock(ctx, nextSeqBlockNum, &header, namespace)
-	if err != nil {
-		log.Error("Error fetching transactions", "err", err)
-		return false
-
-	}
-	var txes types.Transactions
-	for _, tx := range arbTxns.Transactions {
-		var out types.Transaction
-		if err := json.Unmarshal(tx, &out); err != nil {
-			log.Error("Failed to serialize")
-			return false
-		}
-		txes = append(txes, &out)
-
-	}
-
-	// TODO: use hotshot block num?
-	timestamp := time.Now().Unix()
-	s.L1BlockAndTimeMutex.Lock()
-	l1Block := s.l1BlockNumber
-	s.L1BlockAndTimeMutex.Unlock()
-
-	// justification := arbostypes.EspressoBlockJustification{
-	// 	Header: header,
-	// 	Proof:  arbTxns.Proof,
-	// }
-
-	arbHeader := &arbostypes.L1IncomingMessageHeader{
-		Kind:        arbostypes.L1MessageType_L2Message,
-		Poster:      l1pricing.BatchPosterAddress,
-		BlockNumber: l1Block,
-		Timestamp:   uint64(timestamp),
-		RequestId:   nil,
-		L1BaseFee:   nil,
-		// EspressoJustification: &justification,
-	}
-
-	hooks := s.makeSequencingHooks()
-	_, err = s.execEngine.SequenceTransactions(arbHeader, txes, hooks)
-	if err != nil {
-		log.Error("Sequencing error for block number", "block_num", nextSeqBlockNum, "err", err)
-		return false
-	}
-
-	s.hotShotState.advance()
-
-	return true
-
-}
-
-func (s *Sequencer) createBlockDefault(ctx context.Context) (returnValue bool) {
 	var queueItems []txQueueItem
 	var totalBatchSize int
 
@@ -1070,14 +977,14 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config().MaxBlockSpeed * 10)
+		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 		madeBlock := s.createBlock(ctx)
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-			return 0
+			return time.Until(nextBlock)
 		}
 		// If we didn't make a block, try again immediately.
-		return time.Until(nextBlock)
+		return 0
 	})
 
 	return nil
