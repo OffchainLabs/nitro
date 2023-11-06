@@ -163,13 +163,21 @@ func CreateExecutionNode(
 		}
 	}
 
-	if config.Sequencer.Enable {
+	if config.Sequencer.Enable && !config.Sequencer.Espresso {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
 		if err != nil {
 			return nil, err
 		}
 		txPublisher = sequencer
+	} else if config.Sequencer.Enable && config.Sequencer.Espresso {
+		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
+		espressoSequencer, err := NewEspressoSequencer(execEngine, seqConfigFetcher)
+		if err != nil {
+			return nil, err
+		}
+		txPublisher = espressoSequencer
+
 	} else {
 		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
