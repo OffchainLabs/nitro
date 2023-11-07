@@ -20,7 +20,7 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/EspressoSystems/nitro-testnode
-        branch = integration
+	branch = integration
 [submodule "espresso-sequencer"]
 	path = espresso-sequencer
 	url = https://github.com/EspressoSystems/espresso-sequencer.git

@@ -281,6 +281,7 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 
 type Config struct {
 	Sequencer           bool                        `koanf:"sequencer"`
+	Espresso            bool                        `koanf:"espresso"`
 	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
@@ -299,6 +300,9 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
+	if c.Espresso && !c.Sequencer {
+		return errors.New("cannot enable espresso without enabling sequencer")
+	}
 	if c.ParentChainReader.Enable && c.Sequencer && !c.DelayedSequencer.Enable {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
@@ -620,7 +624,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	} else if config.Sequencer && !config.Dangerous.NoSequencerCoordinator {
+	} else if config.Sequencer && !config.Dangerous.NoSequencerCoordinator && !config.Espresso {
 		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-sequencer-coordinator set")
 	}
 	dbs := []ethdb.Database{arbDb}
