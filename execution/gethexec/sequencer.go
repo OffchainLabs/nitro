@@ -66,7 +66,10 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	Espresso                    bool            `koanf:"espresso" reload:"hot"`
+	// Espresso specific flags
+	Espresso          bool   `koanf:"espresso"`
+	HotShotUrl        string `koanf:"hotshot-url"`
+	EspressoNamespace uint64 `koanf:"espresso-namespace"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -117,7 +120,6 @@ var TestSequencerConfig = SequencerConfig{
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
-	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "if true, l2 transactions will be fetched from espresso sequencer")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
@@ -129,6 +131,9 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
+	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "if true, transactions will be fetched from the espresso sequencer network")
+	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
+	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
 }
 
 type txQueueItem struct {
@@ -713,18 +718,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 }
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
-	usingEspresso := s.config().Espresso
-	if usingEspresso {
-		return s.createBlockEspresso(ctx)
-	}
-	return s.createBlockDefault(ctx)
-}
-
-func (s *Sequencer) createBlockEspresso(ctx context.Context) (returnValue bool) {
-	return false
-}
-
-func (s *Sequencer) createBlockDefault(ctx context.Context) (returnValue bool) {
 	var queueItems []txQueueItem
 	var totalBatchSize int
 
