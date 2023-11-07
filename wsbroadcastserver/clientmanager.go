@@ -172,7 +172,11 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 	cm.broadcastChan <- bm
 }
 
-func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
+func (cm *ClientManager) doBroadcast(bfm *m.BroadcastFeedMessage) ([]*ClientConnection, error) {
+	bm := &m.BroadcastMessage{
+		Version:  1,
+		Messages: []*m.BroadcastFeedMessage{bfm},
+	}
 	if err := cm.backlog.Append(bm); err != nil {
 		return nil, err
 	}
@@ -207,8 +211,18 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 				continue
 			}
 		}
+
+		if uint64(bfm.SequenceNumber) <= client.LastSentSeqNum.Load() {
+			log.Warn("client has already sent message with this sequence number, skipping the message", "client", client.Name, "sequence number", bfm.SequenceNumber)
+			continue
+		}
+
+		m := message{
+			sequenceNumber: bfm.SequenceNumber,
+			data:           data,
+		}
 		select {
-		case client.out <- data:
+		case client.out <- m:
 		default:
 			// Queue for client too backed up, disconnect instead of blocking on channel send
 			sendQueueTooLargeCount++
@@ -327,8 +341,10 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				}
 			case bm := <-cm.broadcastChan:
 				var err error
-				clientDeleteList, err = cm.doBroadcast(bm)
-				logError(err, "failed to do broadcast")
+				for _, msg := range bm.Messages {
+					clientDeleteList, err = cm.doBroadcast(msg)
+					logError(err, "failed to do broadcast")
+				}
 			case <-pingTimer.C:
 				clientDeleteList = cm.verifyClients()
 				pingTimer.Reset(cm.config().Ping)

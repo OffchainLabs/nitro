@@ -19,6 +19,7 @@ var (
 
 type Backlog interface {
 	Append(*m.BroadcastMessage) error
+	Get(uint64, uint64) (*m.BroadcastMessage, error)
 	Count() uint64
 	Lookup(uint64) (BacklogSegment, error)
 }
@@ -91,9 +92,8 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 	return nil
 }
 
-// get reads messages from the given start to end MessageIndex. It was created
-// for the original implementation of the backlog but currently is not used.
-func (b *backlog) get(start, end uint64) (*m.BroadcastMessage, error) {
+// Get reads messages from the given start to end MessageIndex.
+func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {

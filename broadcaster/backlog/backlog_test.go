@@ -267,7 +267,7 @@ func TestGetEmptyBacklog(t *testing.T) {
 		t.Fatalf("error creating dummy backlog: %s", err)
 	}
 
-	_, err = b.get(1, 2)
+	_, err = b.Get(1, 2)
 	if !errors.Is(err, errOutOfBounds) {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -354,7 +354,7 @@ func TestGet(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			bm, err := b.get(tc.start, tc.end)
+			bm, err := b.Get(tc.start, tc.end)
 			if !errors.Is(err, tc.expectedErr) {
 				t.Fatalf("unexpected error: %s", err)
 			}
@@ -402,7 +402,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	go func(t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range []uint64{42, 43, 44, 45, 46, 47} {
-			bm, err := b.get(i, i+1)
+			bm, err := b.Get(i, i+1)
 			errs <- err
 			if err != nil {
 				return

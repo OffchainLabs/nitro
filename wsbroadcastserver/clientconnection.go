@@ -26,6 +26,11 @@ import (
 
 var errContextDone = errors.New("context done")
 
+type message struct {
+	data           []byte
+	sequenceNumber arbutil.MessageIndex
+}
+
 // ClientConnection represents client connection.
 type ClientConnection struct {
 	stopwaiter.StopWaiter
@@ -39,11 +44,13 @@ type ClientConnection struct {
 	Name            string
 	clientManager   *ClientManager
 	requestedSeqNum arbutil.MessageIndex
+	LastSentSeqNum  atomic.Uint64
 
 	lastHeardUnix int64
-	out           chan []byte
+	out           chan message
 	backlog       backlog.Backlog
 	registered    chan bool
+	backlogSent   bool
 
 	compression bool
 	flateReader *wsflate.Reader
@@ -70,12 +77,13 @@ func NewClientConnection(
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
-		out:             make(chan []byte, clientManager.config().MaxSendQueue),
+		out:             make(chan message, clientManager.config().MaxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
 		delay:           delay,
 		backlog:         bklg,
 		registered:      make(chan bool, 1),
+		backlogSent:     false,
 	}
 }
 
@@ -87,41 +95,57 @@ func (cc *ClientConnection) Compression() bool {
 	return cc.compression
 }
 
-func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) (backlog.BacklogSegment, error) {
+func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) error {
 	var prevSegment backlog.BacklogSegment
 	for !backlog.IsBacklogSegmentNil(segment) {
+		// must get the next segment before the messages to be sent are
+		// retrieved ensures another segment is not added in between calls.
+		prevSegment = segment
+		segment = segment.Next()
+
 		select {
 		case <-ctx.Done():
-			return nil, errContextDone
+			return errContextDone
 		default:
 		}
 
+		msgs := prevSegment.Messages()
 		bm := &m.BroadcastMessage{
 			Version:  1, // TODO(clamb): I am unsure if it is correct to hard code the version here like this? It seems to be done in other places though
-			Messages: segment.Messages(),
+			Messages: msgs,
 		}
-		notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
+		err := cc.writeBroadcastMessage(bm)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		data := []byte{}
-		if cc.compression {
-			data = compressed.Bytes()
-		} else {
-			data = notCompressed.Bytes()
-		}
-		err = cc.writeRaw(data)
-		if err != nil {
-			return nil, err
-		}
-		log.Debug("segment sent to client", "client", cc.Name, "sentCount", len(bm.Messages))
-
-		prevSegment = segment
-		segment = segment.Next()
+		// do not use prevSegment.End() method, must figure out the last
+		// sequence number from the messages that were actually sent in case
+		// more messages are added.
+		end := uint64(msgs[len(msgs)-1].SequenceNumber)
+		cc.LastSentSeqNum.Store(end)
+		log.Debug("segment sent to client", "client", cc.Name, "sentCount", len(bm.Messages), "lastSentSeqNum", end)
 	}
-	return prevSegment, nil
+	return nil
+}
 
+func (cc *ClientConnection) writeBroadcastMessage(bm *m.BroadcastMessage) error {
+	notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
+	if err != nil {
+		return err
+	}
+
+	data := []byte{}
+	if cc.compression {
+		data = compressed.Bytes()
+	} else {
+		data = notCompressed.Bytes()
+	}
+	err = cc.writeRaw(data)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {
@@ -147,7 +171,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			cc.clientManager.Remove(cc)
 			return
 		}
-		segment, err = cc.writeBacklog(ctx, segment)
+		err = cc.writeBacklog(ctx, segment)
 		if errors.Is(err, errContextDone) {
 			return
 		} else if err != nil {
@@ -167,29 +191,32 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			log.Error("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)
 		}
 
-		// The backlog may have had more messages added to it whilst the
-		// ClientConnection registers with the ClientManager, therefore the
-		// last segment must be sent again. This may result in duplicate
-		// messages being sent to the client but the client should handle any
-		// duplicate messages. The ClientConnection can not be registered
-		// before the backlog is sent as the backlog may be very large. This
-		// could result in the out channel running out of space.
-		_, err = cc.writeBacklog(ctx, segment)
-		if errors.Is(err, errContextDone) {
-			return
-		} else if err != nil {
-			logWarn(err, "error writing messages from backlog")
-			cc.clientManager.Remove(cc)
-			return
-		}
-
 		// broadcast any new messages sent to the out channel
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case data := <-cc.out:
-				err := cc.writeRaw(data)
+			case msg := <-cc.out:
+				expSeqNum := cc.LastSentSeqNum.Load() + 1
+				if !cc.backlogSent && uint64(msg.sequenceNumber) > expSeqNum {
+					catchupSeqNum := uint64(msg.sequenceNumber) - 1
+					bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
+					if err != nil {
+						logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))
+						cc.clientManager.Remove(cc)
+						return
+					}
+
+					err = cc.writeBroadcastMessage(bm)
+					if err != nil {
+						logWarn(err, fmt.Sprintf("error writing messages %d to %d from backlog", expSeqNum, catchupSeqNum))
+						cc.clientManager.Remove(cc)
+						return
+					}
+				}
+				cc.backlogSent = true
+
+				err := cc.writeRaw(msg.data)
 				if err != nil {
 					logWarn(err, "error writing data to client")
 					cc.clientManager.Remove(cc)
@@ -246,23 +273,6 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 	var err error
 	data, opCode, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
 	return data, opCode, err
-}
-
-func (cc *ClientConnection) Write(bm *m.BroadcastMessage) error {
-	cc.ioMutex.Lock()
-	defer cc.ioMutex.Unlock()
-
-	notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
-	if err != nil {
-		return err
-	}
-
-	if cc.compression {
-		cc.out <- compressed.Bytes()
-	} else {
-		cc.out <- notCompressed.Bytes()
-	}
-	return nil
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {
