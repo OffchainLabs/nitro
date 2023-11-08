@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -69,6 +70,7 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+	FetchHotShotCommitment(blockHeight uint64) (espresso.Commitment, error)
 }
 
 type L1ReaderInterface interface {
@@ -259,6 +261,7 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
+	usingEspresso := v.config.Espresso
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
@@ -304,6 +307,13 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			if err != nil {
 				return err
 			}
+		}
+		if usingEspresso {
+			_, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
+			if err != nil {
+				return fmt.Errorf("failed to fetch hotshot commitment for batch number %d", batch.Number)
+			}
+			// TODO construct preimage here and add to validation entry
 		}
 	}
 
