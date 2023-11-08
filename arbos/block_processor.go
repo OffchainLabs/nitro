@@ -130,6 +130,7 @@ func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
+	lastHotShotHeader *espresso.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
@@ -159,7 +160,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, lastHotShotHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -169,6 +170,7 @@ func ProduceBlockAdvanced(
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
+	lastHotShotHeader *espresso.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
@@ -194,14 +196,17 @@ func ProduceBlockAdvanced(
 
 	// Espresso-specific validation
 	if chainConfig.Espresso {
-		var roots = []*espresso.NmtRoot{&l1Header.BlockJustification.Header.TransactionsRoot}
+		hotshotHeader := l1Header.BlockJustification.Header
+		if lastHotShotHeader != &hotshotHeader {
+			return nil, nil, errors.New("invalid hotshot header")
+		}
+		var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
 		var proofs = []*espresso.NmtProof{&l1Header.BlockJustification.Proof}
 		var txs []espresso.Bytes
 		// TOOD: convert txes
 		err := espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
 		if err != nil {
 			return nil, nil, errors.New("failed to validate namespace proof)")
-
 		}
 	}
 
