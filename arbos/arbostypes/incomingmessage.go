@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -34,13 +35,19 @@ const (
 
 const MaxL2MessageSize = 256 * 1024
 
+type EspressoBlockJustification struct {
+	Header espresso.Header
+	Proof  espresso.NmtProof
+}
+
 type L1IncomingMessageHeader struct {
-	Kind        uint8          `json:"kind"`
-	Poster      common.Address `json:"sender"`
-	BlockNumber uint64         `json:"blockNumber"`
-	Timestamp   uint64         `json:"timestamp"`
-	RequestId   *common.Hash   `json:"requestId" rlp:"nilList"`
-	L1BaseFee   *big.Int       `json:"baseFeeL1"`
+	Kind               uint8          `json:"kind"`
+	Poster             common.Address `json:"sender"`
+	BlockNumber        uint64         `json:"blockNumber"`
+	Timestamp          uint64         `json:"timestamp"`
+	RequestId          *common.Hash   `json:"requestId" rlp:"nilList"`
+	L1BaseFee          *big.Int       `json:"baseFeeL1"`
+	BlockJustification *EspressoBlockJustification
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -228,6 +235,7 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 			timestamp,
 			&requestId,
 			baseFeeL1.Big(),
+			nil,
 		},
 		data,
 		nil,

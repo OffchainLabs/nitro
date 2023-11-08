@@ -109,7 +109,10 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 		Timestamp:   header.Timestamp,
 		RequestId:   nil,
 		L1BaseFee:   nil,
-		// TODO: add justification https://github.com/EspressoSystems/espresso-sequencer/issues/733
+		BlockJustification: &arbostypes.EspressoBlockJustification{
+			Header: header,
+			Proof:  arbTxns.Proof,
+		},
 	}
 
 	hooks := s.makeSequencingHooks()
