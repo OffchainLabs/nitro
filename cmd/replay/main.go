@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -43,6 +44,19 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	if err != nil {
 		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
+	return header
+}
+
+func getHotShotHeaderByHash(hash common.Hash) *espresso.Header {
+	enc, err := wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	if err != nil {
+		return nil
+	}
+	var header &espresso.Header
+	if err := json.Unmarshal(header, &enc); err != nil {
+		panic(fmt.Errorf("Error deserializing espresso header preimage"))
+	}
+
 	return header
 }
 
@@ -152,6 +166,8 @@ func main() {
 	db := state.NewDatabase(raw)
 
 	lastBlockHash := wavmio.GetLastBlockHash()
+	lastHotShotHeaderHash := wavmio.GetLastHotShotHeaderHash()
+	lastHotShotHeader := getHotShotHeaderByHash(lastHotShotHeaderHash)
 
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
@@ -238,7 +254,7 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, lastHotShotHeader, statedb, chainContext, chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
 		}

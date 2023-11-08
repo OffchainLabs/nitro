@@ -33,14 +33,15 @@ func (i *arrayFlags) Set(value string) error {
 }
 
 var (
-	seqMsg             []byte
-	seqMsgPos          uint64
-	posWithinMsg       uint64
-	delayedMsgs        [][]byte
-	delayedMsgFirstPos uint64
-	lastBlockHash      common.Hash
-	preimages          map[common.Hash][]byte
-	seqAdvanced        uint64
+	seqMsg                []byte
+	seqMsgPos             uint64
+	posWithinMsg          uint64
+	delayedMsgs           [][]byte
+	delayedMsgFirstPos    uint64
+	lastBlockHash         common.Hash
+	lastHotShotHeaderHash common.Hash
+	preimages             map[common.Hash][]byte
+	seqAdvanced           uint64
 )
 
 func parsePreimageBytes(path string) {
@@ -115,6 +116,10 @@ func StubFinal() {
 
 func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
+}
+
+func GetLastHotShotHeaderHash() (hash common.Hash) {
+	return lastHotShotHeaderHash
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {
