@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -403,7 +404,7 @@ func (b *Contract) DataPoster() *dataposter.DataPoster {
 type L1ReaderInterface interface {
 	Client() arbutil.L1Interface
 	Subscribe(bool) (<-chan *types.Header, func())
-	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+	WaitForTxApproval(tx *types.Transaction) containers.PromiseInterface[*types.Receipt]
 	UseFinalityData() bool
 }
 
@@ -456,7 +457,7 @@ func GetValidatorWalletContract(
 		return nil, err
 	}
 
-	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+	receipt, err := l1Reader.WaitForTxApproval(tx).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

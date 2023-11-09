@@ -148,7 +148,7 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 
 	if mr.seqCoordinator == nil {
 		mr.lastMaintenance = now
-		mr.runMaintenance()
+		mr.runMaintenance(ctx)
 		return time.Minute
 	}
 
@@ -161,14 +161,14 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 	// Avoid lockout for the sequencer and try to handoff.
 	if mr.seqCoordinator.AvoidLockout(ctx) && mr.seqCoordinator.TryToHandoffChosenOne(ctx) {
 		mr.lastMaintenance = now
-		mr.runMaintenance()
+		mr.runMaintenance(ctx)
 	}
 	defer mr.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
 
 	return time.Minute
 }
 
-func (mr *MaintenanceRunner) runMaintenance() {
+func (mr *MaintenanceRunner) runMaintenance(ctx context.Context) {
 	log.Info("Compacting databases (this may take a while...)")
 	results := make(chan error, len(mr.dbs))
 	expected := 0
@@ -181,7 +181,8 @@ func (mr *MaintenanceRunner) runMaintenance() {
 	}
 	expected++
 	go func() {
-		results <- mr.exec.Maintenance()
+		_, err := mr.exec.Maintenance().Await(ctx)
+		results <- err
 	}()
 	for i := 0; i < expected; i++ {
 		err := <-results

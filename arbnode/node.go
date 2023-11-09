@@ -45,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -56,7 +57,7 @@ func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	_, err = l1Reader.WaitForTxApproval(ctx, tx)
+	_, err = l1Reader.WaitForTxApproval(tx).Await(ctx)
 	if err != nil {
 		return fmt.Errorf("error executing tx: %w", err)
 	}
@@ -320,7 +321,7 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := parentChainReader.WaitForTxApproval(ctx, tx)
+	receipt, err := parentChainReader.WaitForTxApproval(tx).Await(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -1184,39 +1185,39 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
-	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
+func (n *Node) FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte] {
+	return n.InboxReader.GetSequencerMessageBytes(batchNum)
 }
 
-func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, error) {
-	return n.InboxTracker.FindInboxBatchContainingMessage(message)
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise[uint64](n.InboxTracker.FindInboxBatchContainingMessage(message))
 }
 
-func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
 }
 
-func (n *Node) SyncProgressMap() map[string]interface{} {
+func (n *Node) SyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
 	return n.SyncMonitor.SyncProgressMap()
 }
 
-func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
+func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
 	return n.SyncMonitor.SyncTargetMessageCount()
 }
 
 // TODO: switch from pulling to pushing safe/finalized
-func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetSafeMsgCount(ctx)
+func (n *Node) GetSafeMsgCount() containers.PromiseInterface[arbutil.MessageIndex] {
+	return n.InboxReader.GetSafeMsgCount()
 }
 
-func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetFinalizedMsgCount(ctx)
+func (n *Node) GetFinalizedMsgCount() containers.PromiseInterface[arbutil.MessageIndex] {
+	return n.InboxReader.GetFinalizedMsgCount()
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
 	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
 }
 
-func (n *Node) ExpectChosenSequencer() error {
+func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
 	return n.TxStreamer.ExpectChosenSequencer()
 }

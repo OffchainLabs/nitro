@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
@@ -69,13 +70,13 @@ type TransactionStreamerInterface interface {
 }
 
 type InboxReaderInterface interface {
-	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+	GetSequencerMessageBytes(seqNum uint64) containers.PromiseInterface[[]byte]
 }
 
 type L1ReaderInterface interface {
 	Client() arbutil.L1Interface
 	Subscribe(bool) (<-chan *types.Header, func())
-	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+	WaitForTxApproval(tx *types.Transaction) containers.PromiseInterface[*types.Receipt]
 	UseFinalityData() bool
 }
 
@@ -232,7 +233,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	}
 	e.Preimages = make(map[arbutil.PreimageType]map[common.Hash][]byte)
 	if e.Pos != 0 {
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
+		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg).Await(ctx)
 		if err != nil {
 			return err
 		}
@@ -331,7 +332,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	start := buildGlobalState(*prevResult, startPos)
 	end := buildGlobalState(*result, endPos)
-	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
+	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(startPos.BatchNumber).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

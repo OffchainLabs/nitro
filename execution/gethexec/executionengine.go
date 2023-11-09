@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -85,7 +86,13 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+	promise := containers.NewPromise[struct{}](nil)
+	promise.ProduceError(s.reorg(count, newMessages, oldMessages))
+	return &promise
+}
+
+func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
 	if count == 0 {
 		return errors.New("cannot reorg out genesis")
 	}
@@ -134,26 +141,23 @@ func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
 	return currentBlock, nil
 }
 
-func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return 0, err
+		return containers.NewReadyPromise[arbutil.MessageIndex](0, err)
 	}
-	return s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+	return containers.NewReadyPromise[arbutil.MessageIndex](s.BlockNumberToMessageIndex(currentHeader.Number.Uint64()))
 }
 
-func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	return s.HeadMessageNumber()
 }
 
-func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
+func (s *ExecutionEngine) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
 	currentHeader, err := s.getCurrentHeader()
-	if err != nil {
-		return 0, err
-	}
-	return currentHeader.Nonce.Uint64(), nil
+	return containers.NewReadyPromise[uint64](currentHeader.Nonce.Uint64(), err)
 }
 
 func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
@@ -243,9 +247,12 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 	}
 }
 
-func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
+func (s *ExecutionEngine) sequencerWrapper(ctx context.Context, sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
 	attempts := 0
 	for {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		s.createBlocksMutex.Lock()
 		block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
@@ -254,7 +261,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.consensus.ExpectChosenSequencer()
+		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(ctx)
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
@@ -272,8 +279,8 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
-	return s.sequencerWrapper(func() (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(ctx context.Context, header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+	return s.sequencerWrapper(ctx, func() (*types.Block, error) {
 		hooks.TxErrors = nil
 		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
 	})
@@ -341,7 +348,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
+	_, err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -356,11 +363,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	return block, nil
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
-	_, err := s.sequencerWrapper(func() (*types.Block, error) {
-		return s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](&s.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
+		_, err := s.sequencerWrapper(ctx, func() (*types.Block, error) {
+			return s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+		})
+		return struct{}{}, err
 	})
-	return err
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
@@ -385,7 +394,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
+	_, err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +456,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	batchFetcher := func(num uint64) ([]byte, error) {
-		return s.consensus.FetchBatch(s.GetContext(), num)
+		return s.consensus.FetchBatch(num).Await(s.GetContext())
 	}
 
 	block, receipts, err := arbos.ProduceBlock(
@@ -490,16 +499,24 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 	}, nil
 }
 
-func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return stopwaiter.LaunchPromiseThread[*execution.MessageResult](&s.StopWaiterSafe, func(context.Context) (*execution.MessageResult, error) {
+		return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+	})
 }
 
-func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	if !s.createBlocksMutex.TryLock() {
-		return errors.New("createBlock mutex held")
-	}
-	defer s.createBlocksMutex.Unlock()
-	return s.digestMessageWithBlockMutex(num, msg)
+func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return stopwaiter.LaunchPromiseThread[*execution.MessageResult](&s.StopWaiterSafe, func(ctx context.Context) (*execution.MessageResult, error) {
+		if !s.createBlocksMutex.TryLock() {
+			return nil, errors.New("createBlock mutex held")
+		}
+		defer s.createBlocksMutex.Unlock()
+		err := s.digestMessageWithBlockMutex(num, msg)
+		if err != nil {
+			return nil, err
+		}
+		return s.resultFromHeader(s.bc.CurrentHeader())
+	})
 }
 
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {

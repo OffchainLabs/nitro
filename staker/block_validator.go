@@ -199,19 +199,6 @@ func NewBlockValidator(
 			ret.legacyValidInfo = legacyInfo
 		}
 	}
-	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
-		genesis, err := streamer.ResultAtCount(1)
-		if err != nil {
-			return nil, err
-		}
-		ret.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
 	return ret, nil
@@ -436,7 +423,7 @@ func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, 
 	if err != nil {
 		return false, nil, 0, err
 	}
-	batch, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	batch, err := v.inboxReader.GetSequencerMessageBytes(batchNum).Await(ctx)
 	if err != nil {
 		return false, nil, 0, err
 	}
@@ -535,7 +522,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock
-	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
+	_, err := v.recorder.PrepareForRecord(pos, recordUntil).Await(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -1041,7 +1028,17 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 		return false, nil
 	}
 	if v.lastValidGS.Batch == 0 {
-		return false, errors.New("lastValid not initialized. cannot validate genesis")
+		genesis, err := v.streamer.ResultAtCount(1)
+		if err != nil {
+			log.Warn("error reading genesis from streamer", "err", err)
+			return false, nil
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
 	}
 	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
 	if err != nil {
