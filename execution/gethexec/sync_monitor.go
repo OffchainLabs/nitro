@@ -14,7 +14,7 @@ type SyncMonitorConfig struct {
 	ConsensusTimeout time.Duration `koanf:"consensus-timeout" reload:"hot"`
 }
 
-var DefaultSyncMonitorConfig = &SyncMonitorConfig{
+var DefaultSyncMonitorConfig = SyncMonitorConfig{
 	ConsensusTimeout: time.Second * 5,
 }
 

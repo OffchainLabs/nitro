@@ -96,6 +96,7 @@ var ConfigDefault = Config{
 	TxPreChecker:      DefaultTxPreCheckerConfig,
 	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
 	Caching:           DefaultCachingConfig,
+	SyncMonitor:       DefaultSyncMonitorConfig,
 	Dangerous:         DefaultDangerousConfig,
 	Forwarder:         DefaultNodeForwarderConfig,
 }
