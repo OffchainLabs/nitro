@@ -1,13 +1,16 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package validatorwallet
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -15,8 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 var validatorABI abi.ABI
@@ -36,37 +44,23 @@ func init() {
 	walletCreatedID = parsedValidatorWalletCreator.Events["WalletCreated"].ID
 }
 
-type ValidatorWalletInterface interface {
-	Initialize(context.Context) error
-	Address() *common.Address
-	AddressOrZero() common.Address
-	TxSenderAddress() *common.Address
-	RollupAddress() common.Address
-	ChallengeManagerAddress() common.Address
-	L1Client() arbutil.L1Interface
-	TestTransactions(context.Context, []*types.Transaction) error
-	ExecuteTransactions(context.Context, *ValidatorTxBuilder, common.Address) (*types.Transaction, error)
-	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
-	CanBatchTxs() bool
-	AuthIfEoa() *bind.TransactOpts
-}
-
-type ContractValidatorWallet struct {
+type Contract struct {
 	con                     *rollupgen.ValidatorWallet
-	address                 *common.Address
+	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
-	l1Reader                L1ReaderInterface
+	l1Reader                *headerreader.HeaderReader
 	auth                    *bind.TransactOpts
 	walletFactoryAddr       common.Address
 	rollupFromBlock         int64
 	rollup                  *rollupgen.RollupUserLogic
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
+	dataPoster              *dataposter.DataPoster
+	getExtraGas             func() uint64
 }
 
-var _ ValidatorWalletInterface = (*ContractValidatorWallet)(nil)
-
-func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ContractValidatorWallet, error) {
+func NewContract(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
+	getExtraGas func() uint64) (*Contract, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -79,9 +73,8 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 	if err != nil {
 		return nil, err
 	}
-	return &ContractValidatorWallet{
+	wallet := &Contract{
 		con:               con,
-		address:           address,
 		onWalletCreated:   onWalletCreated,
 		l1Reader:          l1Reader,
 		auth:              auth,
@@ -89,10 +82,15 @@ func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, roll
 		rollupAddress:     rollupAddress,
 		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
-	}, nil
+		dataPoster:        dp,
+		getExtraGas:       getExtraGas,
+	}
+	// Go complains if we make an address variable before wallet and copy it in
+	wallet.address.Store(address)
+	return wallet, nil
 }
 
-func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
+func (v *Contract) validateWallet(ctx context.Context) error {
 	if v.con == nil || v.auth == nil {
 		return nil
 	}
@@ -111,7 +109,7 @@ func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
 	return nil
 }
 
-func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
+func (v *Contract) Initialize(ctx context.Context) error {
 	err := v.populateWallet(ctx, false)
 	if err != nil {
 		return err
@@ -126,26 +124,27 @@ func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
 }
 
 // May be the nil if the wallet hasn't been deployed yet
-func (v *ContractValidatorWallet) Address() *common.Address {
-	return v.address
+func (v *Contract) Address() *common.Address {
+	return v.address.Load()
 }
 
 // May be zero if the wallet hasn't been deployed yet
-func (v *ContractValidatorWallet) AddressOrZero() common.Address {
-	if v.address == nil {
+func (v *Contract) AddressOrZero() common.Address {
+	addr := v.address.Load()
+	if addr == nil {
 		return common.Address{}
 	}
-	return *v.address
+	return *addr
 }
 
-func (v *ContractValidatorWallet) TxSenderAddress() *common.Address {
+func (v *Contract) TxSenderAddress() *common.Address {
 	if v.auth == nil {
 		return nil
 	}
 	return &v.auth.From
 }
 
-func (v *ContractValidatorWallet) From() common.Address {
+func (v *Contract) From() common.Address {
 	if v.auth == nil {
 		return common.Address{}
 	}
@@ -153,7 +152,7 @@ func (v *ContractValidatorWallet) From() common.Address {
 }
 
 // nil value == 0 value
-func (v *ContractValidatorWallet) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
+func (v *Contract) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
 	newAuth := *v.auth
 	newAuth.Context = ctx
 	newAuth.Value = value
@@ -165,15 +164,23 @@ func (v *ContractValidatorWallet) getAuth(ctx context.Context, value *big.Int) (
 	return &newAuth, nil
 }
 
-func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
+func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
 	auth, err := v.getAuth(ctx, tx.Value())
 	if err != nil {
 		return nil, err
 	}
-	return v.con.ExecuteTransactionWithGasRefunder(auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
+	data, err := validatorABI.Pack("executeTransactionWithGasRefunder", gasRefunder, tx.Data(), *tx.To(), tx.Value())
+	if err != nil {
+		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
+	}
+	gas, err := v.gasForTxData(ctx, auth, data)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data: %w", err)
+	}
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
 }
 
-func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
+func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
 	if v.con != nil {
 		return nil
 	}
@@ -183,7 +190,7 @@ func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMi
 		}
 		return nil
 	}
-	if v.address == nil {
+	if v.address.Load() == nil {
 		auth, err := v.getAuth(ctx, nil)
 		if err != nil {
 			return err
@@ -195,12 +202,12 @@ func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMi
 		if addr == nil {
 			return nil
 		}
-		v.address = addr
+		v.address.Store(addr)
 		if v.onWalletCreated != nil {
 			v.onWalletCreated(*addr)
 		}
 	}
-	con, err := rollupgen.NewValidatorWallet(*v.address, v.l1Reader.Client())
+	con, err := rollupgen.NewValidatorWallet(*v.Address(), v.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -228,8 +235,8 @@ func combineTxes(txes []*types.Transaction) ([][]byte, []common.Address, []*big.
 }
 
 // Not thread safe! Don't call this from multiple threads at the same time.
-func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder, gasRefunder common.Address) (*types.Transaction, error) {
-	txes := builder.transactions
+func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.Builder, gasRefunder common.Address) (*types.Transaction, error) {
+	txes := builder.Transactions()
 	if len(txes) == 0 {
 		return nil, nil
 	}
@@ -244,7 +251,7 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 		if err != nil {
 			return nil, err
 		}
-		builder.transactions = nil
+		builder.ClearTransactions()
 		return arbTx, nil
 	}
 
@@ -260,7 +267,7 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 		totalAmount = totalAmount.Add(totalAmount, tx.Value())
 	}
 
-	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.address, nil)
+	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.Address(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -273,35 +280,88 @@ func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, build
 	if err != nil {
 		return nil, err
 	}
-	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(auth, gasRefunder, data, dest, amount)
+	txData, err := validatorABI.Pack("executeTransactionsWithGasRefunder", gasRefunder, data, dest, amount)
+	if err != nil {
+		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
+	}
+	gas, err := v.gasForTxData(ctx, auth, txData)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data: %w", err)
+	}
+	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value, nil)
 	if err != nil {
 		return nil, err
 	}
-	builder.transactions = nil
+	builder.ClearTransactions()
 	return arbTx, nil
 }
 
-func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
+func (v *Contract) estimateGas(ctx context.Context, value *big.Int, data []byte) (uint64, error) {
+	h, err := v.l1Reader.LastHeader(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("getting the last header: %w", err)
+	}
+	gasFeeCap := new(big.Int).Mul(h.BaseFee, big.NewInt(2))
+	gasFeeCap = arbmath.BigMax(gasFeeCap, arbmath.FloatToBig(params.GWei))
+
+	gasTipCap, err := v.l1Reader.Client().SuggestGasTipCap(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
+	}
+	g, err := v.l1Reader.Client().EstimateGas(
+		ctx,
+		ethereum.CallMsg{
+			From:      v.auth.From,
+			To:        v.Address(),
+			Value:     value,
+			Data:      data,
+			GasFeeCap: gasFeeCap,
+			GasTipCap: gasTipCap,
+		},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("estimating gas: %w", err)
+	}
+	return g + v.getExtraGas(), nil
+}
+
+func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
 	auth, err := v.getAuth(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	return v.con.TimeoutChallenges(auth, v.challengeManagerAddress, challenges)
+	data, err := validatorABI.Pack("timeoutChallenges", v.challengeManagerAddress, challenges)
+	if err != nil {
+		return nil, fmt.Errorf("packing arguments for timeoutChallenges: %w", err)
+	}
+	gas, err := v.gasForTxData(ctx, auth, data)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data: %w", err)
+	}
+	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
 }
 
-func (v *ContractValidatorWallet) L1Client() arbutil.L1Interface {
+// gasForTxData returns auth.GasLimit if it's nonzero, otherwise returns estimate.
+func (v *Contract) gasForTxData(ctx context.Context, auth *bind.TransactOpts, data []byte) (uint64, error) {
+	if auth.GasLimit != 0 {
+		return auth.GasLimit, nil
+	}
+	return v.estimateGas(ctx, auth.Value, data)
+}
+
+func (v *Contract) L1Client() arbutil.L1Interface {
 	return v.l1Reader.Client()
 }
 
-func (v *ContractValidatorWallet) RollupAddress() common.Address {
+func (v *Contract) RollupAddress() common.Address {
 	return v.rollupAddress
 }
 
-func (v *ContractValidatorWallet) ChallengeManagerAddress() common.Address {
+func (v *Contract) ChallengeManagerAddress() common.Address {
 	return v.challengeManagerAddress
 }
 
-func (v *ContractValidatorWallet) TestTransactions(ctx context.Context, txs []*types.Transaction) error {
+func (v *Contract) TestTransactions(ctx context.Context, txs []*types.Transaction) error {
 	if v.Address() == nil {
 		return nil
 	}
@@ -320,12 +380,31 @@ func (v *ContractValidatorWallet) TestTransactions(ctx context.Context, txs []*t
 	return err
 }
 
-func (v *ContractValidatorWallet) CanBatchTxs() bool {
+func (v *Contract) CanBatchTxs() bool {
 	return true
 }
 
-func (v *ContractValidatorWallet) AuthIfEoa() *bind.TransactOpts {
+func (v *Contract) AuthIfEoa() *bind.TransactOpts {
 	return nil
+}
+
+func (w *Contract) Start(ctx context.Context) {
+	w.dataPoster.Start(ctx)
+}
+
+func (b *Contract) StopAndWait() {
+	b.dataPoster.StopAndWait()
+}
+
+func (b *Contract) DataPoster() *dataposter.DataPoster {
+	return b.dataPoster
+}
+
+type L1ReaderInterface interface {
+	Client() arbutil.L1Interface
+	Subscribe(bool) (<-chan *types.Header, func())
+	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+	UseFinalityData() bool
 }
 
 func GetValidatorWalletContract(

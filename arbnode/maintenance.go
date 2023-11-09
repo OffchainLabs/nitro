@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -29,12 +30,12 @@ type MaintenanceRunner struct {
 
 	// lock is used to ensures that at any given time, only single node is on
 	// maintenance mode.
-	lock *SimpleRedisLock
+	lock *redislock.Simple
 }
 
 type MaintenanceConfig struct {
-	TimeOfDay string                `koanf:"time-of-day" reload:"hot"`
-	Lock      SimpleRedisLockConfig `koanf:"lock" reload:"hot"`
+	TimeOfDay string              `koanf:"time-of-day" reload:"hot"`
+	Lock      redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
@@ -72,11 +73,12 @@ func (c *MaintenanceConfig) Validate() error {
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".time-of-day", DefaultMaintenanceConfig.TimeOfDay, "UTC 24-hour time of day to run maintenance (currently only db compaction) at (e.g. 15:00)")
-	RedisLockConfigAddOptions(prefix+".lock", f)
+	redislock.AddConfigOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
 	TimeOfDay: "",
+	Lock:      redislock.DefaultCfg,
 
 	minutesAfterMidnight: 0,
 }
@@ -97,9 +99,9 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 	}
 
 	if seqCoordinator != nil {
-		c := func() *SimpleRedisLockConfig { return &cfg.Lock }
+		c := func() *redislock.SimpleCfg { return &cfg.Lock }
 		r := func() bool { return true } // always ready to lock
-		rl, err := NewSimpleRedisLock(seqCoordinator.Client, c, r)
+		rl, err := redislock.NewSimple(seqCoordinator.Client, c, r)
 		if err != nil {
 			return nil, fmt.Errorf("creating new simple redis lock: %w", err)
 		}

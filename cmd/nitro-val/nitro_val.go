@@ -32,6 +32,28 @@ func main() {
 	os.Exit(mainImpl())
 }
 
+// Checks metrics and PProf flag, runs them if enabled.
+// Note: they are separate so one can enable/disable them as they wish, the only
+// requirement is that they can't run on the same address and port.
+func startMetrics(cfg *ValidationNodeConfig) error {
+	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
+	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
+	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
+		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
+	}
+	if cfg.Metrics {
+		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
+	}
+	if cfg.PProf {
+		genericconf.StartPprof(pAddr)
+	}
+	return nil
+}
+
 // Returns the exit code
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -46,13 +68,13 @@ func mainImpl() int {
 	stackConf.DataDir = "" // ephemeral
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
-	nodeConfig.AuthRPC.Apply(&stackConf)
+	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = vcsRevision
+	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
@@ -69,13 +91,13 @@ func mainImpl() int {
 		}
 	}
 
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Workdir))
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Workdir)("jwtsecret")
+		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -88,28 +110,19 @@ func mainImpl() int {
 	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
 
-		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(newCfg.Workdir))
+		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
+
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 
-	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
-
-		if nodeConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				genericconf.StartPprof(address)
-			} else {
-				exp.Setup(address)
-			}
-		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
+	if err := startMetrics(nodeConfig); err != nil {
+		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
 

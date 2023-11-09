@@ -33,12 +33,13 @@ var sendRootKey = common.HexToHash("0x55667788")
 var batchNumKey = common.HexToHash("0x99aabbcc")
 var posInBatchKey = common.HexToHash("0xddeeff")
 
-func globalstateFromTestPreimages(preimages map[common.Hash][]byte) validator.GoGlobalState {
+func globalstateFromTestPreimages(preimages map[arbutil.PreimageType]map[common.Hash][]byte) validator.GoGlobalState {
+	keccakPreimages := preimages[arbutil.Keccak256PreimageType]
 	return validator.GoGlobalState{
-		Batch:      new(big.Int).SetBytes(preimages[batchNumKey]).Uint64(),
-		PosInBatch: new(big.Int).SetBytes(preimages[posInBatchKey]).Uint64(),
-		BlockHash:  common.BytesToHash(preimages[blockHashKey]),
-		SendRoot:   common.BytesToHash(preimages[sendRootKey]),
+		Batch:      new(big.Int).SetBytes(keccakPreimages[batchNumKey]).Uint64(),
+		PosInBatch: new(big.Int).SetBytes(keccakPreimages[posInBatchKey]).Uint64(),
+		BlockHash:  common.BytesToHash(keccakPreimages[blockHashKey]),
+		SendRoot:   common.BytesToHash(keccakPreimages[sendRootKey]),
 	}
 }
 
@@ -208,7 +209,9 @@ func TestValidationServerAPI(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages:  globalstateToTestPreimages(endState),
+		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
 	}
 	valRun := client.Launch(&valInput, wasmRoot)
 	res, err := valRun.Await(ctx)
@@ -272,7 +275,9 @@ func TestValidationClientRoom(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages:  globalstateToTestPreimages(endState),
+		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
 	}
 
 	valRuns := make([]validator.ValidationRun, 0, 4)
@@ -324,7 +329,7 @@ func TestExecutionKeepAlive(t *testing.T) {
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
-	shortTimeoutConfig.ExecRunTimeout = time.Second
+	shortTimeoutConfig.ExecutionRunTimeout = time.Second
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 

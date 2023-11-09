@@ -43,7 +43,7 @@ type DelayedSequencerConfig struct {
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
+	f.Bool(prefix+".enable", DefaultDelayedSequencerConfig.Enable, "enable delayed sequencer")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
@@ -52,14 +52,14 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              false,
 	FinalizeDistance:    20,
-	RequireFullFinality: true,
+	RequireFullFinality: false,
 	UseMergeFinality:    true,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
-	RequireFullFinality: true,
+	RequireFullFinality: false,
 	UseMergeFinality:    true,
 }
 

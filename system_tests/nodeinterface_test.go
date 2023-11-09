@@ -16,212 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
-
-func TestDeploy(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
-
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
-
-	_, simple := deploySimple(t, ctx, auth, client)
-
-	tx, err := simple.Increment(&auth)
-	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-
-	counter, err := simple.Counter(&bind.CallOpts{})
-	Require(t, err, "failed to get counter")
-
-	if counter != 1 {
-		Fatal(t, "Unexpected counter value", counter)
-	}
-}
-
-func TestEstimate(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
-
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
-
-	gasPrice := big.NewInt(params.GWei / 10)
-
-	// set the gas price
-	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
-	Require(t, err, "could not deploy ArbOwner contract")
-	tx, err := arbOwner.SetMinimumL2BaseFee(&auth, gasPrice)
-	Require(t, err, "could not set L2 gas price")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-
-	// connect to arbGasInfo precompile
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), client)
-	Require(t, err, "could not deploy contract")
-
-	// wait for price to come to equilibrium
-	equilibrated := false
-	numTriesLeft := 20
-	for !equilibrated && numTriesLeft > 0 {
-		// make an empty block to let the gas price update
-		l2info.GasPrice = new(big.Int).Mul(l2info.GasPrice, big.NewInt(2))
-		TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
-
-		// check if the price has equilibrated
-		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
-		Require(t, err, "could not get L2 gas price")
-		if gasPrice.Cmp(setPrice) == 0 {
-			equilibrated = true
-		}
-		numTriesLeft--
-	}
-	if !equilibrated {
-		Fatal(t, "L2 gas price did not converge", gasPrice)
-	}
-
-	initialBalance, err := client.BalanceAt(ctx, auth.From, nil)
-	Require(t, err, "could not get balance")
-
-	// deploy a test contract
-	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
-	Require(t, err, "could not deploy contract")
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-
-	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
-	Require(t, err, "could not get header")
-	if header.BaseFee.Cmp(gasPrice) != 0 {
-		Fatal(t, "Header has wrong basefee", header.BaseFee, gasPrice)
-	}
-
-	balance, err := client.BalanceAt(ctx, auth.From, nil)
-	Require(t, err, "could not get balance")
-	expectedCost := receipt.GasUsed * gasPrice.Uint64()
-	observedCost := initialBalance.Uint64() - balance.Uint64()
-	if expectedCost != observedCost {
-		Fatal(t, "Expected deployment to cost", expectedCost, "instead of", observedCost)
-	}
-
-	tx, err = simple.Increment(&auth)
-	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-
-	counter, err := simple.Counter(&bind.CallOpts{})
-	Require(t, err, "failed to get counter")
-
-	if counter != 1 {
-		Fatal(t, "Unexpected counter value", counter)
-	}
-}
-
-func TestComponentEstimate(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
-
-	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
-	l2BaseFee := GetBaseFee(t, client, ctx)
-
-	colors.PrintGrey("l1 basefee ", l1BaseFee)
-	colors.PrintGrey("l2 basefee ", l2BaseFee)
-
-	userBalance := big.NewInt(1e16)
-	maxPriorityFeePerGas := big.NewInt(0)
-	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
-
-	l2info.GenerateAccount("User")
-	TransferBalance(t, "Owner", "User", userBalance, l2info, client, ctx)
-
-	from := l2info.GetAddress("User")
-	to := testhelpers.RandomAddress()
-	gas := uint64(100000000)
-	calldata := []byte{0x00, 0x12}
-	value := big.NewInt(4096)
-
-	nodeAbi, err := node_interfacegen.NodeInterfaceMetaData.GetAbi()
-	Require(t, err)
-
-	nodeMethod := nodeAbi.Methods["gasEstimateComponents"]
-	estimateCalldata := append([]byte{}, nodeMethod.ID...)
-	packed, err := nodeMethod.Inputs.Pack(to, false, calldata)
-	Require(t, err)
-	estimateCalldata = append(estimateCalldata, packed...)
-
-	msg := ethereum.CallMsg{
-		From:      from,
-		To:        &types.NodeInterfaceAddress,
-		Gas:       gas,
-		GasFeeCap: maxFeePerGas,
-		GasTipCap: maxPriorityFeePerGas,
-		Value:     value,
-		Data:      estimateCalldata,
-	}
-	returnData, err := client.CallContract(ctx, msg, nil)
-	Require(t, err)
-
-	outputs, err := nodeMethod.Outputs.Unpack(returnData)
-	Require(t, err)
-	if len(outputs) != 4 {
-		Fatal(t, "expected 4 outputs from gasEstimateComponents, got", len(outputs))
-	}
-
-	gasEstimate, _ := outputs[0].(uint64)
-	gasEstimateForL1, _ := outputs[1].(uint64)
-	baseFee, _ := outputs[2].(*big.Int)
-	l1BaseFeeEstimate, _ := outputs[3].(*big.Int)
-
-	execNode := getExecNode(t, node)
-	tx := l2info.SignTxAs("User", &types.DynamicFeeTx{
-		ChainID:   execNode.ArbInterface.BlockChain().Config().ChainID,
-		Nonce:     0,
-		GasTipCap: maxPriorityFeePerGas,
-		GasFeeCap: maxFeePerGas,
-		Gas:       gasEstimate,
-		To:        &to,
-		Value:     value,
-		Data:      calldata,
-	})
-
-	l2Estimate := gasEstimate - gasEstimateForL1
-
-	colors.PrintBlue("Est. ", gasEstimate, " - ", gasEstimateForL1, " = ", l2Estimate)
-
-	if !arbmath.BigEquals(l1BaseFeeEstimate, l1BaseFee) {
-		Fatal(t, l1BaseFeeEstimate, l1BaseFee)
-	}
-	if !arbmath.BigEquals(baseFee, l2BaseFee) {
-		Fatal(t, baseFee, l2BaseFee.Uint64())
-	}
-
-	Require(t, client.SendTransaction(ctx, tx))
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-
-	l2Used := receipt.GasUsed - receipt.GasUsedForL1
-	colors.PrintMint("True ", receipt.GasUsed, " - ", receipt.GasUsedForL1, " = ", l2Used)
-
-	if l2Estimate != l2Used {
-		Fatal(t, l2Estimate, l2Used)
-	}
-}
 
 func callFindBatchContainig(t *testing.T, ctx context.Context, client *ethclient.Client, nodeAbi *abi.ABI, blockNum uint64) uint64 {
 	findBatch := nodeAbi.Methods["findBatchContainingBlock"]
@@ -334,5 +131,65 @@ func TestFindBatch(t *testing.T) {
 		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
 			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
 		}
+	}
+}
+
+func TestL2BlockRangeForL1(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	user := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+
+	numTransactions := 200
+	for i := 0; i < numTransactions; i++ {
+		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+	}
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	if err != nil {
+		t.Fatalf("Error creating node interface: %v", err)
+	}
+
+	l1BlockNums := map[uint64]*[2]uint64{}
+	latestL2, err := builder.L2.Client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatalf("Error querying most recent l2 block: %v", err)
+	}
+	for l2BlockNum := uint64(0); l2BlockNum <= latestL2; l2BlockNum++ {
+		l1BlockNum, err := nodeInterface.BlockL1Num(&bind.CallOpts{}, l2BlockNum)
+		if err != nil {
+			t.Fatalf("Error quering l1 block number for l2 block: %d, error: %v", l2BlockNum, err)
+		}
+		if _, ok := l1BlockNums[l1BlockNum]; !ok {
+			l1BlockNums[l1BlockNum] = &[2]uint64{l2BlockNum, l2BlockNum}
+		}
+		l1BlockNums[l1BlockNum][1] = l2BlockNum
+	}
+
+	// Test success.
+	for l1BlockNum := range l1BlockNums {
+		rng, err := nodeInterface.L2BlockRangeForL1(&bind.CallOpts{}, l1BlockNum)
+		if err != nil {
+			t.Fatalf("Error getting l2 block range for l1 block: %d, error: %v", l1BlockNum, err)
+		}
+		expected := l1BlockNums[l1BlockNum]
+		if rng.FirstBlock != expected[0] || rng.LastBlock != expected[1] {
+			unexpectedL1BlockNum, err := nodeInterface.BlockL1Num(&bind.CallOpts{}, rng.LastBlock)
+			if err != nil {
+				t.Fatalf("Error quering l1 block number for l2 block: %d, error: %v", rng.LastBlock, err)
+			}
+			// Handle the edge case when new l2 blocks are produced between latestL2 was last calculated and now.
+			if unexpectedL1BlockNum != l1BlockNum || rng.LastBlock < expected[1] || rng.FirstBlock != expected[0] {
+				t.Errorf("L2BlockRangeForL1(%d) = (%d %d) want (%d %d)", l1BlockNum, rng.FirstBlock, rng.LastBlock, expected[0], expected[1])
+			}
+		}
+	}
+	// Test invalid case.
+	if _, err := nodeInterface.L2BlockRangeForL1(&bind.CallOpts{}, 1e5); err == nil {
+		t.Fatalf("GetL2BlockRangeForL1 didn't fail for an invalid input")
 	}
 }

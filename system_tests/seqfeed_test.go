@@ -13,7 +13,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -28,9 +27,9 @@ func newBroadcasterConfigTest() *wsbroadcastserver.BroadcasterConfig {
 
 func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 	return &broadcastclient.Config{
-		URLs:    []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
+		URL:     []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
 		Timeout: 200 * time.Millisecond,
-		Verifier: signature.VerifierConfig{
+		Verify: signature.VerifierConfig{
 			Dangerous: signature.DangerousVerifierConfig{
 				AcceptMissing: true,
 			},
@@ -43,30 +42,33 @@ func TestSequencerFeed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
-	defer nodeA.StopAndWait()
-	clientNodeConfig := arbnode.ConfigDefaultL2Test()
-	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
-	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	cleanupSeq := builderSeq.Build(t)
+	defer cleanupSeq()
+	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
-	defer nodeB.StopAndWait()
+	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	builder.takeOwnership = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+	client := builder.L2.Client
 
-	l2info1.GenerateAccount("User2")
+	seqInfo.GenerateAccount("User2")
 
-	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
+	tx := seqInfo.PrepareTx("Owner", "User2", seqInfo.TransferGas, big.NewInt(1e12), nil)
 
-	err := client1.SendTransaction(ctx, tx)
+	err := seqClient.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx)
+	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
 	Require(t, err)
-	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	l2balance, err := client.BalanceAt(ctx, seqInfo.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
@@ -78,19 +80,20 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
-	defer nodeA.StopAndWait()
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	cleanupSeq := builderSeq.Build(t)
+	defer cleanupSeq()
+	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
-	bigChainId, err := client1.ChainID(ctx)
+	bigChainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
 
 	config := relay.ConfigDefault
-	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
 	config.Node.Feed.Output = *newBroadcasterConfigTest()
-	config.L2.ChainId = bigChainId.Uint64()
+	config.Chain.ID = bigChainId.Uint64()
 
 	feedErrChan := make(chan error, 10)
 	currentRelay, err := relay.NewRelay(&config, feedErrChan)
@@ -99,26 +102,28 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 	defer currentRelay.StopAndWait()
 
-	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
-	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
-	defer nodeC.StopAndWait()
-	StartWatchChanErr(t, ctx, feedErrChan, nodeC)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	builder.takeOwnership = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+	node, client := builder.L2.ConsensusNode, builder.L2.Client
+	StartWatchChanErr(t, ctx, feedErrChan, node)
 
-	l2info1.GenerateAccount("User2")
+	seqInfo.GenerateAccount("User2")
 
-	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
+	tx := seqInfo.PrepareTx("Owner", "User2", seqInfo.TransferGas, big.NewInt(1e12), nil)
 
-	err = client1.SendTransaction(ctx, tx)
+	err = seqClient.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx)
+	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
 	Require(t, err)
-	l2balance, err := client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	l2balance, err := client.BalanceAt(ctx, seqInfo.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
@@ -136,20 +141,26 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, nil, chainConfig, nil)
-	defer requireClose(t, l1stack, "unable to close l1stack")
-	defer nodeA.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig = nodeConfigA
+	builder.chainConfig = chainConfig
+	builder.L2Info = nil
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	l2clientA := builder.L2.Client
+
+	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
+	nodeConfigC.DataAvailability.RPCAggregator.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC, gethexec.ConfigDefaultTest(), nil)
-	defer nodeC.StopAndWait()
+	testClientC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigC})
+	defer cleanupC()
+	l2clientC, nodeC := testClientC.Client, testClientC.ConsensusNode
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
@@ -158,16 +169,17 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB, nil, nil)
-	defer nodeB.StopAndWait()
+	nodeConfigB.DataAvailability.RPCAggregator.Enable = false
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigB})
+	defer cleanupB()
+	l2clientB := testClientB.Client
 
-	l2infoA.GenerateAccount("FraudUser")
-	l2infoA.GenerateAccount("RealUser")
+	builder.L2Info.GenerateAccount("FraudUser")
+	builder.L2Info.GenerateAccount("RealUser")
 
-	fraudTx := l2infoA.PrepareTx("Owner", "FraudUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
-	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
-	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
+	fraudTx := builder.L2Info.PrepareTx("Owner", "FraudUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
+	realTx := builder.L2Info.PrepareTx("Owner", "RealUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
 	for i := 0; i < 10; i++ {
 		err := l2clientC.SendTransaction(ctx, fraudTx)
@@ -180,7 +192,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		}
 	}
 
-	_, err := EnsureTxSucceeded(ctx, l2clientC, fraudTx)
+	_, err := testClientC.EnsureTxSucceeded(fraudTx)
 	if err != nil {
 		t.Fatal("error ensuring fraud transaction succeeded:", err)
 	}
@@ -190,7 +202,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if err != nil {
 		t.Fatal("error waiting for tx:", err)
 	}
-	l2balance, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
+	l2balance, err := l2clientB.BalanceAt(ctx, builder.L2Info.GetAddress("FraudUser"), nil)
 	if err != nil {
 		t.Fatal("error getting balance:", err)
 	}
@@ -204,7 +216,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("error sending real transaction:", err)
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx)
+	_, err = builder.L2.EnsureTxSucceeded(realTx)
 	if err != nil {
 		t.Fatal("error ensuring real transaction succeeded:", err)
 	}
@@ -214,7 +226,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if err != nil {
 		t.Fatal("error waiting for transaction to get to node b:", err)
 	}
-	l2balanceFraudAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
+	l2balanceFraudAcct, err := l2clientB.BalanceAt(ctx, builder.L2Info.GetAddress("FraudUser"), nil)
 	if err != nil {
 		t.Fatal("error getting fraud balance:", err)
 	}
@@ -222,7 +234,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance (fraud acct should be empty) was:", l2balanceFraudAcct)
 	}
 
-	l2balanceRealAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("RealUser"), nil)
+	l2balanceRealAcct, err := l2clientB.BalanceAt(ctx, builder.L2Info.GetAddress("RealUser"), nil)
 	if err != nil {
 		t.Fatal("error getting real balance:", err)
 	}

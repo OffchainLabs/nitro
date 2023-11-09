@@ -76,6 +76,32 @@ func (c *RedisCoordinator) CurrentChosenSequencer(ctx context.Context) (string, 
 	return current, nil
 }
 
+// GetPriorities returns the priority list of sequencers
+func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, error) {
+	prioritiesString, err := rc.Client.Get(ctx, PRIORITIES_KEY).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			err = errors.New("sequencer priorities unset")
+		}
+		return []string{}, err
+	}
+	prioritiesList := strings.Split(prioritiesString, ",")
+	return prioritiesList, nil
+}
+
+// GetLiveliness returns a map whose keys are sequencers that have their liveliness set to OK
+func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error) {
+	livelinessList, _, err := rc.Client.Scan(ctx, 0, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
+	if err != nil {
+		return []string{}, err
+	}
+	for i, elem := range livelinessList {
+		url := strings.TrimPrefix(elem, WANTS_LOCKOUT_KEY_PREFIX)
+		livelinessList[i] = url
+	}
+	return livelinessList, nil
+}
+
 func MessageKeyFor(pos arbutil.MessageIndex) string {
 	return fmt.Sprintf("%s%d", MESSAGE_KEY_PREFIX, pos)
 }

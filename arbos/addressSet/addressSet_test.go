@@ -10,11 +10,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -170,6 +173,158 @@ func TestAddressSetAllMembers(t *testing.T) {
 			Require(t, aset.Add(addr))
 		}
 		checkAllMembers(t, aset, possibleAddresses)
+	}
+}
+
+func TestRectifyMappingAgainstHistory(t *testing.T) {
+	db := storage.NewMemoryBackedStateDB()
+	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
+	Require(t, Initialize(sto))
+	aset := OpenAddressSet(sto)
+	version := uint64(10)
+
+	// Test Nova history
+	addr1 := common.HexToAddress("0x9C040726F2A657226Ed95712245DeE84b650A1b5")
+	addr2 := common.HexToAddress("0xd345e41ae2cb00311956aa7109fc801ae8c81a52")
+	addr3 := common.HexToAddress("0xd0749b3e537ed52de4e6a3ae1eb6fc26059d0895")
+	addr4 := common.HexToAddress("0x86a02dd71363c440b21f4c0e5b2ad01ffe1a7482")
+	// Follow logs
+	Require(t, aset.Add(addr1))
+	Require(t, aset.Add(addr2))
+	Require(t, aset.Remove(addr1, version))
+	Require(t, aset.Add(addr3))
+	Require(t, aset.Add(addr4))
+	Require(t, aset.Remove(addr2, version))
+	Require(t, aset.Remove(addr3, version))
+	// Check if history's correct
+	CurrentOwner, _ := aset.backingStorage.GetByUint64(uint64(1))
+	isOwner, _ := aset.IsMember(addr2)
+	correctOwner, _ := aset.IsMember(addr4)
+	if size(t, aset) != uint64(1) || CurrentOwner != common.BytesToHash(addr2.Bytes()) || isOwner || !correctOwner {
+		Fail(t, "Logs and current state did not match")
+	}
+	// Run RectifyMapping to fix the issue
+	checkIfRectifyMappingWorks(t, aset, []common.Address{addr4}, true)
+	Require(t, aset.Clear())
+
+	// Test Arb1 history
+	addr1 = common.HexToAddress("0xd345e41ae2cb00311956aa7109fc801ae8c81a52")
+	addr2 = common.HexToAddress("0x98e4db7e07e584f89a2f6043e7b7c89dc27769ed")
+	addr3 = common.HexToAddress("0xcf57572261c7c2bcf21ffd220ea7d1a27d40a827")
+	// Follow logs
+	Require(t, aset.Add(addr1))
+	Require(t, aset.Add(addr2))
+	Require(t, aset.Add(addr3))
+	Require(t, aset.Remove(addr1, version))
+	Require(t, aset.Remove(addr2, version))
+	// Check if history's correct
+	CurrentOwner, _ = aset.backingStorage.GetByUint64(uint64(1))
+	correctOwner, _ = aset.IsMember(addr3)
+	index, _ := aset.byAddress.GetUint64(common.BytesToHash(addr3.Bytes()))
+	if size(t, aset) != uint64(1) || index == 1 || CurrentOwner != common.BytesToHash(addr3.Bytes()) || !correctOwner {
+		Fail(t, "Logs and current state did not match")
+	}
+	// Run RectifyMapping to fix the issue
+	checkIfRectifyMappingWorks(t, aset, []common.Address{addr3}, true)
+	Require(t, aset.Clear())
+
+	// Test Goerli history
+	addr1 = common.HexToAddress("0x186B56023d42B2B4E7616589a5C62EEf5FCa21DD")
+	addr2 = common.HexToAddress("0xc8efdb677afeb775ce1617dd976b56b3a6e95bba")
+	addr3 = common.HexToAddress("0xc3f86bb81e32295d29c288ffb4828936538cf326")
+	addr4 = common.HexToAddress("0x67acb531a05160a81dcd03079347f264c4fa2da3")
+	// Follow logs
+	Require(t, aset.Add(addr1))
+	Require(t, aset.Add(addr2))
+	Require(t, aset.Add(addr3))
+	Require(t, aset.Remove(addr1, version))
+	Require(t, aset.Add(addr4))
+	Require(t, aset.Remove(addr3, version))
+	Require(t, aset.Remove(addr2, version))
+	// Check if history's correct
+	CurrentOwner, _ = aset.backingStorage.GetByUint64(uint64(1))
+	isOwner, _ = aset.IsMember(addr3)
+	correctOwner, _ = aset.IsMember(addr4)
+	if size(t, aset) != uint64(1) || CurrentOwner != common.BytesToHash(addr3.Bytes()) || isOwner || !correctOwner {
+		Fail(t, "Logs and current state did not match")
+	}
+	// Run RectifyMapping to fix the issue
+	checkIfRectifyMappingWorks(t, aset, []common.Address{addr4}, true)
+}
+
+func TestRectifyMapping(t *testing.T) {
+	db := storage.NewMemoryBackedStateDB()
+	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
+	Require(t, Initialize(sto))
+	aset := OpenAddressSet(sto)
+
+	addr1 := testhelpers.RandomAddress()
+	addr2 := testhelpers.RandomAddress()
+	addr3 := testhelpers.RandomAddress()
+	possibleAddresses := []common.Address{addr1, addr2, addr3}
+
+	Require(t, aset.Add(addr1))
+	Require(t, aset.Add(addr2))
+	Require(t, aset.Add(addr3))
+
+	// Non owner's should not be able to call RectifyMapping
+	err := aset.RectifyMapping(testhelpers.RandomAddress())
+	if err == nil {
+		Fail(t, "RectifyMapping was successfully called by non owner")
+	}
+
+	// Corrupt the list and verify if RectifyMapping fixes it
+	addrHash := common.BytesToHash(addr2.Bytes())
+	Require(t, aset.backingStorage.SetByUint64(uint64(1), addrHash))
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, true)
+
+	// Corrupt the map and verify if RectifyMapping fixes it
+	addrHash = common.BytesToHash(addr2.Bytes())
+	Require(t, aset.byAddress.Set(addrHash, util.UintToHash(uint64(6))))
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, true)
+
+	// Add a new owner to the map and verify if RectifyMapping syncs list with the map
+	// to check for the case where list has fewer owners than expected
+	addr4 := testhelpers.RandomAddress()
+	addrHash = common.BytesToHash(addr4.Bytes())
+	Require(t, aset.byAddress.Set(addrHash, util.UintToHash(uint64(1))))
+	checkIfRectifyMappingWorks(t, aset, possibleAddresses, true)
+
+	// RectifyMapping should not do anything if the mapping is correct
+	// Check to verify functionality post fix
+	err = aset.RectifyMapping(addr1)
+	if err == nil {
+		Fail(t, "RectifyMapping called by a correctly mapped owner")
+	}
+
+}
+
+func checkIfRectifyMappingWorks(t *testing.T, aset *AddressSet, owners []common.Address, clearList bool) {
+	t.Helper()
+	if clearList {
+		Require(t, aset.ClearList())
+	}
+	for index, owner := range owners {
+		Require(t, aset.RectifyMapping(owner))
+
+		addrAsHash := common.BytesToHash(owner.Bytes())
+		slot, err := aset.byAddress.GetUint64(addrAsHash)
+		Require(t, err)
+		atSlot, err := aset.backingStorage.GetByUint64(slot)
+		Require(t, err)
+		if slot == 0 || atSlot != addrAsHash {
+			Fail(t, "RectifyMapping did not fix the mismatch")
+		}
+
+		if clearList && int(size(t, aset)) != index+1 {
+			Fail(t, "RectifyMapping did not fix the mismatch")
+		}
+	}
+	allMembers, err := aset.AllMembers(size(t, aset))
+	Require(t, err)
+	less := func(a, b common.Address) bool { return a.String() < b.String() }
+	if cmp.Diff(owners, allMembers, cmpopts.SortSlices(less)) != "" {
+		Fail(t, "RectifyMapping did not fix the mismatch")
 	}
 }
 

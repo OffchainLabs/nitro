@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
@@ -128,9 +129,16 @@ func RecoverPayloadFromDasBatch(
 	batchNum uint64,
 	sequencerMsg []byte,
 	dasReader DataAvailabilityReader,
-	preimages map[common.Hash][]byte,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
 	keysetValidationMode KeysetValidationMode,
 ) ([]byte, error) {
+	var keccakPreimages map[common.Hash][]byte
+	if preimages != nil {
+		if preimages[arbutil.Keccak256PreimageType] == nil {
+			preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+		}
+		keccakPreimages = preimages[arbutil.Keccak256PreimageType]
+	}
 	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
 		log.Error("Failed to deserialize DAS message", "err", err)
@@ -138,7 +146,7 @@ func RecoverPayloadFromDasBatch(
 	}
 	version := cert.Version
 	recordPreimage := func(key common.Hash, value []byte) {
-		preimages[key] = value
+		keccakPreimages[key] = value
 	}
 
 	if version >= 2 {
@@ -179,7 +187,7 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Couldn't get keyset", "err", err)
 		return nil, err
 	}
-	if preimages != nil {
+	if keccakPreimages != nil {
 		dastree.RecordHash(recordPreimage, keysetPreimage)
 	}
 
@@ -211,11 +219,11 @@ func RecoverPayloadFromDasBatch(
 		return nil, err
 	}
 
-	if preimages != nil {
+	if keccakPreimages != nil {
 		if version == 0 {
 			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
-			preimages[dataHash] = payload
-			preimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
+			keccakPreimages[dataHash] = payload
+			keccakPreimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
 		} else {
 			dastree.RecordHash(recordPreimage, payload)
 		}

@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -18,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
@@ -36,34 +40,35 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	L1Reader             headerreader.Config              `koanf:"l1-reader" reload:"hot"`
-	Sequencer            SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDB          arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker         TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder            ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTargetImpl string                           `koanf:"forwarding-target"`
-	Caching              CachingConfig                    `koanf:"caching"`
-	SyncMonitor          SyncMonitorConfig                `koanf:"sync-monitor" reload:"hot"`
-	RPC                  arbitrum.Config                  `koanf:"rpc"`
-	Archive              bool                             `koanf:"archive"`
-	TxLookupLimit        uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous            DangerousConfig                  `koanf:"dangerous"`
-}
+	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker      TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder         ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget  string                           `koanf:"forwarding-target"`
+	Caching           CachingConfig                    `koanf:"caching"`
+	SyncMonitor       SyncMonitorConfig                `koanf:"sync-monitor" reload:"hot"`
+	RPC               arbitrum.Config                  `koanf:"rpc"`
+	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
+	Dangerous         DangerousConfig                  `koanf:"dangerous"`
 
-func (c *Config) ForwardingTarget() string {
-	if c.ForwardingTargetImpl == "null" {
-		return ""
-	}
-
-	return c.ForwardingTargetImpl
+	forwardingTarget string
 }
 
 func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
-	if err := c.Sequencer.Validate(); err != nil {
-		return err
+	if !c.Sequencer.Enable && c.ForwardingTarget == "" {
+		return errors.New("ForwardingTarget not set and not sequencer (can use \"null\")")
+	}
+	if c.ForwardingTarget == "null" {
+		c.forwardingTarget = ""
+	} else {
+		c.forwardingTarget = c.ForwardingTarget
+	}
+	if c.forwardingTarget != "" && c.Sequencer.Enable {
+		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
 	return nil
 }
@@ -71,61 +76,71 @@ func (c *Config) Validate() error {
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
-	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
-	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 var ConfigDefault = Config{
-	L1Reader:             headerreader.DefaultConfig,
-	RPC:                  arbitrum.DefaultConfig,
-	Sequencer:            DefaultSequencerConfig,
-	RecordingDB:          arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTargetImpl: "",
-	TxPreChecker:         DefaultTxPreCheckerConfig,
-	Archive:              false,
-	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
-	Caching:              DefaultCachingConfig,
-	Dangerous:            DefaultDangerousConfig,
+	RPC:               arbitrum.DefaultConfig,
+	Sequencer:         DefaultSequencerConfig,
+	ParentChainReader: headerreader.DefaultConfig,
+	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:  "",
+	TxPreChecker:      DefaultTxPreCheckerConfig,
+	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
+	Caching:           DefaultCachingConfig,
+	Dangerous:         DefaultDangerousConfig,
+	Forwarder:         DefaultNodeForwarderConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
+	config.ParentChainReader = headerreader.Config{}
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
 
 	return &config
 }
 
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
+	config.ParentChainReader = headerreader.Config{}
 	config.Sequencer = TestSequencerConfig
-	config.L1Reader = headerreader.TestConfig
+	config.ParentChainReader = headerreader.TestConfig
+	config.ForwardingTarget = "null"
+	config.ParentChainReader = headerreader.TestConfig
+
+	_ = config.Validate()
+
 	return &config
 }
 
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
-	ChainDB       ethdb.Database
-	Backend       *arbitrum.Backend
-	FilterSystem  *filters.FilterSystem
-	ArbInterface  *ArbInterface
-	ExecEngine    *ExecutionEngine
-	Recorder      *BlockRecorder
-	Sequencer     *Sequencer // either nil or same as TxPublisher
-	TxPublisher   TransactionPublisher
-	ConfigFetcher ConfigFetcher
-	SyncMonitor   *SyncMonitor
-	L1Reader      *headerreader.HeaderReader
-	ClassicOutbox *ClassicOutboxRetriever
+	ChainDB           ethdb.Database
+	Backend           *arbitrum.Backend
+	FilterSystem      *filters.FilterSystem
+	ArbInterface      *ArbInterface
+	ExecEngine        *ExecutionEngine
+	Recorder          *BlockRecorder
+	Sequencer         *Sequencer // either nil or same as TxPublisher
+	TxPublisher       TransactionPublisher
+	ConfigFetcher     ConfigFetcher
+	SyncMonitor       *SyncMonitor
+	ParentChainReader *headerreader.HeaderReader
+	ClassicOutbox     *ClassicOutboxRetriever
+	started           atomic.Bool
 }
 
 func CreateExecutionNode(
@@ -141,38 +156,35 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(&config.RecordingDB, execEngine, chainDB)
+	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, chainDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
-	var l1Reader *headerreader.HeaderReader
-	if l1client != nil {
-		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+	var parentChainReader *headerreader.HeaderReader
+	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	} else if config.Sequencer.Enable {
 		log.Warn("sequencer enabled without l1 client")
 	}
 
-	fwTarget := config.ForwardingTarget()
 	if config.Sequencer.Enable {
-		if fwTarget != "" {
-			return nil, errors.New("sequencer and forwarding target both set")
-		}
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
-		sequencer, err = NewSequencer(execEngine, l1Reader, seqConfigFetcher)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
 		if err != nil {
 			return nil, err
 		}
 		txPublisher = sequencer
 	} else {
 		if config.Forwarder.RedisUrl != "" {
-			txPublisher = NewRedisTxForwarder(fwTarget, &config.Forwarder)
-		} else if fwTarget == "" {
+			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
+		} else if config.forwardingTarget == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(fwTarget, &config.Forwarder)
+			txPublisher = NewForwarder(config.forwardingTarget, &config.Forwarder)
 		}
 	}
 
@@ -196,14 +208,15 @@ func CreateExecutionNode(
 	syncMon := NewSyncMonitor(execEngine, syncMonFetcher)
 
 	var classicOutbox *ClassicOutboxRetriever
-	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
-	if err != nil {
-		if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
+
+	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
+		if err != nil {
 			log.Warn("Classic Msg Database not found", "err", err)
+			classicOutbox = nil
+		} else {
+			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 		}
-		classicOutbox = nil
-	} else {
-		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 	}
 
 	apis := []rpc.API{{
@@ -240,18 +253,18 @@ func CreateExecutionNode(
 	stack.RegisterAPIs(apis)
 
 	return &ExecutionNode{
-		chainDB,
-		backend,
-		filterSystem,
-		arbInterface,
-		execEngine,
-		recorder,
-		sequencer,
-		txPublisher,
-		configFetcher,
-		syncMon,
-		l1Reader,
-		classicOutbox,
+		ChainDB:           chainDB,
+		Backend:           backend,
+		FilterSystem:      filterSystem,
+		ArbInterface:      arbInterface,
+		ExecEngine:        execEngine,
+		Recorder:          recorder,
+		Sequencer:         sequencer,
+		TxPublisher:       txPublisher,
+		ConfigFetcher:     configFetcher,
+		SyncMonitor:       syncMon,
+		ParentChainReader: parentChainReader,
+		ClassicOutbox:     classicOutbox,
 	}, nil
 
 }
@@ -273,7 +286,11 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	return nil
 }
 
+// not thread safe
 func (n *ExecutionNode) Start(ctx context.Context) error {
+	if n.started.Swap(true) {
+		return errors.New("already started")
+	}
 	// TODO after separation
 	// err := n.Stack.Start()
 	// if err != nil {
@@ -284,22 +301,25 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
-	if n.L1Reader != nil {
-		n.L1Reader.Start(ctx)
+	if n.ParentChainReader != nil {
+		n.ParentChainReader.Start(ctx)
 	}
 	n.SyncMonitor.Start(ctx)
 	return nil
 }
 
 func (n *ExecutionNode) StopAndWait() {
+	if !n.started.Load() {
+		return
+	}
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
 	if n.TxPublisher.Started() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
-	if n.L1Reader != nil && n.L1Reader.Started() {
-		n.L1Reader.StopAndWait()
+	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
+		n.ParentChainReader.StopAndWait()
 	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
@@ -367,12 +387,12 @@ func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct
 	if n.Sequencer != nil {
 		return n.Sequencer.ForwardTo(url)
 	} else {
-		return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("forwardTo not supported - sequencer not acrtive"))
+		return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("forwardTo not supported - sequencer not active"))
 	}
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
-	n.ExecEngine.SetTransactionStreamer(consensus)
+	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 

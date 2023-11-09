@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -57,6 +58,9 @@ type FullExecutionClient interface {
 	ExecutionRecorder
 	ExecutionSequencer
 
+	Start(ctx context.Context) error
+	StopAndWait()
+
 	Maintenance() containers.PromiseInterface[struct{}]
 }
 
@@ -64,7 +68,7 @@ type FullExecutionClient interface {
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
 	FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte]
-	FindL1BatchForMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
