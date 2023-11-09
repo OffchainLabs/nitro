@@ -28,7 +28,7 @@ var errContextDone = errors.New("context done")
 
 type message struct {
 	data           []byte
-	sequenceNumber arbutil.MessageIndex
+	sequenceNumber *arbutil.MessageIndex
 }
 
 // ClientConnection represents client connection.
@@ -198,8 +198,8 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				return
 			case msg := <-cc.out:
 				expSeqNum := cc.LastSentSeqNum.Load() + 1
-				if !cc.backlogSent && uint64(msg.sequenceNumber) > expSeqNum {
-					catchupSeqNum := uint64(msg.sequenceNumber) - 1
+				if !cc.backlogSent && msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) > expSeqNum {
+					catchupSeqNum := uint64(*msg.sequenceNumber) - 1
 					bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
 					if err != nil {
 						logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))

@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -172,11 +173,7 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 	cm.broadcastChan <- bm
 }
 
-func (cm *ClientManager) doBroadcast(bfm *m.BroadcastFeedMessage) ([]*ClientConnection, error) {
-	bm := &m.BroadcastMessage{
-		Version:  1,
-		Messages: []*m.BroadcastFeedMessage{bfm},
-	}
+func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
 	if err := cm.backlog.Append(bm); err != nil {
 		return nil, err
 	}
@@ -212,13 +209,23 @@ func (cm *ClientManager) doBroadcast(bfm *m.BroadcastFeedMessage) ([]*ClientConn
 			}
 		}
 
-		if uint64(bfm.SequenceNumber) <= client.LastSentSeqNum.Load() {
-			log.Warn("client has already sent message with this sequence number, skipping the message", "client", client.Name, "sequence number", bfm.SequenceNumber)
+		var seqNum *arbutil.MessageIndex
+		n := len(bm.Messages)
+		if n == 0 {
+			seqNum = nil
+		} else if n == 1 {
+			seqNum = &bm.Messages[0].SequenceNumber
+		} else {
+			return nil, fmt.Errorf("doBroadcast was sent %d BroadcastFeedMessages, it can only parse 1 BroadcastFeedMessage at a time", n)
+		}
+
+		if seqNum != nil && uint64(*seqNum) <= client.LastSentSeqNum.Load() {
+			log.Warn("client has already sent message with this sequence number, skipping the message", "client", client.Name, "sequence number", *seqNum)
 			continue
 		}
 
 		m := message{
-			sequenceNumber: bfm.SequenceNumber,
+			sequenceNumber: seqNum,
 			data:           data,
 		}
 		select {
@@ -342,7 +349,17 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 			case bm := <-cm.broadcastChan:
 				var err error
 				for _, msg := range bm.Messages {
-					clientDeleteList, err = cm.doBroadcast(msg)
+					m := &m.BroadcastMessage{
+						Version:                        bm.Version,
+						Messages:                       []*m.BroadcastFeedMessage{msg},
+						ConfirmedSequenceNumberMessage: bm.ConfirmedSequenceNumberMessage,
+					}
+					clientDeleteList, err = cm.doBroadcast(m)
+					logError(err, "failed to do broadcast")
+				}
+
+				if len(bm.Messages) == 0 {
+					clientDeleteList, err = cm.doBroadcast(bm)
 					logError(err, "failed to do broadcast")
 				}
 			case <-pingTimer.C:
