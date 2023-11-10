@@ -68,7 +68,7 @@ type Cache struct {
 }
 
 func isOlderThanFourteenDays(t time.Time) bool {
-	return time.Now().Sub(t) > 14*24*time.Hour
+	return time.Since(t) > 14*24*time.Hour
 }
 
 func deleteFilesOlderThanFourteenDays(dir string) error {
