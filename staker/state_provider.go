@@ -47,7 +47,10 @@ type StateManager struct {
 }
 
 func NewStateManager(val *StatelessBlockValidator, blockValidator *BlockValidator, numOpcodesPerBigStep uint64, maxWavmOpcodes uint64, cacheBaseDir string) (*StateManager, error) {
-	historyCache := challengecache.New(cacheBaseDir)
+	historyCache, err := challengecache.New(cacheBaseDir)
+	if err != nil {
+		return nil, err
+	}
 	return &StateManager{
 		validator:            val,
 		blockValidator:       blockValidator,
