@@ -130,7 +130,7 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 }
 
 func (cc *ClientConnection) writeBroadcastMessage(bm *m.BroadcastMessage) error {
-	notCompressed, compressed, err := serializeMessage(cc.clientManager, bm, !cc.compression, cc.compression)
+	notCompressed, compressed, err := serializeMessage(bm, !cc.compression, cc.compression)
 	if err != nil {
 		return err
 	}

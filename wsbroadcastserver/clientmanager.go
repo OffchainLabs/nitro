@@ -52,7 +52,6 @@ type ClientManager struct {
 	clientAction  chan ClientConnectionAction
 	config        BroadcasterConfigFetcher
 	backlog       backlog.Backlog
-	flateWriter   *flate.Writer
 
 	connectionLimiter *ConnectionLimiter
 }
@@ -180,9 +179,9 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 	config := cm.config()
 	//                                        /-> wsutil.Writer -> not compressed msg buffer
 	// bm -> json.Encoder -> io.MultiWriter -|
-	//                                        \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
+	//                                        \-> flateWriter -> wsutil.Writer -> compressed msg buffer
 
-	notCompressed, compressed, err := serializeMessage(cm, bm, !config.RequireCompression, config.EnableCompression)
+	notCompressed, compressed, err := serializeMessage(bm, !config.RequireCompression, config.EnableCompression)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +247,12 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 	return clientDeleteList, nil
 }
 
-func serializeMessage(cm *ClientManager, bm *m.BroadcastMessage, enableNonCompressedOutput, enableCompressedOutput bool) (bytes.Buffer, bytes.Buffer, error) {
+func serializeMessage(bm *m.BroadcastMessage, enableNonCompressedOutput, enableCompressedOutput bool) (bytes.Buffer, bytes.Buffer, error) {
+	flateWriter, err := flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
+	if err != nil {
+		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to create flate writer: %w", err)
+	}
+
 	var notCompressed bytes.Buffer
 	var compressed bytes.Buffer
 	writers := []io.Writer{}
@@ -259,19 +263,12 @@ func serializeMessage(cm *ClientManager, bm *m.BroadcastMessage, enableNonCompre
 		writers = append(writers, notCompressedWriter)
 	}
 	if enableCompressedOutput {
-		if cm.flateWriter == nil {
-			var err error
-			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
-			if err != nil {
-				return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to create flate writer: %w", err)
-			}
-		}
 		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
 		var msg wsflate.MessageState
 		msg.SetCompressed(true)
 		compressedWriter.SetExtensions(&msg)
-		cm.flateWriter.Reset(compressedWriter)
-		writers = append(writers, cm.flateWriter)
+		flateWriter.Reset(compressedWriter)
+		writers = append(writers, flateWriter)
 	}
 
 	multiWriter := io.MultiWriter(writers...)
@@ -285,7 +282,7 @@ func serializeMessage(cm *ClientManager, bm *m.BroadcastMessage, enableNonCompre
 		}
 	}
 	if compressedWriter != nil {
-		if err := cm.flateWriter.Close(); err != nil {
+		if err := flateWriter.Close(); err != nil {
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to close flate writer: %w", err)
 		}
 		if err := compressedWriter.Flush(); err != nil {
