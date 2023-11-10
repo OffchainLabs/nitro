@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -58,6 +59,10 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 
 func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
 	t.validator = validator
+}
+
+func (t *InboxTracker) FetchHotShotCommitment(blockHeight uint64) (*espresso.Commitment, error) {
+	return nil, nil
 }
 
 func (t *InboxTracker) Initialize() error {

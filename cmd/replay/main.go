@@ -35,10 +35,7 @@ import (
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
-	enc, err := wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
-	if err != nil {
-		panic(fmt.Errorf("Error resolving preimage: %w", err))
-	}
+	enc := wavmio.ReadHotShotHeader()
 	header := &types.Header{}
 	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
@@ -47,11 +44,8 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-func getHotShotHeaderByHash(hash common.Hash) *espresso.Header {
-	enc, err := wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
-	if err != nil {
-		return nil
-	}
+func getHotShotHeader(hash common.Hash) *espresso.Header {
+	bytes = wavmio.get
 	var header &espresso.Header
 	if err := json.Unmarshal(header, &enc); err != nil {
 		panic(fmt.Errorf("Error deserializing espresso header preimage"))

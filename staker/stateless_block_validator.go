@@ -70,7 +70,7 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
-	FetchHotShotCommitment(blockHeight uint64) (espresso.Commitment, error)
+	FetchHotShotCommitment(blockHeight uint64) (*espresso.Commitment, error)
 }
 
 type L1ReaderInterface interface {
