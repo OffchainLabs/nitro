@@ -91,6 +91,7 @@ var ConfigDefault = Config{
 	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
 	Caching:           DefaultCachingConfig,
 	Dangerous:         DefaultDangerousConfig,
+	Forwarder:         DefaultNodeForwarderConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {

@@ -399,7 +399,7 @@ func mainImpl() int {
 	}
 
 	if err := startMetrics(nodeConfig); err != nil {
-		log.Error("Starting metrics: %v", err)
+		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
 
@@ -591,16 +591,23 @@ type NodeConfig struct {
 var NodeConfigDefault = NodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	Node:          arbnode.ConfigDefault,
+	Execution:     gethexec.ConfigDefault,
+	Validation:    valnode.DefaultValidationConfig,
 	ParentChain:   conf.L1ConfigDefault,
 	Chain:         conf.L2ConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
+	FileLogging:   genericconf.DefaultFileLoggingConfig,
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
 	IPC:           genericconf.IPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
+	GraphQL:       genericconf.GraphQLConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Init:          InitConfigDefault,
+	Rpc:           genericconf.DefaultRpcConfig,
 	PProf:         false,
 	PprofCfg:      genericconf.PProfDefault,
 }

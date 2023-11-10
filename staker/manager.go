@@ -4,9 +4,11 @@ package staker
 
 import (
 	"context"
+
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 
@@ -23,7 +25,8 @@ func NewManager(
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
-	historyCacheBaseDir string,
+	historyCacheBaseDir,
+	validatorName string,
 ) (*challengemanager.Manager, error) {
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
@@ -50,29 +53,40 @@ func NewManager(
 	if err != nil {
 		return nil, err
 	}
-	bigStepEdgeHeight, err := managerBinding.LAYERZEROBIGSTEPEDGEHEIGHT(&callOpts)
+	numBigStepLevel, err := managerBinding.NUMBIGSTEPLEVEL(&callOpts)
 	if err != nil {
 		return nil, err
 	}
-	smallStepEdgeHeight, err := managerBinding.LAYERZEROSMALLSTEPEDGEHEIGHT(&callOpts)
-	if err != nil {
-		return nil, err
+	challengeLeafHeights := make([]l2stateprovider.Height, numBigStepLevel+2)
+	for i := uint8(0); i <= numBigStepLevel+1; i++ {
+		leafHeight, err := managerBinding.GetLayerZeroEndHeight(&callOpts, i)
+		if err != nil {
+			return nil, err
+		}
+		challengeLeafHeights[i] = l2stateprovider.Height(leafHeight.Uint64())
 	}
+
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
-		nil,
-		smallStepEdgeHeight.Uint64(),
-		bigStepEdgeHeight.Uint64()*smallStepEdgeHeight.Uint64(),
 		historyCacheBaseDir,
+		challengeLeafHeights,
+		validatorName,
 	)
 	if err != nil {
 		return nil, err
 	}
+	provider := l2stateprovider.NewHistoryCommitmentProvider(
+		stateManager,
+		stateManager,
+		stateManager,
+		challengeLeafHeights,
+		stateManager,
+	)
 	manager, err := challengemanager.New(
 		ctx,
 		chain,
 		client,
-		stateManager,
+		provider,
 		rollupAddress,
 		challengemanager.WithMode(types.MakeMode),
 	)
