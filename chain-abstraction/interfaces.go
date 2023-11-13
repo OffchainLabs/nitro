@@ -56,6 +56,8 @@ const (
 	AssertionConfirmed
 )
 
+const BeforeDeadlineAssertionConfirmationError = "BEFORE_DEADLINE"
+
 // Assertion represents a top-level claim in the protocol about the
 // chain state created by a validator that stakes on their claim.
 // Assertions can be challenged.

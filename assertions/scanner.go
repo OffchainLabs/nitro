@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -49,6 +50,7 @@ type Manager struct {
 	stateProvider               l2stateprovider.ExecutionStateAgreementChecker
 	pollInterval                time.Duration
 	confirmationAttemptInterval time.Duration
+	averageTimeForBlockCreation time.Duration
 	rollupAddr                  common.Address
 	validatorName               string
 	forksDetectedCount          uint64
@@ -71,6 +73,7 @@ func NewManager(
 	assertionConfirmationAttemptInterval time.Duration,
 	stateManager l2stateprovider.ExecutionProvider,
 	postInterval time.Duration,
+	averageTimeForBlockCreation time.Duration,
 ) (*Manager, error) {
 	if pollInterval == 0 {
 		return nil, errors.New("assertion scanning interval must be greater than 0")
@@ -94,16 +97,17 @@ func NewManager(
 		stateManager:                stateManager,
 		postInterval:                postInterval,
 		submittedAssertions:         threadsafe.NewSet[common.Hash](),
+		averageTimeForBlockCreation: averageTimeForBlockCreation,
 	}, nil
 }
 
 // The Start function begins two main tasks:
 // 1. It initiates scanning of the assertion chain for newly created assertions, starting from the latest confirmed assertion. This scanning is done via polling.
 // 2. Concurrently, it also starts a routine that is responsible for posting new assertions to the assertion chain.
-func (s *Manager) Start(ctx context.Context) {
-	go s.postAssertionRoutine(ctx)
+func (m *Manager) Start(ctx context.Context) {
+	go m.postAssertionRoutine(ctx)
 
-	latestConfirmed, err := s.chain.LatestConfirmed(ctx)
+	latestConfirmed, err := m.chain.LatestConfirmed(ctx)
 	if err != nil {
 		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
 		return
@@ -115,7 +119,7 @@ func (s *Manager) Start(ctx context.Context) {
 	}
 
 	filterer, err := retry.UntilSucceeds(ctx, func() (*rollupgen.RollupUserLogicFilterer, error) {
-		return rollupgen.NewRollupUserLogicFilterer(s.rollupAddr, s.backend)
+		return rollupgen.NewRollupUserLogicFilterer(m.rollupAddr, m.backend)
 	})
 	if err != nil {
 		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
@@ -127,19 +131,19 @@ func (s *Manager) Start(ctx context.Context) {
 		Context: ctx,
 	}
 	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		return true, s.checkForAssertionAdded(ctx, filterer, filterOpts)
+		return true, m.checkForAssertionAdded(ctx, filterer, filterOpts)
 	})
 	if err != nil {
 		srvlog.Error("Could not check for assertion added event")
 		return
 	}
 
-	ticker := time.NewTicker(s.pollInterval)
+	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := s.backend.HeaderByNumber(ctx, nil)
+			latestBlock, err := m.backend.HeaderByNumber(ctx, nil)
 			if err != nil {
 				srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 				continue
@@ -158,7 +162,7 @@ func (s *Manager) Start(ctx context.Context) {
 				Context: ctx,
 			}
 			_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-				return true, s.checkForAssertionAdded(ctx, filterer, filterOpts)
+				return true, m.checkForAssertionAdded(ctx, filterer, filterOpts)
 			})
 			if err != nil {
 				srvlog.Error("Could not check for assertion added", log.Ctx{"err": err})
@@ -171,19 +175,19 @@ func (s *Manager) Start(ctx context.Context) {
 	}
 }
 
-func (s *Manager) ForksDetected() uint64 {
-	return s.forksDetectedCount
+func (m *Manager) ForksDetected() uint64 {
+	return m.forksDetectedCount
 }
 
-func (s *Manager) ChallengesSubmitted() uint64 {
-	return s.challengesSubmittedCount
+func (m *Manager) ChallengesSubmitted() uint64 {
+	return m.challengesSubmittedCount
 }
 
-func (s *Manager) AssertionsProcessed() uint64 {
-	return s.assertionsProcessedCount
+func (m *Manager) AssertionsProcessed() uint64 {
+	return m.assertionsProcessedCount
 }
 
-func (s *Manager) checkForAssertionAdded(
+func (m *Manager) checkForAssertionAdded(
 	ctx context.Context,
 	filterer *rollupgen.RollupUserLogicFilterer,
 	filterOpts *bind.FilterOpts,
@@ -209,13 +213,13 @@ func (s *Manager) checkForAssertionAdded(
 		assertionHash := protocol.AssertionHash{Hash: it.Event.AssertionHash}
 
 		// Try to confirm the assertion in the background.
-		go s.keepTryingAssertionConfirmation(ctx, assertionHash)
+		go m.keepTryingAssertionConfirmation(ctx, assertionHash)
 
 		// Try to process the assertion creation event in the background
 		// to not block the processing of other incoming events.
 		go func() {
 			_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-				return true, s.ProcessAssertionCreationEvent(ctx, assertionHash)
+				return true, m.ProcessAssertionCreationEvent(ctx, assertionHash)
 			}, retry.WithInterval(time.Minute))
 			if processErr != nil {
 				srvlog.Error(
@@ -419,35 +423,67 @@ func (m *Manager) findLastAgreedWithAncestor(
 	return latestConfirmedInfo, nil
 }
 
-func (s *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
-	ticker := time.NewTicker(s.confirmationAttemptInterval)
-	defer ticker.Stop()
+func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
 	for {
-		select {
-		case <-ticker.C:
-			status, err := s.chain.AssertionStatus(ctx, assertionHash)
-			if err != nil {
-				srvlog.Error("Could not get assertion by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
-				continue
-			}
-			if status == protocol.NoAssertion {
-				srvlog.Error("No assertion found by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
-				continue
-			}
-			if status == protocol.AssertionConfirmed {
-				srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
-				return
-			}
-			err = s.chain.ConfirmAssertionByTime(ctx, assertionHash)
-			if err != nil {
-				continue
-			}
-			srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
-			return
-		case <-ctx.Done():
+		if m.assertionConfirmed(ctx, assertionHash) {
 			return
 		}
+		ticker := time.NewTicker(m.confirmationAttemptInterval)
+		select {
+		case <-ctx.Done():
+			ticker.Stop()
+			return
+		case <-ticker.C:
+		}
 	}
+}
+
+func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol.AssertionHash) bool {
+	status, err := m.chain.AssertionStatus(ctx, assertionHash)
+	if err != nil {
+		srvlog.Error("Could not get assertion by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
+		return false
+	}
+	if status == protocol.NoAssertion {
+		srvlog.Error("No assertion found by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
+		return false
+	}
+	if status == protocol.AssertionConfirmed {
+		srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
+		return true
+	}
+	err = m.chain.ConfirmAssertionByTime(ctx, assertionHash)
+	if err != nil {
+		if strings.Contains(err.Error(), protocol.BeforeDeadlineAssertionConfirmationError) {
+			creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+			if err != nil {
+				srvlog.Error("Could not get assertion creation info by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
+				return false
+			}
+			prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+			if err != nil {
+				srvlog.Error("Could not get assertion creation info by hash", log.Ctx{"err": err, "assertionHash": creationInfo.ParentAssertionHash})
+				return false
+			}
+			latestHeader, err := m.chain.Backend().HeaderByNumber(ctx, nil)
+			if err != nil {
+				srvlog.Error("Could not get latest header", log.Ctx{"err": err})
+				return false
+			}
+			<-time.After(m.getConfirmationInterval(creationInfo.CreationBlock, prevCreationInfo.ConfirmPeriodBlocks, latestHeader.Number.Uint64()))
+		}
+		return false
+	}
+	srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
+	return true
+}
+
+func (m *Manager) getConfirmationInterval(creationBlock uint64, confirmPeriodBlocks uint64, latestHeaderNumber uint64) time.Duration {
+	if creationBlock+confirmPeriodBlocks > latestHeaderNumber {
+		blocksLeftForConfirmation := (creationBlock + confirmPeriodBlocks) - latestHeaderNumber
+		return m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
+	}
+	return 0
 }
 
 // Returns true if the manager can respond to an assertion with a challenge.
