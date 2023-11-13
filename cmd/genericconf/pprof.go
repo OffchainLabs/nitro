@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	// Blank import pprof registers its HTTP handlers.
 	_ "net/http/pprof" // #nosec G108
 
 	"github.com/ethereum/go-ethereum/log"
@@ -16,8 +17,7 @@ func StartPprof(address string) {
 	log.Info("Starting metrics server with pprof", "addr", fmt.Sprintf("http://%s/debug/metrics", address))
 	log.Info("Pprof endpoint", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
 	go func() {
-		// #nosec G114
-		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
+		if err := http.ListenAndServe(address, http.DefaultServeMux); /* #nosec G114 */ err != nil {
 			log.Error("Failure in running pprof server", "err", err)
 		}
 	}()

@@ -20,8 +20,8 @@ func (a *ConsensusAPI) FetchBatch(ctx context.Context, batchNum uint64) ([]byte,
 	return a.consensus.FetchBatch(batchNum).Await(ctx)
 }
 
-func (a *ConsensusAPI) FindL1BatchForMessage(ctx context.Context, message arbutil.MessageIndex) (uint64, error) {
-	return a.consensus.FindL1BatchForMessage(message).Await(ctx)
+func (a *ConsensusAPI) FindInboxBatchContainingMessage(ctx context.Context, message arbutil.MessageIndex) (uint64, error) {
+	return a.consensus.FindInboxBatchContainingMessage(message).Await(ctx)
 }
 
 func (a *ConsensusAPI) GetBatchParentChainBlock(ctx context.Context, seqNum uint64) (uint64, error) {

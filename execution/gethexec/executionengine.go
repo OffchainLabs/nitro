@@ -74,7 +74,7 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 	s.reorgSequencing = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(consensus consensus.FullConsensusClient) error {
+func (s *ExecutionEngine) SetConsensus(consensus consensus.FullConsensusClient) error {
 	if s.Started() {
 		return errors.New("trying to set transaction consensus after start")
 	}
@@ -622,7 +622,7 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			s.latestBlockMutex.Lock()
 			block := s.latestBlock
 			s.latestBlockMutex.Unlock()
-			if block != lastBlock && block != nil {
+			if block != nil && (lastBlock == nil || block.Hash() != lastBlock.Hash()) {
 				log.Info(
 					"created block",
 					"l2Block", block.Number(),

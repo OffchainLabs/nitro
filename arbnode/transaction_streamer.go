@@ -19,6 +19,7 @@ import (
 
 	"errors"
 
+	"github.com/cockroachdb/pebble"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
@@ -71,7 +72,7 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcastQueueSize   int           `koanf:"max-broadcaster-queue-size"`
+	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 }
@@ -79,19 +80,19 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   1024,
+	MaxBroadcasterQueueSize: 1024,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize:   10_000,
+	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
+	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 }
@@ -495,7 +496,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
-			maxQueueSize := s.config().MaxBroadcastQueueSize
+			maxQueueSize := s.config().MaxBroadcasterQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
@@ -524,7 +525,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 	if broadcastStartPos > 0 {
 		_, err := s.GetMessage(broadcastStartPos - 1)
 		if err != nil {
-			if !errors.Is(err, leveldb.ErrNotFound) {
+			if !errors.Is(err, leveldb.ErrNotFound) && !errors.Is(err, pebble.ErrNotFound) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
@@ -711,6 +712,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var oldMsg *arbostypes.MessageWithMetadata
 	var lastDelayedRead uint64
 	var hasNewConfirmedMessages bool
+	var cacheClearLen int
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
@@ -739,10 +741,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Or no active broadcast reorg and broadcast messages start before or immediately after last L1 message
 		if messagesAfterPos >= broadcastStartPos {
 			broadcastSliceIndex := int(messagesAfterPos - broadcastStartPos)
+			messagesOldLen := len(messages)
 			if broadcastSliceIndex < len(s.broadcasterQueuedMessages) {
 				// Some cached feed messages can be used
 				messages = append(messages, s.broadcasterQueuedMessages[broadcastSliceIndex:]...)
 			}
+			// This calculation gives the exact length of cache which was appended to messages
+			cacheClearLen = broadcastSliceIndex + len(messages) - messagesOldLen
 		}
 
 		// L1 used or replaced broadcast cache items
@@ -815,8 +820,14 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	if clearQueueOnSuccess {
-		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+		// Check if new messages were added at the end of cache, if they were, then dont remove those particular messages
+		if len(s.broadcasterQueuedMessages) > cacheClearLen {
+			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos)+uint64(cacheClearLen))
+		} else {
+			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+		}
 		s.broadcasterQueuedMessagesActiveReorg = false
 	}
 
@@ -956,7 +967,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	s.execLastMsgCount = prevMessageCount
+	s.execLastMsgCount = msgCount
 	pos, err := s.exec.HeadMessageNumber().Await(ctx)
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)

@@ -15,9 +15,28 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+
+	"github.com/r3labs/diff/v3"
+	flag "github.com/spf13/pflag"
 )
+
+func TestEmptyCliConfig(t *testing.T) {
+	f := flag.NewFlagSet("", flag.ContinueOnError)
+	NodeConfigAddOptions(f)
+	k, err := confighelpers.BeginCommonParse(f, []string{})
+	Require(t, err)
+	var emptyCliNodeConfig NodeConfig
+	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
+	Require(t, err)
+	if !reflect.DeepEqual(emptyCliNodeConfig, NodeConfigDefault) {
+		changelog, err := diff.Diff(emptyCliNodeConfig, NodeConfigDefault)
+		Require(t, err)
+		Fail(t, "empty cli config differs from expected default", changelog)
+	}
+}
 
 func TestSeqConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
@@ -69,7 +88,7 @@ func TestReloads(t *testing.T) {
 
 	config := NodeConfigDefault
 	update := NodeConfigDefault
-	update.Node.BatchPoster.BatchPollDelay++
+	update.Node.BatchPoster.MaxSize++
 
 	check(reflect.ValueOf(config), false, "config")
 	Require(t, config.CanReload(&config))
@@ -86,7 +105,7 @@ func TestReloads(t *testing.T) {
 	// check that non-reloadable fields fail assignment
 	update.Metrics = !update.Metrics
 	testUnsafe()
-	update.L2.ChainID++
+	update.ParentChain.ID++
 	testUnsafe()
 	update.Node.Staker.Enable = !update.Node.Staker.Enable
 	testUnsafe()
@@ -114,8 +133,8 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check updating the config
 	update := config.ShallowClone()
 	expected := config.ShallowClone()
-	update.Node.BatchPoster.BatchPollDelay += 2 * time.Millisecond
-	expected.Node.BatchPoster.BatchPollDelay += 2 * time.Millisecond
+	update.Node.BatchPoster.MaxSize += 100
+	expected.Node.BatchPoster.MaxSize += 100
 	Require(t, liveConfig.Set(update))
 	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to set config")
@@ -123,7 +142,7 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// check that an invalid reload gets rejected
 	update = config.ShallowClone()
-	update.L2.ChainID++
+	update.ParentChain.ID++
 	if liveConfig.Set(update) == nil {
 		Fail(t, "failed to reject invalid update")
 	}
@@ -150,19 +169,19 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// change the config file
 	expected = config.ShallowClone()
-	expected.Node.BatchPoster.BatchPollDelay += time.Millisecond
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"poll-delay\":\"%s\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.BatchPollDelay.String())
+	expected.Node.BatchPoster.MaxSize += 100
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
 	if !PollLiveConfigUntilEqual(liveConfig, expected) {
-		Fail(t, "failed to update config", config.Node.BatchPoster.BatchPollDelay, update.Node.BatchPoster.BatchPollDelay)
+		Fail(t, "failed to update config", config.Node.BatchPoster.MaxSize, update.Node.BatchPoster.MaxSize)
 	}
 
 	// change chain.id in the config file (currently non-reloadable)
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"poll-delay\":\"%s\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.BatchPollDelay.String())
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload

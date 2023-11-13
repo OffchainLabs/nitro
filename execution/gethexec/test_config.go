@@ -12,7 +12,9 @@ func ConfigDefaultNonSequencerTest() *Config {
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ExecRPC = ExecRPCConfigTest
-	config.ConsensesServer = rpcclient.TestClientConfig
+	config.ConsensusServer = rpcclient.TestClientConfig
+	config.ParentChainReader = headerreader.TestConfig
+	config.ForwardingTarget = "null"
 
 	err := config.Validate()
 	if err != nil {
@@ -24,9 +26,10 @@ func ConfigDefaultNonSequencerTest() *Config {
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-	config.L1Reader = headerreader.TestConfig
+	config.ParentChainReader = headerreader.TestConfig
 	config.ExecRPC = ExecRPCConfigTest
-	config.ConsensesServer = rpcclient.TestClientConfig
+	config.ConsensusServer = rpcclient.TestClientConfig
+	config.ForwardingTarget = "null"
 
 	err := config.Validate()
 	if err != nil {

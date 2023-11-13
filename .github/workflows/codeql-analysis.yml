@@ -14,6 +14,8 @@ name: "CodeQL"
 on:
   push:
     branches: [ "master" ]
+  merge_group:
+    branches: [ "master" ]
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ "master" ]
@@ -23,13 +25,13 @@ on:
 jobs:
   analyze:
     name: Analyze
+    if: github.repository == 'OffchainLabs/nitro' # don't run in any forks without "Advanced Security" enabled
     runs-on: ubuntu-8
     permissions:
       actions: read
       contents: read
       security-events: write
     env:
-      CODEQL_EXTRACTOR_GO_BUILD_TRACING: 'on'
       WABT_VERSION: 1.0.32
 
     strategy:
@@ -41,7 +43,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: true
 
@@ -59,24 +61,19 @@ jobs:
         config-file: ./.github/codeql/codeql-config.yml
 
     - name: Setup nodejs
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v3
       with:
         node-version: '16'
         cache: 'yarn'
         cache-dependency-path: '**/yarn.lock'
 
     - name: Install go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v4
       with:
         go-version: 1.20.x
 
     - name: Install rust stable
-      uses: actions-rs/toolchain@v1
-      id: install-rust
-      with:
-        profile: minimal
-        toolchain: "stable"
-        override: true
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Cache Rust Build Products
       uses: actions/cache@v3

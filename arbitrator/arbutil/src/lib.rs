@@ -3,5 +3,7 @@
 
 pub mod color;
 pub mod format;
+mod types;
 
 pub use color::{Color, DebugColor};
+pub use types::PreimageType;

@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"context"
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -55,6 +56,9 @@ type FullExecutionClient interface {
 	ExecutionClient
 	ExecutionRecorder
 	ExecutionSequencer
+
+	Start(ctx context.Context) error
+	StopAndWait()
 
 	Maintenance() containers.PromiseInterface[struct{}]
 }

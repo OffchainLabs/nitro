@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -18,27 +17,26 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.BatchPoster.Enable = false
-	l2Info, arbNode, l2Client, l1Info, l1Backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil, nil)
-	defer requireClose(t, l1stack)
-	defer arbNode.StopAndWait()
 
-	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
-	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
 	Require(t, err)
-	batchReceipt, err := EnsureTxSucceeded(ctx, l1Client, tx)
+	batchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	execNode := getExecNode(t, arbNode)
 	for i := 0; ; i++ {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch from L1")
 		}
-		msgNum, err := execNode.ExecEngine.HeadMessageNumber().Await(ctx)
+		msgNum, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber().Await(ctx)
 		Require(t, err)
 		if msgNum == 1 {
 			break
@@ -47,33 +45,33 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	metadata, err := arbNode.InboxTracker.GetBatchMetadata(1)
+	metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
 	if metadata.ParentChainBlock != originalBatchBlock {
 		Fatal(t, "Posted batch in block", originalBatchBlock, "but metadata says L1 block was", metadata.ParentChainBlock)
 	}
 
-	_, l2Receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2Info, l2Client, ctx)
+	_, l2Receipt := builder.L2.TransferBalance(t, "Owner", "Owner", common.Big1, builder.L2Info)
 
 	// Make the reorg larger to force the miner to discard transactions.
 	// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 	// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 	// Therefore, we make a bunch of small blocks to prevent the code from running.
 	for j := uint64(0); j < 70; j++ {
-		TransferBalance(t, "Faucet", "Faucet", common.Big1, l1Info, l1Client, ctx)
+		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info)
 	}
 
-	parentBlock := l1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
-	err = l1Backend.BlockChain().ReorgToOldBlock(parentBlock)
+	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
+	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
 	Require(t, err)
 
 	// Produce a new l1Block so that the batch ends up in a different l1Block than before
-	TransferBalance(t, "User", "User", common.Big1, l1Info, l1Client, ctx)
+	builder.L1.TransferBalance(t, "User", "User", common.Big1, builder.L1Info)
 
 	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
 	Require(t, err)
-	newBatchReceipt, err := EnsureTxSucceeded(ctx, l1Client, tx)
+	newBatchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	newBatchBlock := newBatchReceipt.BlockNumber.Uint64()
@@ -87,7 +85,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch reorg from L1")
 		}
-		metadata, err = arbNode.InboxTracker.GetBatchMetadata(1)
+		metadata, err = builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
 		Require(t, err)
 		if metadata.ParentChainBlock == newBatchBlock {
 			break
@@ -97,10 +95,10 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, err = arbNode.InboxReader.GetSequencerMessageBytes(1).Await(ctx)
+	_, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(1).Await(ctx)
 	Require(t, err)
 
-	l2Header, err := l2Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)
+	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)
 	Require(t, err)
 
 	if l2Header.Hash() != l2Receipt.BlockHash {

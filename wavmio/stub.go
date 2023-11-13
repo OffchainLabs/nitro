@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 // source for arrayFlags: https://stackoverflow.com/questions/28322997/how-to-get-a-list-of-values-into-a-flag-in-golang
@@ -134,7 +135,7 @@ func AdvanceInboxMessage() {
 	seqAdvanced++
 }
 
-func ResolvePreImage(hash common.Hash) ([]byte, error) {
+func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
 	val, ok := preimages[hash]
 	if !ok {
 		return []byte{}, errors.New("preimage not found")

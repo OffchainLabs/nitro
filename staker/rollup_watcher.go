@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -43,10 +45,11 @@ type StakerInfo struct {
 
 type RollupWatcher struct {
 	*rollupgen.RollupUserLogic
-	address      common.Address
-	fromBlock    *big.Int
-	client       arbutil.L1Interface
-	baseCallOpts bind.CallOpts
+	address             common.Address
+	fromBlock           *big.Int
+	client              arbutil.L1Interface
+	baseCallOpts        bind.CallOpts
+	unSupportedL3Method atomic.Bool
 }
 
 func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
@@ -69,17 +72,28 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	return &opts
 }
 
+// A regexp matching "execution reverted" errors returned from the parent chain RPC.
+var executionRevertedRegexp = regexp.MustCompile("(?i)execution reverted")
+
 func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64) (*big.Int, error) {
 	callOpts := r.getCallOpts(ctx)
-	createdAtBlock, err := r.GetNodeCreationBlockForLogLookup(callOpts, nodeNum)
-	if err != nil {
+	if !r.unSupportedL3Method.Load() {
+		createdAtBlock, err := r.GetNodeCreationBlockForLogLookup(callOpts, nodeNum)
+		if err == nil {
+			return createdAtBlock, nil
+		}
 		log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
-		node, err := r.GetNode(callOpts, nodeNum)
-		if err != nil {
+		if executionRevertedRegexp.MatchString(err.Error()) {
+			r.unSupportedL3Method.Store(true)
+		} else {
 			return nil, err
 		}
-		createdAtBlock = new(big.Int).SetUint64(node.CreatedAtBlock)
 	}
+	node, err := r.GetNode(callOpts, nodeNum)
+	if err != nil {
+		return nil, err
+	}
+	createdAtBlock := new(big.Int).SetUint64(node.CreatedAtBlock)
 	return createdAtBlock, nil
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 )
 
@@ -115,7 +116,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
-	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number), tx)
+	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time), tx)
 	if err != nil {
 		return err
 	}
@@ -134,7 +135,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Time, extraInfo.ArbOSFormatVersion))
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
@@ -143,11 +144,6 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	}
 	if config.Strictness < TxPreCheckerStrictnessLikelyCompatible {
 		return nil
-	}
-	balance := statedb.GetBalance(sender)
-	cost := tx.Cost()
-	if arbmath.BigLessThan(balance, cost) {
-		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if options != nil {
 		if err := options.Check(extraInfo.L1BlockNumber, header.Time, statedb); err != nil {
@@ -170,7 +166,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				oldHeader = previousHeader
 				blocksTraversed++
 			}
-			if oldHeader != header {
+			if !headerreader.HeadersEqual(oldHeader, header) {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)
@@ -184,10 +180,19 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			conditionalTxAcceptedByTxPreCheckerOldStateCounter.Inc(1)
 		}
 	}
+	balance := statedb.GetBalance(sender)
+	cost := tx.Cost()
+	if arbmath.BigLessThan(balance, cost) {
+		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
+	}
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
-	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
+	brotliCompressionLevel, err := arbos.BrotliCompressionLevel()
+	if err != nil {
+		return fmt.Errorf("failed to get brotli compression level: %w", err)
+	}
+	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)
 	if tx.Gas() < intrinsic+dataGas.Uint64() {
 		return core.ErrIntrinsicGas

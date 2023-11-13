@@ -208,6 +208,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		bridgeAddr,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
+		big.NewInt(117964),
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
@@ -228,7 +229,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 }
 
 func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chainConfig *params.ChainConfig, l1Client arbutil.L1Interface, l2info *BlockchainTestInfo, rollupAddresses *chaininfo.RollupAddresses, initMsg *arbostypes.ParsedInitMessage, txOpts *bind.TransactOpts, signer signature.DataSignerFunc, fatalErrChan chan error) (*arbnode.Node, *gethexec.ExecutionNode) {
-	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMsg, nil)
+	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMsg, nil, nil)
 	execNode, err := gethexec.CreateExecutionNode(ctx, stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
 	Require(t, err)
 

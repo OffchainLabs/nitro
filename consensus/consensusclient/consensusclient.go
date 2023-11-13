@@ -53,10 +53,10 @@ func (c *Client) FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte]
 	})
 }
 
-func (c *Client) FindL1BatchForMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+func (c *Client) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread[uint64](c, func(ctx context.Context) (uint64, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_findL1BatchForMessage", message)
+		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_findInboxBatchContainingMessage", message)
 		if err != nil {
 			return 0, convertError(err)
 		}

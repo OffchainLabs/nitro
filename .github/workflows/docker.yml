@@ -3,6 +3,7 @@ run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
   push:
     branches:
@@ -22,12 +23,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
         with:
           driver-opts: network=host
 
@@ -39,7 +40,7 @@ jobs:
           restore-keys: ${{ runner.os }}-buildx-
 
       - name: Build nitro-node docker
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           target: nitro-node
           push: true
@@ -49,7 +50,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: Build nitro-node-dev docker
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           target: nitro-node-dev
           push: true
@@ -58,6 +59,17 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
+      - name: Start background nitro-testnode
+        shell: bash
+        run: |
+          cd nitro-testnode
+          ./test-node.bash --init --dev &
+      
+      - name: Wait for rpc to come up
+        shell: bash
+        run: |
+          ${{ github.workspace }}/.github/workflows/waitForNitro.sh
+  
       - name: Print WAVM module root
         id: module-root
         run: |
@@ -65,7 +77,7 @@ jobs:
           # We work around this by piping a tarball through stdout
           docker run --rm --entrypoint tar localhost:5000/nitro-node-dev:latest -cf - target/machines/latest | tar xf -
           module_root="$(cat "target/machines/latest/module-root.txt")"
-          echo "::set-output name=module-root::$module_root"
+          echo "name=module-root=$module_root" >> $GITHUB_STATE
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
       - name: Upload WAVM machine as artifact

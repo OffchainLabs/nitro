@@ -10,7 +10,7 @@ import (
 type JsonRecordResult struct {
 	Pos       arbutil.MessageIndex
 	BlockHash common.Hash
-	Preimages jsonapi.PreimagesMapJson
+	Preimages *jsonapi.PreimagesMapJson
 	BatchInfo []validator.BatchInfo
 }
 
