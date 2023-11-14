@@ -38,8 +38,8 @@ func TestDelayInboxLong(t *testing.T) {
 	var lastDelayedMessage *types.Transaction
 
 	for i := 0; i < addLocalLoops; i++ {
-		l1Txs := make([]*types.Transaction, 0, messagesPerAddLocal)
-		for len(l1Txs) < messagesPerAddLocal {
+		wrappedL1Txs := make([]*txpool.Transaction, 0, messagesPerAddLocal)
+		for len(wrappedL1Txs) < messagesPerAddLocal {
 			randNum := rand.Int() % messagesPerDelayed
 			var l1tx *types.Transaction
 			if randNum == 0 {
@@ -50,12 +50,9 @@ func TestDelayInboxLong(t *testing.T) {
 			} else {
 				l1tx = builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
-			l1Txs = append(l1Txs, l1tx)
+			wrappedL1Txs = append(wrappedL1Txs, &txpool.Transaction{Tx: l1tx})
 		}
-		wrappedL1Txs := make([]*txpool.Transaction, 0, messagesPerAddLocal)
-		for _, tx := range l1Txs {
-			wrappedL1Txs = append(wrappedL1Txs, &txpool.Transaction{Tx: tx})
-		}
+
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
 		errs := builder.L1.L1Backend.TxPool().Add(wrappedL1Txs, true, false)
 		for _, err := range errs {
@@ -63,7 +60,7 @@ func TestDelayInboxLong(t *testing.T) {
 		}
 		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
 		confirmLatestBlock(ctx, t, builder.L1Info, builder.L1.Client)
-		_, err := builder.L1.EnsureTxSucceeded(l1Txs[len(l1Txs)-1])
+		_, err := builder.L1.EnsureTxSucceeded(wrappedL1Txs[len(wrappedL1Txs)-1].Tx)
 		Require(t, err)
 	}
 

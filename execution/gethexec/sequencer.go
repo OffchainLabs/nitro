@@ -387,6 +387,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
 		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
 	}
 

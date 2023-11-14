@@ -168,6 +168,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		}
 		if newTx.Type() >= types.ArbitrumDepositTxType || newTx.Type() == types.BlobTxType {
 			// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+			// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 			return nil, types.ErrTxTypeNotSupported
 		}
 		return types.Transactions{newTx}, nil

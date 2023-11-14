@@ -239,7 +239,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	Require(t, err)
 	blockNumber := block.NumberU64()
 
-	l2BlockTime := func() uint64 {
+	currentL2BlockTime := func() uint64 {
 		l2Block, err := builder.L2.Client.BlockByNumber(ctx, nil)
 		Require(t, err)
 		return l2Block.Time()
@@ -249,7 +249,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	optionsB := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
 	optionsAB := optionsProduct(optionsA, optionsB)
 	options1 := dedupOptions(t, append(append(optionsAB, optionsA...), optionsB...))
-	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, l2BlockTime()))
+	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, currentL2BlockTime()))
 	for i, options := range options1 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, builder.L2Info, rpcClient, options)
 	}
@@ -285,7 +285,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	optionsD := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
 	optionsCD := optionsProduct(optionsC, optionsD)
 	options2 := dedupOptions(t, append(append(optionsCD, optionsC...), optionsD...))
-	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, l2BlockTime()))
+	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, currentL2BlockTime()))
 	for i, options := range options2 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, builder.L2Info, rpcClient, options)
 	}
@@ -295,7 +295,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, l2BlockTime()))
+	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, currentL2BlockTime()))
 	for i, options := range options3 {
 		testConditionalTxThatShouldFail(t, ctx, i, builder.L2Info, rpcClient, options, -32003)
 	}
