@@ -132,8 +132,10 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 	return bm, nil
 }
 
-// delete removes segments before the confirmed sequence number given. It will
-// not remove the segment containing the confirmed sequence number.
+// delete removes segments before the confirmed sequence number given. The
+// segment containing the confirmed sequence number will continue to store
+// previous messages but will register that messages up to the given number
+// have been deleted.
 func (b *backlog) delete(confirmed uint64) {
 	head := b.head.Load()
 	tail := b.tail.Load()
@@ -148,36 +150,38 @@ func (b *backlog) delete(confirmed uint64) {
 	if confirmed > tail.End() {
 		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.end.Load())
 		b.reset()
-		// should this be returning an error? The other buffer does not and just continues
 		return
 	}
 
 	// find the segment containing the confirmed message
-	segment, err := b.Lookup(confirmed)
+	found, err := b.Lookup(confirmed)
 	if err != nil {
 		log.Error(fmt.Sprintf("%s: clearing backlog", err.Error()))
 		b.reset()
-		// should this be returning an error? The other buffer does not and just continues
 		return
+	}
+	segment := found.(*backlogSegment)
+
+	// delete messages from the segment with the confirmed message
+	newHead := segment
+	start := head.Start()
+	if segment.End() == confirmed {
+		found = segment.Next()
+		newHead = found.(*backlogSegment)
+	} else {
+		err = segment.Delete(confirmed)
+		if err != nil {
+			log.Error(fmt.Sprintf("%s: clearing backlog", err.Error()))
+			b.reset()
+			return
+		}
 	}
 
-	// check the segment actually contains that message
-	if found := segment.Contains(confirmed); !found {
-		log.Error("error message not found in backlog segment, clearing backlog", "confirmed sequence number", confirmed)
-		b.reset()
-		// should this be returning an error? The other buffer does not and just continues
-		return
-	}
-
-	// remove all previous segments
-	previous := segment.Previous()
-	if IsBacklogSegmentNil(previous) {
-		return
-	}
-	b.removeFromLookup(head.Start(), previous.End())
-	b.head.Store(segment.(*backlogSegment))
-	count := b.Count() + head.Start() - previous.End() - uint64(1)
+	// tidy up lookup, count and head
+	b.removeFromLookup(start, confirmed)
+	count := b.Count() + start - confirmed - uint64(1)
 	b.messageCount.Store(count)
+	b.head.Store(newHead)
 }
 
 // removeFromLookup removes all entries from the head segment's start index to
@@ -185,7 +189,7 @@ func (b *backlog) delete(confirmed uint64) {
 func (b *backlog) removeFromLookup(start, end uint64) {
 	b.lookupLock.Lock()
 	defer b.lookupLock.Unlock()
-	for i := start; i == end; i++ {
+	for i := start; i <= end; i++ {
 		delete(b.lookupByIndex, i)
 	}
 }
@@ -218,16 +222,16 @@ func (b *backlog) reset() {
 type BacklogSegment interface {
 	Start() uint64
 	End() uint64
-	Contains(uint64) bool
 	Next() BacklogSegment
-	Previous() BacklogSegment
 	Get(uint64, uint64) ([]*m.BroadcastFeedMessage, error)
 	Messages() []*m.BroadcastFeedMessage
+	Delete(uint64) error
 }
 
 type backlogSegment struct {
 	start           atomic.Uint64
 	end             atomic.Uint64
+	messagesLock    sync.RWMutex
 	messages        []*m.BroadcastFeedMessage
 	messageCount    atomic.Uint64
 	nextSegment     atomic.Pointer[backlogSegment]
@@ -262,11 +266,9 @@ func (s *backlogSegment) Next() BacklogSegment {
 	return s.nextSegment.Load()
 }
 
-func (s *backlogSegment) Previous() BacklogSegment {
-	return s.previousSegment.Load()
-}
-
 func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
+	s.messagesLock.RLock()
+	defer s.messagesLock.RUnlock()
 	return s.messages
 }
 
@@ -283,6 +285,9 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 
 	startIndex := start - s.start.Load()
 	endIndex := end - s.start.Load() + 1
+
+	s.messagesLock.RLock()
+	defer s.messagesLock.RUnlock()
 	return s.messages[startIndex:endIndex], nil
 }
 
@@ -292,6 +297,8 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 // message is ahead of the segment's end message append will return
 // errDropSegments to ensure any messages before the given message are dropped.
 func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) error {
+	s.messagesLock.Lock()
+	defer s.messagesLock.Unlock()
 	seen := false
 	defer s.updateSegment(&seen)
 
@@ -309,14 +316,26 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 }
 
 // Contains confirms whether the segment contains a message with the given sequence number
-func (s *backlogSegment) Contains(i uint64) bool {
-	if i < s.start.Load() || i > s.end.Load() {
-		return false
+func (s *backlogSegment) Delete(confirmed uint64) error {
+	seen := false
+	defer s.updateSegment(&seen)
+
+	start := s.start.Load()
+	end := s.end.Load()
+	if confirmed < start || confirmed > end {
+		return fmt.Errorf("confirmed message (%d) is not in current backlog (%d-%d)", confirmed, start, end)
 	}
 
-	msgIndex := i - s.start.Load()
+	msgIndex := confirmed - start
+	s.messagesLock.Lock()
 	msg := s.messages[msgIndex]
-	return uint64(msg.SequenceNumber) == i
+	if uint64(msg.SequenceNumber) != confirmed {
+		return fmt.Errorf("confirmed message (%d) is not in expected index (%d) in current backlog (%d-%d)", confirmed, msgIndex, start, end)
+	}
+
+	s.messages = s.messages[msgIndex+1:]
+	s.messagesLock.Unlock()
+	return nil
 }
 
 // updateSegment updates the messageCount, start and end indices of the segment

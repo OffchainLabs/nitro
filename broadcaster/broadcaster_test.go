@@ -84,21 +84,21 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
 
 	b.Confirm(4)
-	waitUntilUpdated(t, expectMessageCount(3,
-		"after 6 messages, 4 cleared by confirm (first backlog segment)"))
+	waitUntilUpdated(t, expectMessageCount(2,
+		"after 6 messages, 4 cleared by confirm"))
 
 	b.Confirm(5)
-	waitUntilUpdated(t, expectMessageCount(3,
-		"after 6 messages, 5 cleared by confirm, but segment containing 5th message remains in backlog"))
+	waitUntilUpdated(t, expectMessageCount(1,
+		"after 6 messages, 5 cleared by confirm"))
 
 	b.Confirm(4)
-	waitUntilUpdated(t, expectMessageCount(3,
+	waitUntilUpdated(t, expectMessageCount(1,
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(5)
 	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 7))
-	waitUntilUpdated(t, expectMessageCount(4,
-		"after 7 messages, 4 cleared by confirm, but segment containing 5th message remains in backlog"))
+	waitUntilUpdated(t, expectMessageCount(2,
+		"after 7 messages, 5 cleared by confirm"))
 
 	// Confirm not-yet-seen or already confirmed/cleared sequence numbers twice to force clearing cache
 	b.Confirm(8)

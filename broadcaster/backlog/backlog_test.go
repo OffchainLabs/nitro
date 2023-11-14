@@ -31,6 +31,12 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 			t.Errorf("failed to find message (%d) in lookup", k)
 		}
 	}
+
+	expLen := len(lookupKeys)
+	actualLen := len(b.lookupByIndex)
+	if expLen != actualLen {
+		t.Errorf("expected length of lookupByIndex map (%d) does not equal actual length (%d)", expLen, actualLen)
+	}
 }
 
 func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCount int, start, end uint64) {
@@ -111,7 +117,7 @@ func TestAppend(t *testing.T) {
 			3, // Message 44 is non sequential and the first message in a new segment, the previous messages will be dropped from the backlog
 			44,
 			46,
-			[]arbutil.MessageIndex{45, 46},
+			[]arbutil.MessageIndex{44, 45, 46},
 		},
 		{
 			"MessageSeenFirstSegmentMessage",
@@ -208,22 +214,40 @@ func TestDelete(t *testing.T) {
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
-			"MsgInBacklog",
+			"FirstMsgInBacklog",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			43, // only the first segment will be deleted
-			4,
-			43,
+			40, // this is the first message in the backlog
+			6,
+			41,
 			46,
-			[]arbutil.MessageIndex{43, 44, 45, 46},
+			[]arbutil.MessageIndex{41, 42, 43, 44, 45, 46},
 		},
 		{
-			"MsgInFirstSegmentInBacklog",
+			"FirstMsgInSegment",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			42, // first segment will not be deleted as confirmed message is there
-			7,
-			40,
+			43, // this is the first message in a middle segment of the backlog
+			3,
+			44,
 			46,
+			[]arbutil.MessageIndex{44, 45, 46},
+		},
+		{
+			"MiddleMsgInSegment",
 			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			44, // this is a message in the middle of a middle segment of the backlog
+			2,
+			45,
+			46,
+			[]arbutil.MessageIndex{45, 46},
+		},
+		{
+			"LastMsgInSegment",
+			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			45, // this is the last message in a middle segment of the backlog, the whole segment should be deleted along with any segments before it
+			1,
+			46,
+			46,
+			[]arbutil.MessageIndex{46},
 		},
 		{
 			"MsgAfterBacklog",
@@ -420,7 +444,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 		defer wg.Done()
 		for _, i := range []uint64{40, 43, 47} {
 			b.delete(i)
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}(t, b)
 
@@ -435,5 +459,5 @@ func TestBacklogRaceCondition(t *testing.T) {
 	}
 	// Messages up to 47 were deleted. However the segment that 47 was in is
 	// kept, which is why the backlog starts at 46.
-	validateBacklog(t, b, 10, 46, 55, append(indexes, newIndexes...))
+	validateBacklog(t, b, 8, 48, 55, newIndexes[1:])
 }
