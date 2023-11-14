@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/offchainlabs/nitro/espresso"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"

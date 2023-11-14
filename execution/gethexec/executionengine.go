@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -287,6 +288,11 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
+	jst := header.BlockJustification
+	var hotShotHeader espresso.Header
+	if jst != nil {
+		hotShotHeader = jst.Header
+	}
 
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -294,7 +300,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		txes,
 		delayedMessagesRead,
 		lastBlockHeader,
-		&header.BlockJustification.Header,
+		&hotShotHeader,
 		statedb,
 		s.bc,
 		s.bc.Config(),
@@ -442,12 +448,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
+	jst := msg.Message.Header.BlockJustification
+	var hotShotHeader espresso.Header
+	if jst != nil {
+		hotShotHeader = jst.Header
+	}
 
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
 		currentHeader,
-		&msg.Message.Header.BlockJustification.Header,
+		&hotShotHeader,
 		statedb,
 		s.bc,
 		s.bc.Config(),

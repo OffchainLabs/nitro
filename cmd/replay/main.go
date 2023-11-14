@@ -25,11 +25,11 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )

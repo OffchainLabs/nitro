@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/espresso"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -41,13 +41,13 @@ type EspressoBlockJustification struct {
 }
 
 type L1IncomingMessageHeader struct {
-	Kind               uint8          `json:"kind"`
-	Poster             common.Address `json:"sender"`
-	BlockNumber        uint64         `json:"blockNumber"`
-	Timestamp          uint64         `json:"timestamp"`
-	RequestId          *common.Hash   `json:"requestId" rlp:"nilList"`
-	L1BaseFee          *big.Int       `json:"baseFeeL1"`
-	BlockJustification *EspressoBlockJustification
+	Kind               uint8                       `json:"kind"`
+	Poster             common.Address              `json:"sender"`
+	BlockNumber        uint64                      `json:"blockNumber"`
+	Timestamp          uint64                      `json:"timestamp"`
+	RequestId          *common.Hash                `json:"requestId" rlp:"nilList"`
+	L1BaseFee          *big.Int                    `json:"baseFeeL1"`
+	BlockJustification *EspressoBlockJustification `json:"justification" rlp:"optional"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {

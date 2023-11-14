@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/offchainlabs/nitro/espresso"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
