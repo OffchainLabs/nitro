@@ -56,11 +56,6 @@ type ClientManager struct {
 	connectionLimiter *ConnectionLimiter
 }
 
-type ClientConnectionAction struct {
-	cc     *ClientConnection
-	create bool
-}
-
 func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, bklg backlog.Backlog) *ClientManager {
 	config := configFetcher()
 	return &ClientManager{
@@ -96,14 +91,6 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	clientsTotalSuccessCounter.Inc(1)
 
 	return nil
-}
-
-// Register registers given connection as a Client.
-func (cm *ClientManager) Register(clientConnection *ClientConnection) {
-	cm.clientAction <- ClientConnectionAction{
-		clientConnection,
-		true,
-	}
 }
 
 // removeAll removes all clients after main ClientManager thread exits
@@ -148,13 +135,6 @@ func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
 	}
 
 	delete(cm.clientPtrMap, clientConnection)
-}
-
-func (cm *ClientManager) Remove(clientConnection *ClientConnection) {
-	cm.clientAction <- ClientConnectionAction{
-		clientConnection,
-		false,
-	}
 }
 
 func (cm *ClientManager) ClientCount() int32 {

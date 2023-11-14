@@ -31,6 +31,11 @@ type message struct {
 	sequenceNumber *arbutil.MessageIndex
 }
 
+type ClientConnectionAction struct {
+	cc     *ClientConnection
+	create bool
+}
+
 // ClientConnection represents client connection.
 type ClientConnection struct {
 	stopwaiter.StopWaiter
@@ -42,7 +47,7 @@ type ClientConnection struct {
 
 	desc            *netpoll.Desc
 	Name            string
-	clientManager   *ClientManager
+	clientAction    chan ClientConnectionAction
 	requestedSeqNum arbutil.MessageIndex
 	LastSentSeqNum  atomic.Uint64
 
@@ -61,10 +66,11 @@ type ClientConnection struct {
 func NewClientConnection(
 	conn net.Conn,
 	desc *netpoll.Desc,
-	clientManager *ClientManager,
+	clientAction chan ClientConnectionAction,
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	maxSendQueue int,
 	delay time.Duration,
 	bklg backlog.Backlog,
 ) *ClientConnection {
@@ -74,10 +80,10 @@ func NewClientConnection(
 		desc:            desc,
 		creation:        time.Now(),
 		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
-		clientManager:   clientManager,
+		clientAction:    clientAction,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
-		out:             make(chan message, clientManager.config().MaxSendQueue),
+		out:             make(chan message, maxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
 		delay:           delay,
@@ -93,6 +99,22 @@ func (cc *ClientConnection) Age() time.Duration {
 
 func (cc *ClientConnection) Compression() bool {
 	return cc.compression
+}
+
+// Register sends the ClientConnection to be registered with the ClientManager.
+func (cc *ClientConnection) Register() {
+	cc.clientAction <- ClientConnectionAction{
+		cc:     cc,
+		create: true,
+	}
+}
+
+// Remove sends the ClientConnection to be removed from the ClientManager.
+func (cc *ClientConnection) Remove() {
+	cc.clientAction <- ClientConnectionAction{
+		cc:     cc,
+		create: false,
+	}
 }
 
 func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) error {
@@ -168,7 +190,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		segment, err := cc.backlog.Lookup(uint64(cc.requestedSeqNum))
 		if err != nil {
 			logWarn(err, "error finding requested sequence number in backlog")
-			cc.clientManager.Remove(cc)
+			cc.Remove()
 			return
 		}
 		err = cc.writeBacklog(ctx, segment)
@@ -176,11 +198,11 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			return
 		} else if err != nil {
 			logWarn(err, "error writing messages from backlog")
-			cc.clientManager.Remove(cc)
+			cc.Remove()
 			return
 		}
 
-		cc.clientManager.Register(cc)
+		cc.Register()
 		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
@@ -203,14 +225,14 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 					bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
 					if err != nil {
 						logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))
-						cc.clientManager.Remove(cc)
+						cc.Remove()
 						return
 					}
 
 					err = cc.writeBroadcastMessage(bm)
 					if err != nil {
 						logWarn(err, fmt.Sprintf("error writing messages %d to %d from backlog", expSeqNum, catchupSeqNum))
-						cc.clientManager.Remove(cc)
+						cc.Remove()
 						return
 					}
 				}
@@ -219,7 +241,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				err := cc.writeRaw(msg.data)
 				if err != nil {
 					logWarn(err, "error writing data to client")
-					cc.clientManager.Remove(cc)
+					cc.Remove()
 					return
 				}
 			}

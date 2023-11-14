@@ -378,7 +378,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		// Register incoming client in clientManager.
 		safeConn := writeDeadliner{conn, config.WriteTimeout}
 
-		client := NewClientConnection(safeConn, desc, s.clientManager, requestedSeqNum, connectingIP, compressionAccepted, s.config().ClientDelay, s.backlog)
+		client := NewClientConnection(safeConn, desc, s.clientManager.clientAction, requestedSeqNum, connectingIP, compressionAccepted, s.config().MaxSendQueue, s.config().ClientDelay, s.backlog)
 		client.Start(ctx)
 
 		// Subscribe to events about conn.
@@ -387,7 +387,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
 				log.Debug("Hup received", "age", client.Age(), "client", client.Name)
-				s.clientManager.Remove(client)
+				client.Remove()
 				return
 			}
 
@@ -399,7 +399,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client, close on any error
 				if _, _, err := client.Receive(ctx, s.config().ReadTimeout); err != nil {
-					s.clientManager.Remove(client)
+					client.Remove()
 					return
 				}
 			})
