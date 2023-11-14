@@ -35,7 +35,10 @@ import (
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
-	enc := wavmio.ReadHotShotHeader()
+	enc, err := wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	if err != nil {
+		panic(fmt.Errorf("Error resolving preimage: %w", err))
+	}
 	header := &types.Header{}
 	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
@@ -44,14 +47,14 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-func getHotShotHeader(hash common.Hash) *espresso.Header {
-	bytes = wavmio.get
-	var header &espresso.Header
-	if err := json.Unmarshal(header, &enc); err != nil {
+func getHotShotHeader() *espresso.Header {
+	headerBytes := wavmio.GetHotShotHeader()
+	var header espresso.Header
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
 		panic(fmt.Errorf("Error deserializing espresso header preimage"))
 	}
 
-	return header
+	return &header
 }
 
 type WavmChainContext struct{}
@@ -160,8 +163,7 @@ func main() {
 	db := state.NewDatabase(raw)
 
 	lastBlockHash := wavmio.GetLastBlockHash()
-	lastHotShotHeaderHash := wavmio.GetLastHotShotHeaderHash()
-	lastHotShotHeader := getHotShotHeaderByHash(lastHotShotHeaderHash)
+	lastHotShotHeader := getHotShotHeader()
 
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash

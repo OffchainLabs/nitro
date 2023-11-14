@@ -17,6 +17,7 @@ const QUERY_SIZE = 32
 // bytes32
 const IDX_LAST_BLOCKHASH = 0
 const IDX_SEND_ROOT = 1
+const IDX_HOTSHOT_HEADER = 2
 
 // u64
 const IDX_INBOX_POSITION = 0
@@ -72,6 +73,15 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 
 func SetLastBlockHash(hash [32]byte) {
 	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
+}
+
+func SetHotShotHeader(header []byte) {
+	setGlobalStateBytes32(IDX_HOTSHOT_HEADER, header[:])
+}
+
+func GetHotShotHeader() (header []byte) {
+	getGlobalStateBytes32(IDX_HOTSHOT_HEADER, header[:])
+	return
 }
 
 // Note: if a GetSendRoot is ever modified, the validator will need to fill in the previous send root, which it currently does not.
