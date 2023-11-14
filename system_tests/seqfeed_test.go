@@ -108,8 +108,8 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	builder.takeOwnership = false
 	cleanup := builder.Build(t)
 	defer cleanup()
-	node, client := builder.L2.ConsensusNode, builder.L2.Client
-	StartWatchChanErr(t, ctx, feedErrChan, node)
+	node, exec, client := builder.L2.ConsensusNode, builder.L2.ExecNode, builder.L2.Client
+	StartWatchChanErr(t, ctx, feedErrChan, node, exec)
 
 	seqInfo.GenerateAccount("User2")
 

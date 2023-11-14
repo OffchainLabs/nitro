@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"sync/atomic"
-	"testing"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,10 +19,14 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/consensus/consensusclient"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/execapi"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	flag "github.com/spf13/pflag"
 )
 
@@ -39,6 +42,26 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
 }
 
+type ExecRPCConfig struct {
+	Public        bool `koanf:"public"`
+	Authenticated bool `koanf:"authenticated"`
+}
+
+var ExecRPCConfigDefault = ExecRPCConfig{
+	Public:        false,
+	Authenticated: true,
+}
+
+var ExecRPCConfigTest = ExecRPCConfig{
+	Public:        true,
+	Authenticated: false,
+}
+
+func ExecRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".public", ExecRPCConfigDefault.Public, "rpc is public")
+	f.Bool(prefix+".authenticated", ExecRPCConfigDefault.Authenticated, "rpc is authenticated")
+}
+
 type Config struct {
 	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
@@ -49,7 +72,9 @@ type Config struct {
 	Caching           CachingConfig                    `koanf:"caching"`
 	SyncMonitor       SyncMonitorConfig                `koanf:"sync-monitor" reload:"hot"`
 	RPC               arbitrum.Config                  `koanf:"rpc"`
+	ExecRPC           ExecRPCConfig                    `koanf:"exec-rpc"`
 	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
+	ConsensusServer   rpcclient.ClientConfig           `koanf:"consensus-server" reload:"hot"`
 	Dangerous         DangerousConfig                  `koanf:"dangerous"`
 
 	forwardingTarget string
@@ -57,6 +82,9 @@ type Config struct {
 
 func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.ConsensusServer.Validate(); err != nil {
 		return err
 	}
 	if !c.Sequencer.Enable && c.ForwardingTarget == "" {
@@ -84,6 +112,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+	ExecRPCConfigAddOptions(prefix+".exec-rpc", f)
+	rpcclient.RPCClientAddOptions(prefix+".consensus-server", f, &ConfigDefault.ConsensusServer)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -95,35 +125,11 @@ var ConfigDefault = Config{
 	ForwardingTarget:  "",
 	TxPreChecker:      DefaultTxPreCheckerConfig,
 	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
+	ExecRPC:           ExecRPCConfigDefault,
 	Caching:           DefaultCachingConfig,
 	SyncMonitor:       DefaultSyncMonitorConfig,
 	Dangerous:         DefaultDangerousConfig,
 	Forwarder:         DefaultNodeForwarderConfig,
-}
-
-func ConfigDefaultNonSequencerTest() *Config {
-	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{}
-	config.Sequencer.Enable = false
-	config.Forwarder = DefaultTestForwarderConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
-}
-
-func ConfigDefaultTest() *Config {
-	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{}
-	config.Sequencer = TestSequencerConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.ForwardingTarget = "null"
-	config.ParentChainReader = headerreader.TestConfig
-
-	_ = config.Validate()
-
-	return &config
 }
 
 type ConfigFetcher func() *Config
@@ -141,7 +147,23 @@ type ExecutionNode struct {
 	SyncMonitor       *SyncMonitor
 	ParentChainReader *headerreader.HeaderReader
 	ClassicOutbox     *ClassicOutboxRetriever
-	started           atomic.Bool
+	ConsensusClient   *consensusclient.Client
+
+	stopOnce sync.Once
+}
+
+type ExecNodeLifeCycle struct {
+	exec *ExecutionNode
+}
+
+func (l *ExecNodeLifeCycle) Start() error { return nil }
+
+func (l *ExecNodeLifeCycle) Stop() error {
+	if !l.exec.ExecEngine.Stopped() {
+		log.Info("Stack shutting down - closing execution node..")
+	}
+	l.exec.StopAndWait()
+	return nil
 }
 
 func CreateExecutionNode(
@@ -153,7 +175,19 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	var consensusClient *consensusclient.Client
+
+	if config.ConsensusServer.URL != "" {
+		clientFetcher := func() *rpcclient.ClientConfig { return &configFetcher().ConsensusServer }
+		consensusClient = consensusclient.NewClient(clientFetcher, stack)
+	}
+
+	var consensusInterface consensus.FullConsensusClient
+	if consensusClient != nil {
+		consensusInterface = consensusClient
+	}
+
+	execEngine, err := NewExecutionEngine(l2BlockChain, consensusInterface)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +240,7 @@ func CreateExecutionNode(
 	}
 
 	syncMonFetcher := func() *SyncMonitorConfig { return &configFetcher().SyncMonitor }
-	syncMon := NewSyncMonitor(execEngine, syncMonFetcher)
+	syncMon := NewSyncMonitor(execEngine, syncMonFetcher, consensusInterface)
 
 	var classicOutbox *ClassicOutboxRetriever
 
@@ -218,6 +252,23 @@ func CreateExecutionNode(
 		} else {
 			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 		}
+	}
+
+	execNode := &ExecutionNode{
+		ChainDB:           chainDB,
+		Backend:           backend,
+		FilterSystem:      filterSystem,
+		ArbInterface:      arbInterface,
+		ExecEngine:        execEngine,
+		Recorder:          recorder,
+		Sequencer:         sequencer,
+		TxPublisher:       txPublisher,
+		ConfigFetcher:     configFetcher,
+		SyncMonitor:       syncMon,
+		ParentChainReader: parentChainReader,
+		ClassicOutbox:     classicOutbox,
+		ConsensusClient:   consensusClient,
+		stopOnce:          sync.Once{},
 	}
 
 	apis := []rpc.API{{
@@ -250,23 +301,18 @@ func CreateExecutionNode(
 		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
 		Public:    false,
 	})
+	apis = append(apis, rpc.API{
+		Namespace:     execution.RPCNamespace,
+		Service:       execapi.NewExecAPI(execNode),
+		Public:        config.ExecRPC.Public,
+		Authenticated: config.ExecRPC.Authenticated,
+	})
 
 	stack.RegisterAPIs(apis)
 
-	return &ExecutionNode{
-		ChainDB:           chainDB,
-		Backend:           backend,
-		FilterSystem:      filterSystem,
-		ArbInterface:      arbInterface,
-		ExecEngine:        execEngine,
-		Recorder:          recorder,
-		Sequencer:         sequencer,
-		TxPublisher:       txPublisher,
-		ConfigFetcher:     configFetcher,
-		SyncMonitor:       syncMon,
-		ParentChainReader: parentChainReader,
-		ClassicOutbox:     classicOutbox,
-	}, nil
+	stack.RegisterLifecycle(&ExecNodeLifeCycle{execNode})
+
+	return execNode, nil
 
 }
 
@@ -289,14 +335,17 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 
 // not thread safe
 func (n *ExecutionNode) Start(ctx context.Context) error {
-	if n.started.Swap(true) {
-		return errors.New("already started")
-	}
 	// TODO after separation
 	// err := n.Stack.Start()
 	// if err != nil {
 	// 	return fmt.Errorf("error starting geth stack: %w", err)
 	// }
+	if n.ConsensusClient != nil {
+		err := n.ConsensusClient.Start(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
@@ -310,30 +359,32 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 }
 
 func (n *ExecutionNode) StopAndWait() {
-	if !n.started.Load() {
-		return
-	}
-	// TODO after separation
-	// n.Stack.StopRPC() // does nothing if not running
-	if n.TxPublisher.Started() {
-		n.TxPublisher.StopAndWait()
-	}
-	n.Recorder.OrderlyShutdown()
-	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
-		n.ParentChainReader.StopAndWait()
-	}
-	if n.ExecEngine.Started() {
-		n.ExecEngine.StopAndWait()
-	}
-	n.ArbInterface.BlockChain().Stop() // does nothing if not running
-	if err := n.Backend.Stop(); err != nil {
-		log.Error("backend stop", "err", err)
-	}
-	n.SyncMonitor.StopAndWait()
-	// TODO after separation
-	// if err := n.Stack.Close(); err != nil {
-	// 	log.Error("error on stak close", "err", err)
-	// }
+	n.stopOnce.Do(func() {
+		// TODO after separation
+		// n.Stack.StopRPC() // does nothing if not running
+		if n.TxPublisher.Started() {
+			n.TxPublisher.StopAndWait()
+		}
+		n.Recorder.OrderlyShutdown()
+		if n.ParentChainReader != nil && n.ParentChainReader.Started() {
+			n.ParentChainReader.StopAndWait()
+		}
+		if n.ExecEngine.Started() {
+			n.ExecEngine.StopAndWait()
+		}
+		n.ArbInterface.BlockChain().Stop() // does nothing if not running
+		if err := n.Backend.Stop(); err != nil {
+			log.Error("backend stop", "err", err)
+		}
+		n.SyncMonitor.StopAndWait()
+		if n.ConsensusClient != nil && n.ConsensusClient.Started() {
+			n.ConsensusClient.StopAndWait()
+		}
+		// TODO after separation
+		// if err := n.Stack.Close(); err != nil {
+		// 	log.Error("error on stak close", "err", err)
+		// }
+	})
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
@@ -344,9 +395,6 @@ func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostyp
 }
 func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return n.ExecEngine.HeadMessageNumber()
-}
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.ExecEngine.HeadMessageNumberSync(t)
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
 	return n.ExecEngine.NextDelayedMessageNumber()
@@ -392,9 +440,11 @@ func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct
 	}
 }
 
-func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
-	n.ExecEngine.SetConsensus(consensus)
-	n.SyncMonitor.SetConsensusInfo(consensus)
+func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClient) error {
+	if err := n.ExecEngine.SetConsensus(consensus); err != nil {
+		return err
+	}
+	return n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {

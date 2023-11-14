@@ -93,9 +93,11 @@ func TestFindBatch(t *testing.T) {
 	rollupAddresses.Bridge = bridgeAddr
 	rollupAddresses.SequencerInbox = seqInboxAddr
 	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	consensus, _ := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
+	consensus, exec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
+	Require(t, exec.Initialize(ctx))
 	err := consensus.Start(ctx)
 	Require(t, err)
+	Require(t, exec.Start(ctx))
 
 	l2Client := ClientForStack(t, consensus.Stack)
 	nodeAbi, err := node_interfacegen.NodeInterfaceMetaData.GetAbi()

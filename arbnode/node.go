@@ -34,6 +34,8 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/consensus"
+	consensusapi "github.com/offchainlabs/nitro/consensus/consensusserver"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -49,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -343,6 +346,26 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 	}, nil
 }
 
+type ConfigConsensusRPC struct {
+	Public        bool `koanf:"public"`
+	Authenticated bool `koanf:"authenticated"`
+}
+
+var DefaultConfigConsensusRPC = ConfigConsensusRPC{
+	Public:        false,
+	Authenticated: true,
+}
+
+var TestConfigConsensusRPC = ConfigConsensusRPC{
+	Public:        true,
+	Authenticated: false,
+}
+
+func ConsensusRPCAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".public", DefaultConfigConsensusRPC.Public, "consensus rpc is public")
+	f.Bool(prefix+".authenticated", DefaultConfigConsensusRPC.Authenticated, "consensus rpc is authenticated")
+}
+
 type Config struct {
 	Sequencer           bool                        `koanf:"sequencer"`
 	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
@@ -358,6 +381,8 @@ type Config struct {
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
+	ExecutionServer     rpcclient.ClientConfig      `koanf:"execution-server" reload:"hot"`
+	ConsensusRPC        ConfigConsensusRPC          `koanf:"consensus-rpc"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
 }
@@ -415,6 +440,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
+	rpcclient.RPCClientAddOptions(prefix+".execution-server", f, &ConfigDefault.ExecutionServer)
+	ConsensusRPCAddOptions(prefix+".consensus-rpc", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 }
 
@@ -433,8 +460,10 @@ var ConfigDefault = Config{
 	SyncMonitor:         DefaultSyncMonitorConfig,
 	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
-	ResourceMgmt:        resourcemanager.DefaultConfig,
+	ExecutionServer:     rpcclient.DefaultClientConfig,
+	ConsensusRPC:        DefaultConfigConsensusRPC,
 	Maintenance:         DefaultMaintenanceConfig,
+	ResourceMgmt:        resourcemanager.DefaultConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -457,6 +486,8 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.ConsensusRPC = TestConfigConsensusRPC
+	config.ExecutionServer = rpcclient.TestClientConfig
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
@@ -474,6 +505,8 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker = staker.TestL1ValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.ConsensusRPC = TestConfigConsensusRPC
+	config.ExecutionServer = rpcclient.TestClientConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -989,6 +1022,14 @@ func CreateNode(
 			Public: false,
 		})
 	}
+	config := configFetcher.Get()
+	apis = append(apis, rpc.API{
+		Namespace:     consensus.RPCNamespace,
+		Version:       "1.0",
+		Service:       consensusapi.NewConsensusAPI(currentNode),
+		Public:        config.ConsensusRPC.Public,
+		Authenticated: config.ConsensusRPC.Authenticated,
+	})
 
 	stack.RegisterAPIs(apis)
 
@@ -998,12 +1039,16 @@ func CreateNode(
 func (n *Node) Start(ctx context.Context) error {
 	// config is the static config at start, not a dynamic config
 	config := n.configFetcher.Get()
-	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
+	gethExec, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {
-		execClient = nil
+		gethExec = nil
 	}
-	if execClient != nil {
-		err := execClient.Initialize(ctx)
+	if gethExec != nil {
+		err := gethExec.SetConsensusClient(n)
+		if err != nil {
+			return fmt.Errorf("error setting consensus in execution client: %w", err)
+		}
+		err = gethExec.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
@@ -1013,12 +1058,11 @@ func (n *Node) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
-	if execClient != nil {
-		execClient.SetConsensusClient(n)
-	}
-	err = n.Execution.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error starting exec client: %w", err)
+	if n.Execution != nil {
+		err := n.Execution.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting exec client: %w", err)
+		}
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()

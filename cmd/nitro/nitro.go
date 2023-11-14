@@ -48,6 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -469,10 +470,12 @@ func mainImpl() int {
 		return 1
 	}
 
+	execConfigFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().Node.ExecutionServer }
+	execClient := execclient.NewClient(execConfigFetcher, stack)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
-		execNode,
+		execClient,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
@@ -525,6 +528,10 @@ func mainImpl() int {
 			log.Info("validation node started")
 		}
 	}
+	err = execNode.Initialize(ctx)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+	}
 	if err == nil {
 		err = currentNode.Start(ctx)
 		if err != nil {
@@ -532,6 +539,14 @@ func mainImpl() int {
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
+	}
+	if err == nil {
+		err = execNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		} else {
+			defer execNode.StopAndWait()
+		}
 	}
 
 	sigint := make(chan os.Signal, 1)

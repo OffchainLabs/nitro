@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -22,15 +22,16 @@ type SyncMonitorConfigFetcher func() *SyncMonitorConfig
 
 type SyncMonitor struct {
 	stopwaiter.StopWaiter
-	consensus execution.ConsensusInfo
+	consensus consensus.ConsensusInfo
 	exec      *ExecutionEngine
 	config    SyncMonitorConfigFetcher
 }
 
-func NewSyncMonitor(exec *ExecutionEngine, config SyncMonitorConfigFetcher) *SyncMonitor {
+func NewSyncMonitor(exec *ExecutionEngine, config SyncMonitorConfigFetcher, consensus consensus.ConsensusInfo) *SyncMonitor {
 	return &SyncMonitor{
-		exec:   exec,
-		config: config,
+		exec:      exec,
+		config:    config,
+		consensus: consensus,
 	}
 }
 
@@ -100,6 +101,10 @@ func (s *SyncMonitor) Synced() bool {
 	return len(s.SyncProgressMap()) == 0
 }
 
-func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
+func (s *SyncMonitor) SetConsensusInfo(consensus consensus.ConsensusInfo) error {
+	if s.consensus != nil {
+		return errors.New("trying to set consensus in sync-monitor while already set")
+	}
 	s.consensus = consensus
+	return nil
 }

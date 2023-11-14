@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"errors"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -11,6 +10,8 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 )
+
+const RPCNamespace = "nitroexec"
 
 type MessageResult struct {
 	BlockHash common.Hash
@@ -25,14 +26,12 @@ type RecordResult struct {
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
-var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
 	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
 	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
-	HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 }
 
@@ -62,32 +61,4 @@ type FullExecutionClient interface {
 	StopAndWait()
 
 	Maintenance() containers.PromiseInterface[struct{}]
-}
-
-// not implemented in execution, used as input
-// BatchFetcher is required for any execution node
-type BatchFetcher interface {
-	FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte]
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64]
-	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
-}
-
-type ConsensusInfo interface {
-	SyncProgressMap() containers.PromiseInterface[map[string]interface{}]
-	SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
-
-	// TODO: switch from pulling to pushing safe/finalized
-	GetSafeMsgCount() containers.PromiseInterface[arbutil.MessageIndex]
-	GetFinalizedMsgCount() containers.PromiseInterface[arbutil.MessageIndex]
-}
-
-type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
-	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
-}
-
-type FullConsensusClient interface {
-	BatchFetcher
-	ConsensusInfo
-	ConsensusSequencer
 }

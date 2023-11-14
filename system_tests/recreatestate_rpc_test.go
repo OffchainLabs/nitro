@@ -321,6 +321,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	execConfig.ConsensusServer.URL = ""
 	execConfig.Caching = *cacheConfig
 
 	skipBlocks := execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving
@@ -341,7 +342,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	Require(t, node.Start(ctx1))
 	client := ClientForStack(t, stack)
 
-	StartWatchChanErr(t, ctx, feedErrChan, node)
+	StartWatchChanErr(t, ctx, feedErrChan, node, execNode)
 	dataDir := node.Stack.DataDir()
 
 	l2info.GenerateAccount("User2")

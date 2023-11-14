@@ -6,6 +6,8 @@ package genericconf
 import (
 	"time"
 
+	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
@@ -172,7 +174,7 @@ func (a AuthRPCConfig) Apply(stackConf *node.Config) {
 var AuthRPCConfigDefault = AuthRPCConfig{
 	Addr:      "127.0.0.1",
 	Port:      8549,
-	API:       []string{"validation"},
+	API:       []string{"validation", execution.RPCNamespace, consensus.RPCNamespace},
 	Origins:   []string{"localhost"},
 	JwtSecret: "",
 }

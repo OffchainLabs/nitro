@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,10 +23,14 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -474,6 +479,9 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.WSPort = 0
+	stackConf.WSHost = "127.0.0.1"
+	stackConf.WSModules = []string{server_api.Namespace, consensus.RPCNamespace, execution.RPCNamespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
@@ -495,6 +503,8 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 
 	stack, err := node.New(&stackConf)
 	Require(t, err)
+
+	node.DefaultAuthModules = []string{server_api.Namespace}
 
 	configFetcher := func() *valnode.Config { return config }
 	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
@@ -773,19 +783,82 @@ func createTestNodeWithL1(
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
+	execclient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stack)
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
+		ctx, l2stack, execclient, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
+	Require(t, execNode.Initialize(ctx))
+
 	Require(t, currentNode.Start(ctx))
+
+	Require(t, execNode.Start(ctx))
 
 	l2client = ClientForStack(t, l2stack)
 
-	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
+	StartWatchChanErr(t, ctx, fatalErrChan, currentNode, execNode)
 
 	return
+}
+
+type execNodesInfo struct {
+	execNodes []*gethexec.ExecutionNode
+	lock      sync.Mutex
+}
+
+var execNodes map[string]*execNodesInfo = make(map[string]*execNodesInfo)
+var execNodeLock sync.Mutex
+
+// assumptions: it is possible that multiple tests will use the same endpoint, but not concurrently
+// if multiple tests registered for the same endpoint, only the last one is active
+func addExecNode(endpoint string, node *gethexec.ExecutionNode) {
+	execNodeLock.Lock()
+	defer execNodeLock.Unlock()
+	nodeInfo := execNodes[endpoint]
+	if nodeInfo == nil {
+		nodeInfo = &execNodesInfo{}
+		execNodes[endpoint] = nodeInfo
+	}
+	nodeInfo.lock.Lock()
+	defer nodeInfo.lock.Unlock()
+	nodeInfo.execNodes = append(nodeInfo.execNodes, node)
+}
+
+func rmExecNode(t *testing.T, endpoint string, node *gethexec.ExecutionNode) {
+	execNodeLock.Lock()
+	defer execNodeLock.Unlock()
+	nodeInfo := execNodes[endpoint]
+	if nodeInfo == nil {
+		return
+	}
+	nodeInfo.lock.Lock()
+	defer nodeInfo.lock.Unlock()
+	if len(nodeInfo.execNodes) == 1 && nodeInfo.execNodes[0] == node {
+		delete(execNodes, endpoint)
+		return
+	}
+	newNodes := []*gethexec.ExecutionNode{}
+	for i := 0; i < len(nodeInfo.execNodes); i++ {
+		if !(node == nodeInfo.execNodes[i]) {
+			newNodes = append(newNodes, nodeInfo.execNodes[i])
+		}
+	}
+	nodeInfo.execNodes = newNodes
+}
+
+func getExecNodeFromEndpoint(t *testing.T, endpoint string) *gethexec.ExecutionNode {
+	execNodeLock.Lock()
+	defer execNodeLock.Unlock()
+	nodeInfo := execNodes[endpoint]
+	if nodeInfo == nil {
+		Fatal(t, "didn't find execnode for endpoint: ", endpoint)
+		return nil
+	}
+	nodeInfo.lock.Lock()
+	defer nodeInfo.lock.Unlock()
+	return nodeInfo.execNodes[len(nodeInfo.execNodes)-1]
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
@@ -811,15 +884,21 @@ func createTestNode(
 	execNode, err := gethexec.CreateExecutionNode(ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan)
+	execclient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), stack)
+
+	currentNode, err := arbnode.CreateNode(ctx, stack, execclient, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
 	err = currentNode.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
 
+	Require(t, execNode.Initialize(ctx))
+
 	Require(t, currentNode.Start(ctx))
 	client := ClientForStack(t, stack)
+
+	Require(t, execNode.Start(ctx))
 
 	if takeOwnership {
 		debugAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -835,22 +914,27 @@ func createTestNode(
 		Require(t, err)
 	}
 
-	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	StartWatchChanErr(t, ctx, feedErrChan, currentNode, execNode)
 
 	return l2info, currentNode, client
 }
 
-func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
+func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node, exec *gethexec.ExecutionNode) {
+	endpoint := node.Stack.WSEndpoint()
+	addExecNode(endpoint, exec)
 	go func() {
 		select {
-		case <-ctx.Done():
-			return
 		case err := <-feedErrChan:
 			t.Errorf("error occurred: %v", err)
+			if exec != nil {
+				exec.StopAndWait()
+			}
 			if node != nil {
 				node.StopAndWait()
 			}
+		case <-ctx.Done():
 		}
+		rmExecNode(t, endpoint, exec)
 	}()
 }
 
@@ -918,14 +1002,20 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan)
+	execclient := execclient.NewClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), l2stack)
+
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, execclient, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
+
+	Require(t, currentExec.Initialize(ctx))
 
 	err = currentNode.Start(ctx)
-	Require(t, err)
+	Require(t, err, nodeConfig.BlockValidator.ValidationServer.URL, " l2: ", l2stack.WSEndpoint())
 	l2client := ClientForStack(t, l2stack)
 
-	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	Require(t, currentExec.Start(ctx))
+
+	StartWatchChanErr(t, ctx, feedErrChan, currentNode, currentExec)
 
 	return l2client, currentNode
 }
@@ -1099,8 +1189,9 @@ func TestMain(m *testing.M) {
 func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 	t.Helper()
 	gethExec, ok := node.Execution.(*gethexec.ExecutionNode)
-	if !ok {
-		t.Fatal("failed to get exec node from arbnode")
+	if ok {
+		return gethExec
 	}
-	return gethExec
+	endpoint := node.Stack.WSEndpoint() // this assumes both use the same address
+	return getExecNodeFromEndpoint(t, endpoint)
 }

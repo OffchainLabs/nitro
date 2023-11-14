@@ -1030,7 +1030,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.lastValidGS.Batch == 0 {
 		genesis, err := v.streamer.ResultAtCount(1)
 		if err != nil {
-			log.Warn("error reading genesis from streamer", "err", err)
+			log.Warn("validator: error reading genesis from streamer", "err", err)
 			return false, nil
 		}
 		v.lastValidGS = validator.GoGlobalState{
