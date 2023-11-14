@@ -12,7 +12,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -25,14 +25,14 @@ const PRIMARY_FEED_UPTIME = time.Minute * 10
 
 type Router struct {
 	stopwaiter.StopWaiter
-	messageChan                 chan broadcaster.BroadcastFeedMessage
+	messageChan                 chan m.BroadcastFeedMessage
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
 
 	forwardTxStreamer       broadcastclient.TransactionStreamerInterface
 	forwardConfirmationChan chan arbutil.MessageIndex
 }
 
-func (r *Router) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (r *Router) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		r.messageChan <- *feedMessage
 	}
@@ -68,7 +68,7 @@ func NewBroadcastClients(
 	}
 	newStandardRouter := func() *Router {
 		return &Router{
-			messageChan:                 make(chan broadcaster.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
+			messageChan:                 make(chan m.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
 			confirmedSequenceNumberChan: make(chan arbutil.MessageIndex, ROUTER_QUEUE_SIZE),
 			forwardTxStreamer:           txStreamer,
 			forwardConfirmationChan:     confirmedSequenceNumberListener,
@@ -156,7 +156,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					continue
 				}
 				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
-				if err := bcs.primaryRouter.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
+				if err := bcs.primaryRouter.forwardTxStreamer.AddBroadcastMessages([]*m.BroadcastFeedMessage{&msg}); err != nil {
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 				}
 			case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
@@ -178,7 +178,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					continue
 				}
 				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
-				if err := bcs.secondaryRouter.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
+				if err := bcs.secondaryRouter.forwardTxStreamer.AddBroadcastMessages([]*m.BroadcastFeedMessage{&msg}); err != nil {
 					log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
 				}
 			case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
