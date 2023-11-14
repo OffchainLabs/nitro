@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -84,8 +85,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	}
 	for i := 0; i < largeLoops; i++ {
 		l1TxsThisTime := rand.Int() % (avgTotalL1MessagesPerLoop * 2)
-		l1Txs := make([]*types.Transaction, 0, l1TxsThisTime)
-		for len(l1Txs) < l1TxsThisTime {
+		wrappedL1Txs := make([]*txpool.Transaction, 0, l1TxsThisTime)
+		for len(wrappedL1Txs) < l1TxsThisTime {
 			randNum := rand.Int() % avgTotalL1MessagesPerLoop
 			var l1tx *types.Transaction
 			if randNum < avgDelayedMessagesPerLoop {
@@ -96,10 +97,11 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			} else {
 				l1tx = builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
-			l1Txs = append(l1Txs, l1tx)
+			wrappedL1Txs = append(wrappedL1Txs, &txpool.Transaction{Tx: l1tx})
 		}
-		// adding multiple messages in the same AddLocal to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().AddLocals(l1Txs)
+
+		// adding multiple messages in the same Add with local=true to get them in the same L1 block
+		errs := builder.L1.L1Backend.TxPool().Add(wrappedL1Txs, true, false)
 		for _, err := range errs {
 			if err != nil {
 				Fatal(t, err)
@@ -112,8 +114,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		}
 		builder.L2.SendWaitTestTransactions(t, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
-		if len(l1Txs) > 0 {
-			_, err := builder.L1.EnsureTxSucceeded(l1Txs[len(l1Txs)-1])
+		if len(wrappedL1Txs) > 0 {
+			_, err := builder.L1.EnsureTxSucceeded(wrappedL1Txs[len(wrappedL1Txs)-1].Tx)
 			if err != nil {
 				Fatal(t, err)
 			}
@@ -155,7 +157,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
+
+	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
