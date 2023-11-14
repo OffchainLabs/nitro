@@ -30,14 +30,13 @@ import (
 )
 
 var (
-	clientsCurrentGauge               = metrics.NewRegisteredGauge("arb/feed/clients/current", nil)
-	clientsConnectCount               = metrics.NewRegisteredCounter("arb/feed/clients/connect", nil)
-	clientsDisconnectCount            = metrics.NewRegisteredCounter("arb/feed/clients/disconnect", nil)
-	clientsTotalSuccessCounter        = metrics.NewRegisteredCounter("arb/feed/clients/success", nil)
-	clientsTotalFailedRegisterCounter = metrics.NewRegisteredCounter("arb/feed/clients/failed/register", nil)
-	clientsTotalFailedUpgradeCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
-	clientsTotalFailedWorkerCounter   = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
-	clientsDurationHistogram          = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
+	clientsCurrentGauge              = metrics.NewRegisteredGauge("arb/feed/clients/current", nil)
+	clientsConnectCount              = metrics.NewRegisteredCounter("arb/feed/clients/connect", nil)
+	clientsDisconnectCount           = metrics.NewRegisteredCounter("arb/feed/clients/disconnect", nil)
+	clientsTotalSuccessCounter       = metrics.NewRegisteredCounter("arb/feed/clients/success", nil)
+	clientsTotalFailedUpgradeCounter = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
+	clientsTotalFailedWorkerCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
+	clientsDurationHistogram         = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 // ClientManager manages client connections

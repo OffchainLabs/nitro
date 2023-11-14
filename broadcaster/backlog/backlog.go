@@ -160,14 +160,24 @@ func (b *backlog) delete(confirmed uint64) {
 		b.reset()
 		return
 	}
-	segment := found.(*backlogSegment)
+	segment, ok := found.(*backlogSegment)
+	if !ok {
+		log.Error("error in backlogSegment type assertion: clearing backlog")
+		b.reset()
+		return
+	}
 
 	// delete messages from the segment with the confirmed message
 	newHead := segment
 	start := head.Start()
 	if segment.End() == confirmed {
 		found = segment.Next()
-		newHead = found.(*backlogSegment)
+		newHead, ok = found.(*backlogSegment)
+		if !ok {
+			log.Error("error in backlogSegment type assertion: clearing backlog")
+			b.reset()
+			return
+		}
 	} else {
 		err = segment.Delete(confirmed)
 		if err != nil {

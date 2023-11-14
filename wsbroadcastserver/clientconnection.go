@@ -157,7 +157,7 @@ func (cc *ClientConnection) writeBroadcastMessage(bm *m.BroadcastMessage) error 
 		return err
 	}
 
-	data := []byte{}
+	var data []byte
 	if cc.compression {
 		data = compressed.Bytes()
 	} else {
