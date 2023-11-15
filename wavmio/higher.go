@@ -54,6 +54,12 @@ func ReadInboxMessage(msgNum uint64) []byte {
 	})
 }
 
+func ReadHotShotCommitment(seqNum uint64) (header []byte) {
+	return readBuffer(func(offset uint32, buf []byte) uint32 {
+		return readHotShotCommitment(seqNum, buf)
+	})
+}
+
 func ReadDelayedInboxMessage(seqNum uint64) []byte {
 	return readBuffer(func(offset uint32, buf []byte) uint32 {
 		return readDelayedInboxMessage(seqNum, offset, buf)
@@ -77,11 +83,6 @@ func SetLastBlockHash(hash [32]byte) {
 
 func SetHotShotHeader(header []byte) {
 	setGlobalStateBytes32(IDX_HOTSHOT_HEADER, header[:])
-}
-
-func GetHotShotHeader() (header []byte) {
-	getGlobalStateBytes32(IDX_HOTSHOT_HEADER, header[:])
-	return
 }
 
 // Note: if a GetSendRoot is ever modified, the validator will need to fill in the previous send root, which it currently does not.

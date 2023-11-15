@@ -3,7 +3,7 @@
 
 use crate::{
     gostack::GoStack,
-    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{Escape, HotShotCommitmentMap, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
 
@@ -85,6 +85,14 @@ pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
+pub fn read_hotshot_commitment(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
+    let hotshot_comms = &env.hotshot_comm_map;
+
+    read_hotshot_commitment_impl(&sp, hotshot_comms, "wavmio.readHotShotCommitment")
+}
+
 pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (sp, env) = GoStack::new(sp, &mut env);
     ready_hostio(env)?;
@@ -99,6 +107,15 @@ pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
+}
+
+// Reads a hotshot commitment
+fn read_hotshot_commitment_impl(
+    _sp: &GoStack,
+    _comm_map: &HotShotCommitmentMap,
+    _name: &str,
+) -> MaybeEscape {
+    return unimplemented!();
 }
 
 /// Reads an inbox message

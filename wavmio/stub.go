@@ -118,8 +118,12 @@ func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
 }
 
-func GetHotShotHeader() []byte {
+func ReadHotShotHeader(seqNum uint64) []byte {
+	if seqNum != seqMsgPos {
+		panic(fmt.Sprintf("hotshot header position should be consistent with the sequencer inbox position %d", seqNum))
+	}
 	return hotShotHeader
+
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {

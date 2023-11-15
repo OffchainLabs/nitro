@@ -72,6 +72,13 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotCommitment(
+    sp: GoStack,
+) {
+    return unimplemented!();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessage(sp: GoStack) {
     let msg_num = sp.read_u64(0);
     let offset = sp.read_u64(1);
@@ -120,7 +127,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInb
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolveTypedPreimage(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolveTypedPreimage(
+    sp: GoStack,
+) {
     let preimage_type = sp.read_u8(0);
     let hash_ptr = sp.read_u64(1);
     let hash_len = sp.read_u64(2);

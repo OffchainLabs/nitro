@@ -308,6 +308,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				return err
 			}
 		}
+		log.Info("Doing some proving")
 		if usingEspresso {
 			hotShotHeader, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
 			log.Info("Fetching hotshot commitment", "header", hotShotHeader)

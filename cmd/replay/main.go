@@ -47,8 +47,8 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-func getHotShotHeader() *espresso.Header {
-	headerBytes := wavmio.GetHotShotHeader()
+func getHotShotCommitment(seqNum uint64) *espresso.Header {
+	headerBytes := wavmio.ReadHotShotCommitment(seqNum)
 	var header espresso.Header
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
 		panic(fmt.Errorf("Error deserializing espresso header preimage"))
@@ -163,7 +163,6 @@ func main() {
 	db := state.NewDatabase(raw)
 
 	lastBlockHash := wavmio.GetLastBlockHash()
-	lastHotShotHeader := getHotShotHeader()
 
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
@@ -250,7 +249,9 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, lastHotShotHeader, statedb, chainContext, chainConfig, batchFetcher)
+		seqNum := wavmio.GetInboxPosition()
+		hotShotHeader := getHotShotCommitment(seqNum)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, hotShotHeader, statedb, chainContext, chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
 		}
