@@ -17,7 +17,7 @@ func TestDebugAPI(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	l2rpc, _ := builder.L2.Stack.Attach()
+	l2rpc := builder.L2.Stack.Attach()
 
 	var dump state.Dump
 	err := l2rpc.CallContext(ctx, &dump, "debug_dumpBlock", rpc.LatestBlockNumber)

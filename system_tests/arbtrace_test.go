@@ -148,7 +148,7 @@ func TestArbTraceForwarding(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	l2rpc, _ := builder.L2.Stack.Attach()
+	l2rpc := builder.L2.Stack.Attach()
 	txArgs := callTxArgs{}
 	traceTypes := []string{"trace"}
 	blockNum := rpc.BlockNumberOrHash{}
