@@ -108,21 +108,25 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 		return nil, errOutOfBounds
 	}
 
-	segment, err := b.Lookup(start)
+	found, err := b.Lookup(start)
 	if err != nil {
 		return nil, err
+	}
+	segment, ok := found.(*backlogSegment)
+	if !ok {
+		return nil, fmt.Errorf("error in backlogSegment type assertion")
 	}
 
 	bm := &m.BroadcastMessage{Version: 1}
 	required := int(end-start) + 1
 	for {
-		segMsgs, err := segment.Get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
+		segMsgs, err := segment.get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
 		if err != nil {
 			return nil, err
 		}
 
 		bm.Messages = append(bm.Messages, segMsgs...)
-		segment = segment.Next()
+		segment = segment.nextSegment.Load()
 		if len(bm.Messages) == required {
 			break
 		} else if segment == nil {
@@ -179,7 +183,7 @@ func (b *backlog) delete(confirmed uint64) {
 			return
 		}
 	} else {
-		err = segment.Delete(confirmed)
+		err = segment.delete(confirmed)
 		if err != nil {
 			log.Error(fmt.Sprintf("%s: clearing backlog", err.Error()))
 			b.reset()
@@ -233,9 +237,8 @@ type BacklogSegment interface {
 	Start() uint64
 	End() uint64
 	Next() BacklogSegment
-	Get(uint64, uint64) ([]*m.BroadcastFeedMessage, error)
+	Contains(uint64) bool
 	Messages() []*m.BroadcastFeedMessage
-	Delete(uint64) error
 }
 
 type backlogSegment struct {
@@ -282,8 +285,8 @@ func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
 	return s.messages
 }
 
-// Get reads messages from the given start to end MessageIndex
-func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
+// get reads messages from the given start to end MessageIndex
+func (s *backlogSegment) get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
 	noMsgs := []*m.BroadcastFeedMessage{}
 	if start < s.start.Load() {
 		return noMsgs, errOutOfBounds
@@ -326,23 +329,34 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 }
 
 // Contains confirms whether the segment contains a message with the given sequence number
-func (s *backlogSegment) Delete(confirmed uint64) error {
+func (s *backlogSegment) Contains(i uint64) bool {
+	start := s.start.Load()
+	if i < start || i > s.end.Load() {
+		return false
+	}
+
+	msgIndex := i - start
+	s.messagesLock.RLock()
+	msg := s.messages[msgIndex]
+	s.messagesLock.RUnlock()
+	if uint64(msg.SequenceNumber) != i {
+		return false
+	}
+	return true
+}
+
+func (s *backlogSegment) delete(confirmed uint64) error {
 	seen := false
 	defer s.updateSegment(&seen)
 
 	start := s.start.Load()
 	end := s.end.Load()
-	if confirmed < start || confirmed > end {
-		return fmt.Errorf("confirmed message (%d) is not in current backlog (%d-%d)", confirmed, start, end)
-	}
-
 	msgIndex := confirmed - start
-	s.messagesLock.Lock()
-	msg := s.messages[msgIndex]
-	if uint64(msg.SequenceNumber) != confirmed {
+	if !s.Contains(confirmed) {
 		return fmt.Errorf("confirmed message (%d) is not in expected index (%d) in current backlog (%d-%d)", confirmed, msgIndex, start, end)
 	}
 
+	s.messagesLock.Lock()
 	s.messages = s.messages[msgIndex+1:]
 	s.messagesLock.Unlock()
 	return nil
