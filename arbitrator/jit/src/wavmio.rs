@@ -273,7 +273,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
+        let hotshot_comm = socket::read_bytes(stream)?;
         env.sequencer_messages.insert(position, message);
+        env.hotshot_comm_map.insert(position, hotshot_comm);
     }
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

@@ -2,12 +2,14 @@ package validator
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type BatchInfo struct {
-	Number uint64
-	Data   []byte
+	Number        uint64
+	HotShotHeader *espresso.Commitment
+	Data          []byte
 }
 
 type ValidationInput struct {

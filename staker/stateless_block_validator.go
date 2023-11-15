@@ -291,7 +291,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-	for _, batch := range e.BatchInfo {
+	for i, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
 		}
@@ -309,11 +309,12 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			}
 		}
 		if usingEspresso {
-			_, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
+			hotShotHeader, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
+			log.Info("Fetching hotshot commitment", "header", hotShotHeader)
 			if err != nil {
 				return fmt.Errorf("failed to fetch hotshot commitment for batch number %d", batch.Number)
 			}
-			// TODO construct preimage here and add to validation entry
+			e.BatchInfo[i].HotShotHeader = hotShotHeader
 		}
 	}
 

@@ -185,6 +185,7 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
+pub type HotShotCommitmentMap = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
 
 #[derive(Default)]
@@ -203,6 +204,8 @@ pub struct WasmEnv {
     pub preimages: Preimages,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
+    /// Mapping from batch positions to hotshot commitments
+    pub hotshot_comm_map: HotShotCommitmentMap,
     /// The delayed inbox's messages
     pub delayed_messages: Inbox,
     /// The purpose and connections of this process

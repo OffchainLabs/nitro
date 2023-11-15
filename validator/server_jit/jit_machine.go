@@ -27,6 +27,7 @@ type JitMachine struct {
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+	log.Info("HERE IS THE BINARY PATH", "binary", binaryPath)
 	invocation := []string{"--binary", binaryPath, "--forks"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
@@ -158,6 +159,9 @@ func (machine *JitMachine) prove(
 			return state, err
 		}
 		if err := writeBytes(batch.Data); err != nil {
+			return state, err
+		}
+		if err := writeBytes(batch.HotShotHeader[:]); err != nil {
 			return state, err
 		}
 	}
