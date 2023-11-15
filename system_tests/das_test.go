@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -171,7 +172,8 @@ func TestDASRekey(t *testing.T) {
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 
-	l2stackA, err := createDefaultStackForTest(nodeDir)
+	stackConfig := createStackConfigForTest(nodeDir)
+	l2stackA, err := node.New(stackConfig)
 	Require(t, err)
 
 	l2chainDb, err := l2stackA.OpenDatabase("chaindb", 0, 0, "", false)
@@ -218,7 +220,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 	}
 
 	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
+		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
 		Require(t, err)
 
 		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)

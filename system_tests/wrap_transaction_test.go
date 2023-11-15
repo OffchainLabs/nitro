@@ -79,7 +79,7 @@ func EnsureTxSucceeded(ctx context.Context, client arbutil.L1Interface, tx *type
 func EnsureTxSucceededWithTimeout(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	txRes, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
-		return nil, fmt.Errorf("waitFoxTx got: %w", err)
+		return nil, fmt.Errorf("waitFoxTx (tx=%s) got: %w", tx.Hash().Hex(), err)
 	}
 	return txRes, arbutil.DetailTxError(ctx, client, tx, txRes)
 }
