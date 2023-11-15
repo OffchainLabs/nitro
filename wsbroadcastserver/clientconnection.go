@@ -132,6 +132,10 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 		}
 
 		msgs := prevSegment.Messages()
+		if prevSegment.Contains(uint64(cc.requestedSeqNum)) {
+			requestedIdx := int(cc.requestedSeqNum) - int(prevSegment.Start())
+			msgs = msgs[requestedIdx:]
+		}
 		bm := &m.BroadcastMessage{
 			Version:  1, // TODO(clamb): I am unsure if it is correct to hard code the version here like this? It seems to be done in other places though
 			Messages: msgs,
