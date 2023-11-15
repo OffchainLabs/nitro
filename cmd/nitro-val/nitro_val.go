@@ -73,8 +73,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = vcsRevision
+	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
@@ -122,7 +122,7 @@ func mainImpl() int {
 	}
 
 	if err := startMetrics(nodeConfig); err != nil {
-		log.Error("Starting metrics: %v", err)
+		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
 

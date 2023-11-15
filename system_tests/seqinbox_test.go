@@ -6,16 +6,19 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -39,44 +42,92 @@ type blockTestState struct {
 
 const seqInboxTestIters = 40
 
-func deployGasRefunder(ctx context.Context, t *testing.T, info *BlockchainTestInfo, client *ethclient.Client) common.Address {
+func encodeAddBatch(seqABI *abi.ABI, seqNum *big.Int, message []byte, afterDelayedMsgRead *big.Int, gasRefunder common.Address) ([]byte, error) {
+	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin0"]
+	if !ok {
+		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin0 method")
+	}
+	inputData, err := method.Inputs.Pack(
+		seqNum,
+		message,
+		afterDelayedMsgRead,
+		gasRefunder,
+		new(big.Int).SetUint64(uint64(1)),
+		new(big.Int).SetUint64(uint64(1)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	fullData := append([]byte{}, method.ID...)
+	fullData = append(fullData, inputData...)
+	return fullData, nil
+}
+func diffAccessList(accessed, al types.AccessList) string {
+	m := make(map[common.Address]map[common.Hash]bool)
+	for i := 0; i < len(al); i++ {
+		if _, ok := m[al[i].Address]; !ok {
+			m[al[i].Address] = make(map[common.Hash]bool)
+		}
+		for _, slot := range al[i].StorageKeys {
+			m[al[i].Address][slot] = true
+		}
+	}
+
+	diff := ""
+	for i := 0; i < len(accessed); i++ {
+		addr := accessed[i].Address
+		if _, ok := m[addr]; !ok {
+			diff += fmt.Sprintf("contract address: %q wasn't accessed\n", addr)
+			continue
+		}
+		for j := 0; j < len(accessed[i].StorageKeys); j++ {
+			slot := accessed[i].StorageKeys[j]
+			if _, ok := m[addr][slot]; !ok {
+				diff += fmt.Sprintf("storage slot: %v for contract: %v wasn't accessed\n", slot, addr)
+			}
+		}
+	}
+	return diff
+}
+
+func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) common.Address {
 	t.Helper()
 	abi, err := bridgegen.GasRefunderMetaData.GetAbi()
 	if err != nil {
 		t.Fatalf("Error getting gas refunder abi: %v", err)
 	}
-	fauOpts := info.GetDefaultTransactOpts("Faucet", ctx)
-	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), client)
+	fauOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), builder.L1.Client)
 	if err != nil {
 		t.Fatalf("Error getting gas refunder contract deployment transaction: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error deploying gas refunder contract: %v", err)
 	}
-	tx = info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
-	if err := client.SendTransaction(ctx, tx); err != nil {
+	tx = builder.L1Info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
+	if err := builder.L1.Client.SendTransaction(ctx, tx); err != nil {
 		t.Fatalf("Error sending gas refunder funding transaction")
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error funding gas refunder")
 	}
-	contract, err := bridgegen.NewGasRefunder(addr, client)
+	contract, err := bridgegen.NewGasRefunder(addr, builder.L1.Client)
 	if err != nil {
 		t.Fatalf("Error getting gas refunder contract binding: %v", err)
 	}
-	tx, err = contract.AllowContracts(&fauOpts, []common.Address{info.GetAddress("SequencerInbox")})
+	tx, err = contract.AllowContracts(&fauOpts, []common.Address{builder.L1Info.GetAddress("SequencerInbox")})
 	if err != nil {
 		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error addting sequencer inbox in gas refunder allowlist: %v", err)
 	}
 
-	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{info.GetAddress("Sequencer")})
+	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{builder.L1Info.GetAddress("Sequencer")})
 	if err != nil {
 		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
 		t.Fatalf("Error addting sequencer in gas refunder allowlist: %v", err)
 	}
 	return addr
@@ -86,26 +137,30 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.InboxReader.HardReorg = true
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.InboxReader.HardReorg = true
 	if validator {
-		conf.BlockValidator.Enable = true
+		builder.nodeConfig.BlockValidator.Enable = true
 	}
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil, nil)
-	execNode := getExecNode(t, arbNode)
-	l2Backend := execNode.Backend
-	defer requireClose(t, l1stack)
-	defer arbNode.StopAndWait()
+	builder.isSequencer = false
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	l1BlockChain := l1backend.BlockChain()
+	l2Backend := builder.L2.ExecNode.Backend
 
-	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
+	l1BlockChain := builder.L1.L1Backend.BlockChain()
+
+	rpcC := builder.L1.Stack.Attach()
+	gethClient := gethclient.New(rpcC)
+
+	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
-	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	gasRefunderAddr := deployGasRefunder(ctx, t, l1Info, l1Client)
+	gasRefunderAddr := deployGasRefunder(ctx, t, builder)
 
-	ownerAddress := l2Info.GetAddress("Owner")
+	ownerAddress := builder.L2Info.GetAddress("Owner")
 	var startL2BlockNumber uint64 = 0
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
@@ -138,10 +193,15 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	}
 	var faucetTxs []*types.Transaction
 	for _, acct := range accounts {
-		l1Info.GenerateAccount(acct)
-		faucetTxs = append(faucetTxs, l1Info.PrepareTx("Faucet", acct, 30000, big.NewInt(1e16), nil))
+		builder.L1Info.GenerateAccount(acct)
+		faucetTxs = append(faucetTxs, builder.L1Info.PrepareTx("Faucet", acct, 30000, big.NewInt(1e16), nil))
 	}
-	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
+	builder.L1.SendWaitTestTransactions(t, faucetTxs)
+
+	seqABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		t.Fatalf("Error getting sequencer inbox abi: %v", err)
+	}
 
 	for i := 1; i < seqInboxTestIters; i++ {
 		if i%10 == 0 {
@@ -153,7 +213,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 			// Therefore, we make a bunch of small blocks to prevent the code from running.
-			padAddr := l1Info.GetAddress("ReorgPadding")
+			padAddr := builder.L1Info.GetAddress("ReorgPadding")
 			for j := uint64(0); j < 70; j++ {
 				rawTx := &types.DynamicFeeTx{
 					To:        &padAddr,
@@ -162,12 +222,12 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 					Value:     new(big.Int),
 					Nonce:     j,
 				}
-				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
-				Require(t, l1Client.SendTransaction(ctx, tx))
-				_, _ = EnsureTxSucceeded(ctx, l1Client, tx)
+				tx := builder.L1Info.SignTxAs("ReorgPadding", rawTx)
+				Require(t, builder.L1.Client.SendTransaction(ctx, tx))
+				_, _ = builder.L1.EnsureTxSucceeded(tx)
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
-			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
+			currentHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
 				Fatal(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
@@ -182,10 +242,10 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			// Sometimes, this causes it to drop the next tx.
 			// To work around this, we create a sacrificial tx, which may or may not succeed.
 			// Whichever happens, by the end of this block, the miner will have processed the reorg.
-			tx := l1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "Faucet", 30000, big.NewInt(0), nil)
-			err = l1Client.SendTransaction(ctx, tx)
+			tx := builder.L1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "Faucet", 30000, big.NewInt(0), nil)
+			err = builder.L1.Client.SendTransaction(ctx, tx)
 			Require(t, err)
-			_, _ = WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
+			_, _ = WaitForTx(ctx, builder.L1.Client, tx.Hash(), time.Second)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]*big.Int)
@@ -213,10 +273,10 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				var dest common.Address
 				if j == 0 && amount.Cmp(reserveAmount) >= 0 {
 					name := accountName(len(state.accounts))
-					if !l2Info.HasAccount(name) {
-						l2Info.GenerateAccount(name)
+					if !builder.L2Info.HasAccount(name) {
+						builder.L2Info.GenerateAccount(name)
 					}
-					dest = l2Info.GetAddress(name)
+					dest = builder.L2Info.GetAddress(name)
 					state.accounts = append(state.accounts, dest)
 					state.balances[dest] = big.NewInt(0)
 				} else {
@@ -231,7 +291,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 					Nonce:     state.nonces[source],
 				}
 				state.nonces[source]++
-				tx := l2Info.SignTxAs(accountName(sourceNum), rawTx)
+				tx := builder.L2Info.SignTxAs(accountName(sourceNum), rawTx)
 				txData, err := tx.MarshalBinary()
 				Require(t, err)
 				var segment []byte
@@ -251,7 +311,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 			seqNonce := len(blockStates) - 1
 			for j := 0; ; j++ {
-				haveNonce, err := l1Client.PendingNonceAt(ctx, seqOpts.From)
+				haveNonce, err := builder.L1.Client.PendingNonceAt(ctx, seqOpts.From)
 				Require(t, err)
 				if haveNonce == uint64(seqNonce) {
 					break
@@ -263,9 +323,34 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			}
 			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
-			before, err := l1Client.BalanceAt(ctx, seqOpts.From, nil)
+			before, err := builder.L1.Client.BalanceAt(ctx, seqOpts.From, nil)
 			if err != nil {
 				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
+			}
+
+			data, err := encodeAddBatch(seqABI, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
+			if err != nil {
+				t.Fatalf("Error encoding batch data: %v", err)
+			}
+			si := builder.L1Info.GetAddress("SequencerInbox")
+			wantAL, _, _, err := gethClient.CreateAccessList(ctx, ethereum.CallMsg{
+				From: seqOpts.From,
+				To:   &si,
+				Data: data,
+			})
+			if err != nil {
+				t.Fatalf("Error creating access list: %v", err)
+			}
+			accessed := arbnode.AccessList(&arbnode.AccessListOpts{
+				SequencerInboxAddr:       builder.L1Info.GetAddress("SequencerInbox"),
+				BridgeAddr:               builder.L1Info.GetAddress("Bridge"),
+				DataPosterAddr:           seqOpts.From,
+				GasRefunderAddr:          gasRefunderAddr,
+				SequencerInboxAccs:       len(blockStates),
+				AfterDelayedMessagesRead: 1,
+			})
+			if diff := diffAccessList(accessed, *wantAL); diff != "" {
+				t.Errorf("Access list mistmatch:\n%s\n", diff)
 			}
 			if i%5 == 0 {
 				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
@@ -273,18 +358,18 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
 			}
 			Require(t, err)
-			txRes, err := EnsureTxSucceeded(ctx, l1Client, tx)
+			txRes, err := builder.L1.EnsureTxSucceeded(tx)
 			if err != nil {
 				// Geth's clique miner is finicky.
 				// Unfortunately this is so rare that I haven't had an opportunity to test this workaround.
 				// Specifically, I suspect there's a race where it thinks there's no txs to put in the new block,
 				// if a new tx arrives at the same time as it tries to create a block.
 				// Resubmit the transaction in an attempt to get the miner going again.
-				_ = l1Client.SendTransaction(ctx, tx)
-				txRes, err = EnsureTxSucceeded(ctx, l1Client, tx)
+				_ = builder.L1.Client.SendTransaction(ctx, tx)
+				txRes, err = builder.L1.EnsureTxSucceeded(tx)
 				Require(t, err)
 			}
-			after, err := l1Client.BalanceAt(ctx, seqOpts.From, nil)
+			after, err := builder.L1.Client.BalanceAt(ctx, seqOpts.From, nil)
 			if err != nil {
 				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
 			}
@@ -326,9 +411,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				expectedPos, err := execNode.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
+				expectedPos, err := builder.L2.ExecNode.ExecEngine.BlockNumberToMessageIndex(expectedBlockNumber)
 				Require(t, err)
-				lastValidated := arbNode.BlockValidator.Validated(t)
+				lastValidated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 				if lastValidated == expectedPos+1 {
 					break
 				} else if i >= 1000 {

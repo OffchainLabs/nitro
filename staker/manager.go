@@ -25,7 +25,8 @@ func NewManager(
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
-	historyCacheBaseDir string,
+	historyCacheBaseDir,
+	validatorName string,
 ) (*challengemanager.Manager, error) {
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
@@ -69,6 +70,7 @@ func NewManager(
 		statelessBlockValidator,
 		historyCacheBaseDir,
 		challengeLeafHeights,
+		validatorName,
 	)
 	if err != nil {
 		return nil, err

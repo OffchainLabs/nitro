@@ -61,7 +61,10 @@ import (
 )
 
 func printSampleUsage(name string) {
-	fmt.Printf("Sample usage: %s --help \n", name)
+	fmt.Printf("Sample usage: %s [OPTIONS] \n\n", name)
+	fmt.Printf("Options:\n")
+	fmt.Printf("  --help\n")
+	fmt.Printf("  --dev: Start a default L2-only dev chain\n")
 }
 
 func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.WalletConfig) (common.Address, error) {
@@ -163,6 +166,7 @@ func mainImpl() int {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	stackConf.DBEngine = nodeConfig.Persistent.DBEngine
+	nodeConfig.Rpc.Apply(&stackConf)
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -174,8 +178,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = vcsRevision
+	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
@@ -399,7 +403,7 @@ func mainImpl() int {
 	}
 
 	if err := startMetrics(nodeConfig); err != nil {
-		log.Error("Starting metrics: %v", err)
+		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
 
@@ -591,16 +595,23 @@ type NodeConfig struct {
 var NodeConfigDefault = NodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	Node:          arbnode.ConfigDefault,
+	Execution:     gethexec.ConfigDefault,
+	Validation:    valnode.DefaultValidationConfig,
 	ParentChain:   conf.L1ConfigDefault,
 	Chain:         conf.L2ConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
+	FileLogging:   genericconf.DefaultFileLoggingConfig,
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
 	IPC:           genericconf.IPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
+	GraphQL:       genericconf.GraphQLConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Init:          InitConfigDefault,
+	Rpc:           genericconf.DefaultRpcConfig,
 	PProf:         false,
 	PprofCfg:      genericconf.PProfDefault,
 }
@@ -769,7 +780,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 

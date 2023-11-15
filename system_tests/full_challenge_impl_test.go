@@ -182,7 +182,10 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 }
 
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbutil.L1Interface) {
-	for i := 0; i < 12; i++ {
+	// With SimulatedBeacon running in on-demand block production mode, the
+	// finalized block is considered to be be the nearest multiple of 32 less
+	// than or equal to the block number.
+	for i := 0; i < 32; i++ {
 		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
 			l1Info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
@@ -207,6 +210,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		bridgeAddr,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
+		big.NewInt(117964),
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
@@ -407,6 +411,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fatal(t, err)
 	}
+
+	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
 	for i := 0; i < 100; i++ {
 		var tx *types.Transaction

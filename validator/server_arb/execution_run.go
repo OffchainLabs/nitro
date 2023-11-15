@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -56,54 +57,62 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetBigStepLeavesUpTo(toBigStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		var stateRoots []common.Hash
-		machine, err := e.cache.GetMachineAt(ctx, 0)
+		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err
 		}
-		if !machine.IsRunning() {
+		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
+		// to align with the state roots that the inbox machine will produce.
+		var stateRoots []common.Hash
+		if machineStartIndex == 0 {
+			gs := machine.GetGlobalState()
+			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+			stateRoots = append(stateRoots, hash)
+		} else {
+			// Otherwise, we simply append the machine hash at the specified start index.
+			stateRoots = append(stateRoots, machine.Hash())
+		}
+
+		// If we only want 1 state root, we can return early.
+		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
-		for i := uint64(0); i <= toBigStep; i++ {
-			position := i * numOpcodesPerBigStep
-			if err = machine.Step(ctx, position); err != nil {
-				return nil, err
+		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
+			// The absolute opcode position the machine should be in after stepping.
+			position := machineStartIndex + stepSize*(numIterations+1)
+
+			// Advance the machine in step size increments.
+			if err := machine.Step(ctx, stepSize); err != nil {
+				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
+			}
+			// If the machine reached the finished state, we can break out of the loop and append to
+			// our state roots slice a finished machine hash.
+			machineStep := machine.GetStepCount()
+			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
+				gs := machine.GetGlobalState()
+				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+				stateRoots = append(stateRoots, hash)
+				break
+			}
+			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
+			if position != machineStep {
+				machineRunning := machine.IsRunning()
+				if machineRunning || machineStep > position {
+					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
+				}
 			}
 			stateRoots = append(stateRoots, machine.Hash())
 		}
-		return stateRoots, nil
-	})
-}
 
-func (e *executionRun) GetSmallStepLeavesUpTo(bigStep uint64, toSmallStep uint64, numOpcodesPerBigStep uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		var stateRoots []common.Hash
-		fromSmall := bigStep * numOpcodesPerBigStep
-		toSmall := fromSmall + toSmallStep
-		for i := fromSmall; i <= toSmall; i++ {
-			machineStep, err := e.intermediateGetStepAt(ctx, i)
-			if err != nil {
-				return nil, err
-			}
-			stateRoots = append(stateRoots, machineStep.Hash)
+		// If the machine finished in less than the number of hashes we anticipate, we pad
+		// to the expected value by repeating the last machine hash until the state roots are the correct
+		// length.
+		for uint64(len(stateRoots)) < numDesiredLeaves {
+			stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 		}
-		return stateRoots, nil
-	})
-}
-
-func (e *executionRun) GetLeavesInRangeWithStepSize(fromStep uint64, toStep uint64, stepSize uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		var stateRoots []common.Hash
-		for i := fromStep; i <= toStep; i = i + stepSize {
-			machineStep, err := e.intermediateGetStepAt(ctx, i)
-			if err != nil {
-				return nil, err
-			}
-			stateRoots = append(stateRoots, machineStep.Hash)
-		}
-		return stateRoots, nil
+		return stateRoots[:numDesiredLeaves], nil
 	})
 }
 
