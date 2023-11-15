@@ -68,7 +68,7 @@ func TestAssertionOnLargeNumberOfBatch(t *testing.T) {
 	manager, err := staker.NewStateManager(stateless, t.TempDir(), nil)
 	Require(t, err)
 
-	poster := assertions.NewPoster(
+	poster := assertions.NewManager(
 		assertionChain,
 		manager,
 		"test",

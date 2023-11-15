@@ -24,6 +24,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -73,6 +75,7 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 
 type L1ValidatorConfig struct {
 	Enable                    bool                        `koanf:"enable"`
+	Bold                      BoldConfig                  `koanf:"bold"`
 	Strategy                  string                      `koanf:"strategy"`
 	StakerInterval            time.Duration               `koanf:"staker-interval"`
 	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
@@ -140,6 +143,7 @@ func (c *L1ValidatorConfig) Validate() error {
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
+	Bold:                      DefaultBoldConfig,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Minute,
 	MakeAssertionInterval:     time.Hour,
@@ -163,7 +167,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Millisecond * 10,
-	MakeAssertionInterval:     0,
+	MakeAssertionInterval:     -time.Hour * 1000,
 	PostingStrategy:           L1PostingStrategy{},
 	DisableChallenge:          false,
 	ConfirmationBlocks:        0,
@@ -190,6 +194,7 @@ var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
+	BoldConfigAddOptions(prefix+".bold", f)
 	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
@@ -252,6 +257,7 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
+	bridge                  *bridgegen.IBridge
 	fatalErr                chan<- error
 }
 
@@ -286,6 +292,7 @@ func NewStaker(
 	stakedNotifiers []LatestStakedNotifier,
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
+	bridgeAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
 
@@ -302,6 +309,13 @@ func NewStaker(
 	if config.StartValidationFromStaked && blockValidator != nil {
 		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
+	var bridge *bridgegen.IBridge
+	if config.Bold.Enable {
+		bridge, err = bridgegen.NewIBridge(bridgeAddress, client)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -313,6 +327,7 @@ func NewStaker(
 		lastActCalledBlock:      nil,
 		inboxReader:             statelessBlockValidator.inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
+		bridge:                  bridge,
 		fatalErr:                fatalErr,
 	}, nil
 }
@@ -427,6 +442,13 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
+		switchedToBoldProtocol, err := s.checkAndSwitchToBoldStaker(ctxIn)
+		if err != nil {
+			log.Error("staker: error in checking switch to bold staker", "err", err)
+		}
+		if switchedToBoldProtocol {
+			s.StopAndWait()
+		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
@@ -485,6 +507,48 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		return s.config.StakerInterval
 	})
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		// Using ctxIn instead of ctx since, ctxIn will be passed on to bold staker
+		// and ctx will be cancelled after the switch to bold staker.
+		switchedToBoldProtocol, err := s.checkAndSwitchToBoldStaker(ctxIn)
+		if err != nil {
+			log.Error("staker: error in checking switch to bold staker", "err", err)
+		}
+		if switchedToBoldProtocol {
+			s.StopAndWait()
+		}
+		return s.config.StakerInterval
+	})
+}
+
+func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
+	switchedToBoldProtocol := false
+	if s.config.Bold.Enable {
+		callOpts := s.getCallOpts(ctx)
+		rollupAddress, err := s.bridge.Rollup(callOpts)
+		if err != nil {
+			return false, err
+		}
+		userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, s.client)
+		if err != nil {
+			return false, err
+		}
+		_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
+		if err != nil {
+			// Switch to Bold protocol since ExtraChallengeTimeBlocks does not exist in bold protocol.
+			auth, err := s.builder.Auth(ctx)
+			if err != nil {
+				return false, err
+			}
+			boldManager, err := NewManager(ctx, rollupAddress, auth, *callOpts, s.client, s.statelessBlockValidator, &s.config.Bold)
+			if err != nil {
+				return false, err
+			}
+			boldManager.Start(ctx)
+			switchedToBoldProtocol = true
+		}
+	}
+	return switchedToBoldProtocol, nil
 }
 
 func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {

@@ -183,7 +183,7 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	poster, err := assertions.NewPoster(
+	poster, err := assertions.NewManager(
 		assertionChain,
 		stateManager,
 		"good",
@@ -211,7 +211,7 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	posterB, err := assertions.NewPoster(
+	posterB, err := assertions.NewManager(
 		chainB,
 		stateManagerB,
 		"evil",

@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -61,21 +62,23 @@ func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int) (common.Address, error) {
 	client := l1Reader.Client()
+
+	/// deploy eth based templates
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
 	}
 
-	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client)
+	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
 	}
 
-	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client)
+	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client, maxDataSize)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
@@ -93,16 +96,51 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
-	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
+	ethBasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
+		Bridge:           bridgeTemplate,
+		SequencerInbox:   seqInboxTemplate,
+		Inbox:            inboxTemplate,
+		RollupEventInbox: rollupEventBridgeTemplate,
+		Outbox:           outboxTemplate,
+	}
+
+	/// deploy ERC20 based templates
+	erc20BridgeTemplate, tx, _, err := bridgegen.DeployERC20Bridge(auth, client)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
+	}
+
+	erc20InboxTemplate, tx, _, err := bridgegen.DeployERC20Inbox(auth, client, maxDataSize)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
+	}
+
+	erc20RollupEventBridgeTemplate, tx, _, err := rollupgen.DeployERC20RollupEventInbox(auth, client)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: %w", err)
+	}
+
+	erc20OutboxTemplate, tx, _, err := bridgegen.DeployERC20Outbox(auth, client)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
+	}
+
+	erc20BasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
+		Bridge:           erc20BridgeTemplate,
+		SequencerInbox:   seqInboxTemplate,
+		Inbox:            erc20InboxTemplate,
+		RollupEventInbox: erc20RollupEventBridgeTemplate,
+		Outbox:           erc20OutboxTemplate,
+	}
+
+	bridgeCreatorAddr, tx, _, err := rollupgen.DeployBridgeCreator(auth, client, ethBasedTemplates, erc20BasedTemplates)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
-	}
-
-	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("bridge creator update templates error: %w", err)
 	}
 
 	return bridgeCreatorAddr, nil
@@ -149,10 +187,10 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
+func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
+	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth, maxDataSize)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
 
 	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth)
@@ -178,6 +216,12 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
+	upgradeExecutor, tx, _, err := upgrade_executorgen.DeployUpgradeExecutor(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("upgrade executor deploy error: %w", err)
+	}
+
 	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
@@ -190,6 +234,12 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
 	}
 
+	l2FactoriesDeployHelper, tx, _, err := rollupgen.DeployDeployHelper(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("deploy helper creator deploy error: %w", err)
+	}
+
 	tx, err = rollupCreator.SetTemplates(
 		auth,
 		bridgeCreator,
@@ -197,8 +247,10 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		challengeManagerAddr,
 		rollupAdminLogic,
 		rollupUserLogic,
+		upgradeExecutor,
 		validatorUtils,
 		validatorWalletCreator,
+		l2FactoriesDeployHelper,
 	)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
@@ -235,12 +287,12 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -250,11 +302,19 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
 	}
 
+	deployParams := rollupgen.RollupCreatorRollupDeploymentParams{
+		Config:                    config,
+		BatchPoster:               batchPoster,
+		Validators:                validatorAddrs,
+		MaxDataSize:               maxDataSize,
+		NativeToken:               nativeToken,
+		DeployFactoriesToL2:       false,
+		MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
+	}
+
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		config,
-		batchPoster,
-		validatorAddrs,
+		deployParams,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -274,6 +334,8 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 		SequencerInbox:         info.SequencerInbox,
 		DeployedAt:             receipt.BlockNumber.Uint64(),
 		Rollup:                 info.RollupAddress,
+		NativeToken:            nativeToken,
+		UpgradeExecutor:        info.UpgradeExecutor,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
 	}, nil
@@ -816,7 +878,7 @@ func createNodeImpl(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}

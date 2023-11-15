@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -77,9 +76,6 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 	}, nil
 }
 
-const RECENT_FEED_ITEM_TTL = time.Second * 10
-const RECENT_FEED_INITIAL_MAP_SIZE = 1024
-
 func (r *Relay) Start(ctx context.Context) error {
 	r.StopWaiter.Start(ctx, r)
 	err := r.broadcaster.Initialize()
@@ -93,35 +89,16 @@ func (r *Relay) Start(ctx context.Context) error {
 
 	r.broadcastClients.Start(ctx)
 
-	var lastConfirmed arbutil.MessageIndex
-	recentFeedItemsNew := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
-	recentFeedItemsOld := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 	r.LaunchThread(func(ctx context.Context) {
-		recentFeedItemsCleanup := time.NewTicker(RECENT_FEED_ITEM_TTL)
-		defer recentFeedItemsCleanup.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case msg := <-r.messageChan:
-				if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
-					continue
-				}
-				if _, ok := recentFeedItemsOld[msg.SequenceNumber]; ok {
-					continue
-				}
-				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
 				sharedmetrics.UpdateSequenceNumberGauge(msg.SequenceNumber)
 				r.broadcaster.BroadcastSingleFeedMessage(&msg)
 			case cs := <-r.confirmedSequenceNumberChan:
-				if lastConfirmed == cs {
-					continue
-				}
 				r.broadcaster.Confirm(cs)
-			case <-recentFeedItemsCleanup.C:
-				// Cycle buckets to get rid of old entries
-				recentFeedItemsOld = recentFeedItemsNew
-				recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 			}
 		}
 	})

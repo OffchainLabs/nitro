@@ -122,7 +122,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		for i := numStateRoots; i < int(numDesiredLeaves); i++ {
 			stateRootsMmap.Set(numStateRoots, lastStateRoot)
 		}
-		return stateRootsMmap, nil
+		return stateRootsMmap.SubMmap(0, int(numDesiredLeaves)), nil
 	})
 }
 

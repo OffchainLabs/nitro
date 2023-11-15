@@ -16,13 +16,13 @@ func TestSequencerPause(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info1, nodeA, client := CreateTestL2(t, ctx)
-	defer nodeA.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	const numUsers = 100
 
-	execA := getExecNode(t, nodeA)
-	prechecker, ok := execA.TxPublisher.(*gethexec.TxPreChecker)
+	prechecker, ok := builder.L2.ExecNode.TxPublisher.(*gethexec.TxPreChecker)
 	if !ok {
 		t.Error("prechecker not found on node")
 	}
@@ -35,15 +35,15 @@ func TestSequencerPause(t *testing.T) {
 
 	for num := 0; num < numUsers; num++ {
 		userName := fmt.Sprintf("My_User_%d", num)
-		l2info1.GenerateAccount(userName)
+		builder.L2Info.GenerateAccount(userName)
 		users = append(users, userName)
 	}
 
 	for _, userName := range users {
-		tx := l2info1.PrepareTx("Owner", userName, l2info1.TransferGas, big.NewInt(1e16), nil)
-		err := client.SendTransaction(ctx, tx)
+		tx := builder.L2Info.PrepareTx("Owner", userName, builder.L2Info.TransferGas, big.NewInt(1e16), nil)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, client, tx)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
 
@@ -52,7 +52,7 @@ func TestSequencerPause(t *testing.T) {
 	var txs types.Transactions
 
 	for _, userName := range users {
-		tx := l2info1.PrepareTx(userName, "Owner", l2info1.TransferGas, big.NewInt(2), nil)
+		tx := builder.L2Info.PrepareTx(userName, "Owner", builder.L2Info.TransferGas, big.NewInt(2), nil)
 		txs = append(txs, tx)
 	}
 
@@ -63,7 +63,7 @@ func TestSequencerPause(t *testing.T) {
 		}(tx)
 	}
 
-	_, err := EnsureTxSucceededWithTimeout(ctx, client, txs[0], time.Second)
+	_, err := builder.L2.EnsureTxSucceededWithTimeout(txs[0], time.Second)
 	if err == nil {
 		t.Error("tx passed while sequencer paused")
 	}
@@ -71,7 +71,7 @@ func TestSequencerPause(t *testing.T) {
 	sequencer.Activate()
 
 	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, client, tx)
+		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
 }
