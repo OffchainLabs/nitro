@@ -506,7 +506,7 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, info
 	Require(t, err)
 	valConfig := staker.DefaultL1ValidatorConfig
 	valConfig.Strategy = "WatchTower"
-	valConfig.EnableBold = true
+	valConfig.Bold = staker.DefaultBoldConfig
 	valConfig.StakerInterval = 100 * time.Millisecond
 
 	dp, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)

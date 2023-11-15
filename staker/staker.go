@@ -75,7 +75,7 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 
 type L1ValidatorConfig struct {
 	Enable                    bool                        `koanf:"enable"`
-	EnableBold                bool                        `koanf:"enable-bold"`
+	Bold                      BoldConfig                  `koanf:"bold"`
 	Strategy                  string                      `koanf:"strategy"`
 	StakerInterval            time.Duration               `koanf:"staker-interval"`
 	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
@@ -143,7 +143,7 @@ func (c *L1ValidatorConfig) Validate() error {
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
-	EnableBold:                false,
+	Bold:                      DefaultBoldConfig,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Minute,
 	MakeAssertionInterval:     time.Hour,
@@ -194,7 +194,7 @@ var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
-	f.Bool(prefix+".enable-bold", DefaultL1ValidatorConfig.EnableBold, "enable switch check to bold validator")
+	BoldConfigAddOptions(prefix+".bold", f)
 	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
@@ -310,7 +310,7 @@ func NewStaker(
 		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
 	var bridge *bridgegen.IBridge
-	if config.EnableBold {
+	if config.Bold.Enable {
 		bridge, err = bridgegen.NewIBridge(bridgeAddress, client)
 		if err != nil {
 			return nil, err
@@ -523,7 +523,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 
 func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
 	switchedToBoldProtocol := false
-	if s.config.EnableBold {
+	if s.config.Bold.Enable {
 		callOpts := s.getCallOpts(ctx)
 		rollupAddress, err := s.bridge.Rollup(callOpts)
 		if err != nil {
@@ -540,7 +540,7 @@ func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
 			if err != nil {
 				return false, err
 			}
-			boldManager, err := NewManager(ctx, rollupAddress, auth, *callOpts, s.client, s.statelessBlockValidator, "", "")
+			boldManager, err := NewManager(ctx, rollupAddress, auth, *callOpts, s.client, s.statelessBlockValidator, &s.config.Bold)
 			if err != nil {
 				return false, err
 			}
