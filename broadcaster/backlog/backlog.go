@@ -339,10 +339,7 @@ func (s *backlogSegment) Contains(i uint64) bool {
 	s.messagesLock.RLock()
 	msg := s.messages[msgIndex]
 	s.messagesLock.RUnlock()
-	if uint64(msg.SequenceNumber) != i {
-		return false
-	}
-	return true
+	return uint64(msg.SequenceNumber) == i
 }
 
 func (s *backlogSegment) delete(confirmed uint64) error {
