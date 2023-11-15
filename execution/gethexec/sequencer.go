@@ -85,7 +85,7 @@ type SequencerConfigFetcher func() *SequencerConfig
 
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
-	MaxBlockSpeed:               time.Millisecond * 100,
+	MaxBlockSpeed:               time.Millisecond * 250,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	Forwarder:                   DefaultSequencerForwarderConfig,
@@ -385,8 +385,9 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
-	if tx.Type() >= types.ArbitrumDepositTxType {
-		// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
+		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
 	}
 

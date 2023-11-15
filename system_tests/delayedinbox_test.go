@@ -38,16 +38,17 @@ func TestDelayInboxSimple(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, l2node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
 
-	l2info.GenerateAccount("User2")
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
-	SendSignedTxViaL1(t, ctx, l1info, l1client, l2client, delayedTx)
+	builder.L2Info.GenerateAccount("User2")
 
-	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	delayedTx := builder.L2Info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
+	builder.L1.SendSignedTx(t, builder.L2.Client, delayedTx, builder.L1Info)
+
+	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
 		Fatal(t, "Unexpected balance:", l2balance)
