@@ -535,12 +535,12 @@ func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
 		}
 		_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
 		if err != nil {
-			// Switch to Bold protocol since ExtraChallengeTimeBlocks does not exist in bold protocol .
+			// Switch to Bold protocol since ExtraChallengeTimeBlocks does not exist in bold protocol.
 			auth, err := s.builder.Auth(ctx)
 			if err != nil {
 				return false, err
 			}
-			boldManager, err := NewManager(ctx, rollupAddress, auth, *callOpts, s.client, s.statelessBlockValidator, "")
+			boldManager, err := NewManager(ctx, rollupAddress, auth, *callOpts, s.client, s.statelessBlockValidator, "", "")
 			if err != nil {
 				return false, err
 			}
