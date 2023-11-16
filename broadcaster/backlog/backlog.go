@@ -17,6 +17,7 @@ var (
 	errOutOfBounds        = errors.New("message not found in backlog")
 )
 
+// Backlog defines the interface for backlog.
 type Backlog interface {
 	Head() BacklogSegment
 	Append(*m.BroadcastMessage) error
@@ -25,6 +26,8 @@ type Backlog interface {
 	Lookup(uint64) (BacklogSegment, error)
 }
 
+// backlog stores backlogSegments and provides the ability to read/write
+// messages.
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
@@ -34,6 +37,7 @@ type backlog struct {
 	messageCount  atomic.Uint64
 }
 
+// NewBacklog creates a backlog.
 func NewBacklog(c ConfigFetcher) Backlog {
 	lookup := make(map[uint64]*backlogSegment)
 	return &backlog{
@@ -42,6 +46,7 @@ func NewBacklog(c ConfigFetcher) Backlog {
 	}
 }
 
+// Head return the head backlogSegment within the backlog.
 func (b *backlog) Head() BacklogSegment {
 	return b.head.Load()
 }
@@ -204,7 +209,7 @@ func (b *backlog) delete(confirmed uint64) {
 }
 
 // removeFromLookup removes all entries from the head segment's start index to
-// the given confirmed index
+// the given confirmed index.
 func (b *backlog) removeFromLookup(start, end uint64) {
 	b.lookupLock.Lock()
 	defer b.lookupLock.Unlock()
@@ -213,6 +218,7 @@ func (b *backlog) removeFromLookup(start, end uint64) {
 	}
 }
 
+// Lookup attempts to find the backlogSegment storing the given message index.
 func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
 	b.lookupLock.RLock()
 	segment, ok := b.lookupByIndex[i]
@@ -224,11 +230,12 @@ func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
 	return segment, nil
 }
 
+// Count returns the number of messages stored within the backlog.
 func (s *backlog) Count() uint64 {
 	return s.messageCount.Load()
 }
 
-// reset removes all segments from the backlog
+// reset removes all segments from the backlog.
 func (b *backlog) reset() {
 	b.lookupLock.Lock()
 	defer b.lookupLock.Unlock()
@@ -238,6 +245,7 @@ func (b *backlog) reset() {
 	b.messageCount.Store(0)
 }
 
+// BacklogSegment defines the interface for backlogSegment.
 type BacklogSegment interface {
 	Start() uint64
 	End() uint64
@@ -246,6 +254,8 @@ type BacklogSegment interface {
 	Messages() []*m.BroadcastFeedMessage
 }
 
+// backlogSegment stores messages up to a limit defined by the backlog. It also
+// points to the next backlogSegment in the list.
 type backlogSegment struct {
 	start           atomic.Uint64
 	end             atomic.Uint64
@@ -272,25 +282,29 @@ func IsBacklogSegmentNil(segment BacklogSegment) bool {
 	return segment.(*backlogSegment) == nil
 }
 
+// Start returns the first message index within the backlogSegment.
 func (s *backlogSegment) Start() uint64 {
 	return uint64(s.start.Load())
 }
 
+// End returns the last message index within the backlogSegment.
 func (s *backlogSegment) End() uint64 {
 	return uint64(s.end.Load())
 }
 
+// Next returns the next backlogSegment.
 func (s *backlogSegment) Next() BacklogSegment {
 	return s.nextSegment.Load()
 }
 
+// Messages returns all of the messages stored in the backlogSegment.
 func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
 	return s.messages
 }
 
-// get reads messages from the given start to end MessageIndex
+// get reads messages from the given start to end message index.
 func (s *backlogSegment) get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
 	noMsgs := []*m.BroadcastFeedMessage{}
 	if start < s.start.Load() {
@@ -333,7 +347,8 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 	return nil
 }
 
-// Contains confirms whether the segment contains a message with the given sequence number
+// Contains confirms whether the segment contains a message with the given
+// sequence number.
 func (s *backlogSegment) Contains(i uint64) bool {
 	start := s.start.Load()
 	if i < start || i > s.end.Load() {
@@ -347,6 +362,8 @@ func (s *backlogSegment) Contains(i uint64) bool {
 	return uint64(msg.SequenceNumber) == i
 }
 
+// delete removes messages from the backlogSegment up to and including the
+// given confirmed message index.
 func (s *backlogSegment) delete(confirmed uint64) error {
 	seen := false
 	defer s.updateSegment(&seen)
@@ -376,7 +393,7 @@ func (s *backlogSegment) updateSegment(seen *bool) {
 	}
 }
 
-// count returns the number of messages stored in the backlog segment
+// count returns the number of messages stored in the backlog segment.
 func (s *backlogSegment) count() int {
 	return int(s.messageCount.Load())
 }
