@@ -18,6 +18,7 @@ var (
 )
 
 type Backlog interface {
+	Head() BacklogSegment
 	Append(*m.BroadcastMessage) error
 	Get(uint64, uint64) (*m.BroadcastMessage, error)
 	Count() uint64
@@ -39,6 +40,10 @@ func NewBacklog(c ConfigFetcher) Backlog {
 		lookupByIndex: lookup,
 		config:        c,
 	}
+}
+
+func (b *backlog) Head() BacklogSegment {
+	return b.head.Load()
 }
 
 // Append will add the given messages to the backlogSegment at head until
