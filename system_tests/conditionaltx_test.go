@@ -102,7 +102,7 @@ func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[c
 }
 
 func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := math.HexOrDecimal64(timestamp + 30)
+	future := math.HexOrDecimal64(timestamp + 40)
 	past := math.HexOrDecimal64(timestamp - 1)
 	futureBlockNumber := math.HexOrDecimal64(blockNumber + 1000)
 	currentBlockNumber := math.HexOrDecimal64(blockNumber)
@@ -227,9 +227,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	currentRootHash2 := getStorageRootHash(t, builder.L2.ExecNode, contractAddress2)
 	currentSlotValueMap2 := getStorageSlotValue(t, builder.L2.ExecNode, contractAddress2)
 
-	rpcClient, err := builder.L2.ConsensusNode.Stack.Attach()
-	Require(t, err)
-
+	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
 	builder.L2Info.GenerateAccount("User2")
 
 	testConditionalTxThatShouldSucceed(t, ctx, -1, builder.L2Info, rpcClient, nil)
@@ -240,13 +238,18 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err := builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber := block.NumberU64()
-	blockTime := block.Time()
+
+	currentL2BlockTime := func() uint64 {
+		l2Block, err := builder.L2.Client.BlockByNumber(ctx, nil)
+		Require(t, err)
+		return l2Block.Time()
+	}
 
 	optionsA := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
 	optionsB := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
 	optionsAB := optionsProduct(optionsA, optionsB)
 	options1 := dedupOptions(t, append(append(optionsAB, optionsA...), optionsB...))
-	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, currentL2BlockTime()))
 	for i, options := range options1 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, builder.L2Info, rpcClient, options)
 	}
@@ -277,13 +280,12 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	blockTime = block.Time()
 
 	optionsC := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
 	optionsD := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
 	optionsCD := optionsProduct(optionsC, optionsD)
 	options2 := dedupOptions(t, append(append(optionsCD, optionsC...), optionsD...))
-	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, currentL2BlockTime()))
 	for i, options := range options2 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, builder.L2Info, rpcClient, options)
 	}
@@ -293,8 +295,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	block, err = builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
-	blockTime = block.Time()
-	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, currentL2BlockTime()))
 	for i, options := range options3 {
 		testConditionalTxThatShouldFail(t, ctx, i, builder.L2Info, rpcClient, options, -32003)
 	}
@@ -312,8 +313,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	rpcClient, err := builder.L2.ConsensusNode.Stack.Attach()
-	Require(t, err)
+	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	contractAddress, simple := builder.L2.DeploySimple(t, auth)
@@ -413,8 +413,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	rpcClient, err := builder.L2.ConsensusNode.Stack.Attach()
-	Require(t, err)
+	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
 
 	builder.L2Info.GenerateAccount("User2")
 
