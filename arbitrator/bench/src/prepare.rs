@@ -4,14 +4,13 @@ use prover::utils::{Bytes32, CBytes};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::parse_input::*;
 
-pub fn prepare_machine() -> eyre::Result<Machine> {
-    let path = Path::new("/home/ultrainstinct/items.txt");
-    let file = File::open(&path)?;
+pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
+    let file = File::open(&preimages)?;
     let reader = BufReader::new(file);
 
     let data = FileData::from_reader(reader)?;
@@ -32,7 +31,7 @@ pub fn prepare_machine() -> eyre::Result<Machine> {
     };
     let preimage_resolver = Arc::new(Box::new(preimage_resolver));
 
-    let binary_path = Path::new("/home/ultrainstinct/machines/latest/machine.wavm.br");
+    let binary_path = Path::new(&machines);
     println!("Creating machine from binary_path");
     let mut mach = Machine::new_from_wavm(binary_path)?;
 

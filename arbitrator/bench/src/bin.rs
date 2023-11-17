@@ -1,9 +1,25 @@
+use std::path::PathBuf;
+
 use bench::prepare::*;
+use clap::Parser;
 use eyre::bail;
 use prover::machine::MachineStatus;
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to a preimages text file
+    #[arg(short, long)]
+    preimages_path: PathBuf,
+
+    /// Path to a machine.wavm.br
+    #[arg(short, long)]
+    machine_path: PathBuf,
+}
+
 fn main() -> eyre::Result<()> {
-    let mut machine = prepare_machine()?;
+    let args = Args::parse();
+    let mut machine = prepare_machine(args.preimages_path, args.machine_path)?;
     let start = std::time::Instant::now();
     let machine_hash = machine.hash();
     println!(
