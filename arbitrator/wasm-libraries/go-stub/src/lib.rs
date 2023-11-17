@@ -277,29 +277,6 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
     }
 }
 
-/// Safety: λ(dest value, src []byte) (int, bool)
-#[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
-    let mut sp = GoStack::new(sp);
-    let dest_val = JsValueId(sp.read_u64());
-    let (src_ptr, src_len) = sp.read_go_slice();
-
-    get_js().copy_bytes_to_js(dest_val, |buf| {
-        if buf.len() as u64 != src_len {
-            eprintln!(
-                "Go copying bytes from Go source length {} to JS dest length {}",
-                src_len,
-                buf.len(),
-            );
-        }
-        let len = std::cmp::min(src_len, buf.len() as u64) as usize;
-        // Slightly inefficient as this allocates a new temporary buffer
-        buf[..len].copy_from_slice(&wavm::read_slice(src_ptr, len as u64));
-        sp.write_u64(go_js::get_number(len as f64).0);
-        sp.write_u8(1);
-    });
-}
-
 /// Safety: λ(dest []byte, src value) (int, bool)
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
@@ -307,20 +284,43 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     let (dest_ptr, dest_len) = sp.read_go_slice();
     let src_val = JsValueId(sp.read_u64());
 
-    get_js().copy_bytes_to_go(src_val, |buf| {
-        if buf.len() as u64 != dest_len {
-            eprintln!(
-                "Go copying bytes from JS source length {} to Go dest length {}",
-                buf.len(),
-                dest_len,
-            );
+    let write_bytes = |buf: &[_]| {
+        let src_len = buf.len() as u64;
+        if src_len != dest_len {
+            eprintln!("Go copying bytes from JS src length {src_len} to Go dest length {dest_len}");
         }
-        let len = std::cmp::min(buf.len() as u64, dest_len) as usize;
+        let len = std::cmp::min(src_len, dest_len) as usize;
         wavm::write_slice(&buf[..len], dest_ptr);
+        len
+    };
 
-        sp.write_u64(go_js::get_number(len as f64).0);
-        sp.write_u8(1);
-    });
+    let bits = get_js().copy_bytes_to_go(src_val, write_bytes);
+    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
+    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
+}
+
+/// Safety: λ(dest value, src []byte) (int, bool)
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let dest_val = JsValueId(sp.read_u64());
+    let (src_ptr, src_len) = sp.read_go_slice();
+
+    let write_bytes = |buf: &mut [_]| {
+        let dest_len = buf.len() as u64;
+        if dest_len != src_len {
+            eprintln!("Go copying bytes from Go src length {src_len} to JS dest length {dest_len}");
+        }
+        let len = std::cmp::min(src_len, dest_len) as usize;
+
+        // Slightly inefficient as this allocates a new temporary buffer
+        buf[..len].copy_from_slice(&wavm::read_slice(src_ptr, len as u64));
+        len
+    };
+
+    let bits = get_js().copy_bytes_to_js(dest_val, write_bytes);
+    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
+    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
 }
 
 /// Safety: λ(array value, i int, v value)

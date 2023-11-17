@@ -11,7 +11,6 @@ use go_js::{JsEnv, JsValueId};
 use wasmer::{StoreMut, TypedFunction};
 
 /// go side: λ(v value)
-// TODO: implement ref counting
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
     let val = JsValueId(sp.read_u64());
@@ -199,18 +198,19 @@ pub fn js_copy_bytes_to_go(mut env: WasmEnvMut, sp: u32) {
     let (dest_ptr, dest_len) = sp.read_go_slice();
     let src_val = JsValueId(sp.read_u64());
 
-    env.js_state.copy_bytes_to_go(src_val, |buf| {
+    let write_bytes = |buf: &[_]| {
         let src_len = buf.len() as u64;
         if src_len != dest_len {
-            eprintln!(
-                "Go copying bytes from JS source length {src_len} to Go dest length {dest_len}",
-            );
+            eprintln!("Go copying bytes from JS src length {src_len} to Go dest length {dest_len}");
         }
         let len = std::cmp::min(src_len, dest_len) as usize;
         sp.write_slice(dest_ptr, &buf[..len]);
-        sp.write_u64(go_js::get_number(len as f64).0);
-        sp.write_u8(1);
-    });
+        len
+    };
+
+    let bits = env.js_state.copy_bytes_to_go(src_val, write_bytes);
+    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
+    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
 }
 
 /// go side: λ(dest value, src []byte) (int, bool)
@@ -219,21 +219,22 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
     let dest_val = JsValueId(sp.read_u64());
     let (src_ptr, src_len) = sp.read_go_slice();
 
-    env.js_state.copy_bytes_to_js(dest_val, |buf| {
+    let write_bytes = |buf: &mut [_]| {
         let dest_len = buf.len() as u64;
         if buf.len() as u64 != src_len {
-            eprintln!(
-                "Go copying bytes from Go source length {src_len} to JS dest length {dest_len}",
-            );
+            eprintln!("Go copying bytes from Go src length {src_len} to JS dest length {dest_len}");
         }
         let len = std::cmp::min(src_len, dest_len) as usize;
 
         // Slightly inefficient as this allocates a new temporary buffer
         let data = sp.read_slice(src_ptr, len as u64);
         buf[..len].copy_from_slice(&data);
-        sp.write_u64(go_js::get_number(len as f64).0);
-        sp.write_u8(1);
-    });
+        len
+    };
+
+    let bits = env.js_state.copy_bytes_to_js(dest_val, write_bytes);
+    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
+    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
 }
 
 macro_rules! reject {

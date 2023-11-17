@@ -307,7 +307,7 @@ lazy_static! {
 }
 
 impl Module {
-    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
+    const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
 
     fn from_binary(
         bin: &WasmBinary,
@@ -818,8 +818,8 @@ struct ErrorGuardProof {
 }
 
 impl ErrorGuardProof {
-    const STACK_PREFIX: &str = "Guard stack:";
-    const GUARD_PREFIX: &str = "Error guard:";
+    const STACK_PREFIX: &'static str = "Guard stack:";
+    const GUARD_PREFIX: &'static str = "Error guard:";
 
     fn new(
         frame_stack: Bytes32,

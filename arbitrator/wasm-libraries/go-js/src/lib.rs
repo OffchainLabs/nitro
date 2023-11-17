@@ -1,12 +1,19 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+//! This crate implements a Js Runtime meant to back the functionality needed by the Go runtime in WASM.
+//!
+//! Official reference implementation
+//!     [js.go](https://github.com/golang/go/blob/go1.20.10/src/syscall/js/js.go)
+//!     [wasm_exec.js](https://github.com/golang/go/blob/go1.21.4/misc/wasm/wasm_exec.js)
+
 mod evm_api;
 mod js_core;
 mod runtime;
 
 pub use js_core::{JsEnv, JsValue, JsValueId};
 
+use eyre::{bail, Result};
 use js_core::{JsObject, GLOBAL_ID, NAN_ID, NULL_ID, ZERO_ID};
 use std::sync::Arc;
 
@@ -115,7 +122,7 @@ impl JsState {
         object: JsValueId,
         method: &str,
         args: &[JsValueId],
-    ) -> eyre::Result<JsValueId> {
+    ) -> Result<JsValueId> {
         let this = self.values.id_to_value(object);
         let object = this.clone().assume_object("valueCall target");
         let JsValue::Function(function) = object.get(method) else {
@@ -131,7 +138,7 @@ impl JsState {
         env: &'a mut (dyn JsEnv + 'a),
         constructor: JsValueId,
         args: &[JsValueId],
-    ) -> eyre::Result<JsValueId> {
+    ) -> Result<JsValueId> {
         // All of our constructors are normal functions that work via a call
         let JsValue::Function(function) = self.values.id_to_value(constructor) else {
             panic!("Go attempted to construct non-function {constructor:?}");
@@ -149,29 +156,38 @@ impl JsState {
         let len = match self.values.id_to_value(array) {
             JsValue::Array(array) => array.lock().len(),
             JsValue::Uint8Array(array) => array.lock().len(),
+            JsValue::String(data) => data.encode_utf16().count(),
             x => {
-                panic!("Go attempted to call valueLength on invalid type: {x:?}");
+                panic!("Go attempted to call valueLength on unsupported type: {x:?}");
             }
         };
         len
     }
 
-    pub fn copy_bytes_to_go(&self, src: JsValueId, write_bytes: impl FnOnce(&[u8])) {
-        match self.values.id_to_value(src) {
+    /// Copies bytes from a uint8 array, returning the number of bytes written.
+    pub fn copy_bytes_to_go(
+        &self,
+        src: JsValueId,
+        write_bytes: impl FnOnce(&[u8]) -> usize, // returns number of bytes written
+    ) -> Result<JsValueId> {
+        let len = match self.values.id_to_value(src) {
             JsValue::Uint8Array(array) => write_bytes(&array.lock()),
-            x => {
-                panic!("Go attempted to call copyBytesToGo on invalid type: {x:?}");
-            }
+            x => bail!("Go tried to call copyBytesToGo on invalid type: {x:?}"),
         };
+        Ok(get_number(len as f64))
     }
 
-    pub fn copy_bytes_to_js(&self, dest: JsValueId, write_bytes: impl FnOnce(&mut [u8])) {
-        match self.values.id_to_value(dest) {
+    /// Copies bytes into a uint8 array, returning the number of bytes written.
+    pub fn copy_bytes_to_js(
+        &self,
+        dest: JsValueId,
+        write_bytes: impl FnOnce(&mut [u8]) -> usize, // returns number of bytes written
+    ) -> Result<JsValueId> {
+        let len = match self.values.id_to_value(dest) {
             JsValue::Uint8Array(array) => write_bytes(&mut array.lock()),
-            x => {
-                panic!("Go attempted to call copyBytesToJs on invalid type: {x:?}");
-            }
+            x => bail!("Go tried to call copyBytesToJs on invalid type: {x:?}"),
         };
+        Ok(get_number(len as f64))
     }
 
     /// Gets the globals object for use in Rust

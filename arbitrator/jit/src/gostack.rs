@@ -298,7 +298,7 @@ impl GoStack {
             Ok(s) => s,
             Err(e) => {
                 let bytes = e.as_bytes();
-                eprintln!("Go string {bytes:?} is not valid utf8: {e:?}");
+                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
                 String::from_utf8_lossy(bytes).into_owned()
             }
         }
