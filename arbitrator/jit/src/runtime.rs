@@ -5,9 +5,7 @@ use crate::{
     gostack::{GoStack, TimeoutInfo},
     machine::{Escape, MaybeEscape, WasmEnvMut},
 };
-
 use rand::RngCore;
-
 use std::io::Write;
 
 pub fn go_debug(x: u32) {

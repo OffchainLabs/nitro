@@ -137,6 +137,10 @@ jit_dir = arbitrator/jit
 go_js_files = $(wildcard arbitrator/wasm-libraries/go-js/*.toml arbitrator/wasm-libraries/go-js/src/*.rs)
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files) $(go_js_files)
 
+go_js_test_dir = arbitrator/wasm-libraries/go-js-test
+go_js_test_files = $(wildcard $(go_js_test_dir)/*.go $(go_js_test_dir)/*.mod)
+go_js_test = $(go_js_test_dir)/js-test.wasm
+
 # user targets
 
 push: lint test-go .make/fmt
@@ -200,6 +204,9 @@ test-go-stylus: test-go-deps
 test-go-redis: test-go-deps
 	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
+
+test-js-runtime: $(arbitrator_jit) $(go_js_test)
+	./target/bin/jit --binary $(go_js_test) --go-arg --cranelift
 
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -408,6 +415,9 @@ $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(go_js_test): $(go_js_test_files)
+	cd $(go_js_test_dir) && GOOS=js GOARCH=wasm go build -o js-test.wasm
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
 	$(prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize

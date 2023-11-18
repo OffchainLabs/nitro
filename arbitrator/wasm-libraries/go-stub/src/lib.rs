@@ -295,7 +295,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     };
 
     let bits = get_js().copy_bytes_to_go(src_val, write_bytes);
-    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
+    sp.write_u64(bits.as_ref().map(|x| *x).unwrap_or_default());
     sp.write_u8(bits.map(|_| 1).unwrap_or_default());
 }
 
@@ -319,7 +319,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
     };
 
     let bits = get_js().copy_bytes_to_js(dest_val, write_bytes);
-    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
+    sp.write_u64(bits.as_ref().map(|x| *x).unwrap_or_default());
     sp.write_u8(bits.map(|_| 1).unwrap_or_default());
 }
 

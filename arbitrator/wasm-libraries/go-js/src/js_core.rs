@@ -212,8 +212,8 @@ impl fmt::Debug for JsValue {
         match self {
             JsValue::Undefined => write!(f, "undefined"),
             JsValue::Null => write!(f, "null"),
-            JsValue::Bool(x) => write!(f, "{x}"),
-            JsValue::Number(x) => write!(f, "{x}"),
+            JsValue::Bool(x) => write!(f, "{x:?}"),
+            JsValue::Number(x) => write!(f, "{x:?}"),
             JsValue::String(x) => write!(f, "{x:?}"),
             JsValue::Object(x) => write!(f, "{x:?}"),
             JsValue::Uint8Array(x) => write!(f, "{x:?}"),
