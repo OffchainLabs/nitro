@@ -122,19 +122,19 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
 	}
 
-	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
+	ospMem, tx, _, err := ospgen.DeployOneStepProverMemory(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
 	}
 
-	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
+	ospMath, tx, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
 	}
 
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
