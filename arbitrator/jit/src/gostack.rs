@@ -113,10 +113,6 @@ impl GoStack {
         self.read_u64_raw(ptr)
     }
 
-    pub fn read_js(&mut self) -> JsValueId {
-        JsValueId(self.read_u64())
-    }
-
     pub fn read_u8_raw(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(self.view()).read().unwrap()
@@ -147,6 +143,10 @@ impl GoStack {
 
     pub unsafe fn read_ref<'a, T>(&mut self) -> &'a T {
         &*self.read_ptr()
+    }
+
+    pub fn read_js(&mut self) -> JsValueId {
+        JsValueId(self.read_u64())
     }
 
     /// TODO: replace `unbox` with a safe id-based API
@@ -181,10 +181,6 @@ impl GoStack {
         self.write_u64_raw(ptr, x)
     }
 
-    pub fn write_js(&mut self, id: JsValueId) -> &mut Self {
-        self.write_u64(id.0)
-    }
-
     pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> &mut Self {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
@@ -215,6 +211,10 @@ impl GoStack {
 
     pub fn write_nullptr(&mut self) -> &mut Self {
         self.write_ptr(std::ptr::null::<u8>())
+    }
+
+    pub fn write_js(&mut self, id: JsValueId) -> &mut Self {
+        self.write_u64(id.0)
     }
 
     pub fn skip_u8(&mut self) -> &mut Self {

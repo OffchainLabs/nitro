@@ -49,6 +49,8 @@ pub struct Opts {
     go_arg: bool,
     #[structopt(long)]
     debug: bool,
+    #[structopt(long)]
+    require_success: bool,
 }
 
 fn main() -> Result<()> {
@@ -124,6 +126,10 @@ fn main() -> Result<()> {
     };
 
     env.send_results(error);
+
+    if !success && opts.require_success {
+        std::process::exit(1);
+    }
     Ok(())
 }
 

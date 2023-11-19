@@ -24,7 +24,6 @@ pub fn js_value_get(mut env: WasmEnvMut, sp: u32) {
     let field = sp.read_string();
 
     let result = env.js_state.value_get(source, &field);
-
     sp.write_js(result);
 }
 
@@ -45,7 +44,6 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
     let index = sp.read_go_ptr() as usize;
 
     let result = env.js_state.value_index(source, index);
-
     sp.write_js(result);
 }
 
@@ -114,6 +112,19 @@ impl<'a, 'b> JsEnv for WasmerJsEnv<'a, 'b> {
 }
 
 /// go side: λ(v value, args []value) (value, bool)
+pub fn js_value_new(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
+
+    let constructor = sp.read_js();
+    let (args_ptr, args_len) = sp.read_go_slice();
+    let args = sp.read_value_ids(args_ptr, args_len);
+
+    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
+    let result = env.js_state.value_new(&mut js_env, constructor, &args);
+    sp.write_call_result(result, || "constructor call".into())
+}
+
+/// go side: λ(v value, args []value) (value, bool)
 pub fn js_value_invoke(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
 
@@ -140,19 +151,6 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     sp.write_call_result(result, || format!("method call to {method}"))
 }
 
-/// go side: λ(v value, args []value) (value, bool)
-pub fn js_value_new(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
-
-    let constructor = sp.read_js();
-    let (args_ptr, args_len) = sp.read_go_slice();
-    let args = sp.read_value_ids(args_ptr, args_len);
-
-    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
-    let result = env.js_state.value_new(&mut js_env, constructor, &args);
-    sp.write_call_result(result, || "constructor call".into())
-}
-
 /// go side: λ(v string) value
 pub fn js_string_val(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
@@ -175,6 +173,7 @@ pub fn js_value_length(mut env: WasmEnvMut, sp: u32) {
 pub fn js_value_prepare_string(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
     let text = sp.read_js();
+
     let (data, len) = env.js_state.value_prepare_string(text);
     sp.write_js(data);
     sp.write_u64(len);
@@ -216,9 +215,9 @@ pub fn js_copy_bytes_to_go(mut env: WasmEnvMut, sp: u32) {
         len
     };
 
-    let bits = env.js_state.copy_bytes_to_go(src_val, write_bytes);
-    sp.write_u64(bits.as_ref().map(|x| *x).unwrap_or_default());
-    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
+    let len = env.js_state.copy_bytes_to_go(src_val, write_bytes);
+    sp.write_u64(len.as_ref().map(|x| *x).unwrap_or_default());
+    sp.write_u8(len.map(|_| 1).unwrap_or_default());
 }
 
 /// go side: λ(dest value, src []byte) (int, bool)
@@ -240,9 +239,9 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
         len
     };
 
-    let bits = env.js_state.copy_bytes_to_js(dest_val, write_bytes);
-    sp.write_u64(bits.as_ref().map(|x| *x).unwrap_or_default());
-    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
+    let len = env.js_state.copy_bytes_to_js(dest_val, write_bytes);
+    sp.write_u64(len.as_ref().map(|x| *x).unwrap_or_default());
+    sp.write_u8(len.map(|_| 1).unwrap_or_default());
 }
 
 macro_rules! reject {

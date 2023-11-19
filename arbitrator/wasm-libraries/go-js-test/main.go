@@ -1,11 +1,11 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+//go:build js && wasm
+
 package main
 
-import (
-	"testing"
-)
+import "testing"
 
 func main() {
 	tests := []testing.InternalTest{
