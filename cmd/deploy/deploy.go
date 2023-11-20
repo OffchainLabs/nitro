@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/util"
+	deploycode "github.com/offchainlabs/nitro/deploy"
 )
 
 func main() {
@@ -141,7 +142,7 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := arbnode.DeployOnL1(
+	deployedAddresses, err := deploycode.DeployOnL1(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
