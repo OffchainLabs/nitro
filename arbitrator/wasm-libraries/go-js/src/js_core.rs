@@ -4,7 +4,10 @@
 use fnv::FnvHashMap;
 use parking_lot::Mutex;
 use std::{
-    collections::hash_map,
+    collections::{
+        hash_map::{self, DefaultHasher},
+        BTreeMap,
+    },
     fmt,
     hash::{Hash, Hasher},
     sync::Arc,
@@ -266,6 +269,7 @@ impl fmt::Debug for JsValueId {
 }
 
 /// A reference count of None means infinity (never freeable)
+#[derive(Clone, Debug, Hash)]
 struct ReferenceCount(Option<usize>);
 
 impl ReferenceCount {
@@ -296,6 +300,7 @@ impl ReferenceCount {
     }
 }
 
+#[derive(Debug, Hash)]
 struct ValueAndRefCount {
     value: JsValue,
     ref_count: ReferenceCount,
@@ -412,5 +417,17 @@ impl JsValuePool {
                 panic!("Removing {id:?} but corresponding value {value:?} mapped to {removed:?} in id_by_value");
             }
         }
+    }
+
+    /// Gets the hash of the pool, which is useful in tests.
+    pub fn pool_hash(&self) -> u64 {
+        let values = self.0.lock();
+        let tree: BTreeMap<_, _> = values.value_by_id.iter().collect();
+
+        let mut hasher = DefaultHasher::new();
+        for (id, count) in &tree {
+            (id, &count.ref_count).hash(&mut hasher);
+        }
+        hasher.finish()
     }
 }

@@ -35,6 +35,7 @@ func main() {
 		{"TestCopyBytesToGo", TestCopyBytesToGo},
 		{"TestCopyBytesToJS", TestCopyBytesToJS},
 		{"TestGlobal", TestGlobal},
+		{"TestPoolHash", TestPoolHash},
 	}
 
 	// include all tests

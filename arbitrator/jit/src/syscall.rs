@@ -244,6 +244,12 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
     sp.write_u8(len.map(|_| 1).unwrap_or_default());
 }
 
+/// go side: λ() u64
+pub fn debug_pool_hash(mut env: WasmEnvMut, sp: u32) {
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    sp.write_u64(env.js_state.pool_hash());
+}
+
 macro_rules! reject {
     ($($f:ident),* $(,)?) => {
         $(

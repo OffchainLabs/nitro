@@ -334,7 +334,7 @@ impl Module {
             };
 
             let mut qualified_name = format!("{module}__{import_name}");
-            qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
+            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
                 let call = match forward {

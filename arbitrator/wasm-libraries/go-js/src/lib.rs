@@ -15,7 +15,6 @@ pub use js_core::{JsEnv, JsValue, JsValueId};
 
 use eyre::{bail, Result};
 use js_core::{JsObject, GLOBAL_ID, NAN_ID, NULL_ID, ZERO_ID};
-use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub fn get_null() -> JsValueId {
@@ -193,14 +192,6 @@ impl JsState {
         (id, len)
     }
 
-    /// Gets the contents of a uint8 array.
-    pub fn get_uint8_array(&self, array: JsValueId) -> Arc<Mutex<Box<[u8]>>> {
-        match self.values.id_to_value(array) {
-            JsValue::Uint8Array(text) => text,
-            x => panic!("value {array:?} not a uint8 array: {x:?}"),
-        }
-    }
-
     /// Copies bytes from a uint8 array, returning the number of bytes written.
     pub fn copy_bytes_to_go(
         &self,
@@ -233,6 +224,11 @@ impl JsState {
             JsValue::Object(object) => object,
             _ => unreachable!(),
         }
+    }
+
+    /// Gets the hash of the pool, which is useful in tests.
+    pub fn pool_hash(&self) -> u64 {
+        self.values.pool_hash()
     }
 }
 

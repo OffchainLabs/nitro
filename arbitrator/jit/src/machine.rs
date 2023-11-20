@@ -107,6 +107,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "syscall/js.valueInstanceOf" => func!(syscall::js_value_instance_of),
             "syscall/js.copyBytesToGo" => func!(syscall::js_copy_bytes_to_go),
             "syscall/js.copyBytesToJS" => func!(syscall::js_copy_bytes_to_js),
+            "go-js-test/syscall.debugPoolHash" => func!(syscall::debug_pool_hash),
 
             github!("wavmio.getGlobalStateBytes32") => func!(wavmio::get_global_state_bytes32),
             github!("wavmio.setGlobalStateBytes32") => func!(wavmio::set_global_state_bytes32),

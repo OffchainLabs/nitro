@@ -9,14 +9,24 @@ package main
 
 import (
 	"fmt"
+	"go-js-test/syscall"
 	"math"
+	"runtime"
 	"syscall/js"
 	"testing"
 )
 
-var dummys = js.Global()
+// Object of dummy values (misspelling is intentional and matches the official tests).
+var dummys js.Value
+var startHash uint64
 
 func init() {
+	startHash = syscall.PoolHash()
+
+	// set `dummys` to a new field of the global object
+	js.Global().Set("dummys", map[string]interface{}{})
+	dummys = js.Global().Get("dummys")
+
 	dummys.Set("someBool", true)
 	dummys.Set("someString", "abc\u1234")
 	dummys.Set("someInt", 42)
@@ -451,5 +461,15 @@ func TestGlobal(t *testing.T) {
 
 	if got := ident.Invoke(js.Global()); !got.Equal(js.Global()) {
 		t.Errorf("got %#v, want %#v", got, js.Global())
+	}
+}
+
+func TestPoolHash(t *testing.T) {
+	dummys = js.Undefined() // drop dummys
+	runtime.GC()
+
+	poolHash := syscall.PoolHash()
+	if poolHash != startHash {
+		t.Error("reference counting failure:", poolHash, startHash)
 	}
 }

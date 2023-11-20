@@ -406,12 +406,18 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
 }
 
 /// Safety: λ(v value)
-/// TODO: reference counting
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: usize) {
     let mut sp = GoStack::new(sp);
     let val = JsValueId(sp.read_u64());
     get_js().finalize_ref(val);
+}
+
+/// Safety: λ() uint64
+#[no_mangle]
+pub unsafe extern "C" fn go__go_js_test_syscall_debugPoolHash(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    sp.write_u64(get_js().pool_hash());
 }
 
 #[no_mangle]
