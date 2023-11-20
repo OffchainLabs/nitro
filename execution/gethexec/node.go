@@ -39,16 +39,17 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker      TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder         ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget  string                           `koanf:"forwarding-target"`
-	Caching           CachingConfig                    `koanf:"caching"`
-	RPC               arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous         DangerousConfig                  `koanf:"dangerous"`
+	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker              TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                 ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget          string                           `koanf:"forwarding-target"`
+	SecondaryForwardingTarget []string                         `koanf:"secondary-forwarding-target"`
+	Caching                   CachingConfig                    `koanf:"caching"`
+	RPC                       arbitrum.Config                  `koanf:"rpc"`
+	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
+	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -77,6 +78,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
@@ -85,16 +87,17 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:               arbitrum.DefaultConfig,
-	Sequencer:         DefaultSequencerConfig,
-	ParentChainReader: headerreader.DefaultConfig,
-	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTarget:  "",
-	TxPreChecker:      DefaultTxPreCheckerConfig,
-	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
-	Caching:           DefaultCachingConfig,
-	Dangerous:         DefaultDangerousConfig,
-	Forwarder:         DefaultNodeForwarderConfig,
+	RPC:                       arbitrum.DefaultConfig,
+	Sequencer:                 DefaultSequencerConfig,
+	ParentChainReader:         headerreader.DefaultConfig,
+	RecordingDatabase:         arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:          "",
+	SecondaryForwardingTarget: []string{},
+	TxPreChecker:              DefaultTxPreCheckerConfig,
+	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
+	Caching:                   DefaultCachingConfig,
+	Dangerous:                 DefaultDangerousConfig,
+	Forwarder:                 DefaultNodeForwarderConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -176,7 +179,8 @@ func CreateExecutionNode(
 		} else if config.forwardingTarget == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.forwardingTarget, &config.Forwarder)
+			targets := append([]string{config.forwardingTarget}, config.SecondaryForwardingTarget...)
+			txPublisher = NewForwarder(targets, &config.Forwarder)
 		}
 	}
 

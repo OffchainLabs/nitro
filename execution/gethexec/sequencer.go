@@ -489,20 +489,20 @@ func (s *Sequencer) ForwardTarget() string {
 	if s.forwarder == nil {
 		return ""
 	}
-	return s.forwarder.target
+	return s.forwarder.targets[0]
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
-		if s.forwarder.target == url {
+		if s.forwarder.targets[0] == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
 			return nil
 		}
 		s.forwarder.Disable()
 	}
-	s.forwarder = NewForwarder(url, &s.config().Forwarder)
+	s.forwarder = NewForwarder([]string{url}, &s.config().Forwarder)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)

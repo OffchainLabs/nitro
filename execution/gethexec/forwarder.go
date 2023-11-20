@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,19 +80,23 @@ func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderCon
 }
 
 type TxForwarder struct {
+	ctx context.Context
+
 	enabled   atomic.Bool
-	target    string
 	timeout   time.Duration
 	transport *http.Transport
-	rpcClient *rpc.Client
-	ethClient *ethclient.Client
 
 	healthMutex   sync.Mutex
 	healthErr     error
 	healthChecked time.Time
+
+	targets               []string
+	rpcClients            []*rpc.Client
+	ethClients            []*ethclient.Client
+	tryNewForwarderErrors *regexp.Regexp
 }
 
-func NewForwarder(target string, config *ForwarderConfig) *TxForwarder {
+func NewForwarder(targets []string, config *ForwarderConfig) *TxForwarder {
 	dialer := net.Dialer{
 		Timeout:   5 * time.Second,
 		KeepAlive: 2 * time.Second,
@@ -116,34 +121,45 @@ func NewForwarder(target string, config *ForwarderConfig) *TxForwarder {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	return &TxForwarder{
-		target:    target,
-		timeout:   config.ConnectionTimeout,
-		transport: transport,
+		targets:               targets,
+		timeout:               config.ConnectionTimeout,
+		transport:             transport,
+		tryNewForwarderErrors: regexp.MustCompile(`(?i)(http:|json:|.*Timeout exceeded).*`),
 	}
 }
 
-func (f *TxForwarder) ctxWithTimeout(inctx context.Context) (context.Context, context.CancelFunc) {
+func (f *TxForwarder) ctxWithTimeout() (context.Context, context.CancelFunc) {
 	if f.timeout == time.Duration(0) {
-		return context.WithCancel(inctx)
+		return context.WithCancel(f.ctx)
 	}
-	return context.WithTimeout(inctx, f.timeout)
+	return context.WithTimeout(f.ctx, f.timeout)
 }
 
 func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	if !f.enabled.Load() {
 		return ErrNoSequencer
 	}
-	ctx, cancelFunc := f.ctxWithTimeout(inctx)
+	ctx, cancelFunc := f.ctxWithTimeout()
 	defer cancelFunc()
-	if options == nil {
-		return f.ethClient.SendTransaction(ctx, tx)
+	for pos, rpcClient := range f.rpcClients {
+		var err error
+		if options == nil {
+			err = f.ethClients[pos].SendTransaction(ctx, tx)
+		} else {
+			err = arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
+		}
+		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
+			return err
+		}
+		log.Info("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
 	}
-	return arbitrum.SendConditionalTransactionRPC(ctx, f.rpcClient, tx, options)
+	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
 const cacheUpstreamHealth = 2 * time.Second
 const maxHealthTimeout = 10 * time.Second
 
+// CheckHealth returns health of the highest priority forwarding target
 func (f *TxForwarder) CheckHealth(inctx context.Context) error {
 	if !f.enabled.Load() {
 		return ErrNoSequencer
@@ -157,28 +173,44 @@ func (f *TxForwarder) CheckHealth(inctx context.Context) error {
 		}
 		ctx, cancelFunc := context.WithTimeout(context.Background(), timeout)
 		defer cancelFunc()
-		f.healthErr = f.rpcClient.CallContext(ctx, nil, "arb_checkPublisherHealth")
+		f.healthErr = f.rpcClients[0].CallContext(ctx, nil, "arb_checkPublisherHealth")
 		f.healthChecked = time.Now()
 	}
 	return f.healthErr
 }
 
 func (f *TxForwarder) Initialize(inctx context.Context) error {
-	if f.target == "" {
-		f.rpcClient = nil
-		f.ethClient = nil
-		f.enabled.Store(false)
-		return nil
+	if f.ctx == nil {
+		f.ctx = inctx
 	}
-	ctx, cancelFunc := f.ctxWithTimeout(inctx)
+
+	pos := 0
+	for pos < len(f.targets) {
+		if f.targets[pos] == "" {
+			f.targets = append(f.targets[:pos], f.targets[pos+1:]...)
+		} else {
+			pos += 1
+		}
+	}
+
+	ctx, cancelFunc := f.ctxWithTimeout()
 	defer cancelFunc()
-	rpcClient, err := rpc.DialTransport(ctx, f.target, f.transport)
-	if err != nil {
-		return err
+	pos = 0
+	for pos < len(f.targets) {
+		rpcClient, err := rpc.DialTransport(ctx, f.targets[pos], f.transport)
+		if err != nil {
+			log.Warn("error initializing a forwarding client in txForwarder", "forwarding url", f.targets[pos], "err", err)
+			f.targets = append(f.targets[:pos], f.targets[pos+1:]...)
+			continue
+		}
+		ethClient := ethclient.NewClient(rpcClient)
+		f.rpcClients = append(f.rpcClients, rpcClient)
+		f.ethClients = append(f.ethClients, ethClient)
+		pos += 1
 	}
-	f.rpcClient = rpcClient
-	f.ethClient = ethclient.NewClient(rpcClient)
-	f.enabled.Store(true)
+	if len(f.rpcClients) > 0 {
+		f.enabled.Store(true)
+	}
 	return nil
 }
 
@@ -192,8 +224,8 @@ func (f *TxForwarder) Start(ctx context.Context) error {
 }
 
 func (f *TxForwarder) StopAndWait() {
-	if f.ethClient != nil {
-		f.ethClient.Close() // internally closes also the rpc client
+	for _, ethClient := range f.ethClients {
+		ethClient.Close() // internally closes also the rpc client
 	}
 }
 
@@ -346,7 +378,7 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 	}
 	var newForwarder *TxForwarder
 	for {
-		newForwarder = NewForwarder(newSequencerUrl, f.config)
+		newForwarder = NewForwarder([]string{newSequencerUrl}, f.config)
 		err := newForwarder.Initialize(ctx)
 		if err == nil {
 			break
