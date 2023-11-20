@@ -242,8 +242,8 @@ impl<E: EvmApi> DerefMut for NativeInstance<E> {
 }
 
 impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
-    fn ink_left(&mut self) -> MachineMeter {
-        let vm = self.env_mut().meter();
+    fn ink_left(&self) -> MachineMeter {
+        let vm = self.env().meter();
         match vm.status() {
             0 => MachineMeter::Ready(vm.ink()),
             _ => MachineMeter::Exhausted,
@@ -251,14 +251,14 @@ impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
     }
 
     fn set_meter(&mut self, meter: MachineMeter) {
-        let vm = self.env_mut().meter();
+        let vm = self.env_mut().meter_mut();
         vm.set_ink(meter.ink());
         vm.set_status(meter.status());
     }
 }
 
 impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
-    fn pricing(&mut self) -> PricingParams {
+    fn pricing(&self) -> PricingParams {
         self.env().config.unwrap().pricing
     }
 }

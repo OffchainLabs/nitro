@@ -90,8 +90,12 @@ impl<E: EvmApi> WasmEnv<E> {
         Ok(info)
     }
 
-    pub fn meter(&mut self) -> &mut MeterData {
+    pub fn meter_mut(&mut self) -> &mut MeterData {
         self.meter.as_mut().expect("not metered")
+    }
+
+    pub fn meter(&self) -> &MeterData {
+        self.meter.as_ref().expect("not metered")
     }
 
     pub fn say<D: Display>(&self, text: D) {
@@ -216,7 +220,7 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
 }
 
 impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
-    fn ink_left(&mut self) -> MachineMeter {
+    fn ink_left(&self) -> MachineMeter {
         let vm = self.env.meter();
         match vm.status() {
             0_u32 => MachineMeter::Ready(vm.ink()),
@@ -225,14 +229,14 @@ impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
     }
 
     fn set_meter(&mut self, meter: MachineMeter) {
-        let vm = self.env.meter();
+        let vm = self.env.meter_mut();
         vm.set_ink(meter.ink());
         vm.set_status(meter.status());
     }
 }
 
 impl<'a, E: EvmApi> GasMeteredMachine for HostioInfo<'a, E> {
-    fn pricing(&mut self) -> PricingParams {
+    fn pricing(&self) -> PricingParams {
         self.config().pricing
     }
 }

@@ -230,7 +230,7 @@ impl Display for OutOfInkError {
 
 /// Note: implementers may panic if uninstrumented
 pub trait MeteredMachine {
-    fn ink_left(&mut self) -> MachineMeter;
+    fn ink_left(&self) -> MachineMeter;
     fn set_meter(&mut self, meter: MachineMeter);
 
     fn set_ink(&mut self, ink: u64) {
@@ -289,9 +289,9 @@ pub trait MeteredMachine {
 }
 
 pub trait GasMeteredMachine: MeteredMachine {
-    fn pricing(&mut self) -> PricingParams;
+    fn pricing(&self) -> PricingParams;
 
-    fn gas_left(&mut self) -> Result<u64, OutOfInkError> {
+    fn gas_left(&self) -> Result<u64, OutOfInkError> {
         let pricing = self.pricing();
         match self.ink_left() {
             MachineMeter::Ready(ink) => Ok(pricing.ink_to_gas(ink)),
@@ -322,7 +322,7 @@ fn sat_add_mul(base: u64, per: u64, count: u64) -> u64 {
 }
 
 impl MeteredMachine for Machine {
-    fn ink_left(&mut self) -> MachineMeter {
+    fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
             ($global:expr) => {{
                 $global.unwrap().try_into().expect("type mismatch")
