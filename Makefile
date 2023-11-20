@@ -206,7 +206,7 @@ test-go-redis: test-go-deps
 	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
 
-test-js-runtime: $(go_js_test) $(arbitrator_jit) $(go_js_test_libs)
+test-js-runtime: $(prover_bin) $(go_js_test) $(arbitrator_jit) $(go_js_test_libs)
 	./target/bin/jit --binary $< --go-arg --cranelift --require-success
 	$(prover_bin) $< -s 90000000 -l $(go_js_test_libs) --require-success
 
