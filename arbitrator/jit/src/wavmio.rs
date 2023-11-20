@@ -85,12 +85,12 @@ pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn read_hotshot_commitment(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+pub fn read_hotshot_header(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (sp, env) = GoStack::new(sp, &mut env);
     ready_hostio(env)?;
     let hotshot_comms = &env.hotshot_comm_map;
 
-    read_hotshot_commitment_impl(&sp, hotshot_comms, "wavmio.readHotShotCommitment")
+    read_hotshot_header_impl(&sp, hotshot_comms, "wavmio.readHotShotHeader")
 }
 
 pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
@@ -110,12 +110,12 @@ pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 }
 
 // Reads a hotshot commitment
-fn read_hotshot_commitment_impl(
+fn read_hotshot_header_impl(
     _sp: &GoStack,
     _comm_map: &HotShotCommitmentMap,
     _name: &str,
 ) -> MaybeEscape {
-    return unimplemented!();
+    Ok(())
 }
 
 /// Reads an inbox message

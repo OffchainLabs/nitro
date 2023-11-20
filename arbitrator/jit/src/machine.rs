@@ -107,7 +107,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "github.com/offchainlabs/nitro/wavmio.getGlobalStateU64" => func!(wavmio::get_global_state_u64),
             "github.com/offchainlabs/nitro/wavmio.setGlobalStateU64" => func!(wavmio::set_global_state_u64),
             "github.com/offchainlabs/nitro/wavmio.readInboxMessage" => func!(wavmio::read_inbox_message),
-            "github.com/offchainlabs/nitro/wavmio.readHotShotCommitment" => func!(wavmio::read_hotshot_commitment),
+            "github.com/offchainlabs/nitro/wavmio.readHotShotHeader" => func!(wavmio::read_hotshot_header),
             "github.com/offchainlabs/nitro/wavmio.readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
             "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => {
                 #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries

@@ -54,10 +54,12 @@ func ReadInboxMessage(msgNum uint64) []byte {
 	})
 }
 
-func ReadHotShotCommitment(seqNum uint64) (header []byte) {
-	return readBuffer(func(offset uint32, buf []byte) uint32 {
-		return readHotShotCommitment(seqNum, buf)
-	})
+func ReadHotShotHeader(seqNum uint64) (header []byte) {
+	var mockHeader []byte
+	return mockHeader
+	// return readBuffer(func(offset uint32, buf []byte) uint32 {
+	// 	return readHotShotCommitment(seqNum, buf)
+	// })
 }
 
 func ReadDelayedInboxMessage(seqNum uint64) []byte {
