@@ -42,30 +42,31 @@ import (
 )
 
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
-	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
-	if err != nil {
-		Fatal(t, err)
-	}
-	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
-	if err != nil {
-		Fatal(t, err)
-	}
-	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
-	if err != nil {
-		Fatal(t, err)
-	}
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
-	if err != nil {
-		Fatal(t, err)
-	}
-	ospEntry, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
-	if err != nil {
-		Fatal(t, err)
-	}
+	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
+	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
-	if err != nil {
-		Fatal(t, err)
-	}
+	Require(t, err)
+
+	ospMem, tx, _, err := ospgen.DeployOneStepProverMemory(auth, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospMath, tx, _, err := ospgen.DeployOneStepProverMath(auth, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospEntry, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
 	return ospEntry
 }
 
