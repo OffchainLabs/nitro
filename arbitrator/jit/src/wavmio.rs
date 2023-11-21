@@ -85,12 +85,12 @@ pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn read_hotshot_header(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+pub fn read_hotshot_commitment(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (sp, env) = GoStack::new(sp, &mut env);
     ready_hostio(env)?;
     let hotshot_comms = &env.hotshot_comm_map;
 
-    read_hotshot_header_impl(&sp, hotshot_comms, "wavmio.readHotShotHeader")
+    read_hotshot_commitment_impl(&sp, hotshot_comms, "wavmio.readHotShotCommitment")
 }
 
 pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
@@ -110,7 +110,7 @@ pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 }
 
 // Reads a hotshot commitment
-fn read_hotshot_header_impl(
+fn read_hotshot_commitment_impl(
     sp: &GoStack,
     comm_map: &HotShotCommitmentMap,
     name: &str,
@@ -131,10 +131,7 @@ fn read_hotshot_header_impl(
         }};
     }
 
-    let message = match comm_map.get(&msg_num) {
-        Some(message) => message,
-        None => error!("missing inbox message {msg_num} in {name}"),
-    };
+    let message = comm_map.get(&msg_num).unwrap_or(&[0; 32]);
 
     if out_ptr + 32 > sp.memory_size() {
         error!("unknown message type in {name}");
@@ -317,7 +314,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
-        let hotshot_comm = socket::read_bytes(stream)?;
+        let hotshot_comm = socket::read_bytes32(stream)?;
         env.sequencer_messages.insert(position, message);
         env.hotshot_comm_map.insert(position, hotshot_comm);
     }

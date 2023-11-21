@@ -7,9 +7,9 @@ import (
 )
 
 type BatchInfo struct {
-	Number        uint64
-	HotShotHeader *espresso.Header
-	Data          []byte
+	Number            uint64
+	HotShotCommitment *espresso.Commitment
+	Data              []byte
 }
 
 type ValidationInput struct {

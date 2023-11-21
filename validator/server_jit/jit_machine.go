@@ -6,7 +6,6 @@ package server_jit
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -153,14 +152,10 @@ func (machine *JitMachine) prove(
 
 	// send inbox
 	for _, batch := range entry.BatchInfo {
-		var hotShotHeader []byte
-		if batch.HotShotHeader != nil {
-			hotShotHeader, err = json.Marshal(batch.HotShotHeader)
-			if err != nil {
-				fmt.Println("Error marshalling struct:", err)
-				return state, err
-			}
-			log.Info("preparing to write bytes", hotShotHeader, len(hotShotHeader))
+		var hotShotCommitment [32]byte
+		if batch.HotShotCommitment != nil {
+			hotShotCommitment = *batch.HotShotCommitment
+			log.Info("preparing to send hotshot commitment", hotShotCommitment)
 		}
 		if err := writeExact(another); err != nil {
 			return state, err
@@ -171,7 +166,7 @@ func (machine *JitMachine) prove(
 		if err := writeBytes(batch.Data); err != nil {
 			return state, err
 		}
-		if err := writeBytes(hotShotHeader[:]); err != nil {
+		if err := writeExact(hotShotCommitment[:]); err != nil {
 			return state, err
 		}
 	}

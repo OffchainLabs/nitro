@@ -118,7 +118,7 @@ func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
 }
 
-func ReadHotShotHeader(seqNum uint64) [32]byte {
+func ReadHotShotCommitment(seqNum uint64) [32]byte {
 	if seqNum != seqMsgPos {
 		panic(fmt.Sprintf("hotshot header position should be consistent with the sequencer inbox position %d", seqNum))
 	}

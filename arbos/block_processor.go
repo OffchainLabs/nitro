@@ -130,7 +130,7 @@ func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
-	lastHotShotHeader *espresso.Header,
+	lastHotShotCommitment *espresso.Commitment,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
@@ -160,7 +160,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, lastHotShotHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, lastHotShotCommitment, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -170,7 +170,7 @@ func ProduceBlockAdvanced(
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
-	lastHotShotHeader *espresso.Header,
+	lastHotShotCommitment *espresso.Commitment,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
@@ -197,7 +197,7 @@ func ProduceBlockAdvanced(
 	// Espresso-specific validation
 	if chainConfig.Espresso {
 		hotshotHeader := l1Header.BlockJustification.Header
-		if lastHotShotHeader != &hotshotHeader {
+		if *lastHotShotCommitment != hotshotHeader.Commit() {
 			return nil, nil, errors.New("invalid hotshot header")
 		}
 		var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}

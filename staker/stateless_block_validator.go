@@ -315,7 +315,8 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			// if err != nil {
 			// 	return fmt.Errorf("failed to fetch hotshot commitment for batch number %d", batch.Number)
 			// }
-			e.BatchInfo[i].HotShotHeader = &hotShotHeader
+			hotShotCommitment := hotShotHeader.Commit()
+			e.BatchInfo[i].HotShotCommitment = &hotShotCommitment
 		}
 	}
 

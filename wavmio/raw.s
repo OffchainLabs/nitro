@@ -26,7 +26,7 @@ TEXT ·readInboxMessage(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·readHotShotHeader(SB), NOSPLIT, $0
+TEXT ·readHotShotCommitment(SB), NOSPLIT, $0
   CallImport
   RET
 
