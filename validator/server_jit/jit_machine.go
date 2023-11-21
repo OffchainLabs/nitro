@@ -6,6 +6,7 @@ package server_jit
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -152,9 +153,14 @@ func (machine *JitMachine) prove(
 
 	// send inbox
 	for _, batch := range entry.BatchInfo {
-		var hotShotHeader [32]byte
+		var hotShotHeader []byte
 		if batch.HotShotHeader != nil {
-			hotShotHeader = *batch.HotShotHeader
+			hotShotHeader, err = json.Marshal(batch.HotShotHeader)
+			if err != nil {
+				fmt.Println("Error marshalling struct:", err)
+				return state, err
+			}
+			log.Info("preparing to write bytes", hotShotHeader, len(hotShotHeader))
 		}
 		if err := writeExact(another); err != nil {
 			return state, err

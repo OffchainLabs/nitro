@@ -39,7 +39,7 @@ var (
 	delayedMsgs        [][]byte
 	delayedMsgFirstPos uint64
 	lastBlockHash      common.Hash
-	hotShotHeader      []byte
+	hotShotHeader      [32]byte
 	preimages          map[common.Hash][]byte
 	seqAdvanced        uint64
 )
@@ -118,7 +118,7 @@ func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
 }
 
-func ReadHotShotHeader(seqNum uint64) []byte {
+func ReadHotShotHeader(seqNum uint64) [32]byte {
 	if seqNum != seqMsgPos {
 		panic(fmt.Sprintf("hotshot header position should be consistent with the sequencer inbox position %d", seqNum))
 	}

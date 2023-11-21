@@ -309,13 +309,13 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			}
 		}
 		log.Info("Doing some proving")
-		if usingEspresso {
-			hotShotHeader, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
-			log.Info("Fetching hotshot commitment", "header", hotShotHeader)
-			if err != nil {
-				return fmt.Errorf("failed to fetch hotshot commitment for batch number %d", batch.Number)
-			}
-			e.BatchInfo[i].HotShotHeader = hotShotHeader
+		if usingEspresso || true {
+			//hotShotHeader, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
+			hotShotHeader := espresso.Header{}
+			// if err != nil {
+			// 	return fmt.Errorf("failed to fetch hotshot commitment for batch number %d", batch.Number)
+			// }
+			e.BatchInfo[i].HotShotHeader = &hotShotHeader
 		}
 	}
 

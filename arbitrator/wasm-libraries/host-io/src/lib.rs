@@ -72,9 +72,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotCommitment(
-    sp: GoStack,
-) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotHeader(sp: GoStack) {
     return unimplemented!();
 }
 

@@ -39,6 +39,19 @@ func readBuffer(f func(uint32, []byte) uint32) []byte {
 	}
 }
 
+func readBufferHotShot(f func(uint32, []byte) uint32) []byte {
+	buf := make([]byte, 0, INITIAL_CAPACITY)
+	offset := 0
+	for {
+		read := f(uint32(offset), buf[offset:(offset+QUERY_SIZE)])
+		offset += int(read)
+		if read < QUERY_SIZE {
+			buf = buf[:offset]
+			return buf
+		}
+	}
+}
+
 func StubInit() {}
 
 func StubFinal() {}
@@ -54,12 +67,9 @@ func ReadInboxMessage(msgNum uint64) []byte {
 	})
 }
 
-func ReadHotShotHeader(seqNum uint64) (header []byte) {
-	var mockHeader []byte
-	return mockHeader
-	// return readBuffer(func(offset uint32, buf []byte) uint32 {
-	// 	return readHotShotCommitment(seqNum, buf)
-	// })
+func ReadHotShotHeader(seqNum uint64) (header [32]byte) {
+	readHotShotHeader(seqNum, header[:])
+	return
 }
 
 func ReadDelayedInboxMessage(seqNum uint64) []byte {

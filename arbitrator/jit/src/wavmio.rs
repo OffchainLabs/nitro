@@ -111,10 +111,37 @@ pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
 // Reads a hotshot commitment
 fn read_hotshot_header_impl(
-    _sp: &GoStack,
-    _comm_map: &HotShotCommitmentMap,
-    _name: &str,
+    sp: &GoStack,
+    comm_map: &HotShotCommitmentMap,
+    name: &str,
 ) -> MaybeEscape {
+    let msg_num = sp.read_u64(0);
+    let out_ptr = sp.read_u64(1);
+    let out_len = sp.read_u64(2);
+    if out_len != 32 {
+        eprintln!("Go trying to read header bytees with out len {out_len} in {name}");
+        sp.write_u64(5, 0);
+        return Ok(());
+    }
+
+    macro_rules! error {
+        ($text:expr $(,$args:expr)*) => {{
+            let text = format!($text $(,$args)*);
+            return Escape::hostio(&text)
+        }};
+    }
+
+    let message = match comm_map.get(&msg_num) {
+        Some(message) => message,
+        None => error!("missing inbox message {msg_num} in {name}"),
+    };
+
+    if out_ptr + 32 > sp.memory_size() {
+        error!("unknown message type in {name}");
+    }
+    let read = message.get(0..32).unwrap_or_default();
+    sp.write_slice(out_ptr, read);
+    sp.write_u64(5, read.len() as u64);
     Ok(())
 }
 

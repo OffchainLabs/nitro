@@ -48,10 +48,11 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 }
 
 func getHotShotCommitment(seqNum uint64) *espresso.Header {
-	headerBytes := wavmio.ReadHotShotHeader(seqNum)
+	var headerBytes [32]byte
+	headerBytes = wavmio.ReadHotShotHeader(seqNum)
 	var header espresso.Header
-	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		panic(fmt.Errorf("Error deserializing espresso header preimage"))
+	if err := json.Unmarshal(headerBytes[:], &header); err != nil {
+		panic(fmt.Errorf("Error deserializing espresso header preimage", headerBytes, len(headerBytes)))
 	}
 
 	return &header
@@ -251,7 +252,7 @@ func main() {
 		}
 		seqNum := wavmio.GetInboxPosition()
 		var hotShotHeader *espresso.Header
-		if chainConfig.Espresso {
+		if chainConfig.Espresso || true {
 			hotShotHeader = getHotShotCommitment(seqNum)
 		}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, hotShotHeader, statedb, chainContext, chainConfig, batchFetcher)

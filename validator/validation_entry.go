@@ -8,7 +8,7 @@ import (
 
 type BatchInfo struct {
 	Number        uint64
-	HotShotHeader *espresso.Commitment
+	HotShotHeader *espresso.Header
 	Data          []byte
 }
 
