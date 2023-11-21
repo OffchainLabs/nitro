@@ -1,6 +1,7 @@
 package espresso
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,23 +9,26 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
 
 type Client struct {
-	baseUrl string
-	client  *http.Client
-	log     log.Logger
+	baseUrl   string
+	client    *http.Client
+	log       log.Logger
+	namespace uint64
 }
 
-func NewClient(log log.Logger, url string) *Client {
+func NewClient(log log.Logger, url string, namespace uint64) *Client {
 	if !strings.HasSuffix(url, "/") {
 		url += "/"
 	}
 	return &Client{
-		baseUrl: url,
-		client:  http.DefaultClient,
-		log:     log,
+		baseUrl:   url,
+		client:    http.DefaultClient,
+		log:       log,
+		namespace: namespace,
 	}
 }
 
@@ -52,8 +56,52 @@ func (c *Client) FetchHeader(ctx context.Context, blockHeight uint64) (Header, e
 	return res, nil
 }
 
-func (c *Client) FetchTransactionsInBlock(ctx context.Context, block uint64, header *Header, namespace uint64) (TransactionsInBlock, error) {
+type RawTransaction struct {
+	Vm      int    `json:"vm"`
+	Payload []int8 `json:"payload"`
+}
+
+func (c *Client) SubmitTransaction(ctx context.Context, tx *types.Transaction) error {
+	var txnBytes, err = json.Marshal(tx)
+	if err != nil {
+		return err
+	}
+	//	json.RawMessage is a []byte array, which is marshalled as a base64-encoded string.
+	//	Our sequencer API expects a JSON array.
+	payload := make([]int8, len(txnBytes))
+	for i := range payload {
+		payload[i] = int8(txnBytes[i])
+	}
+	txn := RawTransaction{
+		Vm:      int(c.namespace),
+		Payload: payload,
+	}
+	marshalled, err := json.Marshal(txn)
+	if err != nil {
+		return err
+	}
+	fmt.Println(c.baseUrl)
+	request, err := http.NewRequest("POST", c.baseUrl+"submit/submit", bytes.NewBuffer(marshalled))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
+		return fmt.Errorf("receieved unexpected status code: %v", response.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) FetchTransactionsInBlock(ctx context.Context, block uint64, header *Header) (TransactionsInBlock, error) {
+	namespace := c.namespace
 	var res NamespaceResponse
+	log.Info(fmt.Sprintf("Fetching tx, block: %d, namespace: %d", block, namespace))
 	if err := c.get(ctx, &res, "availability/block/%d/namespace/%d", block, namespace); err != nil {
 		return TransactionsInBlock{}, err
 	}

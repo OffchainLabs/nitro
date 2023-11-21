@@ -33,9 +33,9 @@ type HotShotState struct {
 	nextSeqBlockNum uint64
 }
 
-func NewHotShotState(log log.Logger, url string) *HotShotState {
+func NewHotShotState(log log.Logger, url string, namespace uint64) *HotShotState {
 	return &HotShotState{
-		client: *espresso.NewClient(log, url),
+		client: *espresso.NewClient(log, url, namespace),
 		// TODO: Load this from the inbox reader so that new sequencers don't read redundant blocks
 		// https://github.com/EspressoSystems/espresso-sequencer/issues/734
 		nextSeqBlockNum: 0,
@@ -62,7 +62,7 @@ func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerCo
 	return &EspressoSequencer{
 		execEngine:   execEngine,
 		config:       configFetcher,
-		hotShotState: NewHotShotState(log.New(), config.HotShotUrl),
+		hotShotState: NewHotShotState(log.New(), config.HotShotUrl, config.EspressoNamespace),
 	}, nil
 }
 
@@ -80,12 +80,11 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
 	log.Info("Attempting to sequence Espresso block", "block_num", nextSeqBlockNum)
 	header, err := s.hotShotState.client.FetchHeader(ctx, nextSeqBlockNum)
-	namespace := s.config().EspressoNamespace
 	if err != nil {
 		log.Warn("Unable to fetch header for block number, will retry", "block_num", nextSeqBlockNum)
 		return false
 	}
-	arbTxns, err := s.hotShotState.client.FetchTransactionsInBlock(ctx, nextSeqBlockNum, &header, namespace)
+	arbTxns, err := s.hotShotState.client.FetchTransactionsInBlock(ctx, nextSeqBlockNum, &header)
 	if err != nil {
 		log.Error("Error fetching transactions", "err", err)
 		return false
@@ -146,6 +145,10 @@ func (s *EspressoSequencer) Start(ctxIn context.Context) error {
 
 // Required methods for the TransactionPublisher interface
 func (s *EspressoSequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	if err := s.hotShotState.client.SubmitTransaction(parentCtx, tx); err != nil {
+		log.Error("Failed to submit transaction", err)
+		return err
+	}
 	return nil
 }
 
