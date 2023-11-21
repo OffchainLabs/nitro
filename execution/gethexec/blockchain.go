@@ -75,8 +75,6 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 
 	return &core.CacheConfig{
 		TrieCleanLimit:                     cachingConfig.TrieCleanCache,
-		TrieCleanJournal:                   stack.ResolvePath(baseConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:                 baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch:                baseConf.NoPrefetch,
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
 		TrieDirtyDisabled:                  cachingConfig.Archive,

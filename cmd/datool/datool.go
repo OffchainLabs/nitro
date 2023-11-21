@@ -102,7 +102,6 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -204,8 +203,6 @@ func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, 
 	f.String("url", "http://localhost:9877", "URL of DAS server to connect to.")
 	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
 
-	genericconf.ConfConfigAddOptions("conf", f)
-
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
@@ -267,7 +264,6 @@ func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f.String("dir", "", "the directory to generate the keys in")
 	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
 	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
-	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
