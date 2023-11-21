@@ -107,9 +107,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev wabt
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-14 main' && \
+    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-16 main' && \
     apt-get update && \
-    apt-get install -y llvm-14-dev libclang-common-14-dev
+    apt-get install -y llvm-16-dev libclang-common-16-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
