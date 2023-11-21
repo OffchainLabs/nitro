@@ -109,7 +109,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-15 main' && \
     apt-get update && \
-    apt-get install -y llvm-15-dev libclang-common-15-dev
+    apt-get install -y llvm-15-dev libclang-common-15-dev libpolly-15-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
