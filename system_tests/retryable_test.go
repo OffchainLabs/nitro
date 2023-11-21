@@ -191,8 +191,89 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
-	if !arbmath.BigEquals(l2balance, big.NewInt(1e6)) {
+	if !arbmath.BigEquals(l2balance, callValue) {
 		Fatal(t, "Unexpected balance:", l2balance)
+	}
+}
+
+func TestSubmitRetryableEmptyEscrow(t *testing.T) {
+	t.Parallel()
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	user2Address := builder.L2Info.GetAddress("User2")
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := common.Big0
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err, "failed to deploy NodeInterface")
+
+	// estimate the gas needed to auto redeem the retryable
+	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL2.NoSend = true
+	usertxoptsL2.GasMargin = 0
+	tx, err := nodeInterface.EstimateRetryableTicket(
+		&usertxoptsL2,
+		usertxoptsL2.From,
+		deposit,
+		user2Address,
+		callValue,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		[]byte{0x32, 0x42, 0x32, 0x88}, // increase the cost to beyond that of params.TxGas
+	)
+	Require(t, err, "failed to estimate retryable submission")
+	estimate := tx.Gas()
+	colors.PrintBlue("estimate: ", estimate)
+
+	// submit & auto redeem the retryable using the gas estimate
+	usertxoptsL1 := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxoptsL1,
+		user2Address,
+		callValue,
+		big.NewInt(1e16),
+		beneficiaryAddress,
+		beneficiaryAddress,
+		arbmath.UintToBig(estimate),
+		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		[]byte{0x32, 0x42, 0x32, 0x88},
+	)
+	Require(t, err)
+
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
+	}
+
+	waitForL1DelayBlocks(t, ctx, builder)
+
+	l2Tx := lookupL2Tx(l1Receipt)
+	receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t)
+	}
+
+	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+
+	if !arbmath.BigEquals(l2balance, callValue) {
+		Fatal(t, "Unexpected balance:", l2balance)
+	}
+
+	escrowAccount := retryables.RetryableEscrowAddress(l2Tx.Hash())
+	state, err := builder.L2.ExecNode.ArbInterface.BlockChain().State()
+	Require(t, err)
+	escrowCodeHash := state.GetCodeHash(escrowAccount)
+	if escrowCodeHash == (common.Hash{}) {
+		Fatal(t, "Escrow account deleted (or not created)")
+	} else if escrowCodeHash != types.EmptyCodeHash {
+		Fatal(t, "Escrow account has unexpected code hash", escrowCodeHash)
 	}
 }
 
