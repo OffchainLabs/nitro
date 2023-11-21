@@ -102,7 +102,7 @@ var ConfigDefault = Config{
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{}
+	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
@@ -114,7 +114,6 @@ func ConfigDefaultNonSequencerTest() *Config {
 
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{}
 	config.Sequencer = TestSequencerConfig
 	config.ForwardingTarget = "null"
 	config.ParentChainReader = headerreader.TestConfig

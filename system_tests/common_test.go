@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -656,7 +657,7 @@ func DeployOnTestL1(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := arbnode.DeployOnL1(
+	addresses, err := deploy.DeployOnL1(
 		ctx,
 		l1Reader,
 		&l1TransactionOpts,
