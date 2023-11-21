@@ -170,45 +170,49 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					bcs.primaryRouter.forwardConfirmationChan <- cs
 				}
 
-			// Secondary Feeds
-			case msg := <-bcs.secondaryRouter.messageChan:
-				startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
-				if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
-					continue
-				}
-				if _, ok := recentFeedItemsOld[msg.SequenceNumber]; ok {
-					continue
-				}
-				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
-				if err := bcs.secondaryRouter.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
-					log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
-				}
-			case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
-				startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
-				if cs == lastConfirmed {
-					continue
-				}
-				lastConfirmed = cs
-				if bcs.secondaryRouter.forwardConfirmationChan != nil {
-					bcs.secondaryRouter.forwardConfirmationChan <- cs
-				}
-
 			// Cycle buckets to get rid of old entries
 			case <-recentFeedItemsCleanup.C:
 				recentFeedItemsOld = recentFeedItemsNew
 				recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 
-			// failed to get messages from both primary and secondary feeds for ~5 seconds, start a new secondary feed
+			// Failed to get messages from both primary and secondary feeds for ~5 seconds, start a new secondary feed
 			case <-startSecondaryFeedTimer.C:
 				bcs.startSecondaryFeed(ctx)
 
-			// failed to get messages from primary feed for ~5 seconds, reset the timer responsible for stopping a secondary
+			// Failed to get messages from primary feed for ~5 seconds, reset the timer responsible for stopping a secondary
 			case <-primaryFeedIsDownTimer.C:
 				stopSecondaryFeedTimer.Reset(PRIMARY_FEED_UPTIME)
 
-			// primary feeds have been up and running for PRIMARY_FEED_UPTIME=10 mins without a failure, stop the recently started secondary feed
+			// Primary feeds have been up and running for PRIMARY_FEED_UPTIME=10 mins without a failure, stop the recently started secondary feed
 			case <-stopSecondaryFeedTimer.C:
 				bcs.stopSecondaryFeed()
+
+			default:
+				select {
+				// Secondary Feeds
+				case msg := <-bcs.secondaryRouter.messageChan:
+					startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
+					if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
+						continue
+					}
+					if _, ok := recentFeedItemsOld[msg.SequenceNumber]; ok {
+						continue
+					}
+					recentFeedItemsNew[msg.SequenceNumber] = time.Now()
+					if err := bcs.secondaryRouter.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
+						log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
+					}
+				case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
+					startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
+					if cs == lastConfirmed {
+						continue
+					}
+					lastConfirmed = cs
+					if bcs.secondaryRouter.forwardConfirmationChan != nil {
+						bcs.secondaryRouter.forwardConfirmationChan <- cs
+					}
+				default:
+				}
 			}
 		}
 	})
