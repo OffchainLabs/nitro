@@ -88,7 +88,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make wabt && \
     cargo install --force cbindgen
-COPY arbitrator/Cargo.* arbitrator/stylus/cbindgen.toml arbitrator/stylus/
+COPY arbitrator/Cargo.* arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
