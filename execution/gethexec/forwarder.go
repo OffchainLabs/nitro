@@ -124,7 +124,7 @@ func NewForwarder(targets []string, config *ForwarderConfig) *TxForwarder {
 		targets:               targets,
 		timeout:               config.ConnectionTimeout,
 		transport:             transport,
-		tryNewForwarderErrors: regexp.MustCompile(`(?i)(http:|json:|.*Timeout exceeded).*`),
+		tryNewForwarderErrors: regexp.MustCompile(`(?i)(^http:|^json:|^i/0|timeout exceeded|no such host)`),
 	}
 }
 
