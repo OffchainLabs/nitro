@@ -156,9 +156,6 @@ func NewSeqCoordinator(
 		config:           config,
 		signer:           signer,
 	}
-	if sequencer != nil {
-		sequencer.Pause()
-	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
 }
