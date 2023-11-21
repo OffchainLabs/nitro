@@ -62,7 +62,6 @@ pub struct WasmerJsEnv<'a, 'b> {
     resume: &'a TypedFunction<(), ()>,
     get_stack_pointer: &'a TypedFunction<(), i32>,
     go_stack: &'a mut GoStack<'b>,
-    //store: &'a mut StoreMut<'b>,
 }
 
 impl<'a, 'b> WasmerJsEnv<'a, 'b> {
