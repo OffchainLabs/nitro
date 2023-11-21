@@ -209,7 +209,7 @@ func ProduceBlockAdvanced(
 		var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
 		var proofs = []*espresso.NmtProof{&l1Header.BlockJustification.Proof}
 		// If the validation function below were not mocked, we would need to serialize the transactions
-		// in the batch here. To avoid the unecessary overhead, we provide an empty array instsead.
+		// in the batch here. To avoid the unnecessary overhead, we provide an empty array instead.
 		var txs []espresso.Bytes
 		err := espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
 		if err != nil {
