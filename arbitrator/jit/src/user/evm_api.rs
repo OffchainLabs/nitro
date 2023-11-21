@@ -101,7 +101,7 @@ pub(super) fn exec_wasm(
                 let js_state = &mut env.js_state;
                 let exports = &mut env.exports;
 
-                let js_env = &mut WasmerJsEnv::new(sp, &mut store, exports, &mut env.go_state)?;
+                let js_env = &mut WasmerJsEnv::new(sp, exports, &mut env.go_state)?;
                 let outs = js_state.call_stylus_func(api_id, method, args, js_env)?;
                 respond.send(outs).unwrap();
             }

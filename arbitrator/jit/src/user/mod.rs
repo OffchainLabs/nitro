@@ -35,8 +35,8 @@ mod evm_api;
 /// These values are placed on the stack as follows
 ///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
 ///
-pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn stylus_activate(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let wasm = sp.read_go_slice_owned();
     let page_limit = sp.read_u16();
     let version = sp.read_u16();
@@ -78,8 +78,8 @@ pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
 /// These values are placed on the stack as follows
 ///     || modHash || calldata... || params || evmApi | 4 pad || evmData || gas || status | 7 pad | out ptr ||
 ///
-pub fn stylus_call(env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let sp = &mut GoStack::simple(sp, &env);
+pub fn stylus_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let sp = &mut GoStack::simple(sp, &mut env);
     use UserOutcome::*;
 
     // move inputs
@@ -127,8 +127,8 @@ pub fn stylus_call(env: WasmEnvMut, sp: u32) -> MaybeEscape {
 /// These values are placed on the stack as follows
 ///     || vec ptr || len u32 | pad 4 ||
 ///
-pub fn read_rust_vec_len(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn read_rust_vec_len(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let vec: &Vec<u8> = unsafe { sp.read_ref() };
     sp.write_u32(vec.len() as u32);
 }
@@ -143,8 +143,8 @@ pub fn read_rust_vec_len(env: WasmEnvMut, sp: u32) {
 /// These values are placed on the stack as follows
 ///     || vec ptr || dest... ||
 ///
-pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn rust_vec_into_slice(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let vec: Vec<u8> = sp.unbox();
     let ptr: *mut u8 = sp.read_ptr_mut();
     sp.write_slice(ptr as u64, &vec);
@@ -161,8 +161,8 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 /// The values are placed on the stack as follows
 ///     || version | 2 garbage bytes | max_depth || ink_price | debugMode || result ptr ||
 ///
-pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn rust_config_impl(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
 
     let config = StylusConfig {
         version: sp.read_u16(),
@@ -190,8 +190,8 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 ///     || baseFee || chainid || coinbase || gas limit || block number || timestamp || address ||
 ///     || sender || value || gas price || origin || reentrant | 4 pad || data ptr ||
 ///
-pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn evm_data_impl(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let evm_data = EvmData {
         block_basefee: sp.read_bytes32().into(),
         chainid: sp.read_u64(),

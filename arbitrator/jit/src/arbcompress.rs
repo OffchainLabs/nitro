@@ -32,8 +32,8 @@ pub enum BrotliStatus {
 }
 
 /// go side: λ(inBuf []byte, outBuf []byte, level, windowSize uint64) (outLen uint64, status BrotliStatus)
-pub fn brotli_compress(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn brotli_compress(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
     let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
     let level = sp.read_u32();
@@ -66,8 +66,8 @@ pub fn brotli_compress(env: WasmEnvMut, sp: u32) {
 }
 
 /// go side: λ(inBuf []byte, outBuf []byte) (outLen uint64, status BrotliStatus)
-pub fn brotli_decompress(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn brotli_decompress(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
     let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
 

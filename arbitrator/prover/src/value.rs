@@ -13,7 +13,7 @@ use std::{
     fmt::Display,
     ops::Add,
 };
-use wasmparser::{FuncType, Type};
+use wasmparser::{FuncType, ValType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -33,61 +33,56 @@ impl ArbValueType {
     }
 }
 
-impl TryFrom<Type> for ArbValueType {
+impl TryFrom<ValType> for ArbValueType {
     type Error = eyre::Error;
 
-    fn try_from(ty: Type) -> Result<ArbValueType> {
-        use Type::*;
+    fn try_from(ty: ValType) -> Result<ArbValueType> {
+        use ValType as V;
         Ok(match ty {
-            I32 => Self::I32,
-            I64 => Self::I64,
-            F32 => Self::F32,
-            F64 => Self::F64,
-            FuncRef => Self::FuncRef,
-            ExternRef => Self::FuncRef,
-            V128 => bail!("128-bit types are not supported"),
-
-            // TODO: removed in wasmparser 0.95+
-            ExnRef => bail!("Type not used in newer versions of wasmparser"),
-            Func => bail!("Type not used in newer versions of wasmparser"),
-            EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),
+            V::I32 => Self::I32,
+            V::I64 => Self::I64,
+            V::F32 => Self::F32,
+            V::F64 => Self::F64,
+            V::FuncRef => Self::FuncRef,
+            V::ExternRef => Self::FuncRef,
+            V::V128 => bail!("128-bit types are not supported"),
         })
     }
 }
 
-impl From<ArbValueType> for Type {
+impl From<ArbValueType> for ValType {
     fn from(ty: ArbValueType) -> Self {
-        use ArbValueType::*;
+        use ArbValueType as V;
         match ty {
-            I32 => Self::I32,
-            I64 => Self::I64,
-            F32 => Self::F32,
-            F64 => Self::F64,
+            V::I32 => Self::I32,
+            V::I64 => Self::I64,
+            V::F32 => Self::F32,
+            V::F64 => Self::F64,
             // InternalRef's aren't analogous, but they can be viewed as function pointers from wavm's perspective
-            RefNull | FuncRef | InternalRef => Self::FuncRef,
+            V::RefNull | V::FuncRef | V::InternalRef => Self::FuncRef,
         }
     }
 }
 
 #[cfg(feature = "native")]
-pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
+pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
     match ty {
-        wasmer::Type::I32 => wasmer::wasmparser::Type::I32,
-        wasmer::Type::I64 => wasmer::wasmparser::Type::I64,
-        wasmer::Type::F32 => wasmer::wasmparser::Type::F32,
-        wasmer::Type::F64 => wasmer::wasmparser::Type::F64,
-        wasmer::Type::V128 => wasmer::wasmparser::Type::V128,
-        wasmer::Type::ExternRef => wasmer::wasmparser::Type::ExternRef,
-        wasmer::Type::FuncRef => wasmer::wasmparser::Type::FuncRef,
+        wasmer::Type::I32 => wasmer::wasmparser::ValType::I32,
+        wasmer::Type::I64 => wasmer::wasmparser::ValType::I64,
+        wasmer::Type::F32 => wasmer::wasmparser::ValType::F32,
+        wasmer::Type::F64 => wasmer::wasmparser::ValType::F64,
+        wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
+        wasmer::Type::ExternRef => wasmer::wasmparser::ValType::ExternRef,
+        wasmer::Type::FuncRef => wasmer::wasmparser::ValType::FuncRef,
     }
 }
 
 #[cfg(feature = "native")]
 pub fn parser_func_type(ty: wasmer::FunctionType) -> FuncType {
-    let convert = |t: &[wasmer::Type]| -> Vec<Type> { t.iter().map(parser_type).collect() };
-    let params = convert(ty.params()).into_boxed_slice();
-    let returns = convert(ty.results()).into_boxed_slice();
-    FuncType { params, returns }
+    let convert = |t: &[wasmer::Type]| -> Vec<ValType> { t.iter().map(parser_type).collect() };
+    let params = convert(ty.params());
+    let results = convert(ty.results());
+    FuncType::new(params, results)
 }
 
 impl From<FloatType> for ArbValueType {
@@ -442,10 +437,10 @@ impl TryFrom<FuncType> for FunctionType {
         let mut inputs = vec![];
         let mut outputs = vec![];
 
-        for input in func.params.iter() {
+        for input in func.params() {
             inputs.push(ArbValueType::try_from(*input)?)
         }
-        for output in func.returns.iter() {
+        for output in func.results() {
             outputs.push(ArbValueType::try_from(*output)?)
         }
         Ok(Self { inputs, outputs })

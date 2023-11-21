@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-use wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
+use wasmparser::{BlockType, Operator};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
@@ -645,7 +645,7 @@ pub fn wasm_to_wavm(
 
     let block_type_params = |ty: BlockType| -> usize {
         match ty {
-            BlockType::Type(Type::EmptyBlockType) => 0,
+            BlockType::Empty => 0,
             BlockType::Type(_) => 0,
             BlockType::FuncType(idx) => all_types[idx as usize].inputs.len(),
         }
@@ -653,7 +653,7 @@ pub fn wasm_to_wavm(
 
     let block_type_results = |ty: BlockType| -> usize {
         match ty {
-            BlockType::Type(Type::EmptyBlockType) => 0,
+            BlockType::Empty => 0,
             BlockType::Type(_) => 1,
             BlockType::FuncType(idx) => all_types[idx as usize].outputs.len(),
         }
@@ -732,16 +732,16 @@ pub fn wasm_to_wavm(
                 stack = StackState::Unreachable;
             },
             Nop => opcode!(Nop),
-            Block { ty } => {
-                scopes.push(Scope::Simple(*ty, vec![], height_after_block!(ty)));
+            Block { blockty } => {
+                scopes.push(Scope::Simple(*blockty, vec![], height_after_block!(blockty)));
             }
-            Loop { ty } => {
-                scopes.push(Scope::Loop(*ty, out.len(), stack, height_after_block!(ty)));
+            Loop { blockty } => {
+                scopes.push(Scope::Loop(*blockty, out.len(), stack, height_after_block!(blockty)));
             }
-            If { ty } => {
+            If { blockty } => {
                 opcode!(I32Eqz);
                 stack -= 1; // the else block shouldn't have the conditional that gets popped next instruction
-                scopes.push(Scope::IfElse(*ty, vec![], Some(out.len()), stack, height_after_block!(ty)));
+                scopes.push(Scope::IfElse(*blockty, vec![], Some(out.len()), stack, height_after_block!(blockty)));
                 opcode!(ArbitraryJumpIf);
             }
             Else => {
@@ -779,11 +779,11 @@ pub fn wasm_to_wavm(
             }
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
-            BrTable { table } => {
+            BrTable { targets } => {
                 let start_stack = stack;
                 // evaluate each branch
                 let mut subjumps = vec![];
-                for (index, target) in table.targets().enumerate() {
+                for (index, target) in targets.targets().enumerate() {
                     opcode!(Dup, @push 1);
                     opcode!(I32Const, index as u64, @push 1);
                     compare!(I32, Eq, false);
@@ -793,7 +793,7 @@ pub fn wasm_to_wavm(
 
                 // nothing matched: drop the index and jump to the default.
                 opcode!(Drop, @pop 1);
-                branch!(ArbitraryJump, table.default());
+                branch!(ArbitraryJump, targets.default());
 
                 // simulate a jump table of branches
                 for (jump, branch) in subjumps {
@@ -806,10 +806,10 @@ pub fn wasm_to_wavm(
             Return => branch!(ArbitraryJump, scopes.len() - 1),
             Call { function_index } => call!(*function_index),
 
-            CallIndirect { index, table_index, .. } => {
-                let ty = &all_types[*index as usize];
+            CallIndirect { type_index, table_index, .. } => {
+                let ty = &all_types[*type_index as usize];
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
-                opcode!(CallIndirect, pack_call_indirect(*table_index, *index), @push delta - 1);
+                opcode!(CallIndirect, pack_call_indirect(*table_index, *type_index), @push delta - 1);
             }
 
             unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
@@ -1016,8 +1016,8 @@ pub fn wasm_to_wavm(
                 ensure!(*mem == 0, "multi-memory proposal not supported");
                 call!(internals_offset + InternalFunc::MemoryFill as u32)
             },
-            MemoryCopy { src, dst } => {
-                ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
+            MemoryCopy { src_mem, dst_mem } => {
+                ensure!(*src_mem == 0 && *dst_mem == 0, "multi-memory proposal not supported");
                 call!(internals_offset + InternalFunc::MemoryCopy as u32)
             },
 
@@ -1066,12 +1066,12 @@ pub fn wasm_to_wavm(
                     V128Not, V128And, V128AndNot, V128Or, V128Xor, V128Bitselect, V128AnyTrue,
                     I8x16Abs, I8x16Neg, I8x16Popcnt, I8x16AllTrue, I8x16Bitmask, I8x16NarrowI16x8S, I8x16NarrowI16x8U,
                     I8x16Shl, I8x16ShrS, I8x16ShrU, I8x16Add, I8x16AddSatS, I8x16AddSatU, I8x16Sub, I8x16SubSatS,
-                    I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16RoundingAverageU,
+                    I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16AvgrU,
                     I16x8ExtAddPairwiseI8x16S, I16x8ExtAddPairwiseI8x16U, I16x8Abs, I16x8Neg, I16x8Q15MulrSatS,
                     I16x8AllTrue, I16x8Bitmask, I16x8NarrowI32x4S, I16x8NarrowI32x4U, I16x8ExtendLowI8x16S,
                     I16x8ExtendHighI8x16S, I16x8ExtendLowI8x16U, I16x8ExtendHighI8x16U, I16x8Shl, I16x8ShrS, I16x8ShrU,
                     I16x8Add, I16x8AddSatS, I16x8AddSatU, I16x8Sub, I16x8SubSatS, I16x8SubSatU, I16x8Mul, I16x8MinS,
-                    I16x8MinU, I16x8MaxS, I16x8MaxU, I16x8RoundingAverageU, I16x8ExtMulLowI8x16S,
+                    I16x8MinU, I16x8MaxS, I16x8MaxU, I16x8AvgrU, I16x8ExtMulLowI8x16S,
                     I16x8ExtMulHighI8x16S, I16x8ExtMulLowI8x16U, I16x8ExtMulHighI8x16U, I32x4ExtAddPairwiseI16x8S,
                     I32x4ExtAddPairwiseI16x8U, I32x4Abs, I32x4Neg, I32x4AllTrue, I32x4Bitmask, I32x4ExtendLowI16x8S,
                     I32x4ExtendHighI16x8S, I32x4ExtendLowI16x8U, I32x4ExtendHighI16x8U, I32x4Shl, I32x4ShrS, I32x4ShrU,
@@ -1087,13 +1087,14 @@ pub fn wasm_to_wavm(
                     F32x4ConvertI32x4U, I32x4TruncSatF64x2SZero, I32x4TruncSatF64x2UZero, F64x2ConvertLowI32x4S,
                     F64x2ConvertLowI32x4U, F32x4DemoteF64x2Zero, F64x2PromoteLowF32x4, I8x16RelaxedSwizzle,
                     I32x4RelaxedTruncSatF32x4S, I32x4RelaxedTruncSatF32x4U, I32x4RelaxedTruncSatF64x2SZero,
-                    I32x4RelaxedTruncSatF64x2UZero, F32x4Fma, F32x4Fms, F64x2Fma, F64x2Fms, I8x16LaneSelect,
-                    I16x8LaneSelect, I32x4LaneSelect, I64x2LaneSelect, F32x4RelaxedMin, F32x4RelaxedMax,
-                    F64x2RelaxedMin, F64x2RelaxedMax
+                    I32x4RelaxedTruncSatF64x2UZero, F32x4RelaxedFma, F32x4RelaxedFnma, F64x2RelaxedFma,
+                    F64x2RelaxedFnma, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
+                    I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
+                    I16x8RelaxedQ15mulrS, I16x8DotI8x16I7x16S, I32x4DotI8x16I7x16AddS,
+                    F32x4RelaxedDotBf16x8AddF32x4
                 )
             ) => bail!("SIMD extension not supported {:?}", unsupported)
         };
     }
-
     Ok(())
 }

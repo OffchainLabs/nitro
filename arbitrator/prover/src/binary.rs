@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 use wasmer_types::{entity::EntityRef, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
-    Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
-    NameSectionReader, Naming, Operator, Parser, Payload, TableType, Type, TypeDef, Validator,
-    WasmFeatures,
+    Data, Element, Export, ExternalKind, Global, Import, MemoryType, Name, NameSectionReader,
+    Naming, Operator, Parser, Payload, SectionReader, SectionWithLimitedItems, TableType, Type,
+    TypeRef, ValType, Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -220,7 +220,7 @@ pub fn op_as_const(op: Operator) -> Result<Value> {
 pub struct FuncImport<'a> {
     pub offset: u32,
     pub module: &'a str,
-    pub name: Option<&'a str>, // in wasmparser 0.95+ this won't be optional
+    pub name: &'a str,
 }
 
 /// This enum primarily exists because wasmer's ExternalKind doesn't impl these derived functions
@@ -237,14 +237,13 @@ impl TryFrom<ExternalKind> for ExportKind {
     type Error = eyre::Error;
 
     fn try_from(kind: ExternalKind) -> Result<Self> {
-        use ExternalKind::*;
+        use ExternalKind as E;
         match kind {
-            Function => Ok(Self::Func),
-            Table => Ok(Self::Table),
-            Memory => Ok(Self::Memory),
-            Global => Ok(Self::Global),
-            Tag => Ok(Self::Tag),
-            kind => bail!("unsupported kind {:?}", kind),
+            E::Func => Ok(Self::Func),
+            E::Table => Ok(Self::Table),
+            E::Memory => Ok(Self::Memory),
+            E::Global => Ok(Self::Global),
+            E::Tag => Ok(Self::Tag),
         }
     }
 }
@@ -294,7 +293,6 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         reference_types: false,
         multi_value: true,
         bulk_memory: true, // not all ops supported yet
-        module_linking: false,
         simd: false,
         relaxed_simd: false,
         threads: false,
@@ -304,10 +302,9 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         exceptions: false,
         memory64: false,
         extended_const: false,
+        component_model: false,
     };
-    let mut validator = Validator::new();
-    validator.wasm_features(features);
-    validator
+    Validator::new_with_features(features)
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
@@ -339,10 +336,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         match &mut section {
             TypeSection(type_section) => {
                 for _ in 0..type_section.get_count() {
-                    let ty = match type_section.read()? {
-                        TypeDef::Func(ty) => ty,
-                        x => bail!("Unsupported type section {:?}", x),
-                    };
+                    let Type::Func(ty) = type_section.read()?;
                     binary.types.push(ty.try_into()?);
                 }
             }
@@ -381,30 +375,31 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
             }
             ImportSection(imports) => {
                 for import in flatten!(Import, imports) {
-                    let ImportSectionEntryType::Function(offset) = import.ty else {
+                    let TypeRef::Func(offset) = import.ty else {
                         bail!("unsupported import kind {:?}", import)
                     };
                     let import = FuncImport {
                         offset,
                         module: import.module,
-                        name: import.field,
+                        name: import.name,
                     };
                     binary.imports.push(import);
                 }
             }
             ExportSection(exports) => {
-                use ExternalKind::*;
+                use ExternalKind as E;
                 for export in flatten!(Export, exports) {
-                    let name = export.field.to_owned();
-                    if let Function = export.kind {
+                    let name = export.name.to_owned();
+                    let kind = export.kind;
+                    if let E::Func = kind {
                         let index = export.index;
                         let name = || name.clone();
                         binary.names.functions.entry(index).or_insert_with(name);
                     }
 
                     // TODO: we'll only support the types also in wasmparser 0.95+
-                    if matches!(export.kind, Function | Table | Memory | Global | Tag) {
-                        let kind = export.kind.try_into()?;
+                    if matches!(kind, E::Func | E::Table | E::Memory | E::Global | E::Tag) {
+                        let kind = kind.try_into()?;
                         binary.exports.insert(name, (export.index, kind));
                     } else {
                         bail!("unsupported export kind {:?}", export)
@@ -418,25 +413,19 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
             CodeSectionStart { .. } => {}
-            CustomSection {
-                name,
-                data_offset,
-                data,
-                ..
-            } => {
-                if *name != "name" {
+            CustomSection(reader) => {
+                if reader.name() != "name" {
                     continue;
                 }
 
-                let mut name_reader = NameSectionReader::new(data, *data_offset)?;
+                let mut name_reader = NameSectionReader::new(reader.data(), reader.data_offset())?;
 
                 while !name_reader.eof() {
                     match name_reader.read()? {
-                        Name::Module(name) => binary.names.module = name.get_name()?.to_owned(),
-                        Name::Function(namemap) => {
-                            let mut map_reader = namemap.get_map()?;
-                            for _ in 0..map_reader.get_count() {
-                                let Naming { index, name } = map_reader.read()?;
+                        Name::Module { name, .. } => binary.names.module = name.to_owned(),
+                        Name::Function(mut namemap) => {
+                            for _ in 0..namemap.get_count() {
+                                let Naming { index, name } = namemap.read()?;
                                 binary.names.functions.insert(index, name.to_owned());
                             }
                         }
@@ -446,7 +435,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
             }
             Version { num, .. } => ensure!(*num == 1, "wasm format version not supported {}", num),
             UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
-            End => {}
+            End(_) => {}
             x => bail!("unsupported section type {:?}", x),
         }
     }
@@ -474,10 +463,9 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         exports.extend(export);
     }
     for import in &binary.imports {
-        if let Some(name) = import.name {
-            if exports.contains(name) {
-                bail!("binary exports an import with the same name {}", name.red());
-            }
+        let name = import.name;
+        if exports.contains(name) {
+            bail!("binary exports an import with the same name {}", name.red());
         }
     }
 
@@ -486,7 +474,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
     if let Some(name) = exports.into_iter().find(reserved) {
         bail!("binary exports reserved symbol {}", name.red())
     }
-    if let Some(name) = binary.imports.iter().filter_map(|x| x.name).find(reserved) {
+    if let Some(name) = binary.imports.iter().map(|x| x.name).find(reserved) {
         bail!("binary imports reserved symbol {}", name.red())
     }
 
@@ -541,7 +529,7 @@ impl<'a> WasmBinary<'a> {
 
         for (index, code) in self.codes.iter_mut().enumerate() {
             let index = LocalFunctionIndex::from_u32(index as u32);
-            let locals: Vec<Type> = code.locals.iter().map(|x| x.value.into()).collect();
+            let locals: Vec<ValType> = code.locals.iter().map(|x| x.value.into()).collect();
 
             let mut build = mem::take(&mut code.expr);
             let mut input = Vec::with_capacity(build.len());

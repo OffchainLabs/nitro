@@ -15,14 +15,14 @@ pub fn go_debug(x: u32) {
 pub fn reset_memory_data_view(_: u32) {}
 
 /// go side: λ(code int32)
-pub fn wasm_exit(env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn wasm_exit(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let mut sp = GoStack::simple(sp, &mut env);
     Escape::exit(sp.read_u32())
 }
 
 /// go side: λ(fd uintptr, p pointer, len int32)
-pub fn wasm_write(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn wasm_write(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let fd = sp.read_u64();
     let ptr = sp.read_u64();
     let len = sp.read_u32();
