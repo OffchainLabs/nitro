@@ -27,7 +27,6 @@ type JitMachine struct {
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-	log.Info("HERE IS THE BINARY PATH", "binary", binaryPath)
 	invocation := []string{"--binary", binaryPath, "--forks"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
@@ -155,7 +154,6 @@ func (machine *JitMachine) prove(
 		var hotShotCommitment [32]byte
 		if batch.HotShotCommitment != nil {
 			hotShotCommitment = *batch.HotShotCommitment
-			log.Info("preparing to send hotshot commitment", hotShotCommitment)
 		}
 		if err := writeExact(another); err != nil {
 			return state, err

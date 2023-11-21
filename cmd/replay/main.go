@@ -50,7 +50,7 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 func getHotShotCommitment(seqNum uint64) *espresso.Commitment {
 	var headerBytes espresso.Commitment
 	headerBytes = wavmio.ReadHotShotCommitment(seqNum)
-	log.Info("Commitment", "commit", headerBytes)
+	log.Info("HotShot commitment", "commit", headerBytes)
 	return &headerBytes
 }
 
@@ -248,7 +248,7 @@ func main() {
 		}
 		seqNum := wavmio.GetInboxPosition()
 		var hotShotCommitment *espresso.Commitment
-		if chainConfig.Espresso || true {
+		if chainConfig.Espresso {
 			hotShotCommitment = getHotShotCommitment(seqNum)
 		}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, hotShotCommitment, statedb, chainContext, chainConfig, batchFetcher)

@@ -39,19 +39,6 @@ func readBuffer(f func(uint32, []byte) uint32) []byte {
 	}
 }
 
-func readBufferHotShot(f func(uint32, []byte) uint32) []byte {
-	buf := make([]byte, 0, INITIAL_CAPACITY)
-	offset := 0
-	for {
-		read := f(uint32(offset), buf[offset:(offset+QUERY_SIZE)])
-		offset += int(read)
-		if read < QUERY_SIZE {
-			buf = buf[:offset]
-			return buf
-		}
-	}
-}
-
 func StubInit() {}
 
 func StubFinal() {}
@@ -91,10 +78,6 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 
 func SetLastBlockHash(hash [32]byte) {
 	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
-}
-
-func SetHotShotHeader(header []byte) {
-	setGlobalStateBytes32(IDX_HOTSHOT_HEADER, header[:])
 }
 
 // Note: if a GetSendRoot is ever modified, the validator will need to fill in the previous send root, which it currently does not.

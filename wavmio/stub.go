@@ -156,10 +156,6 @@ func SetLastBlockHash(hash [32]byte) {
 	lastBlockHash = hash
 }
 
-func SetHotShotHeader(header []byte) {
-	hotShotHeader = header
-}
-
 func SetSendRoot(hash [32]byte) {
 }
 

@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -59,10 +58,6 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 
 func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
 	t.validator = validator
-}
-
-func (t *InboxTracker) FetchHotShotCommitment(blockHeight uint64) (*espresso.Commitment, error) {
-	return nil, nil
 }
 
 func (t *InboxTracker) Initialize() error {

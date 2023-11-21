@@ -119,7 +119,7 @@ fn read_hotshot_commitment_impl(
     let out_ptr = sp.read_u64(1);
     let out_len = sp.read_u64(2);
     if out_len != 32 {
-        eprintln!("Go trying to read header bytees with out len {out_len} in {name}");
+        eprintln!("Go trying to read header bytes with out len {out_len} in {name}");
         sp.write_u64(5, 0);
         return Ok(());
     }
@@ -134,11 +134,10 @@ fn read_hotshot_commitment_impl(
     let message = comm_map.get(&msg_num).unwrap_or(&[0; 32]);
 
     if out_ptr + 32 > sp.memory_size() {
-        error!("unknown message type in {name}");
+        error!("memory bounds exceeded in {name}");
     }
-    let read = message.get(0..32).unwrap_or_default();
-    sp.write_slice(out_ptr, read);
-    sp.write_u64(5, read.len() as u64);
+    sp.write_slice(out_ptr, message);
+    sp.write_u64(5, 32);
     Ok(())
 }
 

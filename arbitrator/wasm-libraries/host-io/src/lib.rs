@@ -75,6 +75,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotCommitment(
     sp: GoStack,
 ) {
+    // TODO implement for fault proofs
+    // https://github.com/EspressoSystems/espresso-sequencer/issues/671
     return unimplemented!();
 }
 

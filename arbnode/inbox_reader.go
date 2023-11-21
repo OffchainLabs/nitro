@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -569,10 +568,6 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 		msgBlock.Set(r.firstMessageBlock)
 	}
 	return msgBlock, nil
-}
-
-func (t *InboxReader) FetchHotShotCommitment(blockHeight uint64) (*espresso.Commitment, error) {
-	return nil, nil
 }
 
 func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {

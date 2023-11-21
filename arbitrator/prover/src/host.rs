@@ -184,6 +184,8 @@ impl Hostio {
                 opcode!(ReadPreImage, PreimageType::Sha2_256);
             }
             WavmReadHotShotCommitment => {
+                // TODO implement for fault proofs
+                // https://github.com/EspressoSystems/espresso-sequencer/issues/670
                 unimplemented!()
             }
             WavmReadInboxMessage => {

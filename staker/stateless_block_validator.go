@@ -70,7 +70,6 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
-	FetchHotShotCommitment(blockHeight uint64) (*espresso.Commitment, error)
 }
 
 type L1ReaderInterface interface {
@@ -308,13 +307,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				return err
 			}
 		}
-		log.Info("Doing some proving")
-		if usingEspresso || true {
-			//hotShotHeader, err := v.inboxReader.FetchHotShotCommitment(batch.Number)
+		if usingEspresso {
+			// TODO: implement client method to fetch real headers
+			// https://github.com/EspressoSystems/espresso-sequencer/issues/771
 			hotShotHeader := espresso.Header{}
-			// if err != nil {
-			// 	return fmt.Errorf("failed to fetch hotshot commitment for batch number %d", batch.Number)
-			// }
 			hotShotCommitment := hotShotHeader.Commit()
 			e.BatchInfo[i].HotShotCommitment = &hotShotCommitment
 		}
