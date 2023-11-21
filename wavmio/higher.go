@@ -17,7 +17,6 @@ const QUERY_SIZE = 32
 // bytes32
 const IDX_LAST_BLOCKHASH = 0
 const IDX_SEND_ROOT = 1
-const IDX_HOTSHOT_HEADER = 2
 
 // u64
 const IDX_INBOX_POSITION = 0
