@@ -79,11 +79,12 @@ pub fn stylus_activate(mut env: WasmEnvMut, sp: u32) {
 ///     || modHash || calldata... || params || evmApi | 4 pad || evmData || gas || status | 7 pad | out ptr ||
 ///
 pub fn stylus_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let sp = &mut GoStack::simple(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    let sp = &mut sp;
     use UserOutcome::*;
 
     // move inputs
-    let module_hash = sp.read_bytes32();
+    let module = sp.read_bytes32();
     let calldata = sp.read_go_slice_owned();
     let (compile, config): (CompileConfig, StylusConfig) = sp.unbox();
     let api_id = sp.read_u32();
@@ -93,13 +94,6 @@ pub fn stylus_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     // buy ink
     let pricing = config.pricing;
     let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
-
-    let Some(module) = env.data().module_asms.get(&module_hash).cloned() else {
-        return Escape::failure(format!(
-            "module hash {module_hash:?} not found in {:?}",
-            env.data().module_asms.keys()
-        ));
-    };
 
     let result = exec_wasm(
         sp, env, module, calldata, compile, config, api_id, evm_data, ink,

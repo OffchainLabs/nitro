@@ -8,7 +8,7 @@ use crate::{
 
 use arbutil::Color;
 use go_js::JsEnv;
-use wasmer::{StoreMut, TypedFunction};
+use wasmer::TypedFunction;
 
 /// go side: λ(v value)
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {

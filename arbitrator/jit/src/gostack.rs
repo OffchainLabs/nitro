@@ -358,7 +358,7 @@ fn test_sp() -> Result<()> {
     use prover::programs::prelude::CompileConfig;
     use wasmer::{FunctionEnv, MemoryType};
 
-    let mut store = &mut CompileConfig::default().store();
+    let store = &mut CompileConfig::default().store();
     let mut env = WasmEnv::default();
     env.memory = Some(Memory::new(store, MemoryType::new(0, None, false))?);
     let env = &mut FunctionEnv::new(store, env).into_mut(store);
