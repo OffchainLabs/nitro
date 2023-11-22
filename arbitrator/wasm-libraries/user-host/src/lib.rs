@@ -9,6 +9,7 @@ use evm_api::ApiCaller;
 use prover::programs::{meter::MeteredMachine, prelude::StylusConfig};
 
 mod evm_api;
+mod guard;
 mod host;
 mod ink;
 mod link;

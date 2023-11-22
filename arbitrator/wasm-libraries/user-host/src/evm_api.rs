@@ -1,15 +1,11 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use crate::guard::{self, ErrorPolicy};
 use arbutil::evm::{
     api::EvmApiMethod,
     js::{ApiValue, JsCallIntoGo},
 };
-
-#[link(wasm_import_module = "hostio")]
-extern "C" {
-    fn wavm_set_error_policy(status: u32);
-}
 
 #[link(wasm_import_module = "go_stub")]
 extern "C" {
@@ -45,7 +41,7 @@ impl JsCallIntoGo for ApiCaller {
 
         let api_id = self.api_id;
         unsafe {
-            wavm_set_error_policy(0); // disable error recovery
+            guard::set_error_policy(ErrorPolicy::ChainHalt);
 
             let count = run_api_closure(api_id, method, data.as_ptr(), lens.as_ptr(), args.len());
             let mut lens = vec![0_usize; count];
@@ -56,7 +52,7 @@ impl JsCallIntoGo for ApiCaller {
             move_api_result_data(data.as_ptr());
 
             let outs = outs.into_iter().map(ApiValue).collect();
-            wavm_set_error_policy(1); // re-enable error recovery
+            guard::set_error_policy(ErrorPolicy::Recover);
             outs
         }
     }
