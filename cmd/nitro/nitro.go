@@ -826,14 +826,19 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
-		l2MaxTxSize := gethexec.DefaultSequencerConfig.MaxTxDataSize
-		bufferSpace := 5000
-		if l2MaxTxSize < bufferSpace*2 {
-			return false, fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
+		if chainInfo.DasIndexUrl != "" {
+			chainDefaults["node.batch-poster.max-size"] = 1000000
+			chainDefaults["node.sequencer.max-tx-data-size"] = 995000
+		} else {
+			l2MaxTxSize := gethexec.DefaultSequencerConfig.MaxTxDataSize
+			bufferSpace := 5000
+			if l2MaxTxSize < bufferSpace*2 {
+				return false, fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
+			}
+			safeBatchSize := l2MaxTxSize - bufferSpace
+			chainDefaults["node.batch-poster.max-size"] = safeBatchSize
+			chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 		}
-		safeBatchSize := l2MaxTxSize - bufferSpace
-		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
-		chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
