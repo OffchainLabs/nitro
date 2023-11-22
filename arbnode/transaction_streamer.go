@@ -531,7 +531,9 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize chain config: %w", err)
 	}
-	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
+	// TODO: once we have a safe U256Bytes that does a copy internally, use that instead of doing an explicit copy here
+	chainIdBytes := math.U256Bytes(new(big.Int).Set(s.chainConfig.ChainID))
+	msg := append(append(chainIdBytes, 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
