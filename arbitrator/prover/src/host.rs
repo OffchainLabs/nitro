@@ -75,6 +75,7 @@ pub enum Hostio {
     WavmHaltAndSetFinished,
     WavmLinkModule,
     WavmUnlinkModule,
+    WavmSetErrorPolicy,
     ProgramInkLeft,
     ProgramInkStatus,
     ProgramSetInk,
@@ -117,6 +118,7 @@ impl FromStr for Hostio {
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
             ("hostio", "wavm_link_module") => WavmLinkModule,
             ("hostio", "wavm_unlink_module") => WavmUnlinkModule,
+            ("hostio", "wavm_set_error_policy") => WavmSetErrorPolicy,
             ("hostio", "program_ink_left") => ProgramInkLeft,
             ("hostio", "program_ink_status") => ProgramInkStatus,
             ("hostio", "program_set_ink") => ProgramSetInk,
@@ -173,6 +175,7 @@ impl Hostio {
             WavmHaltAndSetFinished      => func!(),
             WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
             WavmUnlinkModule            => func!(),                  // λ()
+            WavmSetErrorPolicy          => func!([I32]),             // λ(enabled)
             ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
             ProgramInkStatus            => func!([I32], [I32]),      // λ(module) → ink_status
             ProgramSetInk               => func!([I32, I64]),        // λ(module, ink_left)
@@ -286,6 +289,11 @@ impl Hostio {
             WavmUnlinkModule => {
                 // λ()
                 opcode!(UnlinkModule);
+            }
+            WavmSetErrorPolicy => {
+                // λ(status)
+                opcode!(LocalGet, 0);
+                opcode!(SetErrorPolicy);
             }
             ProgramInkLeft => {
                 // λ(module) → ink_left

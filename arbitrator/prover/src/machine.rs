@@ -5,6 +5,7 @@ use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
+    error_guard::{ErrorGuard, ErrorGuardProof, ErrorGuardStack},
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -782,87 +783,13 @@ impl PreimageResolverWrapper {
 }
 
 #[derive(Clone, Debug)]
-pub struct ErrorGuard {
-    frame_stack: usize,
-    value_stack: usize,
-    inter_stack: usize,
-    on_error: ProgramCounter,
-}
-
-impl Display for ErrorGuard {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}{} {} {} {} {}{}",
-            "ErrorGuard(".grey(),
-            self.frame_stack.mint(),
-            self.value_stack.mint(),
-            self.inter_stack.mint(),
-            "→".grey(),
-            self.on_error,
-            ")".grey(),
-        )
-    }
-}
-
-#[derive(Clone, Debug)]
-struct ErrorGuardProof {
-    frame_stack: Bytes32,
-    value_stack: Bytes32,
-    inter_stack: Bytes32,
-    on_error: ProgramCounter,
-}
-
-impl ErrorGuardProof {
-    const STACK_PREFIX: &'static str = "Guard stack:";
-    const GUARD_PREFIX: &'static str = "Error guard:";
-
-    fn new(
-        frame_stack: Bytes32,
-        value_stack: Bytes32,
-        inter_stack: Bytes32,
-        on_error: ProgramCounter,
-    ) -> Self {
-        Self {
-            frame_stack,
-            value_stack,
-            inter_stack,
-            on_error,
-        }
-    }
-
-    fn serialize_for_proof(&self) -> Vec<u8> {
-        let mut data = self.frame_stack.to_vec();
-        data.extend(self.value_stack.0);
-        data.extend(self.inter_stack.0);
-        data.extend(Value::from(self.on_error).serialize_for_proof());
-        data
-    }
-
-    fn hash(&self) -> Bytes32 {
-        Keccak256::new()
-            .chain(Self::GUARD_PREFIX)
-            .chain(self.frame_stack)
-            .chain(self.value_stack)
-            .chain(self.inter_stack)
-            .chain(Value::InternalRef(self.on_error).hash())
-            .finalize()
-            .into()
-    }
-
-    fn hash_guards(guards: &[Self]) -> Bytes32 {
-        hash_stack(guards.iter().map(|g| g.hash()), Self::STACK_PREFIX)
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
     frame_stack: Vec<StackFrame>,
-    guards: Vec<ErrorGuard>,
+    guards: ErrorGuardStack,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -881,7 +808,7 @@ type FrameStackHash = Bytes32;
 type ValueStackHash = Bytes32;
 type InterStackHash = Bytes32;
 
-fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
+pub(crate) fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
 where
     I: IntoIterator<Item = D>,
     D: AsRef<[u8]>,
@@ -1422,7 +1349,7 @@ impl Machine {
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
-            guards: vec![],
+            guards: Default::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info,
@@ -1477,7 +1404,7 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
-            guards: vec![],
+            guards: Default::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
@@ -1787,7 +1714,8 @@ impl Machine {
                     machine.print_backtrace(true);
                 };
 
-                if let Some(guard) = self.guards.pop() {
+                if self.guards.enabled && !self.guards.is_empty() {
+                    let guard = self.guards.pop().unwrap();
                     if self.debug_info {
                         print_debug_info(self);
                     }
@@ -2388,10 +2316,16 @@ impl Machine {
                         on_error: self.pc,
                     });
                     self.value_stack.push(1_u32.into());
+                    self.guards.enabled = true;
                     reset_refs!();
                 }
                 Opcode::PopErrorGuard => {
                     self.guards.pop();
+                    self.guards.enabled = false;
+                }
+                Opcode::SetErrorPolicy => {
+                    let status = self.value_stack.pop().unwrap().assume_u32();
+                    self.guards.enabled = status != 0;
                 }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
@@ -2574,8 +2508,7 @@ impl Machine {
                 h.update(self.get_modules_root());
 
                 if !guards.is_empty() {
-                    h.update(b"With guards:");
-                    h.update(ErrorGuardProof::hash_guards(&guards));
+                    h.update(ErrorGuardProof::hash_guards(&guards, self.guards.enabled));
                 }
             }
             MachineStatus::Finished => {
@@ -2863,8 +2796,9 @@ impl Machine {
             data.push(0);
         } else {
             let last_idx = guards.len() - 1;
-            data.extend(ErrorGuardProof::hash_guards(&guards[..last_idx]));
-            data.push(1);
+            let enabled = self.guards.enabled;
+            data.extend(ErrorGuardProof::hash_guards(&guards[..last_idx], enabled));
+            data.push(1 + enabled as u8);
             data.extend(guards[last_idx].serialize_for_proof());
         }
         data

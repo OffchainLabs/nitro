@@ -165,6 +165,8 @@ pub enum Opcode {
     PushErrorGuard,
     /// Drops the innermost error scope
     PopErrorGuard,
+    /// Determines whether to bypass error scopes
+    SetErrorPolicy,
     /// Dynamically adds a module to the replay machine
     LinkModule,
     /// Dynamically removes the last module to the replay machine
@@ -286,6 +288,7 @@ impl Opcode {
             Opcode::UnlinkModule => 0x8024,
             Opcode::PushErrorGuard => 0x8025,
             Opcode::PopErrorGuard => 0x8026,
+            Opcode::SetErrorPolicy => 0x8027,
             Opcode::HaltAndSetFinished => 0x8022,
         }
     }

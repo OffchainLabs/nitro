@@ -6,6 +6,11 @@ use arbutil::evm::{
     js::{ApiValue, JsCallIntoGo},
 };
 
+#[link(wasm_import_module = "hostio")]
+extern "C" {
+    fn wavm_set_error_policy(status: u32);
+}
+
 #[link(wasm_import_module = "go_stub")]
 extern "C" {
     fn run_api_closure(
@@ -40,6 +45,8 @@ impl JsCallIntoGo for ApiCaller {
 
         let api_id = self.api_id;
         unsafe {
+            wavm_set_error_policy(0); // disable error recovery
+
             let count = run_api_closure(api_id, method, data.as_ptr(), lens.as_ptr(), args.len());
             let mut lens = vec![0_usize; count];
             read_api_result_lens(lens.as_mut_ptr());
@@ -48,7 +55,9 @@ impl JsCallIntoGo for ApiCaller {
             let data: Vec<_> = outs.iter_mut().map(Vec::as_mut_ptr).collect();
             move_api_result_data(data.as_ptr());
 
-            outs.into_iter().map(ApiValue).collect()
+            let outs = outs.into_iter().map(ApiValue).collect();
+            wavm_set_error_policy(1); // re-enable error recovery
+            outs
         }
     }
 }
