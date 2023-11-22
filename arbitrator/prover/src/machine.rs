@@ -2316,12 +2316,10 @@ impl Machine {
                         on_error: self.pc,
                     });
                     self.value_stack.push(1_u32.into());
-                    self.guards.enabled = true;
                     reset_refs!();
                 }
                 Opcode::PopErrorGuard => {
                     self.guards.pop();
-                    self.guards.enabled = false;
                 }
                 Opcode::SetErrorPolicy => {
                     let status = self.value_stack.pop().unwrap().assume_u32();
