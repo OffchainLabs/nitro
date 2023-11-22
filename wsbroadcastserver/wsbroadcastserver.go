@@ -23,6 +23,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -32,6 +33,8 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
+	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/upgrade/duration", nil)
+	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
 )
 
 const (
@@ -60,6 +63,7 @@ type BroadcasterConfig struct {
 	EnableCompression  bool                    `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
+	MaxCatchup         int                     `koanf:"max-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
 	ClientDelay        time.Duration           `koanf:"client-delay" reload:"hot"`
 }
@@ -83,7 +87,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
 	f.Duration(prefix+".ping", DefaultBroadcasterConfig.Ping, "duration for ping interval")
 	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
-	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
+	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size for HTTP to WS upgrade")
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")
@@ -93,6 +97,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
+	f.Int(prefix+".max-catchup", DefaultBroadcasterConfig.MaxCatchup, "the maximum size of the catchup buffer (-1 means unlimited)")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
 	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay the first messages sent to each client by this amount")
 }
@@ -117,6 +122,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	EnableCompression:  true,
 	RequireCompression: false,
 	LimitCatchup:       false,
+	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
 }
@@ -141,6 +147,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	EnableCompression:  true,
 	RequireCompression: false,
 	LimitCatchup:       false,
+	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
 }
@@ -197,7 +204,11 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
 	})
 
-	return s.StartWithHeader(ctx, header)
+	startTime := time.Now()
+	err := s.StartWithHeader(ctx, header)
+	elapsed := time.Since(startTime)
+	startWithHeaderTimer.Update(elapsed)
+	return err
 }
 
 func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
@@ -312,7 +323,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
+		startTime := time.Now()
 		_, err = upgrader.Upgrade(conn)
+		elapsed := time.Since(startTime)
+		upgradeToWSTimer.Update(elapsed)
 
 		if err != nil {
 			if err.Error() != "" {

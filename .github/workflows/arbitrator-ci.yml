@@ -3,6 +3,7 @@ run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_r
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
     paths:
       - 'arbitrator/**'
@@ -24,7 +25,7 @@ jobs:
     runs-on: ubuntu-8
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -48,23 +49,18 @@ jobs:
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: "stable"
-          override: true
           components: 'llvm-tools-preview, rustfmt, clippy'
+          targets: 'wasm32-wasi, wasm32-unknown-unknown'
 
       - name: Install grcov
-        uses: actions-rs/install@v0.1
+        uses: jaxxstorm/action-install-gh-release@v1.10.0
         with:
-          crate: grcov
-          version: latest
-          use-tool-cache: true
-
-      - name: Install rust wasm targets
-        run: rustup target add wasm32-wasi wasm32-unknown-unknown
+          repo: mozilla/grcov
+          tag: v0.8.18
+          extension: "\\.bz2"
+          cache: enable
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
@@ -147,22 +143,13 @@ jobs:
           echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
 
       - name: Clippy check
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all --manifest-path arbitrator/Cargo.toml -- -D warnings
+        run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all --manifest-path arbitrator/Cargo.toml
+        run: cargo test --all --manifest-path arbitrator/Cargo.toml
 
       - name: Rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all --manifest-path arbitrator/Cargo.toml -- --check
+        run: cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs

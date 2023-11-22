@@ -64,7 +64,7 @@ func TestStorageBackedInt64(t *testing.T) {
 
 func TestStorageSlots(t *testing.T) {
 	state, _ := NewArbosMemoryBackedArbOSState()
-	sto := state.BackingStorage().OpenSubStorage([]byte{})
+	sto := state.BackingStorage().OpenCachedSubStorage([]byte{})
 
 	println("nil address", colors.Blue, storage.NilAddressRepresentation.String(), colors.Clear)
 

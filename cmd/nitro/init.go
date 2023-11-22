@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -33,12 +34,13 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/spf13/pflag"
@@ -50,7 +52,7 @@ type InitConfig struct {
 	DownloadPath    string        `koanf:"download-path"`
 	DownloadPoll    time.Duration `koanf:"download-poll"`
 	DevInit         bool          `koanf:"dev-init"`
-	DevInitAddr     string        `koanf:"dev-init-address"`
+	DevInitAddress  string        `koanf:"dev-init-address"`
 	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
 	Empty           bool          `koanf:"empty"`
 	AccountsPerSync uint          `koanf:"accounts-per-sync"`
@@ -58,7 +60,7 @@ type InitConfig struct {
 	ThenQuit        bool          `koanf:"then-quit"`
 	Prune           string        `koanf:"prune"`
 	PruneBloomSize  uint64        `koanf:"prune-bloom-size"`
-	ResetToMsg      int64         `koanf:"reset-to-message"`
+	ResetToMessage  int64         `koanf:"reset-to-message"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -67,14 +69,14 @@ var InitConfigDefault = InitConfig{
 	DownloadPath:    "/tmp/",
 	DownloadPoll:    time.Minute,
 	DevInit:         false,
-	DevInitAddr:     "",
+	DevInitAddress:  "",
 	DevInitBlockNum: 0,
 	ImportFile:      "",
 	AccountsPerSync: 100000,
 	ThenQuit:        false,
 	Prune:           "",
 	PruneBloomSize:  2048,
-	ResetToMsg:      -1,
+	ResetToMessage:  -1,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -83,15 +85,15 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
-	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddr, "Address of dev-account. Leave empty to use the dev-wallet.")
+	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
-	f.Bool(prefix+".empty", InitConfigDefault.DevInit, "init with empty state")
+	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
-	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMsg, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
+	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 }
 
 func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
@@ -267,7 +269,7 @@ var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{
 // Finds important roots to retain while proving
 func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) ([]common.Hash, error) {
 	initConfig := &nodeConfig.Init
-	chainConfig := execution.TryReadStoredChainConfig(chainDb)
+	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
@@ -295,7 +297,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		return nil, err
 	}
 	if initConfig.Prune == "validator" {
-		if l1Client == nil {
+		if l1Client == nil || reflect.ValueOf(l1Client).IsNil() {
 			return nil, errors.New("an L1 connection is required for validator pruning")
 		}
 		callOpts := bind.CallOpts{
@@ -329,7 +331,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
+		validatorDb := rawdb.NewTable(arbDb, storage.BlockValidatorPrefix)
 		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
@@ -419,17 +421,16 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 }
 
 func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) error {
-	trieCachePath := cacheConfig.TrieCleanJournal
 	config := &nodeConfig.Init
 	if config.Prune == "" {
-		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, trieCachePath)
+		return pruner.RecoverPruning(stack.InstanceDir(), chainDb)
 	}
 	root, err := findImportantRoots(ctx, chainDb, stack, nodeConfig, cacheConfig, l1Client, rollupAddrs)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
 
-	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), Cachedir: trieCachePath, BloomSize: config.PruneBloomSize})
+	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: config.PruneBloomSize})
 	if err != nil {
 		return err
 	}
@@ -439,9 +440,9 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
-			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
+			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -449,7 +450,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -486,7 +487,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 	if err != nil {
 		return chainDb, nil, err
 	}
@@ -514,7 +515,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			NextBlockNumber: config.Init.DevInitBlockNum,
 			Accounts: []statetransfer.AccountInitializationInfo{
 				{
-					Addr:       common.HexToAddress(config.Init.DevInitAddr),
+					Addr:       common.HexToAddress(config.Init.DevInitAddress),
 					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
 					Nonce:      0,
 				},
@@ -528,11 +529,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
-		chainConfig = execution.TryReadStoredChainConfig(chainDb)
+		chainConfig = gethexec.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -550,15 +551,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		combinedL2ChainInfoFiles := config.L2.ChainInfoFiles
-		if config.L2.ChainInfoIpfsUrl != "" {
-			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, config.L2.ChainInfoIpfsUrl, config.L2.ChainInfoIpfsDownloadPath)
+		combinedL2ChainInfoFiles := config.Chain.InfoFiles
+		if config.Chain.InfoIpfsUrl != "" {
+			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, config.Chain.InfoIpfsUrl, config.Chain.InfoIpfsDownloadPath)
 			if err != nil {
 				log.Error("error getting l2 chain info file from ipfs", "err", err)
 			}
 			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
 		}
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, combinedL2ChainInfoFiles, config.L2.ChainInfoJson)
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, combinedL2ChainInfoFiles, config.Chain.InfoJson)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -583,7 +584,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			cacheConfig.SnapshotWait = true
 		}
 		var parsedInitMessage *arbostypes.ParsedInitMessage
-		if config.Node.L1Reader.Enable {
+		if config.Node.ParentChainReader.Enable {
 			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 			if err != nil {
 				return chainDb, nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
@@ -630,7 +631,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
-		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
@@ -23,8 +22,7 @@ func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.Global
 }
 
 type BlockValidatorDebugAPI struct {
-	val        *staker.StatelessBlockValidator
-	blockchain *core.BlockChain
+	val *staker.StatelessBlockValidator
 }
 
 type ValidateBlockResult struct {

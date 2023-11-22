@@ -14,22 +14,22 @@ const PASSWORD_NOT_SET = "PASSWORD_NOT_SET"
 
 type WalletConfig struct {
 	Pathname      string `koanf:"pathname"`
-	PasswordImpl  string `koanf:"password"`
+	Password      string `koanf:"password"`
 	PrivateKey    string `koanf:"private-key"`
 	Account       string `koanf:"account"`
 	OnlyCreateKey bool   `koanf:"only-create-key"`
 }
 
-func (w *WalletConfig) Password() *string {
-	if w.PasswordImpl == PASSWORD_NOT_SET {
+func (w *WalletConfig) Pwd() *string {
+	if w.Password == PASSWORD_NOT_SET {
 		return nil
 	}
-	return &w.PasswordImpl
+	return &w.Password
 }
 
 var WalletConfigDefault = WalletConfig{
 	Pathname:      "",
-	PasswordImpl:  PASSWORD_NOT_SET,
+	Password:      PASSWORD_NOT_SET,
 	PrivateKey:    "",
 	Account:       "",
 	OnlyCreateKey: false,
@@ -37,7 +37,7 @@ var WalletConfigDefault = WalletConfig{
 
 func WalletConfigAddOptions(prefix string, f *flag.FlagSet, defaultPathname string) {
 	f.String(prefix+".pathname", defaultPathname, "pathname for wallet")
-	f.String(prefix+".password", WalletConfigDefault.PasswordImpl, "wallet passphrase")
+	f.String(prefix+".password", WalletConfigDefault.Password, "wallet passphrase")
 	f.String(prefix+".private-key", WalletConfigDefault.PrivateKey, "private key for wallet")
 	f.String(prefix+".account", WalletConfigDefault.Account, "account to use (default is first account in keystore)")
 	f.Bool(prefix+".only-create-key", WalletConfigDefault.OnlyCreateKey, "if true, creates new key then exits")

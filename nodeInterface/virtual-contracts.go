@@ -53,6 +53,7 @@ func init() {
 		statedb *state.StateDB,
 		header *types.Header,
 		backend core.NodeInterfaceBackendAPI,
+		blockCtx *vm.BlockContext,
 	) (*core.Message, *ExecutionResult, error) {
 		to := msg.To
 		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
@@ -87,10 +88,7 @@ func init() {
 				return msg, nil, nil
 			}
 
-			evm, vmError, err := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true})
-			if err != nil {
-				return msg, nil, err
-			}
+			evm, vmError := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
 			go func() {
 				<-ctx.Done()
 				evm.Cancel()
@@ -137,7 +135,12 @@ func init() {
 			return
 		}
 
-		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress)
+		brotliCompressionLevel, err := state.BrotliCompressionLevel()
+		if err != nil {
+			log.Error("failed to get brotli compression level", "err", err)
+			return
+		}
+		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 		posterCostInL2Gas := arbos.GetPosterGas(state, header.BaseFee, msg.TxRunMode, posterCost)
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
@@ -180,4 +183,16 @@ func arbNodeFromNodeInterfaceBackend(backend BackendAPI) (*arbnode.Node, error) 
 		return nil, errors.New("failed to get Arbitrum Node from backend")
 	}
 	return arbNode, nil
+}
+
+func blockchainFromNodeInterfaceBackend(backend BackendAPI) (*core.BlockChain, error) {
+	apiBackend, ok := backend.(*arbitrum.APIBackend)
+	if !ok {
+		return nil, errors.New("API backend isn't Arbitrum")
+	}
+	bc := apiBackend.BlockChain()
+	if bc == nil {
+		return nil, errors.New("failed to get Blockchain from backend")
+	}
+	return bc, nil
 }

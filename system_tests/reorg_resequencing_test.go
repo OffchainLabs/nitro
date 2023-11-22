@@ -19,27 +19,28 @@ func TestReorgResequencing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	startMsgCount, err := node.TxStreamer.GetMessageCount()
+	startMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
-	l2info.GenerateAccount("Intermediate")
-	l2info.GenerateAccount("User1")
-	l2info.GenerateAccount("User2")
-	l2info.GenerateAccount("User3")
-	l2info.GenerateAccount("User4")
-	TransferBalance(t, "Owner", "User1", big.NewInt(params.Ether), l2info, client, ctx)
-	TransferBalance(t, "Owner", "Intermediate", big.NewInt(params.Ether*3), l2info, client, ctx)
-	TransferBalance(t, "Intermediate", "User2", big.NewInt(params.Ether), l2info, client, ctx)
-	TransferBalance(t, "Intermediate", "User3", big.NewInt(params.Ether), l2info, client, ctx)
+	builder.L2Info.GenerateAccount("Intermediate")
+	builder.L2Info.GenerateAccount("User1")
+	builder.L2Info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("User3")
+	builder.L2Info.GenerateAccount("User4")
+	builder.L2.TransferBalance(t, "Owner", "User1", big.NewInt(params.Ether), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "Intermediate", big.NewInt(params.Ether*3), builder.L2Info)
+	builder.L2.TransferBalance(t, "Intermediate", "User2", big.NewInt(params.Ether), builder.L2Info)
+	builder.L2.TransferBalance(t, "Intermediate", "User3", big.NewInt(params.Ether), builder.L2Info)
 
 	// Intermediate does not have exactly 1 ether because of fees
 	accountsWithBalance := []string{"User1", "User2", "User3"}
 	verifyBalances := func(scenario string) {
 		for _, account := range accountsWithBalance {
-			balance, err := client.BalanceAt(ctx, l2info.GetAddress(account), nil)
+			balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress(account), nil)
 			Require(t, err)
 			if balance.Int64() != params.Ether {
 				Fatal(t, "expected account", account, "to have a balance of 1 ether but instead it has", balance, "wei "+scenario)
@@ -48,15 +49,15 @@ func TestReorgResequencing(t *testing.T) {
 	}
 	verifyBalances("before reorg")
 
-	err = node.TxStreamer.ReorgTo(startMsgCount)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
 
-	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
+	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbostypes.L1IncomingMessage{
@@ -68,24 +69,24 @@ func TestReorgResequencing(t *testing.T) {
 			RequestId:   &delayedIndexHash,
 			L1BaseFee:   common.Big0,
 		},
-		L2msg: append(l2info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
+		L2msg: append(builder.L2Info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
 	}
-	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
+	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
 	}})
 	Require(t, err)
 
-	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
 	verifyBalances("after reorg with new deposit")
 
-	err = node.TxStreamer.ReorgTo(startMsgCount)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	_, err = node.Execution.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")

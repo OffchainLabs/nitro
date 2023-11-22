@@ -2,8 +2,9 @@
   {
     "chain-name": "arb1",
     "parent-chain-id": 1,
+    "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://arb1-sequencer.arbitrum.io/rpc",
-    "feed-url": "wss://arb1.arbitrum.io/feed",
+    "feed-url": "wss://arb1-feed.arbitrum.io/feed",
     "has-genesis-state": true,
     "chain-config":
     {
@@ -51,8 +52,9 @@
   {
     "chain-name": "nova",
     "parent-chain-id": 1,
+    "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://nova.arbitrum.io/rpc",
-    "feed-url": "wss://nova.arbitrum.io/feed",
+    "feed-url": "wss://nova-feed.arbitrum.io/feed",
     "das-index-url": "https://nova.arbitrum.io/das-servers",
     "chain-config":
     {
@@ -100,6 +102,7 @@
   {
     "chain-name": "goerli-rollup",
     "parent-chain-id": 5,
+    "parent-chain-is-arbitrum": false,
     "sequencer-url": "https://goerli-rollup.arbitrum.io/rpc",
     "feed-url": "wss://goerli-rollup.arbitrum.io/feed",
     "chain-config":
@@ -213,6 +216,56 @@
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }
+    }
+  },
+  {
+    "chain-id": 421614,
+    "parent-chain-id": 11155111,
+    "parent-chain-is-arbitrum": false,
+    "chain-name": "sepolia-rollup",
+    "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
+    "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
+    "chain-config":
+    {
+      "chainId": 421614,
+      "homesteadBlock": 0,
+      "daoForkBlock": null,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "clique":
+      {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum":
+      {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": false,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 10,
+        "InitialChainOwner": "0x71B61c2E250AFa05dFc36304D6c91501bE0965D8",
+        "GenesisBlockNum": 0
+      }
+    },
+    "rollup":
+    {
+      "bridge": "0x38f918D0E9F1b721EDaA41302E399fa1B79333a9",
+      "inbox": "0xaAe29B0366299461418F5324a79Afc425BE5ae21",
+      "sequencer-inbox": "0x6c97864CE4bEf387dE0b3310A44230f7E3F1be0D",
+      "rollup": "0xd80810638dbDF9081b72C1B33c65375e807281C8",
+      "validator-utils": "0x1f6860C3cac255fFFa72B7410b1183c3a0D261e0",
+      "validator-wallet-creator": "0x894fC71fA0A666352824EC954B401573C861D664",
+      "deployed-at": 4139226
     }
   }
 ]

@@ -17,6 +17,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
@@ -24,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -38,10 +40,11 @@ type DAServerConfig struct {
 	RESTPort           uint64                              `koanf:"rest-port"`
 	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
 
-	DAConf das.DataAvailabilityConfig `koanf:"data-availability"`
+	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
 
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
-	LogLevel   int                    `koanf:"log-level"`
+	Conf     genericconf.ConfConfig `koanf:"conf"`
+	LogLevel int                    `koanf:"log-level"`
+	LogType  string                 `koanf:"log-type"`
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -58,13 +61,14 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTAddr:           "localhost",
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
-	DAConf:             das.DefaultDataAvailabilityConfig,
-	ConfConfig:         genericconf.ConfConfigDefault,
+	DataAvailability:   das.DefaultDataAvailabilityConfig,
+	Conf:               genericconf.ConfConfigDefault,
+	LogLevel:           int(log.LvlInfo),
+	LogType:            "plaintext",
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
 	PProf:              false,
 	PprofCfg:           genericconf.PProfDefault,
-	LogLevel:           3,
 }
 
 func main() {
@@ -97,6 +101,8 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
+	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
+
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -109,7 +115,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	if err := confighelpers.EndCommonParse(k, &serverConfig); err != nil {
 		return nil, err
 	}
-	if serverConfig.ConfConfig.Dump {
+	if serverConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"data-availability.key.priv-key": "",
 		})
@@ -148,6 +154,9 @@ func (c *L1ReaderCloser) String() string {
 func startMetrics(cfg *DAServerConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
+	if cfg.Metrics && !metrics.Enabled {
+		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
+	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
 		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
@@ -173,7 +182,12 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	logFormat, err := genericconf.ParseLogType(serverConfig.LogType)
+	if err != nil {
+		flag.Usage()
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
@@ -188,22 +202,23 @@ func startup() error {
 	defer cancel()
 
 	var l1Reader *headerreader.HeaderReader
-	if serverConfig.DAConf.L1NodeURL != "" && serverConfig.DAConf.L1NodeURL != "none" {
-		l1Client, err := das.GetL1Client(ctx, serverConfig.DAConf.L1ConnectionAttempts, serverConfig.DAConf.L1NodeURL)
+	if serverConfig.DataAvailability.ParentChainNodeURL != "" && serverConfig.DataAvailability.ParentChainNodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, serverConfig.DataAvailability.ParentChainConnectionAttempts, serverConfig.DataAvailability.ParentChainNodeURL)
 		if err != nil {
 			return err
 		}
-		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
 		if err != nil {
 			return err
 		}
 	}
 
 	var seqInboxAddress *common.Address
-	if serverConfig.DAConf.SequencerInboxAddress == "none" {
+	if serverConfig.DataAvailability.SequencerInboxAddress == "none" {
 		seqInboxAddress = nil
-	} else if len(serverConfig.DAConf.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DAConf.SequencerInboxAddress)
+	} else if len(serverConfig.DataAvailability.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DataAvailability.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
@@ -214,7 +229,7 @@ func startup() error {
 		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
 	}
 
-	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
+	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}
@@ -224,7 +239,7 @@ func startup() error {
 		dasLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
-	vcsRevision, vcsTime := confighelpers.GetVersion()
+	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)

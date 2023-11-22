@@ -20,9 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -69,20 +73,24 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable                   bool                     `koanf:"enable"`
-	Strategy                 string                   `koanf:"strategy"`
-	StakerInterval           time.Duration            `koanf:"staker-interval"`
-	MakeAssertionInterval    time.Duration            `koanf:"make-assertion-interval"`
-	L1PostingStrategy        L1PostingStrategy        `koanf:"posting-strategy"`
-	DisableChallenge         bool                     `koanf:"disable-challenge"`
-	ConfirmationBlocks       int64                    `koanf:"confirmation-blocks"`
-	UseSmartContractWallet   bool                     `koanf:"use-smart-contract-wallet"`
-	OnlyCreateWalletContract bool                     `koanf:"only-create-wallet-contract"`
-	StartFromStaked          bool                     `koanf:"start-validation-from-staked"`
-	ContractWalletAddress    string                   `koanf:"contract-wallet-address"`
-	GasRefunderAddress       string                   `koanf:"gas-refunder-address"`
-	Dangerous                DangerousConfig          `koanf:"dangerous"`
-	L1Wallet                 genericconf.WalletConfig `koanf:"parent-chain-wallet"`
+	Enable                    bool                        `koanf:"enable"`
+	Strategy                  string                      `koanf:"strategy"`
+	StakerInterval            time.Duration               `koanf:"staker-interval"`
+	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
+	PostingStrategy           L1PostingStrategy           `koanf:"posting-strategy"`
+	DisableChallenge          bool                        `koanf:"disable-challenge"`
+	ConfirmationBlocks        int64                       `koanf:"confirmation-blocks"`
+	UseSmartContractWallet    bool                        `koanf:"use-smart-contract-wallet"`
+	OnlyCreateWalletContract  bool                        `koanf:"only-create-wallet-contract"`
+	StartValidationFromStaked bool                        `koanf:"start-validation-from-staked"`
+	ContractWalletAddress     string                      `koanf:"contract-wallet-address"`
+	GasRefunderAddress        string                      `koanf:"gas-refunder-address"`
+	DataPoster                dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                  string                      `koanf:"redis-url"`
+	RedisLock                 redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
+	Dangerous                 DangerousConfig             `koanf:"dangerous"`
+	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -132,25 +140,50 @@ func (c *L1ValidatorConfig) Validate() error {
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
-	Enable:                   true,
-	Strategy:                 "Watchtower",
-	StakerInterval:           time.Minute,
-	MakeAssertionInterval:    time.Hour,
-	L1PostingStrategy:        L1PostingStrategy{},
-	DisableChallenge:         false,
-	ConfirmationBlocks:       12,
-	UseSmartContractWallet:   false,
-	OnlyCreateWalletContract: false,
-	StartFromStaked:          true,
-	ContractWalletAddress:    "",
-	GasRefunderAddress:       "",
-	Dangerous:                DefaultDangerousConfig,
-	L1Wallet:                 DefaultValidatorL1WalletConfig,
+	Enable:                    true,
+	Strategy:                  "Watchtower",
+	StakerInterval:            time.Minute,
+	MakeAssertionInterval:     time.Hour,
+	PostingStrategy:           L1PostingStrategy{},
+	DisableChallenge:          false,
+	ConfirmationBlocks:        12,
+	UseSmartContractWallet:    false,
+	OnlyCreateWalletContract:  false,
+	StartValidationFromStaked: true,
+	ContractWalletAddress:     "",
+	GasRefunderAddress:        "",
+	DataPoster:                dataposter.DefaultDataPosterConfigForValidator,
+	RedisUrl:                  "",
+	RedisLock:                 redislock.DefaultCfg,
+	ExtraGas:                  50000,
+	Dangerous:                 DefaultDangerousConfig,
+	ParentChainWallet:         DefaultValidatorL1WalletConfig,
+}
+
+var TestL1ValidatorConfig = L1ValidatorConfig{
+	Enable:                    true,
+	Strategy:                  "Watchtower",
+	StakerInterval:            time.Millisecond * 10,
+	MakeAssertionInterval:     -time.Hour * 1000,
+	PostingStrategy:           L1PostingStrategy{},
+	DisableChallenge:          false,
+	ConfirmationBlocks:        0,
+	UseSmartContractWallet:    false,
+	OnlyCreateWalletContract:  false,
+	StartValidationFromStaked: true,
+	ContractWalletAddress:     "",
+	GasRefunderAddress:        "",
+	DataPoster:                dataposter.TestDataPosterConfigForValidator,
+	RedisUrl:                  "",
+	RedisLock:                 redislock.DefaultCfg,
+	ExtraGas:                  50000,
+	Dangerous:                 DefaultDangerousConfig,
+	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
 	Pathname:      "validator-wallet",
-	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	Password:      genericconf.WalletConfigDefault.Password,
 	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
 	Account:       genericconf.WalletConfigDefault.Account,
 	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
@@ -166,11 +199,15 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
-	f.Bool(prefix+".start-validation-from-staked", DefaultL1ValidatorConfig.StartFromStaked, "assume staked nodes are valid")
+	f.Bool(prefix+".start-validation-from-staked", DefaultL1ValidatorConfig.StartValidationFromStaked, "assume staked nodes are valid")
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
+	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
+	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
+	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
-	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.L1Wallet.Pathname)
+	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 }
 
 type DangerousConfig struct {
@@ -204,7 +241,7 @@ type LatestConfirmedNotifier interface {
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
-	l1Reader                L1ReaderInterface
+	l1Reader                *headerreader.HeaderReader
 	stakedNotifiers         []LatestStakedNotifier
 	confirmedNotifiers      []LatestConfirmedNotifier
 	activeChallenge         *ChallengeManager
@@ -219,8 +256,29 @@ type Staker struct {
 	fatalErr                chan<- error
 }
 
+type ValidatorWalletInterface interface {
+	Initialize(context.Context) error
+	// Address must be able to be called concurrently with other functions
+	Address() *common.Address
+	// Address must be able to be called concurrently with other functions
+	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
+	RollupAddress() common.Address
+	ChallengeManagerAddress() common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	CanBatchTxs() bool
+	AuthIfEoa() *bind.TransactOpts
+	Start(context.Context)
+	StopAndWait()
+	// May be nil
+	DataPoster() *dataposter.DataPoster
+}
+
 func NewStaker(
-	l1Reader L1ReaderInterface,
+	l1Reader *headerreader.HeaderReader,
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
@@ -242,7 +300,7 @@ func NewStaker(
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
-	if config.StartFromStaked && blockValidator != nil {
+	if config.StartValidationFromStaked && blockValidator != nil {
 		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
 	return &Staker{
@@ -252,7 +310,7 @@ func NewStaker(
 		confirmedNotifiers:      confirmedNotifiers,
 		baseCallOpts:            callOpts,
 		config:                  config,
-		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
+		highGasBlocksBuffer:     big.NewInt(config.PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:      nil,
 		inboxReader:             statelessBlockValidator.inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
@@ -269,7 +327,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if walletAddressOrZero != (common.Address{}) {
 		s.updateStakerBalanceMetric(ctx)
 	}
-	if s.blockValidator != nil && s.config.StartFromStaked {
+	if s.blockValidator != nil && s.config.StartValidationFromStaked {
 		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
 			return err
@@ -335,7 +393,17 @@ func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address
 	return latestStaked, count, &globalState, nil
 }
 
+func (s *Staker) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+	if s.Strategy() != WatchtowerStrategy {
+		s.wallet.StopAndWait()
+	}
+}
+
 func (s *Staker) Start(ctxIn context.Context) {
+	if s.Strategy() != WatchtowerStrategy {
+		s.wallet.Start(ctxIn)
+	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
@@ -444,7 +512,7 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 		log.Warn("error getting gas price", "err", err)
 	} else {
 		gasPriceFloat = float64(gasPrice.Int64()) / 1e9
-		if gasPriceFloat >= s.config.L1PostingStrategy.HighGasThreshold {
+		if gasPriceFloat >= s.config.PostingStrategy.HighGasThreshold {
 			gasPriceHigh = true
 		}
 	}
@@ -469,14 +537,14 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 	// Clamp `s.highGasBlocksBuffer` to between 0 and HighGasDelayBlocks
 	if s.highGasBlocksBuffer.Sign() < 0 {
 		s.highGasBlocksBuffer.SetInt64(0)
-	} else if s.highGasBlocksBuffer.Cmp(big.NewInt(s.config.L1PostingStrategy.HighGasDelayBlocks)) > 0 {
-		s.highGasBlocksBuffer.SetInt64(s.config.L1PostingStrategy.HighGasDelayBlocks)
+	} else if s.highGasBlocksBuffer.Cmp(big.NewInt(s.config.PostingStrategy.HighGasDelayBlocks)) > 0 {
+		s.highGasBlocksBuffer.SetInt64(s.config.PostingStrategy.HighGasDelayBlocks)
 	}
 	if gasPriceHigh && s.highGasBlocksBuffer.Sign() > 0 {
 		log.Warn(
 			"not acting yet as gas price is high",
 			"gasPrice", gasPriceFloat,
-			"highGasPriceConfig", s.config.L1PostingStrategy.HighGasThreshold,
+			"highGasPriceConfig", s.config.PostingStrategy.HighGasThreshold,
 			"highGasBuffer", s.highGasBlocksBuffer,
 		)
 		return false
@@ -484,8 +552,34 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 	return true
 }
 
+func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
+	dp := s.wallet.DataPoster()
+	if dp == nil {
+		return nil
+	}
+	dataPosterNonce, _, err := dp.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		return err
+	}
+	latestNonce, err := s.l1Reader.Client().NonceAt(ctx, dp.Sender(), nil)
+	if err != nil {
+		return err
+	}
+	if dataPosterNonce > latestNonce {
+		return fmt.Errorf("data poster nonce %v is ahead of on-chain nonce %v -- probably waiting for a pending transaction to be included in a block", dataPosterNonce, latestNonce)
+	}
+	if dataPosterNonce < latestNonce {
+		return fmt.Errorf("data poster nonce %v is behind on-chain nonce %v -- is something else making transactions on this address?", dataPosterNonce, latestNonce)
+	}
+	return nil
+}
+
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if s.config.strategy != WatchtowerStrategy {
+		err := s.confirmDataPosterIsReady(ctx)
+		if err != nil {
+			return nil, err
+		}
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)
@@ -706,8 +800,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.builder,
-			s.builder.builderAuth,
-			*s.builder.wallet.Address(),
+			s.builder.BuilderAuth(),
+			*s.builder.WalletAddress(),
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,

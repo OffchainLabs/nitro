@@ -58,7 +58,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	}
 
 	commit := func() (common.Hash, error) {
-		root, err := statedb.Commit(true)
+		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -189,7 +189,8 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 	for _, r := range retryablesList {
 		var to *common.Address
 		if r.To != (common.Address{}) {
-			to = &r.To
+			addr := r.To
+			to = &addr
 		}
 		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
 		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)

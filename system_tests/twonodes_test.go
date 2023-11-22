@@ -20,24 +20,27 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig = l1NodeConfigA
+	builder.chainConfig = chainConfig
+	builder.L2Info = nil
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
-	l1NodeConfigBDataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
-	defer nodeB.StopAndWait()
+	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{dasConfig: &l1NodeConfigBDataAvailability})
+	defer cleanupB()
 
-	l2info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("User2")
 
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2clientA.SendTransaction(ctx, tx)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -45,15 +48,15 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 
-	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), time.Second*5)
 	Require(t, err)
 
-	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
