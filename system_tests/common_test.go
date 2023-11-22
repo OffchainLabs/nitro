@@ -189,7 +189,7 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	} else {
 		l2 := NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client =
-			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
+			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.chainConfig, b.takeOwnership)
 		b.L2 = l2
 	}
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
@@ -801,7 +801,7 @@ func createTestNodeWithL1(
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func createTestNode(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, takeOwnership bool,
+	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, chainConfig *params.ChainConfig, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL2Test()
@@ -814,7 +814,7 @@ func createTestNode(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", chainConfig, &execConfig.Caching)
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
