@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"math/bits"
 
+	eth_math "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -375,4 +376,15 @@ func SquareFloat(value float64) float64 {
 func BalancePerEther(balance *big.Int) float64 {
 	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
 	return balancePerEther
+}
+
+// U256Bytes converts big Int to 256bit EVM number.
+// This operation makes a copy of big Int.
+func U256Bytes(n *big.Int) []byte {
+	return eth_math.U256Bytes(new(big.Int).Set(n))
+}
+
+// Uint64ToU256Bytes converts uint64 to 256bit EVM number.
+func Uint64ToU256Bytes(n uint64) []byte {
+	return eth_math.U256Bytes(UintToBig(n))
 }
