@@ -269,6 +269,11 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			// Additional pre-transaction validity check
+			if err = extraPreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
+				return nil, nil, err
+			}
+
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
 				brotliCompressionLevel, err := state.BrotliCompressionLevel()
@@ -327,8 +332,9 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			// Additional transaction validity check
-			if err = extraTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info, result); err != nil {
+			// Additional post-transaction validity check
+			if err = extraPostTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info, result); err != nil {
+				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
 
