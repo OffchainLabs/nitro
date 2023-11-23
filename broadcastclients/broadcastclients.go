@@ -166,7 +166,9 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					continue
 				}
 				lastConfirmed = cs
-				bcs.primaryRouter.forwardConfirmationChan <- cs
+				if bcs.primaryRouter.forwardConfirmationChan != nil {
+					bcs.primaryRouter.forwardConfirmationChan <- cs
+				}
 
 			// Secondary Feeds
 			case msg := <-bcs.secondaryRouter.messageChan:
@@ -187,7 +189,9 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					continue
 				}
 				lastConfirmed = cs
-				bcs.secondaryRouter.forwardConfirmationChan <- cs
+				if bcs.secondaryRouter.forwardConfirmationChan != nil {
+					bcs.secondaryRouter.forwardConfirmationChan <- cs
+				}
 
 			// Cycle buckets to get rid of old entries
 			case <-recentFeedItemsCleanup.C:
