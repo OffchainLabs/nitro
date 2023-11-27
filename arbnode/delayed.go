@@ -184,6 +184,8 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	}
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
+	var lastParentChainBlockNumber uint64
+	var lastL1BlockNumber uint64
 	for _, parsedLog := range parsedLogs {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
 		data, ok := messageData[msgKey]
@@ -196,9 +198,17 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
 		parentChainBlockNumber := parsedLog.Raw.BlockNumber
-		l1BlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, b.client, parentChainBlockNumber)
-		if err != nil {
-			return nil, err
+		var l1BlockNumber uint64
+		if lastParentChainBlockNumber == parentChainBlockNumber && lastParentChainBlockNumber > 0 {
+			l1BlockNumber = lastL1BlockNumber
+		} else {
+			var err error
+			l1BlockNumber, err = arbutil.CorrespondingL1BlockNumber(ctx, b.client, parentChainBlockNumber)
+			if err != nil {
+				return nil, err
+			}
+			lastParentChainBlockNumber = parentChainBlockNumber
+			lastL1BlockNumber = l1BlockNumber
 		}
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
@@ -217,7 +227,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			},
 			ParentChainBlockNumber: parsedLog.Raw.BlockNumber,
 		}
-		err = msg.Message.FillInBatchGasCost(batchFetcher)
+		err := msg.Message.FillInBatchGasCost(batchFetcher)
 		if err != nil {
 			return nil, err
 		}

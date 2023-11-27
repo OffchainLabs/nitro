@@ -532,7 +532,9 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize chain config: %w", err)
 	}
-	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
+	// TODO: once we have a safe U256Bytes that does a copy internally, use that instead of doing an explicit copy here
+	chainIdBytes := math.U256Bytes(new(big.Int).Set(s.chainConfig.ChainID))
+	msg := append(append(chainIdBytes, 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
@@ -698,6 +700,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var oldMsg *arbostypes.MessageWithMetadata
 	var lastDelayedRead uint64
 	var hasNewConfirmedMessages bool
+	var cacheClearLen int
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
@@ -726,10 +729,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Or no active broadcast reorg and broadcast messages start before or immediately after last L1 message
 		if messagesAfterPos >= broadcastStartPos {
 			broadcastSliceIndex := int(messagesAfterPos - broadcastStartPos)
+			messagesOldLen := len(messages)
 			if broadcastSliceIndex < len(s.broadcasterQueuedMessages) {
 				// Some cached feed messages can be used
 				messages = append(messages, s.broadcasterQueuedMessages[broadcastSliceIndex:]...)
 			}
+			// This calculation gives the exact length of cache which was appended to messages
+			cacheClearLen = broadcastSliceIndex + len(messages) - messagesOldLen
 		}
 
 		// L1 used or replaced broadcast cache items
@@ -802,8 +808,14 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	if clearQueueOnSuccess {
-		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+		// Check if new messages were added at the end of cache, if they were, then dont remove those particular messages
+		if len(s.broadcasterQueuedMessages) > cacheClearLen {
+			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos)+uint64(cacheClearLen))
+		} else {
+			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+		}
 		s.broadcasterQueuedMessagesActiveReorg = false
 	}
 

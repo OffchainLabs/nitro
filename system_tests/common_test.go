@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -38,6 +39,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/catalyst"
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -478,6 +481,7 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NAT = nil
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 	return &stackConf
 }
 
@@ -490,6 +494,7 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 
@@ -566,7 +571,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesis := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
+	l1Genesis := core.DeveloperGenesisBlock(15_000_000, l1info.GetAddress("Faucet"))
 	infoGenesis := l1info.GetGenesisAlloc()
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
@@ -574,9 +579,16 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
+	nodeConf.SyncMode = downloader.FullSync
 
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
+
+	simBeacon, err := catalyst.NewSimulatedBeacon(0, l1backend)
+	Require(t, err)
+	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
+	stack.RegisterLifecycle(simBeacon)
+
 	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
 	Require(t, err)
@@ -597,8 +609,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	Require(t, stack.Start())
 	Require(t, l1backend.StartMining())
 
-	rpcClient, err := stack.Attach()
-	Require(t, err)
+	rpcClient := stack.Attach()
 
 	l1Client := ethclient.NewClient(rpcClient)
 
@@ -646,7 +657,7 @@ func DeployOnTestL1(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := arbnode.DeployOnL1(
+	addresses, err := deploy.DeployOnL1(
 		ctx,
 		l1Reader,
 		&l1TransactionOpts,
@@ -712,8 +723,7 @@ func createL2BlockChainWithStackConfig(
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient, err := backend.Attach()
-	Require(t, err)
+	rpcClient := backend.Attach()
 	return ethclient.NewClient(rpcClient)
 }
 
@@ -885,10 +895,7 @@ func Create2ndNodeWithConfig(
 		execConfig = gethexec.ConfigDefaultNonSequencerTest()
 	}
 	feedErrChan := make(chan error, 10)
-	l1rpcClient, err := l1stack.Attach()
-	if err != nil {
-		Fatal(t, err)
-	}
+	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
