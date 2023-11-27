@@ -151,6 +151,10 @@ func (machine *JitMachine) prove(
 
 	// send inbox
 	for _, batch := range entry.BatchInfo {
+		var hotShotCommitment [32]byte
+		if batch.HotShotCommitment != nil {
+			hotShotCommitment = *batch.HotShotCommitment
+		}
 		if err := writeExact(another); err != nil {
 			return state, err
 		}
@@ -158,6 +162,9 @@ func (machine *JitMachine) prove(
 			return state, err
 		}
 		if err := writeBytes(batch.Data); err != nil {
+			return state, err
+		}
+		if err := writeExact(hotShotCommitment[:]); err != nil {
 			return state, err
 		}
 	}

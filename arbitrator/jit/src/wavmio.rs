@@ -3,7 +3,7 @@
 
 use crate::{
     gostack::GoStack,
-    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{Escape, HotShotCommitmentMap, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
 
@@ -85,6 +85,14 @@ pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
+pub fn read_hotshot_commitment(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
+    let hotshot_comms = &env.hotshot_comm_map;
+
+    read_hotshot_commitment_impl(&sp, hotshot_comms, "wavmio.readHotShotCommitment")
+}
+
 pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (sp, env) = GoStack::new(sp, &mut env);
     ready_hostio(env)?;
@@ -99,6 +107,32 @@ pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
+}
+
+// Reads a hotshot commitment
+fn read_hotshot_commitment_impl(
+    sp: &GoStack,
+    comm_map: &HotShotCommitmentMap,
+    name: &str,
+) -> MaybeEscape {
+    let msg_num = sp.read_u64(0);
+    let out_ptr = sp.read_u64(1);
+    let out_len = sp.read_u64(2);
+    if out_len != 32 {
+        eprintln!("Go trying to read header bytes with out len {out_len} in {name}");
+        sp.write_u64(5, 0);
+        return Ok(());
+    }
+
+    let message = comm_map.get(&msg_num).unwrap_or(&[0; 32]);
+
+    if out_ptr + 32 > sp.memory_size() {
+        let text = format!("memory bounds exceeded in {}", name);
+        return Escape::hostio(&text);
+    }
+    sp.write_slice(out_ptr, message);
+    sp.write_u64(5, 32);
+    Ok(())
 }
 
 /// Reads an inbox message
@@ -273,7 +307,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
+        let hotshot_comm = socket::read_bytes32(stream)?;
         env.sequencer_messages.insert(position, message);
+        env.hotshot_comm_map.insert(position, hotshot_comm);
     }
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

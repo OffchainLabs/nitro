@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -44,6 +45,12 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
 	return header
+}
+
+func getHotShotCommitment(seqNum uint64) *espresso.Commitment {
+	headerBytes := espresso.Commitment(wavmio.ReadHotShotCommitment(seqNum))
+	log.Info("HotShot commitment", "commit", headerBytes)
+	return &headerBytes
 }
 
 type WavmChainContext struct{}
@@ -238,7 +245,12 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
+		seqNum := wavmio.GetInboxPosition()
+		var hotShotCommitment *espresso.Commitment
+		if chainConfig.Espresso {
+			hotShotCommitment = getHotShotCommitment(seqNum)
+		}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, hotShotCommitment, statedb, chainContext, chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
 		}

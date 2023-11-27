@@ -86,6 +86,8 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+	// Espresso specific flags
+	Espresso bool `koanf:"espresso"`
 }
 
 func (c *BlockValidatorConfig) Validate() error {
@@ -107,6 +109,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
+	f.Bool(prefix+".espresso", DefaultBlockValidatorConfig.Espresso, "if true, hotshot header preimages will be added to validation entries to verify that transactions have been sequenced by espresso")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 }
 

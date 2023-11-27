@@ -39,6 +39,7 @@ var (
 	delayedMsgs        [][]byte
 	delayedMsgFirstPos uint64
 	lastBlockHash      common.Hash
+	hotShotHeader      [32]byte
 	preimages          map[common.Hash][]byte
 	seqAdvanced        uint64
 )
@@ -115,6 +116,14 @@ func StubFinal() {
 
 func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
+}
+
+func ReadHotShotCommitment(seqNum uint64) [32]byte {
+	if seqNum != seqMsgPos {
+		panic(fmt.Sprintf("hotshot header position should be consistent with the sequencer inbox position %d", seqNum))
+	}
+	return hotShotHeader
+
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {

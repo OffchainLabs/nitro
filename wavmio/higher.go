@@ -53,6 +53,11 @@ func ReadInboxMessage(msgNum uint64) []byte {
 	})
 }
 
+func ReadHotShotCommitment(seqNum uint64) (commitment [32]byte) {
+	readHotShotCommitment(seqNum, commitment[:])
+	return
+}
+
 func ReadDelayedInboxMessage(seqNum uint64) []byte {
 	return readBuffer(func(offset uint32, buf []byte) uint32 {
 		return readDelayedInboxMessage(seqNum, offset, buf)

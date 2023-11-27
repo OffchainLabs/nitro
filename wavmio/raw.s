@@ -26,6 +26,10 @@ TEXT ·readInboxMessage(SB), NOSPLIT, $0
   CallImport
   RET
 
+TEXT ·readHotShotCommitment(SB), NOSPLIT, $0
+  CallImport
+  RET
+
 TEXT ·readDelayedInboxMessage(SB), NOSPLIT, $0
   CallImport
   RET

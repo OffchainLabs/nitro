@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -259,6 +260,7 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
+	usingEspresso := v.config.Espresso
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
@@ -288,7 +290,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-	for _, batch := range e.BatchInfo {
+	for i, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
 		}
@@ -304,6 +306,13 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			if err != nil {
 				return err
 			}
+		}
+		if usingEspresso {
+			// TODO: implement client method to fetch real headers
+			// https://github.com/EspressoSystems/espresso-sequencer/issues/771
+			hotShotHeader := espresso.Header{}
+			hotShotCommitment := hotShotHeader.Commit()
+			e.BatchInfo[i].HotShotCommitment = &hotShotCommitment
 		}
 	}
 
