@@ -734,8 +734,17 @@ func createNodeImpl(
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.ValidationServer.URL != "" {
+		var hotShotReader *HotShotReader
+		if config.BlockValidator.Espresso {
+			addr := common.HexToAddress(config.BlockValidator.HotShotAddress)
+			hotShotReader, err = NewHotShotReader(addr, l1client)
+			if err != nil {
+				return nil, err
+			}
+		}
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
+			hotShotReader,
 			inboxTracker,
 			txStreamer,
 			exec,

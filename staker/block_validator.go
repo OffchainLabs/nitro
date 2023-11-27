@@ -87,7 +87,8 @@ type BlockValidatorConfig struct {
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
 	// Espresso specific flags
-	Espresso bool `koanf:"espresso"`
+	Espresso       bool   `koanf:"espresso"`
+	HotShotAddress string `koanf:"hotshot-address"`
 }
 
 func (c *BlockValidatorConfig) Validate() error {

@@ -370,6 +370,12 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 .make:
 	mkdir .make
 
+generate-hotshot-binding:
+	forge build --root espresso-sequencer --out ../out --extra-output-files abi
+	mv ./out/HotShot.sol/HotShot.abi.json ./arbos/espresso/hotshot
+	rm -rf out
+	abigen --abi ./arbos/espresso/hotshot/HotShot.abi.json --pkg hotshot --out ./arbos/espresso/hotshot/hotshot.go
+	rm ./arbos/espresso/hotshot/HotShot.abi.json
 
 # Makefile settings
 

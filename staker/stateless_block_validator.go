@@ -42,6 +42,8 @@ type StatelessBlockValidator struct {
 	db           ethdb.Database
 	daService    arbstate.DataAvailabilityReader
 
+	hotShotReader HotShotReaderInterface
+
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
@@ -70,6 +72,10 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+}
+
+type HotShotReaderInterface interface {
+	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espresso.Commitment, error)
 }
 
 type L1ReaderInterface interface {
@@ -223,6 +229,7 @@ func newValidationEntry(
 
 func NewStatelessBlockValidator(
 	inboxReader InboxReaderInterface,
+	hotShotReader HotShotReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
@@ -239,6 +246,7 @@ func NewStatelessBlockValidator(
 		execSpawner:        execClient,
 		recorder:           recorder,
 		validationSpawners: []validator.ValidationSpawner{valClient},
+		hotShotReader:      hotShotReader,
 		inboxReader:        inboxReader,
 		inboxTracker:       inbox,
 		streamer:           streamer,
@@ -308,11 +316,13 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			}
 		}
 		if usingEspresso {
-			// TODO: implement client method to fetch real headers
-			// https://github.com/EspressoSystems/espresso-sequencer/issues/771
-			hotShotHeader := espresso.Header{}
-			hotShotCommitment := hotShotHeader.Commit()
-			e.BatchInfo[i].HotShotCommitment = &hotShotCommitment
+			batchNum := e.BatchInfo[i].Number
+			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
+			if err != nil {
+				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)
+
+			}
+			e.BatchInfo[i].HotShotCommitment = hotShotCommitment
 		}
 	}
 
