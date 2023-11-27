@@ -47,7 +47,7 @@ type L1IncomingMessageHeader struct {
 	Timestamp          uint64                      `json:"timestamp"`
 	RequestId          *common.Hash                `json:"requestId" rlp:"nilList"`
 	L1BaseFee          *big.Int                    `json:"baseFeeL1"`
-	BlockJustification *EspressoBlockJustification `json:"justification" rlp:"optional"`
+	BlockJustification *EspressoBlockJustification `json:"justification,omitempty" rlp:"optional"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
