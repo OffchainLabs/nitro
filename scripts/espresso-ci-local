@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+make lint
+
+make test-go
+make test-go-challenge
+
+container=$(docker run -d -p 6379:6379 redis)
+trap "exit" INT TERM
+trap "docker rm -f $container" EXIT
+
+make test-go-redis

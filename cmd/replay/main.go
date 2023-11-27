@@ -48,8 +48,7 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 }
 
 func getHotShotCommitment(seqNum uint64) *espresso.Commitment {
-	var headerBytes espresso.Commitment
-	headerBytes = wavmio.ReadHotShotCommitment(seqNum)
+	headerBytes := espresso.Commitment(wavmio.ReadHotShotCommitment(seqNum))
 	log.Info("HotShot commitment", "commit", headerBytes)
 	return &headerBytes
 }
