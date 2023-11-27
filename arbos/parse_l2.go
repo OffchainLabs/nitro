@@ -166,7 +166,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
-		if newTx.Type() == types.ArbitrumSubtypedTxType && features.TxSubtypeSupported(types.GetArbitrumTxSubtype(newTx)) {
+		if newTx.Type() == types.ArbitrumSubtypedTxType && !features.TxSubtypeSupported(types.GetArbitrumTxSubtype(newTx)) {
 
 			return nil, types.ErrTxTypeNotSupported
 		}
