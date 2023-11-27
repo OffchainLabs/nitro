@@ -183,33 +183,30 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	if f.ctx == nil {
 		f.ctx = inctx
 	}
-
-	pos := 0
-	for pos < len(f.targets) {
-		if f.targets[pos] == "" {
-			f.targets = append(f.targets[:pos], f.targets[pos+1:]...)
-		} else {
-			pos += 1
-		}
-	}
-
 	ctx, cancelFunc := f.ctxWithTimeout()
 	defer cancelFunc()
-	pos = 0
-	for pos < len(f.targets) {
-		rpcClient, err := rpc.DialTransport(ctx, f.targets[pos], f.transport)
-		if err != nil {
-			log.Warn("error initializing a forwarding client in txForwarder", "forwarding url", f.targets[pos], "err", err)
-			f.targets = append(f.targets[:pos], f.targets[pos+1:]...)
+	var targets []string
+	var lastError error
+	for _, target := range f.targets {
+		if target == "" {
 			continue
 		}
+		rpcClient, err := rpc.DialTransport(ctx, target, f.transport)
+		if err != nil {
+			log.Warn("error initializing a forwarding client in txForwarder", "forwarding url", target, "err", err)
+			lastError = err
+			continue
+		}
+		targets = append(targets, target)
 		ethClient := ethclient.NewClient(rpcClient)
 		f.rpcClients = append(f.rpcClients, rpcClient)
 		f.ethClients = append(f.ethClients, ethClient)
-		pos += 1
 	}
+	f.targets = targets
 	if len(f.rpcClients) > 0 {
 		f.enabled.Store(true)
+	} else {
+		return lastError
 	}
 	return nil
 }
