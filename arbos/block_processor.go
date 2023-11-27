@@ -138,7 +138,6 @@ func ProduceBlock(
 	if err != nil {
 		return nil, nil, err
 	}
-	message.Header.Features = arbostypes.ArbosVersionBasedFeatureFlags(arbState.ArbOSVersion())
 	var batchFetchErr error
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)

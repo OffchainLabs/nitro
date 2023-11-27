@@ -51,9 +51,8 @@ func RequiredArobosVersionForTxSubtype(txSubtype uint8) uint64 {
 type Features uint8
 
 const (
-	FeatureFlag_Invalid           Features = (1 << 0) // when set indicates that feature flags value is not set to valid value
-	FeatureFlag_ArbitrumTippingTx Features = (1 << 1)
-	FeatureFlag_Reserved          Features = (1 << 7) // could be used to implement future feature format versioning where version = feature_flags & 0x7f
+	FeatureFlag_ArbitrumTippingTx Features = (1 << 0)
+	FeatureFlag_Reserved          Features = (1 << 7) // could be used to implement future feature format versioning e.g. where version = feature_flags & 0x7f
 )
 
 func (f Features) TxSubtypeSupported(subtype uint8) bool {

@@ -844,7 +844,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		Timestamp:   uint64(timestamp),
 		RequestId:   nil,
 		L1BaseFee:   nil,
-		Features:    arbostypes.FeatureFlag_Invalid,
+		Features:    0, // TODO(magic)
 	}
 
 	start := time.Now()

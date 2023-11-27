@@ -285,9 +285,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return nil, err
+	}
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
-
+	header.Features = arbostypes.ArbosVersionBasedFeatureFlags(arbState.ArbOSVersion())
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
@@ -295,7 +299,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
-		nil,
+		arbState,
 		s.bc,
 		s.bc.Config(),
 		hooks,
