@@ -124,17 +124,11 @@ fn read_hotshot_commitment_impl(
         return Ok(());
     }
 
-    macro_rules! error {
-        ($text:expr $(,$args:expr)*) => {{
-            let text = format!($text $(,$args)*);
-            return Escape::hostio(&text)
-        }};
-    }
-
     let message = comm_map.get(&msg_num).unwrap_or(&[0; 32]);
 
     if out_ptr + 32 > sp.memory_size() {
-        error!("memory bounds exceeded in {name}");
+        let text = format!("memory bounds exceeded in {}", name);
+        return Escape::hostio(&text);
     }
     sp.write_slice(out_ptr, message);
     sp.write_u64(5, 32);
