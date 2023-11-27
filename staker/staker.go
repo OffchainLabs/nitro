@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -163,7 +164,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Millisecond * 10,
-	MakeAssertionInterval:     0,
+	MakeAssertionInterval:     -time.Hour * 1000,
 	PostingStrategy:           L1PostingStrategy{},
 	DisableChallenge:          false,
 	ConfirmationBlocks:        0,
@@ -240,7 +241,7 @@ type LatestConfirmedNotifier interface {
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
-	l1Reader                L1ReaderInterface
+	l1Reader                *headerreader.HeaderReader
 	stakedNotifiers         []LatestStakedNotifier
 	confirmedNotifiers      []LatestConfirmedNotifier
 	activeChallenge         *ChallengeManager
@@ -277,7 +278,7 @@ type ValidatorWalletInterface interface {
 }
 
 func NewStaker(
-	l1Reader L1ReaderInterface,
+	l1Reader *headerreader.HeaderReader,
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,

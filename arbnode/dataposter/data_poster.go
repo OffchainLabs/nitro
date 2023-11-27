@@ -823,7 +823,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
 	UseNoOpStorage:         false,
-	LegacyStorageEncoding:  true,
+	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
 }
@@ -847,6 +847,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
+	LegacyStorageEncoding:  false,
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
 }
 
