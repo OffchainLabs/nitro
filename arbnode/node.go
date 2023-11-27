@@ -786,8 +786,23 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
 	}
+	// must init broadcast server before trying to sequence anything
+	if n.BroadcastServer != nil {
+		err = n.BroadcastServer.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting feed broadcast server: %w", err)
+		}
+	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
+	} else {
+		if n.DelayedSequencer != nil {
+			err := n.DelayedSequencer.ForceSequenceDelayed(ctx)
+			if err != nil {
+				return fmt.Errorf("error initially sequencing delayed instructions: %w", err)
+			}
+		}
+		n.Execution.Activate()
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)
@@ -833,12 +848,6 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.L1Reader != nil {
 		n.L1Reader.Start(ctx)
-	}
-	if n.BroadcastServer != nil {
-		err = n.BroadcastServer.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting feed broadcast server: %w", err)
-		}
 	}
 	if n.BroadcastClients != nil {
 		go func() {
