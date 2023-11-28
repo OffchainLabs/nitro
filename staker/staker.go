@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -245,7 +246,7 @@ type LatestConfirmedNotifier interface {
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
-	l1Reader                L1ReaderInterface
+	l1Reader                *headerreader.HeaderReader
 	stakedNotifiers         []LatestStakedNotifier
 	confirmedNotifiers      []LatestConfirmedNotifier
 	activeChallenge         *ChallengeManager
@@ -283,7 +284,7 @@ type ValidatorWalletInterface interface {
 }
 
 func NewStaker(
-	l1Reader L1ReaderInterface,
+	l1Reader *headerreader.HeaderReader,
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
