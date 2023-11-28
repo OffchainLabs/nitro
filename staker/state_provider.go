@@ -8,13 +8,18 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	flag "github.com/spf13/pflag"
+
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -32,33 +37,43 @@ var (
 )
 
 type BoldConfig struct {
-	Enable                             bool   `koanf:"enable"`
-	Mode                               string `koanf:"mode"`
-	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight                uint64 `koanf:"small-step-leaf-height"`
-	NumBigSteps                        uint64 `koanf:"num-big-steps"`
-	ValidatorName                      string `koanf:"validator-name"`
-	MachineLeavesCachePath             string `koanf:"machine-leaves-cache-path"`
-	AssertionPostingIntervalSeconds    uint64 `koanf:"assertion-posting-interval-seconds"`
-	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
-	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
-	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
+	Enable                      bool          `koanf:"enable"`
+	Mode                        string        `koanf:"mode"`
+	ValidatorName               string        `koanf:"validator-name"`
+	MachineLeavesCachePath      string        `koanf:"machine-leaves-cache-path"`
+	AssertionPostingInterval    time.Duration `koanf:"assertion-posting-interval"`
+	AssertionScanningInterval   time.Duration `koanf:"assertion-scanning-interval"`
+	AssertionConfirmingInterval time.Duration `koanf:"assertion-confirming-interval"`
+	EdgeTrackerWakeInterval     time.Duration `koanf:"edge-tracker-wake-interval"`
 }
 
 var DefaultBoldConfig = BoldConfig{
-	Enable:                             false,
-	Mode:                               "make-mode",
-	BlockChallengeLeafHeight:           1 << 5,
-	BigStepLeafHeight:                  1 << 5,
-	SmallStepLeafHeight:                1 << 7,
-	NumBigSteps:                        5,
-	ValidatorName:                      "default-validator",
-	MachineLeavesCachePath:             "/tmp/machine-leaves-cache",
-	AssertionPostingIntervalSeconds:    30,
-	AssertionScanningIntervalSeconds:   30,
-	AssertionConfirmingIntervalSeconds: 60,
-	EdgeTrackerWakeIntervalSeconds:     1,
+	Enable:                      false,
+	Mode:                        "make-mode",
+	ValidatorName:               "default-validator",
+	MachineLeavesCachePath:      "/tmp/machine-leaves-cache",
+	AssertionPostingInterval:    30 * time.Second,
+	AssertionScanningInterval:   30 * time.Second,
+	AssertionConfirmingInterval: 60 * time.Second,
+	EdgeTrackerWakeInterval:     1 * time.Second,
+}
+
+var BoldModes = map[string]types.Mode{
+	"watch-tower-mode": types.WatchTowerMode,
+	"resolve-mode":     types.ResolveMode,
+	"defensive-mode":   types.DefensiveMode,
+	"make-mode":        types.MakeMode,
+}
+
+func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold protocol")
+	f.String(prefix+".mode", DefaultBoldConfig.Mode, "mode for bold protocol")
+	f.String(prefix+".validator-name", DefaultBoldConfig.ValidatorName, "name of validator")
+	f.String(prefix+".machine-leaves-cache-path", DefaultBoldConfig.MachineLeavesCachePath, "path to machine leaves cache")
+	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "interval for posting assertions")
+	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "interval for scanning assertions")
+	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "interval for confirming assertions")
+	f.Duration(prefix+".edge-tracker-wake-interval", DefaultBoldConfig.EdgeTrackerWakeInterval, "interval for waking edge tracker")
 }
 
 type StateManager struct {
