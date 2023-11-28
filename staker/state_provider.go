@@ -8,13 +8,19 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	flag "github.com/spf13/pflag"
+
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/mmap"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -32,33 +38,43 @@ var (
 )
 
 type BoldConfig struct {
-	Enable                             bool   `koanf:"enable"`
-	Mode                               string `koanf:"mode"`
-	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight                uint64 `koanf:"small-step-leaf-height"`
-	NumBigSteps                        uint64 `koanf:"num-big-steps"`
-	ValidatorName                      string `koanf:"validator-name"`
-	MachineLeavesCachePath             string `koanf:"machine-leaves-cache-path"`
-	AssertionPostingIntervalSeconds    uint64 `koanf:"assertion-posting-interval-seconds"`
-	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
-	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
-	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
+	Enable                      bool          `koanf:"enable"`
+	Mode                        string        `koanf:"mode"`
+	ValidatorName               string        `koanf:"validator-name"`
+	MachineLeavesCachePath      string        `koanf:"machine-leaves-cache-path"`
+	AssertionPostingInterval    time.Duration `koanf:"assertion-posting-interval"`
+	AssertionScanningInterval   time.Duration `koanf:"assertion-scanning-interval"`
+	AssertionConfirmingInterval time.Duration `koanf:"assertion-confirming-interval"`
+	EdgeTrackerWakeInterval     time.Duration `koanf:"edge-tracker-wake-interval"`
 }
 
 var DefaultBoldConfig = BoldConfig{
-	Enable:                             false,
-	Mode:                               "make-mode",
-	BlockChallengeLeafHeight:           1 << 5,
-	BigStepLeafHeight:                  1 << 5,
-	SmallStepLeafHeight:                1 << 7,
-	NumBigSteps:                        5,
-	ValidatorName:                      "default-validator",
-	MachineLeavesCachePath:             "/tmp/machine-leaves-cache",
-	AssertionPostingIntervalSeconds:    30,
-	AssertionScanningIntervalSeconds:   30,
-	AssertionConfirmingIntervalSeconds: 60,
-	EdgeTrackerWakeIntervalSeconds:     1,
+	Enable:                      false,
+	Mode:                        "make-mode",
+	ValidatorName:               "default-validator",
+	MachineLeavesCachePath:      "/tmp/machine-leaves-cache",
+	AssertionPostingInterval:    30 * time.Second,
+	AssertionScanningInterval:   30 * time.Second,
+	AssertionConfirmingInterval: 60 * time.Second,
+	EdgeTrackerWakeInterval:     1 * time.Second,
+}
+
+var BoldModes = map[string]types.Mode{
+	"watch-tower-mode": types.WatchTowerMode,
+	"resolve-mode":     types.ResolveMode,
+	"defensive-mode":   types.DefensiveMode,
+	"make-mode":        types.MakeMode,
+}
+
+func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold protocol")
+	f.String(prefix+".mode", DefaultBoldConfig.Mode, "mode for bold protocol")
+	f.String(prefix+".validator-name", DefaultBoldConfig.ValidatorName, "name of validator")
+	f.String(prefix+".machine-leaves-cache-path", DefaultBoldConfig.MachineLeavesCachePath, "path to machine leaves cache")
+	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "interval for posting assertions")
+	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "interval for scanning assertions")
+	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "interval for confirming assertions")
+	f.Duration(prefix+".edge-tracker-wake-interval", DefaultBoldConfig.EdgeTrackerWakeInterval, "interval for waking edge tracker")
 }
 
 type StateManager struct {
@@ -75,7 +91,10 @@ func NewStateManager(
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
 ) (*StateManager, error) {
-	historyCache := challengecache.New(cacheBaseDir)
+	historyCache, err := challengecache.New(cacheBaseDir)
+	if err != nil {
+		return nil, err
+	}
 	sm := &StateManager{
 		validator:            val,
 		historyCache:         historyCache,
@@ -168,13 +187,13 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, []validator.GoGlobalState, error) {
+) (mmap.Mmap, error) {
 	// Check the integrity of the arguments.
 	if fromBatch >= toBatch {
-		return nil, nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
+		return nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
 	}
 	if fromHeight > toHeight {
-		return nil, nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
+		return nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
 	}
 	// Compute the total desired hashes from this request.
 	totalDesiredHashes := (toHeight - fromHeight) + 1
@@ -182,11 +201,11 @@ func (s *StateManager) StatesInBatchRange(
 	// Get the fromBatch's message count.
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	executionResult, err := s.validator.streamer.ResultAtCount(prevBatchMsgCount)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	startState := validator.GoGlobalState{
 		BlockHash:  executionResult.BlockHash,
@@ -194,13 +213,19 @@ func (s *StateManager) StatesInBatchRange(
 		Batch:      uint64(fromBatch),
 		PosInBatch: 0,
 	}
-	machineHashes := []common.Hash{machineHash(startState)}
-	states := []validator.GoGlobalState{startState}
+	machineHashesMmap, err := mmap.NewMmap(int(totalDesiredHashes))
+	numStateRoots := 0
+	if err != nil {
+		return nil, err
+	}
+	machineHashesMmap.Set(numStateRoots, machineHash(startState))
+	numStateRoots++
 
 	for batch := fromBatch; batch < toBatch; batch++ {
 		batchMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
-			return nil, nil, err
+			machineHashesMmap.Free()
+			return nil, err
 		}
 		messagesInBatch := batchMessageCount - prevBatchMsgCount
 
@@ -210,7 +235,8 @@ func (s *StateManager) StatesInBatchRange(
 			messageCount := msgIndex + 1
 			executionResult, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageCount))
 			if err != nil {
-				return nil, nil, err
+				machineHashesMmap.Free()
+				return nil, err
 			}
 			// If the position in batch is equal to the number of messages in the batch,
 			// we do not include this state, instead, we break and include the state
@@ -224,14 +250,15 @@ func (s *StateManager) StatesInBatchRange(
 				Batch:      uint64(batch),
 				PosInBatch: i + 1,
 			}
-			states = append(states, state)
-			machineHashes = append(machineHashes, machineHash(state))
+			machineHashesMmap.Set(numStateRoots, machineHash(state))
+			numStateRoots++
 		}
 
 		// Fully consume the batch.
 		executionResult, err := s.validator.streamer.ResultAtCount(batchMessageCount)
 		if err != nil {
-			return nil, nil, err
+			machineHashesMmap.Free()
+			return nil, err
 		}
 		state := validator.GoGlobalState{
 			BlockHash:  executionResult.BlockHash,
@@ -239,14 +266,15 @@ func (s *StateManager) StatesInBatchRange(
 			Batch:      uint64(batch) + 1,
 			PosInBatch: 0,
 		}
-		states = append(states, state)
-		machineHashes = append(machineHashes, machineHash(state))
+		machineHashesMmap.Set(numStateRoots, machineHash(state))
+		numStateRoots++
 		prevBatchMsgCount = batchMessageCount
 	}
-	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
-		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
+	lastMachineHashes := machineHashesMmap.Get(numStateRoots - 1)
+	for i := numStateRoots; i < int(totalDesiredHashes); i++ {
+		machineHashesMmap.Set(i, lastMachineHashes)
 	}
-	return machineHashes[fromHeight : toHeight+1], states, nil
+	return machineHashesMmap.SubMmap(int(fromHeight), int(toHeight+1)), nil
 }
 
 func machineHash(gs validator.GoGlobalState) common.Hash {
@@ -286,7 +314,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 	toHeight option.Option[l2stateprovider.Height],
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, error) {
+) (mmap.Mmap, error) {
 	var to l2stateprovider.Height
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
@@ -294,7 +322,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +332,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *StateManager) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
-) ([]common.Hash, error) {
+) (mmap.Mmap, error) {
 	s.Lock()
 	defer s.Unlock()
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))

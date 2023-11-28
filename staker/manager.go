@@ -7,7 +7,6 @@ import (
 
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
-	"github.com/OffchainLabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
@@ -25,8 +24,7 @@ func NewManager(
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
-	historyCacheBaseDir,
-	validatorName string,
+	config *BoldConfig,
 ) (*challengemanager.Manager, error) {
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
@@ -68,9 +66,9 @@ func NewManager(
 
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
-		historyCacheBaseDir,
+		config.MachineLeavesCachePath,
 		challengeLeafHeights,
-		validatorName,
+		config.ValidatorName,
 	)
 	if err != nil {
 		return nil, err
@@ -88,7 +86,13 @@ func NewManager(
 		client,
 		provider,
 		rollupAddress,
-		challengemanager.WithMode(types.MakeMode),
+		challengemanager.WithName(config.ValidatorName),
+		challengemanager.WithMode(BoldModes[config.Mode]),
+		challengemanager.WithAssertionPostingInterval(config.AssertionPostingInterval),
+		challengemanager.WithAssertionScanningInterval(config.AssertionScanningInterval),
+		challengemanager.WithAssertionConfirmingInterval(config.AssertionConfirmingInterval),
+		challengemanager.WithEdgeTrackerWakeInterval(config.EdgeTrackerWakeInterval),
+		challengemanager.WithAddress(txOpts.From),
 	)
 	if err != nil {
 		return nil, err
