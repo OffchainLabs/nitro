@@ -288,11 +288,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
-	jst := header.BlockJustification
-	var hotShotHeader espresso.Commitment
-	if jst != nil {
-		hotShotHeader = jst.Header.Commit()
-	}
 
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -300,7 +295,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		txes,
 		delayedMessagesRead,
 		lastBlockHeader,
-		&hotShotHeader,
 		statedb,
 		s.bc,
 		s.bc.Config(),
