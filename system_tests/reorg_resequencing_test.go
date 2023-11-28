@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestReorgResequencing(t *testing.T) {
@@ -69,7 +70,7 @@ func TestReorgResequencing(t *testing.T) {
 			RequestId:   &delayedIndexHash,
 			L1BaseFee:   common.Big0,
 		},
-		L2msg: append(builder.L2Info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
+		L2msg: append(builder.L2Info.GetAddress("User4").Bytes(), arbmath.Uint64ToU256Bytes(params.Ether)...),
 	}
 	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
