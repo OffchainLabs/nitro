@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -103,7 +102,6 @@ var ConfigDefault = Config{
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{OldHeaderTimeout: 5 * time.Minute}
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
