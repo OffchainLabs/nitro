@@ -769,11 +769,15 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	}
 	if useNormalEstimation {
 		// If we're at the latest nonce, we can skip the special future tx estimate stuff
-		return b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
+		gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
 			From: b.dataPoster.Sender(),
 			To:   &b.seqInboxAddr,
 			Data: realData,
 		})
+		if err != nil {
+			return 0, err
+		}
+		return gas + config.ExtraBatchGas, nil
 	}
 
 	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
