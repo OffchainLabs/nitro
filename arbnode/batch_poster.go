@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -757,32 +756,26 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
-func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
+func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64) (uint64, error) {
 	config := b.config()
-	callOpts := &bind.CallOpts{
-		Context: ctx,
+	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
+	if !useNormalEstimation {
+		// Check if we can use normal estimation anyways because we're at the latest nonce
+		latestNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.Sender(), nil)
+		if err != nil {
+			return 0, err
+		}
+		useNormalEstimation = latestNonce == realNonce
 	}
-	if config.DataPoster.WaitForL1Finality {
-		callOpts.BlockNumber = big.NewInt(int64(rpc.SafeBlockNumber))
+	if useNormalEstimation {
+		// If we're at the latest nonce, we can skip the special future tx estimate stuff
+		return b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
+			From: b.dataPoster.Sender(),
+			To:   &b.seqInboxAddr,
+			Data: realData,
+		})
 	}
-	safeDelayedMessagesBig, err := b.bridge.DelayedMessageCount(callOpts)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get the confirmed delayed message count: %w", err)
-	}
-	if !safeDelayedMessagesBig.IsUint64() {
-		return 0, fmt.Errorf("calling delayedMessageCount() on the bridge returned a non-uint64 result %v", safeDelayedMessagesBig)
-	}
-	safeDelayedMessages := safeDelayedMessagesBig.Uint64()
-	if safeDelayedMessages > delayedMessages {
-		// On restart, we may be trying to estimate gas for a batch whose successor has
-		// already made it into pending state, if not latest state.
-		// In that case, we might get a revert with `DelayedBackwards()`.
-		// To avoid that, we artificially increase the delayed messages to `safeDelayedMessages`.
-		// In theory, this might reduce gas usage, but only by a factor that's already
-		// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
-		// posts a new delayed message that we didn't see while gas estimating.
-		delayedMessages = safeDelayedMessages
-	}
+
 	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
 	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
@@ -805,7 +798,6 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 			"error estimating gas for batch",
 			"err", err,
 			"delayedMessages", delayedMessages,
-			"safeDelayedMessages", safeDelayedMessages,
 			"sequencerMessageHeader", hex.EncodeToString(sequencerMessageHeader),
 			"sequencerMessageLen", len(sequencerMessage),
 		)
@@ -857,6 +849,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
+
+	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
+	if err != nil {
+		return false, err
+	}
 
 	config := b.config()
 	forcePostBatch := time.Since(firstMsgTime) >= config.MaxDelay
@@ -1000,11 +997,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, b.building.segments.delayedMsg)
+	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
 		return false, err
 	}
-	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
+	// On restart, we may be trying to estimate gas for a batch whose successor has
+	// already made it into pending state, if not latest state.
+	// In that case, we might get a revert with `DelayedBackwards()`.
+	// To avoid that, we artificially increase the delayed messages to `lastPotentialMsg.DelayedMessagesRead`.
+	// In theory, this might reduce gas usage, but only by a factor that's already
+	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
+	// posts a new delayed message that we didn't see while gas estimating.
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, nonce)
 	if err != nil {
 		return false, err
 	}
