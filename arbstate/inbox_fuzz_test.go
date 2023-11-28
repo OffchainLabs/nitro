@@ -66,7 +66,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
 		}
-		multiplexer := NewInboxMultiplexer(backend, 0, nil, KeysetValidate)
+		multiplexer := NewInboxMultiplexer(backend, 0, nil, nil, KeysetValidate)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {
 			panic(err)

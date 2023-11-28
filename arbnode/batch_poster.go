@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -68,6 +69,7 @@ type BatchPoster struct {
 	seqInboxAddr        common.Address
 	building            *buildingBatch
 	daWriter            das.DataAvailabilityServiceWriter
+	availDAWriter       avail.DataAvailabilityWriter
 	dataPoster          *dataposter.DataPoster
 	redisLock           *redislock.Simple
 	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
@@ -210,7 +212,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass: time.Hour,
 }
 
-func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter, availDAWriter avail.DataAvailabilityWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -238,17 +240,18 @@ func NewBatchPoster(ctx context.Context, dataPosterDB ethdb.Database, l1Reader *
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:     l1Reader,
-		inbox:        inbox,
-		streamer:     streamer,
-		syncMonitor:  syncMonitor,
-		config:       config,
-		bridge:       bridge,
-		seqInbox:     seqInbox,
-		seqInboxABI:  seqInboxABI,
-		seqInboxAddr: deployInfo.SequencerInbox,
-		daWriter:     daWriter,
-		redisLock:    redisLock,
+		l1Reader:      l1Reader,
+		inbox:         inbox,
+		streamer:      streamer,
+		syncMonitor:   syncMonitor,
+		config:        config,
+		bridge:        bridge,
+		seqInbox:      seqInbox,
+		seqInboxABI:   seqInboxABI,
+		seqInboxAddr:  deployInfo.SequencerInbox,
+		daWriter:      daWriter,
+		availDAWriter: availDAWriter,
+		redisLock:     redisLock,
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
@@ -890,6 +893,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, err
 		} else {
 			sequencerMsg = das.Serialize(cert)
+		}
+	}
+
+	// ideally we make this part of the above statment by having everything under a single unified interface (soon TM)
+	if b.daWriter == nil && b.availDAWriter != nil {
+		// Store the data on Avail and return a marhsalled BlobPointer, which gets used as the sequencerMsg
+		// which is later used to retrieve the data from Avail
+		sequencerMsg, err = b.availDAWriter.Store(ctx, sequencerMsg)
+		if err != nil {
+			return false, err
 		}
 	}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
@@ -35,11 +36,12 @@ type StatelessBlockValidator struct {
 
 	recorder BlockRecorder
 
-	inboxReader  InboxReaderInterface
-	inboxTracker InboxTrackerInterface
-	streamer     TransactionStreamerInterface
-	db           ethdb.Database
-	daService    arbstate.DataAvailabilityReader
+	inboxReader   InboxReaderInterface
+	inboxTracker  InboxTrackerInterface
+	streamer      TransactionStreamerInterface
+	db            ethdb.Database
+	daService     arbstate.DataAvailabilityReader
+	availDAReader avail.DataAvailabilityReader
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -237,6 +239,7 @@ func NewStatelessBlockValidator(
 	recorder BlockRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
+	availDAReader avail.DataAvailabilityReader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
@@ -253,6 +256,7 @@ func NewStatelessBlockValidator(
 		streamer:           streamer,
 		db:                 arbdb,
 		daService:          das,
+		availDAReader:      availDAReader,
 	}
 	return validator, nil
 }
@@ -303,16 +307,26 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			continue
 		}
 		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			continue
+			if v.daService == nil {
+				log.Warn("No DAS configured, but sequencer message found with DAS header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromDasBatch(
+					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
+				)
+				if err != nil {
+					return err
+				}
+			}
 		}
-		if v.daService == nil {
-			log.Warn("No DAS configured, but sequencer message found with DAS header")
-		} else {
-			_, err := arbstate.RecoverPayloadFromDasBatch(
-				ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
-			)
-			if err != nil {
-				return err
+
+		if avail.IsAvailMessageHeaderByte(batch.Data[40]) {
+			if v.availDAReader == nil {
+				log.Warn("No avail DA configured, but sequencer message found with availDA header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromAvailBatch(ctx, batch.Number, batch.Data, v.availDAReader, e.Preimages)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
