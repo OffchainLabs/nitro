@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -18,24 +17,21 @@ func TestTrieDBCommitRace(t *testing.T) {
 	_ = testhelpers.InitTestLog(t, log.LvlError)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := gethexec.ConfigDefaultTest()
-	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	execConfig.Caching.BlockCount = 127
-	execConfig.Caching.BlockAge = 0
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 127
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, execConfig, nil, nil)
-	cancel = func() {
-		defer requireClose(t, l1stack)
-		defer node.StopAndWait()
-	}
-	defer cancel()
-	execNode := getExecNode(t, node)
-	l2info.GenerateAccount("User2")
-	bc := execNode.Backend.ArbInterface().BlockChain()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
+	builder.execConfig.Caching.BlockCount = 127
+	builder.execConfig.Caching.BlockAge = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 127
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 
 	var wg sync.WaitGroup
 	quit := make(chan struct{})
@@ -45,13 +41,13 @@ func TestTrieDBCommitRace(t *testing.T) {
 		for {
 			select {
 			default:
-				TransferBalance(t, "Faucet", "User2", common.Big1, l2info, l2client, ctx)
+				builder.L2.TransferBalance(t, "Faucet", "User2", common.Big1, builder.L2Info)
 			case <-quit:
 				return
 			}
 		}
 	}()
-	api := execNode.Backend.APIBackend()
+	api := builder.L2.ExecNode.Backend.APIBackend()
 	blockNumber := 1
 	for i := 0; i < 5; i++ {
 		var roots []common.Hash

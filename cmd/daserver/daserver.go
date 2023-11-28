@@ -239,7 +239,7 @@ func startup() error {
 		dasLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
-	vcsRevision, vcsTime := confighelpers.GetVersion()
+	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)

@@ -166,6 +166,7 @@ func mainImpl() int {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	stackConf.DBEngine = nodeConfig.Persistent.DBEngine
+	nodeConfig.Rpc.Apply(&stackConf)
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -177,8 +178,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = vcsRevision
+	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
@@ -779,7 +780,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
@@ -815,7 +815,10 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.FeedUrl != "" {
-		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
+		chainDefaults["node.feed.input.url"] = strings.Split(chainInfo.FeedUrl, ",")
+	}
+	if chainInfo.SecondaryFeedUrl != "" {
+		chainDefaults["node.feed.input.secondary-url"] = strings.Split(chainInfo.SecondaryFeedUrl, ",")
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true

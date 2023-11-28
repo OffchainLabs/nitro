@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -30,12 +32,15 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/catalyst"
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -52,6 +57,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -103,6 +109,10 @@ func (tc *TestClient) GetBalance(t *testing.T, account common.Address) *big.Int 
 	return GetBalance(t, tc.ctx, tc.Client, account)
 }
 
+func (tc *TestClient) GetBaseFee(t *testing.T) *big.Int {
+	return GetBaseFee(t, tc.Client, tc.ctx)
+}
+
 func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
 	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
 }
@@ -113,6 +123,14 @@ func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transa
 
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
 	return deploySimple(t, tc.ctx, auth, tc.Client)
+}
+
+func (tc *TestClient) EnsureTxSucceeded(transaction *types.Transaction) (*types.Receipt, error) {
+	return tc.EnsureTxSucceededWithTimeout(transaction, time.Second*5)
+}
+
+func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
 type NodeBuilder struct {
@@ -165,13 +183,13 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
-			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+			createTestNodeWithL1(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
 		b.L1, b.L2 = l1, l2
 		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
 		l2 := NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client =
-			CreateTestL2WithConfig(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.takeOwnership)
+			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.chainConfig, b.takeOwnership)
 		b.L2 = l2
 	}
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
@@ -212,6 +230,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.ConsensusNode =
 		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+	l2.ExecNode = getExecNode(t, l2.ConsensusNode)
 	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
 	return l2, func() { l2.cleanup() }
 }
@@ -462,6 +481,7 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NAT = nil
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 	return &stackConf
 }
 
@@ -474,6 +494,7 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 
@@ -550,7 +571,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesis := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
+	l1Genesis := core.DeveloperGenesisBlock(15_000_000, l1info.GetAddress("Faucet"))
 	infoGenesis := l1info.GetGenesisAlloc()
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
@@ -558,9 +579,16 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
+	nodeConf.SyncMode = downloader.FullSync
 
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
+
+	simBeacon, err := catalyst.NewSimulatedBeacon(0, l1backend)
+	Require(t, err)
+	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
+	stack.RegisterLifecycle(simBeacon)
+
 	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
 	Require(t, err)
@@ -581,8 +609,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	Require(t, stack.Start())
 	Require(t, l1backend.StartMining())
 
-	rpcClient, err := stack.Attach()
-	Require(t, err)
+	rpcClient := stack.Attach()
 
 	l1Client := ethclient.NewClient(rpcClient)
 
@@ -628,18 +655,23 @@ func DeployOnTestL1(
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	addresses, err := arbnode.DeployOnL1(
+	nativeToken := common.Address{}
+	maxDataSize := big.NewInt(117964)
+	addresses, err := deploy.DeployOnL1(
 		ctx,
 		l1Reader,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		0,
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		nativeToken,
+		maxDataSize,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
+	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
 	return addresses, initMessage
 }
@@ -691,40 +723,12 @@ func createL2BlockChainWithStackConfig(
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient, err := backend.Attach()
-	Require(t, err)
+	rpcClient := backend.Attach()
 	return ethclient.NewClient(rpcClient)
 }
 
 // Create and deploy L1 and arbnode for L2
-func createTestNodeOnL1(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, nil, nil, nil, nil)
-}
-
-func createTestNodeOnL1WithConfig(
-	t *testing.T,
-	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	execConfig *gethexec.Config,
-	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
-) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
-	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig, nil)
-	return
-}
-
-func createTestNodeOnL1WithConfigImpl(
+func createTestNodeWithL1(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
@@ -796,12 +800,8 @@ func createTestNodeOnL1WithConfigImpl(
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, nil, nil, true)
-}
-
-func CreateTestL2WithConfig(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, takeOwnership bool,
+func createTestNode(
+	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, chainConfig *params.ChainConfig, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL2Test()
@@ -814,7 +814,7 @@ func CreateTestL2WithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig(), &execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", chainConfig, &execConfig.Caching)
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
@@ -874,24 +874,6 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
-func Create2ndNode(
-	t *testing.T,
-	ctx context.Context,
-	first *arbnode.Node,
-	l1stack *node.Node,
-	l1info *BlockchainTestInfo,
-	l2InitData *statetransfer.ArbosInitializationInfo,
-	dasConfig *das.DataAvailabilityConfig,
-) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
-	if dasConfig == nil {
-		nodeConf.DataAvailability.Enable = false
-	} else {
-		nodeConf.DataAvailability = *dasConfig
-	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf, nil, nil)
-}
-
 func Create2ndNodeWithConfig(
 	t *testing.T,
 	ctx context.Context,
@@ -910,10 +892,7 @@ func Create2ndNodeWithConfig(
 		execConfig = gethexec.ConfigDefaultNonSequencerTest()
 	}
 	feedErrChan := make(chan error, 10)
-	l1rpcClient, err := l1stack.Attach()
-	if err != nil {
-		Fatal(t, err)
-	}
+	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
@@ -988,11 +967,19 @@ func authorizeDASKeyset(
 	err := keyset.Serialize(wr)
 	Require(t, err, "unable to serialize DAS keyset")
 	keysetBytes := wr.Bytes()
-	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-	Require(t, err, "unable to create sequencer inbox")
+
+	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err, "unable to parse sequencer inbox ABI")
+	setKeysetCalldata, err := sequencerInboxABI.Pack("setValidKeyset", keysetBytes)
+	Require(t, err, "unable to generate calldata")
+
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l1info.Accounts["UpgradeExecutor"].Address, l1client)
+	Require(t, err, "unable to bind upgrade executor")
+
 	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
+
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
 }
