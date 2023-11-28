@@ -269,6 +269,11 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			// Additional pre-transaction validity check
+			if err = extraPreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
+				return nil, nil, err
+			}
+
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
 				brotliCompressionLevel, err := state.BrotliCompressionLevel()
@@ -327,6 +332,12 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			// Additional post-transaction validity check
+			if err = extraPostTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info, result); err != nil {
+				statedb.RevertToSnapshot(snap)
+				return nil, nil, err
+			}
+
 			return receipt, result, nil
 		})()
 
@@ -365,6 +376,19 @@ func ProduceBlockAdvanced(
 			return nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
 		}
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
+
+		arbosVer := types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion
+		if arbosVer >= arbostypes.ArbosVersion_FixRedeemGas {
+			// subtract gas burned for future use
+			for _, scheduledTx := range result.ScheduledTxes {
+				switch inner := scheduledTx.GetInner().(type) {
+				case *types.ArbitrumRetryTx:
+					txGasUsed = arbmath.SaturatingUSub(txGasUsed, inner.Gas)
+				default:
+					log.Warn("Unexpected type of scheduled tx", "type", scheduledTx.Type())
+				}
+			}
+		}
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
 		switch txInner := tx.GetInner().(type) {

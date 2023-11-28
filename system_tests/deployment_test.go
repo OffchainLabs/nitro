@@ -115,7 +115,7 @@ func TestContractDeployment(t *testing.T) {
 	defer cleanup()
 
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
-	for _, size := range []int{0, 1, 1000, 20000, params.MaxCodeSize} {
+	for _, size := range []int{0, 1, 1000, 20000, params.DefaultMaxCodeSize} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
 	}
 
@@ -128,13 +128,13 @@ func TestExtendedContractDeployment(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.MaxCodeSize * 3
-	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.MaxInitCodeSize * 3
+	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
+	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
 	cleanup := builder.Build(t)
 	defer cleanup()
 
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
-	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.MaxCodeSize * 3} {
+	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
 	}
 
