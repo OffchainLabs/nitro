@@ -528,6 +528,7 @@ func testLogs(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -578,11 +579,18 @@ func testLogs(t *testing.T, jit bool) {
 	}
 
 	tooMany := encode([]common.Hash{{}, {}, {}, {}, {}}, []byte{})
-	tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, tooMany)
+	tx := l2info.PrepareTxTo("Owner", &logAddr, 1e9, nil, tooMany)
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 10, jit, ctx, node, l2client)
+	delegate := argsForMulticall(vm.DELEGATECALL, logAddr, nil, []byte{0x00})
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, delegate)
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+	if receipt.Logs[0].Address != multiAddr {
+		Fatal(t, "wrong address", receipt.Logs[0].Address)
+	}
+
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramCreate(t *testing.T) {
