@@ -112,7 +112,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		for uint64(len(stateRoots)) < numDesiredLeaves {
 			stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
 		}
-		return stateRoots, nil
+		return stateRoots[:numDesiredLeaves], nil
 	})
 }
 
