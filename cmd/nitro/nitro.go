@@ -814,6 +814,9 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
+	if chainInfo.SecondaryForwardingTarget != "" {
+		chainDefaults["execution.secondary-forwarding-target"] = strings.Split(chainInfo.SecondaryForwardingTarget, ",")
+	}
 	if chainInfo.FeedUrl != "" {
 		chainDefaults["node.feed.input.url"] = strings.Split(chainInfo.FeedUrl, ",")
 	}
