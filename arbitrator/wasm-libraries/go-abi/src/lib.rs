@@ -1,9 +1,10 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::convert::TryInto;
-
 use arbutil::wavm;
+use eyre::Result;
+use go_js::JsValueId;
+use std::convert::TryInto;
 
 extern "C" {
     pub fn wavm_guest_call__getsp() -> usize;
@@ -53,6 +54,10 @@ impl GoStack {
         self.read_u64() as *mut T
     }
 
+    pub unsafe fn read_js(&mut self) -> JsValueId {
+        JsValueId(self.read_u64())
+    }
+
     pub unsafe fn unbox<T>(&mut self) -> T {
         *Box::from_raw(self.read_ptr_mut())
     }
@@ -96,6 +101,10 @@ impl GoStack {
 
     pub unsafe fn write_nullptr(&mut self) -> &mut Self {
         self.write_ptr(std::ptr::null::<u8>())
+    }
+
+    pub unsafe fn write_js(&mut self, id: JsValueId) -> &mut Self {
+        self.write_u64(id.0)
     }
 
     pub fn skip_u8(&mut self) -> &mut Self {
@@ -155,6 +164,24 @@ impl GoStack {
         let saved = self.top - (self.sp + 8);
         *self = Self::new(wavm_guest_call__getsp());
         self.advance(saved);
+    }
+
+    pub unsafe fn write_call_result(
+        &mut self,
+        result: Result<JsValueId>,
+        msg: impl FnOnce() -> String,
+    ) {
+        match result {
+            Ok(result) => {
+                self.write_js(result);
+                self.write_u8(1);
+            }
+            Err(err) => {
+                eprintln!("Go {} failed with error {err:#}", msg());
+                self.write_js(go_js::get_null());
+                self.write_u8(0);
+            }
+        }
     }
 }
 

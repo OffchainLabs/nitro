@@ -4,9 +4,10 @@
 #![allow(clippy::useless_transmute)]
 
 use crate::{
-    machine::{WasmEnv, WasmEnvMut},
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     wavmio::{Bytes20, Bytes32},
 };
+use eyre::Result;
 use go_js::JsValueId;
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
@@ -144,6 +145,10 @@ impl GoStack {
         &*self.read_ptr()
     }
 
+    pub fn read_js(&mut self) -> JsValueId {
+        JsValueId(self.read_u64())
+    }
+
     /// TODO: replace `unbox` with a safe id-based API
     pub fn unbox<T>(&mut self) -> T {
         let ptr: *mut T = self.read_ptr_mut();
@@ -206,6 +211,10 @@ impl GoStack {
 
     pub fn write_nullptr(&mut self) -> &mut Self {
         self.write_ptr(std::ptr::null::<u8>())
+    }
+
+    pub fn write_js(&mut self, id: JsValueId) -> &mut Self {
+        self.write_u64(id.0)
     }
 
     pub fn skip_u8(&mut self) -> &mut Self {
@@ -303,6 +312,28 @@ impl GoStack {
             }
         }
     }
+
+    pub fn write_call_result(
+        &mut self,
+        result: Result<JsValueId>,
+        msg: impl FnOnce() -> String,
+    ) -> MaybeEscape {
+        match result {
+            Ok(result) => {
+                self.write_js(result);
+                self.write_u8(1);
+            }
+            Err(err) => match err.downcast::<Escape>() {
+                Ok(escape) => return Err(escape),
+                Err(err) => {
+                    eprintln!("Go {} failed with error {err:#}", msg());
+                    self.write_js(go_js::get_null());
+                    self.write_u8(0);
+                }
+            },
+        }
+        Ok(())
+    }
 }
 
 pub struct GoRuntimeState {
@@ -358,7 +389,7 @@ pub struct TimeoutState {
 
 #[test]
 #[allow(clippy::identity_op, clippy::field_reassign_with_default)]
-fn test_sp() -> eyre::Result<()> {
+fn test_sp() -> Result<()> {
     use prover::programs::prelude::CompileConfig;
     use wasmer::{FunctionEnv, MemoryType};
 

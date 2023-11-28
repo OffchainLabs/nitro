@@ -14,7 +14,7 @@ use rand_pcg::Pcg32;
 use std::{collections::BinaryHeap, convert::TryFrom, io::Write};
 
 unsafe fn read_value_ids(mut ptr: u64, len: u64) -> Vec<JsValueId> {
-    let mut values = Vec::new();
+    let mut values = vec![];
     for _ in 0..len {
         let p = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
         values.push(JsValueId(wavm::caller_load64(p)));
@@ -132,7 +132,7 @@ impl Ord for TimeoutInfo {
 
 impl PartialOrd for TimeoutInfo {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 
@@ -175,25 +175,6 @@ pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(sp: usize) {
     }
 }
 
-macro_rules! unimpl_js {
-    ($($f:ident),* $(,)?) => {
-        $(
-            #[no_mangle]
-            pub unsafe extern "C" fn $f(_: usize) {
-                unimplemented!("Go JS interface {} not supported", stringify!($f));
-            }
-        )*
-    }
-}
-
-unimpl_js!(
-    go__syscall_js_valuePrepareString,
-    go__syscall_js_valueLoadString,
-    go__syscall_js_valueDelete,
-    go__syscall_js_valueInvoke,
-    go__syscall_js_valueInstanceOf,
-);
-
 static mut JS: Option<JsState> = None;
 
 unsafe fn get_js<'a>() -> &'a JsState {
@@ -211,8 +192,7 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
     let field = sp.read_string();
 
     let result = get_js().value_get(source, &field);
-
-    sp.write_u64(result.0);
+    sp.write_js(result);
 }
 
 struct WavmJsEnv<'a> {
@@ -263,18 +243,35 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
 
     let mut js_env = WavmJsEnv::new(&mut sp);
     let result = get_js().value_new(&mut js_env, constructor, &args);
+    sp.write_call_result(result, || "constructor call".into())
+}
 
-    match result {
-        Ok(result) => {
-            sp.write_u64(result.0);
-            sp.write_u8(1);
-        }
-        Err(err) => {
-            eprintln!("Go constructor call failed with error {err:#}");
-            sp.write_u64(go_js::get_null().0);
-            sp.write_u8(0);
-        }
-    }
+/// Safety: λ(v value, args []value) (value, bool)
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueInvoke(sp: usize) {
+    let mut sp = GoStack::new(sp);
+
+    let object = sp.read_js();
+    let (args_ptr, args_len) = sp.read_go_slice();
+    let args = read_value_ids(args_ptr, args_len);
+
+    let mut js_env = WavmJsEnv::new(&mut sp);
+    let result = get_js().value_invoke(&mut js_env, object, &args);
+    sp.write_call_result(result, || "invocation".into())
+}
+
+/// Safety: λ(v value, method string, args []value) (value, bool)
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let object = JsValueId(sp.read_u64());
+    let method = sp.read_string();
+    let (args_ptr, args_len) = sp.read_go_slice();
+    let args = read_value_ids(args_ptr, args_len);
+
+    let mut js_env = WavmJsEnv::new(&mut sp);
+    let result = get_js().value_call(&mut js_env, object, &method, &args);
+    sp.write_call_result(result, || format!("method call to {method}"))
 }
 
 /// Safety: λ(dest []byte, src value) (int, bool)
@@ -294,9 +291,9 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
         len
     };
 
-    let bits = get_js().copy_bytes_to_go(src_val, write_bytes);
-    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
-    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
+    let len = get_js().copy_bytes_to_go(src_val, write_bytes);
+    sp.write_u64(len.as_ref().map(|x| *x).unwrap_or_default());
+    sp.write_u8(len.map(|_| 1).unwrap_or_default());
 }
 
 /// Safety: λ(dest value, src []byte) (int, bool)
@@ -318,9 +315,9 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
         len
     };
 
-    let bits = get_js().copy_bytes_to_js(dest_val, write_bytes);
-    sp.write_u64(bits.as_ref().map(|x| x.0).unwrap_or_default());
-    sp.write_u8(bits.map(|_| 1).unwrap_or_default());
+    let len = get_js().copy_bytes_to_js(dest_val, write_bytes);
+    sp.write_u64(len.as_ref().map(|x| *x).unwrap_or_default());
+    sp.write_u8(len.map(|_| 1).unwrap_or_default());
 }
 
 /// Safety: λ(array value, i int, v value)
@@ -328,35 +325,10 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
 pub unsafe extern "C" fn go__syscall_js_valueSetIndex(sp: usize) {
     let mut sp = GoStack::new(sp);
     let source = JsValueId(sp.read_u64());
-    let index = sp.read_go_ptr() as usize;
+    let index = sp.read_go_ptr();
     let value = JsValueId(sp.read_u64());
 
     get_js().value_set_index(source, index, value);
-}
-
-/// Safety: λ(v value, method string, args []value) (value, bool)
-#[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
-    let mut sp = GoStack::new(sp);
-    let object = JsValueId(sp.read_u64());
-    let method_name = sp.read_string();
-    let (args_ptr, args_len) = sp.read_go_slice();
-    let args = read_value_ids(args_ptr, args_len);
-
-    let mut js_env = WavmJsEnv::new(&mut sp);
-    let result = get_js().value_call(&mut js_env, object, &method_name, &args);
-
-    match result {
-        Ok(result) => {
-            sp.write_u64(result.0);
-            sp.write_u8(1);
-        }
-        Err(err) => {
-            eprintln!("Go method call to {method_name} failed with error {err:#}");
-            sp.write_u64(go_js::get_null().0);
-            sp.write_u8(0);
-        }
-    }
 }
 
 /// Safety: λ(v value, field string, x value)
@@ -376,7 +348,7 @@ pub unsafe extern "C" fn go__syscall_js_stringVal(sp: usize) {
     let mut sp = GoStack::new(sp);
     let data = sp.read_string();
     let value = get_js().string_val(data);
-    sp.write_u64(value.0);
+    sp.write_js(value);
 }
 
 /// Safety: λ(v value) int
@@ -390,6 +362,38 @@ pub unsafe extern "C" fn go__syscall_js_valueLength(sp: usize) {
     sp.write_u64(length as u64);
 }
 
+/// Safety: λ(str value) (array value, len int)
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valuePrepareString(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let text = sp.read_js();
+
+    let (data, len) = get_js().value_prepare_string(text);
+    sp.write_js(data);
+    sp.write_u64(len);
+}
+
+/// Safety: λ(str value, dest []byte)
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueLoadString(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let text = sp.read_js();
+    let (dest_ptr, dest_len) = sp.read_go_slice();
+
+    let write_bytes = |buf: &[_]| {
+        let src_len = buf.len() as u64;
+        if src_len != dest_len {
+            eprintln!("Go copying bytes from JS src length {src_len} to Go dest length {dest_len}");
+        }
+        let len = src_len.min(dest_len) as usize;
+        wavm::write_slice(&buf[..len], dest_ptr);
+        len
+    };
+    if let Err(error) = get_js().copy_bytes_to_go(text, write_bytes) {
+        eprintln!("failed to load string: {error:?}");
+    }
+}
+
 /// Safety: λ(v value, i int) value
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
@@ -398,17 +402,22 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
     let index = sp.read_ptr::<*const u8>() as usize;
 
     let result = get_js().value_index(source, index);
-
-    sp.write_u64(result.0);
+    sp.write_js(result);
 }
 
 /// Safety: λ(v value)
-/// TODO: reference counting
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: usize) {
     let mut sp = GoStack::new(sp);
     let val = JsValueId(sp.read_u64());
     get_js().finalize_ref(val);
+}
+
+/// Safety: λ() uint64
+#[no_mangle]
+pub unsafe extern "C" fn go__go_js_test_syscall_debugPoolHash(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    sp.write_u64(get_js().pool_hash());
 }
 
 #[no_mangle]
@@ -426,3 +435,16 @@ pub unsafe extern "C" fn wavm__go_after_run() {
         }
     }
 }
+
+macro_rules! reject {
+    ($($f:ident),* $(,)?) => {
+        $(
+            #[no_mangle]
+            pub unsafe extern "C" fn $f(_: usize) {
+                unimplemented!("Go JS interface {} not supported", stringify!($f));
+            }
+        )*
+    }
+}
+
+reject!(go__syscall_js_valueDelete, go__syscall_js_valueInstanceOf);

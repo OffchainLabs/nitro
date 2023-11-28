@@ -6,3 +6,5 @@ publish = false
 
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
+go-js = { path = "../go-js/" }
+eyre = "0.6.9"

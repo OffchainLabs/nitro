@@ -520,6 +520,5 @@ fn main() -> Result<()> {
         eprintln!("Machine didn't finish: {}", mach.get_status().red());
         std::process::exit(1);
     }
-
     Ok(())
 }

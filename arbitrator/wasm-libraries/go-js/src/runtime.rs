@@ -1,6 +1,8 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use eyre::bail;
+
 use crate::js_core::{JsEnv, JsObject, JsValue};
 use std::io::Write;
 
@@ -52,8 +54,17 @@ pub fn make_globals_object() -> JsValue {
         "Object",
         |_env, _this, _args| Ok(JsObject::default().into()),
     );
-    object.insert_func("Array", |_env, _this, _args| {
-        Ok(JsValue::Array(Default::default()))
+    object.insert_func("Array", |_env, _this, args| {
+        if args.len() != 1 {
+            return Ok(JsValue::from(args));
+        }
+        let JsValue::Number(len) = args[0] else {
+            return Ok(JsValue::from(args));
+        };
+        if len.fract() != 0. {
+            bail!("invalid array length");
+        }
+        Ok(JsValue::from(vec![JsValue::Number(0.); len as usize]))
     });
     object.insert("process", make_process_object());
     object.insert("fs", make_fs_object());

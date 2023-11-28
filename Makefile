@@ -82,9 +82,18 @@ prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_s
 prover_src = arbitrator/prover/src
 rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) $(prover_direct_includes)
 
+jit_dir = arbitrator/jit
+go_js_files = $(wildcard arbitrator/wasm-libraries/go-js/*.toml arbitrator/wasm-libraries/go-js/src/*.rs)
+jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files) $(go_js_files)
+
+go_js_test_dir = arbitrator/wasm-libraries/go-js-test
+go_js_test_files = $(wildcard $(go_js_test_dir)/*.go $(go_js_test_dir)/*.mod)
+go_js_test = $(go_js_test_dir)/js-test.wasm
+go_js_test_libs = $(patsubst %, $(output_latest)/%.wasm, soft-float wasi_stub go_stub)
+
 wasm_lib = arbitrator/wasm-libraries
 wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
-wasm_lib_go_abi = $(call wasm_lib_deps,go-abi)
+wasm_lib_go_abi = $(call wasm_lib_deps,go-abi) $(go_js_files)
 
 wasm32_wasi = target/wasm32-wasi/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
@@ -132,10 +141,6 @@ stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data
 stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
-
-jit_dir = arbitrator/jit
-go_js_files = $(wildcard arbitrator/wasm-libraries/go-js/*.toml arbitrator/wasm-libraries/go-js/src/*.rs)
-jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files) $(go_js_files)
 
 # user targets
 
@@ -200,6 +205,10 @@ test-go-stylus: test-go-deps
 test-go-redis: test-go-deps
 	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
+
+test-js-runtime: $(go_js_test) $(arbitrator_jit) $(go_js_test_libs) $(prover_bin)
+	./target/bin/jit --binary $< --go-arg --cranelift --require-success
+	$(prover_bin) $< -s 90000000 -l $(go_js_test_libs) --require-success
 
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -329,7 +338,7 @@ $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
-$(output_latest)/go_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,go-stub) $(wasm_lib_go_abi)  $(go_js_files)
+$(output_latest)/go_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,go-stub) $(wasm_lib_go_abi) $(go_js_files)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/go_stub.wasm $@
 
@@ -408,6 +417,9 @@ $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(go_js_test): $(go_js_test_files)
+	cd $(go_js_test_dir) && GOOS=js GOARCH=wasm go build -o js-test.wasm
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
 	$(prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
