@@ -27,7 +27,10 @@ func TestCache(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	cache := New(basePath)
+	cache, err := New(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageHeight:  0,
@@ -49,7 +52,7 @@ func TestCache(t *testing.T) {
 		common.BytesToHash([]byte("bar")),
 		common.BytesToHash([]byte("baz")),
 	}
-	err := cache.Put(key, want)
+	err = cache.Put(key, want)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +293,10 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 			b.Fatal(err)
 		}
 	})
-	cache := New(basePath)
+	cache, err := New(basePath)
+	if err != nil {
+		b.Fatal(err)
+	}
 	key := &Key{
 		WavmModuleRoot: common.BytesToHash([]byte("foo")),
 		MessageHeight:  0,

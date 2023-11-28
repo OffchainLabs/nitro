@@ -36,6 +36,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
@@ -66,11 +67,44 @@ type Cache struct {
 	baseDir string
 }
 
+func isOlderThanFourteenDays(t time.Time) bool {
+	return time.Since(t) > 14*24*time.Hour
+}
+
+func deleteFilesOlderThanFourteenDays(dir string) error {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		fileInfo, err := file.Info()
+		if err != nil {
+			return err
+		}
+		if fileInfo.IsDir() {
+			if err := deleteFilesOlderThanFourteenDays(filepath.Join(dir, fileInfo.Name())); err != nil {
+				return err
+			}
+		} else {
+			if isOlderThanFourteenDays(fileInfo.ModTime()) {
+				if err := os.Remove(filepath.Join(dir, fileInfo.Name())); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // New cache from a base directory path.
-func New(baseDir string) *Cache {
+func New(baseDir string) (*Cache, error) {
+	err := deleteFilesOlderThanFourteenDays(baseDir)
+	if err != nil {
+		return nil, err
+	}
 	return &Cache{
 		baseDir: baseDir,
-	}
+	}, nil
 }
 
 // Key for cache lookups includes the wavm module root of a challenge, as well
