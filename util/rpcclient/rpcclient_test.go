@@ -88,6 +88,11 @@ func (t *testAPI) FailAtFirst(ctx context.Context) error {
 	return errors.New("error")
 }
 
+func (t *testAPI) Delay(ctx context.Context, msec int64) error {
+	<-time.After(time.Millisecond * time.Duration(msec))
+	return nil
+}
+
 func TestRpcClientRetry(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
