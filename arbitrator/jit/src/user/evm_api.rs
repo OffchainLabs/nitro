@@ -3,11 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::{
-    gostack::GoStack,
-    machine::{ModuleAsm, WasmEnvMut},
-    syscall::WasmerJsEnv,
-};
+use crate::{gostack::GoStack, machine::WasmEnv, syscall::WasmerJsEnv, wavmio::Bytes32};
 use arbutil::{
     evm::{
         api::EvmApiMethod,
@@ -53,8 +49,8 @@ impl JsCallIntoGo for ApiCaller {
 /// Executes a wasm on a new thread
 pub(super) fn exec_wasm(
     sp: &mut GoStack,
-    mut env: WasmEnvMut,
-    module: ModuleAsm,
+    env: &mut WasmEnv,
+    module: Bytes32,
     calldata: Vec<u8>,
     compile: CompileConfig,
     config: StylusConfig,
@@ -64,6 +60,13 @@ pub(super) fn exec_wasm(
 ) -> Result<(Result<UserOutcome>, u64)> {
     use EvmMsg::*;
     use UserOutcomeKind::*;
+
+    let Some(module) = env.module_asms.get(&module).cloned() else {
+        bail!(
+            "module hash {module:?} not found in {:?}",
+            env.module_asms.keys()
+        );
+    };
 
     let (tx, rx) = mpsc::sync_channel(0);
     let evm_api = JsEvmApi::new(ApiCaller::new(tx.clone()));
@@ -91,17 +94,16 @@ pub(super) fn exec_wasm(
     });
 
     loop {
-        let msg = match rx.recv_timeout(env.data().process.child_timeout) {
+        let msg = match rx.recv_timeout(env.process.child_timeout) {
             Ok(msg) => msg,
             Err(err) => bail!("{}", err.red()),
         };
         match msg {
             Call(method, args, respond) => {
-                let (env, mut store) = env.data_and_store_mut();
                 let js_state = &mut env.js_state;
                 let exports = &mut env.exports;
 
-                let js_env = &mut WasmerJsEnv::new(sp, &mut store, exports, &mut env.go_state)?;
+                let js_env = &mut WasmerJsEnv::new(sp, exports, &mut env.go_state)?;
                 let outs = js_state.call_stylus_func(api_id, method, args, js_env)?;
                 respond.send(outs).unwrap();
             }

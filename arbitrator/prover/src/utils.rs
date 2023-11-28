@@ -4,7 +4,7 @@
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
-use wasmparser::{TableType, Type};
+use wasmparser::{TableType, ValType};
 
 /// A Vec<u8> allocated with libc::malloc
 pub struct CBytes {
@@ -61,7 +61,7 @@ impl From<&[u8]> for CBytes {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(remote = "Type")]
+#[serde(remote = "ValType")]
 enum RemoteType {
     I32,
     I64,
@@ -70,18 +70,13 @@ enum RemoteType {
     V128,
     FuncRef,
     ExternRef,
-
-    // TODO: types removed in wasmparser 0.95+
-    ExnRef,
-    Func,
-    EmptyBlockType,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "TableType")]
 pub struct RemoteTableType {
     #[serde(with = "RemoteType")]
-    pub element_type: Type,
+    pub element_type: ValType,
     pub initial: u32,
     pub maximum: Option<u32>,
 }

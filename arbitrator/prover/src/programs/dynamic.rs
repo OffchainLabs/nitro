@@ -9,7 +9,7 @@ use super::{
 use eyre::{bail, Result};
 use parking_lot::RwLock;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
-use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
+use wasmparser::{BlockType, Operator};
 
 pub const SCRATCH_GLOBAL: &str = "stylus_scratch_global";
 
@@ -99,7 +99,7 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
         }
 
         let [ink, status, scratch] = self.globals.map(|x| x.as_u32());
-        let if_ty = TypeOrFuncType::Type(WpType::EmptyBlockType);
+        let blockty = BlockType::Empty;
 
         #[rustfmt::skip]
         let linear = |coefficient| {
@@ -122,7 +122,7 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
 
                 // [old_ink, new_ink] → (old_ink < new_ink) (overflow detected)
                 I64LtU,
-                If { ty: if_ty },
+                If { blockty },
                 I32Const { value: 1 },
                 set!(status),
                 Unreachable,

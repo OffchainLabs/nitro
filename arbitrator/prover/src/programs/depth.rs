@@ -15,7 +15,7 @@ use std::sync::Arc;
 use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
 };
-use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
+use wasmparser::{BlockType, Operator, ValType};
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
@@ -132,7 +132,7 @@ impl<'a> FuncDepthChecker<'a> {
 }
 
 impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
-    fn locals_info(&mut self, locals: &[WpType]) {
+    fn locals_info(&mut self, locals: &[ValType]) {
         self.locals = Some(locals.len());
     }
 
@@ -176,14 +176,13 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
             bail!("frame too large: {} > {}-word limit", size.red(), limit);
         }
 
+        let blockty = BlockType::Empty;
         out.extend([
             // if space <= size => panic with depth = 0
             GlobalGet { global_index },
             I32Const { value: size as i32 },
             I32LeU,
-            If {
-                ty: BlockType::Type(WpType::EmptyBlockType),
-            },
+            If { blockty },
             I32Const { value: 0 },
             GlobalSet { global_index },
             Unreachable,
@@ -274,7 +273,7 @@ impl<'a> FuncDepthChecker<'a> {
         macro_rules! block_type {
             ($ty:expr) => {{
                 match $ty {
-                    BlockType::Type(WpType::EmptyBlockType) => {}
+                    BlockType::Empty => {}
                     BlockType::Type(_) => push!(1),
                     BlockType::FuncType(id) => {
                         let index = SignatureIndex::from_u32(*id);
@@ -292,17 +291,17 @@ impl<'a> FuncDepthChecker<'a> {
         for op in &self.code {
             #[rustfmt::skip]
             match op {
-                Block { ty } => {
-                    block_type!(ty); // we'll say any return slots have been pre-allocated
+                Block { blockty } => {
+                    block_type!(blockty); // we'll say any return slots have been pre-allocated
                     scopes.push(stack);
                 }
-                Loop { ty } => {
-                    block_type!(ty); // return slots
+                Loop { blockty } => {
+                    block_type!(blockty); // return slots
                     scopes.push(stack);
                 }
-                If { ty } => {
-                    pop!();          // pop the conditional
-                    block_type!(ty); // return slots
+                If { blockty } => {
+                    pop!();               // pop the conditional
+                    block_type!(blockty); // return slots
                     scopes.push(stack);
                 }
                 Else => {
@@ -325,10 +324,10 @@ impl<'a> FuncDepthChecker<'a> {
                     };
                     ins_and_outs!(ty)
                 }
-                CallIndirect { index, .. } => {
-                    let index = SignatureIndex::from_u32(*index);
+                CallIndirect { type_index, .. } => {
+                    let index = SignatureIndex::from_u32(*type_index);
                     let Some(ty) = self.sigs.get(&index) else {
-                        bail!("missing type for signature {}", index.as_u32().red())
+                        bail!("missing type for signature {}", type_index.red())
                     };
                     ins_and_outs!(ty);
                     pop!() // the table index
@@ -449,13 +448,13 @@ impl<'a> FuncDepthChecker<'a> {
                         I8x16Abs, I8x16Neg, I8x16Popcnt, I8x16AllTrue, I8x16Bitmask,
                         I8x16NarrowI16x8S, I8x16NarrowI16x8U,
                         I8x16Shl, I8x16ShrS, I8x16ShrU, I8x16Add, I8x16AddSatS, I8x16AddSatU, I8x16Sub, I8x16SubSatS,
-                        I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16RoundingAverageU,
+                        I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16AvgrU,
                         I16x8ExtAddPairwiseI8x16S, I16x8ExtAddPairwiseI8x16U, I16x8Abs, I16x8Neg, I16x8Q15MulrSatS,
                         I16x8AllTrue, I16x8Bitmask, I16x8NarrowI32x4S, I16x8NarrowI32x4U, I16x8ExtendLowI8x16S,
                         I16x8ExtendHighI8x16S, I16x8ExtendLowI8x16U, I16x8ExtendHighI8x16U,
                         I16x8Shl, I16x8ShrS, I16x8ShrU, I16x8Add, I16x8AddSatS, I16x8AddSatU,
                         I16x8Sub, I16x8SubSatS, I16x8SubSatU, I16x8Mul, I16x8MinS, I16x8MinU,
-                        I16x8MaxS, I16x8MaxU, I16x8RoundingAverageU, I16x8ExtMulLowI8x16S,
+                        I16x8MaxS, I16x8MaxU, I16x8AvgrU, I16x8ExtMulLowI8x16S,
                         I16x8ExtMulHighI8x16S, I16x8ExtMulLowI8x16U, I16x8ExtMulHighI8x16U,
                         I32x4ExtAddPairwiseI16x8U, I32x4Abs, I32x4Neg, I32x4AllTrue, I32x4Bitmask,
                         I32x4ExtAddPairwiseI16x8S, I32x4ExtendLowI16x8S, I32x4ExtendHighI16x8S, I32x4ExtendLowI16x8U,
@@ -473,9 +472,11 @@ impl<'a> FuncDepthChecker<'a> {
                         F32x4ConvertI32x4U, I32x4TruncSatF64x2SZero, I32x4TruncSatF64x2UZero, F64x2ConvertLowI32x4S,
                         F64x2ConvertLowI32x4U, F32x4DemoteF64x2Zero, F64x2PromoteLowF32x4, I8x16RelaxedSwizzle,
                         I32x4RelaxedTruncSatF32x4S, I32x4RelaxedTruncSatF32x4U, I32x4RelaxedTruncSatF64x2SZero,
-                        I32x4RelaxedTruncSatF64x2UZero, F32x4Fma, F32x4Fms, F64x2Fma, F64x2Fms, I8x16LaneSelect,
-                        I16x8LaneSelect, I32x4LaneSelect, I64x2LaneSelect, F32x4RelaxedMin, F32x4RelaxedMax,
-                        F64x2RelaxedMin, F64x2RelaxedMax
+                        I32x4RelaxedTruncSatF64x2UZero, F32x4RelaxedFma, F32x4RelaxedFnma, F64x2RelaxedFma,
+                        F64x2RelaxedFnma, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
+                        I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
+                        I16x8RelaxedQ15mulrS, I16x8DotI8x16I7x16S, I32x4DotI8x16I7x16AddS,
+                        F32x4RelaxedDotBf16x8AddF32x4
                     )
                 ) => bail!("SIMD extension not supported {:?}", unsupported),
             };

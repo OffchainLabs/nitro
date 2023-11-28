@@ -6,9 +6,21 @@ members = [
         "jit",
 ]
 exclude = [
-        "stylus/tests/"
+        "stylus/tests/",
+        "tools/wasmer/"
 ]
 resolver = "2"
+
+[workspace.package]
+authors = ["Offchain Labs"]
+edition = "2021"
+homepage = "https://arbitrum.io"
+license = "BSL"
+repository = "https://github.com/OffchainLabs/nitro.git"
+rust-version = "1.67"
+
+[workspace.dependencies]
+wasmparser = "0.95"
 
 [profile.release]
 debug = true

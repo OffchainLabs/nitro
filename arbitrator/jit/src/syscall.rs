@@ -8,7 +8,7 @@ use crate::{
 
 use arbutil::Color;
 use go_js::JsEnv;
-use wasmer::{StoreMut, TypedFunction};
+use wasmer::TypedFunction;
 
 /// go side: λ(v value)
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
@@ -61,14 +61,12 @@ pub struct WasmerJsEnv<'a, 'b> {
     rng: &'a mut rand_pcg::Pcg32,
     resume: &'a TypedFunction<(), ()>,
     get_stack_pointer: &'a TypedFunction<(), i32>,
-    go_stack: &'a mut GoStack,
-    store: &'a mut StoreMut<'b>,
+    go_stack: &'a mut GoStack<'b>,
 }
 
 impl<'a, 'b> WasmerJsEnv<'a, 'b> {
     pub fn new(
-        sp: &'a mut GoStack,
-        store: &'a mut StoreMut<'b>,
+        go_stack: &'a mut GoStack<'b>,
         exports: &'a mut WasmEnvFuncs,
         go_state: &'a mut GoRuntimeState,
     ) -> Result<Self, Escape> {
@@ -83,8 +81,7 @@ impl<'a, 'b> WasmerJsEnv<'a, 'b> {
             rng: &mut go_state.rng,
             resume,
             get_stack_pointer,
-            go_stack: sp,
-            store,
+            go_stack,
         })
     }
 }
@@ -95,8 +92,8 @@ impl<'a, 'b> JsEnv for WasmerJsEnv<'a, 'b> {
     }
 
     fn resume(&mut self) -> eyre::Result<()> {
-        let store = &mut *self.store;
         let go_stack = &mut *self.go_stack;
+        let store = &mut go_stack.store;
 
         self.resume.call(store)?;
 
@@ -113,40 +110,40 @@ impl<'a, 'b> JsEnv for WasmerJsEnv<'a, 'b> {
 
 /// go side: λ(v value, args []value) (value, bool)
 pub fn js_value_new(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
     let constructor = sp.read_js();
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_ids(args_ptr, args_len);
 
-    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
+    let mut js_env = WasmerJsEnv::new(&mut sp, &mut env.exports, &mut env.go_state)?;
     let result = env.js_state.value_new(&mut js_env, constructor, &args);
     sp.write_call_result(result, || "constructor call".into())
 }
 
 /// go side: λ(v value, args []value) (value, bool)
 pub fn js_value_invoke(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
     let object = sp.read_js();
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_ids(args_ptr, args_len);
 
-    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
+    let mut js_env = WasmerJsEnv::new(&mut sp, &mut env.exports, &mut env.go_state)?;
     let result = env.js_state.value_invoke(&mut js_env, object, &args);
     sp.write_call_result(result, || "invocation".into())
 }
 
 /// go side: λ(v value, method string, args []value) (value, bool)
 pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
     let object = sp.read_js();
     let method = sp.read_string();
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_ids(args_ptr, args_len);
 
-    let mut js_env = WasmerJsEnv::new(&mut sp, &mut store, &mut env.exports, &mut env.go_state)?;
+    let mut js_env = WasmerJsEnv::new(&mut sp, &mut env.exports, &mut env.go_state)?;
     let result = env.js_state.value_call(&mut js_env, object, &method, &args);
     sp.write_call_result(result, || format!("method call to {method}"))
 }

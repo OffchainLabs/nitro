@@ -28,9 +28,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Memory, Module, Pages, Store,
+    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store,
     TypedFunction, Value, WasmTypeList,
 };
+use wasmer_vm::VMExtern;
 
 #[derive(Debug)]
 pub struct NativeInstance<E: EvmApi> {
@@ -182,9 +183,14 @@ impl<E: EvmApi> NativeInstance<E> {
         let store = &mut self.store;
         let exports = &self.instance.exports;
 
-        let expect_global = |name| -> Global { exports.get_global(name).unwrap().clone() };
-        let ink_left = unsafe { expect_global(STYLUS_INK_LEFT).vmglobal(store) };
-        let ink_status = unsafe { expect_global(STYLUS_INK_STATUS).vmglobal(store) };
+        let mut expect_global = |name| {
+            let VMExtern::Global(sh) = exports.get_extern(name).unwrap().to_vm_extern() else {
+                panic!("name not found global");
+            };
+            sh.get(store.objects_mut()).vmglobal()
+        };
+        let ink_left = expect_global(STYLUS_INK_LEFT);
+        let ink_status = expect_global(STYLUS_INK_STATUS);
 
         self.env_mut().meter = Some(MeterData {
             ink_left,

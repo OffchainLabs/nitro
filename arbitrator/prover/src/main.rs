@@ -407,9 +407,7 @@ fn main() -> Result<()> {
         while let Some((module, func, profile)) = func_stack.pop() {
             sum.total_cycles += profile.total_cycles;
             sum.count += profile.count;
-            let entry = func_profile
-                .entry((module, func))
-                .or_insert_with(SimpleProfile::default);
+            let entry = func_profile.entry((module, func)).or_default();
             entry.count += sum.count;
             entry.total_cycles += sum.total_cycles;
             entry.local_cycles += profile.local_cycles;
