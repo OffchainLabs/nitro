@@ -196,10 +196,12 @@ func ProduceBlockAdvanced(
 
 	// Espresso-specific validation
 	// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
-	if chainConfig.Espresso {
+	var defaultCommitment espresso.Commitment
+
+	if lastHotShotCommitment != nil && !lastHotShotCommitment.Equals(defaultCommitment) {
 		jst := l1Header.BlockJustification
 		if jst == nil {
-			return nil, nil, errors.New("batch missing espresso justification")
+			return nil, nil, fmt.Errorf("batch missing espresso justification, provided commitment:  %v", lastHotShotCommitment)
 
 		}
 		hotshotHeader := jst.Header

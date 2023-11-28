@@ -155,6 +155,7 @@ func (machine *JitMachine) prove(
 		if batch.HotShotCommitment != nil {
 			hotShotCommitment = *batch.HotShotCommitment
 		}
+		log.Info("validating with hotshot commitment", "commitment", hotShotCommitment)
 		if err := writeExact(another); err != nil {
 			return state, err
 		}
