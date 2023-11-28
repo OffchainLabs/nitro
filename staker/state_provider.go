@@ -75,7 +75,10 @@ func NewStateManager(
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
 ) (*StateManager, error) {
-	historyCache := challengecache.New(cacheBaseDir)
+	historyCache, err := challengecache.New(cacheBaseDir)
+	if err != nil {
+		return nil, err
+	}
 	sm := &StateManager{
 		validator:            val,
 		historyCache:         historyCache,
