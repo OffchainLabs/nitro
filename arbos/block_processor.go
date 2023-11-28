@@ -377,6 +377,19 @@ func ProduceBlockAdvanced(
 		}
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
+		arbosVer := types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion
+		if arbosVer >= arbostypes.ArbosVersion_FixRedeemGas {
+			// subtract gas burned for future use
+			for _, scheduledTx := range result.ScheduledTxes {
+				switch inner := scheduledTx.GetInner().(type) {
+				case *types.ArbitrumRetryTx:
+					txGasUsed = arbmath.SaturatingUSub(txGasUsed, inner.Gas)
+				default:
+					log.Warn("Unexpected type of scheduled tx", "type", scheduledTx.Type())
+				}
+			}
+		}
+
 		// Update expectedTotalBalanceDelta (also done in logs loop)
 		switch txInner := tx.GetInner().(type) {
 		case *types.ArbitrumDepositTx:
