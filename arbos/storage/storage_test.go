@@ -53,7 +53,7 @@ func TestStorageBackedBigInt(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Verify that our encoding matches geth's signed complement impl
-		expectedRawVal := common.BigToHash(math.U256(new(big.Int).Set(in)))
+		expectedRawVal := common.BigToHash(arbmath.U256(in))
 		if rawVal != expectedRawVal {
 			t.Fatal("for input", in, "expected raw value", expectedRawVal, "but got", rawVal)
 		}
