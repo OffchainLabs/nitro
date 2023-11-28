@@ -400,19 +400,12 @@ func (b *Contract) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }
 
-type L1ReaderInterface interface {
-	Client() arbutil.L1Interface
-	Subscribe(bool) (<-chan *types.Header, func())
-	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
-	UseFinalityData() bool
-}
-
 func GetValidatorWalletContract(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
 	transactAuth *bind.TransactOpts,
-	l1Reader L1ReaderInterface,
+	l1Reader *headerreader.HeaderReader,
 	createIfMissing bool,
 ) (*common.Address, error) {
 	client := l1Reader.Client()
