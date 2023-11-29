@@ -139,7 +139,8 @@ func ProduceBlock(
 		return nil, nil, err
 	}
 	var batchFetchErr error
-	txes, err := ParseL2Transactions(message, chainConfig.ChainID, arbState.ArbOSVersion(), func(batchNum uint64, batchHash common.Hash) []byte {
+	arbOSVersion := arbState.ArbOSVersion()
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, &arbOSVersion, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err

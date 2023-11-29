@@ -36,7 +36,8 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	txes, err := ParseL2Transactions(newMsg, chainId, 0, nil)
+	arbOSVersion := uint64(0)
+	txes, err := ParseL2Transactions(newMsg, chainId, &arbOSVersion, nil)
 	if err != nil {
 		t.Error(err)
 	}

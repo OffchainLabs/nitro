@@ -223,10 +223,9 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
-		currentBlockHeader := s.bc.CurrentBlock()
-		arbOSVersion := types.DeserializeHeaderExtraInformation(currentBlockHeader).ArbOSFormatVersion
+		// We can't check if ArbOS version supports the message, it will be checked later
 		// We don't need a batch fetcher as this is an L2 message
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, arbOSVersion, nil)
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, nil, nil)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
