@@ -159,8 +159,32 @@ func ProduceBlock(
 	}
 
 	hooks := NoopSequencingHooks()
+
+	// Espresso-specific validation
+	// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
+	if chainConfig.Espresso {
+		jst := message.Header.BlockJustification
+		if jst == nil {
+			return nil, nil, errors.New("batch missing espresso justification")
+
+		}
+		hotshotHeader := jst.Header
+		if *lastHotShotCommitment != hotshotHeader.Commit() {
+			return nil, nil, errors.New("invalid hotshot header")
+		}
+		var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
+		var proofs = []*espresso.NmtProof{&message.Header.BlockJustification.Proof}
+		// If the validation function below were not mocked, we would need to serialize the transactions
+		// in the batch here. To avoid the unnecessary overhead, we provide an empty array instead.
+		var txs []espresso.Bytes
+		err := espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
+		if err != nil {
+			return nil, nil, errors.New("failed to validate namespace proof)")
+		}
+	}
+
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, lastHotShotCommitment, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -170,7 +194,6 @@ func ProduceBlockAdvanced(
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
-	lastHotShotCommitment *espresso.Commitment,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
@@ -192,31 +215,6 @@ func ProduceBlockAdvanced(
 		poster:        poster,
 		l1BlockNumber: l1Header.BlockNumber,
 		l1Timestamp:   l1Header.Timestamp,
-	}
-
-	// Espresso-specific validation
-	// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
-	var defaultCommitment espresso.Commitment
-
-	if lastHotShotCommitment != nil && !lastHotShotCommitment.Equals(defaultCommitment) {
-		jst := l1Header.BlockJustification
-		if jst == nil {
-			return nil, nil, fmt.Errorf("batch missing espresso justification, provided commitment:  %v", lastHotShotCommitment)
-
-		}
-		hotshotHeader := jst.Header
-		if *lastHotShotCommitment != hotshotHeader.Commit() {
-			return nil, nil, errors.New("invalid hotshot header")
-		}
-		var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
-		var proofs = []*espresso.NmtProof{&l1Header.BlockJustification.Proof}
-		// If the validation function below were not mocked, we would need to serialize the transactions
-		// in the batch here. To avoid the unnecessary overhead, we provide an empty array instead.
-		var txs []espresso.Bytes
-		err := espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
-		if err != nil {
-			return nil, nil, errors.New("failed to validate namespace proof)")
-		}
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)

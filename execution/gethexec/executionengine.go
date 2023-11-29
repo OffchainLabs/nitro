@@ -294,7 +294,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		txes,
 		delayedMessagesRead,
 		lastBlockHeader,
-		nil,
 		statedb,
 		s.bc,
 		s.bc.Config(),

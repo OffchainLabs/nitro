@@ -20,6 +20,7 @@ import (
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
+// TODO: parse espresso justification https://github.com/EspressoSystems/nitro-espresso-integration/pull/14/files
 func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
