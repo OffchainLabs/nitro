@@ -168,6 +168,15 @@ func (w *Watcher) ComputeHonestPathTimer(
 		return 0, nil, nil, errors.New("latest block header number is not a uint64")
 	}
 	blockNumber := header.Number.Uint64()
+	return w.ComputeHonestPathTimerByBlockNumber(ctx, topLevelAssertionHash, edgeId, blockNumber)
+}
+
+func (w *Watcher) ComputeHonestPathTimerByBlockNumber(
+	ctx context.Context,
+	topLevelAssertionHash protocol.AssertionHash,
+	edgeId protocol.EdgeId,
+	blockNumber uint64,
+) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error) {
 	chal, ok := w.challenges.TryGet(topLevelAssertionHash)
 	if !ok {
 		return 0, nil, nil, fmt.Errorf(

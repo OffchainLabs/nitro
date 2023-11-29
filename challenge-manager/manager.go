@@ -342,6 +342,13 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 		)
 	})
 }
+func (m *Manager) Watcher() *watcher.Watcher {
+	return m.watcher
+}
+
+func (m *Manager) ChallengeManager() *challengeV2gen.EdgeChallengeManagerFilterer {
+	return m.chalManager
+}
 
 func (m *Manager) Start(ctx context.Context) {
 	srvlog.Info("Started challenge manager", log.Ctx{

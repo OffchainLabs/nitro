@@ -258,6 +258,63 @@ func TestSync_HonestBobStopsCharlieJoins(t *testing.T) {
 	)
 }
 
+func TestSync_HonestBobRemainsDishonestAliceStops(t *testing.T) {
+	be, err := backend.NewAnvilLocal(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, be.Start())
+	defer func() {
+		require.NoError(t, be.Stop(), "error stopping backend")
+	}()
+
+	layerZeroHeights := &protocol.LayerZeroHeights{
+		BlockChallengeHeight:     1 << 5,
+		BigStepChallengeHeight:   1 << 3,
+		SmallStepChallengeHeight: 1 << 5,
+	}
+	numBigSteps := uint8(3)
+	totalWasmOpcodes := uint64(1)
+	for i := uint8(0); i < numBigSteps; i++ {
+		totalWasmOpcodes *= layerZeroHeights.BigStepChallengeHeight
+	}
+	totalWasmOpcodes *= layerZeroHeights.SmallStepChallengeHeight
+	machineDivergenceStep := totalWasmOpcodes / 2
+
+	scenario := &ChallengeScenario{
+		Name: "dishonest alice stops and bob wins by time",
+		AliceStateManager: func() l2stateprovider.Provider {
+			assertionDivergenceHeight := uint64(4)
+			sm, err := statemanager.NewForSimpleMachine(
+				statemanager.WithLayerZeroHeights(layerZeroHeights, numBigSteps),
+				statemanager.WithMachineDivergenceStep(machineDivergenceStep),
+				statemanager.WithBlockDivergenceHeight(assertionDivergenceHeight),
+				statemanager.WithDivergentBlockHeightOffset(0),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return sm
+		}(),
+		BobStateManager: func() l2stateprovider.Provider {
+			sm, err := statemanager.NewForSimpleMachine(statemanager.WithLayerZeroHeights(layerZeroHeights, numBigSteps))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return sm
+		}(),
+		Expectations: []expect{
+			expectAssertionConfirmedByChallengeWinner,
+		},
+	}
+
+	testSyncAliceStopsBobRemains(
+		t,
+		be,
+		scenario,
+		challenge_testing.WithLayerZeroHeights(layerZeroHeights),
+		challenge_testing.WithNumBigStepLevels(numBigSteps),
+	)
+}
+
 type FlakyEthClient struct {
 	*ethclient.Client
 }
@@ -504,6 +561,86 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 			t.Fatal(err)
 		}
 
+	})
+}
+
+// testSyncAliceStopsBobRemains tests the scenario where dishonest Alice stops and honest bob remains.
+func testSyncAliceStopsBobRemains(t *testing.T, be backend.Backend, s *ChallengeScenario, opts ...challenge_testing.Opt) {
+	t.Run(s.Name, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
+		defer cancel()
+
+		rollup, err := be.DeployRollup(opts...)
+		require.NoError(t, err)
+
+		// Bad Alice
+		aliceCtx, aliceCancelCtx := context.WithCancel(ctx)
+		aChain, err := solimpl.NewAssertionChain(aliceCtx, rollup, be.Alice(), be.Client())
+		require.NoError(t, err)
+		alice, err := validator.New(aliceCtx, aChain, be.Client(), s.AliceStateManager, rollup, validator.WithAddress(be.Alice().From), validator.WithName("alice"), validator.WithMode(types.MakeMode), validator.WithEdgeTrackerWakeInterval(100*time.Millisecond))
+		require.NoError(t, err)
+
+		// Good Bob
+		bChain, err := solimpl.NewAssertionChain(ctx, rollup, be.Bob(), be.Client())
+		require.NoError(t, err)
+		bob, err := validator.New(ctx, bChain, be.Client(), s.BobStateManager, rollup, validator.WithAddress(be.Bob().From), validator.WithName("bob"), validator.WithMode(types.MakeMode), validator.WithEdgeTrackerWakeInterval(100*time.Millisecond))
+		require.NoError(t, err)
+
+		alicePoster, err := assertions.NewManager(aChain, s.AliceStateManager, be.Client(), alice, rollup, "alice", time.Hour, time.Second*10, s.AliceStateManager, time.Hour, time.Second)
+		require.NoError(t, err)
+		bobPoster, err := assertions.NewManager(bChain, s.BobStateManager, be.Client(), bob, rollup, "bob", time.Hour, time.Second*10, s.BobStateManager, time.Hour, time.Second)
+		require.NoError(t, err)
+		aliceLeaf, err := alicePoster.PostAssertion(aliceCtx)
+		require.NoError(t, err)
+		bobLeaf, err := bobPoster.PostAssertion(ctx)
+		require.NoError(t, err)
+		require.NoError(t, alicePoster.ProcessAssertionCreationEvent(aliceCtx, aliceLeaf.Id()))
+		require.NoError(t, bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Id()))
+
+		// Alice and bob starts to challenge each other.
+		alice.Start(aliceCtx)
+		bob.Start(ctx)
+
+		// 30s later, alice shuts down
+		time.Sleep(30 * time.Second)
+		aliceCancelCtx()
+
+		g, groupCtx := errgroup.WithContext(ctx)
+		for _, e := range s.Expectations {
+			fn := e // loop closure
+			g.Go(func() error {
+				return fn(t, groupCtx, be)
+			})
+		}
+
+		if err = g.Wait(); err != nil {
+			t.Fatal(err)
+		}
+
+		// Confirm that local path timer is equal to onchain path timer.
+		filterOpts := &bind.FilterOpts{
+			Start:   0,
+			Context: ctx,
+		}
+		logs, err := bob.ChallengeManager().FilterEdgeConfirmedByTime(filterOpts, nil, nil)
+		require.NoError(t, err)
+		edges := bob.Watcher().GetEdges()
+		for logs.Next() {
+			for _, edge := range edges {
+				if edge.Id().Hash == logs.Event.EdgeId {
+					assertionHash, err := edge.AssertionHash(ctx)
+					require.NoError(t, err)
+					pathTimer, _, _, err := bob.Watcher().ComputeHonestPathTimerByBlockNumber(ctx, assertionHash, edge.Id(), logs.Event.Raw.BlockNumber)
+					require.NoError(t, err)
+					// Allow for some small error.
+					// Since contract might use have used an old block to compute the path timer.
+					require.True(t, int64(logs.Event.TotalTimeUnrivaled)-int64(pathTimer) <= 1)
+					require.True(t, int64(logs.Event.TotalTimeUnrivaled)-int64(pathTimer) >= -1)
+					t.Log("Local path timer is equal to onchain path timer")
+					t.Logf("edge %v: path timer %v", edge.Id(), pathTimer)
+				}
+			}
+		}
 	})
 }
 
