@@ -229,8 +229,8 @@ func newValidationEntry(
 
 func NewStatelessBlockValidator(
 	inboxReader InboxReaderInterface,
-	hotShotReader HotShotReaderInterface,
 	inbox InboxTrackerInterface,
+	hotShotReader HotShotReaderInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
@@ -238,6 +238,10 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
+	// Sanity check, also used to surpress the unused koanf field lint error
+	if config().Espresso && config().HotShotAddress == "" {
+		return nil, errors.New("cannot create a new stateless block validator in espresso mode without a hotshot reader")
+	}
 	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
 	valClient := server_api.NewValidationClient(valConfFetcher, stack)
 	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
@@ -300,8 +304,9 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	}
 	for i, batch := range e.BatchInfo {
 		if usingEspresso {
-			// Only provide commitment for L2 message type
-			batchNum := e.BatchInfo[i].Number
+			// TODO: Use the inbox tracker to fetch the correct HotShot index
+			// https://github.com/EspressoSystems/espresso-sequencer/issues/782
+			batchNum := batch.Number
 			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
 			if err != nil {
 				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)

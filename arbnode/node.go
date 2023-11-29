@@ -744,8 +744,8 @@ func createNodeImpl(
 		}
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
-			hotShotReader,
 			inboxTracker,
+			hotShotReader,
 			txStreamer,
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
