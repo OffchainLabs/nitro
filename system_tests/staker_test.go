@@ -446,9 +446,8 @@ func TestStakersCooperative(t *testing.T) {
 func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	stakerImpl, l1info, l1client, l2chainConfig, l2node, deployAuth := setupNonBoldStaker(t, ctx)
-	defer l2node.StopAndWait()
-
+	stakerImpl, builder := setupNonBoldStaker(t, ctx)
+	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
 	err := stakerImpl.Initialize(ctx)
 	Require(t, err)
 	stakerImpl.Start(ctx)
@@ -456,13 +455,13 @@ func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
 		t.Fatal("Old protocol staker not started")
 	}
 
-	rollupAddresses := deployBoldContracts(t, ctx, l1info, l1client, l2chainConfig.ChainID, deployAuth)
+	rollupAddresses := deployBoldContracts(t, ctx, builder.L1Info, builder.L1.Client, builder.chainConfig.ChainID, deployAuth)
 
-	bridge, err := bridgegen.NewBridge(l2node.DeployInfo.Bridge, l1client)
+	bridge, err := bridgegen.NewBridge(builder.L2.ConsensusNode.DeployInfo.Bridge, builder.L1.Client)
 	Require(t, err)
 	tx, err := bridge.UpdateRollupAddress(&deployAuth, rollupAddresses.Rollup)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, builder.L1.Client, tx)
 	Require(t, err)
 
 	time.Sleep(time.Second)
@@ -472,22 +471,21 @@ func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
 	}
 }
 
-func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, info, *ethclient.Client, *params.ChainConfig, *arbnode.Node, bind.TransactOpts) {
+func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, *NodeBuilder) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
-	l2info := NewBlockChainTestInfo(
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.L2Info = NewBlockChainTestInfo(
 		t,
-		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.Build(t)
 	l2node := builder.L2.ConsensusNode
-	l2client := builder.L2.Client
 	l1info := builder.L1Info
 	l1client := builder.L1.Client
 
-	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2client, ctx)
+	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 
@@ -497,10 +495,16 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, info
 	TransferBalance(t, "Faucet", "Validator", balance, l1info, l1client, ctx)
 	l1auth := l1info.GetDefaultTransactOpts("Validator", ctx)
 
-	rollup, err := rollupgen.NewRollupAdminLogic(l2node.DeployInfo.Rollup, l1client)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	Require(t, err)
+	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err)
 
-	tx, err := rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
+	Require(t, err)
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setMinAssertPeriodCalldata)
+	Require(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
@@ -545,7 +549,7 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, info
 		nil,
 	)
 	Require(t, err)
-	return stakerImpl, l1info, l1client, l2chainConfig, l2node, deployAuth
+	return stakerImpl, builder
 }
 
 func deployBoldContracts(
