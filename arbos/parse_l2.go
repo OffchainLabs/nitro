@@ -151,6 +151,11 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 			}
 			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, arbOSVersion, depth+1)
 			if err != nil {
+				if errors.Is(err, types.ErrTxTypeNotSupported) {
+					// in case of reorg back to old arbos version some txes may be not yet supported, but we don't want to drop other txes from batch
+					index.Add(index, big.NewInt(1)) // TODO(magic) do we need to increment the index here?
+					continue
+				}
 				return nil, err
 			}
 			segments = append(segments, nestedSegments...)
