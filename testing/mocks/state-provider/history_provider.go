@@ -59,7 +59,7 @@ func (s *L2StateBackend) L2MessageStatesUpTo(
 	ctx context.Context,
 	from l2stateprovider.Height,
 	upTo option.Option[l2stateprovider.Height],
-	_,
+	fromBatch,
 	toBatch l2stateprovider.Batch,
 ) ([]common.Hash, error) {
 	var to l2stateprovider.Height
@@ -69,5 +69,5 @@ func (s *L2StateBackend) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = l2stateprovider.Height(blockChallengeLeafHeight)
 	}
-	return s.statesUpTo(uint64(from), uint64(to), uint64(toBatch))
+	return s.statesUpTo(uint64(from), uint64(to), uint64(fromBatch), uint64(toBatch))
 }

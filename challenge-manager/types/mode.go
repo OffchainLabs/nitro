@@ -3,13 +3,12 @@ package types
 type Mode uint8
 
 const (
-	// WatchTowerMode mode is the default mode for the challenge manager.
-	// It will not trigger a challenge creation, but will agree if it agrees with assertions and log errors if it disagrees.
+	// Watchtower: don't do anything on L1, but log if there's a bad assertion
 	WatchTowerMode Mode = iota
-	// ResolveMode mode will not post assertion, but will confirm assertion, and this is useful to get the stake back.
-	ResolveMode
-	// DefensiveMode mode will not post assertion, but will post and open challenges if it disagrees with any assertions.
+	// Defensive: stake if there's a bad assertion
 	DefensiveMode
-	// MakeMode mode will perform everything, ranging from posting assertions to staking to challenging and confirming.
+	// Resolve nodes: stay staked on the latest node and resolve any unconfirmed nodes, challenging bad assertions
+	ResolveMode
+	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeMode
 )

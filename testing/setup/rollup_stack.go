@@ -86,7 +86,7 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	honestStateManager, err := statemanager.NewForSimpleMachine(setup.stateManagerOpts...)
+	honestStateManager, err := statemanager.NewForSimpleMachine(setup.StateManagerOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func CreateTwoValidatorFork(
 		cfg.DivergeMachineHeight = 1
 	}
 
-	stateManagerOpts := setup.stateManagerOpts
+	stateManagerOpts := setup.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithBlockDivergenceHeight(cfg.DivergeBlockHeight),
@@ -157,7 +157,7 @@ type ChainSetup struct {
 	useMockBridge        bool
 	useMockOneStepProver bool
 	challengeTestingOpts []challenge_testing.Opt
-	stateManagerOpts     []statemanager.Opt
+	StateManagerOpts     []statemanager.Opt
 }
 
 type Opt func(setup *ChainSetup)
@@ -182,7 +182,7 @@ func WithChallengeTestingOpts(opts ...challenge_testing.Opt) Opt {
 
 func WithStateManagerOpts(opts ...statemanager.Opt) Opt {
 	return func(setup *ChainSetup) {
-		setup.stateManagerOpts = opts
+		setup.StateManagerOpts = opts
 	}
 }
 

@@ -10,12 +10,17 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 )
 
 func (m *Manager) postAssertionRoutine(ctx context.Context) {
+	if m.challengeReader.Mode() < types.MakeMode {
+		srvlog.Warn("Staker strategy not configured to stake on latest assertions")
+		return
+	}
 	if _, err := m.PostAssertion(ctx); err != nil {
 		if !errors.Is(err, solimpl.ErrAlreadyExists) {
 			srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
@@ -81,10 +86,10 @@ func (m *Manager) PostAssertionBasedOnParent(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 	submitFn func(
-	ctx context.Context,
-	parentCreationInfo *protocol.AssertionCreatedInfo,
-	newState *protocol.ExecutionState,
-) (protocol.Assertion, error),
+		ctx context.Context,
+		parentCreationInfo *protocol.AssertionCreatedInfo,
+		newState *protocol.ExecutionState,
+	) (protocol.Assertion, error),
 ) (protocol.Assertion, error) {
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return nil, errors.New("inbox max count not a uint64")
