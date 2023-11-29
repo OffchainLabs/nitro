@@ -253,13 +253,12 @@ func (bcs *BroadcastClients) stopSecondaryFeed() {
 		log.Info("disconnected secondary feed", "url", bcs.secondaryURL[pos])
 
 		// flush the secondary feeds' message and confirmedSequenceNumber channels
-	f:
 		for {
 			select {
 			case <-bcs.secondaryRouter.messageChan:
 			case <-bcs.secondaryRouter.confirmedSequenceNumberChan:
 			default:
-				break f
+				return
 			}
 		}
 	}
