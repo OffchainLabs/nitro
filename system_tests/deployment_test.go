@@ -6,18 +6,18 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"math/big"
 	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient.Client, contractCode []byte, accountInfo *AccountInfo, expectedEstimateGasError error) {
@@ -26,7 +26,7 @@ func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient
 		0x7F, // PUSH32
 	}
 	// len(contractCode)
-	deployCode = append(deployCode, math.U256Bytes(big.NewInt(int64(len(contractCode))))...)
+	deployCode = append(deployCode, arbmath.Uint64ToU256Bytes(uint64(len(contractCode)))...)
 	var codeOffset byte = 42
 	deployCode = append(deployCode, []byte{
 		0x80,             // DUP

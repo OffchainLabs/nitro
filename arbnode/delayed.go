@@ -117,7 +117,7 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 		arbmath.UintToBytes(m.Message.Header.BlockNumber),
 		arbmath.UintToBytes(m.Message.Header.Timestamp),
 		m.Message.Header.RequestId.Bytes(),
-		math.U256Bytes(m.Message.Header.L1BaseFee),
+		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
 		crypto.Keccak256(m.Message.L2msg),
 	)
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
