@@ -109,7 +109,7 @@ func TestTippingTxJsonRPC(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	// make sure ArbOSVersion supports ArbitrumSubtypedTx
-	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumSubtypedTx, builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion)
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumTippingTx, builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion)
 	cleanup := builder.Build(t)
 	defer cleanup()
 	l2client, l2info := builder.L2.Client, builder.L2Info
@@ -151,8 +151,8 @@ func TestTippingTxTipPaid(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	// make sure ArbOSVersion supports ArbitrumSubtypedTx
-	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumSubtypedTx, builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion)
+	// make sure ArbOSVersion supports ArbitrumTippingTx
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = arbmath.MaxInt(arbostypes.ArbosVersion_ArbitrumTippingTx, builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion)
 	cleanup := builder.Build(t)
 	defer cleanup()
 	l2client, l2info := builder.L2.Client, builder.L2Info
@@ -234,7 +234,7 @@ func assertEqualTx(t *testing.T, a, b *types.Transaction) {
 	}
 }
 
-func testSubtypedTxOldArbosVersion(t *testing.T, version uint64) {
+func testTippingTxOldArbosVersion(t *testing.T, version uint64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
@@ -254,9 +254,8 @@ func testSubtypedTxOldArbosVersion(t *testing.T, version uint64) {
 	}
 }
 
-func TestSubtypedTxOldArbosVersion(t *testing.T) {
-	testSubtypedTxOldArbosVersion(t, 8)
-	testSubtypedTxOldArbosVersion(t, 9)
-	testSubtypedTxOldArbosVersion(t, 10)
-	testSubtypedTxOldArbosVersion(t, 11)
+func TestTippingTxOldArbosVersion(t *testing.T) {
+	testTippingTxOldArbosVersion(t, 1)
+	testTippingTxOldArbosVersion(t, 10)
+	testTippingTxOldArbosVersion(t, 11)
 }

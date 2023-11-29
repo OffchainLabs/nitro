@@ -166,7 +166,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
-		if arbOSVersion != nil && newTx.Type() == types.ArbitrumSubtypedTxType && *arbOSVersion < arbostypes.ArbosVersion_ArbitrumSubtypedTx {
+		if arbOSVersion != nil && newTx.Type() == types.ArbitrumSubtypedTxType && *arbOSVersion < arbostypes.RequiredArbosVersionForTxSubtype(types.GetArbitrumTxSubtype(newTx)) {
 			return nil, types.ErrTxTypeNotSupported
 		}
 		if newTx.Type() >= types.ArbitrumDepositTxType || newTx.Type() == types.BlobTxType {

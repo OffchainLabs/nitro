@@ -693,7 +693,7 @@ func (p *TxProcessor) DropTip() bool {
 	version := p.state.ArbOSVersion()
 	transaction := p.msg.Tx
 	tippingTx := false
-	if version >= arbostypes.ArbosVersion_ArbitrumSubtypedTx && transaction != nil && transaction.Type() == types.ArbitrumSubtypedTxType {
+	if version >= arbostypes.ArbosVersion_ArbitrumTippingTx && transaction != nil && transaction.Type() == types.ArbitrumSubtypedTxType {
 		subtype := types.GetArbitrumTxSubtype(transaction)
 		tippingTx = subtype == types.ArbitrumTippingTxSubtype
 	}
