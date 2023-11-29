@@ -129,6 +129,57 @@ func TestEstimate(t *testing.T) {
 	}
 }
 
+func TestDifficultyForLatestArbOS(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	// deploy a test contract
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	Require(t, err, "could not deploy contract")
+
+	tx, err := simple.StoreDifficulty(&auth)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+	Require(t, err)
+	if !arbmath.BigEquals(difficulty, common.Big1) {
+		Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+	}
+}
+
+func TestDifficultyForArbOSTen(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	// deploy a test contract
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	Require(t, err, "could not deploy contract")
+
+	tx, err := simple.StoreDifficulty(&auth)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+	Require(t, err)
+	if !arbmath.BigEquals(difficulty, common.Big1) {
+		Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+	}
+}
+
 func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

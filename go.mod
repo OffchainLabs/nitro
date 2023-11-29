@@ -10,6 +10,7 @@ replace github.com/OffchainLabs/bold => ./bold
 
 require (
 	github.com/OffchainLabs/bold v0.0.0-00010101000000-000000000000
+	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.21.0
 	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
 	github.com/andybalholm/brotli v1.0.4
@@ -84,7 +85,7 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
-	github.com/consensys/gnark-crypto v0.10.0 // indirect
+	github.com/consensys/gnark-crypto v0.12.1 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
