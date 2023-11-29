@@ -841,6 +841,9 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
 		chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 	}
+	if chainInfo.DasIndexUrl != "" {
+		chainDefaults["node.batch-poster.max-size"] = 1000000
+	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return false, err
