@@ -10,7 +10,7 @@ hex = "0.4.3"
 num-traits = "0.2.17"
 sha3 = "0.10.5"
 siphasher = "0.3.10"
-wasmparser = "0.83"
+wasmparser.workspace = true
 serde = { version = "1.0.130", features = ["derive", "rc"] }
 
 [features]

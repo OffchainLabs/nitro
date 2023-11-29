@@ -15,7 +15,7 @@ extern "C" {
 }
 
 impl MeteredMachine for Program {
-    fn ink_left(&mut self) -> MachineMeter {
+    fn ink_left(&self) -> MachineMeter {
         unsafe {
             match user_ink_status() {
                 0 => MachineMeter::Ready(user_ink_left()),
@@ -32,7 +32,7 @@ impl MeteredMachine for Program {
 }
 
 impl GasMeteredMachine for Program {
-    fn pricing(&mut self) -> PricingParams {
+    fn pricing(&self) -> PricingParams {
         self.config.pricing
     }
 }

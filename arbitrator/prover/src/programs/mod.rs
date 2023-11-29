@@ -16,7 +16,7 @@ use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
-use wasmparser::{Operator, Type as WpType};
+use wasmparser::{Operator, ValType};
 
 #[cfg(feature = "native")]
 use {
@@ -62,7 +62,7 @@ pub trait Middleware<M: ModuleMod> {
 
 pub trait FuncMiddleware<'a> {
     /// Provide info on the function's locals. This is called before feed.
-    fn locals_info(&mut self, _locals: &[WpType]) {}
+    fn locals_info(&mut self, _locals: &[ValType]) {}
 
     /// Processes the given operator.
     fn feed<O>(&mut self, op: Operator<'a>, out: &mut O) -> Result<()>
@@ -144,7 +144,7 @@ impl<'a, T> FunctionMiddleware<'a> for FuncMiddlewareWrapper<'a, T>
 where
     T: FuncMiddleware<'a> + Debug,
 {
-    fn locals_info(&mut self, locals: &[WpType]) {
+    fn locals_info(&mut self, locals: &[ValType]) {
         self.0.locals_info(locals);
     }
 
@@ -331,7 +331,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex> {
         self.imports
             .iter()
-            .position(|x| x.module == module && x.name == Some(name))
+            .position(|x| x.module == module && x.name == name)
             .map(|x| ImportIndex::Function(FunctionIndex::from_u32(x as u32)))
             .ok_or_else(|| eyre!("missing import {}", name.red()))
     }

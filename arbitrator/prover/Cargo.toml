@@ -30,10 +30,10 @@ smallvec = { version = "1.10.0", features = ["serde"] }
 brotli2 = { version = "0.3.2", optional = true }
 rayon = { version = "1.5.1", optional = true }
 arbutil = { path = "../arbutil/" }
-wasmer = { path = "../tools/wasmer/lib/api/", optional = true }
+wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 wasmer-types = { path = "../tools/wasmer/lib/types" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", optional = true, default-features = false, features = ["std", "unwind", "avx"] }
-wasmparser = "0.83"
+wasmparser.workspace = true
 
 [lib]
 name = "prover"

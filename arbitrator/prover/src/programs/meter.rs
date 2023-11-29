@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
-use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
+use wasmparser::{BlockType, Operator};
 
 use super::config::SigMap;
 
@@ -137,15 +137,14 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
         if end {
             let ink = self.ink_global.as_u32();
             let status = self.status_global.as_u32();
+            let blockty = BlockType::Empty;
 
             let mut header = [
                 // if ink < cost => panic with status = 1
                 GlobalGet { global_index: ink },
                 I64Const { value: cost as i64 },
                 I64LtU,
-                If {
-                    ty: TypeOrFuncType::Type(WpType::EmptyBlockType),
-                },
+                If { blockty },
                 I32Const { value: 1 },
                 GlobalSet {
                     global_index: status,
@@ -230,7 +229,7 @@ impl Display for OutOfInkError {
 
 /// Note: implementers may panic if uninstrumented
 pub trait MeteredMachine {
-    fn ink_left(&mut self) -> MachineMeter;
+    fn ink_left(&self) -> MachineMeter;
     fn set_meter(&mut self, meter: MachineMeter);
 
     fn set_ink(&mut self, ink: u64) {
@@ -289,9 +288,9 @@ pub trait MeteredMachine {
 }
 
 pub trait GasMeteredMachine: MeteredMachine {
-    fn pricing(&mut self) -> PricingParams;
+    fn pricing(&self) -> PricingParams;
 
-    fn gas_left(&mut self) -> Result<u64, OutOfInkError> {
+    fn gas_left(&self) -> Result<u64, OutOfInkError> {
         let pricing = self.pricing();
         match self.ink_left() {
             MachineMeter::Ready(ink) => Ok(pricing.ink_to_gas(ink)),
@@ -322,7 +321,7 @@ fn sat_add_mul(base: u64, per: u64, count: u64) -> u64 {
 }
 
 impl MeteredMachine for Machine {
-    fn ink_left(&mut self) -> MachineMeter {
+    fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
             ($global:expr) => {{
                 $global.unwrap().try_into().expect("type mismatch")
@@ -401,11 +400,11 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
         dot!(MemoryCopy) => 3100,
         dot!(MemoryFill) => 3100,
 
-        BrTable { table } => {
-            2400 + 325 * table.len() as u64
+        BrTable { targets } => {
+            2400 + 325 * targets.len() as u64
         },
-        CallIndirect { index, .. } => {
-            let ty = tys.get(&SignatureIndex::from_u32(*index)).expect("no type");
+        CallIndirect { type_index, .. } => {
+            let ty = tys.get(&SignatureIndex::from_u32(*type_index)).expect("no type");
             13610 + 650 * ty.inputs.len() as u64
         },
 
@@ -466,12 +465,12 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             V128Not, V128And, V128AndNot, V128Or, V128Xor, V128Bitselect, V128AnyTrue,
             I8x16Abs, I8x16Neg, I8x16Popcnt, I8x16AllTrue, I8x16Bitmask, I8x16NarrowI16x8S, I8x16NarrowI16x8U,
             I8x16Shl, I8x16ShrS, I8x16ShrU, I8x16Add, I8x16AddSatS, I8x16AddSatU, I8x16Sub, I8x16SubSatS,
-            I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16RoundingAverageU,
+            I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16AvgrU,
             I16x8ExtAddPairwiseI8x16S, I16x8ExtAddPairwiseI8x16U, I16x8Abs, I16x8Neg, I16x8Q15MulrSatS,
             I16x8AllTrue, I16x8Bitmask, I16x8NarrowI32x4S, I16x8NarrowI32x4U, I16x8ExtendLowI8x16S,
             I16x8ExtendHighI8x16S, I16x8ExtendLowI8x16U, I16x8ExtendHighI8x16U, I16x8Shl, I16x8ShrS, I16x8ShrU,
             I16x8Add, I16x8AddSatS, I16x8AddSatU, I16x8Sub, I16x8SubSatS, I16x8SubSatU, I16x8Mul, I16x8MinS,
-            I16x8MinU, I16x8MaxS, I16x8MaxU, I16x8RoundingAverageU, I16x8ExtMulLowI8x16S,
+            I16x8MinU, I16x8MaxS, I16x8MaxU, I16x8AvgrU, I16x8ExtMulLowI8x16S,
             I16x8ExtMulHighI8x16S, I16x8ExtMulLowI8x16U, I16x8ExtMulHighI8x16U, I32x4ExtAddPairwiseI16x8S,
             I32x4ExtAddPairwiseI16x8U, I32x4Abs, I32x4Neg, I32x4AllTrue, I32x4Bitmask, I32x4ExtendLowI16x8S,
             I32x4ExtendHighI16x8S, I32x4ExtendLowI16x8U, I32x4ExtendHighI16x8U, I32x4Shl, I32x4ShrS, I32x4ShrU,
@@ -487,9 +486,10 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             F32x4ConvertI32x4U, I32x4TruncSatF64x2SZero, I32x4TruncSatF64x2UZero, F64x2ConvertLowI32x4S,
             F64x2ConvertLowI32x4U, F32x4DemoteF64x2Zero, F64x2PromoteLowF32x4, I8x16RelaxedSwizzle,
             I32x4RelaxedTruncSatF32x4S, I32x4RelaxedTruncSatF32x4U, I32x4RelaxedTruncSatF64x2SZero,
-            I32x4RelaxedTruncSatF64x2UZero, F32x4Fma, F32x4Fms, F64x2Fma, F64x2Fms, I8x16LaneSelect,
-            I16x8LaneSelect, I32x4LaneSelect, I64x2LaneSelect, F32x4RelaxedMin, F32x4RelaxedMax,
-            F64x2RelaxedMin, F64x2RelaxedMax
+            I32x4RelaxedTruncSatF64x2UZero, F32x4RelaxedFma, F32x4RelaxedFnma, F64x2RelaxedFma,
+            F64x2RelaxedFnma, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
+            I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
+            I16x8RelaxedQ15mulrS, I16x8DotI8x16I7x16S, I32x4DotI8x16I7x16AddS, F32x4RelaxedDotBf16x8AddF32x4
         ) => u64::MAX,
     };
     ink

@@ -28,9 +28,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Memory, Module, Pages, Store,
+    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store,
     TypedFunction, Value, WasmTypeList,
 };
+use wasmer_vm::VMExtern;
 
 #[derive(Debug)]
 pub struct NativeInstance<E: EvmApi> {
@@ -182,9 +183,14 @@ impl<E: EvmApi> NativeInstance<E> {
         let store = &mut self.store;
         let exports = &self.instance.exports;
 
-        let expect_global = |name| -> Global { exports.get_global(name).unwrap().clone() };
-        let ink_left = unsafe { expect_global(STYLUS_INK_LEFT).vmglobal(store) };
-        let ink_status = unsafe { expect_global(STYLUS_INK_STATUS).vmglobal(store) };
+        let mut expect_global = |name| {
+            let VMExtern::Global(sh) = exports.get_extern(name).unwrap().to_vm_extern() else {
+                panic!("name not found global");
+            };
+            sh.get(store.objects_mut()).vmglobal()
+        };
+        let ink_left = expect_global(STYLUS_INK_LEFT);
+        let ink_status = expect_global(STYLUS_INK_STATUS);
 
         self.env_mut().meter = Some(MeterData {
             ink_left,
@@ -242,8 +248,8 @@ impl<E: EvmApi> DerefMut for NativeInstance<E> {
 }
 
 impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
-    fn ink_left(&mut self) -> MachineMeter {
-        let vm = self.env_mut().meter();
+    fn ink_left(&self) -> MachineMeter {
+        let vm = self.env().meter();
         match vm.status() {
             0 => MachineMeter::Ready(vm.ink()),
             _ => MachineMeter::Exhausted,
@@ -251,14 +257,14 @@ impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
     }
 
     fn set_meter(&mut self, meter: MachineMeter) {
-        let vm = self.env_mut().meter();
+        let vm = self.env_mut().meter_mut();
         vm.set_ink(meter.ink());
         vm.set_status(meter.status());
     }
 }
 
 impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
-    fn pricing(&mut self) -> PricingParams {
+    fn pricing(&self) -> PricingParams {
         self.env().config.unwrap().pricing
     }
 }

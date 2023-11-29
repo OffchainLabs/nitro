@@ -325,12 +325,9 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
-            let Some(import_name) = import.name else {
-                bail!("Missing name for import in {}", module.red());
-            };
-            let (forward, import_name) = match import_name.strip_prefix(Module::FORWARDING_PREFIX) {
+            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
                 Some(name) => (true, name),
-                None => (false, import_name),
+                None => (false, import.name),
             };
 
             let mut qualified_name = format!("{module}__{import_name}");
@@ -380,9 +377,8 @@ impl Module {
         let func_exports: HashMap<String, u32> = bin
             .exports
             .iter()
-            .filter_map(|(name, (offset, kind))| {
-                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
-            })
+            .filter(|(_, (_, kind))| kind == &ExportKind::Func)
+            .map(|(name, (offset, _))| (name.to_owned(), *offset))
             .collect();
 
         let internals = host::new_internal_funcs(stylus_data);
@@ -453,8 +449,8 @@ impl Module {
             let (memory_index, mut init) = match data.kind {
                 DataKind::Active {
                     memory_index,
-                    init_expr,
-                } => (memory_index, init_expr.get_operators_reader()),
+                    offset_expr,
+                } => (memory_index, offset_expr.get_operators_reader()),
                 _ => continue,
             };
             ensure!(
@@ -491,8 +487,8 @@ impl Module {
             let (t, mut init) = match elem.kind {
                 ElementKind::Active {
                     table_index,
-                    init_expr,
-                } => (table_index, init_expr.get_operators_reader()),
+                    offset_expr,
+                } => (table_index, offset_expr.get_operators_reader()),
                 _ => continue,
             };
             let offset = match (init.read()?, init.read()?, init.eof()) {
