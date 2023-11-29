@@ -189,6 +189,9 @@ jobs:
           command: fmt
           args: --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 
+      - name: Rust Js Runtime Tests
+        run: make test-js-runtime
+
       - name: Make proofs from test cases
         run: make -j8 test-gen-proofs
 

@@ -307,7 +307,7 @@ lazy_static! {
 }
 
 impl Module {
-    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
+    const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
 
     fn from_binary(
         bin: &WasmBinary,
@@ -334,7 +334,7 @@ impl Module {
             };
 
             let mut qualified_name = format!("{module}__{import_name}");
-            qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
+            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
                 let call = match forward {
@@ -818,8 +818,8 @@ struct ErrorGuardProof {
 }
 
 impl ErrorGuardProof {
-    const STACK_PREFIX: &str = "Guard stack:";
-    const GUARD_PREFIX: &str = "Error guard:";
+    const STACK_PREFIX: &'static str = "Guard stack:";
+    const GUARD_PREFIX: &'static str = "Error guard:";
 
     fn new(
         frame_stack: Bytes32,
@@ -2504,11 +2504,6 @@ impl Machine {
     }
 
     pub fn say<D: Display>(text: D) {
-        let text = format!("{text}");
-        let text = match text.len() {
-            0..=250 => text,
-            _ => format!("{} ...", &text[0..250]),
-        };
         println!("{} {text}", "WASM says:".yellow());
     }
 

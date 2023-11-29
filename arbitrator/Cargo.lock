@@ -609,9 +609,9 @@ dependencies = [
 
 [[package]]
 name = "eyre"
-version = "0.6.5"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "221239d1d5ea86bf5d6f91c9d6bc3646ffe471b08ff9b0f91c44f115ac969d2b"
+checksum = "4c2b6b5a29c02cdc822728b7d7b8ae1bab3e3b05d44522770ddd49722eeac7eb"
 dependencies = [
  "indenter",
  "once_cell",
@@ -698,6 +698,18 @@ dependencies = [
  "fallible-iterator",
  "indexmap",
  "stable_deref_trait",
+]
+
+[[package]]
+name = "go-js"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "eyre",
+ "fnv",
+ "parking_lot 0.12.1",
+ "rand",
+ "rand_pcg",
 ]
 
 [[package]]
@@ -844,6 +856,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "eyre",
+ "go-js",
  "hex",
  "libc",
  "ouroboros",

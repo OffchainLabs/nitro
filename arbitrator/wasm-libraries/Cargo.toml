@@ -4,8 +4,9 @@ members = [
 	"wasi-stub",
 	"go-stub",
 	"go-abi",
+	"go-js",
 	"host-io",
-        "user-host",
-        "user-test",
+	"user-host",
+	"user-test",
 ]
 resolver = "2"

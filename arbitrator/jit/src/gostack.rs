@@ -5,10 +5,10 @@
 
 use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-    syscall::JsValue,
     wavmio::{Bytes20, Bytes32},
 };
-use arbutil::Color;
+use eyre::Result;
+use go_js::JsValueId;
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
 use std::{
@@ -50,8 +50,8 @@ impl MemoryViewContainer {
 }
 
 pub struct GoStack {
-    sp: u32,
-    top: u32,
+    pub sp: u32,
+    pub top: u32,
     memory: MemoryViewContainer,
 }
 
@@ -145,6 +145,10 @@ impl GoStack {
         &*self.read_ptr()
     }
 
+    pub fn read_js(&mut self) -> JsValueId {
+        JsValueId(self.read_u64())
+    }
+
     /// TODO: replace `unbox` with a safe id-based API
     pub fn unbox<T>(&mut self) -> T {
         let ptr: *mut T = self.read_ptr_mut();
@@ -209,6 +213,10 @@ impl GoStack {
         self.write_ptr(std::ptr::null::<u8>())
     }
 
+    pub fn write_js(&mut self, id: JsValueId) -> &mut Self {
+        self.write_u64(id.0)
+    }
+
     pub fn skip_u8(&mut self) -> &mut Self {
         self.advance(1);
         self
@@ -251,11 +259,11 @@ impl GoStack {
         self.view().write(ptr.into(), src).unwrap();
     }
 
-    pub fn read_value_slice(&self, mut ptr: u64, len: u64) -> Vec<JsValue> {
+    pub fn read_value_ids(&self, mut ptr: u64, len: u64) -> Vec<JsValueId> {
         let mut values = Vec::new();
         for _ in 0..len {
             let p = u32::try_from(ptr).expect("Go pointer not a u32");
-            values.push(JsValue::new(self.read_u64_raw(p)));
+            values.push(JsValueId(self.read_u64_raw(p)));
             ptr += 8;
         }
         values
@@ -291,35 +299,39 @@ impl GoStack {
         self.read_slice(ptr, len)
     }
 
-    pub fn read_js_string(&mut self) -> Vec<u8> {
+    pub fn read_string(&mut self) -> String {
         let ptr = self.read_u64();
         let len = self.read_u64();
-        self.read_slice(ptr, len)
+        let bytes = self.read_slice(ptr, len);
+        match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
+                String::from_utf8_lossy(bytes).into_owned()
+            }
+        }
     }
 
-    /// Resumes the Go runtime, updating the stack pointer.
-    ///
-    /// # Safety
-    ///
-    /// Caller must cut lifetimes before this call.
-    pub unsafe fn resume(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
-        let Some(resume) = &env.exports.resume else {
-            return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
-        };
-        let Some(get_stack_pointer) = &env.exports.get_stack_pointer else {
-            return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()));
-        };
-
-        // save our progress from the stack pointer
-        let saved = self.top - self.sp;
-
-        // recursively call into wasmer (reentrant)
-        resume.call(store)?;
-
-        // recover the stack pointer
-        let pointer = get_stack_pointer.call(store)? as u32;
-        self.sp = pointer;
-        self.top = pointer + saved;
+    pub fn write_call_result(
+        &mut self,
+        result: Result<JsValueId>,
+        msg: impl FnOnce() -> String,
+    ) -> MaybeEscape {
+        match result {
+            Ok(result) => {
+                self.write_js(result);
+                self.write_u8(1);
+            }
+            Err(err) => match err.downcast::<Escape>() {
+                Ok(escape) => return Err(escape),
+                Err(err) => {
+                    eprintln!("Go {} failed with error {err:#}", msg());
+                    self.write_js(go_js::get_null());
+                    self.write_u8(0);
+                }
+            },
+        }
         Ok(())
     }
 }
@@ -377,7 +389,7 @@ pub struct TimeoutState {
 
 #[test]
 #[allow(clippy::identity_op, clippy::field_reassign_with_default)]
-fn test_sp() -> eyre::Result<()> {
+fn test_sp() -> Result<()> {
     use prover::programs::prelude::CompileConfig;
     use wasmer::{FunctionEnv, MemoryType};
 

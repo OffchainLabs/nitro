@@ -2,11 +2,12 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState, user,
-    wavmio, wavmio::Bytes32, Opts,
+    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, user, wavmio, wavmio::Bytes32,
+    Opts,
 };
 use arbutil::Color;
 use eyre::{bail, ErrReport, Result, WrapErr};
+use go_js::JsState;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{
@@ -106,6 +107,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "syscall/js.valueInstanceOf" => func!(syscall::js_value_instance_of),
             "syscall/js.copyBytesToGo" => func!(syscall::js_copy_bytes_to_go),
             "syscall/js.copyBytesToJS" => func!(syscall::js_copy_bytes_to_js),
+            "go-js-test/syscall.debugPoolHash" => func!(syscall::debug_pool_hash),
 
             github!("wavmio.getGlobalStateBytes32") => func!(wavmio::get_global_state_bytes32),
             github!("wavmio.setGlobalStateBytes32") => func!(wavmio::set_global_state_bytes32),
@@ -202,7 +204,7 @@ pub struct WasmEnv {
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
     /// The state of Go's js runtime
-    pub js_state: JsRuntimeState,
+    pub js_state: JsState,
     /// An ordered list of the 8-byte globals
     pub small_globals: [u64; 2],
     /// An ordered list of the 32-byte globals

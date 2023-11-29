@@ -29,6 +29,7 @@ impl From<u8> for EvmApiStatus {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 #[repr(usize)]
 pub enum EvmApiMethod {
     GetBytes32,

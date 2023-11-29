@@ -13,24 +13,16 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"math/big"
+	"sync/atomic"
 	"syscall/js"
 )
 
 type apiWrapper struct {
-	getBytes32      js.Func
-	setBytes32      js.Func
-	contractCall    js.Func
-	delegateCall    js.Func
-	staticCall      js.Func
-	create1         js.Func
-	create2         js.Func
-	getReturnData   js.Func
-	emitLog         js.Func
-	addressBalance  js.Func
-	addressCodeHash js.Func
-	addPages        js.Func
-	funcs           []byte
+	funcs []js.Func
+	id    uint32
 }
+
+var apiIds uint32 // atomic and sequential
 
 func newApi(
 	interpreter *vm.EVMInterpreter,
@@ -90,7 +82,7 @@ func newApi(
 		js.CopyBytesToJS(array, value)
 		return array
 	}
-	write := func(stylus js.Value, results ...any) any {
+	write := func(results ...any) js.Value {
 		array := make([]interface{}, 0)
 		for _, result := range results {
 			var value js.Value
@@ -120,8 +112,7 @@ func newApi(
 			}
 			array = append(array, value)
 		}
-		stylus.Set("result", js.ValueOf(array))
-		return nil
+		return js.ValueOf(array)
 	}
 	maybe := func(value interface{}, err error) interface{} {
 		if err != nil {
@@ -130,119 +121,105 @@ func newApi(
 		return value
 	}
 
-	getBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	getBytes32 := js.FuncOf(func(this js.Value, args []js.Value) any {
 		key := jsHash(args[0])
 		value, cost := closures.getBytes32(key)
-		return write(stylus, value, cost)
+		return write(value, cost)
 	})
-	setBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	setBytes32 := js.FuncOf(func(this js.Value, args []js.Value) any {
 		key := jsHash(args[0])
 		value := jsHash(args[1])
 		cost, err := closures.setBytes32(key, value)
-		return write(stylus, maybe(cost, err))
+		return write(maybe(cost, err))
 	})
-	contractCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	contractCall := js.FuncOf(func(this js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
 		input := jsBytes(args[1])
 		gas := jsU64(args[2])
 		value := jsBig(args[3])
 		len, cost, status := closures.contractCall(contract, input, gas, value)
-		return write(stylus, len, cost, status)
+		return write(len, cost, status)
 	})
-	delegateCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	delegateCall := js.FuncOf(func(this js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
 		input := jsBytes(args[1])
 		gas := jsU64(args[2])
 		len, cost, status := closures.delegateCall(contract, input, gas)
-		return write(stylus, len, cost, status)
+		return write(len, cost, status)
 	})
-	staticCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	staticCall := js.FuncOf(func(this js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
 		input := jsBytes(args[1])
 		gas := jsU64(args[2])
 		len, cost, status := closures.staticCall(contract, input, gas)
-		return write(stylus, len, cost, status)
+		return write(len, cost, status)
 	})
-	create1 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	create1 := js.FuncOf(func(this js.Value, args []js.Value) any {
 		code := jsBytes(args[0])
 		endowment := jsBig(args[1])
 		gas := jsU64(args[2])
 		addr, len, cost, err := closures.create1(code, endowment, gas)
-		return write(stylus, maybe(addr, err), len, cost)
+		return write(maybe(addr, err), len, cost)
 	})
-	create2 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	create2 := js.FuncOf(func(this js.Value, args []js.Value) any {
 		code := jsBytes(args[0])
 		endowment := jsBig(args[1])
 		salt := jsBig(args[2])
 		gas := jsU64(args[3])
 		addr, len, cost, err := closures.create2(code, endowment, salt, gas)
-		return write(stylus, maybe(addr, err), len, cost)
+		return write(maybe(addr, err), len, cost)
 	})
-	getReturnData := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	getReturnData := js.FuncOf(func(this js.Value, args []js.Value) any {
 		offset := jsU32(args[0])
 		size := jsU32(args[1])
 		data := closures.getReturnData(offset, size)
-		return write(stylus, data)
+		return write(data)
 	})
-	emitLog := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	emitLog := js.FuncOf(func(this js.Value, args []js.Value) any {
 		data := jsBytes(args[0])
 		topics := jsU32(args[1])
 		err := closures.emitLog(data, topics)
-		return write(stylus, err)
+		return write(err)
 	})
-	addressBalance := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	addressBalance := js.FuncOf(func(this js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
 		value, cost := closures.accountBalance(address)
-		return write(stylus, value, cost)
+		return write(value, cost)
 	})
-	addressCodeHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	addressCodeHash := js.FuncOf(func(this js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
 		value, cost := closures.accountCodeHash(address)
-		return write(stylus, value, cost)
+		return write(value, cost)
 	})
-	addPages := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+	addPages := js.FuncOf(func(this js.Value, args []js.Value) any {
 		pages := jsU16(args[0])
 		cost := closures.addPages(pages)
-		return write(stylus, cost)
+		return write(cost)
 	})
 
-	ids := make([]byte, 0, 12*4)
-	funcs := js.Global().Get("stylus").Call("setCallbacks",
+	funcs := []js.Func{
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
 		addressBalance, addressCodeHash, addPages,
-	)
-	for i := 0; i < funcs.Length(); i++ {
-		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
 	}
-	return &apiWrapper{
-		getBytes32:      getBytes32,
-		setBytes32:      setBytes32,
-		contractCall:    contractCall,
-		delegateCall:    delegateCall,
-		staticCall:      staticCall,
-		create1:         create1,
-		create2:         create2,
-		getReturnData:   getReturnData,
-		emitLog:         emitLog,
-		addressBalance:  addressBalance,
-		addressCodeHash: addressCodeHash,
-		addPages:        addPages,
-		funcs:           ids,
+	anys := make([]any, len(funcs)) // js.ValueOf() only works on []any
+	for i, fn := range funcs {
+		anys[i] = fn
 	}
+
+	id := atomic.AddUint32(&apiIds, 1)
+	api := &apiWrapper{funcs, id}
+
+	global.Get("stylus").Set(api.key(), anys)
+	return api
 }
 
 func (api *apiWrapper) drop() {
-	api.getBytes32.Release()
-	api.setBytes32.Release()
-	api.contractCall.Release()
-	api.delegateCall.Release()
-	api.staticCall.Release()
-	api.create1.Release()
-	api.create2.Release()
-	api.getReturnData.Release()
-	api.emitLog.Release()
-	api.addressBalance.Release()
-	api.addressCodeHash.Release()
-	api.addPages.Release()
+	for _, fn := range api.funcs {
+		fn.Release()
+	}
+}
+
+func (api *apiWrapper) key() string {
+	return fmt.Sprintf("api%v", api.id)
 }

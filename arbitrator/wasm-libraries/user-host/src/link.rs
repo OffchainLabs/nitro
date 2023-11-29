@@ -89,12 +89,12 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activa
 /// # Safety
 ///
 /// The Go compiler expects the call to take the form
-///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64) (
+///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, evmApi u32, evmData: *EvmData, gas *u64) (
 ///         status byte, out *Vec<u8>,
 ///     )
 ///
 /// These values are placed on the stack as follows
-///     || modHash || calldata... || params || evmApi... || evmData || gas || status | 7 pad | out ptr ||
+///     || modHash || calldata... || params || evmApi | 4 pad || evmData || gas || status | 7 pad | out ptr ||
 ///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callProgramRustImpl(
@@ -104,8 +104,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
     let compiled_hash = wavm::read_bytes32(sp.read_go_ptr());
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = sp.unbox();
-    let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
-    let evm_data: EvmData = sp.unbox();
+    let evm_api = JsEvmApi::new(ApiCaller::new(sp.read_u32()));
+    let evm_data: EvmData = sp.skip_space().unbox();
     let gas = sp.read_go_ptr();
 
     // buy ink
@@ -122,10 +122,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
     PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
 
     // call the program
-    let go_stack = sp.save_stack();
     let status = program_call_main(module, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
-    sp.restore_stack(go_stack);
+    sp.restore_stack(); // restore the stack pointer (corrupts during EVM API calls)
 
     /// cleans up and writes the output
     macro_rules! finish {

@@ -76,9 +76,9 @@ u64 addPagesWrap(usize api, u16 pages) {
     return addPagesImpl(api, pages);
 }
 
-void captureHostioImpl(usize api, RustSlice * name, RustSlice * data, u64 startInk, u64 endInk);
-void captureHostioWrap(usize api, RustSlice * name, RustSlice * data, u64 startInk, u64 endInk) {
-    return captureHostioImpl(api, name, data, startInk, endInk);
+void captureHostioImpl(usize api, RustSlice * name, RustSlice * data, RustSlice * outs, u64 startInk, u64 endInk);
+void captureHostioWrap(usize api, RustSlice * name, RustSlice * data, RustSlice * outs, u64 startInk, u64 endInk) {
+    return captureHostioImpl(api, name, data, outs, startInk, endInk);
 }
 */
 import "C"
@@ -92,7 +92,7 @@ import (
 )
 
 var apiClosures sync.Map
-var apiIds uintptr // atomic
+var apiIds uintptr // atomic and sequential
 
 func newApi(
 	interpreter *vm.EVMInterpreter,

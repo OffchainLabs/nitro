@@ -6,10 +6,11 @@
 use crate::{
     gostack::GoStack,
     machine::{ModuleAsm, WasmEnvMut},
-    syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
+    syscall::WasmerJsEnv,
 };
 use arbutil::{
     evm::{
+        api::EvmApiMethod,
         js::{ApiValue, JsCallIntoGo, JsEvmApi},
         user::{UserOutcome, UserOutcomeKind},
         EvmData,
@@ -29,7 +30,7 @@ struct ApiCaller {
 }
 
 enum EvmMsg {
-    Call(u32, Vec<ApiValue>, SyncSender<Vec<ApiValue>>),
+    Call(EvmApiMethod, Vec<ApiValue>, SyncSender<Vec<ApiValue>>),
     Panic(String),
     Done,
 }
@@ -41,9 +42,9 @@ impl ApiCaller {
 }
 
 impl JsCallIntoGo for ApiCaller {
-    fn call_go(&mut self, func: u32, args: Vec<ApiValue>) -> Vec<ApiValue> {
+    fn call_go(&mut self, method: EvmApiMethod, args: Vec<ApiValue>) -> Vec<ApiValue> {
         let (tx, rx) = mpsc::sync_channel(0);
-        let msg = EvmMsg::Call(func, args, tx);
+        let msg = EvmMsg::Call(method, args, tx);
         self.parent.send(msg).unwrap();
         rx.recv().unwrap()
     }
@@ -57,7 +58,7 @@ pub(super) fn exec_wasm(
     calldata: Vec<u8>,
     compile: CompileConfig,
     config: StylusConfig,
-    evm_api: Vec<u8>,
+    api_id: u32,
     evm_data: EvmData,
     ink: u64,
 ) -> Result<(Result<UserOutcome>, u64)> {
@@ -65,7 +66,7 @@ pub(super) fn exec_wasm(
     use UserOutcomeKind::*;
 
     let (tx, rx) = mpsc::sync_channel(0);
-    let evm_api = JsEvmApi::new(evm_api, ApiCaller::new(tx.clone()));
+    let evm_api = JsEvmApi::new(ApiCaller::new(tx.clone()));
 
     let handle = thread::spawn(move || unsafe {
         // Safety: module came from compile_user_wasm
@@ -95,45 +96,13 @@ pub(super) fn exec_wasm(
             Err(err) => bail!("{}", err.red()),
         };
         match msg {
-            Call(func, args, respond) => {
+            Call(method, args, respond) => {
                 let (env, mut store) = env.data_and_store_mut();
-                let js = &mut env.js_state;
+                let js_state = &mut env.js_state;
+                let exports = &mut env.exports;
 
-                let mut objects = vec![];
-                let mut object_ids = vec![];
-                for arg in args {
-                    let id = js.pool.insert(DynamicObject::Uint8Array(arg.0));
-                    objects.push(GoValue::Object(id));
-                    object_ids.push(id);
-                }
-
-                let Some(DynamicObject::FunctionWrapper(func)) = js.pool.get(func).cloned() else {
-                    bail!("missing func {}", func.red())
-                };
-
-                js.set_pending_event(func, JsValue::Ref(STYLUS_ID), objects);
-                unsafe { sp.resume(env, &mut store)? };
-
-                let js = &mut env.js_state;
-                let Some(JsValue::Ref(output)) = js.stylus_result.take() else {
-                    bail!("no return value for func {}", func.red())
-                };
-                let Some(DynamicObject::ValueArray(output)) = js.pool.remove(output) else {
-                    bail!("bad return value for func {}", func.red())
-                };
-
-                let mut outs = vec![];
-                for out in output {
-                    let id = out.assume_id()?;
-                    let Some(DynamicObject::Uint8Array(x)) = js.pool.remove(id) else {
-                        bail!("bad inner return value for func {}", func.red())
-                    };
-                    outs.push(ApiValue(x));
-                }
-
-                for id in object_ids {
-                    env.js_state.pool.remove(id);
-                }
+                let js_env = &mut WasmerJsEnv::new(sp, &mut store, exports, &mut env.go_state)?;
+                let outs = js_state.call_stylus_func(api_id, method, args, js_env)?;
                 respond.send(outs).unwrap();
             }
             Panic(error) => bail!(error),

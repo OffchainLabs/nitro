@@ -69,7 +69,7 @@ pub struct GoEvmApi {
     pub add_pages: unsafe extern "C" fn(id: usize, pages: u16) -> u64, // gas cost
     pub capture_hostio: unsafe extern "C" fn(
         id: usize,
-        name: *mut RustBytes,
+        name: *mut RustSlice,
         args: *mut RustSlice,
         outs: *mut RustSlice,
         start_ink: u64,
@@ -264,7 +264,7 @@ impl EvmApi for GoEvmApi {
         call!(
             self,
             capture_hostio,
-            ptr!(RustBytes::new(name.as_bytes().to_vec())),
+            ptr!(RustSlice::new(name.as_bytes())),
             ptr!(RustSlice::new(args)),
             ptr!(RustSlice::new(outs)),
             start_ink,
