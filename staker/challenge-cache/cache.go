@@ -76,7 +76,11 @@ func isOlderThanFourteenDays(t time.Time) bool {
 func deleteFilesOlderThanFourteenDays(dir string) error {
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return nil
+		} else {
+			return err
+		}
 	}
 	for _, file := range files {
 		fileInfo, err := file.Info()

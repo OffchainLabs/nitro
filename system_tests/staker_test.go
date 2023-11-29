@@ -457,11 +457,16 @@ func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
 
 	rollupAddresses := deployBoldContracts(t, ctx, builder.L1Info, builder.L1.Client, builder.chainConfig.ChainID, deployAuth)
 
-	bridge, err := bridgegen.NewBridge(builder.L2.ConsensusNode.DeployInfo.Bridge, builder.L1.Client)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(builder.L2.ConsensusNode.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err)
-	tx, err := bridge.UpdateRollupAddress(&deployAuth, rollupAddresses.Rollup)
+	bridgeABI, err := abi.JSON(strings.NewReader(bridgegen.BridgeABI))
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L1.Client, tx)
+
+	updateRollupAddressCalldata, err := bridgeABI.Pack("updateRollupAddress", rollupAddresses.Rollup)
+	Require(t, err)
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, builder.L2.ConsensusNode.DeployInfo.Bridge, updateRollupAddressCalldata)
+	Require(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	time.Sleep(time.Second)
@@ -511,6 +516,7 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, *Nod
 	valConfig := staker.DefaultL1ValidatorConfig
 	valConfig.Strategy = "WatchTower"
 	valConfig.Bold = staker.DefaultBoldConfig
+	valConfig.Bold.Enable = true
 	valConfig.StakerInterval = 100 * time.Millisecond
 
 	dp, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
