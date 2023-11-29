@@ -6,18 +6,18 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"math/big"
 	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient.Client, contractCode []byte, accountInfo *AccountInfo, expectedEstimateGasError error) {
@@ -26,7 +26,7 @@ func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient
 		0x7F, // PUSH32
 	}
 	// len(contractCode)
-	deployCode = append(deployCode, math.U256Bytes(big.NewInt(int64(len(contractCode))))...)
+	deployCode = append(deployCode, arbmath.Uint64ToU256Bytes(uint64(len(contractCode)))...)
 	var codeOffset byte = 42
 	deployCode = append(deployCode, []byte{
 		0x80,             // DUP
@@ -115,7 +115,7 @@ func TestContractDeployment(t *testing.T) {
 	defer cleanup()
 
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
-	for _, size := range []int{0, 1, 1000, 20000, params.MaxCodeSize} {
+	for _, size := range []int{0, 1, 1000, 20000, params.DefaultMaxCodeSize} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
 	}
 
@@ -128,13 +128,13 @@ func TestExtendedContractDeployment(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.MaxCodeSize * 3
-	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.MaxInitCodeSize * 3
+	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
+	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
 	cleanup := builder.Build(t)
 	defer cleanup()
 
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
-	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.MaxCodeSize * 3} {
+	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
 	}
 
