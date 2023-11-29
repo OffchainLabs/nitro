@@ -704,8 +704,6 @@ validationsLoop:
 		}
 		if currentStatus == Prepared {
 			input, err := validationStatus.Entry.ToInput()
-			log.Info("Here is the prepared validation input", "prepared length", len(input.BatchInfo), "hotshot commitment", input.BatchInfo[0].HotShotCommitment, "first batch number", input.BatchInfo[0].Number)
-			log.Info("Using espresso", "espresso", v.config().Espresso)
 			if err != nil && ctx.Err() == nil {
 				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
 				continue
