@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -50,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
@@ -488,6 +490,42 @@ func mainImpl() int {
 		log.Error("failed to create node", "err", err)
 		return 1
 	}
+
+	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params
+	config := liveNodeConfig.Get()
+	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
+	seqInboxMaxDataSize := 117964
+	if config.Node.ParentChainReader.Enable {
+		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+		if err != nil {
+			log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+			return 1
+		}
+		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
+		seqInboxMaxDataSize = int(res.Int64())
+		if err != nil && !executionRevertedRegexp.MatchString(err.Error()) {
+			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
+			return 1
+		}
+	}
+	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster MaxSize, and at least 15kB below the sequencer inbox’s max data size.
+	if config.Execution.Sequencer.Enable {
+		seqMaxTxDataSize := config.Execution.Sequencer.MaxTxDataSize
+		batchPosterMaxSize := config.Node.BatchPoster.MaxSize
+		if seqMaxTxDataSize > batchPosterMaxSize-5000 || seqMaxTxDataSize > seqInboxMaxDataSize-15000 {
+			log.Error("sequencer's MaxTxDataSize too large")
+			return 1
+		}
+	}
+	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s max data size if the data availability service is not enabled.
+	if config.Node.BatchPoster.Enable && !config.Node.DataAvailability.Enable {
+		batchPosterMaxSize := config.Node.BatchPoster.MaxSize
+		if batchPosterMaxSize > seqInboxMaxDataSize-10000 {
+			log.Error("batchPoster's MaxSize is too large")
+			return 1
+		}
+	}
+
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
 		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
