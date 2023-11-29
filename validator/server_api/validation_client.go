@@ -37,6 +37,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 	atomic.AddInt32(&c.room, -1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := ValidationInputToJson(entry)
+		log.Info("Validation input", "hotshot commitment", input.BatchInfo[0].HotShotCommitment)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
 		atomic.AddInt32(&c.room, 1)

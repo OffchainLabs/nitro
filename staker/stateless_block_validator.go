@@ -299,6 +299,17 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.DelayedMsg = delayedMsg
 	}
 	for i, batch := range e.BatchInfo {
+		if usingEspresso {
+			// Only provide commitment for L2 message type
+			batchNum := e.BatchInfo[i].Number
+			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
+			if err != nil {
+				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)
+
+			}
+			log.Info("fetched HotShot commitment", "batchNum", batchNum, "commitment", hotShotCommitment)
+			e.BatchInfo[i].HotShotCommitment = *hotShotCommitment
+		}
 		if len(batch.Data) <= 40 {
 			continue
 		}
@@ -314,16 +325,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			if err != nil {
 				return err
 			}
-		}
-		if usingEspresso {
-			batchNum := e.BatchInfo[i].Number
-			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
-			if err != nil {
-				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)
-
-			}
-			log.Info("fetched HotShot commitment", "batchNum", batchNum, "commitment", hotShotCommitment)
-			e.BatchInfo[i].HotShotCommitment = hotShotCommitment
 		}
 	}
 
