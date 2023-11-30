@@ -32,14 +32,14 @@ type Backlog interface {
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
-	lookupByIndex containers.SyncMap[uint64, *backlogSegment]
+	lookupByIndex *containers.SyncMap[uint64, *backlogSegment]
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
 // NewBacklog creates a backlog.
 func NewBacklog(c ConfigFetcher) Backlog {
-	lookup := containers.SyncMap[uint64, *backlogSegment]{}
+	lookup := &containers.SyncMap[uint64, *backlogSegment]{}
 	return &backlog{
 		lookupByIndex: lookup,
 		config:        c,
@@ -230,7 +230,7 @@ func (s *backlog) Count() uint64 {
 func (b *backlog) reset() {
 	b.head = atomic.Pointer[backlogSegment]{}
 	b.tail = atomic.Pointer[backlogSegment]{}
-	b.lookupByIndex = containers.SyncMap[uint64, *backlogSegment]{}
+	b.lookupByIndex = &containers.SyncMap[uint64, *backlogSegment]{}
 	b.messageCount.Store(0)
 }
 

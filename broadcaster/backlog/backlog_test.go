@@ -57,7 +57,7 @@ func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCoun
 
 func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
-		lookupByIndex: containers.SyncMap[uint64, *backlogSegment]{},
+		lookupByIndex: &containers.SyncMap[uint64, *backlogSegment]{},
 		config:        func() *Config { return &DefaultTestConfig },
 	}
 	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
@@ -158,7 +158,7 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 		messages: m.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
 	}
 
-	lookup := containers.SyncMap[uint64, *backlogSegment]{}
+	lookup := &containers.SyncMap[uint64, *backlogSegment]{}
 	lookup.Store(40, s)
 	b := &backlog{
 		lookupByIndex: lookup,
