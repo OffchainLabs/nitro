@@ -312,6 +312,8 @@ func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
 
 // Get reads messages from the given start to end message index.
 func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
+	s.messagesLock.RLock()
+	defer s.messagesLock.RUnlock()
 	noMsgs := []*m.BroadcastFeedMessage{}
 	if start < s.Start() {
 		return noMsgs, errOutOfBounds
@@ -324,8 +326,6 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 	startIndex := start - s.Start()
 	endIndex := end - s.Start() + 1
 
-	s.messagesLock.RLock()
-	defer s.messagesLock.RUnlock()
 	tmp := make([]*m.BroadcastFeedMessage, s.config().SegmentLimit)
 	copy(tmp, s.messages)
 	return tmp[startIndex:endIndex], nil
@@ -355,15 +355,15 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 // Contains confirms whether the segment contains a message with the given
 // sequence number.
 func (s *backlogSegment) Contains(i uint64) bool {
+	s.messagesLock.RLock()
+	defer s.messagesLock.RUnlock()
 	start := s.Start()
 	if i < start || i > s.End() {
 		return false
 	}
 
 	msgIndex := i - start
-	s.messagesLock.RLock()
 	msg := s.messages[msgIndex]
-	s.messagesLock.RUnlock()
 	return uint64(msg.SequenceNumber) == i
 }
 
