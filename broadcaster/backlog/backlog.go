@@ -292,7 +292,11 @@ func (s *backlogSegment) End() uint64 {
 
 // Next returns the next backlogSegment.
 func (s *backlogSegment) Next() BacklogSegment {
-	return s.nextSegment.Load()
+	next := s.nextSegment.Load()
+	if next == nil {
+		return nil // return a nil interface instead of a nil *backlogSegment
+	}
+	return next
 }
 
 // Messages returns all of the messages stored in the backlogSegment.
