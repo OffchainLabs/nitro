@@ -142,7 +142,6 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		defer primaryFeedIsDownTimer.Stop()
 
 		msgHandler := func(msg broadcaster.BroadcastFeedMessage, router *Router) error {
-			startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 			if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
 				return nil
 			}
@@ -156,7 +155,6 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			return nil
 		}
 		confSeqHandler := func(cs arbutil.MessageIndex, router *Router) {
-			startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 			if cs == lastConfirmed {
 				return
 			}
@@ -166,56 +164,60 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			}
 		}
 
-		// Two select statements to prioritize reading messages from primary feeds' channels
+		// Multiple select statements to prioritize reading messages from primary feeds' channels and avoid starving of timers
 		for {
+			select {
+			// Cycle buckets to get rid of old entries
+			case <-recentFeedItemsCleanup.C:
+				recentFeedItemsOld = recentFeedItemsNew
+				recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
+			// Primary feeds have been up and running for PRIMARY_FEED_UPTIME=10 mins without a failure, stop the recently started secondary feed
+			case <-stopSecondaryFeedTimer.C:
+				bcs.stopSecondaryFeed()
+			default:
+			}
+
 			select {
 			case <-ctx.Done():
 				return
 			// Primary feeds
 			case msg := <-bcs.primaryRouter.messageChan:
+				startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 				primaryFeedIsDownTimer.Reset(MAX_FEED_INACTIVE_TIME)
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 				}
 			case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
+				startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 				primaryFeedIsDownTimer.Reset(MAX_FEED_INACTIVE_TIME)
 				confSeqHandler(cs, bcs.primaryRouter)
-			// Cycle buckets to get rid of old entries
-			case <-recentFeedItemsCleanup.C:
-				recentFeedItemsOld = recentFeedItemsNew
-				recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
-			// Failed to get messages from both primary and secondary feeds for ~5 seconds, start a new secondary feed
-			case <-startSecondaryFeedTimer.C:
-				bcs.startSecondaryFeed(ctx)
 			// Failed to get messages from primary feed for ~5 seconds, reset the timer responsible for stopping a secondary
 			case <-primaryFeedIsDownTimer.C:
 				stopSecondaryFeedTimer.Reset(PRIMARY_FEED_UPTIME)
-			// Primary feeds have been up and running for PRIMARY_FEED_UPTIME=10 mins without a failure, stop the recently started secondary feed
-			case <-stopSecondaryFeedTimer.C:
-				bcs.stopSecondaryFeed()
 			default:
 				select {
 				case <-ctx.Done():
 					return
 				// Secondary Feeds
 				case msg := <-bcs.secondaryRouter.messageChan:
+					startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 					if err := msgHandler(msg, bcs.secondaryRouter); err != nil {
 						log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
 					}
 				case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
+					startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 					confSeqHandler(cs, bcs.secondaryRouter)
 
 				case msg := <-bcs.primaryRouter.messageChan:
+					startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 					primaryFeedIsDownTimer.Reset(MAX_FEED_INACTIVE_TIME)
 					if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 						log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 					}
 				case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
+					startSecondaryFeedTimer.Reset(MAX_FEED_INACTIVE_TIME)
 					primaryFeedIsDownTimer.Reset(MAX_FEED_INACTIVE_TIME)
 					confSeqHandler(cs, bcs.primaryRouter)
-				case <-recentFeedItemsCleanup.C:
-					recentFeedItemsOld = recentFeedItemsNew
-					recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 				case <-startSecondaryFeedTimer.C:
 					bcs.startSecondaryFeed(ctx)
 				case <-primaryFeedIsDownTimer.C:
