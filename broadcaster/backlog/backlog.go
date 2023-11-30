@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -31,15 +32,14 @@ type Backlog interface {
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
-	lookupLock    sync.RWMutex
-	lookupByIndex map[uint64]*backlogSegment
+	lookupByIndex containers.SyncMap[uint64, *backlogSegment]
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
 // NewBacklog creates a backlog.
 func NewBacklog(c ConfigFetcher) Backlog {
-	lookup := make(map[uint64]*backlogSegment)
+	lookup := containers.SyncMap[uint64, *backlogSegment]{}
 	return &backlog{
 		lookupByIndex: lookup,
 		config:        c,
@@ -93,9 +93,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		} else if err != nil {
 			return err
 		}
-		b.lookupLock.Lock()
-		b.lookupByIndex[uint64(msg.SequenceNumber)] = segment
-		b.lookupLock.Unlock()
+		b.lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
 		b.messageCount.Add(1)
 	}
 
@@ -211,18 +209,14 @@ func (b *backlog) delete(confirmed uint64) {
 // removeFromLookup removes all entries from the head segment's start index to
 // the given confirmed index.
 func (b *backlog) removeFromLookup(start, end uint64) {
-	b.lookupLock.Lock()
-	defer b.lookupLock.Unlock()
 	for i := start; i <= end; i++ {
-		delete(b.lookupByIndex, i)
+		b.lookupByIndex.Delete(i)
 	}
 }
 
 // Lookup attempts to find the backlogSegment storing the given message index.
 func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
-	b.lookupLock.RLock()
-	segment, ok := b.lookupByIndex[i]
-	b.lookupLock.RUnlock()
+	segment, ok := b.lookupByIndex.Load(i)
 	if !ok {
 		return nil, fmt.Errorf("error finding backlog segment containing message with SequenceNumber %d", i)
 	}
@@ -237,11 +231,9 @@ func (s *backlog) Count() uint64 {
 
 // reset removes all segments from the backlog.
 func (b *backlog) reset() {
-	b.lookupLock.Lock()
-	defer b.lookupLock.Unlock()
 	b.head = atomic.Pointer[backlogSegment]{}
 	b.tail = atomic.Pointer[backlogSegment]{}
-	b.lookupByIndex = map[uint64]*backlogSegment{}
+	b.lookupByIndex = containers.SyncMap[uint64, *backlogSegment]{}
 	b.messageCount.Store(0)
 }
 

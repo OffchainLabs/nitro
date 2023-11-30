@@ -9,6 +9,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupKeys []arbutil.MessageIndex) {
@@ -33,7 +34,7 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 	}
 
 	expLen := len(lookupKeys)
-	actualLen := len(b.lookupByIndex)
+	actualLen := int(b.Count())
 	if expLen != actualLen {
 		t.Errorf("expected length of lookupByIndex map (%d) does not equal actual length (%d)", expLen, actualLen)
 	}
@@ -56,7 +57,7 @@ func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCoun
 
 func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
-		lookupByIndex: map[uint64]*backlogSegment{},
+		lookupByIndex: containers.SyncMap[uint64, *backlogSegment]{},
 		config:        func() *Config { return &DefaultTestConfig },
 	}
 	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
@@ -160,8 +161,8 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	s.end.Store(42)
 	s.messageCount.Store(2)
 
-	lookup := make(map[uint64]*backlogSegment)
-	lookup[40] = s
+	lookup := containers.SyncMap[uint64, *backlogSegment]{}
+	lookup.Store(40, s)
 	b := &backlog{
 		lookupByIndex: lookup,
 		config:        func() *Config { return &DefaultTestConfig },
