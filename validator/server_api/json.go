@@ -7,14 +7,16 @@ import (
 	"encoding/base64"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 type BatchInfoJson struct {
-	Number  uint64
-	DataB64 string
+	HotShotCommitment espresso.Commitment
+	Number            uint64
+	DataB64           string
 }
 
 type ValidationInputJson struct {
@@ -42,7 +44,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
+		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData, HotShotCommitment: binfo.HotShotCommitment})
 	}
 	return res
 }
@@ -70,8 +72,9 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			return nil, err
 		}
 		decInfo := validator.BatchInfo{
-			Number: binfo.Number,
-			Data:   data,
+			Number:            binfo.Number,
+			Data:              data,
+			HotShotCommitment: binfo.HotShotCommitment,
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}

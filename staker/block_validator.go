@@ -87,7 +87,8 @@ type BlockValidatorConfig struct {
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
 	// Espresso specific flags
-	Espresso bool `koanf:"espresso"`
+	Espresso       bool   `koanf:"espresso"`
+	HotShotAddress string `koanf:"hotshot-address"` //nolint
 }
 
 func (c *BlockValidatorConfig) Validate() error {
@@ -108,6 +109,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
+	f.String(prefix+".hotshot-address", DefaultBlockValidatorConfig.HotShotAddress, "hotshot contract address that stores the commitments that must be validated against espresso sequencer batches")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	f.Bool(prefix+".espresso", DefaultBlockValidatorConfig.Espresso, "if true, hotshot header preimages will be added to validation entries to verify that transactions have been sequenced by espresso")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
