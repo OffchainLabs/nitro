@@ -12,7 +12,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -130,7 +129,6 @@ func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
-	lastHotShotCommitment *espresso.Commitment,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
@@ -159,29 +157,6 @@ func ProduceBlock(
 	}
 
 	hooks := NoopSequencingHooks()
-
-	// Espresso-specific validation
-	// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
-	if chainConfig.Espresso {
-		jst := message.Header.BlockJustification
-		if jst == nil {
-			return nil, nil, errors.New("batch missing espresso justification")
-
-		}
-		hotshotHeader := jst.Header
-		if *lastHotShotCommitment != hotshotHeader.Commit() {
-			return nil, nil, errors.New("invalid hotshot header")
-		}
-		var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
-		var proofs = []*espresso.NmtProof{&message.Header.BlockJustification.Proof}
-		// If the validation function below were not mocked, we would need to serialize the transactions
-		// in the batch here. To avoid the unnecessary overhead, we provide an empty array instead.
-		var txs []espresso.Bytes
-		err := espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
-		if err != nil {
-			return nil, nil, errors.New("failed to validate namespace proof)")
-		}
-	}
 
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,

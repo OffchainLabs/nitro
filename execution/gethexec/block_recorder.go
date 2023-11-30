@@ -140,7 +140,6 @@ func (r *BlockRecorder) RecordBlockCreation(
 			msg.Message,
 			msg.DelayedMessagesRead,
 			prevHeader,
-			nil,
 			recordingdb,
 			chaincontext,
 			chainConfig,

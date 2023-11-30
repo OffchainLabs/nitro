@@ -246,11 +246,32 @@ func main() {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
 		seqNum := wavmio.GetInboxPosition()
-		var hotShotCommitment *espresso.Commitment
+		// Espresso-specific validation
+		// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
 		if chainConfig.Espresso {
-			hotShotCommitment = getHotShotCommitment(seqNum)
+			hotShotCommitment := getHotShotCommitment(seqNum)
+			jst := message.Message.Header.BlockJustification
+			if jst == nil {
+				panic("batch missing espresso justification")
+
+			}
+			hotshotHeader := jst.Header
+			if *hotShotCommitment != hotshotHeader.Commit() {
+				panic("invalid hotshot header")
+			}
+			var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
+			var proofs = []*espresso.NmtProof{&message.Message.Header.BlockJustification.Proof}
+
+			txs, err := arbos.ParseEspressoTransactions(message.Message)
+			if err != nil {
+				panic(err)
+			}
+			err = espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
+			if err != nil {
+				panic(err)
+			}
 		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, hotShotCommitment, statedb, chainContext, chainConfig, batchFetcher)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
 		}
