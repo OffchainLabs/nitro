@@ -22,13 +22,14 @@ type ChainInfo struct {
 	ParentChainId         uint64 `json:"parent-chain-id"`
 	ParentChainIsArbitrum *bool  `json:"parent-chain-is-arbitrum"`
 	// This is the forwarding target to submit transactions to, called the sequencer URL for clarity
-	SequencerUrl     string              `json:"sequencer-url"`
-	FeedUrl          string              `json:"feed-url"`
-	SecondaryFeedUrl string              `json:"secondary-feed-url"`
-	DasIndexUrl      string              `json:"das-index-url"`
-	HasGenesisState  bool                `json:"has-genesis-state"`
-	ChainConfig      *params.ChainConfig `json:"chain-config"`
-	RollupAddresses  *RollupAddresses    `json:"rollup"`
+	SequencerUrl              string              `json:"sequencer-url"`
+	SecondaryForwardingTarget string              `json:"secondary-forwarding-target"`
+	FeedUrl                   string              `json:"feed-url"`
+	SecondaryFeedUrl          string              `json:"secondary-feed-url"`
+	DasIndexUrl               string              `json:"das-index-url"`
+	HasGenesisState           bool                `json:"has-genesis-state"`
+	ChainConfig               *params.ChainConfig `json:"chain-config"`
+	RollupAddresses           *RollupAddresses    `json:"rollup"`
 }
 
 func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
