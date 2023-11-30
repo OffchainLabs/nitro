@@ -18,13 +18,13 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 	}
 
 	head := b.head.Load()
-	if start != 0 && head.start.Load() != start {
-		t.Errorf("head of backlog (%d) does not equal expected head (%d)", head.start.Load(), start)
+	if start != 0 && head.Start() != start {
+		t.Errorf("head of backlog (%d) does not equal expected head (%d)", head.Start(), start)
 	}
 
 	tail := b.tail.Load()
-	if end != 0 && tail.end.Load() != end {
-		t.Errorf("tail of backlog (%d) does not equal expected tail (%d)", tail.end.Load(), end)
+	if end != 0 && tail.End() != end {
+		t.Errorf("tail of backlog (%d) does not equal expected tail (%d)", tail.End(), end)
 	}
 
 	for _, k := range lookupKeys {
@@ -157,9 +157,6 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	s := &backlogSegment{
 		messages: m.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
 	}
-	s.start.Store(40)
-	s.end.Store(42)
-	s.messageCount.Store(2)
 
 	lookup := containers.SyncMap[uint64, *backlogSegment]{}
 	lookup.Store(40, s)
