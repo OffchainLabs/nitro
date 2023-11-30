@@ -58,7 +58,6 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 	if bm.ConfirmedSequenceNumberMessage != nil {
 		b.delete(uint64(bm.ConfirmedSequenceNumberMessage.SequenceNumber))
-		// TODO(clamb): add to metric?
 	}
 
 	for _, msg := range bm.Messages {
