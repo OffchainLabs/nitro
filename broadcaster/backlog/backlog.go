@@ -88,7 +88,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.messageCount.Store(0)
 			log.Warn(err.Error())
 		} else if errors.Is(err, errSequenceNumberSeen) {
-			log.Info("ignoring message sequence number (%s), already in backlog", msg.SequenceNumber)
+			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
 			continue
 		} else if err != nil {
 			return err
