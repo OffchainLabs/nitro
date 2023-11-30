@@ -108,16 +108,17 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 		return nil, errOutOfBounds
 	}
 
-	if start < head.Start() {
-		start = head.Start()
-	}
-
 	if end > tail.End() {
 		return nil, errOutOfBounds
 	}
 
 	found, err := b.Lookup(start)
-	if err != nil {
+	if start < head.Start() {
+		// doing this check after the Lookup call ensures there is no race
+		// condition with a delete call
+		start = head.Start()
+		found = head
+	} else if err != nil {
 		return nil, err
 	}
 	segment, ok := found.(*backlogSegment)
