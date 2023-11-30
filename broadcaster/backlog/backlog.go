@@ -112,30 +112,26 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 		return nil, errOutOfBounds
 	}
 
-	found, err := b.Lookup(start)
+	segment, err := b.Lookup(start)
 	if start < head.Start() {
 		// doing this check after the Lookup call ensures there is no race
 		// condition with a delete call
 		start = head.Start()
-		found = head
+		segment = head
 	} else if err != nil {
 		return nil, err
-	}
-	segment, ok := found.(*backlogSegment)
-	if !ok {
-		return nil, fmt.Errorf("error in backlogSegment type assertion")
 	}
 
 	bm := &m.BroadcastMessage{Version: 1}
 	required := int(end-start) + 1
 	for {
-		segMsgs, err := segment.get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
+		segMsgs, err := segment.Get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
 		if err != nil {
 			return nil, err
 		}
 
 		bm.Messages = append(bm.Messages, segMsgs...)
-		segment = segment.nextSegment.Load()
+		segment = segment.Next()
 		if len(bm.Messages) == required {
 			break
 		} else if segment == nil {
@@ -245,6 +241,7 @@ type BacklogSegment interface {
 	Next() BacklogSegment
 	Contains(uint64) bool
 	Messages() []*m.BroadcastFeedMessage
+	Get(uint64, uint64) ([]*m.BroadcastFeedMessage, error)
 }
 
 // backlogSegment stores messages up to a limit defined by the backlog. It also
@@ -297,8 +294,8 @@ func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
 	return s.messages
 }
 
-// get reads messages from the given start to end message index.
-func (s *backlogSegment) get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
+// Get reads messages from the given start to end message index.
+func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
 	noMsgs := []*m.BroadcastFeedMessage{}
 	if start < s.start.Load() {
 		return noMsgs, errOutOfBounds
