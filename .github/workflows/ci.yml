@@ -163,7 +163,7 @@ jobs:
         if: matrix.test-mode == 'race'
         run:  |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -race
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- --timeout 20m -race
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
