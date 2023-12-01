@@ -63,14 +63,14 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 	for _, msg := range bm.Messages {
 		segment := b.tail.Load()
 		if segment == nil {
-			segment = newBacklogSegment(b.config)
+			segment = newBacklogSegment()
 			b.head.Store(segment)
 			b.tail.Store(segment)
 		}
 
 		prevMsgIdx := segment.End()
 		if segment.count() >= b.config().SegmentLimit {
-			nextSegment := newBacklogSegment(b.config)
+			nextSegment := newBacklogSegment()
 			segment.nextSegment.Store(nextSegment)
 			prevMsgIdx = segment.End()
 			nextSegment.previousSegment.Store(segment)
@@ -246,7 +246,6 @@ type BacklogSegment interface {
 // backlogSegment stores messages up to a limit defined by the backlog. It also
 // points to the next backlogSegment in the list.
 type backlogSegment struct {
-	config          ConfigFetcher
 	messagesLock    sync.RWMutex
 	messages        []*m.BroadcastFeedMessage
 	nextSegment     atomic.Pointer[backlogSegment]
@@ -256,9 +255,8 @@ type backlogSegment struct {
 // newBacklogSegment creates a backlogSegment object with an empty slice of
 // messages. It does not return an interface as it is only used inside the
 // backlog library.
-func newBacklogSegment(c ConfigFetcher) *backlogSegment {
+func newBacklogSegment() *backlogSegment {
 	return &backlogSegment{
-		config:   c,
 		messages: []*m.BroadcastFeedMessage{},
 	}
 }
@@ -304,7 +302,7 @@ func (s *backlogSegment) Next() BacklogSegment {
 func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
-	tmp := make([]*m.BroadcastFeedMessage, s.config().SegmentLimit)
+	tmp := make([]*m.BroadcastFeedMessage, len(s.messages))
 	copy(tmp, s.messages)
 	return tmp
 }
@@ -325,7 +323,7 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 	startIndex := start - s.Start()
 	endIndex := end - s.Start() + 1
 
-	tmp := make([]*m.BroadcastFeedMessage, s.config().SegmentLimit)
+	tmp := make([]*m.BroadcastFeedMessage, len(s.messages))
 	copy(tmp, s.messages)
 	return tmp[startIndex:endIndex], nil
 }
