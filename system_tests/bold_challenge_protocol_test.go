@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
@@ -25,7 +24,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	challenge_testing "github.com/OffchainLabs/bold/testing"
+	"github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -42,7 +41,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
@@ -59,7 +57,7 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 5) // 5 big step levels, 2^5 each, with small step equalting to 2^31 total.
+	bigStepChallengeLeafHeight   = uint64(1 << 5) // 5 big step levels, 2^5 each, with small step equaling to 2^31 total.
 	smallStepChallengeLeafHeight = uint64(1 << 6)
 )
 
@@ -183,14 +181,6 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	poster, err := assertions.NewManager(
-		assertionChain,
-		stateManager,
-		"good",
-		time.Hour,
-	)
-	Require(t, err)
-
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
 		"/tmp/evil",
@@ -208,14 +198,6 @@ func TestBoldProtocol(t *testing.T) {
 		assertionChain.RollupAddress(),
 		&l1authB,
 		l1client,
-	)
-	Require(t, err)
-
-	posterB, err := assertions.NewManager(
-		chainB,
-		stateManagerB,
-		"evil",
-		time.Hour,
 	)
 	Require(t, err)
 
@@ -283,7 +265,7 @@ func TestBoldProtocol(t *testing.T) {
 		}
 	}
 
-	// Wait for the vaidator to validate the batches.
+	// Wait for the validator to validate the batches.
 	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
 	Require(t, err)
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
@@ -294,28 +276,16 @@ func TestBoldProtocol(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		_, err1 := l2nodeA.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
+		_, err1 := l2nodeA.TxStreamer.ResultAtCount(totalMessageCount)
 		nodeAHasValidated := err1 == nil
 
-		_, err2 := l2nodeB.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
+		_, err2 := l2nodeB.TxStreamer.ResultAtCount(totalMessageCount)
 		nodeBHasValidated := err2 == nil
 
 		if nodeAHasValidated && nodeBHasValidated {
 			break
 		}
 	}
-
-	t.Log("Honest party posting assertion at batch 1, pos 0")
-	_, err = poster.PostAssertion(ctx)
-	Require(t, err)
-
-	t.Log("Honest party posting assertion at batch 2, pos 0")
-	expectedWinnerAssertion, err := poster.PostAssertion(ctx)
-	Require(t, err)
-
-	t.Log("Evil party posting assertion at batch 2, pos 0")
-	_, err = posterB.PostAssertion(ctx)
-	Require(t, err)
 
 	provider := l2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
@@ -362,7 +332,17 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 	)
 	Require(t, err)
-	manager.Start(ctx)
+
+	t.Log("Honest party posting assertion at batch 1, pos 0")
+
+	poster := manager.AssertionManager()
+	_, err = poster.PostAssertion(ctx)
+	Require(t, err)
+
+	t.Log("Honest party posting assertion at batch 2, pos 0")
+	expectedWinnerAssertion, err := poster.PostAssertion(ctx)
+	Require(t, err)
+
 	managerB, err := challengemanager.New(
 		ctx,
 		chainB,
@@ -376,6 +356,13 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 	)
 	Require(t, err)
+
+	t.Log("Evil party posting assertion at batch 2, pos 0")
+	posterB := managerB.AssertionManager()
+	_, err = posterB.PostAssertion(ctx)
+	Require(t, err)
+
+	manager.Start(ctx)
 	managerB.Start(ctx)
 
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
@@ -519,7 +506,6 @@ func deployContractsOnly(
 	Require(t, err)
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 
-	prod := false
 	loserStakeEscrow := common.Address{}
 	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
@@ -529,7 +515,7 @@ func deployContractsOnly(
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
 	cfg := challenge_testing.GenerateRollupConfig(
-		prod,
+		false,
 		wasmModuleRoot,
 		l1TransactionOpts.From,
 		chainId,
@@ -633,10 +619,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stakeTokenAddr common.Address,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
-	l1rpcClient, err := l1stack.Attach()
-	if err != nil {
-		Fatal(t, err)
-	}
+	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 	firstExec, ok := first.Execution.(*gethexec.ExecutionNode)
 	if !ok {
@@ -655,7 +638,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
 	if stackConfig == nil {
-		stackConfig = stackConfigForTest(t)
+		stackConfig = createStackConfigForTest(t.TempDir())
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)

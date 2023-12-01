@@ -196,7 +196,7 @@ func (s *StateManager) StatesInBatchRange(
 		return nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
 	}
 	// Compute the total desired hashes from this request.
-	totalDesiredHashes := (toHeight - fromHeight) + 1
+	totalDesiredHashes := int(toHeight) + 1
 
 	// Get the fromBatch's message count.
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
@@ -250,6 +250,9 @@ func (s *StateManager) StatesInBatchRange(
 				Batch:      uint64(batch),
 				PosInBatch: i + 1,
 			}
+			if numStateRoots >= totalDesiredHashes {
+				break
+			}
 			machineHashesMmap.Set(numStateRoots, machineHash(state))
 			numStateRoots++
 		}
@@ -266,12 +269,15 @@ func (s *StateManager) StatesInBatchRange(
 			Batch:      uint64(batch) + 1,
 			PosInBatch: 0,
 		}
+		if numStateRoots >= totalDesiredHashes {
+			break
+		}
 		machineHashesMmap.Set(numStateRoots, machineHash(state))
 		numStateRoots++
 		prevBatchMsgCount = batchMessageCount
 	}
 	lastMachineHashes := machineHashesMmap.Get(numStateRoots - 1)
-	for i := numStateRoots; i < int(totalDesiredHashes); i++ {
+	for i := numStateRoots; i < totalDesiredHashes; i++ {
 		machineHashesMmap.Set(i, lastMachineHashes)
 	}
 	return machineHashesMmap.SubMmap(int(fromHeight), int(toHeight+1)), nil
