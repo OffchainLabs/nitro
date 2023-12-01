@@ -265,7 +265,12 @@ func newBacklogSegment() *backlogSegment {
 // variable of type BacklogSegment is nil or not. Comparing whether an
 // interface is nil directly will not work.
 func IsBacklogSegmentNil(segment BacklogSegment) bool {
-	return segment.(*backlogSegment) == nil
+	if segment == nil {
+		return true
+	} else if segment.(*backlogSegment) == nil {
+		return true
+	}
+	return false
 }
 
 // Start returns the first message index within the backlogSegment.
