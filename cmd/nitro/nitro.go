@@ -839,7 +839,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		}
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
-		chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1000000
