@@ -6,6 +6,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
+const (
+	V1 = 1
+)
+
 // BroadcastMessage is the base message type for messages to send over the network.
 //
 // Acts as a variant holding the message types. The type of the message is

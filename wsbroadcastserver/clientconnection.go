@@ -137,7 +137,7 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 			msgs = msgs[requestedIdx:]
 		}
 		bm := &m.BroadcastMessage{
-			Version:  1, // TODO(clamb): I am unsure if it is correct to hard code the version here like this? It seems to be done in other places though
+			Version:  m.V1,
 			Messages: msgs,
 		}
 		err := cc.writeBroadcastMessage(bm)
