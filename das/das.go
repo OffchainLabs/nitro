@@ -46,6 +46,7 @@ type DataAvailabilityConfig struct {
 	LocalDBStorage     LocalDBStorageConfig     `koanf:"local-db-storage"`
 	LocalFileStorage   LocalFileStorageConfig   `koanf:"local-file-storage"`
 	S3Storage          S3StorageServiceConfig   `koanf:"s3-storage"`
+	GCSStorage         GCSStorageServiceConfig  `koanf:"gcs-storage"`
 	IpfsStorage        IpfsStorageServiceConfig `koanf:"ipfs-storage"`
 	RegularSyncStorage RegularSyncStorageConfig `koanf:"regular-sync-storage"`
 
@@ -116,6 +117,7 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 		LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
 		LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
 		S3ConfigAddOptions(prefix+".s3-storage", f)
+		GCSConfigAddOptions(prefix+".gcs-storage", f)
 		RegularSyncStorageConfigAddOptions(prefix+".regular-sync-storage", f)
 
 		// Key config for storage
