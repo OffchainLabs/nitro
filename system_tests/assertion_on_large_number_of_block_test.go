@@ -14,15 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
+	modes "github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/math"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	challenge_testing "github.com/OffchainLabs/bold/testing"
+	"github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,12 +42,6 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
-)
-
-var (
-	blockChallengeLeafHeight     = uint64(1 << 26) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 11) // 2048
-	smallStepChallengeLeafHeight = uint64(1 << 20) // 1048576
 )
 
 // Helps in testing the feasibility of assertion after the protocol upgrade.
@@ -74,11 +69,11 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 	Require(t, err)
 
 	challengeLeafHeights := []l2stateprovider.Height{
-		l2stateprovider.Height(blockChallengeLeafHeight),
-		l2stateprovider.Height(bigStepChallengeLeafHeight),
-		l2stateprovider.Height(smallStepChallengeLeafHeight),
+		l2stateprovider.Height(uint64(1 << 26)), // blockChallengeLeafHeight = 67108864
+		l2stateprovider.Height(uint64(1 << 11)), // bigStepChallengeLeafHeight = 2048
+		l2stateprovider.Height(uint64(1 << 20)), // smallStepChallengeLeafHeight = 1048576
 	}
-	manager, err := staker.NewStateManager(stateless, t.TempDir(), nil)
+	manager, err := staker.NewStateManager(stateless, t.TempDir(), challengeLeafHeights, "test")
 	Require(t, err)
 	provider := l2stateprovider.NewHistoryCommitmentProvider(
 		manager,
@@ -87,12 +82,20 @@ func TestAssertionOnLargeNumberOfBlocks(t *testing.T) {
 		challengeLeafHeights,
 		manager,
 	)
-	poster := assertions.NewPoster(
+
+	challengeManager, err := challengemanager.New(
+		ctx,
 		assertionChain,
+		assertionChain.Backend(),
 		provider,
-		"test",
-		time.Second,
+		assertionChain.RollupAddress(),
+		challengemanager.WithName("test"),
+		challengemanager.WithMode(modes.DefensiveMode),
+		challengemanager.WithAssertionPostingInterval(time.Hour),
+		challengemanager.WithAssertionScanningInterval(time.Hour),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
 	)
+	poster := challengeManager.AssertionManager()
 	assertion, err := poster.PostAssertion(ctx)
 	Require(t, err)
 	setupEndTime := time.Now().Unix()
@@ -128,10 +131,12 @@ func testCalculatingBlockChallengeLevelZeroEdgeBisection(
 	_, err = provider.HistoryCommitment(
 		ctx,
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot: wasmModuleRoot,
-			Batch:          l2stateprovider.Batch(topLevelClaimEndBatchCount),
-			FromHeight:     l2stateprovider.Height(0),
-			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(bisectTo)),
+			WasmModuleRoot:              wasmModuleRoot,
+			FromBatch:                   0,
+			ToBatch:                     l2stateprovider.Batch(topLevelClaimEndBatchCount),
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(bisectTo)),
 		},
 	)
 
@@ -139,10 +144,12 @@ func testCalculatingBlockChallengeLevelZeroEdgeBisection(
 	_, err = provider.PrefixProof(
 		ctx,
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot: wasmModuleRoot,
-			Batch:          l2stateprovider.Batch(topLevelClaimEndBatchCount),
-			FromHeight:     l2stateprovider.Height(bisectTo),
-			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
+			WasmModuleRoot:              wasmModuleRoot,
+			FromBatch:                   0,
+			ToBatch:                     l2stateprovider.Batch(topLevelClaimEndBatchCount),
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  l2stateprovider.Height(bisectTo),
+			UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
 		},
 		l2stateprovider.Height(bisectTo),
 	)
@@ -163,10 +170,12 @@ func testCalculatingBlockChallengeLevelZeroEdge(
 	startCommit, err := provider.HistoryCommitment(
 		ctx,
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot: creationInfo.WasmModuleRoot,
-			Batch:          l2stateprovider.Batch(0),
-			FromHeight:     l2stateprovider.Height(0),
-			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(0)),
+			WasmModuleRoot:              creationInfo.WasmModuleRoot,
+			FromBatch:                   0,
+			ToBatch:                     l2stateprovider.Batch(0),
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(0)),
 		},
 	)
 	Require(t, err)
@@ -176,27 +185,31 @@ func testCalculatingBlockChallengeLevelZeroEdge(
 	endCommit, err := provider.HistoryCommitment(
 		ctx,
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot: creationInfo.WasmModuleRoot,
-			Batch:          l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-			FromHeight:     l2stateprovider.Height(0),
-			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
+			WasmModuleRoot:              creationInfo.WasmModuleRoot,
+			FromBatch:                   0,
+			ToBatch:                     l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
 		},
 	)
 	Require(t, err)
 	_, err = provider.PrefixProof(
 		ctx,
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot: creationInfo.WasmModuleRoot,
-			Batch:          l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
-			FromHeight:     l2stateprovider.Height(0),
-			UpToHeight:     option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
+			WasmModuleRoot:              creationInfo.WasmModuleRoot,
+			FromBatch:                   0,
+			ToBatch:                     l2stateprovider.Batch(creationInfo.InboxMaxCount.Uint64()),
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  l2stateprovider.Height(0),
+			UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(levelZeroBlockEdgeHeight)),
 		},
 		l2stateprovider.Height(0),
 	)
 	Require(t, err)
 	return startCommit.Height, endCommit.Height, creationInfo.WasmModuleRoot, creationInfo.InboxMaxCount.Uint64()
 }
-func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, protocol.Protocol) {
+func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, *solimpl.AssertionChain) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
@@ -239,7 +252,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
-	rollupAddresses, assertionChain := deployBoldContracts(t, ctx, l1Info, l1Backend, chainConfig.ChainID, stakeToken)
+	rollupAddresses, assertionChain := deployBoldContractsAndTokenBinding(t, ctx, l1Info, l1Backend, chainConfig.ChainID, stakeToken)
 	l1Info.SetContract("Bridge", rollupAddresses.Bridge)
 	l1Info.SetContract("SequencerInbox", rollupAddresses.SequencerInbox)
 	l1Info.SetContract("Inbox", rollupAddresses.Inbox)
@@ -304,7 +317,7 @@ func setupAndPostBatches(t *testing.T, ctx context.Context) (*arbnode.Node, prot
 	return l2Node, assertionChain
 }
 
-func deployBoldContracts(
+func deployBoldContractsAndTokenBinding(
 	t *testing.T,
 	ctx context.Context,
 	l1info info,
