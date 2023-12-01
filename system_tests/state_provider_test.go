@@ -22,7 +22,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -66,7 +65,7 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		if _, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount)); err == nil {
+		if _, err := l2node.TxStreamer.ResultAtCount(totalMessageCount); err == nil {
 			break
 		}
 	}
@@ -107,7 +106,7 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 	hashes := make([]common.Hash, len(preExpansion))
 	for i, h := range preExpansion {
 		hash := h
-		hashes[i] = common.Hash(hash)
+		hashes[i] = hash
 	}
 
 	computed, err := prefixproofs.Root(hashes)
@@ -147,7 +146,7 @@ func TestStateProvider_BOLD(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		if _, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount)); err == nil {
+		if _, err := l2node.TxStreamer.ResultAtCount(totalMessageCount); err == nil {
 			break
 		}
 	}
@@ -216,7 +215,7 @@ func TestStateProvider_BOLD(t *testing.T) {
 		}
 
 		// Check if we agree with the last posted batch to the inbox.
-		result, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
+		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
 		Require(t, err)
 
 		state := &protocol.ExecutionState{
@@ -303,7 +302,6 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"good",
-		staker.DisableCache(),
 	)
 	Require(t, err)
 	return l2node, l1info, l2info, l1stack, l1client, stateManager
