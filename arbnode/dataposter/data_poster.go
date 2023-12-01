@@ -56,6 +56,7 @@ type DataPoster struct {
 	signer            signerFn
 	redisLock         AttemptLocker
 	config            ConfigFetcher
+	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 
@@ -119,8 +120,9 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	if err != nil {
 		return nil, err
 	}
+	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
-		cfg.UseNoOpStorage = true
+		useNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
 	encF := func() storage.EncoderDecoderInterface {
@@ -131,7 +133,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	}
 	var queue QueueStorage
 	switch {
-	case cfg.UseNoOpStorage:
+	case useNoOpStorage:
 		queue = &noop.Storage{}
 	case opts.RedisClient != nil:
 		var err error
@@ -158,6 +160,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 			return opts.Auth.Signer(addr, tx)
 		},
 		config:            opts.Config,
+		usingNoOpStorage:  useNoOpStorage,
 		replacementTimes:  replacementTimes,
 		metadataRetriever: opts.MetadataRetriever,
 		queue:             queue,
@@ -250,6 +253,13 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 
 func (p *DataPoster) Sender() common.Address {
 	return p.sender
+}
+
+func (p *DataPoster) MaxMempoolTransactions() uint64 {
+	if p.usingNoOpStorage {
+		return 1
+	}
+	return p.config().MaxMempoolTransactions
 }
 
 // Does basic check whether posting transaction with specified nonce would
@@ -398,7 +408,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
-	if config.AllocateMempoolBalance && !config.UseNoOpStorage {
+	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
 		// We reserve half the balance for the first transaction, and then split the remaining balance for all after that.
 		// With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
 		balanceForTx.Div(balanceForTx, common.Big2)
@@ -500,12 +510,12 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
-			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap())
+			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "gas", newTx.FullTx.Gas())
 			return err
 		}
 		log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 	} else {
-		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
+		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "gas", newTx.FullTx.Gas())
 	}
 	newerTx := *newTx
 	newerTx.Sent = true
