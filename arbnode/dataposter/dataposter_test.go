@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Knetic/govaluate"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -240,5 +241,29 @@ func (s *server) mux(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(respBytes); err != nil {
 		fmt.Printf("error writing response: %v\n", err)
+	}
+}
+
+func TestMaxFeeCapFormulaCalculation(t *testing.T) {
+	// This test alerts, by failing, if the max fee cap formula were to be changed in the DefaultDataPosterConfig to
+	// use new variables other than the ones that are keys of 'parameters' map below
+	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	if err != nil {
+		t.Fatalf("error creating govaluate evaluable expression for default maxFeeCap formula: %t", err)
+	}
+	parameters := make(map[string]interface{})
+	parameters["BacklogOfBatches"] = 0
+	parameters["UrgencyGWei"] = DefaultDataPosterConfig.UrgencyGwei
+	parameters["ElapsedTime"] = 0
+	parameters["ElapsedTimeBase"] = float64(DefaultDataPosterConfig.ElapsedTimeBase)
+	parameters["ElapsedTimeImportance"] = DefaultDataPosterConfig.ElapsedTimeImportance
+	parameters["TargetPriceGWei"] = DefaultDataPosterConfig.TargetPriceGwei
+	parameters["GWei"] = 0
+	result, err := expression.Evaluate(parameters)
+	if err != nil {
+		t.Fatalf("error evaluating expression:: %t", err)
+	}
+	if result.(float64) != 0 {
+		t.Fatalf("unexpected result. Got error: %f, want: %d", result.(float64), 0)
 	}
 }
