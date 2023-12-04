@@ -58,6 +58,7 @@ type InboxTrackerInterface interface {
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
+	GetSequencerBatchCount() uint64
 	GetBatchCount() (uint64, error)
 }
 
@@ -306,7 +307,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if usingEspresso {
 			// TODO: Use the inbox tracker to fetch the correct HotShot index
 			// https://github.com/EspressoSystems/espresso-sequencer/issues/782
-			batchNum := batch.Number
+			batchNum := v.inboxTracker.GetSequencerBatchCount()
 			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
 			if err != nil {
 				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)

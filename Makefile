@@ -369,6 +369,9 @@ generate-hotshot-binding:
 	abigen --abi ./arbos/espresso/hotshot/HotShot.abi.json --pkg hotshot --out ./arbos/espresso/hotshot/hotshot.go
 	rm ./arbos/espresso/hotshot/HotShot.abi.json
 
+local-sequencer:
+	./target/bin/nitro --conf.file ./config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://localhost:8548 --graphql.enable --execution.sequencer.espresso --execution.sequencer.hotshot-url "http://localhost:50000" --execution.rpc.espresso --execution.rpc.hotshot-url "http://localhost:50000" --execution.rpc.espresso-namespace 1 --execution.sequencer.espresso-namespace 1
+
 # Makefile settings
 
 always:              # use this to force other rules to always build

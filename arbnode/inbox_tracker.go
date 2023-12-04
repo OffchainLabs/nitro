@@ -40,6 +40,8 @@ type InboxTracker struct {
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
+
+	espressoBatchNum uint64
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
@@ -199,6 +201,10 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.MessageCount, err
+}
+
+func (t *InboxTracker) GetSequencerBatchCount() uint64 {
+	return t.espressoBatchNum
 }
 
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
@@ -604,6 +610,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
+	sequencerBatchDetected := make(map[uint64]bool)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
@@ -615,6 +622,18 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			return err
 		}
 		messages = append(messages, *msg)
+		// Update the count of l2 sequenced messages
+		msgKind := msg.Message.Header.Kind
+		log.Info("message kind", "msg knid", msgKind)
+		log.Info("batch seq number", "number", batchSeqNum)
+		log.Info("current bathc message count", "count", batchSeqNum)
+		if msgKind == 3 && !sequencerBatchDetected[batchSeqNum] {
+			t.espressoBatchNum += 1
+			log.Info("Detected espresso batch, incrementing count to", "count", t.espressoBatchNum)
+			sequencerBatchDetected[batchSeqNum] = true
+		} else {
+			log.Info("Batch does not contain justification")
+		}
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1
 	}

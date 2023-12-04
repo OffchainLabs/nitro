@@ -73,11 +73,6 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 
 	}
 
-	if len(arbTxns.Transactions) == 0 {
-		s.hotShotState.advance()
-		return true
-	}
-
 	arbHeader := &arbostypes.L1IncomingMessageHeader{
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
