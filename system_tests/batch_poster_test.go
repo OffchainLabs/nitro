@@ -62,7 +62,8 @@ func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, 
 
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	httpSrv, srv := newServer(ctx, t)
 	t.Cleanup(func() {
 		if err := httpSrv.Shutdown(ctx); err != nil {
@@ -76,8 +77,6 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 			return
 		}
 	}()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	var redisUrl string
 	if useRedis {
