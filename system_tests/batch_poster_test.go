@@ -8,14 +8,20 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net/http"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -27,8 +33,49 @@ func TestRedisBatchPosterParallel(t *testing.T) {
 	testBatchPosterParallel(t, true)
 }
 
+func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, address common.Address) {
+	t.Helper()
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(builder.L2.ConsensusNode.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	if err != nil {
+		t.Fatal("Failed to get new upgrade executor", err)
+	}
+	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	if err != nil {
+		t.Fatal("Failed to parse sequencer inbox abi", err)
+	}
+	setIsBatchPoster, err := sequencerInboxABI.Pack("setIsBatchPoster", address, true)
+	if err != nil {
+		t.Fatal("Failed to pack setIsBatchPoster", err)
+	}
+	ownerOpts := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
+	tx, err := upgradeExecutor.ExecuteCall(
+		&ownerOpts,
+		builder.L1Info.GetAddress("SequencerInbox"),
+		setIsBatchPoster)
+	if err != nil {
+		t.Fatalf("Error creating transaction to set batch poster: %v", err)
+	}
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+		t.Fatalf("Error setting batch poster: %v", err)
+	}
+}
+
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	t.Parallel()
+	ctx := context.Background()
+	httpSrv, srv := newServer(ctx, t)
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
+	go func() {
+		fmt.Println("Server is listening on port 1234...")
+		if err := httpSrv.ListenAndServeTLS(signerServerCert, signerServerKey); err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stdout, "ListenAndServeTLS() unexpected error:  %v", err)
+			return
+		}
+	}()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -48,13 +95,18 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
+	builder.nodeConfig.BatchPoster.DataPoster.ExternalSigner = *externalSignerTestCfg(srv.address)
+
 	cleanup := builder.Build(t)
 	defer cleanup()
-
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
-
 	builder.L2Info.GenerateAccount("User2")
+
+	addNewBatchPoster(ctx, t, builder, srv.address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.address, 30000, big.NewInt(1e18), nil)})
 
 	var txs []*types.Transaction
 
