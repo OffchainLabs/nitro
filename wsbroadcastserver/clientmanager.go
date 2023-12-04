@@ -337,6 +337,8 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 					logError(err, "failed to do broadcast")
 				}
 
+				// A message with ConfirmedSequenceNumberMessage could be sent without any messages
+				// this section ensures that message is still sent.
 				if len(bm.Messages) == 0 {
 					clientDeleteList, err = cm.doBroadcast(bm)
 					logError(err, "failed to do broadcast")
