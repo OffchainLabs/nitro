@@ -227,7 +227,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				return
 			case msg := <-cc.out:
 				if msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) <= cc.LastSentSeqNum.Load() {
-					log.Debug("client has already sent message with this sequence number, skipping the message", "client", client.Name, "sequence number", *seqNum)
+					log.Debug("client has already sent message with this sequence number, skipping the message", "client", cc.Name, "sequence number", *msg.sequenceNumber)
 					continue
 				}
 
