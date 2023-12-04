@@ -237,7 +237,6 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 					bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
 					if err != nil {
 						logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))
-						cc.Remove()
 						return
 					}
 
