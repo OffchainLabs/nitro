@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -22,7 +23,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type workloadType uint
@@ -71,6 +74,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 	perTransfer := big.NewInt(1e12)
 
+	var simple *mocksgen.Simple
 	if workload != upgradeArbOs {
 		for i := 0; i < workloadLoops; i++ {
 			var tx *types.Transaction
@@ -122,10 +126,24 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		}
 	} else {
 		auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+		// deploy a test contract
+		var err error
+		_, _, simple, err = mocksgen.DeploySimple(&auth, builder.L2.Client)
+		Require(t, err, "could not deploy contract")
+
+		tx, err := simple.StoreDifficulty(&auth)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		Require(t, err)
+		difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+		Require(t, err)
+		if !arbmath.BigEquals(difficulty, common.Big1) {
+			Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+		}
 		// make auth a chain owner
 		arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 		Require(t, err)
-		tx, err := arbDebug.BecomeChainOwner(&auth)
+		tx, err = arbDebug.BecomeChainOwner(&auth)
 		Require(t, err)
 		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
@@ -135,6 +153,16 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		Require(t, err)
 		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
+
+		tx, err = simple.StoreDifficulty(&auth)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		Require(t, err)
+		difficulty, err = simple.GetBlockDifficulty(&bind.CallOpts{})
+		Require(t, err)
+		if !arbmath.BigEquals(difficulty, common.Big1) {
+			Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+		}
 
 		tx = builder.L2Info.PrepareTxTo("Owner", nil, builder.L2Info.TransferGas, perTransfer, []byte{byte(vm.PUSH0)})
 		err = builder.L2.Client.SendTransaction(ctx, tx)
@@ -158,7 +186,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			})
 		}
 
-		_, err := WaitForTx(ctx, testClientB.Client, delayedTx.Hash(), time.Second*5)
+		_, err := WaitForTx(ctx, testClientB.Client, delayedTx.Hash(), time.Second*30)
 		Require(t, err)
 	}
 

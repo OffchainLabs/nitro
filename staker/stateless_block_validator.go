@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -69,13 +68,6 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
-}
-
-type L1ReaderInterface interface {
-	Client() arbutil.L1Interface
-	Subscribe(bool) (<-chan *types.Header, func())
-	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
-	UseFinalityData() bool
 }
 
 type GlobalStatePosition struct {

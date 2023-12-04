@@ -24,7 +24,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -36,6 +35,7 @@ import (
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -532,7 +532,8 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize chain config: %w", err)
 	}
-	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
+	chainIdBytes := arbmath.U256Bytes(s.chainConfig.ChainID)
+	msg := append(append(chainIdBytes, 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{

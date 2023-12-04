@@ -67,6 +67,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
+
+	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)
 	defer cleanupA()
 
@@ -76,6 +78,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if faultyStaker {
 		builder.L2Info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
+
 	config := arbnode.ConfigDefaultL1Test()
 	config.Sequencer = false
 	config.DelayedSequencer.Enable = false
