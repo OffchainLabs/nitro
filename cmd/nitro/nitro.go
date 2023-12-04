@@ -839,7 +839,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.ParentChainIsArbitrum != nil {
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
-		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
+		log.Warn("Chain info field parent-chain-is-arbitrum is missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
 		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
@@ -852,6 +852,9 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	if chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
+	}
+	if chainInfo.SecondaryForwardingTarget != "" {
+		chainDefaults["execution.secondary-forwarding-target"] = strings.Split(chainInfo.SecondaryForwardingTarget, ",")
 	}
 	if chainInfo.FeedUrl != "" {
 		chainDefaults["node.feed.input.url"] = strings.Split(chainInfo.FeedUrl, ",")
@@ -875,7 +878,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		}
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
-		chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1000000
