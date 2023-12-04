@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -71,9 +71,9 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	})
 	go func() {
-		fmt.Println("Server is listening on port 1234...")
+		log.Debug("Server is listening on port 1234...")
 		if err := httpSrv.ListenAndServeTLS(signerServerCert, signerServerKey); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stdout, "ListenAndServeTLS() unexpected error:  %v", err)
+			log.Debug("ListenAndServeTLS() failed", "error", err)
 			return
 		}
 	}()
