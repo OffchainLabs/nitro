@@ -319,7 +319,7 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				}
 			case bm := <-cm.broadcastChan:
 				var err error
-				for _, msg := range bm.Messages {
+				for i, msg := range bm.Messages {
 					m := &m.BroadcastMessage{
 						Version:  bm.Version,
 						Messages: []*m.BroadcastFeedMessage{msg},
