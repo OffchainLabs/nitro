@@ -141,7 +141,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		defer stopSecondaryFeedTimer.Stop()
 		defer primaryFeedIsDownTimer.Stop()
 
-		msgHandler := func(msg broadcaster.BroadcastFeedMessage, router *Router) error {
+		msgHandler := func(msg m.BroadcastFeedMessage, router *Router) error {
 			if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
 				return nil
 			}
@@ -149,7 +149,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				return nil
 			}
 			recentFeedItemsNew[msg.SequenceNumber] = time.Now()
-			if err := router.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
+			if err := router.forwardTxStreamer.AddBroadcastMessages([]*m.BroadcastFeedMessage{&msg}); err != nil {
 				return err
 			}
 			return nil
