@@ -326,9 +326,12 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				var err error
 				for _, msg := range bm.Messages {
 					m := &m.BroadcastMessage{
-						Version:                        bm.Version,
-						Messages:                       []*m.BroadcastFeedMessage{msg},
-						ConfirmedSequenceNumberMessage: bm.ConfirmedSequenceNumberMessage,
+						Version:  bm.Version,
+						Messages: []*m.BroadcastFeedMessage{msg},
+					}
+					// This ensures that only one message is sent with the confirmed sequence number
+					if i == 0 {
+						m.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
 					}
 					clientDeleteList, err = cm.doBroadcast(m)
 					logError(err, "failed to do broadcast")
