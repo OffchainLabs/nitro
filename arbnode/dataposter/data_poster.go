@@ -52,7 +52,7 @@ type DataPoster struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
-	sender            common.Address
+	auth              *bind.TransactOpts
 	signer            signerFn
 	redisLock         AttemptLocker
 	config            ConfigFetcher
@@ -155,7 +155,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	dp := &DataPoster{
 		headerReader: opts.HeaderReader,
 		client:       opts.HeaderReader.Client(),
-		sender:       opts.Auth.From,
+		auth:         opts.Auth,
 		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return opts.Auth.Signer(addr, tx)
 		},
@@ -172,7 +172,13 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		if err != nil {
 			return nil, err
 		}
-		dp.signer, dp.sender = signer, sender
+		dp.signer = signer
+		dp.auth = &bind.TransactOpts{
+			From: sender,
+			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+				return signer(context.TODO(), address, tx)
+			},
+		}
 	}
 	return dp, nil
 }
@@ -251,8 +257,12 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 	}, sender, nil
 }
 
+func (p *DataPoster) Auth() *bind.TransactOpts {
+	return p.auth
+}
+
 func (p *DataPoster) Sender() common.Address {
-	return p.sender
+	return p.auth.From
 }
 
 func (p *DataPoster) MaxMempoolTransactions() uint64 {
@@ -279,7 +289,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 	// Check that posting a new transaction won't exceed maximum pending
 	// transactions in mempool.
 	if cfg.MaxMempoolTransactions > 0 {
-		unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.Sender(), nil)
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
@@ -322,7 +332,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
-		nonce, err := p.client.NonceAt(ctx, p.sender, nonceQueryBlock)
+		nonce, err := p.client.NonceAt(ctx, p.Sender(), nonceQueryBlock)
 		if err != nil {
 			return 0, nil, false, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
@@ -360,7 +370,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	softConfBlock := arbmath.BigSubByUint(latestHeader.Number, config.NonceRbfSoftConfs)
-	softConfNonce, err := p.client.NonceAt(ctx, p.sender, softConfBlock)
+	softConfNonce, err := p.client.NonceAt(ctx, p.Sender(), softConfBlock)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
@@ -476,7 +486,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Data:       calldata,
 		AccessList: accessList,
 	}
-	fullTx, err := p.signer(ctx, p.sender, types.NewTx(&inner))
+	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(&inner))
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
@@ -555,7 +565,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	newTx.Sent = false
 	newTx.Data.GasFeeCap = newFeeCap
 	newTx.Data.GasTipCap = newTipCap
-	newTx.FullTx, err = p.signer(ctx, p.sender, types.NewTx(&newTx.Data))
+	newTx.FullTx, err = p.signer(ctx, p.Sender(), types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
 	}
@@ -578,7 +588,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 	if p.lastBlock != nil && arbmath.BigEquals(p.lastBlock, header.Number) {
 		return nil
 	}
-	nonce, err := p.client.NonceAt(ctx, p.sender, header.Number)
+	nonce, err := p.client.NonceAt(ctx, p.Sender(), header.Number)
 	if err != nil {
 		if p.lastBlock != nil {
 			log.Warn("Failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
@@ -616,7 +626,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 func (p *DataPoster) updateBalance(ctx context.Context) error {
 	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
-	balance, err := p.client.BalanceAt(ctx, p.sender, big.NewInt(-1))
+	balance, err := p.client.BalanceAt(ctx, p.Sender(), big.NewInt(-1))
 	if err != nil {
 		return err
 	}
@@ -671,7 +681,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
 		}
-		unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.Sender(), nil)
 		if err != nil {
 			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
