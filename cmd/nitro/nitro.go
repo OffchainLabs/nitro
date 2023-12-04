@@ -491,9 +491,10 @@ func mainImpl() int {
 		return 1
 	}
 
-	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params
+	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	config := liveNodeConfig.Get()
 	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
+	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
 	if config.Node.ParentChainReader.Enable {
 		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
@@ -508,20 +509,20 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster MaxSize, and at least 15kB below the sequencer inbox’s max data size.
-	if config.Execution.Sequencer.Enable {
-		seqMaxTxDataSize := config.Execution.Sequencer.MaxTxDataSize
-		batchPosterMaxSize := config.Node.BatchPoster.MaxSize
-		if seqMaxTxDataSize > batchPosterMaxSize-5000 || seqMaxTxDataSize > seqInboxMaxDataSize-15000 {
-			log.Error("sequencer's MaxTxDataSize too large")
+	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
+	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
+	if config.Node.BatchPoster.Enable && !config.Node.DataAvailability.Enable {
+		if config.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
+			log.Error("batchPoster's MaxSize is too large")
 			return 1
 		}
 	}
-	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s max data size if the data availability service is not enabled.
-	if config.Node.BatchPoster.Enable && !config.Node.DataAvailability.Enable {
-		batchPosterMaxSize := config.Node.BatchPoster.MaxSize
-		if batchPosterMaxSize > seqInboxMaxDataSize-10000 {
-			log.Error("batchPoster's MaxSize is too large")
+	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
+	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
+	if config.Execution.Sequencer.Enable {
+		if config.Execution.Sequencer.MaxTxDataSize > config.Node.BatchPoster.MaxSize-5000 ||
+			config.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
+			log.Error("sequencer's MaxTxDataSize too large")
 			return 1
 		}
 	}
