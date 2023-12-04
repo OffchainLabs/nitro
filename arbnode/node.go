@@ -615,10 +615,8 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		if stakerObj.Strategy() == staker.WatchtowerStrategy {
-			if err := wallet.Initialize(ctx); err != nil {
-				return nil, err
-			}
+		if err := wallet.Initialize(ctx); err != nil {
+			return nil, err
 		}
 		var txValidatorSenderPtr *common.Address
 		if txOptsValidator != nil {
