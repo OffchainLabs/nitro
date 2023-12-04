@@ -226,6 +226,11 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			case <-ctx.Done():
 				return
 			case msg := <-cc.out:
+				if msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) <= cc.LastSentSeqNum.Load() {
+					log.Debug("client has already sent message with this sequence number, skipping the message", "client", client.Name, "sequence number", *seqNum)
+					continue
+				}
+
 				expSeqNum := cc.LastSentSeqNum.Load() + 1
 				if !cc.backlogSent && msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) > expSeqNum {
 					catchupSeqNum := uint64(*msg.sequenceNumber) - 1

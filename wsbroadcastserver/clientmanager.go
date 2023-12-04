@@ -197,11 +197,6 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 			return nil, fmt.Errorf("doBroadcast was sent %d BroadcastFeedMessages, it can only parse 1 BroadcastFeedMessage at a time", n)
 		}
 
-		if seqNum != nil && uint64(*seqNum) <= client.LastSentSeqNum.Load() {
-			log.Warn("client has already sent message with this sequence number, skipping the message", "client", client.Name, "sequence number", *seqNum)
-			continue
-		}
-
 		m := message{
 			sequenceNumber: seqNum,
 			data:           data,
