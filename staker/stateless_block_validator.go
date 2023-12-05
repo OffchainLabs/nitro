@@ -47,6 +47,8 @@ type StatelessBlockValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
+
+	testIndex uint64
 }
 
 type BlockValidatorRegistrer interface {
@@ -58,7 +60,7 @@ type InboxTrackerInterface interface {
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
-	GetSequencerBatchCount() uint64
+	MessageIndexToHotShotIndex(arbutil.MessageIndex) uint64
 	GetBatchCount() (uint64, error)
 }
 
@@ -177,8 +179,9 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
-	DelayedMsg []byte
+	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
+	DelayedMsg        []byte
+	HotShotCommitment espresso.Commitment
 }
 
 func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
@@ -186,13 +189,14 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	return &validator.ValidationInput{
-		Id:            uint64(e.Pos),
-		HasDelayedMsg: e.HasDelayedMsg,
-		DelayedMsgNr:  e.DelayedMsgNr,
-		Preimages:     e.Preimages,
-		BatchInfo:     e.BatchInfo,
-		DelayedMsg:    e.DelayedMsg,
-		StartState:    e.Start,
+		Id:                uint64(e.Pos),
+		HasDelayedMsg:     e.HasDelayedMsg,
+		DelayedMsgNr:      e.DelayedMsgNr,
+		Preimages:         e.Preimages,
+		BatchInfo:         e.BatchInfo,
+		DelayedMsg:        e.DelayedMsg,
+		HotShotCommitment: e.HotShotCommitment,
+		StartState:        e.Start,
 	}, nil
 }
 
@@ -303,18 +307,20 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-	for i, batch := range e.BatchInfo {
-		// Only fetch commitments for L2 message batches
-		if usingEspresso && e.msg.Message.Header.Kind == 3 {
-			hotShotIndex := v.inboxTracker.GetSequencerBatchCount()
-			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
-			if err != nil {
-				return fmt.Errorf("error attempting to fetch HotShot commitment for height %d: %w", hotShotIndex, err)
 
-			}
-			log.Info("fetched HotShot commitment", "index", hotShotIndex, "commitment", hotShotCommitment)
-			e.BatchInfo[i].HotShotCommitment = *hotShotCommitment
+	if usingEspresso && e.msg.Message.Header.Kind == 3 {
+		hotShotIndex := v.inboxTracker.MessageIndexToHotShotIndex(e.Pos)
+		hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
+		if err != nil {
+			return fmt.Errorf("error attempting to fetch HotShot commitment for height %d: %w", hotShotIndex, err)
+
 		}
+		log.Info("fetched HotShot commitment", "batch", hotShotIndex, "msg index", e.Pos, "commitment", hotShotCommitment)
+		log.Info("batches", "start batch", e.Start.Batch, "pos in batch", e.Start.PosInBatch, "end", e.End.Batch, "pos in batch", e.End.PosInBatch)
+		e.HotShotCommitment = *hotShotCommitment
+	}
+
+	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
 		}

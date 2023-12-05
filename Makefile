@@ -372,6 +372,9 @@ generate-hotshot-binding:
 local-sequencer:
 	./target/bin/nitro --conf.file ./config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://localhost:8548 --graphql.enable --execution.sequencer.espresso --execution.sequencer.hotshot-url "http://localhost:50000" --execution.rpc.espresso --execution.rpc.hotshot-url "http://localhost:50000" --execution.rpc.espresso-namespace 1 --execution.sequencer.espresso-namespace 1
 
+local-validator:
+	./target/bin/nitro --conf.file ./config/validator_config.json --http.port 8247 --http.api net,web3,arb,debug --ws.port 8548
+
 # Makefile settings
 
 always:              # use this to force other rules to always build

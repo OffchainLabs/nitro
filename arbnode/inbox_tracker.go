@@ -41,7 +41,8 @@ type InboxTracker struct {
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 
-	espressoBatchNum uint64
+	messageNumToHotShotIndex map[arbutil.MessageIndex]uint64
+	currentHotShotIndex      uint64
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
@@ -203,8 +204,8 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
-func (t *InboxTracker) GetSequencerBatchCount() uint64 {
-	return t.espressoBatchNum
+func (t *InboxTracker) MessageIndexToHotShotIndex(pos arbutil.MessageIndex) uint64 {
+	return t.messageNumToHotShotIndex[pos]
 }
 
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
@@ -610,7 +611,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
-	sequencerBatchDetected := make(map[uint64]bool)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
@@ -623,13 +623,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		}
 		messages = append(messages, *msg)
 		// Update the count of l2 sequenced messages
-		// Note that since it is possible for this method to see duplicate batches,
-		// We use a boolean map to make sure that we increment the espresso batch count
-		// For every unique batch
 		msgKind := msg.Message.Header.Kind
-		if msgKind == 3 && !sequencerBatchDetected[batchSeqNum] {
-			t.espressoBatchNum += 1
-			sequencerBatchDetected[batchSeqNum] = true
+		if msgKind == 3 {
+			t.messageNumToHotShotIndex[currentpos] = t.currentHotShotIndex
+			t.currentHotShotIndex += 1
 		}
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1
