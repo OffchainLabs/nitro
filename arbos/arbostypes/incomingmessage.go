@@ -41,13 +41,12 @@ type EspressoBlockJustification struct {
 }
 
 type L1IncomingMessageHeader struct {
-	Kind               uint8                       `json:"kind"`
-	Poster             common.Address              `json:"sender"`
-	BlockNumber        uint64                      `json:"blockNumber"`
-	Timestamp          uint64                      `json:"timestamp"`
-	RequestId          *common.Hash                `json:"requestId" rlp:"nilList"`
-	L1BaseFee          *big.Int                    `json:"baseFeeL1"`
-	BlockJustification *EspressoBlockJustification `json:"justification,omitempty" rlp:"optional"`
+	Kind        uint8          `json:"kind"`
+	Poster      common.Address `json:"sender"`
+	BlockNumber uint64         `json:"blockNumber"`
+	Timestamp   uint64         `json:"timestamp"`
+	RequestId   *common.Hash   `json:"requestId" rlp:"nilList"`
+	L1BaseFee   *big.Int       `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -235,7 +234,6 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 			timestamp,
 			&requestId,
 			baseFeeL1.Big(),
-			nil,
 		},
 		data,
 		nil,
