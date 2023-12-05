@@ -302,10 +302,10 @@ func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
 ) (*dataposter.DataPoster, error) {
-	if transactOpts == nil {
+	cfg := cfgFetcher.Get()
+	if transactOpts == nil && cfg.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 		return nil, nil
 	}
-	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 		return nil, nil
 	}
