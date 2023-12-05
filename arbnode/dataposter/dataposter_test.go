@@ -249,21 +249,19 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	// use new variables other than the ones that are keys of 'parameters' map below
 	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
-		t.Fatalf("error creating govaluate evaluable expression for default maxFeeCap formula: %t", err)
+		t.Fatalf("Error creating govaluate evaluable expression for calculating default maxFeeCap formula: %v", err)
 	}
-	parameters := make(map[string]interface{})
-	parameters["BacklogOfBatches"] = 0
-	parameters["UrgencyGWei"] = DefaultDataPosterConfig.UrgencyGwei
-	parameters["ElapsedTime"] = 0
-	parameters["ElapsedTimeBase"] = float64(DefaultDataPosterConfig.ElapsedTimeBase)
-	parameters["ElapsedTimeImportance"] = DefaultDataPosterConfig.ElapsedTimeImportance
-	parameters["TargetPriceGWei"] = DefaultDataPosterConfig.TargetPriceGwei
-	parameters["GWei"] = 0
-	result, err := expression.Evaluate(parameters)
+	config := DefaultDataPosterConfig
+	config.TargetPriceGwei = 0
+	p := &DataPoster{
+		config:              func() *DataPosterConfig { return &config },
+		maxFeeCapExpression: expression,
+	}
+	result, err := p.evalMaxFeeCapExpr(0, 0)
 	if err != nil {
-		t.Fatalf("error evaluating expression:: %t", err)
+		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
-	if result.(float64) != 0 {
-		t.Fatalf("unexpected result. Got error: %f, want: %d", result.(float64), 0)
+	if result.Cmp(common.Big0) != 0 {
+		t.Fatalf("Unexpected result. Got: %d, want: 0", result.Uint64())
 	}
 }

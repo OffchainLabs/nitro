@@ -358,6 +358,25 @@ func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, e
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
+// evalMaxFeeCapExpr uses MaxFeeCapFormula from config to calculate the expression's result by plugging in appropriate parameter values
+func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Duration) (*big.Int, error) {
+	config := p.config()
+	parameters := map[string]any{
+		"BacklogOfBatches":      float64(backlogOfBatches),
+		"UrgencyGWei":           config.UrgencyGwei,
+		"ElapsedTime":           float64(elapsed),
+		"ElapsedTimeBase":       float64(config.ElapsedTimeBase),
+		"ElapsedTimeImportance": config.ElapsedTimeImportance,
+		"TargetPriceGWei":       config.TargetPriceGwei,
+		"GWei":                  params.GWei,
+	}
+	result, err := p.maxFeeCapExpression.Evaluate(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating maxFeeCapExpression: %w", err)
+	}
+	return arbmath.FloatToBig(result.(float64)), nil
+}
+
 func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
@@ -397,19 +416,10 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	elapsed := time.Since(dataCreatedAt)
-	parameters := make(map[string]interface{})
-	parameters["BacklogOfBatches"] = float64(backlogOfBatches)
-	parameters["UrgencyGWei"] = config.UrgencyGwei
-	parameters["ElapsedTime"] = float64(elapsed)
-	parameters["ElapsedTimeBase"] = float64(config.ElapsedTimeBase)
-	parameters["ElapsedTimeImportance"] = config.ElapsedTimeImportance
-	parameters["TargetPriceGWei"] = config.TargetPriceGwei
-	parameters["GWei"] = params.GWei
-	result, err := p.maxFeeCapExpression.Evaluate(parameters)
+	maxFeeCap, err := p.evalMaxFeeCapExpr(backlogOfBatches, elapsed)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error evaluating maxFeeCapExpression: %w", err)
+		return nil, nil, err
 	}
-	maxFeeCap := arbmath.FloatToBig(result.(float64))
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
 		log.Warn(
 			"reducing proposed fee cap to current maximum",
@@ -819,7 +829,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
-	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap")
+	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap. Refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators")
 	f.Duration(prefix+".elapsed-time-base", defaultDataPosterConfig.ElapsedTimeBase, "unit to measure the time elapsed since creation of transaction used for maximum fee cap calculation")
 	f.Float64(prefix+".elapsed-time-importance", defaultDataPosterConfig.ElapsedTimeImportance, "weight given to the units of time elapsed used for maximum fee cap calculation")
 
@@ -856,7 +866,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
-	MaxFeeCapFormula:       "(BacklogOfBatches * BacklogOfBatches * UrgencyGWei * UrgencyGWei + (ElapsedTime/ElapsedTimeBase) * (ElapsedTime/ElapsedTimeBase) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
+	MaxFeeCapFormula:       "(((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 }
@@ -882,7 +892,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
-	MaxFeeCapFormula:       "(BacklogOfBatches * BacklogOfBatches * UrgencyGWei * UrgencyGWei + (ElapsedTime/ElapsedTimeBase) * (ElapsedTime/ElapsedTimeBase) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
+	MaxFeeCapFormula:       "(((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 }
