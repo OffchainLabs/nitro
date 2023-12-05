@@ -304,7 +304,8 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.DelayedMsg = delayedMsg
 	}
 	for i, batch := range e.BatchInfo {
-		if usingEspresso {
+		// Only fetch commitments for L2 message batches
+		if usingEspresso && e.msg.Message.Header.Kind == 3 {
 			hotShotIndex := v.inboxTracker.GetSequencerBatchCount()
 			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
 			if err != nil {
