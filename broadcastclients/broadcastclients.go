@@ -194,15 +194,15 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				return
 			// Primary feeds
 			case msg := <-bcs.primaryRouter.messageChan:
-				clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
-				clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 				}
-			case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
 				clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 				clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
+			case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
 				confSeqHandler(cs, bcs.primaryRouter)
+				clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
+				clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
 			// Failed to get messages from primary feed for ~5 seconds, reset the timer responsible for stopping a secondary
 			case <-primaryFeedIsDownTimer.C:
 				clearAndResetTicker(stopSecondaryFeedTimer, PRIMARY_FEED_UPTIME)
@@ -212,24 +212,23 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					return
 				// Secondary Feeds
 				case msg := <-bcs.secondaryRouter.messageChan:
-					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 					if err := msgHandler(msg, bcs.secondaryRouter); err != nil {
 						log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
 					}
+					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 				case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
-					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 					confSeqHandler(cs, bcs.secondaryRouter)
-
-				case msg := <-bcs.primaryRouter.messageChan:
 					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
-					clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
+				case msg := <-bcs.primaryRouter.messageChan:
 					if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 						log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 					}
-				case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
 					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 					clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
+				case cs := <-bcs.primaryRouter.confirmedSequenceNumberChan:
 					confSeqHandler(cs, bcs.primaryRouter)
+					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
+					clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
 				case <-startSecondaryFeedTimer.C:
 					bcs.startSecondaryFeed(ctx)
 				case <-primaryFeedIsDownTimer.C:
