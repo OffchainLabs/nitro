@@ -2,6 +2,7 @@ package arbos
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,12 +23,12 @@ import (
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
-func ParseEspressoTransactions(msg *arbostypes.L1IncomingMessage) ([]espresso.Bytes, error) {
+func ParseEspressoMsg(msg *arbostypes.L1IncomingMessage) ([]espresso.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	if msg.Header.Kind != arbostypes.L1MessageType_L2Message {
-		return nil, errors.New("Parsing espresso transactions failed. Invalid L1Message type")
+		return nil, nil, errors.New("Parsing espresso transactions failed. Invalid L1Message type")
 	}
 	l2Msg := msg.L2msg
-	return parseEspressoTx(bytes.NewReader(l2Msg))
+	return parseEspressoMsg(bytes.NewReader(l2Msg))
 }
 
 func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
@@ -162,12 +163,10 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 			}
 			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)
 			if err != nil {
-				log.Warn("Failed to parse L2Message in a batch")
+				return nil, err
 			}
-			if nestedSegments != nil && nestedSegments.Len() > 0 {
-				segments = append(segments, nestedSegments...)
-				index.Add(index, big.NewInt(1))
-			}
+			segments = append(segments, nestedSegments...)
+			index.Add(index, big.NewInt(1))
 		}
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)
@@ -185,20 +184,26 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		}
 		return types.Transactions{newTx}, nil
 	case L2MessageKind_EspressoTx:
-		newTx := new(types.Transaction)
-		// Safe to read in its entirety, as all input readers are limited
-		readBytes, err := io.ReadAll(rd)
-		if err != nil {
-			return nil, err
+		segments := make(types.Transactions, 0)
+		jst := true
+		for {
+			nextMsg, err := util.BytestringFromReader(rd, arbostypes.MaxL2MessageSize)
+			if err != nil {
+				// an error here means there are no further messages in the batch
+				// nolint:nilerr
+				return segments, nil
+			}
+			if jst {
+				// In espresso transactions batch, the first msg is always the BlockJustification
+				jst = false
+				continue
+			}
+			newTx := new(types.Transaction)
+			if err := json.Unmarshal(nextMsg, &newTx); err != nil {
+				return nil, err
+			}
+			segments = append(segments, newTx)
 		}
-		if err := json.Unmarshal(readBytes, &newTx); err != nil {
-			return nil, err
-		}
-		if newTx.Type() >= types.ArbitrumDepositTxType {
-			// Should be unreachable due to not accepting Arbitrum internal txs
-			return nil, types.ErrTxTypeNotSupported
-		}
-		return types.Transactions{newTx}, nil
 	case L2MessageKind_Heartbeat:
 		if timestamp >= HeartbeatsDisabledAt {
 			return nil, errors.New("heartbeat messages have been disabled")
@@ -213,36 +218,35 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 	}
 }
 
-func parseEspressoTx(rd io.Reader) ([]espresso.Bytes, error) {
+func parseEspressoMsg(rd io.Reader) ([]espresso.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_EspressoTx:
-		readBytes, err := io.ReadAll(rd)
-		if err != nil {
-			return nil, err
-		}
-		return []espresso.Bytes{readBytes}, nil
-	case L2MessageKind_Batch:
 		txs := make([]espresso.Bytes, 0)
+		var jst *arbostypes.EspressoBlockJustification
 		for {
 			nextMsg, err := util.BytestringFromReader(rd, arbostypes.MaxL2MessageSize)
 			if err != nil {
 				// an error here means there are no further messages in the batch
 				// nolint:nilerr
-				return txs, nil
+				return txs, jst, nil
 			}
-			next, err := parseEspressoTx(bytes.NewReader(nextMsg))
-			if err != nil {
-				return nil, err
+			if jst == nil {
+				j := new(arbostypes.EspressoBlockJustification)
+				if err := json.Unmarshal(nextMsg, &j); err != nil {
+					return nil, nil, err
+				}
+				jst = j
+				continue
 			}
-			txs = append(txs, next...)
+			txs = append(txs, nextMsg)
 		}
 	default:
-		return nil, errors.New("Unexpected l2 message kind")
+		return nil, nil, errors.New("Unexpected l2 message kind")
 	}
 }
 
@@ -456,4 +460,36 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 		Data:    data,
 		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
 	}), nil
+}
+
+// messageFromEspresso serializes raw data from the espresso block into an arbitrum message,
+// including malformed and invalid transactions.
+// This allows validators to rebuild a block and check the espresso commitment.
+//
+// Note that the raw data is actually in JSON format, which can result in a larger size than necessary.
+// Storing it in L1 call data would lead to some waste. However, for the sake of this Proof of Concept,
+// this is deemed acceptable. Addtionally, after we finish the integration, there is no need to store
+// message in L1.
+func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espresso.Bytes, jst *arbostypes.EspressoBlockJustification) (arbostypes.L1IncomingMessage, error) {
+	var l2Message []byte
+
+	l2Message = append(l2Message, L2MessageKind_EspressoTx)
+	jstJson, err := json.Marshal(jst)
+	if err != nil {
+		return arbostypes.L1IncomingMessage{}, err
+	}
+	sizeBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(sizeBuf, uint64(len(jstJson)))
+	l2Message = append(l2Message, sizeBuf...)
+	l2Message = append(l2Message, jstJson...)
+	for _, tx := range txes {
+		binary.BigEndian.PutUint64(sizeBuf, uint64(len(tx)))
+		l2Message = append(l2Message, sizeBuf...)
+		l2Message = append(l2Message, tx...)
+	}
+
+	return arbostypes.L1IncomingMessage{
+		Header: header,
+		L2msg:  l2Message,
+	}, nil
 }

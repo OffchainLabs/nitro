@@ -80,13 +80,14 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 		Timestamp:   header.Timestamp,
 		RequestId:   nil,
 		L1BaseFee:   nil,
-		BlockJustification: &arbostypes.EspressoBlockJustification{
-			Header: header,
-			Proof:  arbTxns.Proof,
-		},
 	}
 
-	_, err = s.execEngine.SequenceTransactionsEspresso(arbHeader, arbTxns.Transactions)
+	jst := &arbostypes.EspressoBlockJustification{
+		Header: header,
+		Proof:  arbTxns.Proof,
+	}
+
+	_, err = s.execEngine.SequenceTransactionsEspresso(arbHeader, arbTxns.Transactions, jst)
 	if err != nil {
 		log.Error("Sequencing error for block number", "block_num", nextSeqBlockNum, "err", err)
 		return false

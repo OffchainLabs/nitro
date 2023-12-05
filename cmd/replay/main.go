@@ -250,22 +250,20 @@ func main() {
 		// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
 		if chainConfig.Espresso {
 			hotShotCommitment := getHotShotCommitment(seqNum)
-			jst := message.Message.Header.BlockJustification
+			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
+			if err != nil {
+				panic(err)
+			}
 			if jst == nil {
 				panic("batch missing espresso justification")
-
 			}
 			hotshotHeader := jst.Header
 			if *hotShotCommitment != hotshotHeader.Commit() {
 				panic("invalid hotshot header")
 			}
 			var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
-			var proofs = []*espresso.NmtProof{&message.Message.Header.BlockJustification.Proof}
+			var proofs = []*espresso.NmtProof{&jst.Proof}
 
-			txs, err := arbos.ParseEspressoTransactions(message.Message)
-			if err != nil {
-				panic(err)
-			}
 			err = espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
 			if err != nil {
 				panic(err)
