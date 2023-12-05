@@ -623,16 +623,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		}
 		messages = append(messages, *msg)
 		// Update the count of l2 sequenced messages
+		// Note that since it is possible for this method to see duplicate batches,
+		// We use a boolean map to make sure that we increment the espresso batch count
+		// For every unique batch
 		msgKind := msg.Message.Header.Kind
-		log.Info("message kind", "msg knid", msgKind)
-		log.Info("batch seq number", "number", batchSeqNum)
-		log.Info("current bathc message count", "count", batchSeqNum)
 		if msgKind == 3 && !sequencerBatchDetected[batchSeqNum] {
 			t.espressoBatchNum += 1
-			log.Info("Detected espresso batch, incrementing count to", "count", t.espressoBatchNum)
 			sequencerBatchDetected[batchSeqNum] = true
-		} else {
-			log.Info("Batch does not contain justification")
 		}
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1
