@@ -305,15 +305,13 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	}
 	for i, batch := range e.BatchInfo {
 		if usingEspresso {
-			// TODO: Use the inbox tracker to fetch the correct HotShot index
-			// https://github.com/EspressoSystems/espresso-sequencer/issues/782
-			batchNum := v.inboxTracker.GetSequencerBatchCount()
-			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
+			hotShotIndex := v.inboxTracker.GetSequencerBatchCount()
+			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
 			if err != nil {
-				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)
+				return fmt.Errorf("error attempting to fetch HotShot commitment for height %d: %w", hotShotIndex, err)
 
 			}
-			log.Info("fetched HotShot commitment", "batchNum", batchNum, "commitment", hotShotCommitment)
+			log.Info("fetched HotShot commitment", "index", hotShotIndex, "commitment", hotShotCommitment)
 			e.BatchInfo[i].HotShotCommitment = *hotShotCommitment
 		}
 		if len(batch.Data) <= 40 {
