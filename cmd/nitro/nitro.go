@@ -817,6 +817,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		chainDefaults["node.data-availability.enable"] = true
 		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
 		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
+		chainDefaults["node.data-availability.enable"] = true
 	}
 	if !chainInfo.HasGenesisState {
 		chainDefaults["init.empty"] = true
