@@ -23,26 +23,23 @@ import (
 
 func prepareNodeWithHistory(t *testing.T, ctx context.Context, execConfig *gethexec.Config, txCount uint64) (node *arbnode.Node, executionNode *gethexec.ExecutionNode, l2client *ethclient.Client, cancel func()) {
 	t.Helper()
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, execConfig, nil, nil)
-	cancel = func() {
-		defer requireClose(t, l1stack)
-		defer node.StopAndWait()
-	}
-	l2info.GenerateAccount("User2")
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig = execConfig
+	cleanup := builder.Build(t)
+	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < txCount; i++ {
-		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
+		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
-		err := l2client.SendTransaction(ctx, tx)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
 	}
 	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, l2client, tx)
+		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
-	exec := getExecNode(t, node)
 
-	return node, exec, l2client, cancel
+	return builder.L2.ConsensusNode, builder.L2.ExecNode, builder.L2.Client, cleanup
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
