@@ -29,6 +29,7 @@ require (
 	github.com/ipfs/go-libipfs v0.6.2
 	github.com/ipfs/interface-go-ipfs-core v0.11.0
 	github.com/ipfs/kubo v0.19.1
+	github.com/jarcoal/httpmock v1.3.1
 	github.com/knadh/koanf v1.4.0
 	github.com/libp2p/go-libp2p v0.27.8
 	github.com/multiformats/go-multiaddr v0.9.0
