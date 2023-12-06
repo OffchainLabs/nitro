@@ -6,19 +6,25 @@ package dataposter
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
@@ -39,7 +45,7 @@ import (
 // is initialized with specified sender/signer and keeps nonce of that address
 // as it posts transactions.
 // Transactions are also saved in the queue when it's being sent, and when
-// persistant storage is used for the queue, after restarting the node
+// persistent storage is used for the queue, after restarting the node
 // dataposter will pick up where it left.
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {
@@ -47,9 +53,10 @@ type DataPoster struct {
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
 	sender            common.Address
-	signer            bind.SignerFn
+	signer            signerFn
 	redisLock         AttemptLocker
 	config            ConfigFetcher
+	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 
@@ -65,6 +72,11 @@ type DataPoster struct {
 	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 }
+
+// signerFn is a signer function callback when a contract requires a method to
+// sign the transaction before submission.
+// This can be local or external, hence the context parameter.
+type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
 
 type AttemptLocker interface {
 	AttemptLock(context.Context) bool
@@ -85,7 +97,7 @@ func parseReplacementTimes(val string) ([]time.Duration, error) {
 		lastReplacementTime = t
 	}
 	if len(res) == 0 {
-		log.Warn("disabling replace-by-fee for data poster")
+		log.Warn("Disabling replace-by-fee for data poster")
 	}
 	// To avoid special casing "don't replace again", replace in 10 years.
 	return append(res, time.Hour*24*365*10), nil
@@ -103,13 +115,14 @@ type DataPosterOpts struct {
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
-	initConfig := opts.Config()
-	replacementTimes, err := parseReplacementTimes(initConfig.ReplacementTimes)
+	cfg := opts.Config()
+	replacementTimes, err := parseReplacementTimes(cfg.ReplacementTimes)
 	if err != nil {
 		return nil, err
 	}
-	if opts.HeaderReader.IsParentChainArbitrum() && !initConfig.UseNoOpStorage {
-		initConfig.UseNoOpStorage = true
+	useNoOpStorage := cfg.UseNoOpStorage
+	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
+		useNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
 	encF := func() storage.EncoderDecoderInterface {
@@ -120,17 +133,17 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	}
 	var queue QueueStorage
 	switch {
-	case initConfig.UseNoOpStorage:
+	case useNoOpStorage:
 		queue = &noop.Storage{}
 	case opts.RedisClient != nil:
 		var err error
-		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &initConfig.RedisSigner, encF)
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
 		if err != nil {
 			return nil, err
 		}
-	case initConfig.UseDBStorage:
+	case cfg.UseDBStorage:
 		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-		if initConfig.Dangerous.ClearDBStorage {
+		if cfg.Dangerous.ClearDBStorage {
 			if err := storage.PruneAll(ctx); err != nil {
 				return nil, err
 			}
@@ -139,22 +152,114 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
-	return &DataPoster{
-		headerReader:      opts.HeaderReader,
-		client:            opts.HeaderReader.Client(),
-		sender:            opts.Auth.From,
-		signer:            opts.Auth.Signer,
+	dp := &DataPoster{
+		headerReader: opts.HeaderReader,
+		client:       opts.HeaderReader.Client(),
+		sender:       opts.Auth.From,
+		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return opts.Auth.Signer(addr, tx)
+		},
 		config:            opts.Config,
+		usingNoOpStorage:  useNoOpStorage,
 		replacementTimes:  replacementTimes,
 		metadataRetriever: opts.MetadataRetriever,
 		queue:             queue,
 		redisLock:         opts.RedisLock,
 		errorCount:        make(map[uint64]int),
-	}, nil
+	}
+	if cfg.ExternalSigner.URL != "" {
+		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
+		if err != nil {
+			return nil, err
+		}
+		dp.signer, dp.sender = signer, sender
+	}
+	return dp, nil
+}
+
+func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
+		log.Info("Client certificate for external signer is enabled")
+		clientCert, err := tls.LoadX509KeyPair(opts.ClientCert, opts.ClientPrivateKey)
+		if err != nil {
+			return nil, fmt.Errorf("error loading client certificate and private key: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{clientCert}
+	}
+
+	if opts.RootCA != "" {
+		rootCrt, err := os.ReadFile(opts.RootCA)
+		if err != nil {
+			return nil, fmt.Errorf("error reading external signer root CA: %w", err)
+		}
+		rootCertPool := x509.NewCertPool()
+		rootCertPool.AppendCertsFromPEM(rootCrt)
+		tlsCfg.RootCAs = rootCertPool
+	}
+
+	return rpc.DialOptions(
+		ctx,
+		opts.URL,
+		rpc.WithHTTPClient(
+			&http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: tlsCfg,
+				},
+			},
+		),
+	)
+}
+
+// externalSigner returns signer function and ethereum address of the signer.
+// Returns an error if address isn't specified or if it can't connect to the
+// signer RPC server.
+func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, common.Address, error) {
+	if opts.Address == "" {
+		return nil, common.Address{}, errors.New("external signer (From) address specified")
+	}
+
+	client, err := rpcClient(ctx, opts)
+	if err != nil {
+		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
+	}
+	sender := common.HexToAddress(opts.Address)
+
+	var hasher types.Signer
+	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+		// According to the "eth_signTransaction" API definition, this should be
+		// RLP encoded transaction object.
+		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
+		var data hexutil.Bytes
+		if err := client.CallContext(ctx, &data, opts.Method, tx); err != nil {
+			return nil, fmt.Errorf("signing transaction: %w", err)
+		}
+		var signedTx types.Transaction
+		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
+			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
+		}
+		if hasher == nil {
+			hasher = types.LatestSignerForChainID(tx.ChainId())
+		}
+		if hasher.Hash(tx) != hasher.Hash(&signedTx) {
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), hasher.Hash(tx))
+		}
+		return &signedTx, nil
+	}, sender, nil
 }
 
 func (p *DataPoster) Sender() common.Address {
 	return p.sender
+}
+
+func (p *DataPoster) MaxMempoolTransactions() uint64 {
+	if p.usingNoOpStorage {
+		return 1
+	}
+	return p.config().MaxMempoolTransactions
 }
 
 // Does basic check whether posting transaction with specified nonce would
@@ -303,7 +408,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
-	if config.AllocateMempoolBalance && !config.UseNoOpStorage {
+	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
 		// We reserve half the balance for the first transaction, and then split the remaining balance for all after that.
 		// With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
 		balanceForTx.Div(balanceForTx, common.Big2)
@@ -371,7 +476,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Data:       calldata,
 		AccessList: accessList,
 	}
-	fullTx, err := p.signer(p.sender, types.NewTx(&inner))
+	fullTx, err := p.signer(ctx, p.sender, types.NewTx(&inner))
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
@@ -405,12 +510,12 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
-			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap())
+			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "gas", newTx.FullTx.Gas())
 			return err
 		}
 		log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 	} else {
-		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
+		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "gas", newTx.FullTx.Gas())
 	}
 	newerTx := *newTx
 	newerTx.Sent = true
@@ -450,7 +555,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	newTx.Sent = false
 	newTx.Data.GasFeeCap = newFeeCap
 	newTx.Data.GasTipCap = newTipCap
-	newTx.FullTx, err = p.signer(p.sender, types.NewTx(&newTx.Data))
+	newTx.FullTx, err = p.signer(ctx, p.sender, types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
 	}
@@ -636,20 +741,40 @@ type DataPosterConfig struct {
 	ReplacementTimes string                     `koanf:"replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
-	WaitForL1Finality      bool            `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64          `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxQueuedTransactions  int             `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64         `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64         `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64         `koanf:"min-fee-cap-gwei" reload:"hot"`
-	MinTipCapGwei          float64         `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64         `koanf:"max-tip-cap-gwei" reload:"hot"`
-	NonceRbfSoftConfs      uint64          `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	AllocateMempoolBalance bool            `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseDBStorage           bool            `koanf:"use-db-storage"`
-	UseNoOpStorage         bool            `koanf:"use-noop-storage"`
-	LegacyStorageEncoding  bool            `koanf:"legacy-storage-encoding" reload:"hot"`
-	Dangerous              DangerousConfig `koanf:"dangerous"`
+	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64            `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  int               `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64           `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64           `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64           `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64           `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
+	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseDBStorage           bool              `koanf:"use-db-storage"`
+	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool              `koanf:"legacy-storage-encoding" reload:"hot"`
+	Dangerous              DangerousConfig   `koanf:"dangerous"`
+	ExternalSigner         ExternalSignerCfg `koanf:"external-signer"`
+}
+
+type ExternalSignerCfg struct {
+	// URL of the external signer rpc server, if set this overrides transaction
+	// options and uses external signer
+	// for signing transactions.
+	URL string `koanf:"url"`
+	// Hex encoded ethereum address of the external signer.
+	Address string `koanf:"address"`
+	// API method name (e.g. eth_signTransaction).
+	Method string `koanf:"method"`
+	// (Optional) Path to the external signer root CA certificate.
+	// This allows us to use self-signed certificats on the external signer.
+	RootCA string `koanf:"root-ca"`
+	// (Optional) Client certificate for mtls.
+	ClientCert string `koanf:"client-cert"`
+	// (Optional) Client certificate key for mtls.
+	// This is required when client-cert is set.
+	ClientPrivateKey string `koanf:"client-private-key"`
 }
 
 type DangerousConfig struct {
@@ -680,10 +805,20 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
+	addExternalSignerOptions(prefix+".external-signer", f)
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear database storage")
+}
+
+func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".url", DefaultDataPosterConfig.ExternalSigner.URL, "external signer url")
+	f.String(prefix+".address", DefaultDataPosterConfig.ExternalSigner.Address, "external signer address")
+	f.String(prefix+".method", DefaultDataPosterConfig.ExternalSigner.Method, "external signer method")
+	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
+	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
+	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -698,8 +833,9 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
 	UseNoOpStorage:         false,
-	LegacyStorageEncoding:  true,
+	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -721,6 +857,8 @@ var TestDataPosterConfig = DataPosterConfig{
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
+	LegacyStorageEncoding:  false,
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {

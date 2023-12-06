@@ -4,6 +4,7 @@ package staker
 
 import (
 	"context"
+	"time"
 
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
@@ -18,6 +19,13 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
+var BoldModes = map[string]types.Mode{
+	"watchtower-mode": types.WatchTowerMode,
+	"resolve-mode":    types.ResolveMode,
+	"defensive-mode":  types.DefensiveMode,
+	"make-mode":       types.MakeMode,
+}
+
 func NewManager(
 	ctx context.Context,
 	rollupAddress common.Address,
@@ -25,8 +33,7 @@ func NewManager(
 	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
-	historyCacheBaseDir,
-	validatorName string,
+	config *BoldConfig,
 ) (*challengemanager.Manager, error) {
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
@@ -68,9 +75,9 @@ func NewManager(
 
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
-		historyCacheBaseDir,
+		config.MachineLeavesCachePath,
 		challengeLeafHeights,
-		validatorName,
+		config.ValidatorName,
 	)
 	if err != nil {
 		return nil, err
@@ -88,7 +95,13 @@ func NewManager(
 		client,
 		provider,
 		rollupAddress,
-		challengemanager.WithMode(types.MakeMode),
+		challengemanager.WithName(config.ValidatorName),
+		challengemanager.WithMode(BoldModes[config.Mode]),
+		challengemanager.WithAssertionPostingInterval(time.Duration(config.AssertionPostingIntervalSeconds)),
+		challengemanager.WithAssertionScanningInterval(time.Duration(config.AssertionScanningIntervalSeconds)),
+		challengemanager.WithAssertionConfirmingInterval(time.Duration(config.AssertionConfirmingIntervalSeconds)),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Duration(config.EdgeTrackerWakeIntervalSeconds)),
+		challengemanager.WithAddress(txOpts.From),
 	)
 	if err != nil {
 		return nil, err

@@ -111,8 +111,9 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct
 		// length.
-		for uint64(len(stateRoots)) < numDesiredLeaves {
-			stateRoots = append(stateRoots, stateRoots[len(stateRoots)-1])
+		lastStateRoot := stateRoots[len(stateRoots)-1]
+		for len(stateRoots) < int(numDesiredLeaves) {
+			stateRoots = append(stateRoots, lastStateRoot)
 		}
 		return stateRoots[:numDesiredLeaves], nil
 	})

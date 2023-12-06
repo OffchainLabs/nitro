@@ -435,11 +435,11 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						} else if err != nil {
 							// Unknown error (database error?)
 							return err
-						} else if haveAcc == batch.BeforeInboxAcc {
+						} else if haveAcc == batch.AfterInboxAcc {
 							// Skip this batch, as we already have it in the database
 							sequencerBatches = sequencerBatches[1:]
 						} else {
-							// The first batch BeforeInboxAcc matches, but this batch doesn't,
+							// The first batch AfterInboxAcc matches, but this batch doesn't,
 							// so we'll successfully reorg it when we hit the addMessages
 							break
 						}

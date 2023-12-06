@@ -19,21 +19,22 @@ func TestLogSubscription(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 
 	logChan := make(chan types.Log, 128)
-	subscription, err := client.SubscribeFilterLogs(ctx, ethereum.FilterQuery{}, logChan)
+	subscription, err := builder.L2.Client.SubscribeFilterLogs(ctx, ethereum.FilterQuery{}, logChan)
 	Require(t, err)
 	defer subscription.Unsubscribe()
 
 	tx, err := arbSys.WithdrawEth(&auth, common.Address{})
 	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	if len(receipt.Logs) != 1 {
@@ -52,6 +53,6 @@ func TestLogSubscription(t *testing.T) {
 	if !reflect.DeepEqual(receiptLog, subscriptionLog) {
 		Fatal(t, "Receipt log", receiptLog, "is different than subscription log", subscriptionLog)
 	}
-	_, err = client.BlockByHash(ctx, subscriptionLog.BlockHash)
+	_, err = builder.L2.Client.BlockByHash(ctx, subscriptionLog.BlockHash)
 	Require(t, err)
 }

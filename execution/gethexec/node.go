@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"sync/atomic"
 	"testing"
 
@@ -40,18 +41,19 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	Evil                     bool                             `koanf:"evil"`
-	EvilInterceptDepositGwei uint64                           `koanf:"evil-intercept-deposit-gwei"`
-	ParentChainReader        headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase        arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker             TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget         string                           `koanf:"forwarding-target"`
-	Caching                  CachingConfig                    `koanf:"caching"`
-	RPC                      arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit            uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous                DangerousConfig                  `koanf:"dangerous"`
+	Evil                      bool                             `koanf:"evil"`
+	EvilInterceptDepositGwei  uint64                           `koanf:"evil-intercept-deposit-gwei"`
+	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker              TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                 ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget          string                           `koanf:"forwarding-target"`
+	SecondaryForwardingTarget []string                         `koanf:"secondary-forwarding-target"`
+	Caching                   CachingConfig                    `koanf:"caching"`
+	RPC                       arbitrum.Config                  `koanf:"rpc"`
+	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
+	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -77,8 +79,10 @@ func (c *Config) Validate() error {
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
@@ -87,20 +91,23 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:                      arbitrum.DefaultConfig,
-	Sequencer:                DefaultSequencerConfig,
-	RecordingDatabase:        arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTarget:         "",
-	TxPreChecker:             DefaultTxPreCheckerConfig,
-	TxLookupLimit:            126_230_400, // 1 year at 4 blocks per second
-	Caching:                  DefaultCachingConfig,
-	Dangerous:                DefaultDangerousConfig,
-	Forwarder:                DefaultNodeForwarderConfig,
-	EvilInterceptDepositGwei: 1_000_000, // 1M gwei or 0.001 ETH.
+	RPC:                       arbitrum.DefaultConfig,
+	Sequencer:                 DefaultSequencerConfig,
+	ParentChainReader:         headerreader.DefaultConfig,
+	RecordingDatabase:         arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:          "",
+	SecondaryForwardingTarget: []string{},
+	TxPreChecker:              DefaultTxPreCheckerConfig,
+	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
+	Caching:                   DefaultCachingConfig,
+	Dangerous:                 DefaultDangerousConfig,
+	Forwarder:                 DefaultNodeForwarderConfig,
+	EvilInterceptDepositGwei:  1_000_000, // 1M gwei or 0.001 ETH.
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
+	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
@@ -114,6 +121,7 @@ func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
 	config.ForwardingTarget = "null"
+	config.ParentChainReader = headerreader.TestConfig
 
 	_ = config.Validate()
 
@@ -159,7 +167,7 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
-	if l1client != nil {
+	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
 		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader }, arbSys)
 		if err != nil {
@@ -180,7 +188,8 @@ func CreateExecutionNode(
 		} else if config.forwardingTarget == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.forwardingTarget, &config.Forwarder)
+			targets := append([]string{config.forwardingTarget}, config.SecondaryForwardingTarget...)
+			txPublisher = NewForwarder(targets, &config.Forwarder)
 		}
 	}
 

@@ -9,13 +9,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -26,16 +26,6 @@ var (
 	_ l2stateprovider.L2MessageStateCollector = (*StateManager)(nil)
 	_ l2stateprovider.MachineHashCollector    = (*StateManager)(nil)
 	_ l2stateprovider.ExecutionProvider       = (*StateManager)(nil)
-)
-
-// Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
-var (
-	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
-	// ProofArgs for submission to the protocol.
-	ProofArgs = abi.Arguments{
-		{Type: b32Arr, Name: "prefixExpansion"},
-		{Type: b32Arr, Name: "prefixProof"},
-	}
 )
 
 var (
@@ -102,7 +92,7 @@ func NewStateManager(
 	return sm, nil
 }
 
-// ExecutionStateMsgCount If the state manager locally has this validated execution state.
+// AgreesWithExecutionState If the state manager locally has this validated execution state.
 // Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
 // validated / syncing.
 func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
@@ -185,13 +175,13 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, []validator.GoGlobalState, error) {
-	// Check integrity of the arguments.
+) ([]common.Hash, error) {
+	// Check the integrity of the arguments.
 	if fromBatch >= toBatch {
-		return nil, nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
+		return nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
 	}
 	if fromHeight > toHeight {
-		return nil, nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
+		return nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
 	}
 	// Compute the total desired hashes from this request.
 	totalDesiredHashes := (toHeight - fromHeight) + 1
@@ -199,11 +189,11 @@ func (s *StateManager) StatesInBatchRange(
 	// Get the from batch's message count.
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	executionResult, err := s.validator.streamer.ResultAtCount(prevBatchMsgCount)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	startState := validator.GoGlobalState{
 		BlockHash:  executionResult.BlockHash,
@@ -217,7 +207,7 @@ func (s *StateManager) StatesInBatchRange(
 	for batch := fromBatch; batch < toBatch; batch++ {
 		batchMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		messagesInBatch := batchMessageCount - prevBatchMsgCount
 
@@ -227,7 +217,7 @@ func (s *StateManager) StatesInBatchRange(
 			messageCount := msgIndex + 1
 			executionResult, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageCount))
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			// If the position in batch is equal to the number of messages in the batch,
 			// we do not include this state. Instead, we break and include the state
@@ -248,7 +238,7 @@ func (s *StateManager) StatesInBatchRange(
 		// Fully consume the batch.
 		executionResult, err := s.validator.streamer.ResultAtCount(batchMessageCount)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		state := validator.GoGlobalState{
 			BlockHash:  executionResult.BlockHash,
@@ -263,7 +253,7 @@ func (s *StateManager) StatesInBatchRange(
 	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
 		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
 	}
-	return machineHashes[fromHeight : toHeight+1], states, nil
+	return machineHashes[fromHeight : toHeight+1], nil
 }
 
 func machineHash(gs validator.GoGlobalState) common.Hash {
@@ -311,7 +301,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
+	items, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {
 		return nil, err
 	}

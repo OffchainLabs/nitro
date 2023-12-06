@@ -22,7 +22,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -66,7 +65,7 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		if _, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount)); err == nil {
+		if _, err := l2node.TxStreamer.ResultAtCount(totalMessageCount); err == nil {
 			break
 		}
 	}
@@ -107,7 +106,7 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 	hashes := make([]common.Hash, len(preExpansion))
 	for i, h := range preExpansion {
 		hash := h
-		hashes[i] = common.Hash(hash)
+		hashes[i] = hash
 	}
 
 	computed, err := prefixproofs.Root(hashes)
@@ -147,7 +146,7 @@ func TestStateProvider_BOLD(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		if _, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount)); err == nil {
+		if _, err := l2node.TxStreamer.ResultAtCount(totalMessageCount); err == nil {
 			break
 		}
 	}
@@ -157,11 +156,24 @@ func TestStateProvider_BOLD(t *testing.T) {
 		toBatch := l2stateprovider.Batch(3)
 		fromHeight := l2stateprovider.Height(0)
 		toHeight := l2stateprovider.Height(14)
-		stateRoots, states, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
+		stateRoots, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
 		Require(t, err)
 
-		if len(stateRoots) != 15 {
+		if stateRoots.Length() != 15 {
 			Fatal(t, "wrong number of state roots")
+		}
+<<<<<<< HEAD
+		firstState := states[0]
+		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
+			Fatal(t, "wrong first state")
+		}
+		lastState := states[len(states)-1]
+		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
+			Fatal(t, "wrong last state")
+		}
+||||||| 044fc1a2
+		if len(states) == 0 {
+			Fatal(t, "no states returned")
 		}
 		firstState := states[0]
 		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
@@ -171,6 +183,8 @@ func TestStateProvider_BOLD(t *testing.T) {
 		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
 			Fatal(t, "wrong last state")
 		}
+=======
+>>>>>>> bold
 	})
 	t.Run("AgreesWithExecutionState", func(t *testing.T) {
 		// Non-zero position in batch shoould fail.
@@ -224,7 +238,7 @@ func TestStateProvider_BOLD(t *testing.T) {
 		}
 
 		// Check if we agree with the last posted batch to the inbox.
-		result, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
+		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
 		Require(t, err)
 
 		state := &protocol.ExecutionState{
@@ -310,7 +324,14 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
+<<<<<<< HEAD
 		"",
+||||||| 044fc1a2
+		"good",
+		staker.DisableCache(),
+=======
+		"good",
+>>>>>>> bold
 	)
 	Require(t, err)
 	return l2node, l1info, l2info, l1stack, l1client, stateManager

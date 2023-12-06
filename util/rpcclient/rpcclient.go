@@ -28,6 +28,7 @@ type ClientConfig struct {
 	ConnectionWait time.Duration `koanf:"connection-wait"`
 	ArgLogLimit    uint          `koanf:"arg-log-limit" reload:"hot"`
 	RetryErrors    string        `koanf:"retry-errors" reload:"hot"`
+	RetryDelay     time.Duration `koanf:"retry-delay"`
 
 	retryErrors *regexp.Regexp
 }
@@ -63,6 +64,7 @@ func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientCo
 	f.Uint(prefix+".arg-log-limit", defaultConfig.ArgLogLimit, "limit size of arguments in log entries")
 	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
 	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
+	f.Duration(prefix+".retry-delay", defaultConfig.RetryDelay, "delay between retries")
 }
 
 type RpcClient struct {
@@ -131,6 +133,14 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{int(c.config().ArgLogLimit), args})
 	var err error
 	for i := 0; i < int(c.config().Retries)+1; i++ {
+		retryDelay := c.config().RetryDelay
+		if i > 0 && retryDelay > 0 {
+			select {
+			case <-ctx_in.Done():
+				return ctx_in.Err()
+			case <-time.After(retryDelay):
+			}
+		}
 		if ctx_in.Err() != nil {
 			return ctx_in.Err()
 		}
