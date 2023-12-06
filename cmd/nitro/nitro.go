@@ -234,7 +234,10 @@ func mainImpl() int {
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
+	// If sequencer and signing is enabled or batchposter is enabled without
+	// external signing sequencer will need a key.
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
+		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
