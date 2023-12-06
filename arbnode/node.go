@@ -323,6 +323,12 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
+	var sender string
+	if transactOpts != nil {
+		sender = transactOpts.From.String()
+	} else {
+		sender = cfg.Staker.DataPoster.ExternalSigner.Address
+	}
 	return dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
 			Database:          db,
@@ -332,8 +338,7 @@ func StakerDataposter(
 			RedisLock:         redisLock,
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
-			// transactOpts is non-nil, it's checked at the beginning.
-			RedisKey: transactOpts.From.String() + ".staker-data-poster.queue",
+			RedisKey:          sender + ".staker-data-poster.queue",
 		})
 }
 
@@ -618,15 +623,17 @@ func createNodeImpl(
 		if err := wallet.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		var txValidatorSenderPtr *common.Address
+		var validatorAddr string
 		if txOptsValidator != nil {
-			txValidatorSenderPtr = &txOptsValidator.From
+			validatorAddr = txOptsValidator.From.String()
+		} else {
+			validatorAddr = config.Staker.DataPoster.ExternalSigner.Address
 		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", txValidatorSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", validatorAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
