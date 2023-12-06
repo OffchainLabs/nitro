@@ -162,7 +162,6 @@ func TestStateProvider_BOLD(t *testing.T) {
 		if stateRoots.Length() != 15 {
 			Fatal(t, "wrong number of state roots")
 		}
-<<<<<<< HEAD
 		firstState := states[0]
 		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
 			Fatal(t, "wrong first state")
@@ -171,20 +170,6 @@ func TestStateProvider_BOLD(t *testing.T) {
 		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
 			Fatal(t, "wrong last state")
 		}
-||||||| 044fc1a2
-		if len(states) == 0 {
-			Fatal(t, "no states returned")
-		}
-		firstState := states[0]
-		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
-			Fatal(t, "wrong first state")
-		}
-		lastState := states[len(states)-1]
-		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
-			Fatal(t, "wrong last state")
-		}
-=======
->>>>>>> bold
 	})
 	t.Run("AgreesWithExecutionState", func(t *testing.T) {
 		// Non-zero position in batch shoould fail.
@@ -324,14 +309,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
-<<<<<<< HEAD
 		"",
-||||||| 044fc1a2
-		"good",
-		staker.DisableCache(),
-=======
-		"good",
->>>>>>> bold
 	)
 	Require(t, err)
 	return l2node, l1info, l2info, l1stack, l1client, stateManager
