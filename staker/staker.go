@@ -453,7 +453,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			backoff = time.Minute
 			log.Error("error acting as staker", "err", err)
 		} else {
-			log.Warn("block validation is still pending")
+			log.Warn("error acting as staker", "err", err)
 		}
 		return backoff
 	})
