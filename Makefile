@@ -362,7 +362,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 .make:
 	mkdir .make
 
-generate-hotshot-binding:
+.make/generate-hotshot-binding:
 	forge build --root espresso-sequencer --out ../out --extra-output-files abi
 	mv ./out/HotShot.sol/HotShot.abi.json ./arbos/espresso/hotshot
 	rm -rf out

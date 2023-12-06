@@ -77,13 +77,6 @@ type HotShotReaderInterface interface {
 	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espresso.Commitment, error)
 }
 
-type L1ReaderInterface interface {
-	Client() arbutil.L1Interface
-	Subscribe(bool) (<-chan *types.Header, func())
-	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
-	UseFinalityData() bool
-}
-
 type GlobalStatePosition struct {
 	BatchNumber uint64
 	PosInBatch  uint64
