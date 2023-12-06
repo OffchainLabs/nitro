@@ -270,16 +270,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		bridgeAddr:      opts.DeployInfo.Bridge,
 		daWriter:        opts.DAWriter,
 		redisLock:       redisLock,
-		accessList: func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
-			return AccessList(&AccessListOpts{
-				SequencerInboxAddr:       opts.DeployInfo.SequencerInbox,
-				DataPosterAddr:           opts.TransactOpts.From,
-				BridgeAddr:               opts.DeployInfo.Bridge,
-				GasRefunderAddr:          opts.Config().gasRefunder,
-				SequencerInboxAccs:       SequencerInboxAccs,
-				AfterDelayedMessagesRead: AfterDelayedMessagesRead,
-			})
-		},
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &(opts.Config().DataPoster)
@@ -297,6 +287,18 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		})
 	if err != nil {
 		return nil, err
+	}
+	// Dataposter sender may be external signer address, so we should initialize
+	// access list after initializing dataposter.
+	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
+		return AccessList(&AccessListOpts{
+			SequencerInboxAddr:       opts.DeployInfo.SequencerInbox,
+			DataPosterAddr:           b.dataPoster.Sender(),
+			BridgeAddr:               opts.DeployInfo.Bridge,
+			GasRefunderAddr:          opts.Config().gasRefunder,
+			SequencerInboxAccs:       SequencerInboxAccs,
+			AfterDelayedMessagesRead: AfterDelayedMessagesRead,
+		})
 	}
 	return b, nil
 }
