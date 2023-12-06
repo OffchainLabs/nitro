@@ -58,7 +58,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	}
 
 	commit := func() (common.Hash, error) {
-		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
+		root, err := statedb.Commit(true)
 		if err != nil {
 			return common.Hash{}, err
 		}
