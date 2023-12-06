@@ -292,7 +292,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	// access list after initializing dataposter.
 	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
 		if opts.L1Reader.IsParentChainArbitrum() {
-			// Access lists cost gas instead of saving gas on L2s,
+			// Access lists cost gas instead of saving gas when posting to L2s,
 			// because data is expensive in comparison to computation.
 			return nil
 		}
