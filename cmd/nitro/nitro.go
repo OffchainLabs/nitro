@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -50,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
@@ -232,7 +234,10 @@ func mainImpl() int {
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
+	// If sequencer and signing is enabled or batchposter is enabled without
+	// external signing sequencer will need a key.
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
+		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -488,6 +493,43 @@ func mainImpl() int {
 		log.Error("failed to create node", "err", err)
 		return 1
 	}
+
+	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
+	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
+	seqInboxMaxDataSize := 117964
+	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
+	if nodeConfig.Node.ParentChainReader.Enable {
+		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+		if err != nil {
+			log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+			return 1
+		}
+		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
+		if err == nil {
+			seqInboxMaxDataSize = int(res.Int64())
+		} else if !executionRevertedRegexp.MatchString(err.Error()) {
+			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
+			return 1
+		}
+	}
+	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
+	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
+	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DataAvailability.Enable {
+		if nodeConfig.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
+			log.Error("batchPoster's MaxSize is too large")
+			return 1
+		}
+	}
+	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
+	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
+	if nodeConfig.Execution.Sequencer.Enable {
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 ||
+			nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
+			log.Error("sequencer's MaxTxDataSize too large")
+			return 1
+		}
+	}
+
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
 		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
