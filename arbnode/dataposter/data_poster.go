@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Knetic/govaluate"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -71,6 +72,8 @@ type DataPoster struct {
 	nonce      uint64
 	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
+
+	maxFeeCapExpression *govaluate.EvaluableExpression
 }
 
 // signerFn is a signer function callback when a contract requires a method to
@@ -152,6 +155,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
+	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
+	if err != nil {
+		return nil, fmt.Errorf("error creating govaluate evaluable expression for calculating maxFeeCap: %w", err)
+	}
 	dp := &DataPoster{
 		headerReader: opts.HeaderReader,
 		client:       opts.HeaderReader.Client(),
@@ -159,13 +166,14 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return opts.Auth.Signer(addr, tx)
 		},
-		config:            opts.Config,
-		usingNoOpStorage:  useNoOpStorage,
-		replacementTimes:  replacementTimes,
-		metadataRetriever: opts.MetadataRetriever,
-		queue:             queue,
-		redisLock:         opts.RedisLock,
-		errorCount:        make(map[uint64]int),
+		config:              opts.Config,
+		usingNoOpStorage:    useNoOpStorage,
+		replacementTimes:    replacementTimes,
+		metadataRetriever:   opts.MetadataRetriever,
+		queue:               queue,
+		redisLock:           opts.RedisLock,
+		errorCount:          make(map[uint64]int),
+		maxFeeCapExpression: expression,
 	}
 	if cfg.ExternalSigner.URL != "" {
 		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
@@ -360,6 +368,25 @@ func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, e
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
+// evalMaxFeeCapExpr uses MaxFeeCapFormula from config to calculate the expression's result by plugging in appropriate parameter values
+func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Duration) (*big.Int, error) {
+	config := p.config()
+	parameters := map[string]any{
+		"BacklogOfBatches":      float64(backlogOfBatches),
+		"UrgencyGWei":           config.UrgencyGwei,
+		"ElapsedTime":           float64(elapsed),
+		"ElapsedTimeBase":       float64(config.ElapsedTimeBase),
+		"ElapsedTimeImportance": config.ElapsedTimeImportance,
+		"TargetPriceGWei":       config.TargetPriceGwei,
+		"GWei":                  params.GWei,
+	}
+	result, err := p.maxFeeCapExpression.Evaluate(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating maxFeeCapExpression: %w", err)
+	}
+	return arbmath.FloatToBig(result.(float64)), nil
+}
+
 func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
@@ -399,13 +426,10 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	elapsed := time.Since(dataCreatedAt)
-	// MaxFeeCap = (BacklogOfBatches^2 * UrgencyGWei^2 + TargetPriceGWei) * GWei
-	maxFeeCap :=
-		arbmath.FloatToBig(
-			(float64(arbmath.SquareUint(backlogOfBatches))*
-				arbmath.SquareFloat(config.UrgencyGwei) +
-				config.TargetPriceGwei) *
-				params.GWei)
+	maxFeeCap, err := p.evalMaxFeeCapExpr(backlogOfBatches, elapsed)
+	if err != nil {
+		return nil, nil, err
+	}
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
 		log.Warn(
 			"reducing proposed fee cap to current maximum",
@@ -766,6 +790,9 @@ type DataPosterConfig struct {
 	LegacyStorageEncoding  bool              `koanf:"legacy-storage-encoding" reload:"hot"`
 	Dangerous              DangerousConfig   `koanf:"dangerous"`
 	ExternalSigner         ExternalSignerCfg `koanf:"external-signer"`
+	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
+	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
+	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
 }
 
 type ExternalSignerCfg struct {
@@ -812,6 +839,11 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
+	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap the result of which would be float64.\n"+
+		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
+		"Currently available variables to construct the formula are BacklogOfBatches, UrgencyGWei, ElapsedTime, ElapsedTimeBase, ElapsedTimeImportance, TargetPriceGWei and GWei")
+	f.Duration(prefix+".elapsed-time-base", defaultDataPosterConfig.ElapsedTimeBase, "unit to measure the time elapsed since creation of transaction used for maximum fee cap calculation")
+	f.Float64(prefix+".elapsed-time-importance", defaultDataPosterConfig.ElapsedTimeImportance, "weight given to the units of time elapsed used for maximum fee cap calculation")
 
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
@@ -846,6 +878,9 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	MaxFeeCapFormula:       "(((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
+	ElapsedTimeBase:        10 * time.Minute,
+	ElapsedTimeImportance:  10,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -869,6 +904,9 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	MaxFeeCapFormula:       "(((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
+	ElapsedTimeBase:        10 * time.Minute,
+	ElapsedTimeImportance:  10,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
