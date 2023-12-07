@@ -51,10 +51,11 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	tracker := &InboxTracker{
-		db:         db,
-		txStreamer: txStreamer,
-		das:        das,
-		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
+		db:                       db,
+		txStreamer:               txStreamer,
+		das:                      das,
+		batchMeta:                containers.NewLruCache[uint64, BatchMetadata](1000),
+		messageNumToHotShotIndex: make(map[arbutil.MessageIndex]uint64),
 	}
 	return tracker, nil
 }
@@ -624,8 +625,9 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		messages = append(messages, *msg)
 		// Update the count of l2 sequenced messages
 		msgKind := msg.Message.Header.Kind
-		if msgKind == 3 {
-			t.messageNumToHotShotIndex[currentpos] = t.currentHotShotIndex
+		if msgKind == arbostypes.L1MessageType_L2Message {
+			index := currentpos - 1
+			t.messageNumToHotShotIndex[index] = t.currentHotShotIndex
 			t.currentHotShotIndex += 1
 		}
 		batchMessageCounts[batchSeqNum] = currentpos

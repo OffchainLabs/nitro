@@ -118,7 +118,7 @@ func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
 }
 
-func ReadHotShotCommitment(pos uint64, posInBatch uint64) [32]byte {
+func ReadHotShotCommitment(inboxPos uint64, posInInbox uint64) [32]byte {
 	return hotShotHeader
 
 }

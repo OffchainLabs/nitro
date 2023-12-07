@@ -139,7 +139,6 @@ func (machine *JitMachine) prove(
 	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
-	log.Info("validating with hotshot commitment", "commitment", entry.HotShotCommitment)
 	if err := writeExact(entry.HotShotCommitment[:]); err != nil {
 		return state, err
 	}
@@ -152,8 +151,6 @@ func (machine *JitMachine) prove(
 	success := []byte{successByte}
 	another := []byte{anotherByte}
 	ready := []byte{readyByte}
-
-	log.Info("here are the indices", "validation id", entry.Id, "inbox position", entry.StartState.Batch, "pos in batch", entry.StartState.PosInBatch)
 
 	// send inbox
 	for _, batch := range entry.BatchInfo {

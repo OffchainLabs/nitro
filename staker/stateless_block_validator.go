@@ -315,8 +315,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			return fmt.Errorf("error attempting to fetch HotShot commitment for height %d: %w", hotShotIndex, err)
 
 		}
-		log.Info("fetched HotShot commitment", "batch", hotShotIndex, "msg index", e.Pos, "commitment", hotShotCommitment)
-		log.Info("batches", "start batch", e.Start.Batch, "pos in batch", e.Start.PosInBatch, "end", e.End.Batch, "pos in batch", e.End.PosInBatch)
 		e.HotShotCommitment = *hotShotCommitment
 	}
 
