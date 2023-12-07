@@ -230,6 +230,7 @@ func errorTest(t *testing.T, jit bool) {
 	defer cleanup()
 
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x01})
@@ -246,7 +247,16 @@ func errorTest(t *testing.T, jit bool) {
 		Fatal(t, "call should have failed")
 	}
 
-	validateBlocks(t, 6, jit, ctx, node, l2client)
+	// ensure tx recovery is correct after failing in a deeply nested call
+	args := []byte{}
+	for i := 0; i < 32; i++ {
+		args = argsForMulticall(vm.CALL, multiAddr, nil, args)
+	}
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	EnsureTxFailed(t, ctx, l2client, tx)
+
+	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {

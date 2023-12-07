@@ -122,10 +122,11 @@ func callProgram(
 		(*u64)(&scope.Contract.Gas),
 	))
 
+	depth := interpreter.Depth()
 	debug := stylusParams.debugMode != 0
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if status == userFailure && debug {
-		log.Warn("program failure", "err", err, "msg", msg, "program", address)
+		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
 	return data, err
 }
