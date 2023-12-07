@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{evm_api::ApiCaller, Program, PROGRAMS};
+use crate::{evm_api::ApiCaller, program::Program};
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
     format::DebugBytes,
@@ -119,11 +119,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
 
     // provide arguments
     let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
+    Program::push_new(calldata, evm_api, evm_data, config);
 
     // call the program
     let status = program_call_main(module, args_len);
-    let outs = PROGRAMS.pop().unwrap().into_outs();
+    let outs = Program::pop();
     sp.restore_stack(); // restore the stack pointer (corrupts during EVM API calls)
 
     /// cleans up and writes the output
