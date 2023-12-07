@@ -47,8 +47,6 @@ type StatelessBlockValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
-
-	testIndex uint64
 }
 
 type BlockValidatorRegistrer interface {
@@ -308,7 +306,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.DelayedMsg = delayedMsg
 	}
 
-	if usingEspresso && e.msg.Message.Header.Kind == 3 {
+	if usingEspresso && e.msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
 		hotShotIndex := v.inboxTracker.MessageIndexToHotShotIndex(e.Pos)
 		hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
 		if err != nil {

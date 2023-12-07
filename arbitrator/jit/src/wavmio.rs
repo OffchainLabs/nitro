@@ -302,7 +302,6 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
     let hotshot_comm = socket::read_bytes32(stream)?;
-    // Debug step: panic here, if the commitment gets read here, try making it a global somehow
 
     env.small_globals = [inbox_position, position_within_message];
     env.large_globals = [last_block_hash, last_send_root];
