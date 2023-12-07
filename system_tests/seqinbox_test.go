@@ -163,8 +163,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ownerAddress := builder.L2Info.GetAddress("Owner")
 	var startL2BlockNumber uint64 = 0
 
-	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
+	startState, _, release, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	Require(t, err)
+	defer release()
 	startOwnerBalance := startState.GetBalance(ownerAddress)
 	startOwnerNonce := startState.GetNonce(ownerAddress)
 
@@ -429,8 +430,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			if block == nil {
 				Fatal(t, "missing state block", state.l2BlockNumber)
 			}
-			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
+			stateDb, _, release, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
+			defer release()
 			for acct, expectedBalance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
 				if expectedBalance.Cmp(haveBalance) < 0 {
