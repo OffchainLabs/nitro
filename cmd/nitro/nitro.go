@@ -238,7 +238,8 @@ func mainImpl() int {
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
 		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
-	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
+		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
