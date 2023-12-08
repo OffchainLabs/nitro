@@ -22,6 +22,10 @@ func (x Option[T]) IsNone() bool {
 	return x.value == nil
 }
 
+func (x Option[T]) IsSome() bool {
+	return x.value != nil
+}
+
 func (x Option[T]) Unwrap() T {
 	return *x.value
 }

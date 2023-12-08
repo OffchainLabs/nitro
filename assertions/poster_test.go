@@ -45,7 +45,7 @@ func TestPostAssertion(t *testing.T) {
 		chain.On("NewStakeOnNewAssertion", ctx, info, execState).Return(assertion, nil)
 		posted, err := poster.PostAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, assertion, posted)
+		require.Equal(t, assertion, posted.Unwrap())
 	})
 	t.Run("existing stake", func(t *testing.T) {
 		ctx := context.Background()
@@ -72,7 +72,7 @@ func TestPostAssertion(t *testing.T) {
 		chain.On("StakeOnNewAssertion", ctx, info, execState).Return(assertion, nil)
 		posted, err := poster.PostAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, assertion, posted)
+		require.Equal(t, assertion, posted.Unwrap())
 	})
 }
 

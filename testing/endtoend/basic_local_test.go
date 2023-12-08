@@ -13,6 +13,7 @@ import (
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	validator "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -452,13 +453,13 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, useFlak
 			t.Fatal(err)
 		}
 
-		aliceLeaf, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+		aliceLeaf, err := retry.UntilSucceeds(ctx, func() (option.Option[protocol.Assertion], error) {
 			return alicePoster.PostAssertion(ctx)
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		bobLeaf, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+		bobLeaf, err := retry.UntilSucceeds(ctx, func() (option.Option[protocol.Assertion], error) {
 			return bobPoster.PostAssertion(ctx)
 		})
 		if err != nil {
@@ -467,12 +468,12 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, useFlak
 
 		// Scan for created assertions.
 		if _, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
-			return nil, alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Id())
+			return nil, alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Unwrap().Id())
 		}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
-			return nil, bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Id())
+			return nil, bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Unwrap().Id())
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -531,8 +532,8 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 		require.NoError(t, err)
 		bobLeaf, err := bobPoster.PostAssertion(bobCtx)
 		require.NoError(t, err)
-		require.NoError(t, alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Id()))
-		require.NoError(t, bobPoster.ProcessAssertionCreationEvent(bobCtx, bobLeaf.Id()))
+		require.NoError(t, alicePoster.ProcessAssertionCreationEvent(ctx, aliceLeaf.Unwrap().Id()))
+		require.NoError(t, bobPoster.ProcessAssertionCreationEvent(bobCtx, bobLeaf.Unwrap().Id()))
 
 		// Alice and bob starts to challenge each other.
 		alice.Start(ctx)
@@ -594,8 +595,8 @@ func testSyncAliceStopsBobRemains(t *testing.T, be backend.Backend, s *Challenge
 		require.NoError(t, err)
 		bobLeaf, err := bobPoster.PostAssertion(ctx)
 		require.NoError(t, err)
-		require.NoError(t, alicePoster.ProcessAssertionCreationEvent(aliceCtx, aliceLeaf.Id()))
-		require.NoError(t, bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Id()))
+		require.NoError(t, alicePoster.ProcessAssertionCreationEvent(aliceCtx, aliceLeaf.Unwrap().Id()))
+		require.NoError(t, bobPoster.ProcessAssertionCreationEvent(ctx, bobLeaf.Unwrap().Id()))
 
 		// Alice and bob starts to challenge each other.
 		alice.Start(aliceCtx)

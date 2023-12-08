@@ -21,19 +21,35 @@ import (
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error {
-	if m.challengedAssertions.Has(id) {
-		srvlog.Info(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
-		return nil
-	}
 	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
+	parentAssertionHash, err := assertion.PrevId(ctx)
+	if err != nil {
+		return errors.Wrapf(err, "could not get parent assertion hash for assertion with id %#x", id)
+	}
+	if m.challengedAssertions.Has(parentAssertionHash) {
+		srvlog.Info(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
+		return nil
+	}
+	assertionStatus, err := m.chain.AssertionStatus(ctx, assertion.Id())
+	if err != nil {
+		return errors.Wrapf(err, "could not get assertion status with id %#x", id)
+	}
+	if assertionStatus == protocol.AssertionConfirmed {
+		srvlog.Info("Skipping challenge submission on already confirmed assertion", log.Ctx{"assertionHash": id.Hash})
+		return nil
+	}
 
 	// We then add a level zero edge to initiate a challenge.
-	levelZeroEdge, edgeTrackerAssertionInfo, err := m.addBlockChallengeLevelZeroEdge(ctx, assertion)
+	levelZeroEdge, edgeTrackerAssertionInfo, alreadyExists, err := m.addBlockChallengeLevelZeroEdge(ctx, assertion)
 	if err != nil {
 		return fmt.Errorf("could not add block challenge level zero edge %v: %w", m.name, err)
+	}
+	if alreadyExists {
+		srvlog.Info("Root level edge for challenged assertion already exists, skipping move", log.Ctx{"assertionHash": id.Hash})
+		return nil
 	}
 	if verifiedErr := m.watcher.AddVerifiedHonestEdge(ctx, levelZeroEdge); verifiedErr != nil {
 		fields := log.Ctx{
@@ -66,21 +82,21 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		"fromBatch":     edgeTrackerAssertionInfo.FromBatch,
 		"toBatch":       edgeTrackerAssertionInfo.ToBatch,
 	})
-	m.challengedAssertions.Insert(id)
+	m.challengedAssertions.Insert(parentAssertionHash)
 	return nil
 }
 
 func (m *Manager) addBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-) (protocol.VerifiedHonestEdge, *edgetracker.AssociatedAssertionMetadata, error) {
+) (protocol.VerifiedHonestEdge, *edgetracker.AssociatedAssertionMetadata, bool, error) {
 	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not get assertion creation info")
+		return nil, nil, false, errors.Wrap(err, "could not get assertion creation info")
 	}
 	prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not get assertion creation info")
+		return nil, nil, false, errors.Wrap(err, "could not get assertion creation info")
 	}
 	fromBatch := l2stateprovider.Batch(protocol.GoGlobalStateFromSolidity(creationInfo.BeforeState.GlobalState).Batch)
 	toBatch := l2stateprovider.Batch(protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState).Batch)
@@ -97,15 +113,15 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		},
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	manager, err := m.chain.SpecChallengeManager(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	layerZeroHeights, err := manager.LayerZeroHeights(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	req := &l2stateprovider.HistoryCommitmentRequest{
 		WasmModuleRoot:              prevCreationInfo.WasmModuleRoot,
@@ -120,7 +136,25 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		req,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
+	}
+	precomputedEdgeId, err := manager.CalculateEdgeId(
+		ctx,
+		protocol.NewBlockChallengeLevel(),
+		protocol.OriginId(creationInfo.ParentAssertionHash),
+		protocol.Height(startCommit.Height),
+		startCommit.Merkle,
+		protocol.Height(endCommit.Height),
+		endCommit.Merkle,
+	)
+	if err != nil {
+		return nil, nil, false, errors.Wrap(err, "could not calculate edge id")
+	}
+	someLevelZeroEdge, err := manager.GetEdge(ctx, precomputedEdgeId)
+
+	// If the edge already exists, we return true and everything else nil.
+	if err == nil && !someLevelZeroEdge.IsNone() {
+		return nil, nil, true, nil
 	}
 	startEndPrefixProof, err := m.stateManager.PrefixProof(
 		ctx,
@@ -128,15 +162,15 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		l2stateprovider.Height(0),
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	edge, err := manager.AddBlockChallengeLevelZeroEdge(ctx, assertion, startCommit, endCommit, startEndPrefixProof)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "could not post block challenge root edge")
+		return nil, nil, false, errors.Wrap(err, "could not post block challenge root edge")
 	}
 	return edge, &edgetracker.AssociatedAssertionMetadata{
 		FromBatch:      fromBatch,
 		ToBatch:        toBatch,
 		WasmModuleRoot: prevCreationInfo.WasmModuleRoot,
-	}, nil
+	}, true, nil
 }

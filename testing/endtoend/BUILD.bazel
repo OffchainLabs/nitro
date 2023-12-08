@@ -24,6 +24,7 @@ go_test(
         "//chain-abstraction/sol-implementation",
         "//challenge-manager",
         "//challenge-manager/types",
+        "//containers/option",
         "//layer2-state-provider",
         "//runtime",
         "//testing",

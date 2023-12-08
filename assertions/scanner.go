@@ -17,6 +17,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
@@ -330,8 +331,10 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	if err != nil {
 		return err
 	}
-	correctClaimedAssertionHash := correctRivalAssertion.Id()
-
+	if correctRivalAssertion.IsNone() {
+		srvlog.Warn(fmt.Sprintf("Expected to post a rival assertion to %#x, but did not post anything", creationInfo.AssertionHash))
+		return nil
+	}
 	if !m.canPostChallenge() {
 		srvlog.Warn("Attempted to post rival assertion and stake, but not configured to initiate a challenge", logFields)
 		return nil
@@ -350,7 +353,7 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	}
 	srvlog.Info("Waiting before submitting challenge on assertion", log.Ctx{"delay": randSecs})
 	time.Sleep(time.Duration(randSecs) * time.Second)
-
+	correctClaimedAssertionHash := correctRivalAssertion.Unwrap().Id()
 	if err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash); err != nil {
 		return err
 	}
@@ -366,36 +369,36 @@ func (m *Manager) postRivalAssertionAndChallenge(
 // then this function will return that assertion.
 func (m *Manager) maybePostRivalAssertion(
 	ctx context.Context, creationInfo *protocol.AssertionCreatedInfo,
-) (protocol.Assertion, error) {
+) (option.Option[protocol.Assertion], error) {
 	latestAgreedWithAncestor, err := m.findLastAgreedWithAncestor(ctx, creationInfo)
 	if err != nil {
-		return nil, err
+		return option.None[protocol.Assertion](), err
 	}
 	// Post what we believe is the correct assertion that follows the ancestor we agree with.
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
-		return nil, err
+		return option.None[protocol.Assertion](), err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
+	var assertionOpt option.Option[protocol.Assertion]
+	var postErr error
 	if staked {
-		assertion, postErr := m.PostAssertionBasedOnParent(
+		assertionOpt, postErr = m.PostAssertionBasedOnParent(
 			ctx, latestAgreedWithAncestor, m.chain.StakeOnNewAssertion,
 		)
-		if postErr != nil {
-			return nil, postErr
-		}
-		m.submittedAssertions.Insert(assertion.Id().Hash)
-		return assertion, nil
+	} else {
+		// Otherwise, we post a new assertion and place a new stake on it.
+		assertionOpt, postErr = m.PostAssertionBasedOnParent(
+			ctx, latestAgreedWithAncestor, m.chain.NewStakeOnNewAssertion,
+		)
 	}
-	// Otherwise, we post a new assertion and place a new stake on it.
-	assertion, err := m.PostAssertionBasedOnParent(
-		ctx, latestAgreedWithAncestor, m.chain.NewStakeOnNewAssertion,
-	)
-	if err != nil {
-		return nil, err
+	if postErr != nil {
+		return option.None[protocol.Assertion](), postErr
 	}
-	m.submittedAssertions.Insert(assertion.Id().Hash)
-	return assertion, nil
+	if assertionOpt.IsSome() {
+		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id().Hash)
+	}
+	return assertionOpt, nil
 }
 
 // Look back until we find the ancestor we agree with for the given assertion.
