@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/threadsafe"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum"
@@ -58,11 +59,12 @@ type ReceiptFetcher interface {
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend    protocol.ChainBackend
-	rollup     *rollupgen.RollupCore
-	userLogic  *rollupgen.RollupUserLogic
-	txOpts     *bind.TransactOpts
-	rollupAddr common.Address
+	backend                                  protocol.ChainBackend
+	rollup                                   *rollupgen.RollupCore
+	userLogic                                *rollupgen.RollupUserLogic
+	txOpts                                   *bind.TransactOpts
+	rollupAddr                               common.Address
+	confirmedChallengesByParentAssertionHash *threadsafe.Set[protocol.AssertionHash] // TODO: Use an LRU cache instead.
 }
 
 type Opt func(*AssertionChain)
@@ -86,9 +88,10 @@ func NewAssertionChain(
 	// we commit them onchain through the transact method in this package.
 	copiedOpts := copyTxOpts(txOpts)
 	chain := &AssertionChain{
-		backend:    backend,
-		txOpts:     copiedOpts,
-		rollupAddr: rollupAddr,
+		backend:                                  backend,
+		txOpts:                                   copiedOpts,
+		rollupAddr:                               rollupAddr,
+		confirmedChallengesByParentAssertionHash: threadsafe.NewSet[protocol.AssertionHash](),
 	}
 	for _, opt := range opts {
 		opt(chain)
@@ -158,6 +161,37 @@ func (a *AssertionChain) IsStaked(ctx context.Context) (bool, error) {
 // RollupAddress for the assertion chain.
 func (a *AssertionChain) RollupAddress() common.Address {
 	return a.rollupAddr
+}
+
+// IsChallengeComplete checks if a challenge is complete by using the challenge's parent assertion hash.
+func (a *AssertionChain) IsChallengeComplete(
+	ctx context.Context,
+	challengeParentAssertionHash protocol.AssertionHash,
+) (bool, error) {
+	if a.confirmedChallengesByParentAssertionHash.Has(challengeParentAssertionHash) {
+		return true, nil
+	}
+	parentAssertionStatus, err := a.AssertionStatus(ctx, challengeParentAssertionHash)
+	if err != nil {
+		return false, err
+	}
+	// Parent must be confirmed for a challenge to be considered complete, so we can
+	// short-circuit early here.
+	parentIsConfirmed := parentAssertionStatus == protocol.AssertionConfirmed
+	if !parentIsConfirmed {
+		return false, nil
+	}
+	latestConfirmed, err := a.LatestConfirmed(ctx)
+	if err != nil {
+		return false, err
+	}
+	// A challenge is complete if the parent assertion of the challenge is confirmed
+	// and the latest confirmed assertion hash is not equal to the challenge's parent assertion hash.
+	challengeConfirmed := latestConfirmed.Id() != challengeParentAssertionHash
+	if challengeConfirmed {
+		a.confirmedChallengesByParentAssertionHash.Insert(challengeParentAssertionHash)
+	}
+	return challengeConfirmed, nil
 }
 
 // NewStakeOnNewAssertion makes an onchain claim given a previous assertion hash, execution state,

@@ -15,6 +15,7 @@ go_library(
         "//chain-abstraction:protocol",
         "//containers",
         "//containers/option",
+        "//containers/threadsafe",
         "//solgen/go/bridgegen",
         "//solgen/go/challengeV2gen",
         "//solgen/go/ospgen",

@@ -96,6 +96,7 @@ type AssertionChain interface {
 	// Read-only methods.
 	IsStaked(ctx context.Context) (bool, error)
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
+	IsChallengeComplete(ctx context.Context, challengeParentAssertionHash AssertionHash) (bool, error)
 	Backend() ChainBackend
 	AssertionStatus(
 		ctx context.Context,

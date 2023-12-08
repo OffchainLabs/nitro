@@ -378,6 +378,95 @@ func TestChallengePeriodBlocks(t *testing.T) {
 	require.Equal(t, cfg.RollupConfig.ConfirmPeriodBlocks, chalPeriod)
 }
 
+func TestIsChallengeComplete(t *testing.T) {
+	ctx := context.Background()
+	_, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
+	require.NoError(t, err)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+		startCommit, startErr := stateManager.HistoryCommitment(
+			ctx,
+			&l2stateprovider.HistoryCommitmentRequest{
+				WasmModuleRoot:              common.Hash{},
+				FromBatch:                   0,
+				ToBatch:                     1,
+				UpperChallengeOriginHeights: []l2stateprovider.Height{},
+				FromHeight:                  0,
+				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
+			},
+		)
+		require.NoError(t, startErr)
+		req := &l2stateprovider.HistoryCommitmentRequest{
+			WasmModuleRoot:              common.Hash{},
+			FromBatch:                   0,
+			ToBatch:                     1,
+			UpperChallengeOriginHeights: []l2stateprovider.Height{},
+			FromHeight:                  0,
+			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
+		}
+		endCommit, endErr := stateManager.HistoryCommitment(
+			ctx,
+			req,
+		)
+		require.NoError(t, endErr)
+		prefixProof, proofErr := stateManager.PrefixProof(ctx, req, l2stateprovider.Height(0))
+		require.NoError(t, proofErr)
+
+		edge, edgeErr := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			leaf,
+			startCommit,
+			endCommit,
+			prefixProof,
+		)
+		require.NoError(t, edgeErr)
+		return edge
+	}
+	honestEdge := leafAdder(createdData.HonestStateManager, createdData.Leaf1)
+	s0, err := honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s0)
+
+	// We then check if the edge is part of a complete challenge. It should not be.
+	chain := createdData.Chains[0]
+	challengeParentAssertionHash, err := honestEdge.AssertionHash(ctx)
+	require.NoError(t, err)
+	chalComplete, err := chain.IsChallengeComplete(ctx, challengeParentAssertionHash)
+	require.NoError(t, err)
+	require.Equal(t, false, chalComplete)
+
+	// Adjust well beyond a challenge period.
+	for i := 0; i < 200; i++ {
+		createdData.Backend.Commit()
+	}
+
+	err = honestEdge.ConfirmByTimer(ctx, make([]protocol.EdgeId, 0))
+	require.NoError(t, err)
+
+	// Adjust beyond the grace period.
+	for i := 0; i < 10; i++ {
+		createdData.Backend.Commit()
+	}
+
+	// Confirm the assertion by challenge.
+	err = chain.ConfirmAssertionByChallengeWinner(
+		ctx, createdData.Leaf1.Id(), honestEdge.Id(),
+	)
+	require.NoError(t, err)
+
+	// Now, the edge should be part of a completed challenge.
+	chalComplete, err = chain.IsChallengeComplete(ctx, challengeParentAssertionHash)
+	require.NoError(t, err)
+	require.Equal(t, true, chalComplete)
+}
+
 type mockBackend struct {
 	*backends.SimulatedBackend
 

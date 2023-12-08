@@ -29,6 +29,11 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 	).Return(mockChallengeManager, nil)
 
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
+	mockChain.On(
+		"IsChallengeComplete",
+		ctx,
+		assertionHash,
+	).Return(false, nil)
 	edgeId := protocol.EdgeId{Hash: common.BytesToHash([]byte("bar"))}
 	edge := &mocks.MockSpecEdge{}
 
@@ -76,6 +81,11 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	originId := protocol.OriginId(common.BytesToHash([]byte("origin bar")))
 	edge := &mocks.MockSpecEdge{}
 
+	mockChain.On(
+		"IsChallengeComplete",
+		ctx,
+		assertionHash,
+	).Return(false, nil)
 	mockChain.On(
 		"TopLevelAssertion",
 		ctx,
