@@ -40,12 +40,6 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
 	}
 
-	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
-	}
-
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client, maxDataSize)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
