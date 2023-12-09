@@ -355,7 +355,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			if i%5 == 0 {
 				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
 			}
 			Require(t, err)
 			txRes, err := builder.L1.EnsureTxSucceeded(tx)

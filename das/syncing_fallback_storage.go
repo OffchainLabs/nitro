@@ -186,10 +186,12 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 }
 
 func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDeliveredLog types.Log) error {
-	deliveredEvent, err := s.inboxContract.ParseSequencerBatchDelivered(batchDeliveredLog)
-	if err != nil {
-		return err
-	}
+	// TODO handle correctly
+	// deliveredEvent, err := s.inboxContract.ParseSequencerBatchDelivered(batchDeliveredLog)
+	var deliveredEvent *bridgegen.AbsBridgeSequencerBatchDelivered = &bridgegen.AbsBridgeSequencerBatchDelivered{}
+	// if err != nil {
+	//	return err
+	//}
 	log.Info("BatchDelivered", "log", batchDeliveredLog, "event", deliveredEvent)
 	storeUntil := arbmath.SaturatingUAdd(deliveredEvent.TimeBounds.MaxTimestamp, uint64(s.config.RetentionPeriod.Seconds()))
 	if storeUntil < uint64(time.Now().Unix()) {
@@ -247,7 +249,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 func FindDASDataFromLog(
 	ctx context.Context,
 	inboxContract *bridgegen.SequencerInbox,
-	deliveredEvent *bridgegen.SequencerInboxSequencerBatchDelivered,
+	deliveredEvent *bridgegen.AbsBridgeSequencerBatchDelivered,
 	inboxAddr common.Address,
 	l1Client arbutil.L1Interface,
 	batchDeliveredLog types.Log) ([]byte, error) {

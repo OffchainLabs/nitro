@@ -27,7 +27,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	Require(t, err)
 	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 	Require(t, err)
 	batchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -69,7 +69,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	// Produce a new l1Block so that the batch ends up in a different l1Block than before
 	builder.L1.TransferBalance(t, "User", "User", common.Big1, builder.L1Info)
 
-	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
+	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 	Require(t, err)
 	newBatchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)

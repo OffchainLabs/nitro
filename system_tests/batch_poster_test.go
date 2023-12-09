@@ -173,7 +173,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		// Make sure the batch poster is able to post multiple batches in one block
 		endL1Block, err := builder.L1.Client.BlockNumber(ctx)
 		Require(t, err)
-		seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.L2.ConsensusNode.DeployInfo.SequencerInbox, 0)
+		seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.L2.ConsensusNode.DeployInfo.SequencerInbox, builder.L2.ConsensusNode.DeployInfo.Bridge, 0)
 		Require(t, err)
 		batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(startL1Block), new(big.Int).SetUint64(endL1Block))
 		Require(t, err)

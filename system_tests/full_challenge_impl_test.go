@@ -146,7 +146,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 
 const makeBatch_MsgsPerBatch = int64(5)
 
-func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
+func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr, bridgeAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
@@ -164,12 +164,12 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 
 	seqNum := new(big.Int).Lsh(common.Big1, 256)
 	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
 
-	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
+	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, bridgeAddr, 0)
 	Require(t, err)
 	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
 	Require(t, err)
@@ -200,10 +200,10 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(10000),
-		FutureBlocks:  big.NewInt(10000),
-		DelaySeconds:  big.NewInt(10000),
-		FutureSeconds: big.NewInt(10000),
+		DelayBlocks:   10000,
+		FutureBlocks:  10000,
+		DelaySeconds:  10000,
+		FutureSeconds: 10000,
 	}
 	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
@@ -302,16 +302,16 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 
 	// seqNum := common.Big2
-	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-1)
+	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, asserterBridgeAddr, -1)
+	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengerBridgeAddr, challengeMsgIdx-1)
 
 	// seqNum.Add(seqNum, common.Big1)
-	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch-1)
+	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, asserterBridgeAddr, -1)
+	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengerBridgeAddr, challengeMsgIdx-makeBatch_MsgsPerBatch-1)
 
 	// seqNum.Add(seqNum, common.Big1)
-	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, -1)
-	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengeMsgIdx-makeBatch_MsgsPerBatch*2-1)
+	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, asserterBridgeAddr, -1)
+	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, challengerBridgeAddr, challengeMsgIdx-makeBatch_MsgsPerBatch*2-1)
 
 	trueSeqInboxAddr := challengerSeqInboxAddr
 	trueDelayedBridge := challengerBridgeAddr

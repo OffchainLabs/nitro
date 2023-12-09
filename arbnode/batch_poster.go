@@ -909,9 +909,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 
 		l1BoundBlockNumber := arbutil.ParentHeaderToL1BlockNumber(l1Bound)
-		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, arbmath.BigToUintSaturating(maxTimeVariation.FutureBlocks))
-		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
-
+		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, maxTimeVariation.FutureBlocks)
+		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, maxTimeVariation.FutureSeconds)
 		if config.L1BlockBoundBypass > 0 {
 			latestHeader, err := b.l1Reader.LastHeader(ctx)
 			if err != nil {
@@ -921,8 +920,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
 
-			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelayBlocks))
-			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelaySeconds))
+			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, maxTimeVariation.DelayBlocks)
+			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, maxTimeVariation.DelaySeconds)
 		}
 	}
 

@@ -227,10 +227,13 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 // Trys to find if DAS message is present in the given log and if present
 // returns true and validates if the data is available in the storage service.
 func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log, metricBase string) (bool, error) {
-	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)
-	if err != nil {
-		return false, err
-	}
+	// TODO fix
+	// deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)
+	// if err != nil {
+	//	return false, err
+	//}
+	var deliveredEvent *bridgegen.AbsBridgeSequencerBatchDelivered
+
 	data, err := das.FindDASDataFromLog(ctx, d.inboxContract, deliveredEvent, *d.inboxAddr, d.l1Client, deliveredLog)
 	if err != nil {
 		return false, err

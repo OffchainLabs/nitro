@@ -20,7 +20,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-var sequencerBridgeABI *abi.ABI
+var sequencerInboxABI *abi.ABI
+var bridgeABI *abi.ABI
 var batchDeliveredID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
@@ -37,33 +38,47 @@ const (
 
 func init() {
 	var err error
-	sequencerBridgeABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
+	sequencerInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
-	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
-	sequencerBatchDataABI = sequencerBridgeABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin"]
+	bridgeABI, err = bridgegen.AbsBridgeMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+
+	batchDeliveredID = bridgeABI.Events["SequencerBatchDelivered"].ID
+	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
+	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 }
 
 type SequencerInbox struct {
-	con       *bridgegen.SequencerInbox
-	address   common.Address
-	fromBlock int64
-	client    arbutil.L1Interface
+	inboxContract  *bridgegen.SequencerInbox
+	inboxAddress   common.Address
+	bridgeContract *bridgegen.AbsBridge
+	bridgeAddress  common.Address
+	fromBlock      int64
+	client         arbutil.L1Interface
 }
 
-func NewSequencerInbox(client arbutil.L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
-	con, err := bridgegen.NewSequencerInbox(addr, client)
+func NewSequencerInbox(client arbutil.L1Interface, inboxAddress, bridgeAddress common.Address, fromBlock int64) (*SequencerInbox, error) {
+	inboxContract, err := bridgegen.NewSequencerInbox(inboxAddress, client)
+	if err != nil {
+		return nil, err
+	}
+
+	bridgeContract, err := bridgegen.NewAbsBridge(bridgeAddress, client)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SequencerInbox{
-		con:       con,
-		address:   addr,
-		fromBlock: fromBlock,
-		client:    client,
+		inboxContract:  inboxContract,
+		inboxAddress:   inboxAddress,
+		bridgeContract: bridgeContract,
+		bridgeAddress:  bridgeAddress,
+		fromBlock:      fromBlock,
+		client:         client,
 	}, nil
 }
 
@@ -75,7 +90,7 @@ func (i *SequencerInbox) GetBatchCount(ctx context.Context, blockNumber *big.Int
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	count, err := i.con.BatchCount(opts)
+	count, err := i.inboxContract.BatchCount(opts)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +105,7 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	acc, err := i.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
+	acc, err := i.inboxContract.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
 	return acc, err
 }
 
@@ -102,10 +117,10 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc          common.Hash
 	AfterDelayedAcc        common.Hash
 	AfterDelayedCount      uint64
-	TimeBounds             bridgegen.ISequencerInboxTimeBounds
+	TimeBounds             bridgegen.IBridgeTimeBounds
 	rawLog                 types.Log
 	dataLocation           batchDataLocation
-	bridgeAddress          common.Address
+	inboxAddress           common.Address
 	serialized             []byte // nil if serialization isn't cached yet
 }
 
@@ -127,7 +142,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
 		query := ethereum.FilterQuery{
 			BlockHash: &m.BlockHash,
-			Addresses: []common.Address{m.bridgeAddress},
+			Addresses: []common.Address{m.inboxAddress},
 			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {numberAsHash}},
 		}
 		logs, err := client.FilterLogs(ctx, query)
@@ -141,7 +156,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 			return nil, errors.New("expected to find only one matching sequencer batch data")
 		}
 		event := new(bridgegen.SequencerInboxSequencerBatchData)
-		err = sequencerBridgeABI.UnpackIntoInterface(event, sequencerBatchDataEvent, logs[0].Data)
+		err = sequencerInboxABI.UnpackIntoInterface(event, sequencerBatchDataEvent, logs[0].Data)
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +205,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	query := ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
-		Addresses: []common.Address{i.address},
+		Addresses: []common.Address{i.bridgeAddress},
 		Topics:    [][]common.Hash{{batchDeliveredID}},
 	}
 	logs, err := i.client.FilterLogs(ctx, query)
@@ -203,7 +218,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		if log.Topics[0] != batchDeliveredID {
 			return nil, errors.New("unexpected log selector")
 		}
-		parsedLog, err := i.con.ParseSequencerBatchDelivered(log)
+		parsedLog, err := i.bridgeContract.ParseSequencerBatchDelivered(log)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +247,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			rawLog:                 log,
 			TimeBounds:             parsedLog.TimeBounds,
 			dataLocation:           batchDataLocation(parsedLog.DataLocation),
-			bridgeAddress:          log.Address,
+			inboxAddress:           parsedLog.SequencerInbox,
 		}
 		messages = append(messages, batch)
 	}

@@ -64,9 +64,8 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
-	ethBasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
+	ethBasedTemplates := rollupgen.BridgeCreatorBridgeTemplates{
 		Bridge:           bridgeTemplate,
-		SequencerInbox:   seqInboxTemplate,
 		Inbox:            inboxTemplate,
 		RollupEventInbox: rollupEventBridgeTemplate,
 		Outbox:           outboxTemplate,
@@ -97,9 +96,8 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
-	erc20BasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
+	erc20BasedTemplates := rollupgen.BridgeCreatorBridgeTemplates{
 		Bridge:           erc20BridgeTemplate,
-		SequencerInbox:   seqInboxTemplate,
 		Inbox:            erc20InboxTemplate,
 		RollupEventInbox: erc20RollupEventBridgeTemplate,
 		Outbox:           erc20OutboxTemplate,
