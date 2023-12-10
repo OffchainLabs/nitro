@@ -300,14 +300,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 				l1pricing.L1PricerFundsPoolAddress,
 			)))
 		case 10:
-			if !chainConfig.DebugMode() {
-				// This upgrade isn't finalized so we only want to support it for testing
-				return fmt.Errorf(
-					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					state.arbosVersion+1,
-					ErrFatalNodeOutOfDate,
-				)
-			}
 			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
 			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
 
