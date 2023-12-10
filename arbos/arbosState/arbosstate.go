@@ -315,7 +315,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if !firstTime {
 				ensure(state.chainOwners.ClearList())
 			}
-		case 11:
+		// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+		// TODO: currently you can't get to ArbOS 20 without hitting the default case.
+		case 19:
 			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
 				return fmt.Errorf(
