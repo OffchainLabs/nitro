@@ -16,15 +16,21 @@ import (
 )
 
 type WasmConfig struct {
-	RootPath string `koanf:"root-path"`
+	RootPath               string   `koanf:"root-path"`
+	EnableWasmrootsCheck   bool     `koanf:"enable-wasmroots-check"`
+	AllowedWasmModuleRoots []string `koanf:"allowed-wasm-module-roots"`
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (machine.wavm.br, replay.wasm)")
+	f.Bool(prefix+".enable-wasmroots-check", DefaultWasmConfig.EnableWasmrootsCheck, "enable check for compatibility of on-chain WASM module root with node")
+	f.StringSlice(prefix+".allowed-wasm-module-roots", DefaultWasmConfig.AllowedWasmModuleRoots, "list of WASM module roots to check if the on-chain WASM module root belongs to on node startup")
 }
 
 var DefaultWasmConfig = WasmConfig{
-	RootPath: "",
+	RootPath:               "",
+	EnableWasmrootsCheck:   true,
+	AllowedWasmModuleRoots: []string{},
 }
 
 type Config struct {
