@@ -277,6 +277,12 @@ func IsBacklogSegmentNil(segment BacklogSegment) bool {
 func (s *backlogSegment) Start() uint64 {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
+	return s.start()
+}
+
+// start allows the first message to be retrieved from functions that already
+// have the messagesLock.
+func (s *backlogSegment) start() uint64 {
 	if len(s.messages) > 0 {
 		return uint64(s.messages[0].SequenceNumber)
 	}
@@ -317,7 +323,7 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
 	noMsgs := []*m.BroadcastFeedMessage{}
-	if start < s.Start() {
+	if start < s.start() {
 		return noMsgs, errOutOfBounds
 	}
 
@@ -325,8 +331,8 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 		return noMsgs, errOutOfBounds
 	}
 
-	startIndex := start - s.Start()
-	endIndex := end - s.Start() + 1
+	startIndex := start - s.start()
+	endIndex := end - s.start() + 1
 
 	tmp := make([]*m.BroadcastFeedMessage, len(s.messages))
 	copy(tmp, s.messages)
@@ -359,7 +365,7 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 func (s *backlogSegment) Contains(i uint64) bool {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
-	start := s.Start()
+	start := s.start()
 	if i < start || i > s.End() {
 		return false
 	}
