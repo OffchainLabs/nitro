@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -364,5 +365,23 @@ func TestLength(t *testing.T) {
 			})
 		}
 
+	}
+}
+
+func TestTimeEncoding(t *testing.T) {
+	// RlpTime cuts off subsecond precision, so for this test,
+	// we'll use a time that doesn't have any subsecond precision.
+	now := storage.RlpTime(time.Unix(time.Now().Unix(), 0))
+	enc, err := rlp.EncodeToBytes(now)
+	if err != nil {
+		t.Fatal("failed to encode time", err)
+	}
+	var dec storage.RlpTime
+	err = rlp.DecodeBytes(enc, &dec)
+	if err != nil {
+		t.Fatal("failed to decode time", err)
+	}
+	if !time.Time(dec).Equal(time.Time(now)) {
+		t.Fatalf("time %v encoded then decoded to %v", now, dec)
 	}
 }
