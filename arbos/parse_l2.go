@@ -165,7 +165,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
-		if arbOSVersion != nil && newTx.Type() == types.ArbitrumSubtypedTxType && *arbOSVersion < arbostypes.RequiredArbosVersionForTxSubtype(types.GetArbitrumTxSubtype(newTx)) {
+		if arbOSVersion != nil && !TxSupportedByArbosVersion(newTx, *arbOSVersion) {
 			return nil, types.ErrTxTypeNotSupported
 		}
 		if newTx.Type() >= types.ArbitrumDepositTxType || newTx.Type() == types.BlobTxType {
@@ -186,6 +186,10 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		// ignore invalid message kind
 		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
 	}
+}
+
+func TxSupportedByArbosVersion(tx *types.Transaction, arbOSVersion uint64) bool {
+	return tx.Type() != types.ArbitrumSubtypedTxType || arbOSVersion >= arbostypes.RequiredArbosVersionForTxSubtype(types.GetArbitrumTxSubtype(tx))
 }
 
 func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, txKind byte) (*types.Transaction, error) {
