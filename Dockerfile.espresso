@@ -150,15 +150,14 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
-# Download WAVM machines
-COPY ./scripts/download-machine.sh .
-RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
-RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
-RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
-
+# Download WAVM machines.
 COPY ./scripts/download-machine-espresso.sh .
-# TODO: download espresso wasm release once we have one
-# RUN ./download-machine-espresso.sh 20231211 0x...
+#
+# To use a new wasm machine specify release tag from the page
+# https://github.com/EspressoSystems/nitro-espresso-integration/releases and the
+# corresponding module-root.
+#
+RUN ./download-machine-espresso.sh 20231211-pre.2 0xb2ec17fe4ae788f2c81cd1d28242dfa47696598ea0f18cd78f64c7e2e8b75434
 
 FROM golang:1.20-bullseye as node-builder
 WORKDIR /workspace
