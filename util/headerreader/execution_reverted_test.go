@@ -1,4 +1,7 @@
-package staker
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+package headerreader
 
 import (
 	"io"
@@ -13,14 +16,16 @@ func TestExecutionRevertedRegexp(t *testing.T) {
 		"execution reverted: FOO",
 		// besu returns "Execution reverted"
 		"Execution reverted",
+		// nethermind returns "VM execution error."
+		"VM execution error.",
 	}
 	for _, errString := range executionRevertedErrors {
-		if !executionRevertedRegexp.MatchString(errString) {
+		if !ExecutionRevertedRegexp.MatchString(errString) {
 			t.Fatalf("execution reverted regexp didn't match %q", errString)
 		}
 	}
 	// This regexp should not match random IO errors
-	if executionRevertedRegexp.MatchString(io.ErrUnexpectedEOF.Error()) {
+	if ExecutionRevertedRegexp.MatchString(io.ErrUnexpectedEOF.Error()) {
 		t.Fatal("execution reverted regexp matched unexpected EOF")
 	}
 }
