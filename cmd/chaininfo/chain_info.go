@@ -6,6 +6,7 @@ package chaininfo
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -22,13 +23,14 @@ type ChainInfo struct {
 	ParentChainId         uint64 `json:"parent-chain-id"`
 	ParentChainIsArbitrum *bool  `json:"parent-chain-is-arbitrum"`
 	// This is the forwarding target to submit transactions to, called the sequencer URL for clarity
-	SequencerUrl     string              `json:"sequencer-url"`
-	FeedUrl          string              `json:"feed-url"`
-	SecondaryFeedUrl string              `json:"secondary-feed-url"`
-	DasIndexUrl      string              `json:"das-index-url"`
-	HasGenesisState  bool                `json:"has-genesis-state"`
-	ChainConfig      *params.ChainConfig `json:"chain-config"`
-	RollupAddresses  *RollupAddresses    `json:"rollup"`
+	SequencerUrl              string              `json:"sequencer-url"`
+	SecondaryForwardingTarget string              `json:"secondary-forwarding-target"`
+	FeedUrl                   string              `json:"feed-url"`
+	SecondaryFeedUrl          string              `json:"secondary-feed-url"`
+	DasIndexUrl               string              `json:"das-index-url"`
+	HasGenesisState           bool                `json:"has-genesis-state"`
+	ChainConfig               *params.ChainConfig `json:"chain-config"`
+	RollupAddresses           *RollupAddresses    `json:"rollup"`
 }
 
 func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
@@ -85,7 +87,10 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 	if chainId != 0 {
 		return nil, fmt.Errorf("unsupported chain ID %v", chainId)
 	}
-	return nil, fmt.Errorf("unsupported chain name %v", chainName)
+	if chainName != "" {
+		return nil, fmt.Errorf("unsupported chain name %v", chainName)
+	}
+	return nil, errors.New("must specify --chain.id or --chain.name to choose rollup")
 }
 
 func findChainInfo(chainId uint64, chainName string, chainsInfoBytes []byte) (*ChainInfo, error) {
@@ -93,6 +98,10 @@ func findChainInfo(chainId uint64, chainName string, chainsInfoBytes []byte) (*C
 	err := json.Unmarshal(chainsInfoBytes, &chainsInfo)
 	if err != nil {
 		return nil, err
+	}
+	if chainId == 0 && chainName == "" && len(chainsInfo) == 1 {
+		// If single chain info and no chain id/name given, default to single chain info
+		return &chainsInfo[0], nil
 	}
 	for _, chainInfo := range chainsInfo {
 		if (chainId == 0 || chainInfo.ChainConfig.ChainID.Uint64() == chainId) && (chainName == "" || chainInfo.ChainName == chainName) {
