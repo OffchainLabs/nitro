@@ -7,17 +7,17 @@ import (
 )
 
 type BatchInfo struct {
-	Number            uint64
-	HotShotCommitment espresso.Commitment
-	Data              []byte
+	Number uint64
+	Data   []byte
 }
 
 type ValidationInput struct {
-	Id            uint64
-	HasDelayedMsg bool
-	DelayedMsgNr  uint64
-	Preimages     map[arbutil.PreimageType]map[common.Hash][]byte
-	BatchInfo     []BatchInfo
-	DelayedMsg    []byte
-	StartState    GoGlobalState
+	Id                uint64
+	HasDelayedMsg     bool
+	DelayedMsgNr      uint64
+	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
+	BatchInfo         []BatchInfo
+	DelayedMsg        []byte
+	StartState        GoGlobalState
+	HotShotCommitment espresso.Commitment
 }

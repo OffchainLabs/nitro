@@ -58,6 +58,7 @@ type InboxTrackerInterface interface {
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
+	MessageIndexToHotShotIndex(arbutil.MessageIndex) uint64
 	GetBatchCount() (uint64, error)
 }
 
@@ -176,8 +177,9 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
-	DelayedMsg []byte
+	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
+	DelayedMsg        []byte
+	HotShotCommitment espresso.Commitment
 }
 
 func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
@@ -185,13 +187,14 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	return &validator.ValidationInput{
-		Id:            uint64(e.Pos),
-		HasDelayedMsg: e.HasDelayedMsg,
-		DelayedMsgNr:  e.DelayedMsgNr,
-		Preimages:     e.Preimages,
-		BatchInfo:     e.BatchInfo,
-		DelayedMsg:    e.DelayedMsg,
-		StartState:    e.Start,
+		Id:                uint64(e.Pos),
+		HasDelayedMsg:     e.HasDelayedMsg,
+		DelayedMsgNr:      e.DelayedMsgNr,
+		Preimages:         e.Preimages,
+		BatchInfo:         e.BatchInfo,
+		DelayedMsg:        e.DelayedMsg,
+		HotShotCommitment: e.HotShotCommitment,
+		StartState:        e.Start,
 	}, nil
 }
 
@@ -302,19 +305,18 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-	for i, batch := range e.BatchInfo {
-		if usingEspresso {
-			// TODO: Use the inbox tracker to fetch the correct HotShot index
-			// https://github.com/EspressoSystems/espresso-sequencer/issues/782
-			batchNum := batch.Number
-			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
-			if err != nil {
-				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)
 
-			}
-			log.Info("fetched HotShot commitment", "batchNum", batchNum, "commitment", hotShotCommitment)
-			e.BatchInfo[i].HotShotCommitment = *hotShotCommitment
+	if usingEspresso && e.msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
+		hotShotIndex := v.inboxTracker.MessageIndexToHotShotIndex(e.Pos)
+		hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
+		if err != nil {
+			return fmt.Errorf("error attempting to fetch HotShot commitment for height %d: %w", hotShotIndex, err)
+
 		}
+		e.HotShotCommitment = *hotShotCommitment
+	}
+
+	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
 		}

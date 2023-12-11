@@ -185,7 +185,7 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type HotShotCommitmentMap = BTreeMap<u64, [u8; 32]>;
+pub type HotShotCommitmentMap = BTreeMap<(u64, u64), [u8; 32]>;
 pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
 
 #[derive(Default)]
