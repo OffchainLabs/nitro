@@ -37,7 +37,7 @@ const (
 const MaxL2MessageSize = 256 * 1024
 
 const ArbosVersion_FixRedeemGas = uint64(11)
-const ArbosVersion_ArbitrumTippingTx = 12
+const ArbosVersion_ArbitrumTippingTx = 20
 
 func RequiredArbosVersionForTxSubtype(txSubtype uint8) uint64 {
 	switch txSubtype {
