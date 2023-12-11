@@ -335,9 +335,9 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 	startIndex := start - s.start()
 	endIndex := end - s.start() + 1
 
-	tmp := make([]*m.BroadcastFeedMessage, len(s.messages))
-	copy(tmp, s.messages)
-	return tmp[startIndex:endIndex], nil
+	tmp := make([]*m.BroadcastFeedMessage, endIndex-startIndex)
+	copy(tmp, s.messages[startIndex:endIndex])
+	return tmp, nil
 }
 
 // append appends the given BroadcastFeedMessage to messages if it is the first
