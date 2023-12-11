@@ -255,8 +255,8 @@ func main() {
 				panic("batch missing espresso justification")
 			}
 			hotshotHeader := jst.Header
-			debugComm := espresso.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
-			if !debugComm.Equals(hotshotHeader.Commit()) {
+			commitment := espresso.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
+			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v. seqNum %v posInInbox %v", hotshotHeader.Commit(), debugComm, inboxPos, posInInbox))
 			}
 			var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}

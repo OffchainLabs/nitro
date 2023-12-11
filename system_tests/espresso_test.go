@@ -19,19 +19,19 @@ import (
 )
 
 var (
-	validationPort    = 54320
-	broadcastPort     = 9642
-	maxHotShotBlock   = 100
-	malformedBlockNum = 5
-	firstGoodBlockNum = 15
-	seconGoodBlockNum = 25
+	validationPort     = 54320
+	broadcastPort      = 9642
+	maxHotShotBlock    = 100
+	malformedBlockNum  = 5
+	firstGoodBlockNum  = 15
+	secondGoodBlockNum = 25
 )
 
 func espresso_block_txs_generators(t *testing.T, l2Info *BlockchainTestInfo) map[int][][]byte {
 	return map[int][][]byte{
 		malformedBlockNum: onlyMalformedTxs(t),
 		firstGoodBlockNum: userTxs(t, l2Info),
-		seconGoodBlockNum: func(t *testing.T) [][]byte {
+		secondGoodBlockNum: func(t *testing.T) [][]byte {
 			// Contains malformed txes, valid transactions and invalid transactions
 			r := [][]byte{}
 			r = append(r, onlyMalformedTxs(t)...)
@@ -275,6 +275,6 @@ func TestEspresso(t *testing.T) {
 	Require(t, err)
 
 	if len(block3.Body().Transactions) != 3 {
-		Fatal(t, "block", seconGoodBlockNum, " should contain 2 valid transactions")
+		Fatal(t, "block", secondGoodBlockNum, " should contain 2 valid transactions")
 	}
 }
