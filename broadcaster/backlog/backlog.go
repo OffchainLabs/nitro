@@ -112,7 +112,7 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 	}
 
 	segment, err := b.Lookup(start)
-	head := b.head.Load()
+	head = b.head.Load()
 	if start < head.Start() {
 		// doing this check after the Lookup call ensures there is no race
 		// condition with a delete call
