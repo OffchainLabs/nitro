@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -53,12 +52,14 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -420,6 +421,52 @@ func mainImpl() int {
 		}
 	}()
 
+	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
+	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
+		// Fetch current on-chain WASM module root
+		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+		if err != nil {
+			log.Error("failed to create rollupUserLogic", "err", err)
+			return 1
+		}
+		moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			log.Error("failed to get on-chain WASM module root", "err", err)
+			return 1
+		}
+		if (moduleRoot == common.Hash{}) {
+			log.Error("on-chain WASM module root is zero")
+			return 1
+		}
+		// Check if the on-chain WASM module root belongs to the set of allowed module roots
+		allowedWasmModuleRoots := nodeConfig.Validation.Wasm.AllowedWasmModuleRoots
+		if len(allowedWasmModuleRoots) > 0 {
+			moduleRootMatched := false
+			for _, root := range allowedWasmModuleRoots {
+				if common.HexToHash(root) == moduleRoot {
+					moduleRootMatched = true
+					break
+				}
+			}
+			if !moduleRootMatched {
+				log.Error("on-chain WASM module root did not match with any of the allowed WASM module roots")
+				return 1
+			}
+		} else {
+			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
+			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
+			if err != nil {
+				log.Error("failed to create machine locator", "err", err)
+				return 1
+			}
+			path := locator.GetMachinePath(moduleRoot)
+			if _, err := os.Stat(path); err != nil {
+				log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
+				return 1
+			}
+		}
+	}
+
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
@@ -498,7 +545,6 @@ func mainImpl() int {
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
-	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
 	if nodeConfig.Node.ParentChainReader.Enable {
 		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
 		if err != nil {
@@ -508,7 +554,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !executionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
