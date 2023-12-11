@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"sync"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
+
+// A regexp matching "execution reverted" errors returned from the parent chain RPC.
+var ExecutionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
 
 type ArbSysInterface interface {
 	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
