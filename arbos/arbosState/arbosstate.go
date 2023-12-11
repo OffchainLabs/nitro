@@ -335,11 +335,14 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
 		default:
-			return fmt.Errorf(
-				"the chain is upgrading to unsupported ArbOS version %v, %w",
-				state.arbosVersion+1,
-				ErrFatalNodeOutOfDate,
-			)
+			if !chainConfig.DebugMode() || state.arbosVersion > 19 {
+				// TODO handle skipping arbos versions
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					state.arbosVersion+1,
+					ErrFatalNodeOutOfDate,
+				)
+			}
 		}
 		state.arbosVersion++
 	}
