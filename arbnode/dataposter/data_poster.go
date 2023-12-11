@@ -537,10 +537,8 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
-	if prevTx == nil || (newTx.FullTx.Hash() != prevTx.FullTx.Hash()) {
-		if err := p.saveTx(ctx, prevTx, newTx); err != nil {
-			return err
-		}
+	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
+		return err
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
