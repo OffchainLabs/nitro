@@ -22,15 +22,12 @@ func TestToxiRpcClient(t *testing.T) {
 	Require(t, err)
 	defer proxy.Delete()
 
-	config := &ClientConfig{
-		URL:         "ws://" + proxy.Listen,
-		Timeout:     time.Second * 5,
-		Retries:     3,
-		RetryErrors: "websocket: close.*|.* i/o timeout|.*connection reset by peer|dial tcp .*",
-		RetryDelay:  time.Millisecond * 500,
-	}
+	config := DefaultClientConfig
+	config.URL = "ws://" + proxy.Listen
+	config.Timeout = time.Second * 5
+	config.RetryDelay = time.Millisecond * 500
 	Require(t, config.Validate())
-	configFetcher := func() *ClientConfig { return config }
+	configFetcher := func() *ClientConfig { return &config }
 
 	client := NewRpcClient(configFetcher, server1)
 
