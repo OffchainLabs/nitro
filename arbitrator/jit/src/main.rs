@@ -69,10 +69,10 @@ fn main() {
 
     memory.write(name as u64, b"js\0").unwrap(); // write "js\0" to the name ptr
     memory.write(argv as u64, &name.to_le_bytes()).unwrap(); // write the name ptr to the argv ptr
-    let run_args = vec![Value::I32(1), Value::I32(argv)]; // pass argv with our single name arg
+    let run_args = &[Value::I32(1), Value::I32(argv)]; // pass argv with our single name arg
 
     let main = instance.exports.get_function("run").unwrap();
-    let outcome = main.call(&mut store, &run_args);
+    let outcome = main.call(&mut store, run_args);
     let escape = match outcome {
         Ok(outcome) => {
             println!("Go returned values {:?}", outcome);
