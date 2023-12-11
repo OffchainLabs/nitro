@@ -395,8 +395,8 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 	if resultBig == nil {
 		return nil, fmt.Errorf("maxFeeCapExpression evaluated to float64 not convertible to integer: %v", resultFloat)
 	}
-	if resultBig.Sign() <= 0 {
-		return nil, fmt.Errorf("maxFeeCapExpression evaluated <= 0: %v", resultFloat)
+	if resultBig.Sign() < 0 {
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated < 0: %v", resultFloat)
 	}
 	return resultBig, nil
 }
