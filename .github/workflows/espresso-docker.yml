@@ -112,6 +112,12 @@ jobs:
           path: target/machines/latest/*
           if-no-files-found: error
 
+      - name: Release wasm binary
+        uses: softprops/action-gh-release@v1
+        if: matrix.platform == 'linux/amd64' && startsWith(github.ref, 'refs/tags/')
+        with:
+          files: target/machines/latest/*
+
   # Merge the AMD64 and ARM64 images into the final (multiplatform) image.
   #
   # For documentation refer to
