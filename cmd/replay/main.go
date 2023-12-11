@@ -257,7 +257,7 @@ func main() {
 			hotshotHeader := jst.Header
 			commitment := espresso.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
 			if !commitment.Equals(hotshotHeader.Commit()) {
-				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v. seqNum %v posInInbox %v", hotshotHeader.Commit(), debugComm, inboxPos, posInInbox))
+				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v. seqNum %v posInInbox %v", hotshotHeader.Commit(), commitment, inboxPos, posInInbox))
 			}
 			var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
 			var proofs = []*espresso.NmtProof{&jst.Proof}
