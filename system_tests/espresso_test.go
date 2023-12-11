@@ -19,15 +19,19 @@ import (
 )
 
 var (
-	validationPort = 54320
-	broadcastPort  = 9642
+	validationPort    = 54320
+	broadcastPort     = 9642
+	maxHotShotBlock   = 100
+	malformedBlockNum = 5
+	firstGoodBlockNum = 15
+	seconGoodBlockNum = 25
 )
 
 func espresso_block_txs_generators(t *testing.T, l2Info *BlockchainTestInfo) map[int][][]byte {
 	return map[int][][]byte{
-		5:  onlyMalformedTxs(t),
-		15: userTxs(t, l2Info),
-		25: func(t *testing.T) [][]byte {
+		malformedBlockNum: onlyMalformedTxs(t),
+		firstGoodBlockNum: userTxs(t, l2Info),
+		seconGoodBlockNum: func(t *testing.T) [][]byte {
 			// Contains malformed txes, valid transactions and invalid transactions
 			r := [][]byte{}
 			r = append(r, onlyMalformedTxs(t)...)
@@ -67,7 +71,7 @@ func userTxs(t *testing.T, l2Info *BlockchainTestInfo) [][]byte {
 	}
 }
 
-func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTestInfo) (func(), int) {
+func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTestInfo) func() {
 	httpmock.Activate()
 
 	httpmock.RegisterResponder(
@@ -102,7 +106,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			// we can mock the proof easily.
 			// See: arbos/espresso/nmt.go
 			dummyProof, _ := json.Marshal(map[int]int{0: 0})
-			if block > 100 {
+			if block > maxHotShotBlock {
 				// make the debug message cleaner
 				return httpmock.NewJsonResponse(404, 0)
 			}
@@ -128,7 +132,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			return httpmock.NewJsonResponse(200, resp)
 		})
 
-	return httpmock.DeactivateAndReset, len(generators)
+	return httpmock.DeactivateAndReset
 }
 
 func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestClient, info, func()) {
@@ -221,12 +225,12 @@ func TestEspresso(t *testing.T) {
 	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, "http://127.0.0.1:50000")
 	defer cleanL2Node()
 
-	cleanHotShot, blockCnt := createMockHotShot(ctx, t, l2Info)
+	cleanHotShot := createMockHotShot(ctx, t, l2Info)
 	defer cleanHotShot()
 
 	// An initial message for genesis block and every non-empty espresso block
 	// should lead to a message
-	expectedMsgCnt := 1 + blockCnt
+	expectedMsgCnt := 1 + maxHotShotBlock
 
 	err := waitFor(t, ctx, func() bool {
 		cnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
@@ -255,22 +259,22 @@ func TestEspresso(t *testing.T) {
 	blockNum, err := l2Node.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	if blockNum != uint64(blockCnt) {
-		Fatal(t, "every non-empty espresso block should lead to one L2 block")
+	if blockNum != uint64(maxHotShotBlock)+1 {
+		Fatal(t, "every espresso block should lead to one L2 block", "expected", blockNum, "recieved", blockNum)
 	}
 
-	block2, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(2))
+	block2, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(firstGoodBlockNum)+1))
 	Require(t, err)
 
 	// Every arbitrum block has one internal tx
 	if len(block2.Body().Transactions) != 3 {
-		Fatal(t, "block 2 should contain 2 valid transactions")
+		Fatal(t, "block ", firstGoodBlockNum+1, " should contain 2 valid transactions")
 	}
 
-	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(3))
+	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(firstGoodBlockNum)+1))
 	Require(t, err)
 
 	if len(block3.Body().Transactions) != 3 {
-		Fatal(t, "block 3 should contain 2 valid transactions")
+		Fatal(t, "block", seconGoodBlockNum, " should contain 2 valid transactions")
 	}
 }
