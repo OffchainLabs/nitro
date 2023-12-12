@@ -5,6 +5,7 @@
 package dataposter
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -527,8 +528,24 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 
 // the mutex must be held by the caller
 func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
-	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
-		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+	if prevTx != nil {
+		if prevTx.Data.Nonce != newTx.Data.Nonce {
+			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+		}
+
+		// Check if prevTx is the same as newTx and we don't need to do anything
+		oldEnc, err := rlp.EncodeToBytes(prevTx)
+		if err != nil {
+			return fmt.Errorf("failed to encode prevTx: %w", err)
+		}
+		newEnc, err := rlp.EncodeToBytes(newTx)
+		if err != nil {
+			return fmt.Errorf("failed to encode newTx: %w", err)
+		}
+		if bytes.Equal(oldEnc, newEnc) {
+			// No need to save newTx as it's the same as prevTx
+			return nil
+		}
 	}
 	if err := p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx); err != nil {
 		return fmt.Errorf("putting new tx in the queue: %w", err)
