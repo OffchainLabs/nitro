@@ -386,6 +386,7 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 	}
 	resultFloat, ok := result.(float64)
 	if !ok {
+		// This shouldn't be possible because we only pass in float64s as arguments
 		return nil, fmt.Errorf("maxFeeCapExpression evaluated to non-float64: %v", result)
 	}
 	// 1e9 gwei gas price is practically speaking an infinite gas price, so we cap it there.
