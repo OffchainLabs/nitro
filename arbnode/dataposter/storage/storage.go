@@ -34,7 +34,7 @@ type QueuedTransaction struct {
 	NextReplacement time.Time
 }
 
-type QueuedTransactionForEncoding struct {
+type queuedTransactionForEncoding struct {
 	FullTx          *types.Transaction
 	Data            types.DynamicFeeTx
 	Meta            []byte
@@ -44,7 +44,7 @@ type QueuedTransactionForEncoding struct {
 }
 
 func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, QueuedTransactionForEncoding{
+	return rlp.Encode(w, queuedTransactionForEncoding{
 		FullTx:          qt.FullTx,
 		Data:            qt.Data,
 		Meta:            qt.Meta,
@@ -55,7 +55,7 @@ func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
 }
 
 func (qt *QueuedTransaction) DecodeRLP(s *rlp.Stream) error {
-	var qtEnc QueuedTransactionForEncoding
+	var qtEnc queuedTransactionForEncoding
 	if err := s.Decode(&qtEnc); err != nil {
 		return err
 	}

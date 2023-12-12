@@ -15,18 +15,26 @@ import (
 // so any subsecond precision is lost.
 type RlpTime time.Time
 
+type rlpTimeEncoding struct {
+	Seconds uint64
+	Nanos   uint64
+}
+
 func (b *RlpTime) DecodeRLP(s *rlp.Stream) error {
-	var nanos uint64
-	err := s.Decode(&nanos)
+	var enc rlpTimeEncoding
+	err := s.Decode(&enc)
 	if err != nil {
 		return err
 	}
-	*b = RlpTime(time.Unix(int64(nanos), 0))
+	*b = RlpTime(time.Unix(int64(enc.Seconds), int64(enc.Nanos)))
 	return nil
 }
 
 func (b RlpTime) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, uint64(time.Time(b).Unix()))
+	return rlp.Encode(w, rlpTimeEncoding{
+		Seconds: uint64(time.Time(b).Unix()),
+		Nanos:   uint64(time.Time(b).Nanosecond()),
+	})
 }
 
 func (b RlpTime) String() string {
