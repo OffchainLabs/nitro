@@ -357,9 +357,40 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	if err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash); err != nil {
 		return err
 	}
+
+	if err := m.logChallengeConfigs(ctx); err != nil {
+		srvlog.Error("Could not log challenge configs", log.Ctx{"err": err})
+	}
+
 	m.challengesSubmittedCount++
 	return nil
 
+}
+
+func (m *Manager) logChallengeConfigs(ctx context.Context) error {
+	cm, err := m.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return err
+	}
+	bigStepNum, err := cm.NumBigSteps(ctx)
+	if err != nil {
+		return err
+	}
+	challengePeriodBlocks, err := cm.ChallengePeriodBlocks(ctx)
+	if err != nil {
+		return err
+	}
+	layerZeroHeights, err := cm.LayerZeroHeights(ctx)
+	if err != nil {
+		return err
+	}
+	srvlog.Info("Challenge configs", log.Ctx{
+		"address":               cm.Address(),
+		"bigStepNumber":         bigStepNum,
+		"challengePeriodBlocks": challengePeriodBlocks,
+		"layerZeroHeights":      layerZeroHeights,
+	})
+	return nil
 }
 
 // Attempt to post a rival assertion based on the last agreed with ancestor
