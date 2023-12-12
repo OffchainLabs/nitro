@@ -230,6 +230,7 @@ func errorTest(t *testing.T, jit bool) {
 	defer cleanup()
 
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x01})
@@ -246,7 +247,16 @@ func errorTest(t *testing.T, jit bool) {
 		Fatal(t, "call should have failed")
 	}
 
-	validateBlocks(t, 6, jit, ctx, node, l2client)
+	// ensure tx recovery is correct after failing in a deeply nested call
+	args := []byte{}
+	for i := 0; i < 32; i++ {
+		args = argsForMulticall(vm.CALL, multiAddr, nil, args)
+	}
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	EnsureTxFailed(t, ctx, l2client, tx)
+
+	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -528,6 +538,7 @@ func testLogs(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -578,11 +589,18 @@ func testLogs(t *testing.T, jit bool) {
 	}
 
 	tooMany := encode([]common.Hash{{}, {}, {}, {}, {}}, []byte{})
-	tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, tooMany)
+	tx := l2info.PrepareTxTo("Owner", &logAddr, 1e9, nil, tooMany)
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 10, jit, ctx, node, l2client)
+	delegate := argsForMulticall(vm.DELEGATECALL, logAddr, nil, []byte{0x00})
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, delegate)
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+	if receipt.Logs[0].Address != multiAddr {
+		Fatal(t, "wrong address", receipt.Logs[0].Address)
+	}
+
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramCreate(t *testing.T) {

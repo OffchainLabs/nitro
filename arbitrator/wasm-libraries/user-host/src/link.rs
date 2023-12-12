@@ -4,7 +4,7 @@
 use crate::{
     evm_api::ApiCaller,
     guard::{self, ErrorPolicy},
-    Program, PROGRAMS,
+    program::Program,
 };
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
 
     // provide arguments
     let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
+    Program::push_new(calldata, evm_api, evm_data, config);
 
     // call the program
     guard::set_error_policy(ErrorPolicy::Recover);
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
 
     // collect results
     guard::set_error_policy(ErrorPolicy::ChainHalt);
-    let outs = PROGRAMS.pop().unwrap().into_outs();
+    let outs = Program::pop();
     sp.restore_stack(); // restore the stack pointer (corrupts during EVM API calls)
 
     /// cleans up and writes the output

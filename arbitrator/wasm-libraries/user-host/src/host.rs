@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{evm_api::ApiCaller, Program};
+use crate::{evm_api::ApiCaller, program::Program};
 use arbutil::{
     crypto,
     evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
