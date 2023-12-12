@@ -126,7 +126,7 @@ interface IRollupCore is IAssertionChain {
      * @return Amount of funds withdrawable by owner
      */
     function withdrawableFunds(address owner) external view returns (uint256);
-    /// @return Index of the latest confirmed assertion
+    /// @return Hash of the latest confirmed assertion
     function latestConfirmed() external view returns (bytes32);
 
     /// @return Number of active stakers currently staked
