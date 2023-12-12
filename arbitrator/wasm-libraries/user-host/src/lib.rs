@@ -7,3 +7,5 @@ mod host;
 mod ink;
 mod link;
 mod program;
+
+pub use host::UserHost;

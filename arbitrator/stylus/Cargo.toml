@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 arbutil = { path = "../arbutil/" }
 prover = { path = "../prover/", default-features = false, features = ["native"] }
+user-host = { path = "../wasm-libraries/user-host/" }
 wasmer = { path = "../tools/wasmer/lib/api" }
 wasmer-vm = { path = "../tools/wasmer/lib/vm/" }
 wasmer-types = { path = "../tools/wasmer/lib/types/" }

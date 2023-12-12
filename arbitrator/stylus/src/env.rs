@@ -3,20 +3,20 @@
 
 use arbutil::{
     evm::{api::EvmApi, EvmData},
-    pricing, Bytes20, Bytes32, Color,
+    pricing,
 };
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
 use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
-    fmt::{Debug, Display},
+    fmt::Debug,
     io,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 use thiserror::Error;
-use wasmer::{FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut, WasmPtr};
+use wasmer::{FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut};
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
 
@@ -68,12 +68,12 @@ impl<E: EvmApi> WasmEnv<E> {
         env: &'a mut WasmEnvMut<'_, E>,
         ink: u64,
     ) -> Result<HostioInfo<'a, E>, Escape> {
-        let mut info = Self::start_free(env)?;
+        let mut info = Self::program(env)?;
         info.buy_ink(pricing::HOSTIO_INK + ink)?;
         Ok(info)
     }
 
-    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
+    pub fn program<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         let mut info = HostioInfo {
@@ -94,10 +94,6 @@ impl<E: EvmApi> WasmEnv<E> {
 
     pub fn meter(&self) -> &MeterData {
         self.meter.as_ref().expect("not metered")
-    }
-
-    pub fn say<D: Display>(&self, text: D) {
-        println!("{} {text}", "Stylus says:".yellow());
     }
 }
 
@@ -156,65 +152,11 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         self.memory.ty(&self.store).minimum
     }
 
-    pub fn _write_u8(&mut self, ptr: u32, x: u8) -> Result<&mut Self, MemoryAccessError> {
-        let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x)?;
-        Ok(self)
-    }
-
-    pub fn write_u32(&mut self, ptr: u32, x: u32) -> Result<&mut Self, MemoryAccessError> {
-        let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x)?;
-        Ok(self)
-    }
-
-    pub fn write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
-        let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x)?;
-        Ok(self)
-    }
-
-    pub fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryAccessError> {
-        let mut data = vec![0; len as usize];
-        self.view().read(ptr.into(), &mut data)?;
-        Ok(data)
-    }
-
     // TODO: use the unstable array_assum_init
     pub fn read_fixed<const N: usize>(&self, ptr: u32) -> Result<[u8; N], MemoryAccessError> {
         let mut data = [MaybeUninit::uninit(); N];
         self.view().read_uninit(ptr.into(), &mut data)?;
         Ok(data.map(|x| unsafe { x.assume_init() }))
-    }
-
-    pub fn read_bytes20(&self, ptr: u32) -> eyre::Result<Bytes20> {
-        let data = self.read_fixed(ptr)?;
-        Ok(data.into())
-    }
-
-    pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
-        let data = self.read_fixed(ptr)?;
-        Ok(data.into())
-    }
-
-    pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
-        self.view().write(ptr.into(), src)
-    }
-
-    pub fn write_bytes20(&self, ptr: u32, src: Bytes20) -> eyre::Result<()> {
-        self.write_slice(ptr, &src.0)?;
-        Ok(())
-    }
-
-    pub fn write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
-        self.write_slice(ptr, &src.0)?;
-        Ok(())
-    }
-
-    pub fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64) {
-        let start_ink = self.start_ink;
-        self.evm_api
-            .capture_hostio(name, args, outs, start_ink, end_ink);
     }
 }
 

@@ -1,6 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use std::fmt::Display;
+
 use crate::program::Program;
 use arbutil::{
     crypto,
@@ -9,7 +11,10 @@ use arbutil::{
     Bytes20, Bytes32,
 };
 use eyre::{eyre, Result};
-use prover::programs::{meter::OutOfInkError, prelude::*};
+use prover::{
+    programs::{meter::OutOfInkError, prelude::*},
+    value::Value,
+};
 
 macro_rules! be {
     ($int:expr) => {
@@ -46,35 +51,29 @@ macro_rules! trace {
 type Address = Bytes20;
 type Wei = Bytes32;
 
-pub struct MemoryBoundsError;
-
-impl From<MemoryBoundsError> for eyre::ErrReport {
-    fn from(_: MemoryBoundsError) -> Self {
-        eyre!("memory access out of bounds")
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub trait UserHost: GasMeteredMachine {
-    type Err: From<OutOfInkError> + From<MemoryBoundsError> + From<eyre::ErrReport>;
-    type E: EvmApi;
+    type Err: From<OutOfInkError> + From<Self::MemoryErr> + From<eyre::ErrReport>;
+    type MemoryErr;
+    type A: EvmApi;
 
     fn args(&self) -> &[u8];
     fn outs(&mut self) -> &mut Vec<u8>;
 
-    fn evm_api(&mut self) -> &mut Self::E;
+    fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
-    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError>;
-    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError>;
-    fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError>;
+    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, Self::MemoryErr>;
+    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, Self::MemoryErr>;
+    fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
 
-    fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError>;
-    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), MemoryBoundsError>;
-    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), MemoryBoundsError>;
-    fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError>;
+    fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), Self::MemoryErr>;
+    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), Self::MemoryErr>;
+    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), Self::MemoryErr>;
+    fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr>;
 
+    fn say<D: Display>(&self, text: D);
     fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
 
     fn read_args(&mut self, ptr: u32) -> Result<(), Self::Err> {
@@ -123,7 +122,7 @@ pub trait UserHost: GasMeteredMachine {
         ret_len: u32,
     ) -> Result<u8, Self::Err> {
         let value = Some(value);
-        let call = |api: &mut Self::E, contract, data: &_, gas, value: Option<_>| {
+        let call = |api: &mut Self::A, contract, data: &_, gas, value: Option<_>| {
             api.contract_call(contract, data, gas, value.unwrap())
         };
         self.do_call(contract, data, data_len, value, gas, ret_len, call, "")
@@ -138,7 +137,7 @@ pub trait UserHost: GasMeteredMachine {
         ret_len: u32,
     ) -> Result<u8, Self::Err> {
         let call =
-            |api: &mut Self::E, contract, data: &_, gas, _| api.delegate_call(contract, data, gas);
+            |api: &mut Self::A, contract, data: &_, gas, _| api.delegate_call(contract, data, gas);
         self.do_call(
             contract, data, data_len, None, gas, ret_len, call, "delegate",
         )
@@ -153,7 +152,7 @@ pub trait UserHost: GasMeteredMachine {
         ret_len: u32,
     ) -> Result<u8, Self::Err> {
         let call =
-            |api: &mut Self::E, contract, data: &_, gas, _| api.static_call(contract, data, gas);
+            |api: &mut Self::A, contract, data: &_, gas, _| api.static_call(contract, data, gas);
         self.do_call(contract, data, data_len, None, gas, ret_len, call, "static")
     }
 
@@ -169,7 +168,7 @@ pub trait UserHost: GasMeteredMachine {
         name: &str,
     ) -> Result<u8, Self::Err>
     where
-        F: FnOnce(&mut Self::E, Address, &[u8], u64, Option<Wei>) -> (u32, u64, UserOutcomeKind),
+        F: FnOnce(&mut Self::A, Address, &[u8], u64, Option<Wei>) -> (u32, u64, UserOutcomeKind),
     {
         self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
         self.pay_for_read(calldata_len.into())?;
@@ -211,7 +210,7 @@ pub trait UserHost: GasMeteredMachine {
         contract: u32,
         revert_data_len: u32,
     ) -> Result<(), Self::Err> {
-        let call = |api: &mut Self::E, code, value, _, gas| api.create1(code, value, gas);
+        let call = |api: &mut Self::A, code, value, _, gas| api.create1(code, value, gas);
         self.do_create(
             code,
             code_len,
@@ -234,7 +233,7 @@ pub trait UserHost: GasMeteredMachine {
         contract: u32,
         revert_data_len: u32,
     ) -> Result<(), Self::Err> {
-        let call = |api: &mut Self::E, code, value, salt: Option<_>, gas| {
+        let call = |api: &mut Self::A, code, value, salt: Option<_>, gas| {
             api.create2(code, value, salt.unwrap(), gas)
         };
         self.do_create(
@@ -263,7 +262,7 @@ pub trait UserHost: GasMeteredMachine {
         name: &str,
     ) -> Result<(), Self::Err>
     where
-        F: FnOnce(&mut Self::E, Vec<u8>, Bytes32, Option<Wei>, u64) -> (Result<Address>, u32, u64),
+        F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, u64) -> (Result<Address>, u32, u64),
     {
         self.buy_ink(HOSTIO_INK + cost)?;
         self.pay_for_read(code_len.into())?;
@@ -464,6 +463,23 @@ pub trait UserHost: GasMeteredMachine {
         let gas_cost = self.evm_api().add_pages(pages);
         self.buy_gas(gas_cost)?;
         trace!("memory_grow", self, be!(pages), &[])
+    }
+
+    fn console_log_text(&mut self, ptr: u32, len: u32) -> Result<(), Self::Err> {
+        let text = self.read_slice(ptr, len)?;
+        self.say(String::from_utf8_lossy(&text));
+        trace!("console_log_text", self, text, &[])
+    }
+
+    fn console_log<T: Into<Value>>(&mut self, value: T) -> Result<(), Self::Err> {
+        let value = value.into();
+        self.say(value);
+        trace!("console_log", self, [format!("{value}").as_bytes()], &[])
+    }
+
+    fn console_tee<T: Into<Value> + Copy>(&mut self, value: T) -> Result<T, Self::Err> {
+        self.say(value.into());
+        Ok(value)
     }
 }
 

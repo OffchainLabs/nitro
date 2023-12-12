@@ -1,15 +1,14 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{
-    evm_api::ApiCaller,
-    host::{MemoryBoundsError, UserHost},
-};
+use std::fmt::Display;
+
+use crate::{evm_api::ApiCaller, host::UserHost};
 use arbutil::{
     evm::{js::JsEvmApi, EvmData},
-    wavm, Bytes20, Bytes32,
+    wavm, Bytes20, Bytes32, Color,
 };
-use eyre::Result;
+use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 
 /// The list of active programs. The current program is always the last.
@@ -66,9 +65,18 @@ impl Program {
     }
 }
 
+pub(crate) struct MemoryBoundsError;
+
+impl From<MemoryBoundsError> for eyre::ErrReport {
+    fn from(_: MemoryBoundsError) -> Self {
+        eyre!("memory access out of bounds")
+    }
+}
+
 impl UserHost for Program {
     type Err = eyre::ErrReport;
-    type E = JsEvmApi<ApiCaller>;
+    type MemoryErr = MemoryBoundsError;
+    type A = JsEvmApi<ApiCaller>;
 
     fn args(&self) -> &[u8] {
         &self.args
@@ -78,7 +86,7 @@ impl UserHost for Program {
         &mut self.outs
     }
 
-    fn evm_api(&mut self) -> &mut Self::E {
+    fn evm_api(&mut self) -> &mut Self::A {
         &mut self.evm_api
     }
 
@@ -123,6 +131,10 @@ impl UserHost for Program {
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError> {
         unsafe { wavm::write_slice_usize(src, ptr as usize) }
         Ok(()) // TODO: check bounds
+    }
+
+    fn say<D: Display>(&self, text: D) {
+        println!("{} {text}", "Stylus says:".yellow());
     }
 
     fn trace(&self, name: &str, args: &[u8], outs: &[u8], _end_ink: u64) {
