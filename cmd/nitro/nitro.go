@@ -786,6 +786,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}
+	if err := c.Execution.Validate(); err != nil {
+		return err
+	}
 	return c.Persistent.Validate()
 }
 

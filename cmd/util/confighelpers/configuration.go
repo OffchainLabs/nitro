@@ -147,7 +147,7 @@ func devFlagArgs() []string {
 		"--parent-chain.id=1337",
 		"--chain.id=412346",
 		"--persistent.chain", "/tmp/dev-test",
-		"--node.sequencer",
+		"--execution.sequencer.enable=true",
 		"--node.dangerous.no-sequencer-coordinator",
 		"--node.staker.enable=false",
 		"--init.empty=false",
