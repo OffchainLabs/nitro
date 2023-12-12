@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -58,7 +59,6 @@ type InboxTrackerInterface interface {
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
-	MessageIndexToHotShotIndex(arbutil.MessageIndex) uint64
 	GetBatchCount() (uint64, error)
 }
 
@@ -205,6 +205,7 @@ func newValidationEntry(
 	msg *arbostypes.MessageWithMetadata,
 	batch []byte,
 	prevDelayed uint64,
+	hotShotCommitment *espressoTypes.Commitment,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
 		Number: start.Batch,
@@ -275,7 +276,6 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
-	usingEspresso := v.config.Espresso
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
@@ -304,16 +304,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 		e.DelayedMsg = delayedMsg
-	}
-
-	if usingEspresso && e.msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
-		hotShotIndex := v.inboxTracker.MessageIndexToHotShotIndex(e.Pos)
-		hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(hotShotIndex)
-		if err != nil {
-			return fmt.Errorf("error attempting to fetch HotShot commitment for height %d: %w", hotShotIndex, err)
-
-		}
-		e.HotShotCommitment = *hotShotCommitment
 	}
 
 	for _, batch := range e.BatchInfo {
@@ -399,7 +389,18 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed)
+	var commitment *espressoTypes.Commitment
+	if v.config.Espresso {
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		if err != nil {
+			return nil, err
+		}
+		commitment, err = v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		if err != nil {
+			return nil, err
+		}
+	}
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed, commitment)
 	if err != nil {
 		return nil, err
 	}

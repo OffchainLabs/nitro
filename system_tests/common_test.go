@@ -155,7 +155,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
-	b.l1StackConfig = createStackConfigForTest(b.dataDir)
+	b.l1StackConfig = createStackConfigForTest(t.TempDir())
 	b.l2StackConfig = createStackConfigForTest(b.dataDir)
 	b.execConfig = gethexec.ConfigDefaultTest()
 	return b
@@ -165,7 +165,7 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
-			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+			createTestNodeOnL1WithConfigImpl(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l1StackConfig, b.l2StackConfig, b.L2Info)
 		b.L1, b.L2 = l1, l2
 		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
@@ -720,7 +720,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig, nil)
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, nil, stackConfig, nil)
 	return
 }
 
@@ -731,7 +731,8 @@ func createTestNodeOnL1WithConfigImpl(
 	nodeConfig *arbnode.Config,
 	execConfig *gethexec.Config,
 	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
+	l1StackConfig *node.Config,
+	l2StackConfig *node.Config,
 	l2info_in info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -747,7 +748,7 @@ func createTestNodeOnL1WithConfigImpl(
 		chainConfig = params.ArbitrumDevTestChainConfig()
 	}
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
+	l1info, l1client, l1backend, l1stack = createTestL1BlockChainWithConfig(t, nil, l1StackConfig)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
@@ -756,7 +757,7 @@ func createTestNodeOnL1WithConfigImpl(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, &execConfig.Caching)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, l2StackConfig, &execConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {

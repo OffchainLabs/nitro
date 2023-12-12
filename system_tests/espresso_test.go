@@ -103,7 +103,6 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			data, ok := generators[block]
 			// Since we don't realize the validation of espresso yet,
 			// we can mock the proof easily.
-			// See: arbos/espresso/nmt.go
 			dummyProof, _ := json.Marshal(map[int]int{0: 0})
 			if block > maxHotShotBlock {
 				// make the debug message cleaner
@@ -270,7 +269,7 @@ func TestEspresso(t *testing.T) {
 		Fatal(t, "block ", firstGoodBlockNum+1, " should contain 2 valid transactions")
 	}
 
-	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(firstGoodBlockNum)+1))
+	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(secondGoodBlockNum)+1))
 	Require(t, err)
 
 	if len(block3.Body().Transactions) != 3 {

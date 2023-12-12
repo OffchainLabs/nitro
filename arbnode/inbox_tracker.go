@@ -40,9 +40,6 @@ type InboxTracker struct {
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
-
-	messageNumToHotShotIndex map[arbutil.MessageIndex]uint64
-	currentHotShotIndex      uint64
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
@@ -51,11 +48,10 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	tracker := &InboxTracker{
-		db:                       db,
-		txStreamer:               txStreamer,
-		das:                      das,
-		batchMeta:                containers.NewLruCache[uint64, BatchMetadata](1000),
-		messageNumToHotShotIndex: make(map[arbutil.MessageIndex]uint64),
+		db:         db,
+		txStreamer: txStreamer,
+		das:        das,
+		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
 }
@@ -203,10 +199,6 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.MessageCount, err
-}
-
-func (t *InboxTracker) MessageIndexToHotShotIndex(pos arbutil.MessageIndex) uint64 {
-	return t.messageNumToHotShotIndex[pos]
 }
 
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
@@ -623,13 +615,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			return err
 		}
 		messages = append(messages, *msg)
-		// Update the count of l2 sequenced messages
-		msgKind := msg.Message.Header.Kind
-		if msgKind == arbostypes.L1MessageType_L2Message {
-			index := currentpos - 1
-			t.messageNumToHotShotIndex[index] = t.currentHotShotIndex
-			t.currentHotShotIndex += 1
-		}
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1
 	}

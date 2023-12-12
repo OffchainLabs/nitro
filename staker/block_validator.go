@@ -14,11 +14,13 @@ import (
 
 	flag "github.com/spf13/pflag"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -496,7 +498,18 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed)
+	var commitment *espressoTypes.Commitment
+	if v.config().Espresso {
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		if err != nil {
+			return false, err
+		}
+		commitment, err = v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		if err != nil {
+			return false, err
+		}
+	}
+	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, commitment)
 	if err != nil {
 		return false, err
 	}

@@ -314,6 +314,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 
 		delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
+		hooks := arbos.NoopSequencingHooks()
 		startTime := time.Now()
 		// Produce a block even if no valid transaction is found
 		block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -324,10 +325,16 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			statedb,
 			s.bc,
 			s.bc.Config(),
-			arbos.NoopSequencingHooks(),
+			hooks,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		for _, err := range hooks.TxErrors {
+			if err != nil {
+				log.Warn(fmt.Sprintf("execute tx error: %v", err.Error()))
+			}
 		}
 		blockCalcTime := time.Since(startTime)
 
