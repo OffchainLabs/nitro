@@ -94,6 +94,9 @@ go_js_test_libs = $(patsubst %, $(output_latest)/%.wasm, soft-float wasi_stub go
 wasm_lib = arbitrator/wasm-libraries
 wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
 wasm_lib_go_abi = $(call wasm_lib_deps,go-abi) $(go_js_files)
+wasm_lib_forward = $(call wasm_lib_deps,forward)
+
+forward_dir = $(wasm_lib)/forward
 
 wasm32_wasi = target/wasm32-wasi/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
@@ -358,11 +361,13 @@ $(output_latest)/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wa
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
 
-$(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wat .make/machines
-	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
+$(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
+	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
+	wat2wasm $(wasm_lib)/forward/forward.wat -o $@
 
-$(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward_stub.wat .make/machines
-	wat2wasm $(wasm_lib)/user-host/forward_stub.wat -o $@
+$(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
+	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward_stub.wat --stub
+	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \

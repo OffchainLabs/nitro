@@ -353,6 +353,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "forward"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "structopt",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

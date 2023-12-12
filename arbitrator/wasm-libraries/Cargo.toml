@@ -8,5 +8,6 @@ members = [
 	"host-io",
 	"user-host",
 	"user-test",
+        "forward",
 ]
 resolver = "2"

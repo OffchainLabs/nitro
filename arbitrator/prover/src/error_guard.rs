@@ -66,8 +66,7 @@ pub(crate) struct ErrorGuardProof {
 }
 
 impl ErrorGuardProof {
-    const STACK_PREFIX_ON: &'static str = "Guard stack (on):";
-    const STACK_PREFIX_OFF: &'static str = "Guard stack (off):";
+    const STACK_PREFIX: &'static str = "Guard stack:";
     const GUARD_PREFIX: &'static str = "Error guard:";
 
     pub fn new(
@@ -103,11 +102,7 @@ impl ErrorGuardProof {
             .into()
     }
 
-    pub fn hash_guards(guards: &[Self], enabled: bool) -> Bytes32 {
-        let prefix = match enabled {
-            true => Self::STACK_PREFIX_ON,
-            false => Self::STACK_PREFIX_OFF,
-        };
-        hash_stack(guards.iter().map(|g| g.hash()), prefix)
+    pub fn hash_guards(guards: &[Self]) -> Bytes32 {
+        hash_stack(guards.iter().map(|g| g.hash()), Self::STACK_PREFIX)
     }
 }

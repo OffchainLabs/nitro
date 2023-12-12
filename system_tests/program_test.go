@@ -547,7 +547,6 @@ func testLogs(t *testing.T, jit bool) {
 		Require(t, err)
 		return receipt
 	}
-
 	encode := func(topics []common.Hash, data []byte) []byte {
 		args := []byte{byte(len(topics))}
 		for _, topic := range topics {

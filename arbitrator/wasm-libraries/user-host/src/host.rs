@@ -1,331 +1,674 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{evm_api::ApiCaller, program::Program};
+use crate::program::Program;
 use arbutil::{
     crypto,
-    evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
+    evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData},
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
-    wavm, Bytes20, Bytes32,
+    Bytes20, Bytes32,
 };
-use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
+use eyre::{eyre, Result};
+use prover::programs::{meter::OutOfInkError, prelude::*};
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
-    let program = Program::start(0);
-    program.pay_for_write(program.args.len() as u64).unwrap();
-    wavm::write_slice_usize(&program.args, ptr);
+macro_rules! be {
+    ($int:expr) => {
+        $int.to_be_bytes()
+    };
+}
+
+macro_rules! trace {
+    ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
+        if $env.evm_data().tracing {
+            //let start_ink = $env.start_ink;
+            let end_ink = $env.ink_ready()?;
+            let mut args = vec![];
+            $(args.extend($args);)*
+            let mut outs = vec![];
+            $(outs.extend($outs);)*
+            $env.trace($name, &args, &outs, end_ink);
+        }
+        Ok($ret)
+    }};
+    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr) => {{
+        trace!($name, $env, [$($args),+], $outs, ())
+    }};
+    ($name:expr, $env:expr, $args:expr, $outs:expr) => {{
+        trace!($name, $env, $args, $outs, ())
+    }};
+    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr, $ret:expr) => {
+        trace!($name, $env, [$($args),+], [$outs], $ret)
+    };
+    ($name:expr, $env:expr, $args:expr, $outs:expr, $ret:expr) => {
+        trace!($name, $env, [$args], [$outs], $ret)
+    };
+}
+type Address = Bytes20;
+type Wei = Bytes32;
+
+pub struct MemoryBoundsError;
+
+impl From<MemoryBoundsError> for eyre::ErrReport {
+    fn from(_: MemoryBoundsError) -> Self {
+        eyre!("memory access out of bounds")
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub trait UserHost: GasMeteredMachine {
+    type Err: From<OutOfInkError> + From<MemoryBoundsError> + From<eyre::ErrReport>;
+    type E: EvmApi;
+
+    fn args(&self) -> &[u8];
+    fn outs(&mut self) -> &mut Vec<u8>;
+
+    fn evm_api(&mut self) -> &mut Self::E;
+    fn evm_data(&self) -> &EvmData;
+    fn evm_return_data_len(&mut self) -> &mut u32;
+
+    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError>;
+    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError>;
+    fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError>;
+
+    fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError>;
+    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), MemoryBoundsError>;
+    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), MemoryBoundsError>;
+    fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError>;
+
+    fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
+
+    fn read_args(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        self.pay_for_write(self.args().len() as u64)?;
+        self.write_slice(ptr, self.args())?;
+        trace!("read_args", self, &[], self.args())
+    }
+
+    fn write_result(&mut self, ptr: u32, len: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        self.pay_for_read(len.into())?;
+        *self.outs() = self.read_slice(ptr, len)?;
+        trace!("write_result", self, &*self.outs(), &[])
+    }
+
+    fn storage_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        let key = self.read_bytes32(key)?;
+
+        let (value, gas_cost) = self.evm_api().get_bytes32(key);
+        self.buy_gas(gas_cost)?;
+        self.write_bytes32(dest, value)?;
+        trace!("storage_load_bytes32", self, key, value)
+    }
+
+    fn storage_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
+
+        let key = self.read_bytes32(key)?;
+        let value = self.read_bytes32(value)?;
+
+        let gas_cost = self.evm_api().set_bytes32(key, value)?;
+        self.buy_gas(gas_cost)?;
+        trace!("storage_store_bytes32", self, [key, value], &[])
+    }
+
+    fn call_contract(
+        &mut self,
+        contract: u32,
+        data: u32,
+        data_len: u32,
+        value: u32,
+        gas: u64,
+        ret_len: u32,
+    ) -> Result<u8, Self::Err> {
+        let value = Some(value);
+        let call = |api: &mut Self::E, contract, data: &_, gas, value: Option<_>| {
+            api.contract_call(contract, data, gas, value.unwrap())
+        };
+        self.do_call(contract, data, data_len, value, gas, ret_len, call, "")
+    }
+
+    fn delegate_call_contract(
+        &mut self,
+        contract: u32,
+        data: u32,
+        data_len: u32,
+        gas: u64,
+        ret_len: u32,
+    ) -> Result<u8, Self::Err> {
+        let call =
+            |api: &mut Self::E, contract, data: &_, gas, _| api.delegate_call(contract, data, gas);
+        self.do_call(
+            contract, data, data_len, None, gas, ret_len, call, "delegate",
+        )
+    }
+
+    fn static_call_contract(
+        &mut self,
+        contract: u32,
+        data: u32,
+        data_len: u32,
+        gas: u64,
+        ret_len: u32,
+    ) -> Result<u8, Self::Err> {
+        let call =
+            |api: &mut Self::E, contract, data: &_, gas, _| api.static_call(contract, data, gas);
+        self.do_call(contract, data, data_len, None, gas, ret_len, call, "static")
+    }
+
+    fn do_call<F>(
+        &mut self,
+        contract: u32,
+        calldata: u32,
+        calldata_len: u32,
+        value: Option<u32>,
+        mut gas: u64,
+        return_data_len: u32,
+        call: F,
+        name: &str,
+    ) -> Result<u8, Self::Err>
+    where
+        F: FnOnce(&mut Self::E, Address, &[u8], u64, Option<Wei>) -> (u32, u64, UserOutcomeKind),
+    {
+        self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
+        self.pay_for_read(calldata_len.into())?;
+
+        let gas_passed = gas;
+        gas = gas.min(self.gas_left()?); // provide no more than what the user has
+
+        let contract = self.read_bytes20(contract)?;
+        let input = self.read_slice(calldata, calldata_len)?;
+        let value = value.map(|x| self.read_bytes32(x)).transpose()?;
+        let api = self.evm_api();
+
+        let (outs_len, gas_cost, status) = call(api, contract, &input, gas, value);
+        self.buy_gas(gas_cost)?;
+        *self.evm_return_data_len() = outs_len;
+        self.write_u32(return_data_len, outs_len)?;
+        let status = status as u8;
+
+        if self.evm_data().tracing {
+            let underscore = (!name.is_empty()).then_some("_").unwrap_or_default();
+            let name = format!("{name}{underscore}call_contract");
+            let value = value.into_iter().flatten();
+            return trace!(
+                &name,
+                self,
+                [contract, be!(gas_passed), value, &input],
+                [be!(outs_len), be!(status)],
+                status
+            );
+        }
+        Ok(status)
+    }
+
+    fn create1(
+        &mut self,
+        code: u32,
+        code_len: u32,
+        endowment: u32,
+        contract: u32,
+        revert_data_len: u32,
+    ) -> Result<(), Self::Err> {
+        let call = |api: &mut Self::E, code, value, _, gas| api.create1(code, value, gas);
+        self.do_create(
+            code,
+            code_len,
+            endowment,
+            None,
+            contract,
+            revert_data_len,
+            3 * PTR_INK + EVM_API_INK,
+            call,
+            "create1",
+        )
+    }
+
+    fn create2(
+        &mut self,
+        code: u32,
+        code_len: u32,
+        endowment: u32,
+        salt: u32,
+        contract: u32,
+        revert_data_len: u32,
+    ) -> Result<(), Self::Err> {
+        let call = |api: &mut Self::E, code, value, salt: Option<_>, gas| {
+            api.create2(code, value, salt.unwrap(), gas)
+        };
+        self.do_create(
+            code,
+            code_len,
+            endowment,
+            Some(salt),
+            contract,
+            revert_data_len,
+            4 * PTR_INK + EVM_API_INK,
+            call,
+            "create2",
+        )
+    }
+
+    fn do_create<F>(
+        &mut self,
+        code: u32,
+        code_len: u32,
+        endowment: u32,
+        salt: Option<u32>,
+        contract: u32,
+        revert_data_len: u32,
+        cost: u64,
+        call: F,
+        name: &str,
+    ) -> Result<(), Self::Err>
+    where
+        F: FnOnce(&mut Self::E, Vec<u8>, Bytes32, Option<Wei>, u64) -> (Result<Address>, u32, u64),
+    {
+        self.buy_ink(HOSTIO_INK + cost)?;
+        self.pay_for_read(code_len.into())?;
+
+        let code = self.read_slice(code, code_len)?;
+        let code_copy = self.evm_data().tracing.then(|| code.clone());
+
+        let endowment = self.read_bytes32(endowment)?;
+        let salt = salt.map(|x| self.read_bytes32(x)).transpose()?;
+        let gas = self.gas_left()?;
+        let api = self.evm_api();
+
+        let (result, ret_len, gas_cost) = call(api, code, endowment, salt, gas);
+        let result = result?;
+
+        self.buy_gas(gas_cost)?;
+        *self.evm_return_data_len() = ret_len;
+        self.write_u32(revert_data_len, ret_len)?;
+        self.write_bytes20(contract, result)?;
+
+        let salt = salt.into_iter().flatten();
+        trace!(
+            name,
+            self,
+            [endowment, salt, code_copy.unwrap()],
+            [result, be!(ret_len)],
+            ()
+        )
+    }
+
+    fn read_return_data(&mut self, dest: u32, offset: u32, size: u32) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.pay_for_write(size.into())?;
+
+        let data = self.evm_api().get_return_data(offset, size);
+        assert!(data.len() <= size as usize);
+        self.write_slice(dest, &data)?;
+
+        let len = data.len() as u32;
+        trace!(
+            "read_return_data",
+            self,
+            [be!(offset), be!(size)],
+            data,
+            len
+        )
+    }
+
+    fn return_data_size(&mut self) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let len = *self.evm_return_data_len();
+        trace!("return_data_size", self, be!(len), &[], len)
+    }
+
+    fn emit_log(&mut self, data: u32, len: u32, topics: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        if topics > 4 || len < topics * 32 {
+            println!("too many!!!!!!!!!!!!!!!!");
+            Err(eyre!("bad topic data"))?;
+        }
+        self.pay_for_read(len.into())?;
+        self.pay_for_evm_log(topics, len - topics * 32)?;
+
+        let data = self.read_slice(data, len)?;
+        self.evm_api().emit_log(data.clone(), topics)?;
+        trace!("emit_log", self, [be!(topics), data], &[])
+    }
+
+    fn account_balance(&mut self, address: u32, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        let address = self.read_bytes20(address)?;
+
+        let (balance, gas_cost) = self.evm_api().account_balance(address);
+        self.buy_gas(gas_cost)?;
+        self.write_bytes32(ptr, balance)?;
+        trace!("account_balance", self, address, balance)
+    }
+
+    fn account_codehash(&mut self, address: u32, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        let address = self.read_bytes20(address)?;
+
+        let (hash, gas_cost) = self.evm_api().account_codehash(address);
+        self.buy_gas(gas_cost)?;
+        self.write_bytes32(ptr, hash)?;
+        trace!("account_codehash", self, address, hash)
+    }
+
+    fn block_basefee(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes32(ptr, self.evm_data().block_basefee)?;
+        trace!("block_basefee", self, &[], self.evm_data().block_basefee)
+    }
+
+    fn block_coinbase(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes20(ptr, self.evm_data().block_coinbase)?;
+        trace!("block_coinbase", self, &[], self.evm_data().block_coinbase)
+    }
+
+    fn block_gas_limit(&mut self) -> Result<u64, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let limit = self.evm_data().block_gas_limit;
+        trace!("block_gas_limit", self, &[], be!(limit), limit)
+    }
+
+    fn block_number(&mut self) -> Result<u64, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let number = self.evm_data().block_number;
+        trace!("block_number", self, &[], be!(number), number)
+    }
+
+    fn block_timestamp(&mut self) -> Result<u64, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let timestamp = self.evm_data().block_timestamp;
+        trace!("block_timestamp", self, &[], be!(timestamp), timestamp)
+    }
+
+    fn chainid(&mut self) -> Result<u64, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let chainid = self.evm_data().chainid;
+        trace!("chainid", self, &[], be!(chainid), chainid)
+    }
+
+    fn contract_address(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes20(ptr, self.evm_data().contract_address)?;
+        trace!(
+            "contract_address",
+            self,
+            &[],
+            self.evm_data().contract_address
+        )
+    }
+
+    fn evm_gas_left(&mut self) -> Result<u64, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let gas = self.gas_left()?;
+        trace!("evm_gas_left", self, be!(gas), &[], gas)
+    }
+
+    fn evm_ink_left(&mut self) -> Result<u64, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let ink = self.ink_ready()?;
+        trace!("evm_ink_left", self, be!(ink), &[], ink)
+    }
+
+    fn msg_reentrant(&mut self) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let reentrant = self.evm_data().reentrant;
+        trace!("msg_reentrant", self, &[], be!(reentrant), reentrant)
+    }
+
+    fn msg_sender(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes20(ptr, self.evm_data().msg_sender)?;
+        trace!("msg_sender", self, &[], self.evm_data().msg_sender)
+    }
+
+    fn msg_value(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes32(ptr, self.evm_data().msg_value)?;
+        trace!("msg_value", self, &[], self.evm_data().msg_value)
+    }
+
+    fn native_keccak256(&mut self, input: u32, len: u32, output: u32) -> Result<(), Self::Err> {
+        self.pay_for_keccak(len.into())?;
+
+        let preimage = self.read_slice(input, len)?;
+        let digest = crypto::keccak(&preimage);
+        self.write_bytes32(output, digest.into())?;
+        trace!("native_keccak256", self, preimage, digest)
+    }
+
+    fn tx_gas_price(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes32(ptr, self.evm_data().tx_gas_price)?;
+        trace!("tx_gas_price", self, &[], self.evm_data().tx_gas_price)
+    }
+
+    fn tx_ink_price(&mut self) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK)?;
+        let ink_price = self.pricing().ink_price;
+        trace!("tx_ink_price", self, &[], be!(ink_price), ink_price)
+    }
+
+    fn tx_origin(&mut self, ptr: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.write_bytes20(ptr, self.evm_data().tx_origin)?;
+        trace!("tx_origin", self, &[], self.evm_data().tx_origin)
+    }
+
+    fn memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
+        if pages == 0 {
+            self.buy_ink(HOSTIO_INK)?;
+            return Ok(());
+        }
+        let gas_cost = self.evm_api().add_pages(pages);
+        self.buy_gas(gas_cost)?;
+        trace!("memory_grow", self, be!(pages), &[])
+    }
+}
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    fn set_trap();
+}
+
+macro_rules! hostio {
+    ($($func:tt)*) => {
+        match Program::current().$($func)* {
+            Ok(value) => value,
+            Err(_) => {
+                set_trap();
+                Default::default()
+            }
+        }
+    };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__write_result(ptr: usize, len: usize) {
-    let program = Program::start(0);
-    program.pay_for_read(len as u64).unwrap();
-    program.outs = wavm::read_slice_usize(ptr, len);
+pub unsafe extern "C" fn user_host__read_args(ptr: u32) {
+    hostio!(read_args(ptr))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__storage_load_bytes32(key: usize, dest: usize) {
-    let program = Program::start(2 * PTR_INK + EVM_API_INK);
-    let key = wavm::read_bytes32(key);
-
-    let (value, gas_cost) = program.evm_api.get_bytes32(key);
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_bytes32(dest, value);
+pub unsafe extern "C" fn user_host__write_result(ptr: u32, len: u32) {
+    hostio!(write_result(ptr, len))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__storage_store_bytes32(key: usize, value: usize) {
-    let program = Program::start(2 * PTR_INK + EVM_API_INK);
-    program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
-
-    let api = &mut program.evm_api;
-    let key = wavm::read_bytes32(key);
-    let value = wavm::read_bytes32(value);
-
-    let gas_cost = api.set_bytes32(key, value).unwrap();
-    program.buy_gas(gas_cost).unwrap();
+pub unsafe extern "C" fn user_host__storage_load_bytes32(key: u32, dest: u32) {
+    hostio!(storage_load_bytes32(key, dest))
 }
 
-type EvmCaller<'a> = &'a mut JsEvmApi<ApiCaller>;
+#[no_mangle]
+pub unsafe extern "C" fn user_host__storage_store_bytes32(key: u32, value: u32) {
+    hostio!(storage_store_bytes32(key, value))
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__call_contract(
-    contract: usize,
-    calldata: usize,
-    calldata_len: usize,
-    value: usize,
+    contract: u32,
+    data: u32,
+    data_len: u32,
+    value: u32,
     gas: u64,
-    ret_len: usize,
+    ret_len: u32,
 ) -> u8 {
-    let value = Some(value);
-    let call = |api: EvmCaller, contract, input: &_, gas, value: Option<_>| {
-        api.contract_call(contract, input, gas, value.unwrap())
-    };
-    do_call(contract, calldata, calldata_len, value, gas, ret_len, call)
+    hostio!(call_contract(contract, data, data_len, value, gas, ret_len))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__delegate_call_contract(
-    contract: usize,
-    calldata: usize,
-    calldata_len: usize,
+    contract: u32,
+    data: u32,
+    data_len: u32,
     gas: u64,
-    ret_len: usize,
+    ret_len: u32,
 ) -> u8 {
-    let call =
-        |api: EvmCaller, contract, input: &_, gas, _| api.delegate_call(contract, input, gas);
-    do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
+    hostio!(delegate_call_contract(
+        contract, data, data_len, gas, ret_len
+    ))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__static_call_contract(
-    contract: usize,
-    calldata: usize,
-    calldata_len: usize,
+    contract: u32,
+    data: u32,
+    data_len: u32,
     gas: u64,
-    ret_len: usize,
+    ret_len: u32,
 ) -> u8 {
-    let call = |api: EvmCaller, contract, input: &_, gas, _| api.static_call(contract, input, gas);
-    do_call(contract, calldata, calldata_len, None, gas, ret_len, call)
-}
-
-unsafe fn do_call<F>(
-    contract: usize,
-    calldata: usize,
-    calldata_len: usize,
-    value: Option<usize>,
-    mut gas: u64,
-    return_data_len: usize,
-    call: F,
-) -> u8
-where
-    F: FnOnce(EvmCaller, Bytes20, &[u8], u64, Option<Bytes32>) -> (u32, u64, UserOutcomeKind),
-{
-    let program = Program::start(3 * PTR_INK + EVM_API_INK);
-    program.pay_for_read(calldata_len as u64).unwrap();
-    gas = gas.min(program.gas_left().unwrap());
-
-    let contract = wavm::read_bytes20(contract);
-    let input = wavm::read_slice_usize(calldata, calldata_len);
-    let value = value.map(|x| wavm::read_bytes32(x));
-    let api = &mut program.evm_api;
-
-    let (outs_len, gas_cost, status) = call(api, contract, &input, gas, value);
-    program.buy_gas(gas_cost).unwrap();
-    program.evm_data.return_data_len = outs_len;
-    wavm::caller_store32(return_data_len, outs_len);
-    status as u8
+    hostio!(static_call_contract(contract, data, data_len, gas, ret_len))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__create1(
-    code: usize,
-    code_len: usize,
-    endowment: usize,
-    contract: usize,
-    revert_data_len: usize,
+    code: u32,
+    code_len: u32,
+    value: u32,
+    contract: u32,
+    revert_len: u32,
 ) {
-    let program = Program::start(3 * PTR_INK + EVM_API_INK);
-    program.pay_for_read(code_len as u64).unwrap();
-
-    let code = wavm::read_slice_usize(code, code_len);
-    let endowment = wavm::read_bytes32(endowment);
-    let gas = program.gas_left().unwrap();
-    let api = &mut program.evm_api;
-
-    let (result, ret_len, gas_cost) = api.create1(code, endowment, gas);
-    program.buy_gas(gas_cost).unwrap();
-    program.evm_data.return_data_len = ret_len;
-    wavm::caller_store32(revert_data_len, ret_len);
-    wavm::write_bytes20(contract, result.unwrap());
+    hostio!(create1(code, code_len, value, contract, revert_len))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__create2(
-    code: usize,
-    code_len: usize,
-    endowment: usize,
-    salt: usize,
-    contract: usize,
-    revert_data_len: usize,
+    code: u32,
+    code_len: u32,
+    value: u32,
+    salt: u32,
+    contract: u32,
+    revert_len: u32,
 ) {
-    let program = Program::start(4 * PTR_INK + EVM_API_INK);
-    program.pay_for_read(code_len as u64).unwrap();
-
-    let code = wavm::read_slice_usize(code, code_len);
-    let endowment = wavm::read_bytes32(endowment);
-    let salt = wavm::read_bytes32(salt);
-    let gas = program.gas_left().unwrap();
-    let api = &mut program.evm_api;
-
-    let (result, ret_len, gas_cost) = api.create2(code, endowment, salt, gas);
-    program.buy_gas(gas_cost).unwrap();
-    program.evm_data.return_data_len = ret_len;
-    wavm::caller_store32(revert_data_len, ret_len);
-    wavm::write_bytes20(contract, result.unwrap());
+    hostio!(create2(code, code_len, value, salt, contract, revert_len))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__read_return_data(
-    ptr: usize,
-    offset: usize,
-    size: usize,
-) -> usize {
-    let program = Program::start(EVM_API_INK);
-    program.pay_for_write(size as u64).unwrap();
-
-    let data = program.evm_api.get_return_data(offset as u32, size as u32);
-    assert!(data.len() <= size);
-    wavm::write_slice_usize(&data, ptr);
-    data.len()
+pub unsafe extern "C" fn user_host__read_return_data(dest: u32, offset: u32, size: u32) -> u32 {
+    hostio!(read_return_data(dest, offset, size))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__return_data_size() -> u32 {
-    let program = Program::start(0);
-    program.evm_data.return_data_len
+    hostio!(return_data_size())
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__emit_log(data: usize, len: u32, topics: u32) {
-    let program = Program::start(EVM_API_INK);
-    if topics > 4 || len < topics * 32 {
-        panic!("bad topic data");
-    }
-    program.pay_for_read(len.into()).unwrap();
-    program.pay_for_evm_log(topics, len - topics * 32).unwrap();
-
-    let data = wavm::read_slice_usize(data, len as usize);
-    program.evm_api.emit_log(data, topics).unwrap();
+pub unsafe extern "C" fn user_host__emit_log(data: u32, len: u32, topics: u32) {
+    hostio!(emit_log(data, len, topics))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_balance(address: usize, ptr: usize) {
-    let program = Program::start(2 * PTR_INK + EVM_API_INK);
-    let address = wavm::read_bytes20(address);
-
-    let (value, gas_cost) = program.evm_api.account_balance(address);
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_bytes32(ptr, value);
+pub unsafe extern "C" fn user_host__account_balance(address: u32, ptr: u32) {
+    hostio!(account_balance(address, ptr))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_codehash(address: usize, ptr: usize) {
-    let program = Program::start(2 * PTR_INK + EVM_API_INK);
-    let address = wavm::read_bytes20(address);
-
-    let (value, gas_cost) = program.evm_api.account_codehash(address);
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_bytes32(ptr, value);
+pub unsafe extern "C" fn user_host__account_codehash(address: u32, ptr: u32) {
+    hostio!(account_codehash(address, ptr))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
-    let program = Program::start(0);
-    program.gas_left().unwrap()
+pub unsafe extern "C" fn user_host__block_basefee(ptr: u32) {
+    hostio!(block_basefee(ptr))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
-    let program = Program::start(0);
-    program.ink_ready().unwrap()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_basefee(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes32(ptr, program.evm_data.block_basefee)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__chainid() -> u64 {
-    let program = Program::start(0);
-    program.evm_data.chainid
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_coinbase(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes20(ptr, program.evm_data.block_coinbase)
+pub unsafe extern "C" fn user_host__block_coinbase(ptr: u32) {
+    hostio!(block_coinbase(ptr))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__block_gas_limit() -> u64 {
-    let program = Program::start(0);
-    program.evm_data.block_gas_limit
+    hostio!(block_gas_limit())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__block_number() -> u64 {
-    let program = Program::start(0);
-    program.evm_data.block_number
+    hostio!(block_number())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__block_timestamp() -> u64 {
-    let program = Program::start(0);
-    program.evm_data.block_timestamp
+    hostio!(block_timestamp())
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__contract_address(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes20(ptr, program.evm_data.contract_address)
+pub unsafe extern "C" fn user_host__chainid() -> u64 {
+    hostio!(chainid())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__contract_address(ptr: u32) {
+    hostio!(contract_address(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
+    hostio!(evm_gas_left())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
+    hostio!(evm_ink_left())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 {
-    let program = Program::start(0);
-    program.evm_data.reentrant
+    hostio!(msg_reentrant())
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__msg_sender(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes20(ptr, program.evm_data.msg_sender)
+pub unsafe extern "C" fn user_host__msg_sender(ptr: u32) {
+    hostio!(msg_sender(ptr))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__msg_value(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes32(ptr, program.evm_data.msg_value)
+pub unsafe extern "C" fn user_host__msg_value(ptr: u32) {
+    hostio!(msg_value(ptr))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__native_keccak256(bytes: usize, len: usize, output: usize) {
-    let program = Program::start(0);
-    program.pay_for_keccak(len as u64).unwrap();
-
-    let preimage = wavm::read_slice_usize(bytes, len);
-    let digest = crypto::keccak(preimage);
-    wavm::write_bytes32(output, digest.into())
+pub unsafe extern "C" fn user_host__native_keccak256(input: u32, len: u32, output: u32) {
+    hostio!(native_keccak256(input, len, output))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__tx_gas_price(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes32(ptr, program.evm_data.tx_gas_price)
+pub unsafe extern "C" fn user_host__tx_gas_price(ptr: u32) {
+    hostio!(tx_gas_price(ptr))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__tx_ink_price() -> u32 {
-    let program = Program::start(0);
-    program.pricing().ink_price
+    hostio!(tx_ink_price())
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__tx_origin(ptr: usize) {
-    let program = Program::start(PTR_INK);
-    wavm::write_bytes20(ptr, program.evm_data.tx_origin)
+pub unsafe extern "C" fn user_host__tx_origin(ptr: u32) {
+    hostio!(tx_origin(ptr))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__memory_grow(pages: u16) {
-    let program = Program::start_free();
-    if pages == 0 {
-        return program.buy_ink(HOSTIO_INK).unwrap();
-    }
-    let gas_cost = program.evm_api.add_pages(pages);
-    program.buy_gas(gas_cost).unwrap();
+    hostio!(memory_grow(pages))
 }

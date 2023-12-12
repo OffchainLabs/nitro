@@ -1,12 +1,16 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::evm_api::ApiCaller;
+use crate::{
+    evm_api::ApiCaller,
+    host::{MemoryBoundsError, UserHost},
+};
 use arbutil::{
     evm::{js::JsEvmApi, EvmData},
-    pricing,
+    wavm, Bytes20, Bytes32,
 };
-use prover::programs::{meter::MeteredMachine, prelude::StylusConfig};
+use eyre::Result;
+use prover::programs::prelude::*;
 
 /// The list of active programs. The current program is always the last.
 ///
@@ -56,15 +60,74 @@ impl Program {
         unsafe { PROGRAMS.pop().expect("no program").outs }
     }
 
-    /// Provides a reference to the current program after paying some ink.
-    pub fn start(cost: u64) -> &'static mut Self {
-        let program = Self::start_free();
-        program.buy_ink(pricing::HOSTIO_INK + cost).unwrap();
-        program
+    /// Provides a reference to the current program.
+    pub fn current() -> &'static mut Self {
+        unsafe { PROGRAMS.last_mut().expect("no program") }
+    }
+}
+
+impl UserHost for Program {
+    type Err = eyre::ErrReport;
+    type E = JsEvmApi<ApiCaller>;
+
+    fn args(&self) -> &[u8] {
+        &self.args
     }
 
-    /// Provides a reference to the current program.
-    pub fn start_free() -> &'static mut Self {
-        unsafe { PROGRAMS.last_mut().expect("no program") }
+    fn outs(&mut self) -> &mut Vec<u8> {
+        &mut self.outs
+    }
+
+    fn evm_api(&mut self) -> &mut Self::E {
+        &mut self.evm_api
+    }
+
+    fn evm_data(&self) -> &EvmData {
+        &self.evm_data
+    }
+
+    fn evm_return_data_len(&mut self) -> &mut u32 {
+        &mut self.evm_data.return_data_len
+    }
+
+    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError> {
+        // TODO: check bounds
+        unsafe { Ok(wavm::read_bytes20(ptr as usize)) }
+    }
+
+    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError> {
+        // TODO: check bounds
+        unsafe { Ok(wavm::read_bytes32(ptr as usize)) }
+    }
+
+    fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
+        // TODO: check bounds
+        unsafe { Ok(wavm::read_slice_usize(ptr as usize, len as usize)) }
+    }
+
+    fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError> {
+        unsafe { wavm::caller_store32(ptr as usize, x) };
+        Ok(()) // TODO: check bounds
+    }
+
+    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), MemoryBoundsError> {
+        unsafe { wavm::write_bytes20(ptr as usize, src) };
+        Ok(()) // TODO: check bounds
+    }
+
+    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), MemoryBoundsError> {
+        unsafe { wavm::write_bytes32(ptr as usize, src) };
+        Ok(()) // TODO: check bounds
+    }
+
+    fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError> {
+        unsafe { wavm::write_slice_usize(src, ptr as usize) }
+        Ok(()) // TODO: check bounds
+    }
+
+    fn trace(&self, name: &str, args: &[u8], outs: &[u8], _end_ink: u64) {
+        let args = hex::encode(args);
+        let outs = hex::encode(outs);
+        println!("Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}");
     }
 }
