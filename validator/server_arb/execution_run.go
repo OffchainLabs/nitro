@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -75,6 +76,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			// Otherwise, we simply append the machine hash at the specified start index.
 			stateRoots = append(stateRoots, machine.Hash())
 		}
+		startHash := stateRoots[0]
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
@@ -88,6 +90,23 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
+
+			progressPercent := (float64(numIterations+1) / float64(numDesiredLeaves)) * 100
+			log.Info(
+				fmt.Sprintf(
+					"Computing subchallenge machine hashes progress: %.2f%% leaves gathered (%d/%d)",
+					progressPercent,
+					numIterations+1,
+					numDesiredLeaves,
+				),
+				log.Ctx{
+					"stepSize":          stepSize,
+					"startHash":         startHash,
+					"machineStartIndex": machineStartIndex,
+					"numDesiredLeaves":  numDesiredLeaves,
+				},
+			)
+
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
 			machineStep := machine.GetStepCount()
