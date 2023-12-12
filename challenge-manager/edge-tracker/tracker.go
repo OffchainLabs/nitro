@@ -369,6 +369,13 @@ func (et *Tracker) ShouldDespawn(ctx context.Context) bool {
 	}
 	_, _, ancestorLocalTimers, err := et.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, et.edge.Id())
 	if err != nil {
+		if errors.Is(err, challengetree.ErrNoLowerChildYet) {
+			srvlog.Info(
+				"Edge %s does not yet have a child, perhaps its creation event is still being processed",
+				containers.Trunc(et.EdgeId().Hash.Bytes()),
+			)
+			return false
+		}
 		fields["err"] = err
 		srvlog.Error("Could not compute honest path timer", fields)
 		return false
@@ -515,6 +522,13 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	// Check if we can confirm by time.
 	timer, ancestors, _, err := et.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, et.edge.Id())
 	if err != nil {
+		if errors.Is(err, challengetree.ErrNoLowerChildYet) {
+			srvlog.Info(
+				"Edge %s does not yet have a child, perhaps its creation event is still being processed",
+				containers.Trunc(et.EdgeId().Hash.Bytes()),
+			)
+			return false, nil
+		}
 		return false, errors.Wrap(err, "could not compute honest path timer")
 	}
 	chalPeriod, err := manager.ChallengePeriodBlocks(ctx)

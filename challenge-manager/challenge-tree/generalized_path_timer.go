@@ -18,6 +18,7 @@ var (
 	ErrNoHonestTopLevelEdge = errors.New("no honest block challenge edge being tracked")
 	ErrNotFound             = errors.New("not found in honest challenge tree")
 	ErrNoLevelZero          = errors.New("no level zero edge with origin id found")
+	ErrNoLowerChildYet      = errors.New("edge does not yet have a lower child")
 )
 
 // PathTimer for an honest edge defined as the cumulative unrivaled time
@@ -234,7 +235,7 @@ func (ht *HonestChallengeTree) findHonestAncestorsWithinChallengeLevel(
 				return nil, nil, errors.Wrapf(lowerErr, "could not get lower child for edge %#x", cursor.Id())
 			}
 			if lowerChild.IsNone() {
-				return nil, nil, fmt.Errorf("edge %#x had no lower child", cursor.Id())
+				return nil, nil, errors.Wrapf(ErrNoLowerChildYet, "edge id %#x", cursor.Id())
 			}
 			cursor = ht.edges.Get(lowerChild.Unwrap())
 		} else {

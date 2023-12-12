@@ -17,6 +17,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
@@ -476,15 +477,15 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		return
 	}
 	for {
-		if m.assertionConfirmed(ctx, assertionHash) {
-			return
-		}
 		ticker := time.NewTicker(m.confirmationAttemptInterval)
+		defer ticker.Stop()
 		select {
 		case <-ctx.Done():
-			ticker.Stop()
 			return
 		case <-ticker.C:
+			if m.assertionConfirmed(ctx, assertionHash) {
+				return
+			}
 		}
 	}
 }
@@ -503,38 +504,53 @@ func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol
 		srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
 		return true
 	}
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+	if err != nil {
+		srvlog.Error("Could not get assertion creation info by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
+		return false
+	}
+	prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	if err != nil {
+		srvlog.Error("Could not get assertion creation info by hash", log.Ctx{"err": err, "assertionHash": creationInfo.ParentAssertionHash})
+		return false
+	}
+	latestHeader, err := m.chain.Backend().HeaderByNumber(ctx, nil)
+	if err != nil {
+		srvlog.Error("Could not get latest header", log.Ctx{"err": err})
+		return false
+	}
+	if !latestHeader.Number.IsUint64() {
+		srvlog.Error("Latest block number is not a uint64", log.Ctx{"number": latestHeader.Number.String()})
+		return false
+	}
+	creationBlock := creationInfo.CreationBlock
+	confirmPeriodBlocks := prevCreationInfo.ConfirmPeriodBlocks
+	currentBlock := latestHeader.Number.Uint64()
+
+	// If the assertion is not yet confirmable, we can simply wait until we are confirmable by time.
+	if currentBlock < creationBlock+confirmPeriodBlocks {
+		blocksLeftForConfirmation := (creationBlock + confirmPeriodBlocks) - currentBlock
+		timeToWait := m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
+		srvlog.Info(
+			fmt.Sprintf(
+				"Assertion with has %s needs at least %d blocks before being confirmable, waiting until then",
+				containers.Trunc(creationInfo.AssertionHash.Bytes()),
+				blocksLeftForConfirmation,
+			),
+		)
+		<-time.After(timeToWait)
+	}
+
 	err = m.chain.ConfirmAssertionByTime(ctx, assertionHash)
 	if err != nil {
 		if strings.Contains(err.Error(), protocol.BeforeDeadlineAssertionConfirmationError) {
-			creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
-			if err != nil {
-				srvlog.Error("Could not get assertion creation info by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
-				return false
-			}
-			prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
-			if err != nil {
-				srvlog.Error("Could not get assertion creation info by hash", log.Ctx{"err": err, "assertionHash": creationInfo.ParentAssertionHash})
-				return false
-			}
-			latestHeader, err := m.chain.Backend().HeaderByNumber(ctx, nil)
-			if err != nil {
-				srvlog.Error("Could not get latest header", log.Ctx{"err": err})
-				return false
-			}
-			<-time.After(m.getConfirmationInterval(creationInfo.CreationBlock, prevCreationInfo.ConfirmPeriodBlocks, latestHeader.Number.Uint64()))
+			return false
 		}
+		srvlog.Error("Could not confirm assertion by time", log.Ctx{"blockNumber": latestHeader.Number.String()})
 		return false
 	}
 	srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
 	return true
-}
-
-func (m *Manager) getConfirmationInterval(creationBlock uint64, confirmPeriodBlocks uint64, latestHeaderNumber uint64) time.Duration {
-	if creationBlock+confirmPeriodBlocks > latestHeaderNumber {
-		blocksLeftForConfirmation := (creationBlock + confirmPeriodBlocks) - latestHeaderNumber
-		return m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
-	}
-	return 0
 }
 
 // Returns true if the manager can respond to an assertion with a challenge.

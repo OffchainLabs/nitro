@@ -159,7 +159,7 @@ func New(
 		assertionPostingInterval:    time.Hour,
 		assertionScanningInterval:   time.Minute,
 		assertionConfirmingInterval: time.Second * 10,
-		averageTimeForBlockCreation: time.Millisecond * 500,
+		averageTimeForBlockCreation: time.Second * 12,
 		challengedAssertions:        threadsafe.NewSet[protocol.AssertionHash](),
 	}
 	for _, o := range opts {
