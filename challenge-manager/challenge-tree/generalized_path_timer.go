@@ -62,31 +62,10 @@ func (ht *HonestChallengeTree) HasConfirmableAncestor(
 	if err != nil {
 		return false, err
 	}
-
-	// Computes the cumulative sum for each element in the list.
-	cumulativeTimers := make([]PathTimer, 0)
-	lastAncestorTimer := honestAncestorLocalTimers[len(honestAncestorLocalTimers)-1] + EdgeLocalTimer(assertionUnrivaledNumBlocks)
-
-	// If we only have a single honest ancestor, check if it plus the assertion unrivaled
-	// timer is enough to be confirmable and return.
-	if len(honestAncestorLocalTimers) == 1 {
-		return uint64(lastAncestorTimer) >= challengePeriodBlocks, nil
-	}
-
-	// We start with the last ancestor, which should also include the top-level assertion's unrivaled timer.
-	cumulativeTimers = append(cumulativeTimers, PathTimer(lastAncestorTimer))
-
-	// Loop over everything except the last element, which is the root edge as we already
-	// appended it in the lines above.
-	for i, ancestorTimer := range honestAncestorLocalTimers[:len(honestAncestorLocalTimers)-1] {
-		cumulativeTimers = append(cumulativeTimers, cumulativeTimers[i]+PathTimer(ancestorTimer))
-	}
-
-	// Then checks if any of them has a cumulative timer greater than
-	// or equal to a challenge period worth of blocks. We loop in reverse because the cumulative timers slice is monotonically
-	// increasing and this could help us exit the loop earlier in case we find an ancestor that is confirmable.
-	for i := len(cumulativeTimers) - 1; i >= 0; i-- {
-		if uint64(cumulativeTimers[i]) >= challengePeriodBlocks {
+	total := assertionUnrivaledNumBlocks
+	for _, timer := range honestAncestorLocalTimers {
+		total += uint64(timer)
+		if total >= challengePeriodBlocks {
 			return true, nil
 		}
 	}
