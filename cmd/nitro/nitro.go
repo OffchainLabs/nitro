@@ -786,6 +786,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}
+	if err := c.Execution.Validate(); err != nil {
+		return err
+	}
 	return c.Persistent.Validate()
 }
 
@@ -890,7 +893,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
-	if chainInfo.SequencerUrl != "" {
+	// Only use chainInfo.SequencerUrl as default forwarding-target if sequencer is not enabled
+	if !k.Bool("execution.sequencer.enable") && chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.SecondaryForwardingTarget != "" {
