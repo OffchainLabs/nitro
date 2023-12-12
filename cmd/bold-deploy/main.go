@@ -62,7 +62,7 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 
 	// Bold specific flags.
-	numBigSteps := flag.Uint("numBigSteps", 5, "Number of big steps in the rollup")
+	numBigSteps := flag.Uint("numBigSteps", 4, "Number of big steps in the rollup")
 	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<5, "block challenge edge leaf height")
 	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<5, "big step edge leaf height")
 	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<7, "small step edge leaf height")
