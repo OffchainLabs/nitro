@@ -17,14 +17,14 @@ use prover::programs::{
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__read_args(ptr: usize) {
     let mut program = Program::start(0);
-    program.pay_for_write(ARGS.len() as u64).unwrap();
+    program.pay_for_write(ARGS.len() as u32).unwrap();
     wavm::write_slice_usize(&ARGS, ptr);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__write_result(ptr: usize, len: usize) {
     let mut program = Program::start(0);
-    program.pay_for_read(len as u64).unwrap();
+    program.pay_for_read(len as u32).unwrap();
     OUTS = wavm::read_slice_usize(ptr, len);
 }
 
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn vm_hooks__memory_grow(pages: u16) {
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: usize, len: usize, output: usize) {
     let mut program = Program::start(0);
-    program.pay_for_keccak(len as u64).unwrap();
+    program.pay_for_keccak(len as u32).unwrap();
 
     let preimage = wavm::read_slice_usize(bytes, len);
     let digest = crypto::keccak(preimage);
