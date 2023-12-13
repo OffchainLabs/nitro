@@ -2789,16 +2789,18 @@ impl Machine {
     }
 
     fn prove_guards(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(33); // size in the empty case
+        let mut data = Vec::with_capacity(34); // size in the empty case
         let guards = self.stack_hashes().3;
-        if guards.is_empty() {
+        let enabled = self.guards.enabled;
+        let empty = self.guards.is_empty();
+
+        data.push(enabled as u8);
+        data.push(empty as u8);
+        if empty {
             data.extend(Bytes32::default());
-            data.push(0);
         } else {
             let last_idx = guards.len() - 1;
-            let enabled = self.guards.enabled;
             data.extend(ErrorGuardProof::hash_guards(&guards[..last_idx]));
-            data.push(1 + enabled as u8);
             data.extend(guards[last_idx].serialize_for_proof());
         }
         data

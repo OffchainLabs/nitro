@@ -2,36 +2,37 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (import "hostio" "wavm_link_module" (func $link (param i32) (result i32)))
-    (import "hostio" "wavm_unlink_module" (func $unlink (param) (result)))
+    (import "hostio" "wavm_link_module"        (func $link (param i32) (result i32)))
+    (import "hostio" "wavm_unlink_module"      (func $unlink (param) (result)))
+    (import "env" "wavm_halt_and_set_finished" (func $halt                         ))
 
     ;; WAVM module hashes
     (data (i32.const 0x000)
-        "\74\22\43\ad\22\2e\e5\6d\f4\bb\3f\0b\09\76\0a\bf\51\b7\17\a4\c5\50\c9\5b\45\be\ea\ed\4c\57\4d\17") ;; block
+        "\56\e6\21\3d\17\66\a1\45\87\00\18\12\9f\bc\f3\64\14\78\38\2e\4a\46\e7\df\c7\77\68\4f\1d\8a\79\d7") ;; block
     (data (i32.const 0x020)
-        "\53\36\71\e6\bf\90\0f\50\fd\18\5f\44\d6\18\77\2f\70\17\19\2a\1a\8d\b6\92\5a\3c\14\1a\af\86\81\d4") ;; call
+        "\dc\a8\84\65\df\1f\e5\d8\b2\e7\92\e0\23\9c\17\d0\9b\dd\bd\37\85\dc\a0\4b\3a\23\e5\fc\1a\83\fe\1a") ;; call
     (data (i32.const 0x040)
-        "\57\27\40\77\40\da\77\f8\1f\fd\81\cb\00\e0\02\17\40\f0\be\e4\11\89\0a\56\ba\80\e4\b9\31\74\13\a2") ;; indirect
+        "\46\d3\80\92\01\62\c0\91\66\d0\6a\50\69\d1\47\f8\60\07\bc\51\fd\36\a0\90\c2\1b\c7\5d\fe\ed\d9\28") ;; indirect
     (data (i32.const 0x060)
-        "\3f\c3\a1\eb\a6\62\70\2b\3b\fa\dc\5b\29\22\11\6f\58\4a\6e\e5\70\60\6f\cf\6c\66\d8\c9\77\c5\c9\23") ;; const
+        "\cf\e5\4c\be\40\74\08\5f\9b\2f\2d\2f\f3\ec\29\02\4f\5a\d6\73\75\47\d0\23\2a\d3\97\fd\2e\92\a7\20") ;; const
     (data (i32.const 0x080)
-        "\83\46\03\41\b4\5f\a6\e6\a3\0d\e9\fc\79\fc\3c\d6\c9\c3\c7\ac\97\42\bc\48\54\92\e6\84\08\37\07\a6") ;; div
+        "\17\06\7b\73\ad\71\f4\9e\87\4b\03\2b\2d\8f\79\31\45\9c\5f\bd\a4\70\b4\b3\0f\ff\06\0e\0a\3e\f6\15") ;; div
     (data (i32.const 0x0a0)
-        "\16\90\98\f2\7f\8d\bf\73\90\b9\eb\94\9f\b9\41\cd\c3\93\2e\30\b8\12\1b\d5\87\98\18\26\f2\62\7d\2c") ;; globals
+        "\ad\e1\ab\3b\8a\06\a9\67\a6\ca\70\10\1e\88\eb\0e\76\4b\49\b9\13\db\6c\5a\a7\13\40\5f\a0\d8\8e\cf") ;; globals
     (data (i32.const 0x0c0)
-        "\f5\6b\4c\c7\19\da\61\01\e4\e4\9a\f1\04\ca\29\97\fd\07\05\d6\c2\3b\e6\55\70\c5\54\65\a0\3f\3d\ee") ;; if-else
+        "\74\d8\18\a2\fd\74\bb\4f\8a\e4\06\e0\3b\07\36\39\fc\ec\a0\4f\1f\29\5e\24\b0\a2\13\bb\92\0c\6c\e4") ;; if-else
     (data (i32.const 0x0e0)
-        "\42\1d\62\e9\9a\51\d4\71\ce\50\6e\b4\83\72\18\ea\f8\ab\ab\b9\29\b8\bd\6d\66\ea\52\b3\3d\50\26\34") ;; locals
+        "\95\3c\d1\ca\08\aa\97\38\e8\d0\ba\43\17\3c\4f\04\82\c8\1d\af\b1\03\da\f2\3a\31\f8\a8\da\0d\4a\14") ;; locals
     (data (i32.const 0x100)
-        "\6d\c0\9f\17\5f\5b\e8\73\64\bc\79\62\e8\13\fd\cb\09\2a\12\24\87\4a\af\15\f2\e1\2e\93\b0\95\30\9a") ;; loop
+        "\78\ac\75\14\39\23\92\49\6e\07\0a\82\5b\be\24\be\1b\c0\d8\4a\e8\33\64\0a\91\29\59\64\df\b1\02\86") ;; loop
     (data (i32.const 0x120)
-        "\a7\66\cb\0e\c4\31\ea\16\fd\c6\2f\d3\11\ca\4a\78\f8\48\6a\69\0a\4c\b9\1c\fc\47\f8\b6\63\6d\80\fa") ;; math
+        "\a8\73\72\41\8a\02\db\aa\19\6f\ec\ba\df\2d\09\a0\36\92\6f\d9\ee\d3\f0\63\6d\50\19\34\f0\15\18\91") ;; math
     (data (i32.const 0x140)
-        "\ea\02\78\f7\a3\b3\e0\0e\55\f6\8f\13\87\d6\6f\04\38\b3\6b\4c\d5\33\e2\3d\0b\36\71\9f\57\f5\f0\59") ;; iops
+        "\7d\91\e4\b8\fa\48\8f\f5\24\70\57\3a\fd\f3\24\1a\6c\87\4d\9e\2a\4b\fd\17\48\dc\22\da\b9\a6\7c\66") ;; iops
     (data (i32.const 0x160)
-        "\97\0c\df\6a\a9\bf\d4\3c\03\80\7f\8a\7e\67\9a\5c\12\05\94\4f\c6\5e\39\9e\00\df\5c\b3\7d\de\55\ad") ;; user
+        "\08\f6\70\9a\1b\e8\6f\84\85\f0\ff\fd\8d\f2\ef\77\74\dc\f5\a5\d7\d0\cb\a1\6b\a3\59\98\09\04\c7\5f") ;; user
     (data (i32.const 0x180)
-        "\c7\db\9f\8e\ed\13\ac\66\72\62\76\65\93\1b\9a\64\03\c3\c8\21\44\92\5c\8d\bc\1a\d6\bd\65\f8\2b\20") ;; return
+        "\a2\85\7b\bd\ae\95\9e\f5\28\b3\dd\be\f9\70\c8\23\cb\76\83\e0\62\b9\9a\02\bc\71\02\ff\81\47\47\ad") ;; return
 
     (func $start (local $counter i32)
 
@@ -80,6 +81,9 @@
              ;; loop until most are gone
              i32.const 3
              i32.ge_s
-             br_if $top))
+             br_if $top)
+
+        call $halt
+    )
     (memory 1)
     (start $start))

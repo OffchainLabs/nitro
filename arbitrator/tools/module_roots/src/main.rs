@@ -16,7 +16,16 @@ struct Opts {
 }
 
 fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    let mut opts = Opts::from_args();
+
+    macro_rules! relocate {
+        ($file:expr) => {
+            let mut path = PathBuf::from("../../../");
+            path.push(&$file);
+            *$file = path;
+        };
+    }
+    relocate!(&mut opts.binary);
 
     let mut mach = Machine::from_paths(
         &[],
@@ -32,9 +41,10 @@ fn main() -> Result<()> {
     )?;
 
     let mut stylus = vec![];
-    for module in &opts.stylus_modules {
+    for module in &mut opts.stylus_modules {
+        relocate!(module);
         let error = || format!("failed to read module at {}", module.to_string_lossy());
-        let wasm = file_bytes(module).wrap_err_with(error)?;
+        let wasm = file_bytes(&module).wrap_err_with(error)?;
         let hash = mach.add_program(&wasm, 1, true).wrap_err_with(error)?;
         let name = module.file_stem().unwrap().to_string_lossy();
         stylus.push((name.to_owned(), hash));
