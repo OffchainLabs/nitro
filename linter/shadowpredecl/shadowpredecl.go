@@ -1,4 +1,5 @@
-// Static analyzer to prevent leaking globals in tests.
+// Static analyzer which disallows declaring constructs that shadow predeclared
+// Go identifiers by having the same name.
 package main
 
 import (

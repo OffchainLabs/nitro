@@ -1,4 +1,4 @@
-// Static analyzer to prevent leaking globals in tests.
+// Static analyzer to prevent conditional checks on select interfaces.
 package main
 
 import (

@@ -1,4 +1,5 @@
-// Static analyzer to prevent leaking globals in tests.
+// Static analyzer to ensure that log statements do not use errors in
+// templated log statements. Authors should use logrus.WithError().
 package main
 
 import (

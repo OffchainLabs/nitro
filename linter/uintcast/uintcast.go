@@ -1,4 +1,5 @@
-// Static analyzer to prevent leaking globals in tests.
+// Static analyzer for detecting unsafe uint to int casts.
+// Use `lint:ignore uintcast` with proper justification to ignore this check.
 package main
 
 import (

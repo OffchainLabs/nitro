@@ -1,4 +1,4 @@
-// Static analyzer to prevent leaking globals in tests.
+// Static analyzer for detecting ineffectual assignments.
 package main
 
 import (

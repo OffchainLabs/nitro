@@ -1,4 +1,5 @@
-// Static analyzer to prevent leaking globals in tests.
+// Static analyzer to ensure that code does not contain applications of [:]
+// on expressions which are already slices.
 package main
 
 import (
