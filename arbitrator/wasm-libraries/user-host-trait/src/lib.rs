@@ -23,7 +23,6 @@ macro_rules! be {
 macro_rules! trace {
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data().tracing {
-            //let start_ink = $env.start_ink;
             let end_ink = $env.ink_ready()?;
             let mut args = vec![];
             $(args.extend($args);)*
@@ -76,14 +75,14 @@ pub trait UserHost: GasMeteredMachine {
 
     fn read_args(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
-        self.pay_for_write(self.args().len() as u64)?;
+        self.pay_for_write(self.args().len() as u32)?;
         self.write_slice(ptr, self.args())?;
         trace!("read_args", self, &[], self.args())
     }
 
     fn write_result(&mut self, ptr: u32, len: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
-        self.pay_for_read(len.into())?;
+        self.pay_for_read(len)?;
         *self.outs() = self.read_slice(ptr, len)?;
         trace!("write_result", self, &*self.outs(), &[])
     }
@@ -169,7 +168,7 @@ pub trait UserHost: GasMeteredMachine {
         F: FnOnce(&mut Self::A, Address, &[u8], u64, Option<Wei>) -> (u32, u64, UserOutcomeKind),
     {
         self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
-        self.pay_for_read(calldata_len.into())?;
+        self.pay_for_read(calldata_len)?;
 
         let gas_passed = gas;
         gas = gas.min(self.gas_left()?); // provide no more than what the user has
@@ -263,7 +262,7 @@ pub trait UserHost: GasMeteredMachine {
         F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, u64) -> (Result<Address>, u32, u64),
     {
         self.buy_ink(HOSTIO_INK + cost)?;
-        self.pay_for_read(code_len.into())?;
+        self.pay_for_read(code_len)?;
 
         let code = self.read_slice(code, code_len)?;
         let code_copy = self.evm_data().tracing.then(|| code.clone());
@@ -293,7 +292,7 @@ pub trait UserHost: GasMeteredMachine {
 
     fn read_return_data(&mut self, dest: u32, offset: u32, size: u32) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
-        self.pay_for_write(size.into())?;
+        self.pay_for_write(size)?;
 
         let data = self.evm_api().get_return_data(offset, size);
         assert!(data.len() <= size as usize);
@@ -321,7 +320,7 @@ pub trait UserHost: GasMeteredMachine {
             println!("too many!!!!!!!!!!!!!!!!");
             Err(eyre!("bad topic data"))?;
         }
-        self.pay_for_read(len.into())?;
+        self.pay_for_read(len)?;
         self.pay_for_evm_log(topics, len - topics * 32)?;
 
         let data = self.read_slice(data, len)?;
@@ -427,7 +426,7 @@ pub trait UserHost: GasMeteredMachine {
     }
 
     fn native_keccak256(&mut self, input: u32, len: u32, output: u32) -> Result<(), Self::Err> {
-        self.pay_for_keccak(len.into())?;
+        self.pay_for_keccak(len)?;
 
         let preimage = self.read_slice(input, len)?;
         let digest = crypto::keccak(&preimage);
