@@ -19,8 +19,10 @@ import (
 
 type executionRun struct {
 	stopwaiter.StopWaiter
-	cache *MachineCache
-	close sync.Once
+	cache                *MachineCache
+	initialMachineGetter func(context.Context) (MachineInterface, error)
+	config               *MachineCacheConfig
+	close                sync.Once
 }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
@@ -32,6 +34,8 @@ func NewExecutionRun(
 ) (*executionRun, error) {
 	exec := &executionRun{}
 	exec.Start(ctxIn, exec)
+	exec.initialMachineGetter = initialMachineGetter
+	exec.config = config
 	exec.cache = NewMachineCache(exec.GetContext(), initialMachineGetter, config)
 	return exec, nil
 }
@@ -60,6 +64,10 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 
 func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+		if stepSize <= 8192 {
+			log.Info(fmt.Sprintf("Step size %d is enough to trigger Merkleized machines, re-caching", stepSize))
+			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config)
+		}
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err
