@@ -7,6 +7,8 @@ members = [
 	"go-js",
 	"host-io",
 	"user-host",
+        "user-host-trait",
 	"user-test",
+        "forward",
 ]
 resolver = "2"

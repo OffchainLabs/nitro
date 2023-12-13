@@ -3,6 +3,9 @@
 
 use crate::{Bytes20, Bytes32};
 
+/// WASM page size, or 2^16 bytes.
+pub const PAGE_SIZE: u32 = 1 << 16;
+
 extern "C" {
     fn wavm_caller_load8(ptr: usize) -> u8;
     fn wavm_caller_load32(ptr: usize) -> u32;
@@ -53,6 +56,10 @@ pub unsafe fn write_slice(src: &[u8], ptr: u64) {
     write_slice_usize(src, ptr)
 }
 
+pub unsafe fn write_slice_u32(src: &[u8], ptr: u32) {
+    write_slice_usize(src, ptr as usize)
+}
+
 pub unsafe fn write_slice_usize(mut src: &[u8], mut ptr: usize) {
     while src.len() >= 4 {
         let mut arr = [0u8; 4];
@@ -73,6 +80,10 @@ pub unsafe fn read_slice(ptr: u64, len: u64) -> Vec<u8> {
     read_slice_usize(ptr, len)
 }
 
+pub unsafe fn read_slice_u32(ptr: u32, len: u32) -> Vec<u8> {
+    read_slice_usize(ptr as usize, len as usize)
+}
+
 pub unsafe fn read_slice_usize(mut ptr: usize, mut len: usize) -> Vec<u8> {
     let mut data = Vec::with_capacity(len);
     if len == 0 {
@@ -90,20 +101,20 @@ pub unsafe fn read_slice_usize(mut ptr: usize, mut len: usize) -> Vec<u8> {
     data
 }
 
-pub unsafe fn read_bytes20(ptr: usize) -> Bytes20 {
-    let data = read_slice_usize(ptr, 20);
+pub unsafe fn read_bytes20(ptr: u32) -> Bytes20 {
+    let data = read_slice_u32(ptr, 20);
     data.try_into().unwrap()
 }
 
-pub unsafe fn read_bytes32(ptr: usize) -> Bytes32 {
-    let data = read_slice_usize(ptr, 32);
+pub unsafe fn read_bytes32(ptr: u32) -> Bytes32 {
+    let data = read_slice_u32(ptr, 32);
     data.try_into().unwrap()
 }
 
-pub unsafe fn write_bytes20(ptr: usize, value: Bytes20) {
-    write_slice_usize(&value.0, ptr)
+pub unsafe fn write_bytes20(ptr: u32, value: Bytes20) {
+    write_slice_u32(&value.0, ptr)
 }
 
-pub unsafe fn write_bytes32(ptr: usize, value: Bytes32) {
-    write_slice_usize(&value.0, ptr)
+pub unsafe fn write_bytes32(ptr: u32, value: Bytes32) {
+    write_slice_u32(&value.0, ptr)
 }

@@ -267,22 +267,22 @@ pub trait MeteredMachine {
     }
 
     /// Pays for a write into the client.
-    fn pay_for_write(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+    fn pay_for_write(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
         self.buy_ink(sat_add_mul(18287, 31, bytes.saturating_sub(32)))
     }
 
     /// Pays for a read into the host.
-    fn pay_for_read(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+    fn pay_for_read(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
         self.buy_ink(sat_add_mul(40423, 61, bytes.saturating_sub(32)))
     }
 
     /// Pays for both I/O and keccak.
-    fn pay_for_keccak(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+    fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
         self.buy_ink(sat_add_mul(268527, 41920, evm::evm_words(bytes)))
     }
 
     /// Pays for copying bytes from geth.
-    fn pay_for_geth_bytes(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+    fn pay_for_geth_bytes(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
         self.pay_for_read(bytes) // TODO: determine value
     }
 }
@@ -316,8 +316,8 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
-fn sat_add_mul(base: u64, per: u64, count: u64) -> u64 {
-    base.saturating_add(per.saturating_mul(count))
+fn sat_add_mul(base: u64, per: u64, count: u32) -> u64 {
+    base.saturating_add(per.saturating_mul(count.into()))
 }
 
 impl MeteredMachine for Machine {

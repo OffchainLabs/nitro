@@ -15,21 +15,21 @@ use prover::programs::{
 };
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__read_args(ptr: usize) {
+pub unsafe extern "C" fn vm_hooks__read_args(ptr: u32) {
     let mut program = Program::start(0);
-    program.pay_for_write(ARGS.len() as u64).unwrap();
-    wavm::write_slice_usize(&ARGS, ptr);
+    program.pay_for_write(ARGS.len() as u32).unwrap();
+    wavm::write_slice_u32(&ARGS, ptr);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__write_result(ptr: usize, len: usize) {
+pub unsafe extern "C" fn vm_hooks__write_result(ptr: u32, len: u32) {
     let mut program = Program::start(0);
-    program.pay_for_read(len as u64).unwrap();
-    OUTS = wavm::read_slice_usize(ptr, len);
+    program.pay_for_read(len).unwrap();
+    OUTS = wavm::read_slice_u32(ptr, len);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: usize, dest: usize) {
+pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: u32, dest: u32) {
     let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
     let key = wavm::read_bytes32(key);
 
@@ -39,7 +39,7 @@ pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: usize, dest: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: usize, value: usize) {
+pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: u32, value: u32) {
     let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
     program.buy_gas(22100).unwrap(); // pretend the worst case
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: usize, value: usiz
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__emit_log(data: usize, len: u32, topics: u32) {
+pub unsafe extern "C" fn vm_hooks__emit_log(data: u32, len: u32, topics: u32) {
     let mut program = Program::start(EVM_API_INK);
     if topics > 4 || len < topics * 32 {
         panic!("bad topic data");
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn vm_hooks__emit_log(data: usize, len: u32, topics: u32) 
     program.pay_for_read(len.into()).unwrap();
     program.pay_for_evm_log(topics, len - topics * 32).unwrap();
 
-    let data = wavm::read_slice_usize(data, len as usize);
+    let data = wavm::read_slice_u32(data, len);
     LOGS.push(data)
 }
 
@@ -77,13 +77,13 @@ pub unsafe extern "C" fn vm_hooks__memory_grow(pages: u16) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: usize, len: usize, output: usize) {
+pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: u32, len: u32, output: u32) {
     let mut program = Program::start(0);
-    program.pay_for_keccak(len as u64).unwrap();
+    program.pay_for_keccak(len).unwrap();
 
-    let preimage = wavm::read_slice_usize(bytes, len);
+    let preimage = wavm::read_slice_u32(bytes, len);
     let digest = crypto::keccak(preimage);
-    wavm::write_slice_usize(&digest, output);
+    wavm::write_slice_u32(&digest, output);
 }
 
 #[no_mangle]

@@ -82,6 +82,17 @@ prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_s
 prover_src = arbitrator/prover/src
 rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) $(prover_direct_includes)
 
+wasm_lib = arbitrator/wasm-libraries
+wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
+wasm_lib_go_abi = $(call wasm_lib_deps,go-abi) $(go_js_files)
+wasm_lib_forward = $(call wasm_lib_deps,forward)
+wasm_lib_user_host_trait = $(call wasm_lib_deps,user-host-trait)
+wasm_lib_user_host = $(call wasm_lib_deps,user-host) $(wasm_lib_user_host_trait)
+
+forward_dir = $(wasm_lib)/forward
+
+stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(wasm_lib_user_host_trait) $(rust_prover_files)
+
 jit_dir = arbitrator/jit
 go_js_files = $(wildcard arbitrator/wasm-libraries/go-js/*.toml arbitrator/wasm-libraries/go-js/src/*.rs)
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files) $(go_js_files)
@@ -90,10 +101,6 @@ go_js_test_dir = arbitrator/wasm-libraries/go-js-test
 go_js_test_files = $(wildcard $(go_js_test_dir)/*.go $(go_js_test_dir)/*.mod)
 go_js_test = $(go_js_test_dir)/js-test.wasm
 go_js_test_libs = $(patsubst %, $(output_latest)/%.wasm, soft-float wasi_stub go_stub)
-
-wasm_lib = arbitrator/wasm-libraries
-wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
-wasm_lib_go_abi = $(call wasm_lib_deps,go-abi) $(go_js_files)
 
 wasm32_wasi = target/wasm32-wasi/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
@@ -140,7 +147,6 @@ stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data
 
 stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
-stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
 # user targets
 
@@ -346,7 +352,7 @@ $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
 
-$(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
+$(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-host
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
 
@@ -358,11 +364,13 @@ $(output_latest)/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wa
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
 
-$(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wat .make/machines
-	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
+$(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
+	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
+	wat2wasm $(wasm_lib)/forward/forward.wat -o $@
 
-$(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward_stub.wat .make/machines
-	wat2wasm $(wasm_lib)/user-host/forward_stub.wat -o $@
+$(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
+	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward_stub.wat --stub
+	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
@@ -444,10 +452,10 @@ contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
 
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps) --require-success
 
 contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm --require-success
 
 contracts/test/prover/proofs/bulk-memory.json: $(patsubst %,$(arbitrator_cases)/%.wasm, bulk-memory) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm -b

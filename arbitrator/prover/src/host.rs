@@ -31,6 +31,7 @@ pub enum InternalFunc {
     UserSetInk,
     UserStackLeft,
     UserSetStack,
+    UserMemorySize,
     CallMain,
 }
 
@@ -48,12 +49,13 @@ impl InternalFunc {
             WavmCallerLoad8  | WavmCallerLoad32  => func!([I32], [I32]),
             WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
             MemoryFill       | MemoryCopy        => func!([I32, I32, I32], []),
-            UserInkLeft   => func!([], [I64]),      // λ() → ink_left
-            UserInkStatus => func!([], [I32]),      // λ() → ink_status
-            UserSetInk    => func!([I64, I32], []), // λ(ink_left, ink_status)
-            UserStackLeft => func!([], [I32]),      // λ() → stack_left
-            UserSetStack  => func!([I32], []),      // λ(stack_left)
-            CallMain      => func!([I32], [I32]),   // λ(args_len) → status
+            UserInkLeft    => func!([], [I64]),      // λ() → ink_left
+            UserInkStatus  => func!([], [I32]),      // λ() → ink_status
+            UserSetInk     => func!([I64, I32], []), // λ(ink_left, ink_status)
+            UserStackLeft  => func!([], [I32]),      // λ() → stack_left
+            UserSetStack   => func!([I32], []),      // λ(stack_left)
+            UserMemorySize => func!([], [I32]),      // λ() → memory_size
+            CallMain       => func!([I32], [I32]),   // λ(args_len) → status
         };
         ty
     }
@@ -75,11 +77,13 @@ pub enum Hostio {
     WavmHaltAndSetFinished,
     WavmLinkModule,
     WavmUnlinkModule,
+    WavmSetErrorPolicy,
     ProgramInkLeft,
     ProgramInkStatus,
     ProgramSetInk,
     ProgramStackLeft,
     ProgramSetStack,
+    ProgramMemorySize,
     ProgramCallMain,
     ConsoleLogTxt,
     ConsoleLogI32,
@@ -117,11 +121,13 @@ impl FromStr for Hostio {
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
             ("hostio", "wavm_link_module") => WavmLinkModule,
             ("hostio", "wavm_unlink_module") => WavmUnlinkModule,
+            ("hostio", "wavm_set_error_policy") => WavmSetErrorPolicy,
             ("hostio", "program_ink_left") => ProgramInkLeft,
             ("hostio", "program_ink_status") => ProgramInkStatus,
             ("hostio", "program_set_ink") => ProgramSetInk,
             ("hostio", "program_stack_left") => ProgramStackLeft,
             ("hostio", "program_set_stack") => ProgramSetStack,
+            ("hostio", "program_memory_size") => ProgramMemorySize,
             ("hostio", "program_call_main") => ProgramCallMain,
             ("hostio", "user_ink_left") => UserInkLeft,
             ("hostio", "user_ink_status") => UserInkStatus,
@@ -173,11 +179,13 @@ impl Hostio {
             WavmHaltAndSetFinished      => func!(),
             WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
             WavmUnlinkModule            => func!(),                  // λ()
+            WavmSetErrorPolicy          => func!([I32]),             // λ(enabled)
             ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
             ProgramInkStatus            => func!([I32], [I32]),      // λ(module) → ink_status
             ProgramSetInk               => func!([I32, I64]),        // λ(module, ink_left)
             ProgramStackLeft            => func!([I32], [I32]),      // λ(module) → stack_left
             ProgramSetStack             => func!([I32, I32]),        // λ(module, stack_left)
+            ProgramMemorySize           => func!([I32], [I32]),      // λ(module) → memory_size
             ProgramCallMain             => func!([I32, I32], [I32]), // λ(module, args_len) → status
             ConsoleLogTxt               => func!([I32, I32]),        // λ(text, len)
             ConsoleLogI32               => func!([I32]),             // λ(value)
@@ -287,6 +295,11 @@ impl Hostio {
                 // λ()
                 opcode!(UnlinkModule);
             }
+            WavmSetErrorPolicy => {
+                // λ(status)
+                opcode!(LocalGet, 0);
+                opcode!(SetErrorPolicy);
+            }
             ProgramInkLeft => {
                 // λ(module) → ink_left
                 cross_internal!(UserInkLeft);
@@ -309,6 +322,10 @@ impl Hostio {
                 // λ(module, stack_left)
                 opcode!(LocalGet, 1); // stack_left
                 cross_internal!(UserSetStack);
+            }
+            ProgramMemorySize => {
+                // λ(module) → memory_size
+                cross_internal!(UserMemorySize);
             }
             ProgramCallMain => {
                 // λ(module, args_len) → status
@@ -419,6 +436,7 @@ pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
         add_func(&[inst(GlobalSet, status), inst(GlobalSet, gas)], UserSetInk);
         add_func(&[inst(GlobalGet, depth)], UserStackLeft);
         add_func(&[inst(GlobalSet, depth)], UserSetStack);
+        add_func(&[inst(MemorySize, 0)], UserMemorySize);
         add_func(&[inst(Call, main)], CallMain);
     }
     funcs

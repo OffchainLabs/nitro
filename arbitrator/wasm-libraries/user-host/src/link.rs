@@ -1,7 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{evm_api::ApiCaller, program::Program};
+use crate::{
+    evm_api::ApiCaller,
+    guard::{self, ErrorPolicy},
+    program::Program,
+};
 use arbutil::{
     evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
     format::DebugBytes,
@@ -60,7 +64,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activa
     let version = sp.read_u16();
     let debug = sp.read_bool32();
     let module_hash = sp.read_go_ptr();
-    let gas = sp.read_go_ptr();
+    let gas = sp.read_go_ptr() as usize;
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -106,7 +110,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
     let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(ApiCaller::new(sp.read_u32()));
     let evm_data: EvmData = sp.skip_space().unbox();
-    let gas = sp.read_go_ptr();
+    let gas = sp.read_go_ptr() as usize;
 
     // buy ink
     let pricing = config.pricing;
@@ -119,10 +123,14 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
 
     // provide arguments
     let args_len = calldata.len();
-    Program::push_new(calldata, evm_api, evm_data, config);
+    Program::push_new(calldata, evm_api, evm_data, module, config);
 
     // call the program
+    guard::set_error_policy(ErrorPolicy::Recover);
     let status = program_call_main(module, args_len);
+
+    // collect results
+    guard::set_error_policy(ErrorPolicy::ChainHalt);
     let outs = Program::pop();
     sp.restore_stack(); // restore the stack pointer (corrupts during EVM API calls)
 

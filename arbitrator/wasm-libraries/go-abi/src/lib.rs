@@ -71,7 +71,7 @@ impl GoStack {
         self.read_u32() != 0
     }
 
-    pub unsafe fn read_go_ptr(&mut self) -> usize {
+    pub unsafe fn read_go_ptr(&mut self) -> u32 {
         self.read_u64().try_into().expect("go pointer doesn't fit")
     }
 

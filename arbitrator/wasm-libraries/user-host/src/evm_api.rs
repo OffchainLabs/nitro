@@ -1,6 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use crate::guard::{self, ErrorPolicy};
 use arbutil::evm::{
     api::EvmApiMethod,
     js::{ApiValue, JsCallIntoGo},
@@ -40,6 +41,8 @@ impl JsCallIntoGo for ApiCaller {
 
         let api_id = self.api_id;
         unsafe {
+            guard::set_error_policy(ErrorPolicy::ChainHalt);
+
             let count = run_api_closure(api_id, method, data.as_ptr(), lens.as_ptr(), args.len());
             let mut lens = vec![0_usize; count];
             read_api_result_lens(lens.as_mut_ptr());
@@ -48,7 +51,9 @@ impl JsCallIntoGo for ApiCaller {
             let data: Vec<_> = outs.iter_mut().map(Vec::as_mut_ptr).collect();
             move_api_result_data(data.as_ptr());
 
-            outs.into_iter().map(ApiValue).collect()
+            let outs = outs.into_iter().map(ApiValue).collect();
+            guard::set_error_policy(ErrorPolicy::Recover);
+            outs
         }
     }
 }

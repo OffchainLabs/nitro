@@ -12,6 +12,7 @@ wasmer-types = { path = "../tools/wasmer/lib/types/" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
 wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm", optional = true }
+user-host-trait = { path = "../wasm-libraries/user-host-trait/" }
 derivative = "2.2.0"
 parking_lot = "0.12.1"
 thiserror = "1.0.33"

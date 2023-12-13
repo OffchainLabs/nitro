@@ -56,6 +56,11 @@ func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
 	return c.State.ChainOwners().Add(c.caller)
 }
 
+// Halts the chain by panicking in the STF
+func (con ArbDebug) Panic(c ctx, evm mech) error {
+	panic("called ArbDebug's debug-only Panic method")
+}
+
 func (con ArbDebug) LegacyError(c ctx) error {
 	return errors.New("example legacy error")
 }
