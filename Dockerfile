@@ -118,6 +118,7 @@ COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/wasm-libraries/go-js arbitrator/wasm-libraries/go-js
+COPY arbitrator/wasm-libraries/user-host-trait arbitrator/wasm-libraries/user-host-trait
 RUN mkdir arbitrator/prover/src arbitrator/jit/src arbitrator/stylus/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
