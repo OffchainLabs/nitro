@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/google/go-cmp/cmp"
@@ -262,6 +263,14 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
 	if result.Cmp(common.Big0) != 0 {
-		t.Fatalf("Unexpected result. Got: %d, want: 0", result.Uint64())
+		t.Fatalf("Unexpected result. Got: %d, want: 0", result)
+	}
+
+	result, err = p.evalMaxFeeCapExpr(0, time.Since(time.Time{}))
+	if err != nil {
+		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
+	}
+	if result.Cmp(big.NewInt(params.GWei)) <= 0 {
+		t.Fatalf("Unexpected result. Got: %d, want: >0", result)
 	}
 }
