@@ -73,6 +73,10 @@ pub trait UserHost: GasMeteredMachine {
     fn say<D: Display>(&self, text: D);
     fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
 
+    /// Reads the program calldata. The semantics are equivalent to that of the EVM's
+    /// [`CALLDATA_COPY`] opcode when requesting the entirety of the current call's calldata.
+    ///
+    /// [`CALLDATA_COPY`]: https://www.evm.codes/#37
     fn read_args(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         self.pay_for_write(self.args().len() as u32)?;
@@ -80,6 +84,9 @@ pub trait UserHost: GasMeteredMachine {
         trace!("read_args", self, &[], self.args())
     }
 
+    /// Writes the final return data. If not called before the program exists, the return data will
+    /// be 0 bytes long. Note that this hostio does not cause the program to exit, which happens
+    /// naturally when `user_entrypoint` returns.
     fn write_result(&mut self, ptr: u32, len: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         self.pay_for_read(len)?;
@@ -87,6 +94,12 @@ pub trait UserHost: GasMeteredMachine {
         trace!("write_result", self, &*self.outs(), &[])
     }
 
+    /// Reads a 32-byte value from permanent storage. Stylus's storage format is identical to
+    /// that of the EVM. This means that, under the hood, this hostio is accessing the 32-byte
+    /// value stored in the EVM state trie at offset `key`, which will be `0` when not previously
+    /// set. The semantics, then, are equivalent to that of the EVM's [`SLOAD`] opcode.
+    ///
+    /// [`SLOAD`]: https://www.evm.codes/#54
     fn storage_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         let key = self.read_bytes32(key)?;
@@ -97,6 +110,12 @@ pub trait UserHost: GasMeteredMachine {
         trace!("storage_load_bytes32", self, key, value)
     }
 
+    /// Stores a 32-byte value to permanent storage. Stylus's storage format is identical to that
+    /// of the EVM. This means that, under the hood, this hostio is storing a 32-byte value into
+    /// the EVM state trie at offset `key`. Furthermore, refunds are tabulated exactly as in the
+    /// EVM. The semantics, then, are equivalent to that of the EVM's [`SSTORE`] opcode.
+    ///
+    /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
@@ -109,6 +128,20 @@ pub trait UserHost: GasMeteredMachine {
         trace!("storage_store_bytes32", self, [key, value], &[])
     }
 
+    /// Calls the contract at the given address with options for passing value and to limit the
+    /// amount of gas supplied. The return status indicates whether the call succeeded, and is
+    /// nonzero on failure.
+    ///
+    /// In both cases `return_data_len` will store the length of the result, the bytes of which can
+    /// be read via the `read_return_data` hostio. The bytes are not returned directly so that the
+    /// programmer can potentially save gas by choosing which subset of the return result they'd
+    /// like to copy.
+    ///
+    /// The semantics are equivalent to that of the EVM's [`CALL`] opcode, including callvalue
+    /// stipends and the 63/64 gas rule. This means that supplying the `u64::MAX` gas can be used
+    /// to send as much as possible.
+    ///
+    /// [`CALL`]: https://www.evm.codes/#f1
     fn call_contract(
         &mut self,
         contract: u32,
@@ -125,6 +158,20 @@ pub trait UserHost: GasMeteredMachine {
         self.do_call(contract, data, data_len, value, gas, ret_len, call, "")
     }
 
+    /// Delegate calls the contract at the given address, with the option to limit the amount of
+    /// gas supplied. The return status indicates whether the call succeeded, and is nonzero on
+    /// failure.
+    ///
+    /// In both cases `return_data_len` will store the length of the result, the bytes of which
+    /// can be read via the `read_return_data` hostio. The bytes are not returned directly so that
+    /// the programmer can potentially save gas by choosing which subset of the return result
+    /// they'd like to copy.
+    ///
+    /// The semantics are equivalent to that of the EVM's [`DELEGATE_CALL`] opcode, including the
+    /// 63/64 gas rule. This means that supplying `u64::MAX` gas can be used to send as much as
+    /// possible.
+    ///
+    /// [`DELEGATE_CALL`]: https://www.evm.codes/#F4
     fn delegate_call_contract(
         &mut self,
         contract: u32,
@@ -140,6 +187,20 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    /// Static calls the contract at the given address, with the option to limit the amount of gas
+    /// supplied. The return status indicates whether the call succeeded, and is nonzero on
+    /// failure.
+    ///
+    /// In both cases `return_data_len` will store the length of the result, the bytes of which can
+    /// be read via the `read_return_data` hostio. The bytes are not returned directly so that the
+    /// programmer can potentially save gas by choosing which subset of the return result they'd
+    /// like to copy.
+    ///
+    /// The semantics are equivalent to that of the EVM's [`STATIC_CALL`] opcode, including the
+    /// 63/64 gas rule. This means that supplying `u64::MAX` gas can be used to send as much as
+    /// possible.
+    ///
+    /// [`STATIC_CALL`]: https://www.evm.codes/#FA
     fn static_call_contract(
         &mut self,
         contract: u32,
@@ -153,6 +214,8 @@ pub trait UserHost: GasMeteredMachine {
         self.do_call(contract, data, data_len, None, gas, ret_len, call, "static")
     }
 
+    /// Performs one of the supported EVM calls.
+    /// Note that `value` must only be [`Some`] for normal calls.
     fn do_call<F>(
         &mut self,
         contract: u32,
@@ -199,6 +262,21 @@ pub trait UserHost: GasMeteredMachine {
         Ok(status)
     }
 
+    /// Deploys a new contract using the init code provided, which the EVM executes to construct
+    /// the code of the newly deployed contract. The init code must be written in EVM bytecode, but
+    /// the code it deploys can be that of a Stylus program. The code returned will be treated as
+    /// WASM if it begins with the EOF-inspired header `0xEFF000`. Otherwise the code will be
+    /// interpreted as that of a traditional EVM-style contract. See [`Deploying Stylus Programs`]
+    /// for more information on writing init code.
+    ///
+    /// On success, this hostio returns the address of the newly created account whose address is
+    /// a function of the sender and nonce. On failure the address will be `0`, `return_data_len`
+    /// will store the length of the revert data, the bytes of which can be read via the
+    /// `read_return_data` hostio. The semantics are equivalent to that of the EVM's [`CREATE`]
+    /// opcode, which notably includes the exact address returned.
+    ///
+    /// [`Deploying Stylus Programs`]: https://developer.arbitrum.io/TODO
+    /// [`CREATE`]: https://www.evm.codes/#f0
     fn create1(
         &mut self,
         code: u32,
@@ -221,6 +299,21 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    /// Deploys a new contract using the init code provided, which the EVM executes to construct
+    /// the code of the newly deployed contract. The init code must be written in EVM bytecode, but
+    /// the code it deploys can be that of a Stylus program. The code returned will be treated as
+    /// WASM if it begins with the EOF-inspired header `0xEFF000`. Otherwise the code will be
+    /// interpreted as that of a traditional EVM-style contract. See [`Deploying Stylus Programs`]
+    /// for more information on writing init code.
+    ///
+    /// On success, this hostio returns the address of the newly created account whose address is a
+    /// function of the sender, salt, and init code. On failure the address will be `0`,
+    /// `return_data_len` will store the length of the revert data, the bytes of which can be read
+    /// via the `read_return_data` hostio. The semantics are equivalent to that of the EVM's
+    /// `[CREATE2`] opcode, which notably includes the exact address returned.
+    ///
+    /// [`Deploying Stylus Programs`]: https://developer.arbitrum.io/TODO
+    /// [`CREATE2`]: https://www.evm.codes/#f5
     fn create2(
         &mut self,
         code: u32,
@@ -246,6 +339,10 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    /// Deploys a contract via [`CREATE`] or [`CREATE2`].
+    ///
+    /// [`CREATE`]: https://www.evm.codes/#f0
+    /// [`CREATE2`]: https://www.evm.codes/#f5
     fn do_create<F>(
         &mut self,
         code: u32,
@@ -290,6 +387,11 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    /// Copies the bytes of the last EVM call or deployment return result. Does not revert if out of
+    /// bounds, but rather copies the overlapping portion. The semantics are otherwise equivalent
+    /// to that of the EVM's [`RETURN_DATA_COPY`] opcode.
+    ///
+    /// [`RETURN_DATA_COPY`]: https://www.evm.codes/#3e
     fn read_return_data(&mut self, dest: u32, offset: u32, size: u32) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
         self.pay_for_write(size)?;
@@ -308,16 +410,30 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    /// Returns the length of the last EVM call or deployment return result, or `0` if neither have
+    /// happened during the program's execution. The semantics are equivalent to that of the EVM's
+    /// [`RETURN_DATA_SIZE`] opcode.
+    ///
+    /// [`RETURN_DATA_SIZE`]: https://www.evm.codes/#3d
     fn return_data_size(&mut self) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let len = *self.evm_return_data_len();
         trace!("return_data_size", self, be!(len), &[], len)
     }
 
+    /// Emits an EVM log with the given number of topics and data, the first bytes of which should
+    /// be the 32-byte-aligned topic data. The semantics are equivalent to that of the EVM's
+    /// [`LOG0`], [`LOG1`], [`LOG2`], [`LOG3`], and [`LOG4`] opcodes based on the number of topics
+    /// specified. Requesting more than `4` topics will induce a revert.
+    ///
+    /// [`LOG0`]: https://www.evm.codes/#a0
+    /// [`LOG1`]: https://www.evm.codes/#a1
+    /// [`LOG2`]: https://www.evm.codes/#a2
+    /// [`LOG3`]: https://www.evm.codes/#a3
+    /// [`LOG4`]: https://www.evm.codes/#a4
     fn emit_log(&mut self, data: u32, len: u32, topics: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
         if topics > 4 || len < topics * 32 {
-            println!("too many!!!!!!!!!!!!!!!!");
             Err(eyre!("bad topic data"))?;
         }
         self.pay_for_read(len)?;
@@ -328,6 +444,10 @@ pub trait UserHost: GasMeteredMachine {
         trace!("emit_log", self, [be!(topics), data], &[])
     }
 
+    /// Gets the ETH balance in wei of the account at the given address.
+    /// The semantics are equivalent to that of the EVM's [`BALANCE`] opcode.
+    ///
+    /// [`BALANCE`]: https://www.evm.codes/#31
     fn account_balance(&mut self, address: u32, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         let address = self.read_bytes20(address)?;
@@ -338,6 +458,12 @@ pub trait UserHost: GasMeteredMachine {
         trace!("account_balance", self, address, balance)
     }
 
+    /// Gets the code hash of the account at the given address. The semantics are equivalent
+    /// to that of the EVM's [`EXT_CODEHASH`] opcode. Note that the code hash of an account without
+    /// code will be the empty hash
+    /// `keccak("") = c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`.
+    ///
+    /// [`EXT_CODEHASH`]: https://www.evm.codes/#3F
     fn account_codehash(&mut self, address: u32, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         let address = self.read_bytes20(address)?;
@@ -348,42 +474,74 @@ pub trait UserHost: GasMeteredMachine {
         trace!("account_codehash", self, address, hash)
     }
 
+    /// Gets the basefee of the current block. The semantics are equivalent to that of the EVM's
+    /// [`BASEFEE`] opcode.
+    ///
+    /// [`BASEFEE`]: https://www.evm.codes/#48
     fn block_basefee(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes32(ptr, self.evm_data().block_basefee)?;
         trace!("block_basefee", self, &[], self.evm_data().block_basefee)
     }
 
+    /// Gets the coinbase of the current block, which on Arbitrum chains is the L1 batch poster's
+    /// address. This differs from Ethereum where the validator including the transaction
+    /// determines the coinbase.
     fn block_coinbase(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes20(ptr, self.evm_data().block_coinbase)?;
         trace!("block_coinbase", self, &[], self.evm_data().block_coinbase)
     }
 
+    /// Gets the gas limit of the current block. The semantics are equivalent to that of the EVM's
+    /// [`GAS_LIMIT`] opcode. Note that as of the time of this writing, `evm.codes` incorrectly
+    /// implies that the opcode returns the gas limit of the current transaction.  When in doubt,
+    /// consult [`The Ethereum Yellow Paper`].
+    ///
+    /// [`GAS_LIMIT`]: https://www.evm.codes/#45
+    /// [`The Ethereum Yellow Paper`]: https://ethereum.github.io/yellowpaper/paper.pdf
     fn block_gas_limit(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let limit = self.evm_data().block_gas_limit;
         trace!("block_gas_limit", self, &[], be!(limit), limit)
     }
 
+    /// Gets a bounded estimate of the L1 block number at which the Sequencer sequenced the
+    /// transaction. See [`Block Numbers and Time`] for more information on how this value is
+    /// determined.
+    ///
+    /// [`Block Numbers and Time`]: https://developer.arbitrum.io/time
     fn block_number(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let number = self.evm_data().block_number;
         trace!("block_number", self, &[], be!(number), number)
     }
 
+    /// Gets a bounded estimate of the Unix timestamp at which the Sequencer sequenced the
+    /// transaction. See [`Block Numbers and Time`] for more information on how this value is
+    /// determined.
+    ///
+    /// [`Block Numbers and Time`]: https://developer.arbitrum.io/time
     fn block_timestamp(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let timestamp = self.evm_data().block_timestamp;
         trace!("block_timestamp", self, &[], be!(timestamp), timestamp)
     }
 
+    /// Gets the unique chain identifier of the Arbitrum chain. The semantics are equivalent to
+    /// that of the EVM's [`CHAIN_ID`] opcode.
+    ///
+    /// [`CHAIN_ID`]: https://www.evm.codes/#46
     fn chainid(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let chainid = self.evm_data().chainid;
         trace!("chainid", self, &[], be!(chainid), chainid)
     }
 
+    /// Gets the address of the current program. The semantics are equivalent to that of the EVM's
+    /// [`ADDRESS`] opcode.
+    ///
+    /// [`ADDRESS`]: https://www.evm.codes/#30
     fn contract_address(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes20(ptr, self.evm_data().contract_address)?;
@@ -395,36 +553,66 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    /// Gets the amount of gas left after paying for the cost of this hostio. The semantics are
+    /// equivalent to that of the EVM's [`GAS`] opcode.
+    ///
+    /// [`GAS`]: https://www.evm.codes/#5a
     fn evm_gas_left(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let gas = self.gas_left()?;
         trace!("evm_gas_left", self, be!(gas), &[], gas)
     }
 
+    /// Gets the amount of ink remaining after paying for the cost of this hostio. The semantics
+    /// are equivalent to that of the EVM's [`GAS`] opcode, except the units are in ink. See
+    /// [`Ink and Gas`] for more information on Stylus's compute pricing.
+    ///
+    /// [`GAS`]: https://www.evm.codes/#5a
+    /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
     fn evm_ink_left(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let ink = self.ink_ready()?;
         trace!("evm_ink_left", self, be!(ink), &[], ink)
     }
 
+    /// Whether the current call is reentrant.
     fn msg_reentrant(&mut self) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let reentrant = self.evm_data().reentrant;
         trace!("msg_reentrant", self, &[], be!(reentrant), reentrant)
     }
 
+    /// Gets the address of the account that called the program. For normal L2-to-L2 transactions
+    /// the semantics are equivalent to that of the EVM's [`CALLER`] opcode, including in cases
+    /// arising from [`DELEGATE_CALL`].
+    ///
+    /// For L1-to-L2 retryable ticket transactions, the top-level sender's address will be aliased.
+    /// See [`Retryable Ticket Address Aliasing`][aliasing] for more information on how this works.
+    ///
+    /// [`CALLER`]: https://www.evm.codes/#33
+    /// [`DELEGATE_CALL`]: https://www.evm.codes/#f4
+    /// [aliasing]: https://developer.arbitrum.io/arbos/l1-to-l2-messaging#address-aliasing
     fn msg_sender(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes20(ptr, self.evm_data().msg_sender)?;
         trace!("msg_sender", self, &[], self.evm_data().msg_sender)
     }
 
+    /// Get the ETH value in wei sent to the program. The semantics are equivalent to that of the
+    /// EVM's [`CALLVALUE`] opcode.
+    ///
+    /// [`CALLVALUE`]: https://www.evm.codes/#34
     fn msg_value(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes32(ptr, self.evm_data().msg_value)?;
         trace!("msg_value", self, &[], self.evm_data().msg_value)
     }
 
+    /// Efficiently computes the [`keccak256`] hash of the given preimage.
+    /// The semantics are equivalent to that of the EVM's [`SHA3`] opcode.
+    ///
+    /// [`keccak256`]: https://en.wikipedia.org/wiki/SHA-3
+    /// [`SHA3`]: https://www.evm.codes/#20
     fn native_keccak256(&mut self, input: u32, len: u32, output: u32) -> Result<(), Self::Err> {
         self.pay_for_keccak(len)?;
 
@@ -434,24 +622,37 @@ pub trait UserHost: GasMeteredMachine {
         trace!("native_keccak256", self, preimage, digest)
     }
 
+    /// Gets the gas price in wei per gas, which on Arbitrum chains equals the basefee. The
+    /// semantics are equivalent to that of the EVM's [`GAS_PRICE`] opcode.
+    ///
+    /// [`GAS_PRICE`]: https://www.evm.codes/#3A
     fn tx_gas_price(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes32(ptr, self.evm_data().tx_gas_price)?;
         trace!("tx_gas_price", self, &[], self.evm_data().tx_gas_price)
     }
 
+    /// Gets the price of ink in evm gas basis points. See [`Ink and Gas`] for more information on
+    /// Stylus's compute-pricing model.
+    ///
+    /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
     fn tx_ink_price(&mut self) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let ink_price = self.pricing().ink_price;
         trace!("tx_ink_price", self, &[], be!(ink_price), ink_price)
     }
 
+    /// Gets the top-level sender of the transaction. The semantics are equivalent to that of the
+    /// EVM's [`ORIGIN`] opcode.
+    ///
+    /// [`ORIGIN`]: https://www.evm.codes/#32
     fn tx_origin(&mut self, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + PTR_INK)?;
         self.write_bytes20(ptr, self.evm_data().tx_origin)?;
         trace!("tx_origin", self, &[], self.evm_data().tx_origin)
     }
 
+    /// Pays for new pages as needed before the memory.grow opcode is invoked
     fn memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
         if pages == 0 {
             self.buy_ink(HOSTIO_INK)?;
@@ -462,18 +663,21 @@ pub trait UserHost: GasMeteredMachine {
         trace!("memory_grow", self, be!(pages), &[])
     }
 
+    /// Prints a UTF-8 encoded string to the console. Only available in debug mode.
     fn console_log_text(&mut self, ptr: u32, len: u32) -> Result<(), Self::Err> {
         let text = self.read_slice(ptr, len)?;
         self.say(String::from_utf8_lossy(&text));
         trace!("console_log_text", self, text, &[])
     }
 
+    /// Prints a value to the console. Only available in debug mode.
     fn console_log<T: Into<Value>>(&mut self, value: T) -> Result<(), Self::Err> {
         let value = value.into();
         self.say(value);
         trace!("console_log", self, [format!("{value}").as_bytes()], &[])
     }
 
+    /// Prints and returns a value to the console. Only available in debug mode.
     fn console_tee<T: Into<Value> + Copy>(&mut self, value: T) -> Result<T, Self::Err> {
         self.say(value.into());
         Ok(value)

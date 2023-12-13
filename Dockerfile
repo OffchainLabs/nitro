@@ -118,11 +118,12 @@ COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/wasm-libraries/go-js arbitrator/wasm-libraries/go-js
-COPY arbitrator/wasm-libraries/user-host-trait arbitrator/wasm-libraries/user-host-trait
+COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
 RUN mkdir arbitrator/prover/src arbitrator/jit/src arbitrator/stylus/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
     rm arbitrator/jit/src/lib.rs
 COPY ./Makefile ./
