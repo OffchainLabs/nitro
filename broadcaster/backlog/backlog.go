@@ -294,6 +294,12 @@ func (s *backlogSegment) start() uint64 {
 func (s *backlogSegment) End() uint64 {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
+	return s.end()
+}
+
+// end allows the first message to be retrieved from functions that already
+// have the messagesLock.
+func (s *backlogSegment) end() uint64 {
 	c := len(s.messages)
 	if c == 0 {
 		return uint64(0)
@@ -328,7 +334,7 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 		return noMsgs, errOutOfBounds
 	}
 
-	if end > s.End() {
+	if end > s.end() {
 		return noMsgs, errOutOfBounds
 	}
 
@@ -367,7 +373,7 @@ func (s *backlogSegment) Contains(i uint64) bool {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
 	start := s.start()
-	if i < start || i > s.End() {
+	if i < start || i > s.end() {
 		return false
 	}
 
