@@ -22,12 +22,21 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-func createArbMachine(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash) (*arbMachines, error) {
+func createArbMachine(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash, opts ...server_common.MachineLoaderOpt) (*arbMachines, error) {
+	loaderCfg := &server_common.MachineLoaderCfg{}
+	for _, o := range opts {
+		o(loaderCfg)
+	}
 	binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
-	log.Info("creating nitro machine", "binpath", binPath)
-	baseMachine := C.arbitrator_load_wavm_binary(cBinPath)
+
+	log.Info("creating nitro machine", "binpath", binPath, "alwaysMerkleize", loaderCfg.ShouldAlwaysMerkleize())
+	shouldMerkleize := C.uint8_t(0)
+	if loaderCfg.ShouldAlwaysMerkleize() {
+		shouldMerkleize = C.uint8_t(1)
+	}
+	baseMachine := C.arbitrator_load_wavm_binary(cBinPath, shouldMerkleize)
 	if baseMachine == nil {
 		return nil, errors.New("failed to load base machine")
 	}

@@ -55,7 +55,7 @@ func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.Machin
 	if err != nil {
 		return nil, err
 	}
-	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*JitMachine, error) {
+	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash, opts ...server_common.MachineLoaderOpt) (*JitMachine, error) {
 		binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.ProverBinPath)
 		return createJitMachine(jitPath, binPath, config.JitCranelift, moduleRoot, fatalErrChan)
 	}
