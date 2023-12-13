@@ -302,10 +302,10 @@ func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
 ) (*dataposter.DataPoster, error) {
-	if transactOpts == nil {
+	cfg := cfgFetcher.Get()
+	if transactOpts == nil && cfg.Staker.DataPoster.ExternalSigner.URL == "" {
 		return nil, nil
 	}
-	cfg := cfgFetcher.Get()
 	mdRetriever := func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 		return nil, nil
 	}
@@ -323,6 +323,12 @@ func StakerDataposter(
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
+	var sender string
+	if transactOpts != nil {
+		sender = transactOpts.From.String()
+	} else {
+		sender = cfg.Staker.DataPoster.ExternalSigner.Address
+	}
 	return dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
 			Database:          db,
@@ -332,8 +338,7 @@ func StakerDataposter(
 			RedisLock:         redisLock,
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
-			// transactOpts is non-nil, it's checked at the beginning.
-			RedisKey: transactOpts.From.String() + ".staker-data-poster.queue",
+			RedisKey:          sender + ".staker-data-poster.queue",
 		})
 }
 
@@ -580,7 +585,7 @@ func createNodeImpl(
 		// creation into multiple helpers.
 		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
 		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
-			if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
+			if config.Staker.UseSmartContractWallet || (txOptsValidator == nil && config.Staker.DataPoster.ExternalSigner.URL == "") {
 				var existingWalletAddress *common.Address
 				if len(config.Staker.ContractWalletAddress) > 0 {
 					if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
@@ -598,7 +603,7 @@ func createNodeImpl(
 				if len(config.Staker.ContractWalletAddress) > 0 {
 					return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 				}
-				wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, txOptsValidator, getExtraGas)
+				wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, getExtraGas)
 				if err != nil {
 					return nil, err
 				}
@@ -615,26 +620,26 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		if stakerObj.Strategy() == staker.WatchtowerStrategy {
-			if err := wallet.Initialize(ctx); err != nil {
-				return nil, err
-			}
+		if err := wallet.Initialize(ctx); err != nil {
+			return nil, err
 		}
-		var txValidatorSenderPtr *common.Address
+		var validatorAddr string
 		if txOptsValidator != nil {
-			txValidatorSenderPtr = &txOptsValidator.From
+			validatorAddr = txOptsValidator.From.String()
+		} else {
+			validatorAddr = config.Staker.DataPoster.ExternalSigner.Address
 		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", txValidatorSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", validatorAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
 	var delayedSequencer *DelayedSequencer
 	if config.BatchPoster.Enable {
-		if txOptsBatchPoster == nil {
+		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{

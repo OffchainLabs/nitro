@@ -53,6 +53,8 @@ var TestClientConfig = ClientConfig{
 var DefaultClientConfig = ClientConfig{
 	URL:         "self-auth",
 	JWTSecret:   "",
+	Retries:     3,
+	RetryErrors: "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit: 2048,
 }
 
