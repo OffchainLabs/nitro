@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 
@@ -69,12 +70,16 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateBoldExecutionRun(ctx context.Context, stepSize uint64, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
+func (a *ExecServerAPI) CreateBoldExecutionRun(ctx context.Context, stepSize string, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
-	execRun, err := a.execSpawner.CreateBoldExecutionRun(wasmModuleRoot, stepSize, input).Await(ctx)
+	stepSizeVal, err := strconv.ParseUint(stepSize, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	execRun, err := a.execSpawner.CreateBoldExecutionRun(wasmModuleRoot, stepSizeVal, input).Await(ctx)
 	if err != nil {
 		return 0, err
 	}
