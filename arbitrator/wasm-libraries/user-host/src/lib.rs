@@ -7,5 +7,6 @@ mod host;
 mod ink;
 mod link;
 mod program;
+mod traits;
 
-pub use host::UserHost;
+pub use traits::UserHost;
