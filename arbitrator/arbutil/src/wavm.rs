@@ -3,6 +3,9 @@
 
 use crate::{Bytes20, Bytes32};
 
+/// WASM page size, or 2^16 bytes.
+pub const PAGE_SIZE: u32 = 1 << 16;
+
 extern "C" {
     fn wavm_caller_load8(ptr: usize) -> u8;
     fn wavm_caller_load32(ptr: usize) -> u32;

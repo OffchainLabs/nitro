@@ -11,6 +11,21 @@ use prover::programs::prelude::*;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 
+// allows introspection into user modules
+#[link(wasm_import_module = "hostio")]
+extern "C" {
+    fn program_memory_size(module: u32) -> u32;
+}
+
+/// Signifies an out-of-bounds memory access was requested.
+pub(crate) struct MemoryBoundsError;
+
+impl From<MemoryBoundsError> for eyre::ErrReport {
+    fn from(_: MemoryBoundsError) -> Self {
+        eyre!("memory access out of bounds")
+    }
+}
+
 /// The list of active programs. The current program is always the last.
 ///
 /// Note that this data-structure may re-alloc while references to [`Program`] are held.
@@ -32,6 +47,8 @@ pub(crate) struct Program {
     pub evm_api: JsEvmApi<ApiCaller>,
     /// EVM Context info.
     pub evm_data: EvmData,
+    /// WAVM module index.
+    pub module: u32,
     /// Call configuration.
     pub config: StylusConfig,
 }
@@ -42,6 +59,7 @@ impl Program {
         args: Vec<u8>,
         evm_api: JsEvmApi<ApiCaller>,
         evm_data: EvmData,
+        module: u32,
         config: StylusConfig,
     ) {
         let program = Self {
@@ -49,6 +67,7 @@ impl Program {
             outs: vec![],
             evm_api,
             evm_data,
+            module,
             config,
         };
         unsafe { PROGRAMS.push(Box::new(program)) }
@@ -63,16 +82,23 @@ impl Program {
     pub fn current() -> &'static mut Self {
         unsafe { PROGRAMS.last_mut().expect("no program") }
     }
-}
 
-pub(crate) struct MemoryBoundsError;
+    /// Reads the program's memory size in pages
+    fn memory_size(&self) -> u32 {
+        unsafe { program_memory_size(self.module) }
+    }
 
-impl From<MemoryBoundsError> for eyre::ErrReport {
-    fn from(_: MemoryBoundsError) -> Self {
-        eyre!("memory access out of bounds")
+    /// Ensures an access is within bounds
+    fn check_memory_access(&self, ptr: u32, bytes: u32) -> Result<(), MemoryBoundsError> {
+        let last_page = ptr.saturating_add(bytes) / wavm::PAGE_SIZE;
+        if last_page > self.memory_size() {
+            return Err(MemoryBoundsError);
+        }
+        Ok(())
     }
 }
 
+#[allow(clippy::unit_arg)]
 impl UserHost for Program {
     type Err = eyre::ErrReport;
     type MemoryErr = MemoryBoundsError;
@@ -99,38 +125,38 @@ impl UserHost for Program {
     }
 
     fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError> {
-        // TODO: check bounds
+        self.check_memory_access(ptr, 20)?;
         unsafe { Ok(wavm::read_bytes20(ptr as usize)) }
     }
 
     fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError> {
-        // TODO: check bounds
+        self.check_memory_access(ptr, 32)?;
         unsafe { Ok(wavm::read_bytes32(ptr as usize)) }
     }
 
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
-        // TODO: check bounds
+        self.check_memory_access(ptr, len)?;
         unsafe { Ok(wavm::read_slice_usize(ptr as usize, len as usize)) }
     }
 
     fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError> {
-        unsafe { wavm::caller_store32(ptr as usize, x) };
-        Ok(()) // TODO: check bounds
+        self.check_memory_access(ptr, 4)?;
+        unsafe { Ok(wavm::caller_store32(ptr as usize, x)) }
     }
 
     fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), MemoryBoundsError> {
-        unsafe { wavm::write_bytes20(ptr as usize, src) };
-        Ok(()) // TODO: check bounds
+        self.check_memory_access(ptr, 20)?;
+        unsafe { Ok(wavm::write_bytes20(ptr as usize, src)) }
     }
 
     fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), MemoryBoundsError> {
-        unsafe { wavm::write_bytes32(ptr as usize, src) };
-        Ok(()) // TODO: check bounds
+        self.check_memory_access(ptr, 32)?;
+        unsafe { Ok(wavm::write_bytes32(ptr as usize, src)) }
     }
 
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError> {
-        unsafe { wavm::write_slice_usize(src, ptr as usize) }
-        Ok(()) // TODO: check bounds
+        self.check_memory_access(ptr, src.len() as u32)?;
+        unsafe { Ok(wavm::write_slice_usize(src, ptr as usize)) }
     }
 
     fn say<D: Display>(&self, text: D) {

@@ -123,7 +123,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
 
     // provide arguments
     let args_len = calldata.len();
-    Program::push_new(calldata, evm_api, evm_data, config);
+    Program::push_new(calldata, evm_api, evm_data, module, config);
 
     // call the program
     guard::set_error_policy(ErrorPolicy::Recover);
