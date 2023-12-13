@@ -41,7 +41,7 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
 pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
     let source = sp.read_js();
-    let index = sp.read_go_ptr() as usize;
+    let index = sp.read_u64() as usize;
 
     let result = env.js_state.value_index(source, index);
     sp.write_js(result);
@@ -51,7 +51,7 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
 pub fn js_value_set_index(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
     let source = sp.read_js();
-    let index = sp.read_go_ptr() as usize;
+    let index = sp.read_u64() as usize;
     let value = sp.read_js();
 
     env.js_state.value_set_index(source, index, value);

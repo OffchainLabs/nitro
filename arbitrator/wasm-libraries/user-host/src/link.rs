@@ -64,7 +64,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activa
     let version = sp.read_u16();
     let debug = sp.read_bool32();
     let module_hash = sp.read_go_ptr();
-    let gas = sp.read_go_ptr();
+    let gas = sp.read_go_ptr() as usize;
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
     let config: StylusConfig = sp.unbox();
     let evm_api = JsEvmApi::new(ApiCaller::new(sp.read_u32()));
     let evm_data: EvmData = sp.skip_space().unbox();
-    let gas = sp.read_go_ptr();
+    let gas = sp.read_go_ptr() as usize;
 
     // buy ink
     let pricing = config.pricing;

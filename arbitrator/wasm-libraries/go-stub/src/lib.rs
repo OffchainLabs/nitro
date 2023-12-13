@@ -325,7 +325,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
 pub unsafe extern "C" fn go__syscall_js_valueSetIndex(sp: usize) {
     let mut sp = GoStack::new(sp);
     let source = JsValueId(sp.read_u64());
-    let index = sp.read_go_ptr();
+    let index = sp.read_u64() as usize;
     let value = JsValueId(sp.read_u64());
 
     get_js().value_set_index(source, index, value);
@@ -399,7 +399,7 @@ pub unsafe extern "C" fn go__syscall_js_valueLoadString(sp: usize) {
 pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
     let mut sp = GoStack::new(sp);
     let source = JsValueId(sp.read_u64());
-    let index = sp.read_ptr::<*const u8>() as usize;
+    let index = sp.read_u64() as usize;
 
     let result = get_js().value_index(source, index);
     sp.write_js(result);

@@ -126,17 +126,17 @@ impl UserHost for Program {
 
     fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError> {
         self.check_memory_access(ptr, 20)?;
-        unsafe { Ok(wavm::read_bytes20(ptr as usize)) }
+        unsafe { Ok(wavm::read_bytes20(ptr)) }
     }
 
     fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError> {
         self.check_memory_access(ptr, 32)?;
-        unsafe { Ok(wavm::read_bytes32(ptr as usize)) }
+        unsafe { Ok(wavm::read_bytes32(ptr)) }
     }
 
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
-        unsafe { Ok(wavm::read_slice_usize(ptr as usize, len as usize)) }
+        unsafe { Ok(wavm::read_slice_u32(ptr, len)) }
     }
 
     fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError> {
@@ -146,17 +146,17 @@ impl UserHost for Program {
 
     fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 20)?;
-        unsafe { Ok(wavm::write_bytes20(ptr as usize, src)) }
+        unsafe { Ok(wavm::write_bytes20(ptr, src)) }
     }
 
     fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 32)?;
-        unsafe { Ok(wavm::write_bytes32(ptr as usize, src)) }
+        unsafe { Ok(wavm::write_bytes32(ptr, src)) }
     }
 
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
-        unsafe { Ok(wavm::write_slice_usize(src, ptr as usize)) }
+        unsafe { Ok(wavm::write_slice_u32(src, ptr)) }
     }
 
     fn say<D: Display>(&self, text: D) {
