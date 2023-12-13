@@ -304,8 +304,8 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 }
 
 func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	getMachine := func(ctx context.Context) (MachineInterface, error) {
-		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
+	getMachine := func(ctx context.Context, opts ...server_common.MachineLoaderOpt) (MachineInterface, error) {
+		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -326,13 +326,9 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 func (v *ArbitratorSpawner) CreateBoldExecutionRun(
 	wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput,
 ) containers.PromiseInterface[validator.ExecutionRun] {
-	getMachine := func(ctx context.Context) (MachineInterface, error) {
+	getMachine := func(ctx context.Context, opts ...server_common.MachineLoaderOpt) (MachineInterface, error) {
 		// Pass in step size.
-		// TODO: More robust handling here.
-		opts := make([]server_common.MachineLoaderOpt, 0)
-		if stepSize <= 8192 {
-			opts = append(opts, server_common.WithAlwaysMerkleize())
-		}
+		log.Info(fmt.Sprintf("Creating bold execution run closure with opts: %d", len(opts)))
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot, opts...)
 		if err != nil {
 			return nil, err

@@ -15,12 +15,13 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type executionRun struct {
 	stopwaiter.StopWaiter
 	cache                *MachineCache
-	initialMachineGetter func(context.Context) (MachineInterface, error)
+	initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error)
 	config               *MachineCacheConfig
 	close                sync.Once
 }
@@ -29,7 +30,7 @@ type executionRun struct {
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
 func NewExecutionRun(
 	ctxIn context.Context,
-	initialMachineGetter func(context.Context) (MachineInterface, error),
+	initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error),
 	config *MachineCacheConfig,
 ) (*executionRun, error) {
 	exec := &executionRun{}
@@ -66,7 +67,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		if stepSize <= 8192 {
 			log.Info(fmt.Sprintf("Step size %d is enough to trigger Merkleized machines, re-caching", stepSize))
-			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config)
+			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
 		}
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {

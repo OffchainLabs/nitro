@@ -2,9 +2,11 @@ package server_common
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -65,6 +67,7 @@ func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Has
 		status = newMachineStatus[M]()
 		l.machines[moduleRoot] = status
 		go func() {
+			log.Info(fmt.Sprintf("In machine loader, calling create machine with opts %d", len(opts)))
 			machine, err := l.createMachine(context.Background(), moduleRoot, opts...)
 			if err != nil {
 				status.ProduceError(err)

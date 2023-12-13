@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/offchainlabs/nitro/validator/server_common"
 	flag "github.com/spf13/pflag"
 )
 
@@ -46,13 +47,13 @@ func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 // `initialMachine` won't be mutated by this function.
-func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Context) (MachineInterface, error), config *MachineCacheConfig) *MachineCache {
+func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error), config *MachineCacheConfig, opts ...server_common.MachineLoaderOpt) *MachineCache {
 	cache := &MachineCache{
 		buildingLock: make(chan struct{}, 1), // locked on init
 		config:       config,
 	}
 	go func() {
-		zeroStepMachine, err := initialMachineGetter(ctx)
+		zeroStepMachine, err := initialMachineGetter(ctx, opts...)
 		if err == nil && zeroStepMachine.GetStepCount() != 0 {
 			zeroStepMachine.Destroy()
 			err = errors.New("initialMachine not at step count 0")
