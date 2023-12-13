@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -117,7 +117,7 @@ var DefaultTestConfig = Config{
 }
 
 type TransactionStreamerInterface interface {
-	AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error
+	AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error
 }
 
 type BroadcastClient struct {
@@ -381,7 +381,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			backoffDuration = bc.config().ReconnectInitialBackoff
 
 			if msg != nil {
-				res := broadcaster.BroadcastMessage{}
+				res := m.BroadcastMessage{}
 				err = json.Unmarshal(msg, &res)
 				if err != nil {
 					log.Error("error unmarshalling message", "msg", msg, "err", err)
@@ -483,7 +483,7 @@ func (bc *BroadcastClient) StopAndWait() {
 	}
 }
 
-func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
+func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *m.BroadcastFeedMessage) error {
 	if bc.config().Verify.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
 		return nil
