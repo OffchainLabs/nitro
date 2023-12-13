@@ -206,6 +206,6 @@ pub unsafe extern "C" fn user_host__tx_origin(ptr: u32) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__memory_grow(pages: u16) {
-    hostio!(memory_grow(pages))
+pub unsafe extern "C" fn user_host__pay_for_memory_grow(pages: u16) {
+    hostio!(pay_for_memory_grow(pages))
 }

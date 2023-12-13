@@ -296,8 +296,8 @@ pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     hostio!(env, tx_origin(ptr))
 }
 
-pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
-    hostio!(env, memory_grow(pages))
+pub(crate) fn pay_for_memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
+    hostio!(env, pay_for_memory_grow(pages))
 }
 
 pub(crate) fn console_log_text<E: EvmApi>(
