@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/EspressoSystems/espresso-sequencer-go/hotshot"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbos/espresso"
-	"github.com/offchainlabs/nitro/arbos/espresso/hotshot"
 )
 
 type HotShotReader struct {
@@ -27,8 +27,8 @@ func NewHotShotReader(hotShotAddr common.Address, l1client bind.ContractBackend)
 
 // L1HotShotCommitmentFromHeight returns a HotShot commitments to a sequencer block
 // This is used in the derivation pipeline to validate sequencer batches in Espresso mode
-func (h *HotShotReader) L1HotShotCommitmentFromHeight(blockHeight uint64) (*espresso.Commitment, error) {
-	var comm espresso.Commitment
+func (h *HotShotReader) L1HotShotCommitmentFromHeight(blockHeight uint64) (*espressoTypes.Commitment, error) {
+	var comm espressoTypes.Commitment
 	// Check if the requested commitments are even available yet on L1.
 	contractBlockHeight, err := h.HotShot.HotshotCaller.BlockHeight(nil)
 	if err != nil {
@@ -56,7 +56,7 @@ func (h *HotShotReader) L1HotShotCommitmentFromHeight(blockHeight uint64) (*espr
 		// trying to read on the current fork of L1.
 		return nil, fmt.Errorf("read 0 for commitment %d at block height %d, this indicates an L1 reorg", blockHeight, contractBlockHeight)
 	}
-	comm, err = espresso.CommitmentFromUint256(espresso.NewU256().SetBigInt(commAsInt))
+	comm, err = espressoTypes.CommitmentFromUint256(espressoTypes.NewU256().SetBigInt(commAsInt))
 	if err != nil {
 		return nil, err
 	}

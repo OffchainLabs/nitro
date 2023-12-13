@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/espresso"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -76,7 +76,7 @@ type InboxReaderInterface interface {
 }
 
 type HotShotReaderInterface interface {
-	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espresso.Commitment, error)
+	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espressoTypes.Commitment, error)
 }
 
 type L1ReaderInterface interface {
@@ -179,7 +179,7 @@ type validationEntry struct {
 	// Valid since Ready
 	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
 	DelayedMsg        []byte
-	HotShotCommitment espresso.Commitment
+	HotShotCommitment espressoTypes.Commitment
 }
 
 func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {

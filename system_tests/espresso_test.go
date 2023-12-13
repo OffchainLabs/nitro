@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/jarcoal/httpmock"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -80,15 +81,13 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 		func(req *http.Request) (*http.Response, error) {
 			log.Info("GET", "url", req.URL)
 			block := uint64(httpmock.MustGetSubmatchAsUint(req, 1))
-			header := espresso.Header{
+			header := espressoTypes.Header{
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
-				// See: arbos/espresso/nmt.go
-				TransactionsRoot: espresso.NmtRoot{Root: []byte{}},
-				Metadata: espresso.Metadata{
-					L1Head:    block,
-					Timestamp: uint64(time.Now().Unix()),
-				},
+				Height:           block,
+				TransactionsRoot: espressoTypes.NmtRoot{Root: []byte{}},
+				L1Head:           0, // Currently not used
+				Timestamp:        uint64(time.Now().Unix()),
 			}
 			return httpmock.NewJsonResponse(200, header)
 		})
@@ -99,7 +98,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 		"GET",
 		`=~http://127.0.0.1:50000/availability/block/(\d+)/namespace/100`,
 		func(req *http.Request) (*http.Response, error) {
-			txes := []espresso.Transaction{}
+			txes := []espressoTypes.Transaction{}
 			block := int(httpmock.MustGetSubmatchAsInt(req, 1))
 			data, ok := generators[block]
 			// Since we don't realize the validation of espresso yet,
@@ -112,20 +111,20 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			}
 			log.Info("GET", "url", req.URL)
 			if !ok {
-				r := espresso.NamespaceResponse{
+				r := espressoClient.NamespaceResponse{
 					Proof:        (*json.RawMessage)(&dummyProof),
-					Transactions: &[]espresso.Transaction{},
+					Transactions: &[]espressoTypes.Transaction{},
 				}
 				return httpmock.NewJsonResponse(200, r)
 			}
 			for _, rawTx := range data {
-				tx := espresso.Transaction{
+				tx := espressoTypes.Transaction{
 					Vm:      100,
 					Payload: rawTx,
 				}
 				txes = append(txes, tx)
 			}
-			resp := espresso.NamespaceResponse{
+			resp := espressoClient.NamespaceResponse{
 				Proof:        (*json.RawMessage)(&dummyProof),
 				Transactions: &txes,
 			}

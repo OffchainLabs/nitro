@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/espresso"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -36,8 +36,8 @@ const (
 const MaxL2MessageSize = 256 * 1024
 
 type EspressoBlockJustification struct {
-	Header espresso.Header
-	Proof  espresso.NmtProof
+	Header espressoTypes.Header
+	Proof  espressoTypes.NmtProof
 }
 
 type L1IncomingMessageHeader struct {

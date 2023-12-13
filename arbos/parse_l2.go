@@ -10,20 +10,20 @@ import (
 	"math/big"
 	"time"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
-func ParseEspressoMsg(msg *arbostypes.L1IncomingMessage) ([]espresso.Bytes, *arbostypes.EspressoBlockJustification, error) {
+func ParseEspressoMsg(msg *arbostypes.L1IncomingMessage) ([]espressoTypes.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	if msg.Header.Kind != arbostypes.L1MessageType_L2Message {
 		return nil, nil, errors.New("Parsing espresso transactions failed. Invalid L1Message type")
 	}
@@ -218,7 +218,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 	}
 }
 
-func parseEspressoMsg(rd io.Reader) ([]espresso.Bytes, *arbostypes.EspressoBlockJustification, error) {
+func parseEspressoMsg(rd io.Reader) ([]espressoTypes.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, nil, err
@@ -226,7 +226,7 @@ func parseEspressoMsg(rd io.Reader) ([]espresso.Bytes, *arbostypes.EspressoBlock
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_EspressoTx:
-		txs := make([]espresso.Bytes, 0)
+		txs := make([]espressoTypes.Bytes, 0)
 		var jst *arbostypes.EspressoBlockJustification
 		for {
 			nextMsg, err := util.BytestringFromReader(rd, arbostypes.MaxL2MessageSize)
@@ -470,7 +470,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 // Storing it in L1 call data would lead to some waste. However, for the sake of this Proof of Concept,
 // this is deemed acceptable. Addtionally, after we finish the integration, there is no need to store
 // message in L1.
-func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espresso.Bytes, jst *arbostypes.EspressoBlockJustification) (arbostypes.L1IncomingMessage, error) {
+func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espressoTypes.Bytes, jst *arbostypes.EspressoBlockJustification) (arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
 
 	l2Message = append(l2Message, L2MessageKind_EspressoTx)

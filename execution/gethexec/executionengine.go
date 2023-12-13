@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -279,7 +279,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 
 func (s *ExecutionEngine) SequenceTransactionsEspresso(
 	header *arbostypes.L1IncomingMessageHeader,
-	rawTxes []espresso.Bytes,
+	rawTxes []espressoTypes.Bytes,
 	jst *arbostypes.EspressoBlockJustification,
 ) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {

@@ -6,8 +6,8 @@ package server_api
 import (
 	"encoding/base64"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
@@ -24,7 +24,7 @@ type ValidationInputJson struct {
 	DelayedMsgNr      uint64
 	PreimagesB64      map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
 	BatchInfo         []BatchInfoJson
-	HotShotCommitment espresso.Commitment
+	HotShotCommitment espressoTypes.Commitment
 	DelayedMsgB64     string
 	StartState        validator.GoGlobalState
 }

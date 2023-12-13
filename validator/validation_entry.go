@@ -1,8 +1,8 @@
 package validator
 
 import (
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -19,5 +19,5 @@ type ValidationInput struct {
 	BatchInfo         []BatchInfo
 	DelayedMsg        []byte
 	StartState        GoGlobalState
-	HotShotCommitment espresso.Commitment
+	HotShotCommitment espressoTypes.Commitment
 }
