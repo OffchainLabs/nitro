@@ -69,6 +69,7 @@ fn forward(file: &mut File) -> Result<()> {
     wln!(
         ";; Copyright 2022-2023, Offchain Labs, Inc.\n\
          ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE\n\
+         ;; This file is auto-generated.\n\
          \n\
          (module"
     );
@@ -101,8 +102,8 @@ fn forward(file: &mut File) -> Result<()> {
         "{s};; allows user_host to request a trap\n\
         {s}(global $trap (mut i32) (i32.const 0))\n\
         {s}(func $check\n\
-        {s}{s}(i32.eqz (i32.eqz (global.get $trap)))  ;; see if set\n\
-        {s}{s}(global.set $trap (i32.const 0))        ;; reset the flag\n\
+        {s}{s}global.get $trap                    ;; see if set\n\
+        {s}{s}(global.set $trap (i32.const 0))    ;; reset the flag\n\
         {s}{s}(if (then (unreachable)))\n\
         {s})\n\
         {s}(func (export \"forward__set_trap\")\n\
@@ -143,6 +144,7 @@ fn forward_stub(file: &mut File) -> Result<()> {
     wln!(
         ";; Copyright 2022-2023, Offchain Labs, Inc.\n\
          ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE\n\
+         ;; This file is auto-generated.\n\
          \n\
          (module"
     );

@@ -12,7 +12,7 @@ use arbutil::{
 };
 use eyre::Result;
 use prover::value::Value;
-use user_host::UserHost;
+use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
 impl<'a, A: EvmApi> UserHost for HostioInfo<'a, A> {

@@ -670,15 +670,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "go-abi"
-version = "0.1.0"
-dependencies = [
- "arbutil",
- "eyre",
- "go-js",
-]
-
-[[package]]
 name = "go-js"
 version = "0.1.0"
 dependencies = [
@@ -1637,7 +1628,7 @@ dependencies = [
  "rand",
  "sha3 0.10.8",
  "thiserror",
- "user-host",
+ "user-host-trait",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",
@@ -1807,14 +1798,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "user-host"
+name = "user-host-trait"
 version = "0.1.0"
 dependencies = [
  "arbutil",
  "eyre",
- "fnv",
- "go-abi",
- "hex",
  "prover",
 ]
 

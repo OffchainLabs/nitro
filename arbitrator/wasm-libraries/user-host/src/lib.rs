@@ -7,6 +7,3 @@ mod host;
 mod ink;
 mod link;
 mod program;
-mod traits;
-
-pub use traits::UserHost;

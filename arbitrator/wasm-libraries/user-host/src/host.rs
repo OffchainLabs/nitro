@@ -1,7 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{program::Program, traits::UserHost};
+use crate::program::Program;
+use user_host_trait::UserHost;
 
 #[link(wasm_import_module = "forward")]
 extern "C" {

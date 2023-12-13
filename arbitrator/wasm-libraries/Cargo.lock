@@ -1173,6 +1173,16 @@ dependencies = [
  "go-abi",
  "hex",
  "prover",
+ "user-host-trait",
+]
+
+[[package]]
+name = "user-host-trait"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "eyre",
+ "prover",
 ]
 
 [[package]]

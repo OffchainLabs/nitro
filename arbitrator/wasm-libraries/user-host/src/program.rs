@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{evm_api::ApiCaller, traits::UserHost};
+use crate::evm_api::ApiCaller;
 use arbutil::{
     evm::{js::JsEvmApi, EvmData},
     wavm, Bytes20, Bytes32, Color,
@@ -9,6 +9,7 @@ use arbutil::{
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
+use user_host_trait::UserHost;
 
 /// The list of active programs. The current program is always the last.
 ///
