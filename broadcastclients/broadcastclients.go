@@ -43,6 +43,7 @@ type BroadcastClients struct {
 	primaryClients   []*broadcastclient.BroadcastClient
 	secondaryClients []*broadcastclient.BroadcastClient
 	secondaryURL     []string
+	makeClient       func(string, *Router) (*broadcastclient.BroadcastClient, error)
 
 	primaryRouter   *Router
 	secondaryRouter *Router
@@ -50,8 +51,6 @@ type BroadcastClients struct {
 	// Use atomic access
 	connected int32
 }
-
-var makeClient func(string, *Router) (*broadcastclient.BroadcastClient, error)
 
 func NewBroadcastClients(
 	configFetcher broadcastclient.ConfigFetcher,
@@ -81,7 +80,7 @@ func NewBroadcastClients(
 		secondaryClients: make([]*broadcastclient.BroadcastClient, 0, len(config.SecondaryURL)),
 		secondaryURL:     config.SecondaryURL,
 	}
-	makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
+	clients.makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
 			configFetcher,
 			url,
@@ -97,7 +96,7 @@ func NewBroadcastClients(
 
 	var lastClientErr error
 	for _, address := range config.URL {
-		client, err := makeClient(address, clients.primaryRouter)
+		client, err := clients.makeClient(address, clients.primaryRouter)
 		if err != nil {
 			lastClientErr = err
 			log.Warn("init broadcast client failed", "address", address)
@@ -243,7 +242,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 	pos := len(bcs.secondaryClients)
 	if pos < len(bcs.secondaryURL) {
 		url := bcs.secondaryURL[pos]
-		client, err := makeClient(url, bcs.secondaryRouter)
+		client, err := bcs.makeClient(url, bcs.secondaryRouter)
 		if err != nil {
 			log.Warn("init broadcast secondary client failed", "address", url)
 			bcs.secondaryURL = append(bcs.secondaryURL[:pos], bcs.secondaryURL[pos+1:]...)
