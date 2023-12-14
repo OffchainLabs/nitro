@@ -91,13 +91,13 @@ impl<'a> FuncMiddleware<'a> for FuncHeapBound {
     {
         use Operator::*;
 
-        let Some(pay_for_memory_grow) = self.pay_func else {
+        let Some(pay_func) = self.pay_func else {
             out.extend([op]);
             return Ok(());
         };
 
         let global_index = self.scratch.as_u32();
-        let function_index = pay_for_memory_grow.as_u32();
+        let function_index = pay_func.as_u32();
 
         if let MemoryGrow { .. } = op {
             out.extend([
