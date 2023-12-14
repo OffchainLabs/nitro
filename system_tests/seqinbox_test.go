@@ -43,9 +43,9 @@ type blockTestState struct {
 const seqInboxTestIters = 40
 
 func encodeAddBatch(seqABI *abi.ABI, seqNum *big.Int, message []byte, afterDelayedMsgRead *big.Int, gasRefunder common.Address) ([]byte, error) {
-	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin0"]
+	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin"]
 	if !ok {
-		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin0 method")
+		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin method")
 	}
 	inputData, err := method.Inputs.Pack(
 		seqNum,

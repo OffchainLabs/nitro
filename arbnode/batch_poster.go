@@ -738,7 +738,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 }
 
 func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
-	method, ok := b.seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
+	method, ok := b.seqInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 	if !ok {
 		return nil, errors.New("failed to find add batch method")
 	}
