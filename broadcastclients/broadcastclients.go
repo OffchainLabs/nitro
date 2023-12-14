@@ -12,7 +12,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -25,14 +25,14 @@ const PRIMARY_FEED_UPTIME = time.Minute * 10
 
 type Router struct {
 	stopwaiter.StopWaiter
-	messageChan                 chan broadcaster.BroadcastFeedMessage
+	messageChan                 chan m.BroadcastFeedMessage
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
 
 	forwardTxStreamer       broadcastclient.TransactionStreamerInterface
 	forwardConfirmationChan chan arbutil.MessageIndex
 }
 
-func (r *Router) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (r *Router) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		r.messageChan <- *feedMessage
 	}
@@ -43,6 +43,7 @@ type BroadcastClients struct {
 	primaryClients   []*broadcastclient.BroadcastClient
 	secondaryClients []*broadcastclient.BroadcastClient
 	secondaryURL     []string
+	makeClient       func(string, *Router) (*broadcastclient.BroadcastClient, error)
 
 	primaryRouter   *Router
 	secondaryRouter *Router
@@ -50,8 +51,6 @@ type BroadcastClients struct {
 	// Use atomic access
 	connected int32
 }
-
-var makeClient func(string, *Router) (*broadcastclient.BroadcastClient, error)
 
 func NewBroadcastClients(
 	configFetcher broadcastclient.ConfigFetcher,
@@ -68,7 +67,7 @@ func NewBroadcastClients(
 	}
 	newStandardRouter := func() *Router {
 		return &Router{
-			messageChan:                 make(chan broadcaster.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
+			messageChan:                 make(chan m.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
 			confirmedSequenceNumberChan: make(chan arbutil.MessageIndex, ROUTER_QUEUE_SIZE),
 			forwardTxStreamer:           txStreamer,
 			forwardConfirmationChan:     confirmedSequenceNumberListener,
@@ -81,7 +80,7 @@ func NewBroadcastClients(
 		secondaryClients: make([]*broadcastclient.BroadcastClient, 0, len(config.SecondaryURL)),
 		secondaryURL:     config.SecondaryURL,
 	}
-	makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
+	clients.makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
 			configFetcher,
 			url,
@@ -97,7 +96,7 @@ func NewBroadcastClients(
 
 	var lastClientErr error
 	for _, address := range config.URL {
-		client, err := makeClient(address, clients.primaryRouter)
+		client, err := clients.makeClient(address, clients.primaryRouter)
 		if err != nil {
 			lastClientErr = err
 			log.Warn("init broadcast client failed", "address", address)
@@ -153,7 +152,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		defer stopSecondaryFeedTimer.Stop()
 		defer primaryFeedIsDownTimer.Stop()
 
-		msgHandler := func(msg broadcaster.BroadcastFeedMessage, router *Router) error {
+		msgHandler := func(msg m.BroadcastFeedMessage, router *Router) error {
 			if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
 				return nil
 			}
@@ -161,7 +160,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				return nil
 			}
 			recentFeedItemsNew[msg.SequenceNumber] = time.Now()
-			if err := router.forwardTxStreamer.AddBroadcastMessages([]*broadcaster.BroadcastFeedMessage{&msg}); err != nil {
+			if err := router.forwardTxStreamer.AddBroadcastMessages([]*m.BroadcastFeedMessage{&msg}); err != nil {
 				return err
 			}
 			return nil
@@ -243,7 +242,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 	pos := len(bcs.secondaryClients)
 	if pos < len(bcs.secondaryURL) {
 		url := bcs.secondaryURL[pos]
-		client, err := makeClient(url, bcs.secondaryRouter)
+		client, err := bcs.makeClient(url, bcs.secondaryRouter)
 		if err != nil {
 			log.Warn("init broadcast secondary client failed", "address", url)
 			bcs.secondaryURL = append(bcs.secondaryURL[:pos], bcs.secondaryURL[pos+1:]...)
