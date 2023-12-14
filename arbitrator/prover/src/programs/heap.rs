@@ -17,16 +17,18 @@ pub struct HeapBound {
     /// Upper bounds the amount of heap memory a module may use
     limit: Pages,
     /// Import called when allocating new pages
-    pay_for_memory_grow: RwLock<Option<FunctionIndex>>,
+    pay_func: RwLock<Option<FunctionIndex>>,
     /// Scratch global shared among middlewares
     scratch: RwLock<Option<GlobalIndex>>,
 }
 
 impl HeapBound {
+    const PAY_FUNC: &'static str = "pay_for_memory_grow";
+
     pub fn new(bounds: CompileMemoryParams) -> Self {
         Self {
             limit: bounds.heap_bound,
-            pay_for_memory_grow: RwLock::default(),
+            pay_func: RwLock::default(),
             scratch: RwLock::default(),
         }
     }
@@ -51,28 +53,23 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
             return Ok(());
         }
 
-        let ImportIndex::Function(import) = module.get_import("vm_hooks", "pay_for_memory_grow")?
-        else {
-            bail!("wrong import kind for {}", "pay_for_memory_grow".red());
+        let ImportIndex::Function(import) = module.get_import("vm_hooks", Self::PAY_FUNC)? else {
+            bail!("wrong import kind for {}", Self::PAY_FUNC.red());
         };
 
         let ty = module.get_function(import)?;
         if ty != FunctionType::new(vec![ArbValueType::I32], vec![]) {
-            bail!(
-                "wrong type for {}: {}",
-                "pay_for_memory_grow".red(),
-                ty.red()
-            );
+            bail!("wrong type for {}: {}", Self::PAY_FUNC.red(), ty.red());
         }
 
-        *self.pay_for_memory_grow.write() = Some(import);
+        *self.pay_func.write() = Some(import);
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         Ok(FuncHeapBound {
             scratch: self.scratch.read().expect("no scratch global"),
-            pay_for_memory_grow: *self.pay_for_memory_grow.read(),
+            pay_func: *self.pay_func.read(),
         })
     }
 
@@ -83,7 +80,7 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
 
 #[derive(Debug)]
 pub struct FuncHeapBound {
-    pay_for_memory_grow: Option<FunctionIndex>,
+    pay_func: Option<FunctionIndex>,
     scratch: GlobalIndex,
 }
 
@@ -94,7 +91,7 @@ impl<'a> FuncMiddleware<'a> for FuncHeapBound {
     {
         use Operator::*;
 
-        let Some(pay_for_memory_grow) = self.pay_for_memory_grow else {
+        let Some(pay_for_memory_grow) = self.pay_func else {
             out.extend([op]);
             return Ok(());
         };

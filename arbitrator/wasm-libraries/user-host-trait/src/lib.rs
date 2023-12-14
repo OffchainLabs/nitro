@@ -652,7 +652,7 @@ pub trait UserHost: GasMeteredMachine {
         trace!("tx_origin", self, &[], self.evm_data().tx_origin)
     }
 
-    /// Pays for new pages as needed before the memory.grow opcode is invoked
+    /// Pays for new pages as needed before the memory.grow opcode is invoked.
     fn pay_for_memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
         if pages == 0 {
             self.buy_ink(HOSTIO_INK)?;
