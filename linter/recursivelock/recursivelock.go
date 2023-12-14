@@ -1,3 +1,4 @@
+// Static Analyzer for detecting nested or recursive mutex read lock statements.
 package main
 
 import (
