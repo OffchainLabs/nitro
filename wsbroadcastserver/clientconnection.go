@@ -5,6 +5,7 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -12,13 +13,28 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+var errContextDone = errors.New("context done")
+
+type message struct {
+	data           []byte
+	sequenceNumber *arbutil.MessageIndex
+}
+
+type ClientConnectionAction struct {
+	cc     *ClientConnection
+	create bool
+}
 
 // ClientConnection represents client connection.
 type ClientConnection struct {
@@ -31,11 +47,15 @@ type ClientConnection struct {
 
 	desc            *netpoll.Desc
 	Name            string
-	clientManager   *ClientManager
+	clientAction    chan ClientConnectionAction
 	requestedSeqNum arbutil.MessageIndex
+	LastSentSeqNum  atomic.Uint64
 
 	lastHeardUnix int64
-	out           chan []byte
+	out           chan message
+	backlog       backlog.Backlog
+	registered    chan bool
+	backlogSent   bool
 
 	compression bool
 	flateReader *wsflate.Reader
@@ -46,11 +66,13 @@ type ClientConnection struct {
 func NewClientConnection(
 	conn net.Conn,
 	desc *netpoll.Desc,
-	clientManager *ClientManager,
+	clientAction chan ClientConnectionAction,
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	maxSendQueue int,
 	delay time.Duration,
+	bklg backlog.Backlog,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
@@ -58,13 +80,16 @@ func NewClientConnection(
 		desc:            desc,
 		creation:        time.Now(),
 		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
-		clientManager:   clientManager,
+		clientAction:    clientAction,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
-		out:             make(chan []byte, clientManager.config().MaxSendQueue),
+		out:             make(chan message, maxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
 		delay:           delay,
+		backlog:         bklg,
+		registered:      make(chan bool, 1),
+		backlogSent:     false,
 	}
 }
 
@@ -76,47 +101,169 @@ func (cc *ClientConnection) Compression() bool {
 	return cc.compression
 }
 
+// Register sends the ClientConnection to be registered with the ClientManager.
+func (cc *ClientConnection) Register() {
+	cc.clientAction <- ClientConnectionAction{
+		cc:     cc,
+		create: true,
+	}
+}
+
+// Remove sends the ClientConnection to be removed from the ClientManager.
+func (cc *ClientConnection) Remove() {
+	cc.clientAction <- ClientConnectionAction{
+		cc:     cc,
+		create: false,
+	}
+}
+
+func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) error {
+	var prevSegment backlog.BacklogSegment
+	for !backlog.IsBacklogSegmentNil(segment) {
+		// must get the next segment before the messages to be sent are
+		// retrieved ensures another segment is not added in between calls.
+		prevSegment = segment
+		segment = segment.Next()
+
+		select {
+		case <-ctx.Done():
+			return errContextDone
+		default:
+		}
+
+		msgs := prevSegment.Messages()
+		if prevSegment.Contains(uint64(cc.requestedSeqNum)) {
+			requestedIdx := int(cc.requestedSeqNum) - int(prevSegment.Start())
+			msgs = msgs[requestedIdx:]
+		}
+		bm := &m.BroadcastMessage{
+			Version:  m.V1,
+			Messages: msgs,
+		}
+		err := cc.writeBroadcastMessage(bm)
+		if err != nil {
+			return err
+		}
+
+		// do not use prevSegment.End() method, must figure out the last
+		// sequence number from the messages that were actually sent in case
+		// more messages are added.
+		end := uint64(msgs[len(msgs)-1].SequenceNumber)
+		cc.LastSentSeqNum.Store(end)
+		log.Debug("segment sent to client", "client", cc.Name, "sentCount", len(bm.Messages), "lastSentSeqNum", end)
+	}
+	return nil
+}
+
+func (cc *ClientConnection) writeBroadcastMessage(bm *m.BroadcastMessage) error {
+	notCompressed, compressed, err := serializeMessage(bm, !cc.compression, cc.compression)
+	if err != nil {
+		return err
+	}
+
+	var data []byte
+	if cc.compression {
+		data = compressed.Bytes()
+	} else {
+		data = notCompressed.Bytes()
+	}
+	err = cc.writeRaw(data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
+		// A delay may be configured, ensures the Broadcaster delays before any
+		// messages are sent to the client. The ClientConnection has not been
+		// registered so the out channel filling is not a concern.
 		if cc.delay != 0 {
-			var delayQueue [][]byte
 			t := time.NewTimer(cc.delay)
-			done := false
-			for !done {
-				select {
-				case <-ctx.Done():
-					return
-				case data := <-cc.out:
-					delayQueue = append(delayQueue, data)
-				case <-t.C:
-					for _, data := range delayQueue {
-						err := cc.writeRaw(data)
-						if err != nil {
-							logWarn(err, "error writing data to client")
-							cc.clientManager.Remove(cc)
-							return
-						}
-					}
-					done = true
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
 			}
 		}
 
+		// Send the current backlog before registering the ClientConnection in
+		// case the backlog is very large
+		segment := cc.backlog.Head()
+		if !backlog.IsBacklogSegmentNil(segment) && segment.Start() < uint64(cc.requestedSeqNum) {
+			s, err := cc.backlog.Lookup(uint64(cc.requestedSeqNum))
+			if err != nil {
+				logWarn(err, "error finding requested sequence number in backlog: sending the entire backlog instead")
+			} else {
+				segment = s
+			}
+		}
+		err := cc.writeBacklog(ctx, segment)
+		if errors.Is(err, errContextDone) {
+			return
+		} else if err != nil {
+			logWarn(err, "error writing messages from backlog")
+			cc.Remove()
+			return
+		}
+
+		cc.Register()
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-cc.registered:
+			log.Debug("ClientConnection registered with ClientManager", "client", cc.Name)
+		case <-timer.C:
+			log.Error("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)
+		}
+
+		// broadcast any new messages sent to the out channel
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case data := <-cc.out:
-				err := cc.writeRaw(data)
+			case msg := <-cc.out:
+				if msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) <= cc.LastSentSeqNum.Load() {
+					log.Debug("client has already sent message with this sequence number, skipping the message", "client", cc.Name, "sequence number", *msg.sequenceNumber)
+					continue
+				}
+
+				expSeqNum := cc.LastSentSeqNum.Load() + 1
+				if !cc.backlogSent && msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) > expSeqNum {
+					catchupSeqNum := uint64(*msg.sequenceNumber) - 1
+					bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
+					if err != nil {
+						logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))
+						return
+					}
+
+					err = cc.writeBroadcastMessage(bm)
+					if err != nil {
+						logWarn(err, fmt.Sprintf("error writing messages %d to %d from backlog", expSeqNum, catchupSeqNum))
+						cc.Remove()
+						return
+					}
+				}
+				cc.backlogSent = true
+
+				err := cc.writeRaw(msg.data)
 				if err != nil {
 					logWarn(err, "error writing data to client")
-					cc.clientManager.Remove(cc)
+					cc.Remove()
 					return
 				}
 			}
 		}
 	})
+}
+
+// Registered is used by the ClientManager to indicate that ClientConnection
+// has been registered with the ClientManager
+func (cc *ClientConnection) Registered() {
+	cc.registered <- true
 }
 
 func (cc *ClientConnection) StopOnly() {
@@ -159,23 +306,6 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 	var err error
 	data, opCode, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
 	return data, opCode, err
-}
-
-func (cc *ClientConnection) Write(x interface{}) error {
-	cc.ioMutex.Lock()
-	defer cc.ioMutex.Unlock()
-
-	notCompressed, compressed, err := serializeMessage(cc.clientManager, x, !cc.compression, cc.compression)
-	if err != nil {
-		return err
-	}
-
-	if cc.compression {
-		cc.out <- compressed.Bytes()
-	} else {
-		cc.out <- notCompressed.Bytes()
-	}
-	return nil
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {

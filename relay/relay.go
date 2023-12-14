@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -28,14 +29,14 @@ type Relay struct {
 	broadcastClients            *broadcastclients.BroadcastClients
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
-	messageChan                 chan broadcaster.BroadcastFeedMessage
+	messageChan                 chan m.BroadcastFeedMessage
 }
 
 type MessageQueue struct {
-	queue chan broadcaster.BroadcastFeedMessage
+	queue chan m.BroadcastFeedMessage
 }
 
-func (q *MessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (q *MessageQueue) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		q.queue <- *feedMessage
 	}
@@ -45,7 +46,7 @@ func (q *MessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Broadcas
 
 func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 
-	q := MessageQueue{make(chan broadcaster.BroadcastFeedMessage, config.Queue)}
+	q := MessageQueue{make(chan m.BroadcastFeedMessage, config.Queue)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, config.Queue)
 

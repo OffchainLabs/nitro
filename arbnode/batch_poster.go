@@ -291,6 +291,11 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	// Dataposter sender may be external signer address, so we should initialize
 	// access list after initializing dataposter.
 	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
+		if opts.L1Reader.IsParentChainArbitrum() {
+			// Access lists cost gas instead of saving gas when posting to L2s,
+			// because data is expensive in comparison to computation.
+			return nil
+		}
 		return AccessList(&AccessListOpts{
 			SequencerInboxAddr:       opts.DeployInfo.SequencerInbox,
 			DataPosterAddr:           b.dataPoster.Sender(),
@@ -758,7 +763,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
-func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64) (uint64, error) {
+func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
 	if !useNormalEstimation {
@@ -772,9 +777,10 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	if useNormalEstimation {
 		// If we're at the latest nonce, we can skip the special future tx estimate stuff
 		gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
-			From: b.dataPoster.Sender(),
-			To:   &b.seqInboxAddr,
-			Data: realData,
+			From:       b.dataPoster.Sender(),
+			To:         &b.seqInboxAddr,
+			Data:       realData,
+			AccessList: realAccessList,
 		})
 		if err != nil {
 			return 0, err
@@ -794,6 +800,9 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		From: b.dataPoster.Sender(),
 		To:   &b.seqInboxAddr,
 		Data: data,
+		// This isn't perfect because we're probably estimating the batch at a different sequence number,
+		// but it should overestimate rather than underestimate which is fine.
+		AccessList: realAccessList,
 	})
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
@@ -1006,6 +1015,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
+	accessList := b.accessList(int(batchPosition.NextSeqNum), int(b.building.segments.delayedMsg))
 	// On restart, we may be trying to estimate gas for a batch whose successor has
 	// already made it into pending state, if not latest state.
 	// In that case, we might get a revert with `DelayedBackwards()`.
@@ -1013,7 +1023,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, nonce)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, nonce, accessList)
 	if err != nil {
 		return false, err
 	}
@@ -1033,9 +1043,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		data,
 		gasLimit,
 		new(big.Int),
-		b.accessList(
-			int(batchPosition.NextSeqNum),
-			int(b.building.segments.delayedMsg)),
+		accessList,
 	)
 	if err != nil {
 		return false, err

@@ -1,8 +1,12 @@
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package storage
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -28,6 +32,44 @@ type QueuedTransaction struct {
 	Sent            bool
 	Created         time.Time // may be earlier than the tx was given to the tx poster
 	NextReplacement time.Time
+}
+
+type queuedTransactionForEncoding struct {
+	FullTx          *types.Transaction
+	Data            types.DynamicFeeTx
+	Meta            []byte
+	Sent            bool
+	Created         *RlpTime `rlp:"optional"` // may be earlier than the tx was given to the tx poster
+	NextReplacement *RlpTime `rlp:"optional"`
+}
+
+func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
+	return rlp.Encode(w, queuedTransactionForEncoding{
+		FullTx:          qt.FullTx,
+		Data:            qt.Data,
+		Meta:            qt.Meta,
+		Sent:            qt.Sent,
+		Created:         (*RlpTime)(&qt.Created),
+		NextReplacement: (*RlpTime)(&qt.NextReplacement),
+	})
+}
+
+func (qt *QueuedTransaction) DecodeRLP(s *rlp.Stream) error {
+	var qtEnc queuedTransactionForEncoding
+	if err := s.Decode(&qtEnc); err != nil {
+		return err
+	}
+	qt.FullTx = qtEnc.FullTx
+	qt.Data = qtEnc.Data
+	qt.Meta = qtEnc.Meta
+	qt.Sent = qtEnc.Sent
+	if qtEnc.Created != nil {
+		qt.Created = time.Time(*qtEnc.Created)
+	}
+	if qtEnc.NextReplacement != nil {
+		qt.NextReplacement = time.Time(*qtEnc.NextReplacement)
+	}
+	return nil
 }
 
 // LegacyQueuedTransaction is used for backwards compatibility.
