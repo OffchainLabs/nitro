@@ -17,16 +17,18 @@ pub struct HeapBound {
     /// Upper bounds the amount of heap memory a module may use
     limit: Pages,
     /// Import called when allocating new pages
-    memory_grow: RwLock<Option<FunctionIndex>>,
+    pay_func: RwLock<Option<FunctionIndex>>,
     /// Scratch global shared among middlewares
     scratch: RwLock<Option<GlobalIndex>>,
 }
 
 impl HeapBound {
+    const PAY_FUNC: &'static str = "pay_for_memory_grow";
+
     pub fn new(bounds: CompileMemoryParams) -> Self {
         Self {
             limit: bounds.heap_bound,
-            memory_grow: RwLock::default(),
+            pay_func: RwLock::default(),
             scratch: RwLock::default(),
         }
     }
@@ -51,23 +53,23 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
             return Ok(());
         }
 
-        let ImportIndex::Function(import) = module.get_import("vm_hooks", "memory_grow")? else {
-            bail!("wrong import kind for {}", "memory_grow".red());
+        let ImportIndex::Function(import) = module.get_import("vm_hooks", Self::PAY_FUNC)? else {
+            bail!("wrong import kind for {}", Self::PAY_FUNC.red());
         };
 
         let ty = module.get_function(import)?;
         if ty != FunctionType::new(vec![ArbValueType::I32], vec![]) {
-            bail!("wrong type for {}: {}", "memory_grow".red(), ty.red());
+            bail!("wrong type for {}: {}", Self::PAY_FUNC.red(), ty.red());
         }
 
-        *self.memory_grow.write() = Some(import);
+        *self.pay_func.write() = Some(import);
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         Ok(FuncHeapBound {
             scratch: self.scratch.read().expect("no scratch global"),
-            memory_grow: *self.memory_grow.read(),
+            pay_func: *self.pay_func.read(),
         })
     }
 
@@ -78,7 +80,7 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
 
 #[derive(Debug)]
 pub struct FuncHeapBound {
-    memory_grow: Option<FunctionIndex>,
+    pay_func: Option<FunctionIndex>,
     scratch: GlobalIndex,
 }
 
@@ -89,13 +91,13 @@ impl<'a> FuncMiddleware<'a> for FuncHeapBound {
     {
         use Operator::*;
 
-        let Some(memory_grow) = self.memory_grow else {
+        let Some(pay_func) = self.pay_func else {
             out.extend([op]);
             return Ok(());
         };
 
         let global_index = self.scratch.as_u32();
-        let function_index = memory_grow.as_u32();
+        let function_index = pay_func.as_u32();
 
         if let MemoryGrow { .. } = op {
             out.extend([

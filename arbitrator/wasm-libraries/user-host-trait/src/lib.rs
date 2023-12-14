@@ -652,15 +652,15 @@ pub trait UserHost: GasMeteredMachine {
         trace!("tx_origin", self, &[], self.evm_data().tx_origin)
     }
 
-    /// Pays for new pages as needed before the memory.grow opcode is invoked
-    fn memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
+    /// Pays for new pages as needed before the memory.grow opcode is invoked.
+    fn pay_for_memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
         if pages == 0 {
             self.buy_ink(HOSTIO_INK)?;
             return Ok(());
         }
         let gas_cost = self.evm_api().add_pages(pages);
         self.buy_gas(gas_cost)?;
-        trace!("memory_grow", self, be!(pages), &[])
+        trace!("pay_for_memory_grow", self, be!(pages), &[])
     }
 
     /// Prints a UTF-8 encoded string to the console. Only available in debug mode.

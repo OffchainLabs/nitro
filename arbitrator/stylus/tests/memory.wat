@@ -2,9 +2,9 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (import "vm_hooks" "memory_grow" (func (param i32)))
-    (import "vm_hooks" "read_args"   (func $read_args   (param i32)))
-    (import "vm_hooks" "write_result" (func $write_result (param i32 i32)))
+    (import "vm_hooks" "pay_for_memory_grow" (func (param i32)))
+    (import "vm_hooks" "read_args"           (func $read_args    (param i32)))
+    (import "vm_hooks" "write_result"        (func $write_result (param i32 i32)))
     (func (export "user_entrypoint") (param $args_len i32) (result i32)
         (local $size i32) (local $step i32)
 

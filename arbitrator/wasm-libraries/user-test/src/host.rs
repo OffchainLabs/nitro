@@ -63,7 +63,7 @@ pub unsafe extern "C" fn vm_hooks__emit_log(data: u32, len: u32, topics: u32) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__memory_grow(pages: u16) {
+pub unsafe extern "C" fn vm_hooks__pay_for_memory_grow(pages: u16) {
     let mut program = Program::start_free();
     if pages == 0 {
         return program.buy_ink(HOSTIO_INK).unwrap();

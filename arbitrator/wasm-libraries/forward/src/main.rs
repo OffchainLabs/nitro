@@ -37,7 +37,7 @@ const HOSTIOS: [[&str; 3]; 31] = [
     ["tx_gas_price", "i32", ""],
     ["tx_ink_price", "", "i32"],
     ["tx_origin", "i32", ""],
-    ["memory_grow", "i32", ""],
+    ["pay_for_memory_grow", "i32", ""],
 ];
 
 #[derive(StructOpt)]

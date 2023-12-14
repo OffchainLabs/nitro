@@ -151,7 +151,7 @@ impl<E: EvmApi> NativeInstance<E> {
                 "tx_gas_price" => func!(host::tx_gas_price),
                 "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
-                "memory_grow" => func!(host::memory_grow),
+                "pay_for_memory_grow" => func!(host::pay_for_memory_grow),
                 "native_keccak256" => func!(host::native_keccak256),
             },
         };
@@ -357,7 +357,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "tx_gas_price" => stub!(|_: u32|),
             "tx_ink_price" => stub!(u32 <- ||),
             "tx_origin" => stub!(|_: u32|),
-            "memory_grow" => stub!(|_: u16|),
+            "pay_for_memory_grow" => stub!(|_: u16|),
             "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
         },
     };

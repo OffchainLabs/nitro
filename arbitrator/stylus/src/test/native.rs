@@ -266,7 +266,7 @@ fn test_heap() -> Result<()> {
     }
 
     // in memory2.wat
-    //     the user program calls memory_grow directly with malicious arguments
+    //     the user program calls pay_for_memory_grow directly with malicious arguments
     //     the cost should exceed a maximum u32, consuming more gas than can ever be bought
 
     let (mut native, _) = TestInstance::new_with_evm("tests/memory2.wat", &compile, config)?;
