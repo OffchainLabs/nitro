@@ -65,10 +65,10 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 
 func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		if stepSize <= 8192 {
-			log.Info(fmt.Sprintf("Step size %d is enough to trigger Merkleized machines, re-caching", stepSize))
-			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
-		}
+		// if stepSize <= 8192 {
+		// 	log.Info(fmt.Sprintf("Step size %d is enough to trigger Merkleized machines, re-caching", stepSize))
+		// 	e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
+		// }
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err

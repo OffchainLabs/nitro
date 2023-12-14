@@ -327,12 +327,12 @@ func (v *ArbitratorSpawner) CreateBoldExecutionRun(
 	wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput,
 ) containers.PromiseInterface[validator.ExecutionRun] {
 	getMachine := func(ctx context.Context, opts ...server_common.MachineLoaderOpt) (MachineInterface, error) {
-		// Pass in step size.
-		log.Info(fmt.Sprintf("Creating bold execution run closure with opts: %d", len(opts)))
-		if len(opts) > 0 {
-			v.machineLoader = NewArbMachineLoader(&DefaultArbitratorMachineConfig, v.locator)
-			log.Info("Updated machine loader for re-cache")
-		}
+		// // Pass in step size.
+		// log.Info(fmt.Sprintf("Creating bold execution run closure with opts: %d", len(opts)))
+		// if len(opts) > 0 {
+		// 	v.machineLoader = NewArbMachineLoader(&DefaultArbitratorMachineConfig, v.locator)
+		// 	log.Info("Updated machine loader for re-cache")
+		// }
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot, opts...)
 		if err != nil {
 			return nil, err
