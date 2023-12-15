@@ -31,6 +31,7 @@ var InitConfigDefault = InitConfig{
 	DevInit:         false,
 	DevInitAddress:  "",
 	DevInitBlockNum: 0,
+	Empty:           false,
 	ImportFile:      "",
 	AccountsPerSync: 100000,
 	ThenQuit:        false,
