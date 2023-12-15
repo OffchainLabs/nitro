@@ -50,9 +50,9 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*TestClient
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l1StackConfig.HTTPPort = 8545
 	builder.l1StackConfig.WSPort = 8546
-	builder.l1StackConfig.HTTPHost = "127.0.0.1"
+	builder.l1StackConfig.HTTPHost = "0.0.0.0"
 	builder.l1StackConfig.HTTPVirtualHosts = []string{"*"}
-	builder.l1StackConfig.WSHost = "127.0.0.1"
+	builder.l1StackConfig.WSHost = "0.0.0.0"
 	builder.l1StackConfig.DataDir = t.TempDir()
 	builder.l1StackConfig.WSModules = append(builder.l1StackConfig.WSModules, "eth")
 
