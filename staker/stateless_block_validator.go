@@ -220,14 +220,15 @@ func newValidationEntry(
 		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
 	}
 	return &validationEntry{
-		Stage:         ReadyForRecord,
-		Pos:           pos,
-		Start:         start,
-		End:           end,
-		HasDelayedMsg: hasDelayed,
-		DelayedMsgNr:  delayedNum,
-		msg:           msg,
-		BatchInfo:     []validator.BatchInfo{batchInfo},
+		Stage:             ReadyForRecord,
+		Pos:               pos,
+		Start:             start,
+		End:               end,
+		HasDelayedMsg:     hasDelayed,
+		DelayedMsgNr:      delayedNum,
+		msg:               msg,
+		HotShotCommitment: *hotShotCommitment,
+		BatchInfo:         []validator.BatchInfo{batchInfo},
 	}, nil
 }
 
@@ -389,18 +390,23 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	var commitment *espressoTypes.Commitment
-	if v.config.Espresso {
+	var comm espressoTypes.Commitment
+	if v.config.Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return nil, err
 		}
-		commitment, err = v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		log.Info("block num %d", jst.EspressoBlockNumber)
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
 		if err != nil {
 			return nil, err
 		}
+		if fetchedCommitment == nil {
+			return nil, fmt.Errorf("commitment not ready yet")
+		}
+		comm = *fetchedCommitment
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed, commitment)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed, &comm)
 	if err != nil {
 		return nil, err
 	}

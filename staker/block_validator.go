@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -498,18 +499,22 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	var commitment *espressoTypes.Commitment
-	if v.config().Espresso {
+	var comm espressoTypes.Commitment
+	if v.config().Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return false, err
 		}
-		commitment, err = v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
 		if err != nil {
 			return false, err
 		}
+		if fetchedCommitment == nil {
+			return false, fmt.Errorf("commitment not ready yet")
+		}
+		comm = *fetchedCommitment
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, commitment)
+	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, &comm)
 	if err != nil {
 		return false, err
 	}
