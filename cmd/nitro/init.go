@@ -15,10 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/offchainlabs/nitro/cmd/conf"
-	"github.com/offchainlabs/nitro/cmd/prunning"
-	"github.com/offchainlabs/nitro/cmd/util"
-
 	"github.com/cavaliergopher/grab/v3"
 	extract "github.com/codeclysm/extract/v3"
 	"github.com/ethereum/go-ethereum/common"
@@ -35,7 +31,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/cmd/prunning"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
