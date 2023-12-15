@@ -208,7 +208,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:   2,
 	DASRetentionPeriod: time.Hour * 24 * 15,
 	GasRefunderAddress: "",
-	ExtraBatchGas:      10_000,
+	ExtraBatchGas:      20_000,
 	DataPoster:         dataposter.TestDataPosterConfig,
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
