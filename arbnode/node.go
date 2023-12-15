@@ -802,7 +802,11 @@ func (n *Node) Start(ctx context.Context) error {
 		n.SeqCoordinator.Start(ctx)
 	} else {
 		if n.DelayedSequencer != nil {
-			err := n.DelayedSequencer.ForceSequenceDelayed(ctx)
+			err := n.TxStreamer.CatchUpExecution()
+			if err != nil {
+				return fmt.Errorf("error catching up execution: %w", err)
+			}
+			err = n.DelayedSequencer.ForceSequenceDelayed(ctx)
 			if err != nil {
 				return fmt.Errorf("error initially sequencing delayed instructions: %w", err)
 			}

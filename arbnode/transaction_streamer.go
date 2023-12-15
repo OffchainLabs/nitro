@@ -987,6 +987,30 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 	return s.config().ExecuteMessageLoopDelay
 }
 
+// this function is "best effort", not reorg-safe
+func (s *TransactionStreamer) CatchUpExecution() error {
+	ctx := s.GetContext()
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		msgCount, err := s.GetMessageCount()
+		if err != nil {
+			// message count not written, so zero
+			// nolint:nilerr
+			return nil
+		}
+		execMsgNum, err := s.exec.HeadMessageNumber()
+		if err != nil {
+			return err
+		}
+		if execMsgNum+1 >= msgCount {
+			return nil
+		}
+		<-time.After(time.Millisecond * 100)
+	}
+}
+
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
