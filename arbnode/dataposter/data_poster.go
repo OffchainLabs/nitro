@@ -5,11 +5,13 @@
 package dataposter
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net/http"
 	"os"
@@ -378,13 +380,27 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 		"ElapsedTimeBase":       float64(config.ElapsedTimeBase),
 		"ElapsedTimeImportance": config.ElapsedTimeImportance,
 		"TargetPriceGWei":       config.TargetPriceGwei,
-		"GWei":                  params.GWei,
 	}
 	result, err := p.maxFeeCapExpression.Evaluate(parameters)
 	if err != nil {
 		return nil, fmt.Errorf("error evaluating maxFeeCapExpression: %w", err)
 	}
-	return arbmath.FloatToBig(result.(float64)), nil
+	resultFloat, ok := result.(float64)
+	if !ok {
+		// This shouldn't be possible because we only pass in float64s as arguments
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated to non-float64: %v", result)
+	}
+	// 1e9 gwei gas price is practically speaking an infinite gas price, so we cap it there.
+	// This also allows the formula to return positive infinity safely.
+	resultFloat = math.Min(resultFloat, 1e9)
+	resultBig := arbmath.FloatToBig(resultFloat * params.GWei)
+	if resultBig == nil {
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated to float64 not convertible to integer: %v", resultFloat)
+	}
+	if resultBig.Sign() < 0 {
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated < 0: %v", resultFloat)
+	}
+	return resultBig, nil
 }
 
 func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
@@ -527,8 +543,24 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 
 // the mutex must be held by the caller
 func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
-	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
-		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+	if prevTx != nil {
+		if prevTx.Data.Nonce != newTx.Data.Nonce {
+			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+		}
+
+		// Check if prevTx is the same as newTx and we don't need to do anything
+		oldEnc, err := rlp.EncodeToBytes(prevTx)
+		if err != nil {
+			return fmt.Errorf("failed to encode prevTx: %w", err)
+		}
+		newEnc, err := rlp.EncodeToBytes(newTx)
+		if err != nil {
+			return fmt.Errorf("failed to encode newTx: %w", err)
+		}
+		if bytes.Equal(oldEnc, newEnc) {
+			// No need to save newTx as it's the same as prevTx
+			return nil
+		}
 	}
 	if err := p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx); err != nil {
 		return fmt.Errorf("putting new tx in the queue: %w", err)
@@ -537,10 +569,8 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
-	if prevTx == nil || (newTx.FullTx.Hash() != prevTx.FullTx.Hash()) {
-		if err := p.saveTx(ctx, prevTx, newTx); err != nil {
-			return err
-		}
+	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
+		return err
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
@@ -839,9 +869,9 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
-	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap the result of which would be float64.\n"+
+	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
-		"Currently available variables to construct the formula are BacklogOfBatches, UrgencyGWei, ElapsedTime, ElapsedTimeBase, ElapsedTimeImportance, TargetPriceGWei and GWei")
+		"Currently available variables to construct the formula are BacklogOfBatches, UrgencyGWei, ElapsedTime, ElapsedTimeBase, ElapsedTimeImportance, and TargetPriceGWei")
 	f.Duration(prefix+".elapsed-time-base", defaultDataPosterConfig.ElapsedTimeBase, "unit to measure the time elapsed since creation of transaction used for maximum fee cap calculation")
 	f.Float64(prefix+".elapsed-time-importance", defaultDataPosterConfig.ElapsedTimeImportance, "weight given to the units of time elapsed used for maximum fee cap calculation")
 
@@ -878,7 +908,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
-	MaxFeeCapFormula:       "(((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
+	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 }
@@ -904,7 +934,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
-	MaxFeeCapFormula:       "(((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei) * GWei",
+	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 }

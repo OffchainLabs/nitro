@@ -75,8 +75,13 @@ func UintToBig(value uint64) *big.Int {
 }
 
 // FloatToBig casts a float to a huge
+// Returns nil when passed NaN or Infinity
 func FloatToBig(value float64) *big.Int {
-	return new(big.Int).SetInt64(int64(value))
+	if math.IsNaN(value) {
+		return nil
+	}
+	result, _ := new(big.Float).SetFloat64(value).Int(nil)
+	return result
 }
 
 // UintToBigFloat casts a uint to a big float

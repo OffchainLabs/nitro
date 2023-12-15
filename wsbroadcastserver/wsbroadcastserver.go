@@ -25,6 +25,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 )
 
 var (
@@ -66,6 +68,7 @@ type BroadcasterConfig struct {
 	MaxCatchup         int                     `koanf:"max-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
 	ClientDelay        time.Duration           `koanf:"client-delay" reload:"hot"`
+	Backlog            backlog.Config          `koanf:"backlog" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -100,6 +103,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-catchup", DefaultBroadcasterConfig.MaxCatchup, "the maximum size of the catchup buffer (-1 means unlimited)")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
 	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay the first messages sent to each client by this amount")
+	backlog.AddOptions(prefix+".backlog", f)
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -125,6 +129,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
+	Backlog:            backlog.DefaultConfig,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -150,6 +155,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	MaxCatchup:         -1,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	ClientDelay:        0,
+	Backlog:            backlog.DefaultTestConfig,
 }
 
 type WSBroadcastServer struct {
@@ -163,18 +169,18 @@ type WSBroadcastServer struct {
 	config        BroadcasterConfigFetcher
 	started       bool
 	clientManager *ClientManager
-	catchupBuffer CatchupBuffer
+	backlog       backlog.Backlog
 	chainId       uint64
 	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(config BroadcasterConfigFetcher, bklg backlog.Backlog, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		config:        config,
-		started:       false,
-		catchupBuffer: catchupBuffer,
-		chainId:       chainId,
-		fatalErrChan:  fatalErrChan,
+		config:       config,
+		started:      false,
+		backlog:      bklg,
+		chainId:      chainId,
+		fatalErrChan: fatalErrChan,
 	}
 }
 
@@ -192,7 +198,7 @@ func (s *WSBroadcastServer) Initialize() error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	s.clientManager = NewClientManager(s.poller, s.config, s.catchupBuffer)
+	s.clientManager = NewClientManager(s.poller, s.config, s.backlog)
 
 	return nil
 }
@@ -372,7 +378,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		// Register incoming client in clientManager.
 		safeConn := writeDeadliner{conn, config.WriteTimeout}
 
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted)
+		client := NewClientConnection(safeConn, desc, s.clientManager.clientAction, requestedSeqNum, connectingIP, compressionAccepted, s.config().MaxSendQueue, s.config().ClientDelay, s.backlog)
+		client.Start(ctx)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
@@ -380,7 +387,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
 				log.Debug("Hup received", "age", client.Age(), "client", client.Name)
-				s.clientManager.Remove(client)
+				client.Remove()
 				return
 			}
 
@@ -392,7 +399,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client, close on any error
 				if _, _, err := client.Receive(ctx, s.config().ReadTimeout); err != nil {
-					s.clientManager.Remove(client)
+					client.Remove()
 					return
 				}
 			})
@@ -528,7 +535,7 @@ func (s *WSBroadcastServer) Started() bool {
 }
 
 // Broadcast sends batch item to all clients.
-func (s *WSBroadcastServer) Broadcast(bm interface{}) {
+func (s *WSBroadcastServer) Broadcast(bm *m.BroadcastMessage) {
 	s.clientManager.Broadcast(bm)
 }
 

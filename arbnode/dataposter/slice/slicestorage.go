@@ -6,6 +6,7 @@ package slice
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -90,7 +91,7 @@ func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.Queued
 			return fmt.Errorf("encoding previous item: %w", err)
 		}
 		if !bytes.Equal(prevEnc, s.queue[queueIdx]) {
-			return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, s.queue[queueIdx], prevEnc)
+			return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, hex.EncodeToString(s.queue[queueIdx]), hex.EncodeToString(prevEnc))
 		}
 		s.queue[queueIdx] = newEnc
 	} else {
