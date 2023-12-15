@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -546,7 +545,6 @@ func mainImpl() int {
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
-	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
 	if nodeConfig.Node.ParentChainReader.Enable {
 		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
 		if err != nil {
@@ -556,7 +554,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !executionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
@@ -788,6 +786,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}
+	if err := c.Execution.Validate(); err != nil {
+		return err
+	}
 	return c.Persistent.Validate()
 }
 
@@ -892,7 +893,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
-	if chainInfo.SequencerUrl != "" {
+	// Only use chainInfo.SequencerUrl as default forwarding-target if sequencer is not enabled
+	if !k.Bool("execution.sequencer.enable") && chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.SecondaryForwardingTarget != "" {

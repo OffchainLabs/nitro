@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"regexp"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -72,9 +72,6 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	return &opts
 }
 
-// A regexp matching "execution reverted" errors returned from the parent chain RPC.
-var executionRevertedRegexp = regexp.MustCompile("(?i)execution reverted")
-
 func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64) (*big.Int, error) {
 	callOpts := r.getCallOpts(ctx)
 	if !r.unSupportedL3Method.Load() {
@@ -83,7 +80,7 @@ func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64
 			return createdAtBlock, nil
 		}
 		log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
-		if executionRevertedRegexp.MatchString(err.Error()) {
+		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
 			r.unSupportedL3Method.Store(true)
 		} else {
 			return nil, err
