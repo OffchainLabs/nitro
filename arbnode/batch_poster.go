@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -57,22 +58,22 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader            *headerreader.HeaderReader
-	inbox               *InboxTracker
-	streamer            *TransactionStreamer
-	config              BatchPosterConfigFetcher
-	seqInbox            *bridgegen.SequencerInbox
-	bridge              *bridgegen.Bridge
-	syncMonitor         *SyncMonitor
-	seqInboxABI         *abi.ABI
-	seqInboxAddr        common.Address
-	bridgeAddr          common.Address
-	gasRefunderAddr     common.Address
-	building            *buildingBatch
-	daWriter            das.DataAvailabilityServiceWriter
-	dataPoster          *dataposter.DataPoster
-	redisLock           *redislock.Simple
-	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
+	l1Reader        *headerreader.HeaderReader
+	inbox           *InboxTracker
+	streamer        *TransactionStreamer
+	config          BatchPosterConfigFetcher
+	seqInbox        *bridgegen.SequencerInbox
+	bridge          *bridgegen.Bridge
+	syncMonitor     *SyncMonitor
+	seqInboxABI     *abi.ABI
+	seqInboxAddr    common.Address
+	bridgeAddr      common.Address
+	gasRefunderAddr common.Address
+	building        *buildingBatch
+	daWriter        das.DataAvailabilityServiceWriter
+	dataPoster      *dataposter.DataPoster
+	redisLock       *redislock.Simple
+
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
 	backlog         uint64
@@ -1103,6 +1104,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
+	commonEphemeralError := time.Time{}
+	exceedMaxMempoolSizeEphemeralError := time.Time{}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -1127,21 +1130,16 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
-			b.firstEphemeralError = time.Time{}
+			commonEphemeralError = time.Time{}
+			exceedMaxMempoolSizeEphemeralError = time.Time{}
 		}
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
-			if b.firstEphemeralError == (time.Time{}) {
-				b.firstEphemeralError = time.Now()
-				logLevel = log.Warn
-			} else if time.Since(b.firstEphemeralError) < time.Minute {
-				logLevel = log.Warn
-			} else if time.Since(b.firstEphemeralError) < time.Minute*5 && strings.Contains(err.Error(), "will exceed max mempool size") {
-				logLevel = log.Warn
-			}
+			logLevel = util.LogLevelEphemeralError(err, "", time.Minute, &commonEphemeralError, logLevel)
+			logLevel = util.LogLevelEphemeralError(err, "will exceed max mempool size", 5*time.Minute, &exceedMaxMempoolSizeEphemeralError, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
