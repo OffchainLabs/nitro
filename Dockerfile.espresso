@@ -157,7 +157,7 @@ COPY ./scripts/download-machine-espresso.sh .
 # https://github.com/EspressoSystems/nitro-espresso-integration/releases and the
 # corresponding module-root.
 #
-RUN ./download-machine-espresso.sh 20231211-pre.2 0xb2ec17fe4ae788f2c81cd1d28242dfa47696598ea0f18cd78f64c7e2e8b75434
+RUN ./download-machine-espresso.sh 20231215-consensus 0xda88b9cbed43a3113142fe83ce6f59af1ba5faf5aa795546a9d18392dc64d9b4
 
 FROM golang:1.20-bullseye as node-builder
 WORKDIR /workspace
