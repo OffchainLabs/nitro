@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -16,6 +17,8 @@ var (
 	errDropSegments       = errors.New("remove previous segments from backlog")
 	errSequenceNumberSeen = errors.New("sequence number already present in backlog")
 	errOutOfBounds        = errors.New("message not found in backlog")
+
+	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 )
 
 // Backlog defines the interface for backlog.
@@ -161,6 +164,8 @@ func (b *backlog) delete(confirmed uint64) {
 		b.reset()
 		return
 	}
+
+	confirmedSequenceNumberGauge.Update(int64(confirmed))
 
 	// find the segment containing the confirmed message
 	found, err := b.Lookup(confirmed)
