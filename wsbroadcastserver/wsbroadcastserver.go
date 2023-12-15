@@ -123,7 +123,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	DisableSigning:     true,
 	LogConnect:         false,
 	LogDisconnect:      false,
-	EnableCompression:  true,
+	EnableCompression:  false,
 	RequireCompression: false,
 	LimitCatchup:       false,
 	MaxCatchup:         -1,
