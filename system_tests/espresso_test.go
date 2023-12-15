@@ -22,6 +22,7 @@ import (
 var (
 	validationPort     = 54320
 	broadcastPort      = 9642
+	startHotShotBlock  = 1
 	maxHotShotBlock    = 100
 	malformedBlockNum  = 5
 	firstGoodBlockNum  = 15
@@ -228,7 +229,7 @@ func TestEspresso(t *testing.T) {
 
 	// An initial message for genesis block and every non-empty espresso block
 	// should lead to a message
-	expectedMsgCnt := 1 + maxHotShotBlock
+	expectedMsgCnt := 1 + maxHotShotBlock - startHotShotBlock
 
 	err := waitFor(t, ctx, func() bool {
 		cnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
@@ -257,11 +258,12 @@ func TestEspresso(t *testing.T) {
 	blockNum, err := l2Node.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	if blockNum != uint64(maxHotShotBlock)+1 {
+	if blockNum != uint64(maxHotShotBlock)+1-uint64(startHotShotBlock) {
 		Fatal(t, "every espresso block should lead to one L2 block", "expected", blockNum, "recieved", blockNum)
 	}
 
-	block2, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(firstGoodBlockNum)+1))
+	first := firstGoodBlockNum + 1 - startHotShotBlock
+	block2, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(first)))
 	Require(t, err)
 
 	// Every arbitrum block has one internal tx
@@ -269,7 +271,8 @@ func TestEspresso(t *testing.T) {
 		Fatal(t, "block ", firstGoodBlockNum+1, " should contain 2 valid transactions")
 	}
 
-	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(secondGoodBlockNum)+1))
+	second := secondGoodBlockNum + 1 - startHotShotBlock
+	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(second)))
 	Require(t, err)
 
 	if len(block3.Body().Transactions) != 3 {
