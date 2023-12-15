@@ -8,6 +8,7 @@ import (
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type HotShotReader struct {
@@ -56,9 +57,14 @@ func (h *HotShotReader) L1HotShotCommitmentFromHeight(blockHeight uint64) (*espr
 		// trying to read on the current fork of L1.
 		return nil, fmt.Errorf("read 0 for commitment %d at block height %d, this indicates an L1 reorg", blockHeight, contractBlockHeight)
 	}
+
 	comm, err = espressoTypes.CommitmentFromUint256(espressoTypes.NewU256().SetBigInt(commAsInt))
+
 	if err != nil {
 		return nil, err
 	}
+
+	log.Info("Sucessfully read commitment", "blockHeight", blockHeight, "commitment", commAsInt.String())
+
 	return &comm, nil
 }

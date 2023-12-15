@@ -36,8 +36,9 @@ const (
 const MaxL2MessageSize = 256 * 1024
 
 type EspressoBlockJustification struct {
-	Header espressoTypes.Header
-	Proof  espressoTypes.NmtProof
+	Header              espressoTypes.Header
+	Proof               espressoTypes.NmtProof
+	EspressoBlockNumber uint64
 }
 
 type L1IncomingMessageHeader struct {
