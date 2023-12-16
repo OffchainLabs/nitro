@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -38,14 +37,14 @@ func (t *sequencerQueuedTx) gas() uint64 {
 	return t.gasToUse
 }
 
-type sequencerQueue []*sequencerQueuedTx
+type retryQueue []*sequencerQueuedTx
 
-func (r *sequencerQueue) Push(item any) {
+func (r *retryQueue) Push(item any) {
 	tx := item.(*sequencerQueuedTx)
 	*r = append(*r, tx)
 }
 
-func (r *sequencerQueue) Pop() any {
+func (r *retryQueue) Pop() any {
 	old := *r
 	n := len(old)
 	item := old[n-1]
@@ -55,9 +54,9 @@ func (r *sequencerQueue) Pop() any {
 }
 
 type timeBoostState struct {
-	currentRoundOngoing *atomic.Bool
-	roundDeadline       time.Time
-	heap                *timeBoostHeap[boostableTx]
+	roundDeadline     time.Time
+	lastRoundDeadline time.Time
+	heap              *timeBoostHeap[boostableTx]
 }
 
 type sequencer struct {
@@ -65,11 +64,12 @@ type sequencer struct {
 	recv            chan *sequencerQueuedTx
 	inputQueue      []boostableTx
 	inputQueueLock  sync.RWMutex
-	retryQueue      sequencerQueue
+	retryQueue      retryQueue
 	retryQueueLock  sync.RWMutex
 	blockGasLimit   uint64
 	blockSpeedLimit time.Duration
 	outputFeed      chan<- *block
+	currBlockNum    uint64
 }
 
 func newSequencer(outputFeed chan<- *block) *sequencer {
@@ -78,13 +78,13 @@ func newSequencer(outputFeed chan<- *block) *sequencer {
 		recv:            make(chan *sequencerQueuedTx, 100_000),
 		blockGasLimit:   100,
 		blockSpeedLimit: time.Millisecond * 250,
-		retryQueue:      make(sequencerQueue, 0),
+		retryQueue:      make(retryQueue, 0),
 		inputQueue:      make([]boostableTx, 0),
 		outputFeed:      outputFeed,
 		timeBoost: &timeBoostState{
-			currentRoundOngoing: &atomic.Bool{},
-			roundDeadline:       time.Now().Add(heap.gFactor),
-			heap:                heap,
+			lastRoundDeadline: time.Now(),
+			roundDeadline:     time.Now().Add(heap.gFactor),
+			heap:              heap,
 		},
 	}
 }
@@ -96,25 +96,46 @@ func (s *sequencer) start(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			fmt.Println("Running block production")
+		// Await the round deadline for timeboost.
+		case <-time.After(time.Until(s.timeBoost.roundDeadline)):
 			var numBlocksProduced uint64
+			roundTxs := s.timeBoost.heap.PopAll()
+			remainingTxs := roundTxs
+			fmt.Println("*** Round finished, producing blocks ***")
+			fmt.Printf("time=%v, num_txs=%d\n", s.timeBoost.roundDeadline, len(roundTxs))
+			fmt.Println("*** -------------------------------- ***")
+			fmt.Println("")
+
 			for {
 				// Produce blocks as fast as possible until we consume all
 				// txs received in the recently ended timeboost round.
-				consumedFullRound := s.createBlock(ctx)
+				remainingTxs = s.createBlock(ctx, remainingTxs)
 				numBlocksProduced += 1
 
 				// Once we fully consume all txs in the round, we can start the next one,
 				// with a delay proportional to number of blocks produced to keep the rate of
 				// block production limited.
-				if consumedFullRound {
+				if len(remainingTxs) == 0 {
 					// Starts the next timeboost round by setting its deadline.
 					// Adds a delay to the next timeboost round based on the block speed limit.
 					// This delay is simply the number of blocks produced times the speed limit.
 					roundDelay := time.Duration(numBlocksProduced) * s.blockSpeedLimit
+					s.timeBoost.lastRoundDeadline = s.timeBoost.roundDeadline
 					s.timeBoost.roundDeadline = time.Now().Add(roundDelay).Add(s.timeBoost.heap.gFactor)
-					s.timeBoost.currentRoundOngoing.Store(true)
+					roundDuration := s.timeBoost.roundDeadline.Sub(s.timeBoost.lastRoundDeadline)
+					fmt.Println("!!! Consumed full round !!!")
+					fmt.Printf(
+						"g_factor=%v, gas_limit=%d, block_speed_limit=%v\n",
+						s.timeBoost.heap.gFactor,
+						s.blockGasLimit,
+						s.blockSpeedLimit,
+					)
+					fmt.Printf("num_blocks=%d\n", numBlocksProduced)
+					fmt.Printf("round_duration=%v\n", roundDuration)
+					fmt.Printf("delaying next round by %v for speed limit\n", roundDelay)
+					fmt.Println("!!! ------------------- !!!")
+					fmt.Println("")
+					break
 				}
 			}
 		}
@@ -125,9 +146,7 @@ func (s *sequencer) listenForTxs(ctx context.Context) {
 	for {
 		select {
 		case tx := <-s.recv:
-			s.inputQueueLock.Lock()
-			s.inputQueue = append(s.inputQueue, tx)
-			s.inputQueueLock.Unlock()
+			s.timeBoost.heap.Push(tx)
 		case <-ctx.Done():
 			return
 		}
@@ -138,11 +157,18 @@ func (s *sequencer) listenForTxs(ctx context.Context) {
 // to "collect" all the txs for the round and then just time.Sleep? What about txes that are being
 // received while this function is sleeping? We won't be able to process them in this case.
 // Maybe we need to do it outside of here? Or perhaps in the "source" of where they originate?
-func (s *sequencer) createBlock(ctx context.Context) (consumedFullRound bool) {
+func (s *sequencer) createBlock(
+	ctx context.Context,
+	txsToConsume []boostableTx,
+) (remainingTxs []boostableTx) {
 	// We gather the txs from the mempool, gathering those that are
 	// coming from the retry queue first.
 	queuedTxs := make([]boostableTx, 0)
 
+	// The retry queue goes first.
+	// NOTE: This toy retry queue does not consider the case where txs
+	// keep failing and keep spamming the retry queue. It is just a prototype.
+	// The real sequencer has a robust retry queue.
 	s.retryQueueLock.Lock()
 	for len(s.retryQueue) > 0 {
 		queuedTxs = append(queuedTxs, (&s.retryQueue).Pop().(boostableTx))
@@ -150,42 +176,19 @@ func (s *sequencer) createBlock(ctx context.Context) (consumedFullRound bool) {
 	s.retryQueueLock.Unlock()
 
 	s.inputQueueLock.Lock()
-	queuedTxs = append(queuedTxs, s.inputQueue...)
+	queuedTxs = append(queuedTxs, txsToConsume...)
 	s.inputQueueLock.Unlock()
 
 	if len(queuedTxs) == 0 {
 		return
 	}
 
-	fmt.Println("Grabbed a few!", len(queuedTxs))
-
 	// Pre-filter txs for being malformed, nonces, etc.
 	queuedTxs = s.prefilterTxs(queuedTxs)
 
-	// Figure out which timeboost heap this tx should go into.
-	s.timeBoost.heap.PushAll(queuedTxs)
-
-	var txes []boostableTx
-	if s.timeBoost.currentRoundOngoing.Load() {
-		// If we are still in a round, wait the remaining time to round completion.
-		<-time.After(time.Until(s.timeBoost.roundDeadline))
-
-		// The round is done, which means we can proceed with popping all the txs
-		// from the timeboost heap and proceeding with producing a block.
-
-		// We pop everything from the timeboost heap as we
-		// can proceed with blocks from them as needed.
-		// If the gas limit is reached, txs will get put into a retry queue,
-		// in which they will get retried by this function which will run again immediately.
-		txes = s.timeBoost.heap.PopAll()
-
-		// We open up the next round's buffer for filling, but we don't know yet
-		// when the next round's timer will end until we finish producing all the blocks here.
-		s.timeBoost.currentRoundOngoing.Store(false)
-	}
-	overflowedTxs := s.executeTxsAndProduceBlock(txes)
-	if len(overflowedTxs) == 0 {
-		consumedFullRound = true
+	overflowedTxs := s.executeTxsAndProduceBlock(queuedTxs)
+	if len(overflowedTxs) != 0 {
+		remainingTxs = overflowedTxs
 		return
 	}
 	s.retryQueueLock.Lock()
@@ -200,7 +203,7 @@ func (s *sequencer) createBlock(ctx context.Context) (consumedFullRound bool) {
 // Otherwise, return the list of indices that did not fit.
 func (s *sequencer) executeTxsAndProduceBlock(readyTxs []boostableTx) (overflowedTxs []boostableTx) {
 	blk := &block{
-		number:    0,
+		number:    s.currBlockNum,
 		txes:      make([]boostableTx, 0, len(readyTxs)),
 		gasUsed:   0,
 		timestamp: time.Now(),
@@ -210,12 +213,12 @@ func (s *sequencer) executeTxsAndProduceBlock(readyTxs []boostableTx) (overflowe
 		if blk.gasUsed+tx.gas() > s.blockGasLimit {
 			overflowedTxs = append(overflowedTxs, tx)
 		} else {
-			fmt.Println("non-overflow")
 			blk.gasUsed += tx.gas()
 			blk.txes = append(blk.txes, tx)
 		}
 	}
 	// Emit the block to some output feed.
+	s.currBlockNum += 1
 	s.outputFeed <- blk
 	return
 }

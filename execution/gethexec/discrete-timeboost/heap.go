@@ -38,12 +38,10 @@ func withTimeboostParameter[T boostableTx](gFactor uint64) timeBoostOpt[T] {
 	}
 }
 
-func (tb *timeBoostHeap[T]) PushAll(txs []T) {
+func (tb *timeBoostHeap[T]) Push(tx T) {
 	tb.Lock()
 	defer tb.Unlock()
-	for _, tx := range txs {
-		heap.Push(&tb.prioQueue, tx)
-	}
+	heap.Push(&tb.prioQueue, tx)
 }
 
 func (tb *timeBoostHeap[T]) PopAll() []T {

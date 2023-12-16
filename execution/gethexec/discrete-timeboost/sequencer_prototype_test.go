@@ -8,12 +8,13 @@ import (
 )
 
 func TestDiscreteTimeBoost(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	blockOutputFeed := make(chan *block, 100)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	blockOutputFeed := make(chan *block, 10_000)
 	seq := newSequencer(blockOutputFeed)
 	go seq.start(ctx)
 
+	// Give the sequencer some start time.
 	time.Sleep(time.Millisecond * 10)
 
 	// Produce txs.
@@ -24,13 +25,14 @@ func TestDiscreteTimeBoost(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				for i := 0; i < 10; i++ {
+				for i := 0; i < 50; i++ {
 					seq.recv <- &sequencerQueuedTx{
 						id:              fmt.Sprintf("%d", id),
 						gasToUse:        5,
 						firstAppearance: time.Now(),
 						gasTipCap:       0,
 					}
+					id += 1
 				}
 			case <-ctx.Done():
 				return
@@ -38,9 +40,13 @@ func TestDiscreteTimeBoost(t *testing.T) {
 		}
 	}()
 
-	// Consume blocks from the output feed.
+	<-ctx.Done()
+
+	close(blockOutputFeed)
+	// Print out the blocks we received in the duration of the test.
+	// They will be held in the buffer of the output channel until we read them.
 	for blk := range blockOutputFeed {
-		t.Logf("Block %+v", blk)
+		t.Logf("block_num=%d, txs=%d, gas_used=%d", blk.number, len(blk.txes), blk.gasUsed)
 	}
 }
 
