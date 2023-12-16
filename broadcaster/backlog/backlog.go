@@ -69,6 +69,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			segment = newBacklogSegment()
 			b.head.Store(segment)
 			b.tail.Store(segment)
+			confirmedSequenceNumberGauge.Update(int64(msg.SequenceNumber))
 		}
 
 		prevMsgIdx := segment.End()
