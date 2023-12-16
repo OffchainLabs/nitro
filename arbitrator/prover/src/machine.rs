@@ -314,7 +314,7 @@ impl Module {
                 code.push(func);
                 host_call_hooks.push(Some((import.module.into(), import.name.into())));
             } else {
-                bail!("Unsupport import kind {:?}", import);
+                bail!("Unsupported import kind {:?}", import);
             }
         }
         func_type_idxs.extend(bin.functions.iter());
