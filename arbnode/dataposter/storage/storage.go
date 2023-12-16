@@ -39,8 +39,8 @@ type queuedTransactionForEncoding struct {
 	Data            types.DynamicFeeTx
 	Meta            []byte
 	Sent            bool
-	Created         *RlpTime `rlp:"optional"` // may be earlier than the tx was given to the tx poster
-	NextReplacement *RlpTime `rlp:"optional"`
+	Created         RlpTime
+	NextReplacement RlpTime
 }
 
 func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
@@ -49,8 +49,8 @@ func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
 		Data:            qt.Data,
 		Meta:            qt.Meta,
 		Sent:            qt.Sent,
-		Created:         (*RlpTime)(&qt.Created),
-		NextReplacement: (*RlpTime)(&qt.NextReplacement),
+		Created:         (RlpTime)(qt.Created),
+		NextReplacement: (RlpTime)(qt.NextReplacement),
 	})
 }
 
@@ -63,12 +63,8 @@ func (qt *QueuedTransaction) DecodeRLP(s *rlp.Stream) error {
 	qt.Data = qtEnc.Data
 	qt.Meta = qtEnc.Meta
 	qt.Sent = qtEnc.Sent
-	if qtEnc.Created != nil {
-		qt.Created = time.Time(*qtEnc.Created)
-	}
-	if qtEnc.NextReplacement != nil {
-		qt.NextReplacement = time.Time(*qtEnc.NextReplacement)
-	}
+	qt.Created = time.Time(qtEnc.Created)
+	qt.NextReplacement = time.Time(qtEnc.NextReplacement)
 	return nil
 }
 
