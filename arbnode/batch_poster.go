@@ -73,6 +73,7 @@ type BatchPoster struct {
 	dataPoster          *dataposter.DataPoster
 	redisLock           *redislock.Simple
 	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
+	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
 	backlog         uint64
@@ -283,6 +284,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
+			ExtraBacklog:      b.GetBacklogEstimate,
 			RedisKey:          "data-poster.queue",
 		})
 	if err != nil {
@@ -846,7 +848,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.backlog),
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate()),
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 		}
@@ -1061,12 +1063,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	unpostedMessages := msgCount - b.building.msgCount
-	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
-	if b.backlog > 10 {
+	backlog := uint64(unpostedMessages) / uint64(postedMessages)
+	if backlog > 10 {
 		logLevel := log.Warn
 		if recentlyHitL1Bounds {
 			logLevel = log.Info
-		} else if b.backlog > 30 {
+		} else if backlog > 30 {
 			logLevel = log.Error
 		}
 		logLevel(
@@ -1076,14 +1078,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			"messageCount", msgCount,
 			"lastPostedMessages", postedMessages,
 			"unpostedMessages", unpostedMessages,
-			"batchBacklogEstimate", b.backlog,
+			"batchBacklogEstimate", backlog,
 		)
 	}
 	if recentlyHitL1Bounds {
 		// This backlog isn't "real" in that we don't want to post any more messages.
 		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
-		b.backlog = 0
+		backlog = 0
 	}
+	atomic.StoreUint64(&b.backlog, backlog)
 	b.building = nil
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
@@ -1096,6 +1099,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	return true, nil
+}
+
+func (b *BatchPoster) GetBacklogEstimate() uint64 {
+	return atomic.LoadUint64(&b.backlog)
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
