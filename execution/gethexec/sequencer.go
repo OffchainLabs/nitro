@@ -66,7 +66,6 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	TimeBoost                   bool            `koanf:"time-boost"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -98,7 +97,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,
-	TimeBoost:               false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -114,7 +112,6 @@ var TestSequencerConfig = SequencerConfig{
 	MaxTxDataSize:               95000,
 	NonceFailureCacheSize:       1024,
 	NonceFailureCacheExpiry:     time.Second,
-	TimeBoost:                   false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -130,7 +127,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
-	f.Bool(prefix+".time-boost", DefaultSequencerConfig.TimeBoost, "enables time boost ordering for transactions")
 }
 
 type txQueueItem struct {
@@ -140,22 +136,6 @@ type txQueueItem struct {
 	returnedResult  bool
 	ctx             context.Context
 	firstAppearance time.Time
-}
-
-func (i txQueueItem) bid() uint64 {
-	return i.tx.GasTipCap().Uint64()
-}
-
-func (i txQueueItem) timestamp() time.Time {
-	return i.firstAppearance
-}
-
-func (i txQueueItem) id() string {
-	return i.tx.Hash().Hex()
-}
-
-func (i txQueueItem) innerTx() *types.Transaction {
-	return i.tx
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -772,26 +752,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if s.txRetryQueue.Len() > 0 {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(queueItems) == 0 {
-			var nextNonceExpiryChan <-chan time.Time
-			if nextNonceExpiryTimer != nil {
-				nextNonceExpiryChan = nextNonceExpiryTimer.C
-			}
-			select {
-			case queueItem = <-s.txQueue:
-			case <-nextNonceExpiryChan:
-				// No need to stop the previous timer since it already elapsed
-				nextNonceExpiryTimer = s.expireNonceFailures()
-				continue
-			case <-s.onForwarderSet:
-				// Make sure this notification isn't outdated
-				_, forwarder := s.GetPauseAndForwarder()
-				if forwarder != nil {
-					s.nonceFailures.Clear()
-				}
-				continue
-			case <-ctx.Done():
-				return false
-			}
 		} else {
 			done := false
 			select {
@@ -868,25 +828,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
-	if s.config().TimeBoost {
-		fmt.Println("Yay timeboosting")
-		// // If timeboost is enabled, we send the txs to a channel a background boost service
-		// // is listening on. This service will then output potentially reordered transactions
-		// // to an an output channel accordingly.
-		// numQueueItems := len(queueItems)
-		// for _, queueItem := range queueItems {
-		// 	s.timeBoostTxFeedIn <- queueItem
-		// }
-
-		// // Wait until we receive all the output txs we expect from the timeboost service.
-		// boostedTxs := make([]*types.Transaction, 0, numQueueItems)
-		// for i := 0; i < numQueueItems; i++ {
-		// 	item := <-s.timeBoostTxFeedOut
-		// 	boostedTxs = append(boostedTxs, item.innerTx())
-		// }
-		// txes = boostedTxs
-	}
-
 	start := time.Now()
 	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
@@ -958,10 +899,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			continue
 		}
 		queueItem.returnResult(err)
-	}
-
-	if s.config().TimeBoost {
-		//s.boostService.startNextRound()
 	}
 	return madeBlock
 }

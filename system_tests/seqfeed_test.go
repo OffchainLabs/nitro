@@ -77,7 +77,6 @@ func TestSequencerFeed(t *testing.T) {
 
 func TestSequencerFeed_TimeBoost(t *testing.T) {
 	t.Parallel()
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -114,6 +113,7 @@ func TestSequencerFeed_TimeBoost(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
+	t.Fatal("oops")
 
 	// baseFee := GetBaseFee(t, sequencerClient, ctx)
 	// l2info1.GasPrice = baseFee

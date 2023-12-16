@@ -1,11 +1,9 @@
-package gethexec
+package discretetimeboost
 
 import (
 	"container/heap"
 	"sync"
 	"time"
-
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 const (
@@ -14,12 +12,12 @@ const (
 
 type timeBoostHeap[T boostableTx] struct {
 	sync.RWMutex
-	prioQueue timeBoostableTxs[T]
+	prioQueue timeBoostableTxs
 	gFactor   time.Duration
 }
 
 func newTimeBoostHeap[T boostableTx](opts ...timeBoostOpt[T]) *timeBoostHeap[T] {
-	prioQueue := make(timeBoostableTxs[T], 0)
+	prioQueue := make(timeBoostableTxs, 0)
 	heap.Init(&prioQueue)
 	srv := &timeBoostHeap[T]{
 		gFactor:   defaultMaxBoostFactor,
@@ -60,21 +58,21 @@ func (tb *timeBoostHeap[T]) PopAll() []T {
 
 // A boostable tx type that contains a bid and a timestamp.
 type boostableTx interface {
-	id() string
+	hash() string
 	bid() uint64
 	timestamp() time.Time
-	innerTx() *types.Transaction
+	gas() uint64
 }
 
 // Defines a type that implements the heap.Interface interface from
 // the standard library.
-type timeBoostableTxs[T boostableTx] []T
+type timeBoostableTxs []boostableTx
 
-func (tb timeBoostableTxs[T]) Len() int      { return len(tb) }
-func (tb timeBoostableTxs[T]) Swap(i, j int) { tb[i], tb[j] = tb[j], tb[i] }
+func (tb timeBoostableTxs) Len() int      { return len(tb) }
+func (tb timeBoostableTxs) Swap(i, j int) { tb[i], tb[j] = tb[j], tb[i] }
 
 // We want to implement a priority queue using a max heap.
-func (tb timeBoostableTxs[T]) Less(i, j int) bool {
+func (tb timeBoostableTxs) Less(i, j int) bool {
 	if tb[i].bid() == tb[j].bid() {
 		// Ties are broken by earliest timestamp.
 		return tb[i].timestamp().Before(tb[j].timestamp())
@@ -83,17 +81,16 @@ func (tb timeBoostableTxs[T]) Less(i, j int) bool {
 }
 
 // Push and Pop implement the required methods for the heap interface from the standard library.
-func (tb *timeBoostableTxs[T]) Push(item any) {
-	tx := item.(T)
+func (tb *timeBoostableTxs) Push(item any) {
+	tx := item.(boostableTx)
 	*tb = append(*tb, tx)
 }
 
-func (tb *timeBoostableTxs[T]) Pop() any {
+func (tb *timeBoostableTxs) Pop() any {
 	old := *tb
 	n := len(old)
 	item := old[n-1]
-	var zero T
-	old[n-1] = zero // avoid memory leak
+	old[n-1] = nil // avoid memory leak
 	*tb = old[0 : n-1]
 	return item
 }
