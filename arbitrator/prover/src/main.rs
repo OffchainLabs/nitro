@@ -34,7 +34,7 @@ struct Opts {
     inbox_add_stub_headers: bool,
     #[structopt(long)]
     always_merkleize: bool,
-    /// profile output instead of generting proofs
+    /// profile output instead of generating proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
     /// simple summary of hot opcodes
