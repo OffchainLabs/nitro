@@ -925,9 +925,12 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
+		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
+		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1000000
+		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
