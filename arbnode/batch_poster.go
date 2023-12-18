@@ -73,6 +73,7 @@ type BatchPoster struct {
 	dataPoster          *dataposter.DataPoster
 	redisLock           *redislock.Simple
 	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
+	messagesPerBatch    *arbmath.MovingAverage[uint64]
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -258,19 +259,20 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:        opts.L1Reader,
-		inbox:           opts.Inbox,
-		streamer:        opts.Streamer,
-		syncMonitor:     opts.SyncMonitor,
-		config:          opts.Config,
-		bridge:          bridge,
-		seqInbox:        seqInbox,
-		seqInboxABI:     seqInboxABI,
-		seqInboxAddr:    opts.DeployInfo.SequencerInbox,
-		gasRefunderAddr: opts.Config().gasRefunder,
-		bridgeAddr:      opts.DeployInfo.Bridge,
-		daWriter:        opts.DAWriter,
-		redisLock:       redisLock,
+		l1Reader:         opts.L1Reader,
+		inbox:            opts.Inbox,
+		streamer:         opts.Streamer,
+		syncMonitor:      opts.SyncMonitor,
+		config:           opts.Config,
+		bridge:           bridge,
+		seqInbox:         seqInbox,
+		seqInboxABI:      seqInboxABI,
+		seqInboxAddr:     opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr:  opts.Config().gasRefunder,
+		bridgeAddr:       opts.DeployInfo.Bridge,
+		daWriter:         opts.DAWriter,
+		redisLock:        redisLock,
+		messagesPerBatch: arbmath.NewMovingAverage[uint64](20),
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &(opts.Config().DataPoster)
@@ -1062,8 +1064,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	)
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
+	b.messagesPerBatch.Update(uint64(postedMessages))
 	unpostedMessages := msgCount - b.building.msgCount
-	backlog := uint64(unpostedMessages) / uint64(postedMessages)
+	messagesPerBatch := b.messagesPerBatch.Average()
+	if messagesPerBatch == 0 {
+		// This should be impossible because we always post at least one message in a batch.
+		// That said, better safe than sorry, as we would panic if this remained at 0.
+		messagesPerBatch = 1
+	}
+	backlog := uint64(unpostedMessages) / messagesPerBatch
 	if backlog > 10 {
 		logLevel := log.Warn
 		if recentlyHitL1Bounds {
@@ -1076,7 +1085,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			"recentlyHitL1Bounds", recentlyHitL1Bounds,
 			"currentPosition", b.building.msgCount,
 			"messageCount", msgCount,
-			"lastPostedMessages", postedMessages,
+			"messagesPerBatch", messagesPerBatch,
+			"postedMessages", postedMessages,
 			"unpostedMessages", unpostedMessages,
 			"batchBacklogEstimate", backlog,
 		)
