@@ -259,20 +259,23 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:         opts.L1Reader,
-		inbox:            opts.Inbox,
-		streamer:         opts.Streamer,
-		syncMonitor:      opts.SyncMonitor,
-		config:           opts.Config,
-		bridge:           bridge,
-		seqInbox:         seqInbox,
-		seqInboxABI:      seqInboxABI,
-		seqInboxAddr:     opts.DeployInfo.SequencerInbox,
-		gasRefunderAddr:  opts.Config().gasRefunder,
-		bridgeAddr:       opts.DeployInfo.Bridge,
-		daWriter:         opts.DAWriter,
-		redisLock:        redisLock,
-		messagesPerBatch: arbmath.NewMovingAverage[uint64](20),
+		l1Reader:        opts.L1Reader,
+		inbox:           opts.Inbox,
+		streamer:        opts.Streamer,
+		syncMonitor:     opts.SyncMonitor,
+		config:          opts.Config,
+		bridge:          bridge,
+		seqInbox:        seqInbox,
+		seqInboxABI:     seqInboxABI,
+		seqInboxAddr:    opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr: opts.Config().gasRefunder,
+		bridgeAddr:      opts.DeployInfo.Bridge,
+		daWriter:        opts.DAWriter,
+		redisLock:       redisLock,
+	}
+	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
+	if err != nil {
+		return nil, err
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &(opts.Config().DataPoster)
@@ -1070,6 +1073,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if messagesPerBatch == 0 {
 		// This should be impossible because we always post at least one message in a batch.
 		// That said, better safe than sorry, as we would panic if this remained at 0.
+		log.Warn(
+			"messagesPerBatch is somehow zero",
+			"postedMessages", postedMessages,
+			"buildingFrom", batchPosition.MessageCount,
+			"buildingTo", b.building.msgCount,
+		)
 		messagesPerBatch = 1
 	}
 	backlog := uint64(unpostedMessages) / messagesPerBatch
