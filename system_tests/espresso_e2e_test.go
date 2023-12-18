@@ -140,15 +140,15 @@ func TestEspressoE2E(t *testing.T) {
 	}
 
 	// Check if the tx is executed correctly
-	amount := big.NewInt(1e16)
-	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, amount, nil)
+	transfer_amount := big.NewInt(1e16)
+	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transfer_amount, nil)
 	err = l2Node.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	err = waitFor(t, ctx, func() bool {
-		b := l2Node.GetBalance(t, addr)
-		log.Info("waiting for balance", "addr", addr, "balance", b)
-		return b.Cmp(amount) >= 0
+		balance := l2Node.GetBalance(t, addr)
+		log.Info("waiting for balance", "addr", addr, "balance", balance)
+		return balance.Cmp(transfer_amount) >= 0
 	})
 	Require(t, err)
 
