@@ -3,7 +3,6 @@ package arbtest
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -307,7 +306,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 		hash := rawdb.ReadCanonicalHash(db, lastBlock)
 		Fatal(t, "Didn't fail to get balance at block:", lastBlock, " with hash:", hash, ", lastBlock:", lastBlock)
 	}
-	if !strings.Contains(err.Error(), fmt.Sprintf("block #%d not found", blockBodyToRemove)) {
+	if !strings.Contains(err.Error(), "block not found while recreating") {
 		Fatal(t, "Failed with unexpected error: \"", err, "\", at block:", lastBlock, "lastBlock:", lastBlock)
 	}
 }
