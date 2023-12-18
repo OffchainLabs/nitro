@@ -66,6 +66,7 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	TimeBoost                   bool            `koanf:"timeboost"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -136,6 +137,23 @@ type txQueueItem struct {
 	returnedResult  bool
 	ctx             context.Context
 	firstAppearance time.Time
+}
+
+func (t txQueueItem) bid() *big.Int {
+	// TODO: Check if it is a tipping tx type to initialize the bid, otherwise set this value to 0.
+	return t.tx.GasTipCap()
+}
+
+func (t txQueueItem) timestamp() time.Time {
+	return t.firstAppearance
+}
+
+func (t txQueueItem) hash() common.Hash {
+	return t.tx.Hash()
+}
+
+func (t txQueueItem) innerQueueItem() txQueueItem {
+	return t
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -291,6 +309,14 @@ type Sequencer struct {
 	activeMutex sync.Mutex
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
+
+	timeBoost *timeBoostState
+}
+
+type timeBoostState struct {
+	lastRoundDeadline time.Time
+	roundDeadline     time.Time
+	heap              *timeBoostHeap[boostableTx]
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -306,6 +332,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
+	heap := newTimeBoostHeap[boostableTx]()
 	s := &Sequencer{
 		execEngine:      execEngine,
 		txQueue:         make(chan txQueueItem, config.QueueSize),
@@ -317,6 +344,11 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		l1Timestamp:     0,
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
+		timeBoost: &timeBoostState{
+			lastRoundDeadline: time.Now(),
+			roundDeadline:     time.Now().Add(heap.gFactor),
+			heap:              heap,
+		},
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -715,7 +747,10 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	return outputQueueItems
 }
 
-func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
+func (s *Sequencer) createBlock(
+	ctx context.Context,
+	txsToConsume []txQueueItem,
+) (remainingTxs []txQueueItem, madeBlock bool) {
 	var queueItems []txQueueItem
 	var totalBatchSize int
 
@@ -730,7 +765,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				}
 			}
 			// Wait for the MaxBlockSpeed until attempting to create a block again
-			returnValue = true
+			madeBlock = true
 		}
 	}()
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
@@ -747,22 +782,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
-	for {
-		var queueItem txQueueItem
-		if s.txRetryQueue.Len() > 0 {
-			queueItem = s.txRetryQueue.Pop()
-		} else if len(queueItems) == 0 {
-		} else {
-			done := false
-			select {
-			case queueItem = <-s.txQueue:
-			default:
-				done = true
-			}
-			if done {
-				break
-			}
-		}
+	for s.txRetryQueue.Len() > 0 {
+		queueItems = append(queueItems, s.txRetryQueue.Pop())
+	}
+	queueItems = append(queueItems, txsToConsume...)
+
+	filteredQueueItems := make([]txQueueItem, 0, len(queueItems))
+	for _, queueItem := range queueItems {
 		err := queueItem.ctx.Err()
 		if err != nil {
 			queueItem.returnResult(err)
@@ -785,8 +811,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			break
 		}
 		totalBatchSize += len(txBytes)
-		queueItems = append(queueItems, queueItem)
+		filteredQueueItems = append(filteredQueueItems, queueItem)
 	}
+	queueItems = filteredQueueItems
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
@@ -800,7 +827,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	if s.handleInactive(ctx, queueItems) {
-		return false
+		madeBlock = false
+		return
 	}
 
 	timestamp := time.Now().Unix()
@@ -816,7 +844,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
 			"localTimestamp", time.Unix(int64(timestamp), 0),
 		)
-		return false
+		madeBlock = false
+		return
 	}
 
 	header := &arbostypes.L1IncomingMessageHeader{
@@ -847,27 +876,31 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		// we changed roles
 		// forward if we have where to
 		if s.handleInactive(ctx, queueItems) {
-			return false
+			madeBlock = false
+			return
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
 			s.txRetryQueue.Push(item)
 		}
-		return false
+		madeBlock = false
+		return
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			// thread closed. We'll later try to forward these messages.
 			for _, item := range queueItems {
 				s.txRetryQueue.Push(item)
-			}
-			return true // don't return failure to avoid retrying immediately
+			} // don't return failure to avoid retrying immediately
+			madeBlock = true
+			return
 		}
 		log.Error("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
-		return false
+		madeBlock = false
+		return
 	}
 
 	if block != nil {
@@ -875,10 +908,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.nonceCache.Finalize(block)
 	}
 
-	madeBlock := false
+	createdBlock := false
 	for i, err := range hooks.TxErrors {
 		if err == nil {
-			madeBlock = true
+			createdBlock = true
 		}
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
@@ -900,7 +933,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		queueItem.returnResult(err)
 	}
-	return madeBlock
+	madeBlock = createdBlock
+	return
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
@@ -954,15 +988,70 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	}
 
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		madeBlock := s.createBlock(ctx)
-		if madeBlock {
-			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-			return time.Until(nextBlock)
+	s.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case queueItem := <-s.txQueue:
+				// Intercept the tx queue and push the queued item directly onto the timeboost heap.
+				s.timeBoost.heap.Push(queueItem)
+			case <-ctx.Done():
+				return
+			}
 		}
-		// If we didn't make a block, try again immediately.
-		return 0
+	})
+
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		var numBlocksProduced uint64
+		roundTxs := s.timeBoost.heap.PopAll()
+		transformedTxs := make([]txQueueItem, len(roundTxs))
+		for i, tx := range roundTxs {
+			fmt.Println("Transforming tx", tx.innerQueueItem().tx.To())
+			transformedTxs[i] = tx.innerQueueItem()
+		}
+		remainingTxs := transformedTxs
+		fmt.Println("*** Round finished, producing blocks ***")
+		fmt.Printf("time=%v, num_txs=%d\n", s.timeBoost.roundDeadline, len(roundTxs))
+		fmt.Println("*** -------------------------------- ***")
+		fmt.Println("")
+
+		if len(remainingTxs) == 0 {
+			s.timeBoost.lastRoundDeadline = s.timeBoost.roundDeadline
+			s.timeBoost.roundDeadline = time.Now().Add(s.timeBoost.heap.gFactor)
+			return time.Until(s.timeBoost.roundDeadline)
+		}
+
+		for {
+			// Produce blocks as fast as possible until we consume all
+			// txs received in the recently ended timeboost round.
+			remainingTxs, _ = s.createBlock(ctx, transformedTxs)
+			numBlocksProduced += 1
+
+			// Once we fully consume all txs in the round, we can start the next one,
+			// with a delay proportional to number of blocks produced to keep the rate of
+			// block production limited.
+			if len(remainingTxs) == 0 {
+				// Starts the next timeboost round by setting its deadline.
+				// Adds a delay to the next timeboost round based on the block speed limit.
+				// This delay is simply the number of blocks produced times the speed limit.
+				roundDelay := time.Duration(numBlocksProduced) * s.config().MaxBlockSpeed
+				s.timeBoost.lastRoundDeadline = s.timeBoost.roundDeadline
+				s.timeBoost.roundDeadline = time.Now().Add(roundDelay).Add(s.timeBoost.heap.gFactor)
+				roundDuration := s.timeBoost.roundDeadline.Sub(s.timeBoost.lastRoundDeadline)
+				fmt.Println("!!! Consumed full round !!!")
+				fmt.Printf(
+					"g_factor=%v, block_speed_limit=%v\n",
+					s.timeBoost.heap.gFactor,
+					s.config().MaxBlockSpeed,
+				)
+				fmt.Printf("num_blocks=%d\n", numBlocksProduced)
+				fmt.Printf("round_duration=%v\n", roundDuration)
+				fmt.Printf("delaying next round by %v for speed limit\n", roundDelay)
+				fmt.Println("!!! ------------------- !!!")
+				fmt.Println("")
+				break
+			}
+		}
+		return time.Until(s.timeBoost.roundDeadline)
 	})
 
 	return nil

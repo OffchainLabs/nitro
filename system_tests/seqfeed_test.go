@@ -66,13 +66,14 @@ func TestSequencerFeed(t *testing.T) {
 	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*10)
 	Require(t, err)
 	l2balance, err := client.BalanceAt(ctx, seqInfo.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
+	t.Fatal("Oops")
 }
 
 // func TestSequencerFeed_TimeBoost(t *testing.T) {
