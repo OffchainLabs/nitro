@@ -9,10 +9,10 @@ import (
 
 // LogLevelEphemeralError is a convenient intermediary level between log levels Warn and Error
 //
-// For a given error, errorSubstring, duration, firstOccuranceTime and logLevel
+// For a given error, errorSubstring, duration, firstOccurrenceTime and logLevel
 // the function defaults to returning the given logLevel if the error doesnt contain the errorSubstring,
 // but if it does, then returns one of the corresponding loglevels as follows
-//   - Warn: For firstOccuranceTime of error being less than the duration amount of time from Now
+//   - Warn: For firstOccurrenceTime of error being less than the duration amount of time from Now
 //   - Error: Otherwise
 //
 // # Usage Examples
@@ -24,19 +24,19 @@ func LogLevelEphemeralError(
 	err error,
 	errorSubstring string,
 	ephemeralDuration time.Duration,
-	firstOccuranceTime *time.Time,
+	firstOccurrenceTime *time.Time,
 	currentLogLevel func(msg string, ctx ...interface{})) func(string, ...interface{}) {
 	if strings.Contains(err.Error(), errorSubstring) || errorSubstring == "" {
 		logLevel := log.Error
-		if *firstOccuranceTime == (time.Time{}) {
-			*firstOccuranceTime = time.Now()
+		if *firstOccurrenceTime == (time.Time{}) {
+			*firstOccurrenceTime = time.Now()
 			logLevel = log.Warn
-		} else if time.Since(*firstOccuranceTime) < ephemeralDuration {
+		} else if time.Since(*firstOccurrenceTime) < ephemeralDuration {
 			logLevel = log.Warn
 		}
 		return logLevel
 	} else {
-		*firstOccuranceTime = time.Time{}
+		*firstOccurrenceTime = time.Time{}
 		return currentLogLevel
 	}
 }
