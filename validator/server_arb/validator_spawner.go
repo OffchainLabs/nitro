@@ -21,7 +21,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 )
+
+var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
 	Workers             int                `koanf:"workers" reload:"hot"`
@@ -146,6 +149,7 @@ func (v *ArbitratorSpawner) execute(
 		}
 		steps += count
 	}
+	arbitratorValidationSteps.Update(int64(steps))
 	if mach.IsErrored() {
 		log.Error("machine entered errored state during attempted validation", "block", entry.Id)
 		return validator.GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
