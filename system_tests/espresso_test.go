@@ -55,12 +55,12 @@ func onlyMalformedTxs(t *testing.T) [][]byte {
 // Two valid transactions and two invalid transactions with invalid nonces
 func userTxs(t *testing.T, l2Info *BlockchainTestInfo) [][]byte {
 	tx1 := l2Info.PrepareTx("Faucet", "Owner", 3e7, big.NewInt(1e16), nil)
-	tx1Bin, err := json.Marshal(tx1)
+	tx1Bin, err := tx1.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	tx2 := l2Info.PrepareTx("Owner", "Faucet", 3e7, big.NewInt(1e16), nil)
-	tx2Bin, err := json.Marshal(tx2)
+	tx2Bin, err := tx2.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}

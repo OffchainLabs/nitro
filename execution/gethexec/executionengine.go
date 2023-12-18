@@ -3,7 +3,6 @@ package gethexec
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -295,7 +294,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 		txes := types.Transactions{}
 		for _, tx := range rawTxes {
 			var out types.Transaction
-			if err := json.Unmarshal(tx, &out); err != nil {
+			if err := out.UnmarshalBinary(tx); err != nil {
 				log.Warn("Malformed tx is found")
 				continue
 			}

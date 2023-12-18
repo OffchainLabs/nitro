@@ -5,7 +5,6 @@ package gethexec
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -122,7 +121,7 @@ func (s *EspressoSequencer) Start(ctxIn context.Context) error {
 
 // Required methods for the TransactionPublisher interface
 func (s *EspressoSequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	var txnBytes, err = json.Marshal(tx)
+	var txnBytes, err = tx.MarshalBinary()
 	if err != nil {
 		return err
 	}
