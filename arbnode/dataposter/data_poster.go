@@ -62,6 +62,7 @@ type DataPoster struct {
 	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	extraBacklog      func() uint64
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -116,6 +117,7 @@ type DataPosterOpts struct {
 	RedisLock         AttemptLocker
 	Config            ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
 }
 
@@ -176,6 +178,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		redisLock:           opts.RedisLock,
 		errorCount:          make(map[uint64]int),
 		maxFeeCapExpression: expression,
+		extraBacklog:        opts.ExtraBacklog,
+	}
+	if dp.extraBacklog == nil {
+		dp.extraBacklog = func() uint64 { return 0 }
 	}
 	if cfg.ExternalSigner.URL != "" {
 		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
@@ -371,6 +377,7 @@ func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, e
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
 // evalMaxFeeCapExpr uses MaxFeeCapFormula from config to calculate the expression's result by plugging in appropriate parameter values
+// backlogOfBatches should already include extraBacklog
 func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Duration) (*big.Int, error) {
 	config := p.config()
 	parameters := map[string]any{
@@ -403,8 +410,10 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 	return resultBig, nil
 }
 
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+// The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
+	dataPosterBacklog += p.extraBacklog()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -442,7 +451,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	elapsed := time.Since(dataCreatedAt)
-	maxFeeCap, err := p.evalMaxFeeCapExpr(backlogOfBatches, elapsed)
+	maxFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -898,7 +907,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 20,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
@@ -925,7 +934,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 20,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
