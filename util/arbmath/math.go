@@ -47,14 +47,14 @@ type Float interface {
 	~float32 | ~float64
 }
 
-// Ordered is anything that implements comparison operators such as `<` and `>`.
+// Number is anything that implements operators such as `<`, `+` and `/`.
 // Unfortunately, that doesn't include big ints.
-type Ordered interface {
+type Number interface {
 	Integer | Float
 }
 
 // MinInt the minimum of two ints
-func MinInt[T Ordered](value, ceiling T) T {
+func MinInt[T Number](value, ceiling T) T {
 	if value > ceiling {
 		return ceiling
 	}
@@ -62,7 +62,7 @@ func MinInt[T Ordered](value, ceiling T) T {
 }
 
 // MaxInt the maximum of two ints
-func MaxInt[T Ordered](value, floor T) T {
+func MaxInt[T Number](value, floor T) T {
 	if value < floor {
 		return floor
 	}
