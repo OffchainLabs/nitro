@@ -369,14 +369,12 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, err
 	}
 	var prevDelayed uint64
-	var prevMessage *arbostypes.MessageWithMetadata
 	if pos > 0 {
 		prev, err := v.streamer.GetMessage(pos - 1)
 		if err != nil {
 			return nil, err
 		}
 		prevDelayed = prev.DelayedMessagesRead
-		prevMessage = prev
 	}
 	prevResult, err := v.streamer.ResultAtCount(pos)
 	if err != nil {
@@ -399,16 +397,6 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return nil, err
-		}
-		// Check that Espresso block numbers increase consecutively. This ensures that the sequenced L2 chain does not skip an Espresso block.
-		if pos > 0 && prevMessage.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
-			_, prevJst, err := arbos.ParseEspressoMsg(prevMessage.Message)
-			if err != nil {
-				return nil, err
-			}
-			if prevJst.EspressoBlockNumber+1 != jst.EspressoBlockNumber {
-				return nil, fmt.Errorf("l2 chain appears to have skipped an espresso block, last espresso block number: %d, current: %d", prevJst.EspressoBlockNumber, jst.EspressoBlockNumber)
-			}
 		}
 		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
 		if err != nil {
