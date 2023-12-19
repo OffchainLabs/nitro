@@ -2507,7 +2507,7 @@ impl Machine {
 
                 if !guards.is_empty() || self.guards.enabled {
                     h.update(b"With guards:");
-                    h.update(&[self.guards.enabled as u8]);
+                    h.update([self.guards.enabled as u8]);
                     h.update(ErrorGuardProof::hash_guards(&guards));
                 }
             }

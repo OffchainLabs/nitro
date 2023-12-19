@@ -49,6 +49,9 @@ func TestBenchmarkGas(t *testing.T) {
 	bench("ecrecover", func() *types.Receipt {
 		return ensure(programTest.FillBlockRecover(&auth))
 	})
+	bench("mulmod", func() *types.Receipt {
+		return ensure(programTest.FillBlockMulMod(&auth))
+	})
 	bench("keccak", func() *types.Receipt {
 		return ensure(programTest.FillBlockHash(&auth))
 	})

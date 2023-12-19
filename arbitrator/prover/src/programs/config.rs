@@ -112,6 +112,8 @@ pub struct CompilePricingParams {
     /// Associates opcodes to their ink costs
     #[derivative(Debug = "ignore")]
     pub costs: OpCosts,
+    /// Cost of checking the amount of ink left.
+    pub ink_header_cost: u64,
     /// Per-byte `MemoryFill` cost
     pub memory_fill_ink: u64,
     /// Per-byte `MemoryCopy` cost
@@ -132,6 +134,7 @@ impl Default for CompilePricingParams {
     fn default() -> Self {
         Self {
             costs: |_, _| 0,
+            ink_header_cost: 0,
             memory_fill_ink: 0,
             memory_copy_ink: 0,
         }
@@ -163,8 +166,9 @@ impl CompileConfig {
                 config.bounds.max_frame_contention = 4096;
                 config.pricing = CompilePricingParams {
                     costs: meter::pricing_v1,
-                    memory_fill_ink: 1000 / 8,
-                    memory_copy_ink: 1000 / 8,
+                    ink_header_cost: 2450,
+                    memory_fill_ink: 800 / 8,
+                    memory_copy_ink: 800 / 8,
                 };
             }
             _ => panic!("no config exists for Stylus version {version}"),
@@ -186,7 +190,7 @@ impl CompileConfig {
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 
-        let meter = MiddlewareWrapper::new(Meter::new(self.pricing.costs));
+        let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
         let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
         let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
         let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));

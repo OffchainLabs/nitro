@@ -2,7 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    programs::{config::PricingParams, FuncMiddleware, Middleware, ModuleMod},
+    programs::{
+        config::{CompilePricingParams, PricingParams, SigMap},
+        FuncMiddleware, Middleware, ModuleMod,
+    },
     value::FunctionType,
     Machine,
 };
@@ -18,7 +21,7 @@ use std::{
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
 use wasmparser::{BlockType, Operator};
 
-use super::config::SigMap;
+use super::config::OpCosts;
 
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
 pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";
@@ -30,22 +33,29 @@ impl<T> OpcodePricer for T where T: Fn(&Operator, &SigMap) -> u64 + Send + Sync 
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Meter<F: OpcodePricer> {
+    /// Associates opcodes to their ink costs.
     #[derivative(Debug = "ignore")]
     costs: F,
+    /// Cost of checking the amount of ink left.
+    header_cost: u64,
+    /// Ink and ink status globals.
     globals: RwLock<Option<[GlobalIndex; 2]>>,
     /// The types of the module being instrumented
     sigs: RwLock<Option<Arc<SigMap>>>,
 }
 
-impl<F: OpcodePricer> Meter<F> {
-    pub fn new(costs: F) -> Self {
+impl Meter<OpCosts> {
+    pub fn new(pricing: &CompilePricingParams) -> Meter<OpCosts> {
         Self {
-            costs,
+            costs: pricing.costs,
+            header_cost: pricing.ink_header_cost,
             globals: RwLock::default(),
             sigs: RwLock::default(),
         }
     }
+}
 
+impl<F: OpcodePricer> Meter<F> {
     pub fn globals(&self) -> [GlobalIndex; 2] {
         self.globals.read().expect("missing globals")
     }
@@ -75,6 +85,7 @@ where
             ink,
             status,
             self.costs.clone(),
+            self.header_cost,
             sigs.clone(),
         ))
     }
@@ -87,18 +98,20 @@ where
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct FuncMeter<'a, F: OpcodePricer> {
-    /// Represents the amount of ink left for consumption
+    /// Represents the amount of ink left for consumption.
     ink_global: GlobalIndex,
-    /// Represents whether the machine is out of ink
+    /// Represents whether the machine is out of ink.
     status_global: GlobalIndex,
-    /// Instructions of the current basic block
+    /// Instructions of the current basic block.
     block: Vec<Operator<'a>>,
-    /// The accumulated cost of the current basic block
+    /// The accumulated cost of the current basic block.
     block_cost: u64,
-    /// Associates opcodes to their ink costs
+    /// Cost of checking the amount of ink left.
+    header_cost: u64,
+    /// Associates opcodes to their ink costs.
     #[derivative(Debug = "ignore")]
     costs: F,
-    /// The types of the module being instrumented
+    /// The types of the module being instrumented.
     sigs: Arc<SigMap>,
 }
 
@@ -107,6 +120,7 @@ impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
         ink_global: GlobalIndex,
         status_global: GlobalIndex,
         costs: F,
+        header_cost: u64,
         sigs: Arc<SigMap>,
     ) -> Self {
         Self {
@@ -114,6 +128,7 @@ impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
             status_global,
             block: vec![],
             block_cost: 0,
+            header_cost,
             costs,
             sigs,
         }
@@ -139,7 +154,10 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
             let status = self.status_global.as_u32();
             let blockty = BlockType::Empty;
 
-            let mut header = [
+            // include the cost of executing the header
+            cost = cost.saturating_add(self.header_cost);
+
+            out.extend([
                 // if ink < cost => panic with status = 1
                 GlobalGet { global_index: ink },
                 I64Const { value: cost as i64 },
@@ -156,16 +174,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
                 I64Const { value: cost as i64 },
                 I64Sub,
                 GlobalSet { global_index: ink },
-            ];
-
-            // include the cost of executing the header
-            for op in &header {
-                cost = cost.saturating_add((self.costs)(op, &self.sigs))
-            }
-            header[1] = I64Const { value: cost as i64 };
-            header[9] = I64Const { value: cost as i64 };
-
-            out.extend(header);
+            ]);
             out.extend(self.block.drain(..));
             self.block_cost = 0;
         }
@@ -268,17 +277,18 @@ pub trait MeteredMachine {
 
     /// Pays for a write into the client.
     fn pay_for_write(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(18287, 31, bytes.saturating_sub(32)))
+        self.buy_ink(sat_add_mul(5040, 25, bytes.saturating_sub(32)))
     }
 
     /// Pays for a read into the host.
     fn pay_for_read(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(40423, 61, bytes.saturating_sub(32)))
+        self.buy_ink(sat_add_mul(16381, 54, bytes.saturating_sub(32)))
     }
 
     /// Pays for both I/O and keccak.
     fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(268527, 41920, evm::evm_words(bytes)))
+        let words = evm::evm_words(bytes).saturating_sub(2);
+        self.buy_ink(sat_add_mul(121800, 21000, words))
     }
 
     /// Pays for copying bytes from geth.
@@ -364,41 +374,42 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
         op!(Unreachable, Return) => 1,
         op!(Nop, Drop) | dot!(I32Const, I64Const) => 1,
         dot!(Block, Loop) | op!(Else, End) => 1,
-        dot!(Br, BrIf, If) => 2400,
-        dot!(Select) => 4000, // TODO: improve wasmer codegen
-        dot!(Call) => 13750,
-        dot!(LocalGet, LocalTee) => 200,
-        dot!(LocalSet) => 375,
-        dot!(GlobalGet) => 300,
-        dot!(GlobalSet) => 990,
-        dot!(I32Load, I32Load8S, I32Load8U, I32Load16S, I32Load16U) => 2200,
-        dot!(I64Load, I64Load8S, I64Load8U, I64Load16S, I64Load16U, I64Load32S, I64Load32U) => 2750,
-        dot!(I32Store, I32Store8, I32Store16) => 2400,
-        dot!(I64Store, I64Store8, I64Store16, I64Store32) => 3100,
-        dot!(MemorySize) => 13500,
+        dot!(Br, BrIf, If) => 765,
+        dot!(Select) => 1250, // TODO: improve wasmer codegen
+        dot!(Call) => 3800,
+        dot!(LocalGet, LocalTee) => 75,
+        dot!(LocalSet) => 210,
+        dot!(GlobalGet) => 225,
+        dot!(GlobalSet) => 575,
+        dot!(I32Load, I32Load8S, I32Load8U, I32Load16S, I32Load16U) => 670,
+        dot!(I64Load, I64Load8S, I64Load8U, I64Load16S, I64Load16U, I64Load32S, I64Load32U) => 680,
+        dot!(I32Store, I32Store8, I32Store16) => 825,
+        dot!(I64Store, I64Store8, I64Store16, I64Store32) => 950,
+        dot!(MemorySize) => 3000,
         dot!(MemoryGrow) => 1, // cost handled by memory pricer
 
-        op!(I32Eqz, I32Eq, I32Ne, I32LtS, I32LtU, I32GtS, I32GtU, I32LeS, I32LeU, I32GeS, I32GeU) => 570,
-        op!(I64Eqz, I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU) => 760,
+        op!(I32Eqz, I32Eq, I32Ne, I32LtS, I32LtU, I32GtS, I32GtU, I32LeS, I32LeU, I32GeS, I32GeU) => 170,
+        op!(I64Eqz, I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU) => 225,
 
-        op!(I32Clz, I32Ctz) => 750,
-        op!(I32Popcnt) => 500,
-        op!(I32Add, I32Sub) => 200,
-        op!(I32Mul) => 550,
-        op!(I32DivS, I32DivU, I32RemS, I32RemU) => 2500,
-        op!(I32And, I32Or, I32Xor, I32Shl, I32ShrS, I32ShrU, I32Rotl, I32Rotr) => 200,
+        op!(I32Clz, I32Ctz) => 210,
+        op!(I32Add, I32Sub) => 70,
+        op!(I32Mul) => 160,
+        op!(I32DivS, I32DivU, I32RemS, I32RemU) => 1120,
+        op!(I32And, I32Or, I32Xor, I32Shl, I32ShrS, I32ShrU, I32Rotl, I32Rotr) => 70,
 
-        op!(I64Clz, I64Ctz) => 750,
-        op!(I64Popcnt) => 750,
-        op!(I64Add, I64Sub) => 200,
-        op!(I64Mul) => 550,
-        op!(I64DivS, I64DivU, I64RemS, I64RemU) => 2900,
-        op!(I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr) => 200,
+        op!(I64Clz, I64Ctz) => 210,
+        op!(I64Add, I64Sub) => 100,
+        op!(I64Mul) => 160,
+        op!(I64DivS, I64DivU, I64RemS, I64RemU) => 1270,
+        op!(I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr) => 100,
 
-        op!(I32WrapI64, I64ExtendI32S, I64ExtendI32U) => 200,
-        op!(I32Extend8S, I32Extend16S, I64Extend8S, I64Extend16S, I64Extend32S) => 200,
-        dot!(MemoryCopy) => 3100,
-        dot!(MemoryFill) => 3100,
+        op!(I32Popcnt) => 2650, // slow on ARM, fast on x86
+        op!(I64Popcnt) => 6000, // slow on ARM, fast on x86
+
+        op!(I32WrapI64, I64ExtendI32S, I64ExtendI32U) => 100,
+        op!(I32Extend8S, I32Extend16S, I64Extend8S, I64Extend16S, I64Extend32S) => 100,
+        dot!(MemoryCopy) => 950,
+        dot!(MemoryFill) => 950,
 
         BrTable { targets } => {
             2400 + 325 * targets.len() as u64
