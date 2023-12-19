@@ -70,7 +70,7 @@ func activateProgram(
 		(*u64)(burner.GasLeft()),
 	))
 
-	data, msg, err := status.toResult(output.takeBytes(), debug)
+	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if err != nil {
 		if debug {
 			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
@@ -124,7 +124,7 @@ func callProgram(
 
 	depth := interpreter.Depth()
 	debug := stylusParams.debugMode != 0
-	data, msg, err := status.toResult(output.takeBytes(), debug)
+	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -312,7 +312,7 @@ func (vec *rustBytes) read() []byte {
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec *rustBytes) takeBytes() []byte {
+func (vec *rustBytes) intoBytes() []byte {
 	slice := vec.read()
 	vec.drop()
 	return slice
