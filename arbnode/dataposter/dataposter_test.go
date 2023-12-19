@@ -93,7 +93,11 @@ func TestExternalSigner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error signing transaction with external signer: %v", err)
 	}
-	want, err := srv.signerFn(addr, tx)
+	args, err := txToSendTxArgs(addr, tx)
+	if err != nil {
+		t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
+	}
+	want, err := srv.signerFn(addr, args.ToTransaction())
 	if err != nil {
 		t.Fatalf("Error signing transaction: %v", err)
 	}

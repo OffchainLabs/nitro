@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
@@ -236,6 +237,31 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
+// txToSendTxArgs converts transaction to SendTxArgs. This is needed for
+// external signer to specify From field.
+func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
+	if tx.To() == nil {
+		return nil, fmt.Errorf("transaction %v has no destination", tx.Hash())
+	}
+	to := common.NewMixedcaseAddress(*tx.To())
+	data := (hexutil.Bytes)(tx.Data())
+	val := (*hexutil.Big)(tx.Value())
+	if val == nil {
+		val = (*hexutil.Big)(big.NewInt(0))
+	}
+	return &apitypes.SendTxArgs{
+		From:                 common.NewMixedcaseAddress(addr),
+		To:                   &to,
+		Gas:                  hexutil.Uint64(tx.Gas()),
+		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
+		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
+		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
+		Value:                *val,
+		Data:                 &data,
+		Nonce:                hexutil.Uint64(tx.Nonce()),
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -249,25 +275,25 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
 	sender := common.HexToAddress(opts.Address)
-
-	var hasher types.Signer
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 		// According to the "eth_signTransaction" API definition, this should be
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		if err := client.CallContext(ctx, &data, opts.Method, tx); err != nil {
+		args, err := txToSendTxArgs(addr, tx)
+		if err != nil {
+			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
+		}
+		if err := client.CallContext(ctx, &data, opts.Method, args); err != nil {
 			return nil, fmt.Errorf("signing transaction: %w", err)
 		}
 		var signedTx types.Transaction
 		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
 			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
 		}
-		if hasher == nil {
-			hasher = types.LatestSignerForChainID(tx.ChainId())
-		}
-		if hasher.Hash(tx) != hasher.Hash(&signedTx) {
-			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), hasher.Hash(tx))
+		hasher := types.LatestSignerForChainID(tx.ChainId())
+		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(&signedTx) {
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), h)
 		}
 		return &signedTx, nil
 	}, sender, nil
