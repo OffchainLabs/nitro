@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	boostpolicies "github.com/offchainlabs/nitro/execution/gethexec/boost-policies"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -66,6 +67,8 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	TxBoost                     bool            `koanf:"txboost"`
+	TxBoostScoringPolicy        string          `koanf:"txboost-scoring-policy"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -97,6 +100,8 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,
+	TxBoost:                 false,
+	TxBoostScoringPolicy:    "express-lane",
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -112,6 +117,8 @@ var TestSequencerConfig = SequencerConfig{
 	MaxTxDataSize:               95000,
 	NonceFailureCacheSize:       1024,
 	NonceFailureCacheExpiry:     time.Second,
+	TxBoost:                     false,
+	TxBoostScoringPolicy:        "express-lane",
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -127,6 +134,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
+	f.Bool(prefix+".txboost", DefaultSequencerConfig.TxBoost, "enable continuous, policy-based tx boost")
+	f.String(prefix+".txboost-scoring-policy", DefaultSequencerConfig.TxBoostScoringPolicy, "define the scoring policy for txboost - options: express-lane, noop")
 }
 
 type txQueueItem struct {
@@ -136,6 +145,14 @@ type txQueueItem struct {
 	returnedResult  bool
 	ctx             context.Context
 	firstAppearance time.Time
+}
+
+func (i txQueueItem) timestamp() time.Time {
+	return i.firstAppearance
+}
+
+func (i txQueueItem) innerTx() *types.Transaction {
+	return i.tx
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -291,6 +308,8 @@ type Sequencer struct {
 	activeMutex sync.Mutex
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
+
+	txBoostHeap *txBoostHeap
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -318,6 +337,13 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
 	}
+	if config.TxBoost {
+		policy, err := parseTimeBoostPolicy(config.TxBoostScoringPolicy)
+		if err != nil {
+			return nil, err
+		}
+		s.txBoostHeap = newTxBoostHeap(policy)
+	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
@@ -325,6 +351,17 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	s.Pause()
 	execEngine.EnableReorgSequencing()
 	return s, nil
+}
+
+func parseTimeBoostPolicy(policyString string) (execution.BoostPolicyScorer, error) {
+	switch policyString {
+	case "express-lane":
+		return &boostpolicies.ExpressLaneScorer{}, nil
+	case "noop":
+		return &boostpolicies.NoopScorer{}, nil
+	default:
+		return nil, fmt.Errorf("unknown timeboost policy scorer string: %s", policyString)
+	}
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -756,31 +793,58 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			if nextNonceExpiryTimer != nil {
 				nextNonceExpiryChan = nextNonceExpiryTimer.C
 			}
-			select {
-			case queueItem = <-s.txQueue:
-			case <-nextNonceExpiryChan:
-				// No need to stop the previous timer since it already elapsed
-				nextNonceExpiryTimer = s.expireNonceFailures()
-				continue
-			case <-s.onForwarderSet:
-				// Make sure this notification isn't outdated
-				_, forwarder := s.GetPauseAndForwarder()
-				if forwarder != nil {
-					s.nonceFailures.Clear()
+
+			if s.config().TxBoost {
+				select {
+				case <-nextNonceExpiryChan:
+					// No need to stop the previous timer since it already elapsed
+					nextNonceExpiryTimer = s.expireNonceFailures()
+					continue
+				case <-s.onForwarderSet:
+					// Make sure this notification isn't outdated
+					_, forwarder := s.GetPauseAndForwarder()
+					if forwarder != nil {
+						s.nonceFailures.Clear()
+					}
+					continue
+				case <-ctx.Done():
+					return false
+				default:
+					queueItem = s.txBoostHeap.Pop().(txQueueItem)
 				}
-				continue
-			case <-ctx.Done():
-				return false
+			} else {
+				select {
+				case queueItem = <-s.txQueue:
+				case <-nextNonceExpiryChan:
+					// No need to stop the previous timer since it already elapsed
+					nextNonceExpiryTimer = s.expireNonceFailures()
+					continue
+				case <-s.onForwarderSet:
+					// Make sure this notification isn't outdated
+					_, forwarder := s.GetPauseAndForwarder()
+					if forwarder != nil {
+						s.nonceFailures.Clear()
+					}
+					continue
+				case <-ctx.Done():
+					return false
+				}
 			}
+
 		} else {
-			done := false
-			select {
-			case queueItem = <-s.txQueue:
-			default:
-				done = true
-			}
-			if done {
+			if s.config().TxBoost {
+				queueItem = s.txBoostHeap.Pop().(txQueueItem)
 				break
+			} else {
+				done := false
+				select {
+				case queueItem = <-s.txQueue:
+				default:
+					done = true
+				}
+				if done {
+					break
+				}
 			}
 		}
 		err := queueItem.ctx.Err()
@@ -971,7 +1035,19 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 				}
 			}
 		})
+	}
 
+	if s.config().TxBoost {
+		s.LaunchThread(func(ctx context.Context) {
+			for {
+				select {
+				case txQueueItem := <-s.txQueue:
+					s.txBoostHeap.Push(boostableTx(txQueueItem))
+				case <-ctx.Done():
+					return
+				}
+			}
+		})
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
