@@ -6,6 +6,7 @@ package dbstorage
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -140,7 +141,7 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		return fmt.Errorf("encoding previous item: %w", err)
 	}
 	if !bytes.Equal(stored, prevEnc) {
-		return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, stored, prevEnc)
+		return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, hex.EncodeToString(stored), hex.EncodeToString(prevEnc))
 	}
 	newEnc, err := s.encDec().Encode(new)
 	if err != nil {

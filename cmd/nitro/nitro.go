@@ -786,6 +786,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}
+	if err := c.Execution.Validate(); err != nil {
+		return err
+	}
 	return c.Persistent.Validate()
 }
 
@@ -890,7 +893,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
-	if chainInfo.SequencerUrl != "" {
+	// Only use chainInfo.SequencerUrl as default forwarding-target if sequencer is not enabled
+	if !k.Bool("execution.sequencer.enable") && chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.SecondaryForwardingTarget != "" {
@@ -921,9 +925,12 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
+		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
+		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1000000
+		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
