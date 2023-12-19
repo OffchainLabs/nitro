@@ -26,6 +26,12 @@ func newTxBoostHeap(policyScorer execution.BoostPolicyScorer) *txBoostHeap {
 	return srv
 }
 
+func (tb *txBoostHeap) Len() int {
+	tb.RLock()
+	defer tb.RUnlock()
+	return tb.prioQueue.Len()
+}
+
 func (tb *txBoostHeap) Push(tx boostableTx) {
 	tb.Lock()
 	defer tb.Unlock()

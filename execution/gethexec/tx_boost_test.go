@@ -31,7 +31,7 @@ func (m *mockTx) innerTx() *types.Transaction {
 
 func TestTxPriorityQueue(t *testing.T) {
 	t.Run("order by score", func(t *testing.T) {
-		heap := newTxBoostHeap(&boostpolicies.ExpressLaneScorer{})
+		heap := newTxBoostHeap(&boostpolicies.ExpressLaneScorer{AllowNonTippingTx: true})
 		now := time.Now()
 		heap.Push(&mockTx{
 			_bid:       0,
@@ -57,7 +57,7 @@ func TestTxPriorityQueue(t *testing.T) {
 		}
 	})
 	t.Run("tiebreak by timestamp", func(t *testing.T) {
-		heap := newTxBoostHeap(&boostpolicies.ExpressLaneScorer{})
+		heap := newTxBoostHeap(&boostpolicies.ExpressLaneScorer{AllowNonTippingTx: true})
 		now := time.Now()
 		heap.Push(&mockTx{
 			_id:        "a",
@@ -85,7 +85,7 @@ func TestTxPriorityQueue(t *testing.T) {
 		}
 	})
 	t.Run("express lane scorer, but no bid set, order by timestamp", func(t *testing.T) {
-		heap := newTxBoostHeap(&boostpolicies.ExpressLaneScorer{})
+		heap := newTxBoostHeap(&boostpolicies.ExpressLaneScorer{AllowNonTippingTx: true})
 		now := time.Now()
 		heap.Push(&mockTx{
 			_id:        "a",

@@ -356,7 +356,9 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 func parseTimeBoostPolicy(policyString string) (execution.BoostPolicyScorer, error) {
 	switch policyString {
 	case "express-lane":
-		return &boostpolicies.ExpressLaneScorer{}, nil
+		return &boostpolicies.BinaryExpressLaneScorer{}, nil
+	case "bid":
+		return &boostpolicies.BidScorer{}, nil
 	case "noop":
 		return &boostpolicies.NoopScorer{}, nil
 	default:
@@ -810,6 +812,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				case <-ctx.Done():
 					return false
 				default:
+					if s.txBoostHeap.Len() == 0 {
+						continue
+					}
 					queueItem = s.txBoostHeap.Pop().(txQueueItem)
 				}
 			} else {
@@ -833,8 +838,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 		} else {
 			if s.config().TxBoost {
+				if s.txBoostHeap.Len() == 0 {
+					break
+				}
 				queueItem = s.txBoostHeap.Pop().(txQueueItem)
-				break
 			} else {
 				done := false
 				select {
@@ -913,6 +920,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	start := time.Now()
+	scores := make([]uint64, len(txes))
+	for i, tx := range txes {
+		scores[i] = s.txBoostHeap.prioQueue.policyScorer.ScoreTx(tx)
+	}
 	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
