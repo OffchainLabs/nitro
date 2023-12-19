@@ -249,6 +249,7 @@ func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 	if val == nil {
 		val = (*hexutil.Big)(big.NewInt(0))
 	}
+	al := tx.AccessList()
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
 		To:                   &to,
@@ -257,8 +258,10 @@ func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
 		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
 		Value:                *val,
-		Data:                 &data,
 		Nonce:                hexutil.Uint64(tx.Nonce()),
+		Data:                 &data,
+		AccessList:           &al,
+		ChainID:              (*hexutil.Big)(tx.ChainId()),
 	}, nil
 }
 
