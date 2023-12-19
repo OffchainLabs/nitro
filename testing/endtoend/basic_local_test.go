@@ -625,7 +625,7 @@ func testSyncAliceStopsBobRemains(t *testing.T, be backend.Backend, s *Challenge
 		}
 		logs, err := bob.ChallengeManager().FilterEdgeConfirmedByTime(filterOpts, nil, nil)
 		require.NoError(t, err)
-		edges := bob.Watcher().GetEdges()
+		edges := bob.Watcher().GetHonestEdges()
 		for logs.Next() {
 			for _, edge := range edges {
 				if edge.Id().Hash == logs.Event.EdgeId {

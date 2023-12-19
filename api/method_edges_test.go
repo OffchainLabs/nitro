@@ -113,9 +113,9 @@ func TestGetEdge(t *testing.T) {
 	s.Router().ServeHTTP(rr, req)
 
 	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusNotImplemented {
+	if status := rr.Code; status != http.StatusInternalServerError {
 		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusNotImplemented)
+			status, http.StatusInternalServerError)
 	}
 }
 

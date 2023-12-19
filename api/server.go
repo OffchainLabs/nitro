@@ -95,6 +95,7 @@ func (s *Server) registerMethods() error {
 	s.router.HandleFunc("/assertions/{id}", s.getAssertionHandler).Methods("GET")
 
 	// Edges
+	s.router.HandleFunc("/honest-edges", s.listHonestEdgesHandler).Methods("GET")
 	s.router.HandleFunc("/edges", s.listEdgesHandler).Methods("GET")
 	s.router.HandleFunc("/edges/{id}", s.getEdgeHandler).Methods("GET")
 

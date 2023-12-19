@@ -3,9 +3,12 @@ package api_test
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/OffchainLabs/bold/api"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 var _ = api.EdgesProvider(&FakeEdgesProvider{})
@@ -15,8 +18,21 @@ type FakeEdgesProvider struct {
 	Edges []protocol.SpecEdge
 }
 
-func (f *FakeEdgesProvider) GetEdges() []protocol.SpecEdge {
+func (f *FakeEdgesProvider) GetHonestEdges() []protocol.SpecEdge {
 	return f.Edges
+}
+
+func (f *FakeEdgesProvider) GetEdges(ctx context.Context) ([]protocol.SpecEdge, error) {
+	return f.Edges, nil
+}
+
+func (f *FakeEdgesProvider) GetEdge(ctx context.Context, edgeId common.Hash) (protocol.SpecEdge, error) {
+	for _, e := range f.Edges {
+		if e.Id().Hash == edgeId {
+			return e, nil
+		}
+	}
+	return nil, fmt.Errorf("no edge found with id %#x", edgeId)
 }
 
 type FakeAssertionProvider struct {

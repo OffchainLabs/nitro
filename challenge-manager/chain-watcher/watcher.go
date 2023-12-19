@@ -354,8 +354,110 @@ func (w *Watcher) Start(ctx context.Context) {
 	}
 }
 
-// GetEdges returns all edges in the watcher.
-func (w *Watcher) GetEdges() []protocol.SpecEdge {
+func (w *Watcher) GetEdge(ctx context.Context, edgeId common.Hash) (protocol.SpecEdge, error) {
+	challengeManager, err := w.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	edgeOpt, err := challengeManager.GetEdge(ctx, protocol.EdgeId{Hash: edgeId})
+	if err != nil {
+		return nil, err
+	}
+	if edgeOpt.IsNone() {
+		return nil, fmt.Errorf("no edge found with id %#x", edgeId)
+	}
+	return edgeOpt.Unwrap(), nil
+}
+
+func (w *Watcher) GetEdges(ctx context.Context) ([]protocol.SpecEdge, error) {
+	scanRange, err := retry.UntilSucceeds(ctx, func() (filterRange, error) {
+		return w.getStartEndBlockNum(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	fromBlock := scanRange.startBlockNum
+	toBlock := scanRange.endBlockNum
+
+	// Get a challenge manager instance and filterer.
+	challengeManager, err := retry.UntilSucceeds(ctx, func() (protocol.SpecChallengeManager, error) {
+		return w.chain.SpecChallengeManager(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	filterer, err := retry.UntilSucceeds(ctx, func() (*challengeV2gen.EdgeChallengeManagerFilterer, error) {
+		return challengeV2gen.NewEdgeChallengeManagerFilterer(challengeManager.Address(), w.backend)
+	})
+	if err != nil {
+		return nil, err
+	}
+	filterOpts := &bind.FilterOpts{
+		Start:   fromBlock,
+		End:     &toBlock,
+		Context: ctx,
+	}
+
+	return retry.UntilSucceeds(ctx, func() ([]protocol.SpecEdge, error) {
+		return w.getAllEdges(ctx, filterer, filterOpts)
+	})
+}
+
+func (w *Watcher) getAllEdges(
+	ctx context.Context,
+	filterer *challengeV2gen.EdgeChallengeManagerFilterer,
+	filterOpts *bind.FilterOpts,
+) ([]protocol.SpecEdge, error) {
+	it, err := filterer.FilterEdgeAdded(filterOpts, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err = it.Close(); err != nil {
+			srvlog.Error("Could not close filter iterator", log.Ctx{"err": err})
+		}
+	}()
+	edges := make([]protocol.SpecEdge, 0)
+	for it.Next() {
+		if it.Error() != nil {
+			return nil, errors.Wrapf(
+				err,
+				"got iterator error when scanning edge creations from block %d to %d",
+				filterOpts.Start,
+				*filterOpts.End,
+			)
+		}
+		edge, err := retry.UntilSucceeds(ctx, func() (protocol.SpecEdge, error) {
+			return w.getEdgeFromEvent(ctx, it.Event)
+		})
+		if err != nil {
+			return nil, err
+		}
+		edges = append(edges, edge)
+	}
+	return edges, nil
+}
+
+func (w *Watcher) getEdgeFromEvent(
+	ctx context.Context,
+	event *challengeV2gen.EdgeChallengeManagerEdgeAdded,
+) (protocol.SpecEdge, error) {
+	challengeManager, err := w.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	edgeOpt, err := challengeManager.GetEdge(ctx, protocol.EdgeId{Hash: event.EdgeId})
+	if err != nil {
+		return nil, err
+	}
+	if edgeOpt.IsNone() {
+		return nil, fmt.Errorf("no edge found with id %#x", event.EdgeId)
+	}
+	return edgeOpt.Unwrap(), nil
+}
+
+// GetHonestEdges returns all edges in the watcher.
+func (w *Watcher) GetHonestEdges() []protocol.SpecEdge {
 	syncEdges := make([]protocol.SpecEdge, 0)
 	//nolint:err
 	_ = w.challenges.ForEach(func(AssertionHash protocol.AssertionHash, t *trackedChallenge) error {
