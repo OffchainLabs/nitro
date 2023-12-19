@@ -468,12 +468,56 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	}
 }
 
-func TestGettingStateForRPC(t *testing.T) {
+func TestGettingStateForRPCFullNode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	execConfig := gethexec.ConfigDefaultTest()
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
-	execConfig.Caching.BlockAge = 0
+	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
+	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 16)
+	execNode, _ := builder.L2.ExecNode, builder.L2.Client
+	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+	api := execNode.Backend.APIBackend()
+
+	header := bc.CurrentBlock()
+	if header == nil {
+		Fatal(t, "failed to get current block header")
+	}
+	state, _, err := api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
+	Require(t, err)
+	addr := builder.L2Info.GetAddress("User2")
+	exists := state.Exist(addr)
+	err = state.Error()
+	Require(t, err)
+	if !exists {
+		Fatal(t, "User2 address does not exist in the state")
+	}
+	// Get the state again to avoid caching
+	state, _, err = api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
+
+	blockCountRequiredToFlushDirties := builder.execConfig.Caching.BlockCount
+	makeSomeTransfers(t, ctx, builder, blockCountRequiredToFlushDirties)
+
+	exists = state.Exist(addr)
+	err = state.Error()
+	Require(t, err)
+	if !exists {
+		Fatal(t, "User2 address does not exist in the state")
+	}
+}
+
+func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.Caching.Archive = true
+	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 128
+	execConfig.Caching.BlockCount = 128
+	execConfig.Caching.SnapshotCache = 0 // disable snapshots
+	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 16)
