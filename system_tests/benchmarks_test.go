@@ -44,7 +44,7 @@ func TestBenchmarkGas(t *testing.T) {
 		receipt := lambda()
 		passed := time.Since(now)
 		ratio := float64(passed.Nanoseconds()) / float64(receipt.GasUsedForL2())
-		fmt.Printf("Bench %-10v %v %.2f\n", name, formatTime(passed), ratio)
+		fmt.Printf("Bench %-10v %v %.2f ns/gas\n", name, formatTime(passed), ratio)
 	}
 	bench("ecrecover", func() *types.Receipt {
 		return ensure(programTest.FillBlockRecover(&auth))
@@ -54,6 +54,9 @@ func TestBenchmarkGas(t *testing.T) {
 	})
 	bench("keccak", func() *types.Receipt {
 		return ensure(programTest.FillBlockHash(&auth))
+	})
+	bench("add", func() *types.Receipt {
+		return ensure(programTest.FillBlockAdd(&auth))
 	})
 	bench("quick step", func() *types.Receipt {
 		return ensure(programTest.FillBlockQuickStep(&auth))
