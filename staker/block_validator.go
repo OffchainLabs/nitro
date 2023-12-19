@@ -505,7 +505,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		if err != nil {
 			return false, err
 		}
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
 		if err != nil {
 			return false, err
 		}
