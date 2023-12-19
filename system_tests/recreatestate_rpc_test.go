@@ -497,6 +497,7 @@ func TestGettingStateForRPCFullNode(t *testing.T) {
 	}
 	// Get the state again to avoid caching
 	state, _, err = api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
+	Require(t, err)
 
 	blockCountRequiredToFlushDirties := builder.execConfig.Caching.BlockCount
 	makeSomeTransfers(t, ctx, builder, blockCountRequiredToFlushDirties)
