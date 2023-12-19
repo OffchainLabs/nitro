@@ -607,7 +607,22 @@ func mainImpl() int {
 		}
 	}
 
-	if valNode != nil {
+	if err == nil && nodeConfig.Init.ResetToMessage > 0 {
+		if currentNode.InboxTracker != nil {
+			err = currentNode.InboxTracker.ReorgMessagesTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMessage))
+		} else {
+			err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMessage))
+		}
+		if err != nil {
+			log.Error("Error resetting to message", "err", err)
+			return 1
+		}
+		if nodeConfig.Init.ThenQuit {
+			return 0
+		}
+	}
+
+	if err == nil && valNode != nil {
 		err = valNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
@@ -628,19 +643,6 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	exitCode := 0
-
-	if err == nil && nodeConfig.Init.ResetToMessage > 0 {
-		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMessage))
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
-			exitCode = 1
-		}
-		if nodeConfig.Init.ThenQuit {
-			close(sigint)
-
-			return exitCode
-		}
-	}
 
 	select {
 	case err := <-fatalErrChan:

@@ -26,18 +26,6 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type DangerousConfig struct {
-	ReorgToBlock int64 `koanf:"reorg-to-block"`
-}
-
-var DefaultDangerousConfig = DangerousConfig{
-	ReorgToBlock: -1,
-}
-
-func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
-}
-
 type Config struct {
 	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
@@ -49,7 +37,6 @@ type Config struct {
 	Caching                   CachingConfig                    `koanf:"caching"`
 	RPC                       arbitrum.Config                  `koanf:"rpc"`
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -83,7 +70,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 var ConfigDefault = Config{
@@ -96,7 +82,6 @@ var ConfigDefault = Config{
 	TxPreChecker:              DefaultTxPreCheckerConfig,
 	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
 	Caching:                   DefaultCachingConfig,
-	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 }
 

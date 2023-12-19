@@ -780,3 +780,74 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	log.Info("InboxTracker", "SequencerBatchCount", count)
 	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
 }
+
+func (t *InboxTracker) ReorgMessagesTo(messageCount arbutil.MessageIndex) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	var delayedRead uint64
+	if messageCount > 0 {
+		prevMessage, err := t.txStreamer.GetMessage(messageCount - 1)
+		if errors.Is(err, AccumulatorNotFoundErr) {
+			return errors.New("attempted to reorg to future message count")
+		}
+		if err != nil {
+			return err
+		}
+		delayedRead = prevMessage.DelayedMessagesRead
+	}
+
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	for batchCount > 0 {
+		batchMeta, err := t.GetBatchMetadata(batchCount - 1)
+		if err != nil {
+			return err
+		}
+		if batchMeta.MessageCount <= messageCount {
+			break
+		}
+		batchCount--
+	}
+
+	if t.validator != nil {
+		t.validator.ReorgToBatchCount(batchCount)
+	}
+
+	dbBatch := t.db.NewBatch()
+
+	// To make the inbox reader start from the right position, we need to entirely remove old delayed messages.
+	err = deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToKey(delayedRead))
+	if err != nil {
+		return err
+	}
+	err = deleteStartingAt(t.db, dbBatch, rlpDelayedMessagePrefix, uint64ToKey(delayedRead))
+	if err != nil {
+		return err
+	}
+	delayedCountData, err := rlp.EncodeToBytes(delayedRead)
+	if err != nil {
+		return err
+	}
+	err = dbBatch.Put(delayedMessageCountKey, delayedCountData)
+	if err != nil {
+		return err
+	}
+
+	err = t.deleteBatchMetadataStartingAt(dbBatch, batchCount)
+	if err != nil {
+		return err
+	}
+	countData, err := rlp.EncodeToBytes(batchCount)
+	if err != nil {
+		return err
+	}
+	err = dbBatch.Put(sequencerBatchCountKey, countData)
+	if err != nil {
+		return err
+	}
+	log.Info("InboxTracker", "SequencerBatchCount", batchCount)
+	return t.txStreamer.ReorgToAndEndBatch(dbBatch, messageCount)
+}
