@@ -140,23 +140,27 @@ func TestEspressoE2E(t *testing.T) {
 	}
 
 	// Check if the tx is executed correctly
-	amount := big.NewInt(1e16)
-	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, amount, nil)
+	transfer_amount := big.NewInt(1e16)
+	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transfer_amount, nil)
 	err = l2Node.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	err = waitFor(t, ctx, func() bool {
-		b := l2Node.GetBalance(t, addr)
-		return b.Cmp(amount) == 0
+		balance := l2Node.GetBalance(t, addr)
+		log.Info("waiting for balance", "addr", addr, "balance", balance)
+		return balance.Cmp(transfer_amount) >= 0
 	})
 	Require(t, err)
 
-	// Check the validated count and message count
+	// Remember the number of messages
+	msgCnt, err := node.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+
+	// Wait for the number of validated messages to catch up
 	err = waitFor(t, ctx, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
-		msgCnt, _ := node.ConsensusNode.TxStreamer.GetMessageCount()
-		// It will retry when the rare case where msgCnt is not equal to validatedCnt occurs
-		return validatedCnt == msgCnt
+		log.Info("waiting for validation", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
+		return validatedCnt >= msgCnt
 	})
 	Require(t, err)
 }

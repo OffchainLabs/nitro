@@ -398,7 +398,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		if err != nil {
 			return nil, err
 		}
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
 		if err != nil {
 			return nil, err
 		}

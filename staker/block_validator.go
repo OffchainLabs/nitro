@@ -522,12 +522,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 			if err != nil {
 				return false, err
 			}
-			if prevJst.EspressoBlockNumber+1 != jst.EspressoBlockNumber {
-				return false, fmt.Errorf("l2 chain appears to have skipped an espresso block, last espresso block number: %d, current: %d", prevJst.EspressoBlockNumber, jst.EspressoBlockNumber)
+			if prevJst.Header.Height+1 != jst.Header.Height {
+				return false, fmt.Errorf("l2 chain appears to have skipped an espresso block, last espresso block number: %d, current: %d", prevJst.Header.Height, jst.Header.Height)
 			}
 		}
 
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.EspressoBlockNumber)
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
 		if err != nil {
 			return false, err
 		}
