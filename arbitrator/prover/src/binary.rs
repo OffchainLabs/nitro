@@ -510,7 +510,7 @@ impl<'a> Debug for WasmBinary<'a> {
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
     pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusData> {
-        let meter = Meter::new(compile.pricing.costs);
+        let meter = Meter::new(&compile.pricing);
         let dygas = DynamicMeter::new(&compile.pricing);
         let depth = DepthChecker::new(compile.bounds);
         let bound = HeapBound::new(compile.bounds);

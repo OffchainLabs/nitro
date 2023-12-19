@@ -90,6 +90,7 @@ pub trait UserHost: GasMeteredMachine {
     fn write_result(&mut self, ptr: u32, len: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         self.pay_for_read(len)?;
+        self.pay_for_geth_bytes(len)?; // returned after call
         *self.outs() = self.read_slice(ptr, len)?;
         trace!("write_result", self, &*self.outs(), &[])
     }
@@ -232,6 +233,7 @@ pub trait UserHost: GasMeteredMachine {
     {
         self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
         self.pay_for_read(calldata_len)?;
+        self.pay_for_geth_bytes(calldata_len)?;
 
         let gas_passed = gas;
         gas = gas.min(self.gas_left()?); // provide no more than what the user has
@@ -360,6 +362,7 @@ pub trait UserHost: GasMeteredMachine {
     {
         self.buy_ink(HOSTIO_INK + cost)?;
         self.pay_for_read(code_len)?;
+        self.pay_for_geth_bytes(code_len)?;
 
         let code = self.read_slice(code, code_len)?;
         let code_copy = self.evm_data().tracing.then(|| code.clone());

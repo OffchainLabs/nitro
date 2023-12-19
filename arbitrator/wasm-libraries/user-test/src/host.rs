@@ -25,6 +25,7 @@ pub unsafe extern "C" fn vm_hooks__read_args(ptr: u32) {
 pub unsafe extern "C" fn vm_hooks__write_result(ptr: u32, len: u32) {
     let mut program = Program::start(0);
     program.pay_for_read(len).unwrap();
+    program.pay_for_geth_bytes(len).unwrap();
     OUTS = wavm::read_slice_u32(ptr, len);
 }
 

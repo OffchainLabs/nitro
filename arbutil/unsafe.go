@@ -12,9 +12,13 @@ func SliceToPointer[T any](slice []T) *T {
 	return &slice[0]
 }
 
+// does a defensive copy due to Go's lake of immutable types
 func PointerToSlice[T any](pointer *T, length int) []T {
-	output := make([]T, length)
-	source := unsafe.Slice(pointer, length)
-	copy(output, source)
+	return CopySlice(unsafe.Slice(pointer, length))
+}
+
+func CopySlice[T any](slice []T) []T {
+	output := make([]T, len(slice))
+	copy(output, slice)
 	return output
 }

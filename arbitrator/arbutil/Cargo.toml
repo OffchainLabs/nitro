@@ -8,8 +8,8 @@ digest = "0.9.0"
 eyre = "0.6.5"
 hex = "0.4.3"
 num-traits = "0.2.17"
-sha3 = "0.10.5"
 siphasher = "0.3.10"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 wasmparser.workspace = true
 serde = { version = "1.0.130", features = ["derive", "rc"] }
 
