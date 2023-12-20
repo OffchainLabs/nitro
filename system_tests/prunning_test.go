@@ -98,7 +98,7 @@ func TestPrunning(t *testing.T) {
 		t.Log("db entries post-prunning:", entriesAfterPrunning)
 
 		if entriesAfterPrunning >= entriesBeforePrunning {
-			Fatal(t, "The db doesn't have less entires after prunning then before. Before:", entriesBeforePrunning, "After:", entriesAfterPrunning)
+			Fatal(t, "The db doesn't have less entries after prunning then before. Before:", entriesBeforePrunning, "After:", entriesAfterPrunning)
 		}
 	}()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
