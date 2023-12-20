@@ -1110,8 +1110,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
-	commonEphemeralError := util.NewEphemeralError(time.Minute)
-	exceedMaxMempoolSizeEphemeralError := util.NewEphemeralError(5 * time.Minute)
+	commonEphemeralError := util.NewEphemeralError(time.Minute, "")
+	exceedMaxMempoolSizeEphemeralError := util.NewEphemeralError(5*time.Minute, "will exceed max mempool size")
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -1144,8 +1144,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			logLevel := log.Error
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
-			logLevel = commonEphemeralError.LogLevelEphemeralError(err, "", logLevel)
-			logLevel = exceedMaxMempoolSizeEphemeralError.LogLevelEphemeralError(err, "will exceed max mempool size", logLevel)
+			logLevel = commonEphemeralError.LogLevelEphemeralError(err, logLevel)
+			logLevel = exceedMaxMempoolSizeEphemeralError.LogLevelEphemeralError(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {

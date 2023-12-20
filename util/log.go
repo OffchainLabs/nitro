@@ -23,21 +23,22 @@ import (
 
 type EphemeralError struct {
 	Duration        time.Duration
+	ErrorString     string
 	FirstOccurrence *time.Time
 }
 
-func NewEphemeralError(duration time.Duration) *EphemeralError {
+func NewEphemeralError(duration time.Duration, errorString string) *EphemeralError {
 	return &EphemeralError{
 		Duration:        duration,
+		ErrorString:     errorString,
 		FirstOccurrence: &time.Time{},
 	}
 }
 
 func (e *EphemeralError) LogLevelEphemeralError(
 	err error,
-	errorSubstring string,
 	currentLogLevel func(msg string, ctx ...interface{})) func(string, ...interface{}) {
-	if !strings.Contains(err.Error(), errorSubstring) && errorSubstring != "" {
+	if !strings.Contains(err.Error(), e.ErrorString) && e.ErrorString != "" {
 		e.Reset()
 		return currentLogLevel
 	}
