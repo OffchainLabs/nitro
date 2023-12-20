@@ -1,0 +1,14 @@
+[package]
+name = "program-exec"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+arbutil = { path = "../../arbutil/", features = ["wavm"] }
+prover = { path = "../../prover/", default-features = false }
+eyre = "0.6.5"
+fnv = "1.0.7"
+hex = "0.4.3"

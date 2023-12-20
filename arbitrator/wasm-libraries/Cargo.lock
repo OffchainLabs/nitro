@@ -714,6 +714,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "program-exec"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "eyre",
+ "fnv",
+ "hex",
+ "prover",
+]
+
+[[package]]
 name = "prover"
 version = "0.1.0"
 dependencies = [
