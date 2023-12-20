@@ -5,14 +5,18 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	merkletree "github.com/wealdtech/go-merkletree"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/wavmio"
 )
 
 // MerkleSample is an example using the Merkle tree to generate and verify proofs.
@@ -41,7 +45,7 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 	// Verify the proof for 'Baz'
 }
 
-func testCompression(data []byte) {
+func testCompression(data []byte, doneChan chan struct{}) {
 	compressed, err := arbcompress.CompressFast(data)
 	if err != nil {
 		panic(err)
@@ -53,6 +57,7 @@ func testCompression(data []byte) {
 	if !bytes.Equal(decompressed, data) {
 		panic("data differs after compression / decompression")
 	}
+	doneChan <- struct{}{}
 }
 
 func main() {
@@ -67,32 +72,57 @@ func main() {
 		[]byte("Baz"),
 	}
 
-	verified, err := MerkleSample(data, 0)
-	if err != nil {
-		panic(err)
-	}
-	if !verified {
-		panic("failed to verify proof for Baz")
-	}
-	verified, err = MerkleSample(data, 1)
-	if err != nil {
-		panic(err)
-	}
-	if !verified {
-		panic("failed to verify proof for Baz")
-	}
+	var wg sync.WaitGroup
 
-	verified, err = MerkleSample(data, -1)
-	if err != nil {
-		if verified {
-			panic("succeded to verify proof invalid")
+	wg.Add(1)
+	go func() {
+		verified, err := MerkleSample(data, 0)
+		if err != nil {
+			panic(err)
 		}
+		if !verified {
+			panic("failed to verify proof for Baz")
+		}
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		verified, err := MerkleSample(data, 1)
+		if err != nil {
+			panic(err)
+		}
+		if !verified {
+			panic("failed to verify proof for Baz")
+		}
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		verified, err := MerkleSample(data, -1)
+		if err != nil {
+			if verified {
+				panic("succeded to verify proof invalid")
+			}
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+	println("verified proofs with waitgroup!\n")
+
+	doneChan1 := make(chan struct{})
+	doneChan2 := make(chan struct{})
+	go testCompression([]byte{}, doneChan1)
+	go testCompression([]byte("This is a test string la la la la la la la la la la"), doneChan2)
+	<-doneChan2
+	<-doneChan1
+
+	println("compression + chan test passed!\n")
+
+	if wavmio.GetInboxPosition() != 0 {
+		panic("unexpected inbox pos")
 	}
-
-	println("verified both proofs!\n")
-
-	testCompression([]byte{})
-	testCompression([]byte("This is a test string la la la la la la la la la la"))
-
-	println("test compression passed!\n")
+	if wavmio.GetLastBlockHash() != (common.Hash{}) {
+		panic("unexpected lastblock hash")
+	}
+	println("wavmio test passed!\n")
 }
