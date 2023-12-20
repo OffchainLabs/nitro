@@ -20,23 +20,38 @@ import (
 //	log.LogLevelEphemeralError(err, "not supported yet", 5*time.Minute, &firstEphemeralError, log.Error)("msg")
 //	log.LogLevelEphemeralError(err, "not supported yet", 5*time.Minute, &firstEphemeralError, log.Error)("msg", "key1", val1)
 //	log.LogLevelEphemeralError(err, "not supported yet", 5*time.Minute, &firstEphemeralError, log.Error)("msg", "key1", val1, "key2", val2)
-func LogLevelEphemeralError(
+
+type EphemeralError struct {
+	Duration        time.Duration
+	FirstOccurrence *time.Time
+}
+
+func NewEphemeralError(duration time.Duration) *EphemeralError {
+	return &EphemeralError{
+		Duration:        duration,
+		FirstOccurrence: &time.Time{},
+	}
+}
+
+func (e *EphemeralError) LogLevelEphemeralError(
 	err error,
 	errorSubstring string,
-	ephemeralDuration time.Duration,
-	firstOccurrenceTime *time.Time,
 	currentLogLevel func(msg string, ctx ...interface{})) func(string, ...interface{}) {
-	if strings.Contains(err.Error(), errorSubstring) || errorSubstring == "" {
-		logLevel := log.Error
-		if *firstOccurrenceTime == (time.Time{}) {
-			*firstOccurrenceTime = time.Now()
-			logLevel = log.Warn
-		} else if time.Since(*firstOccurrenceTime) < ephemeralDuration {
-			logLevel = log.Warn
-		}
-		return logLevel
-	} else {
-		*firstOccurrenceTime = time.Time{}
+	if !strings.Contains(err.Error(), errorSubstring) && errorSubstring != "" {
+		e.Reset()
 		return currentLogLevel
 	}
+
+	logLevel := log.Error
+	if *e.FirstOccurrence == (time.Time{}) {
+		*e.FirstOccurrence = time.Now()
+		logLevel = log.Warn
+	} else if time.Since(*e.FirstOccurrence) < e.Duration {
+		logLevel = log.Warn
+	}
+	return logLevel
+}
+
+func (e *EphemeralError) Reset() {
+	*e.FirstOccurrence = time.Time{}
 }
