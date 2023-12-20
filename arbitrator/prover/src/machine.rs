@@ -1204,7 +1204,18 @@ impl Machine {
             entry!(HaltAndSetFinished);
         }
 
-        // Go support
+        // Go/wasi support
+        if let Some(&f) = main_exports.get("_start").filter(|_| runtime_support) {
+            let expected_type = FunctionType::new([], []);
+            ensure!(
+                main_module.func_types[f as usize] == expected_type,
+                "Main function doesn't match expected signature of [] -> []",
+            );
+            entry!(@cross, u32::try_from(main_module_idx).unwrap(), f);
+            entry!(HaltAndSetFinished);
+        }
+
+        // Go/js support
         if let Some(&f) = main_exports.get("run").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(I32); // argc
