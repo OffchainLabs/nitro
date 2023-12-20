@@ -110,7 +110,7 @@ jobs:
         run: ./scripts/build-brotli.sh -l
 
       - name: Build
-        run: make all -j
+        run: make build build-replay-env -j
 
       - name: Install Compose
         uses: ndeloof/install-compose-action@v0.0.1
