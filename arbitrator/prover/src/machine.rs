@@ -722,10 +722,11 @@ pub struct ModuleState<'a> {
 #[derive(Serialize, Deserialize)]
 pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
+    cothread: bool,
     status: MachineStatus,
-    value_stack: Cow<'a, Vec<Value>>,
+    value_stacks: Cow<'a, Vec<Vec<Value>>>,
     internal_stack: Cow<'a, Vec<Value>>,
-    frame_stack: Cow<'a, Vec<StackFrame>>,
+    frame_stacks: Cow<'a, Vec<Vec<StackFrame>>>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
     pc: ProgramCounter,
@@ -785,10 +786,11 @@ impl PreimageResolverWrapper {
 #[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
+    cothread: bool,
     status: MachineStatus,
-    value_stack: Vec<Value>,
+    value_stacks: Vec<Vec<Value>>,
     internal_stack: Vec<Value>,
-    frame_stack: Vec<StackFrame>,
+    frame_stacks: Vec<Vec<StackFrame>>,
     guards: ErrorGuardStack,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
@@ -1347,10 +1349,11 @@ impl Machine {
 
         let mut mach = Machine {
             status: MachineStatus::Running,
+            cothread: false,
             steps: 0,
-            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
-            frame_stack: Vec::new(),
+            frame_stacks: vec![Vec::new()],
             modules,
             modules_merkle,
             global_state,
@@ -1402,10 +1405,11 @@ impl Machine {
         }
         let mut mach = Machine {
             status: MachineStatus::Running,
+            cothread: false,
             steps: 0,
-            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
-            frame_stack: Vec::new(),
+            frame_stacks: vec![Vec::new()],
             modules,
             modules_merkle: None,
             global_state: Default::default(),
@@ -1452,10 +1456,11 @@ impl Machine {
             .collect();
         let state = MachineState {
             steps: self.steps,
+            cothread: self.cothread,
             status: self.status,
-            value_stack: Cow::Borrowed(&self.value_stack),
+            value_stacks: Cow::Borrowed(&self.value_stacks),
             internal_stack: Cow::Borrowed(&self.internal_stack),
-            frame_stack: Cow::Borrowed(&self.frame_stack),
+            frame_stacks: Cow::Borrowed(&self.frame_stacks),
             modules,
             global_state: self.global_state.clone(),
             pc: self.pc,
@@ -1489,9 +1494,9 @@ impl Machine {
         }
         self.steps = new_state.steps;
         self.status = new_state.status;
-        self.value_stack = new_state.value_stack.into_owned();
+        self.value_stacks = new_state.value_stacks.into_owned();
         self.internal_stack = new_state.internal_stack.into_owned();
-        self.frame_stack = new_state.frame_stack.into_owned();
+        self.frame_stacks = new_state.frame_stacks.into_owned();
         self.global_state = new_state.global_state;
         self.pc = new_state.pc;
         self.stdio_output = new_state.stdio_output.into_owned();
@@ -1571,9 +1576,9 @@ impl Machine {
 
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
-        self.value_stack = args;
+        self.value_stacks[0] = args;
 
-        self.frame_stack.clear();
+        self.frame_stacks[0].clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
@@ -1587,13 +1592,16 @@ impl Machine {
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if !self.frame_stack.is_empty() {
+        if self.cothread {
+            bail!("machine in cothread when expecting final result")
+        }
+        if !self.frame_stacks[0].is_empty() {
             bail!(
                 "machine has not successfully computed a final result {}",
                 self.status.red()
             )
         }
-        Ok(self.value_stack.clone())
+        Ok(self.value_stacks[0].clone())
     }
 
     pub fn call_function(
@@ -1696,11 +1704,19 @@ impl Machine {
         if self.is_halted() {
             return Ok(());
         }
+        let (mut value_stack, mut frame_stack) = match self.cothread {
+            false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+            true => (self.value_stacks.last_mut().unwrap(), self.frame_stacks.last_mut().unwrap()),
+        };
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
         macro_rules! reset_refs {
             () => {
+                (value_stack, frame_stack) = match self.cothread {
+                    false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+                    true => (self.value_stacks.last_mut().unwrap(), self.frame_stacks.last_mut().unwrap()),
+                };
                 module = &mut self.modules[self.pc.module()];
                 func = &module.funcs[self.pc.func()];
             };
@@ -1731,19 +1747,19 @@ impl Machine {
                         print_debug_info(self);
                     }
                     println!("{}", "Recovering...".pink());
-
+                    self.cothread = false;
+                    reset_refs!();
                     // recover at the previous stack heights
-                    assert!(self.frame_stack.len() >= guard.frame_stack);
-                    assert!(self.value_stack.len() >= guard.value_stack);
+                    assert!(frame_stack.len() >= guard.frame_stack);
+                    assert!(value_stack.len() >= guard.value_stack);
                     assert!(self.internal_stack.len() >= guard.inter_stack);
-                    self.frame_stack.truncate(guard.frame_stack);
-                    self.value_stack.truncate(guard.value_stack);
+                    frame_stack.truncate(guard.frame_stack);
+                    value_stack.truncate(guard.value_stack);
                     self.internal_stack.truncate(guard.inter_stack);
                     self.pc = guard.on_error;
 
                     // indicate an error has occured
-                    self.value_stack.push(0_u32.into());
-                    reset_refs!();
+                    value_stack.push(0_u32.into());
                     continue;
                 } else {
                     print_debug_info(self);
@@ -1765,10 +1781,10 @@ impl Machine {
                 Opcode::Unreachable => error!(),
                 Opcode::Nop => {}
                 Opcode::InitFrame => {
-                    let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
-                    let caller_module = self.value_stack.pop().unwrap().assume_u32();
-                    let return_ref = self.value_stack.pop().unwrap();
-                    self.frame_stack.push(StackFrame {
+                    let caller_module_internals = value_stack.pop().unwrap().assume_u32();
+                    let caller_module = value_stack.pop().unwrap().assume_u32();
+                    let return_ref = value_stack.pop().unwrap();
+                    frame_stack.push(StackFrame {
                         return_ref,
                         locals: func
                             .local_types
@@ -1785,7 +1801,7 @@ impl Machine {
                         .and_then(|h| h.as_ref())
                     {
                         if let Err(err) = Self::host_call_hook(
-                            &self.value_stack,
+                            &value_stack,
                             module,
                             &mut self.stdio_output,
                             &hook.0,
@@ -1803,14 +1819,14 @@ impl Machine {
                     Machine::test_next_instruction(func, &self.pc);
                 }
                 Opcode::ArbitraryJumpIf => {
-                    let x = self.value_stack.pop().unwrap();
+                    let x = value_stack.pop().unwrap();
                     if !x.is_i32_zero() {
                         self.pc.inst = inst.argument_data as u32;
                         Machine::test_next_instruction(func, &self.pc);
                     }
                 }
                 Opcode::Return => {
-                    let frame = self.frame_stack.pop().unwrap();
+                    let frame = frame_stack.pop().unwrap();
                     match frame.return_ref {
                         Value::RefNull => error!(),
                         Value::InternalRef(pc) => {
@@ -1828,19 +1844,19 @@ impl Machine {
                     }
                 }
                 Opcode::Call => {
-                    let frame = self.frame_stack.last().unwrap();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(frame.caller_module.into());
-                    self.value_stack.push(frame.caller_module_internals.into());
+                    let frame = frame_stack.last().unwrap();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(frame.caller_module.into());
+                    value_stack.push(frame.caller_module_internals.into());
                     self.pc.func = inst.argument_data as u32;
                     self.pc.inst = 0;
                     func = &module.funcs[self.pc.func()];
                 }
                 Opcode::CrossModuleCall => {
                     flush_module!();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(self.pc.module.into());
-                    self.value_stack.push(module.internals_offset.into());
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
@@ -1849,10 +1865,10 @@ impl Machine {
                 }
                 Opcode::CrossModuleForward => {
                     flush_module!();
-                    let frame = self.frame_stack.last().unwrap();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(frame.caller_module.into());
-                    self.value_stack.push(frame.caller_module_internals.into());
+                    let frame = frame_stack.last().unwrap();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(frame.caller_module.into());
+                    value_stack.push(frame.caller_module_internals.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
@@ -1862,10 +1878,10 @@ impl Machine {
                 Opcode::CrossModuleInternalCall => {
                     flush_module!();
                     let call_internal = inst.argument_data as u32;
-                    let call_module = self.value_stack.pop().unwrap().assume_u32();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(self.pc.module.into());
-                    self.value_stack.push(module.internals_offset.into());
+                    let call_module = value_stack.pop().unwrap().assume_u32();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
                     module = &mut self.modules[call_module as usize];
                     self.pc.module = call_module;
                     self.pc.func = module.internals_offset + call_internal;
@@ -1873,11 +1889,11 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::CallerModuleInternalCall => {
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(self.pc.module.into());
-                    self.value_stack.push(module.internals_offset.into());
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
 
-                    let current_frame = self.frame_stack.last().unwrap();
+                    let current_frame = frame_stack.last().unwrap();
                     if current_frame.caller_module_internals > 0 {
                         let func_idx = u32::try_from(inst.argument_data)
                             .ok()
@@ -1895,7 +1911,7 @@ impl Machine {
                 }
                 Opcode::CallIndirect => {
                     let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
-                    let idx = match self.value_stack.pop() {
+                    let idx = match value_stack.pop() {
                         Some(Value::I32(i)) => usize::try_from(i).unwrap(),
                         x => bail!(
                             "WASM validation failed: top of stack before call_indirect is {:?}",
@@ -1909,10 +1925,10 @@ impl Machine {
                     };
                     match elem.val {
                         Value::FuncRef(call_func) => {
-                            let frame = self.frame_stack.last().unwrap();
-                            self.value_stack.push(Value::InternalRef(self.pc));
-                            self.value_stack.push(frame.caller_module.into());
-                            self.value_stack.push(frame.caller_module_internals.into());
+                            let frame = frame_stack.last().unwrap();
+                            value_stack.push(Value::InternalRef(self.pc));
+                            value_stack.push(frame.caller_module.into());
+                            value_stack.push(frame.caller_module_internals.into());
                             self.pc.func = call_func;
                             self.pc.inst = 0;
                             func = &module.funcs[self.pc.func()];
@@ -1922,23 +1938,23 @@ impl Machine {
                     }
                 }
                 Opcode::LocalGet => {
-                    let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
-                    self.value_stack.push(val);
+                    let val = frame_stack.last().unwrap().locals[inst.argument_data as usize];
+                    value_stack.push(val);
                 }
                 Opcode::LocalSet => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
+                    let val = value_stack.pop().unwrap();
+                    frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
                 }
                 Opcode::GlobalGet => {
-                    self.value_stack
+                    value_stack
                         .push(module.globals[inst.argument_data as usize]);
                 }
                 Opcode::GlobalSet => {
-                    let val = self.value_stack.pop().unwrap();
+                    let val = value_stack.pop().unwrap();
                     module.globals[inst.argument_data as usize] = val;
                 }
                 Opcode::MemoryLoad { ty, bytes, signed } => {
-                    let base = match self.value_stack.pop() {
+                    let base = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         x => bail!(
                             "WASM validation failed: top of stack before memory load is {:?}",
@@ -1951,10 +1967,10 @@ impl Machine {
                     let Some(value) = module.memory.get_value(index, ty, bytes, signed) else {
                         error!("failed to read offset {}", index)
                     };
-                    self.value_stack.push(value);
+                    value_stack.push(value);
                 }
                 Opcode::MemoryStore { ty: _, bytes } => {
-                    let val = match self.value_stack.pop() {
+                    let val = match value_stack.pop() {
                         Some(Value::I32(x)) => x.into(),
                         Some(Value::I64(x)) => x,
                         Some(Value::F32(x)) => x.to_bits().into(),
@@ -1964,7 +1980,7 @@ impl Machine {
                             x,
                         ),
                     };
-                    let base = match self.value_stack.pop() {
+                    let base = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         x => bail!(
                             "WASM validation failed: attempted to memory store with index type {:?}",
@@ -1979,37 +1995,37 @@ impl Machine {
                     }
                 }
                 Opcode::I32Const => {
-                    self.value_stack.push(Value::I32(inst.argument_data as u32));
+                    value_stack.push(Value::I32(inst.argument_data as u32));
                 }
                 Opcode::I64Const => {
-                    self.value_stack.push(Value::I64(inst.argument_data));
+                    value_stack.push(Value::I64(inst.argument_data));
                 }
                 Opcode::F32Const => {
-                    self.value_stack
+                    value_stack
                         .push(f32::from_bits(inst.argument_data as u32).into());
                 }
                 Opcode::F64Const => {
-                    self.value_stack
+                    value_stack
                         .push(f64::from_bits(inst.argument_data).into());
                 }
                 Opcode::I32Eqz => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
+                    let val = value_stack.pop().unwrap();
+                    value_stack.push(Value::I32(val.is_i32_zero() as u32));
                 }
                 Opcode::I64Eqz => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack.push(Value::I32(val.is_i64_zero() as u32));
+                    let val = value_stack.pop().unwrap();
+                    value_stack.push(Value::I32(val.is_i64_zero() as u32));
                 }
                 Opcode::IRelOp(t, op, signed) => {
-                    let vb = self.value_stack.pop();
-                    let va = self.value_stack.pop();
+                    let vb = value_stack.pop();
+                    let va = value_stack.pop();
                     match t {
                         IntegerValType::I32 => {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
                                 if signed {
-                                    self.value_stack.push(exec_irel_op(a as i32, b as i32, op));
+                                    value_stack.push(exec_irel_op(a as i32, b as i32, op));
                                 } else {
-                                    self.value_stack.push(exec_irel_op(a, b, op));
+                                    value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
                                 bail!("WASM validation failed: wrong types for i32relop");
@@ -2018,9 +2034,9 @@ impl Machine {
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
                                 if signed {
-                                    self.value_stack.push(exec_irel_op(a as i64, b as i64, op));
+                                    value_stack.push(exec_irel_op(a as i64, b as i64, op));
                                 } else {
-                                    self.value_stack.push(exec_irel_op(a, b, op));
+                                    value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
                                 bail!("WASM validation failed: wrong types for i64relop");
@@ -2029,26 +2045,26 @@ impl Machine {
                     }
                 }
                 Opcode::Drop => {
-                    self.value_stack.pop().unwrap();
+                    value_stack.pop().unwrap();
                 }
                 Opcode::Select => {
-                    let selector_zero = self.value_stack.pop().unwrap().is_i32_zero();
-                    let val2 = self.value_stack.pop().unwrap();
-                    let val1 = self.value_stack.pop().unwrap();
+                    let selector_zero = value_stack.pop().unwrap().is_i32_zero();
+                    let val2 = value_stack.pop().unwrap();
+                    let val1 = value_stack.pop().unwrap();
                     if selector_zero {
-                        self.value_stack.push(val2);
+                        value_stack.push(val2);
                     } else {
-                        self.value_stack.push(val1);
+                        value_stack.push(val1);
                     }
                 }
                 Opcode::MemorySize => {
                     let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE)
                         .expect("Memory pages grew past a u32");
-                    self.value_stack.push(pages.into());
+                    value_stack.push(pages.into());
                 }
                 Opcode::MemoryGrow => {
                     let old_size = module.memory.size();
-                    let adding_pages = match self.value_stack.pop() {
+                    let adding_pages = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         v => bail!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
@@ -2068,33 +2084,33 @@ impl Machine {
                         module.memory.resize(usize::try_from(new_size).unwrap());
                         // Push the old number of pages
                         let old_pages = u32::try_from(old_size / page_size).unwrap();
-                        self.value_stack.push(old_pages.into());
+                        value_stack.push(old_pages.into());
                     } else {
                         // Push -1
-                        self.value_stack.push(u32::MAX.into());
+                        value_stack.push(u32::MAX.into());
                     }
                 }
                 Opcode::IUnOp(w, op) => {
-                    let va = self.value_stack.pop();
+                    let va = value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
                             let Some(Value::I32(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i32unop");
                             };
-                            self.value_stack.push(exec_iun_op(value, op).into());
+                            value_stack.push(exec_iun_op(value, op).into());
                         }
                         IntegerValType::I64 => {
                             let Some(Value::I64(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i64unop");
                             };
-                            self.value_stack
+                            value_stack
                                 .push(Value::I64(exec_iun_op(value, op) as u64));
                         }
                     }
                 }
                 Opcode::IBinOp(w, op) => {
-                    let vb = self.value_stack.pop();
-                    let va = self.value_stack.pop();
+                    let vb = value_stack.pop();
+                    let va = value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
                             let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) else {
@@ -2107,7 +2123,7 @@ impl Machine {
                             let Some(value) = exec_ibin_op(a, b, op) else {
                                 error!()
                             };
-                            self.value_stack.push(value.into());
+                            value_stack.push(value.into());
                         }
                         IntegerValType::I64 => {
                             let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) else {
@@ -2120,30 +2136,30 @@ impl Machine {
                             let Some(value) = exec_ibin_op(a, b, op) else {
                                 error!()
                             };
-                            self.value_stack.push(value.into());
+                            value_stack.push(value.into());
                         }
                     }
                 }
                 Opcode::I32WrapI64 => {
-                    let x = match self.value_stack.pop() {
+                    let x = match value_stack.pop() {
                         Some(Value::I64(x)) => x,
                         v => bail!(
                             "WASM validation failed: wrong type for i32.wrapi64: {:?}",
                             v,
                         ),
                     };
-                    self.value_stack.push(Value::I32(x as u32));
+                    value_stack.push(Value::I32(x as u32));
                 }
                 Opcode::I64ExtendI32(signed) => {
-                    let x: u32 = self.value_stack.pop().unwrap().assume_u32();
+                    let x: u32 = value_stack.pop().unwrap().assume_u32();
                     let x64 = match signed {
                         true => x as i32 as i64 as u64,
                         false => x as u64,
                     };
-                    self.value_stack.push(x64.into());
+                    value_stack.push(x64.into());
                 }
                 Opcode::Reinterpret(dest, source) => {
-                    let val = match self.value_stack.pop() {
+                    let val = match value_stack.pop() {
                         Some(Value::I32(x)) if source == ArbValueType::I32 => {
                             assert_eq!(dest, ArbValueType::F32, "Unsupported reinterpret");
                             f32::from_bits(x).into()
@@ -2162,39 +2178,39 @@ impl Machine {
                         }
                         v => bail!("bad reinterpret: val {:?} source {:?}", v, source),
                     };
-                    self.value_stack.push(val);
+                    value_stack.push(val);
                 }
                 Opcode::I32ExtendS(b) => {
-                    let mut x = self.value_stack.pop().unwrap().assume_u32();
+                    let mut x = value_stack.pop().unwrap().assume_u32();
                     let mask = (1u32 << b) - 1;
                     x &= mask;
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(x.into());
+                    value_stack.push(x.into());
                 }
                 Opcode::I64ExtendS(b) => {
-                    let mut x = self.value_stack.pop().unwrap().assume_u64();
+                    let mut x = value_stack.pop().unwrap().assume_u64();
                     let mask = (1u64 << b) - 1;
                     x &= mask;
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(x.into());
+                    value_stack.push(x.into());
                 }
                 Opcode::MoveFromStackToInternal => {
-                    self.internal_stack.push(self.value_stack.pop().unwrap());
+                    self.internal_stack.push(value_stack.pop().unwrap());
                 }
                 Opcode::MoveFromInternalToStack => {
-                    self.value_stack.push(self.internal_stack.pop().unwrap());
+                    value_stack.push(self.internal_stack.pop().unwrap());
                 }
                 Opcode::Dup => {
-                    let val = self.value_stack.last().cloned().unwrap();
-                    self.value_stack.push(val);
+                    let val = value_stack.last().cloned().unwrap();
+                    value_stack.push(val);
                 }
                 Opcode::GetGlobalStateBytes32 => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len()
                         || !module
                             .memory
@@ -2204,8 +2220,8 @@ impl Machine {
                     }
                 }
                 Opcode::SetGlobalStateBytes32 => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len() {
                         error!();
                     } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
@@ -2215,17 +2231,17 @@ impl Machine {
                     }
                 }
                 Opcode::GetGlobalStateU64 => {
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
-                        self.value_stack
+                        value_stack
                             .push(self.global_state.u64_vals[idx].into());
                     }
                 }
                 Opcode::SetGlobalStateU64 => {
-                    let val = self.value_stack.pop().unwrap().assume_u64();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let val = value_stack.pop().unwrap().assume_u64();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
@@ -2233,8 +2249,8 @@ impl Machine {
                     }
                 }
                 Opcode::ReadPreImage => {
-                    let offset = self.value_stack.pop().unwrap().assume_u32();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
 
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!()
@@ -2254,12 +2270,12 @@ impl Machine {
                     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
                     let success = module.memory.store_slice_aligned(ptr.into(), read);
                     assert!(success, "Failed to write to previously read memory");
-                    self.value_stack.push(Value::I32(len as u32));
+                    value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadInboxMessage => {
-                    let offset = self.value_stack.pop().unwrap().assume_u32();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let msg_num = self.value_stack.pop().unwrap().assume_u64();
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let msg_num = value_stack.pop().unwrap().assume_u64();
                     let inbox_identifier =
                         argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
                     if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
@@ -2270,7 +2286,7 @@ impl Machine {
                             let len = std::cmp::min(32, message.len().saturating_sub(offset));
                             let read = message.get(offset..(offset + len)).unwrap_or_default();
                             if module.memory.store_slice_aligned(ptr.into(), read) {
-                                self.value_stack.push(Value::I32(len as u32));
+                                value_stack.push(Value::I32(len as u32));
                             } else {
                                 error!();
                             }
@@ -2290,7 +2306,7 @@ impl Machine {
                     }
                 }
                 Opcode::LinkModule => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!("no hash for {}", ptr)
                     };
@@ -2304,7 +2320,7 @@ impl Machine {
                     };
                     flush_module!();
                     let index = self.modules.len() as u32;
-                    self.value_stack.push(index.into());
+                    value_stack.push(index.into());
                     self.modules.push(module.clone());
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.push_leaf(hash);
@@ -2321,24 +2337,47 @@ impl Machine {
                 }
                 Opcode::PushErrorGuard => {
                     self.guards.push(ErrorGuard {
-                        frame_stack: self.frame_stack.len(),
-                        value_stack: self.value_stack.len(),
+                        frame_stack: frame_stack.len(),
+                        value_stack: value_stack.len(),
                         inter_stack: self.internal_stack.len(),
                         on_error: self.pc,
                     });
-                    self.value_stack.push(1_u32.into());
+                    value_stack.push(1_u32.into());
                     reset_refs!();
                 }
                 Opcode::PopErrorGuard => {
                     self.guards.pop();
                 }
                 Opcode::SetErrorPolicy => {
-                    let status = self.value_stack.pop().unwrap().assume_u32();
+                    let status = value_stack.pop().unwrap().assume_u32();
                     self.guards.enabled = status != 0;
                 }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
                     break;
+                }
+                Opcode::NewCoThread => {
+                    if self.cothread {
+                        error!("called NewCoThread from cothread")
+                    }
+                    self.value_stacks.push(Vec::new());
+                    self.frame_stacks.push(Vec::new());
+                    reset_refs!();
+                }
+                Opcode::PopCoThread => {
+                    if self.cothread {
+                        error!("called PopCoThread from cothread")
+                    }
+                    self.value_stacks.pop();
+                    self.frame_stacks.pop();
+                    reset_refs!();
+                }
+                Opcode::SwitchThread => {
+                    self.cothread = match inst.argument_data {
+                        0 => false,
+                        _ => true,
+                    };
+                    reset_refs!();
                 }
             }
         }
@@ -2484,8 +2523,8 @@ impl Machine {
                 hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
             }};
         }
-        let (frame_stack, frames) = compute!(|x| x.frame_stack, self.frame_stack, "Stack frame");
-        let (value_stack, values) = compute!(|x| x.value_stack, self.value_stack, "Value");
+        let (frame_stack, frames) = compute!(|x| x.frame_stack, self.get_frame_stack(), "Stack frame");
+        let (value_stack, values) = compute!(|x| x.value_stack, self.get_data_stack(), "Value");
         let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
 
         let pcs = self.guards.iter().map(|x| x.on_error);
@@ -2555,7 +2594,7 @@ impl Machine {
         }
 
         out!(prove_stack(
-            &self.value_stack,
+            self.get_data_stack(),
             STACK_PROVING_DEPTH,
             hash_value_stack,
             |v| v.serialize_for_proof(),
@@ -2569,7 +2608,7 @@ impl Machine {
         ));
 
         out!(prove_window(
-            &self.frame_stack,
+            self.get_frame_stack(),
             hash_stack_frame_stack,
             StackFrame::serialize_for_proof,
         ));
@@ -2622,6 +2661,8 @@ impl Machine {
 
         let op = next_inst.opcode;
         let arg = next_inst.argument_data;
+        let value_stack = self.get_data_stack();
+        let frame_stack = self.get_frame_stack();
 
         use Opcode::*;
         match op {
@@ -2629,7 +2670,7 @@ impl Machine {
                 out!(self.global_state.serialize());
             }
             LocalGet | LocalSet => {
-                let locals = &self.frame_stack.last().unwrap().locals;
+                let locals = &frame_stack.last().unwrap().locals;
                 let idx = arg as usize;
                 out!(locals[idx].serialize_for_proof());
                 let merkle =
@@ -2653,9 +2694,8 @@ impl Machine {
                 } else {
                     0
                 };
-                let base = match self
-                    .value_stack
-                    .get(self.value_stack.len() - 1 - stack_idx_offset)
+                let base = match value_stack
+                    .get(value_stack.len() - 1 - stack_idx_offset)
                 {
                     Some(Value::I32(x)) => *x,
                     x => fail!("memory index type is {x:?}"),
@@ -2689,7 +2729,7 @@ impl Machine {
             }
             CallIndirect => {
                 let (table, ty) = crate::wavm::unpack_call_indirect(arg);
-                let idx = match self.value_stack.last() {
+                let idx = match value_stack.last() {
                     Some(Value::I32(i)) => *i,
                     x => fail!("top of stack before call_indirect is {x:?}"),
                 };
@@ -2716,7 +2756,7 @@ impl Machine {
                 }
             }
             CrossModuleInternalCall => {
-                let module_idx = self.value_stack.last().unwrap().assume_u32() as usize;
+                let module_idx = value_stack.last().unwrap().assume_u32() as usize;
                 let called_module = &self.modules[module_idx];
                 out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
                 out!(mod_merkle
@@ -2725,7 +2765,7 @@ impl Machine {
             }
             GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
                 out!(self.global_state.serialize());
-                let ptr = self.value_stack.last().unwrap().assume_u32();
+                let ptr = value_stack.last().unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
@@ -2734,9 +2774,8 @@ impl Machine {
                 }
             }
             ReadPreImage | ReadInboxMessage => {
-                let ptr = self
-                    .value_stack
-                    .get(self.value_stack.len() - 2)
+                let ptr = value_stack
+                    .get(value_stack.len() - 2)
                     .unwrap()
                     .assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
@@ -2754,9 +2793,8 @@ impl Machine {
                         data.push(0); // preimage proof type
                         out!(preimage);
                     } else if op == Opcode::ReadInboxMessage {
-                        let msg_idx = self
-                            .value_stack
-                            .get(self.value_stack.len() - 3)
+                        let msg_idx = value_stack
+                            .get(value_stack.len() - 3)
                             .unwrap()
                             .assume_u64();
                         let inbox_id = argument_data_to_inbox(arg).expect("Bad inbox indentifier");
@@ -2771,7 +2809,7 @@ impl Machine {
             }
             LinkModule | UnlinkModule => {
                 if op == LinkModule {
-                    let leaf_index = match self.value_stack.last() {
+                    let leaf_index = match value_stack.last() {
                         Some(Value::I32(x)) => *x as usize / Memory::LEAF_SIZE,
                         x => fail!("module pointer has invalid type {x:?}"),
                     };
@@ -2818,7 +2856,17 @@ impl Machine {
     }
 
     pub fn get_data_stack(&self) -> &[Value] {
-        &self.value_stack
+        match self.cothread {
+            false => &self.value_stacks[0],
+            true => self.value_stacks.last().unwrap(),
+        }
+    }
+
+    fn get_frame_stack(&self) -> &[StackFrame] {
+        match self.cothread {
+            false => &self.frame_stacks[0],
+            true => self.frame_stacks.last().unwrap(),
+        }
     }
 
     pub fn get_internals_stack(&self) -> &[Value] {
@@ -2885,13 +2933,14 @@ impl Machine {
         };
 
         print_pc(self.pc);
-        for frame in self.frame_stack.iter().rev().take(25) {
+        let frame_stack = self.get_frame_stack();
+        for frame in frame_stack.iter().rev().take(25) {
             if let Value::InternalRef(pc) = frame.return_ref {
                 print_pc(pc);
             }
         }
-        if self.frame_stack.len() > 25 {
-            print(format!("  ... and {} more", self.frame_stack.len() - 25).grey());
+        if frame_stack.len() > 25 {
+            print(format!("  ... and {} more", frame_stack.len() - 25).grey());
         }
     }
 }

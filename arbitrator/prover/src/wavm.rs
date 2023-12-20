@@ -173,6 +173,12 @@ pub enum Opcode {
     UnlinkModule,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
+    /// create cothread (cannot be called from cothread)
+    NewCoThread,
+    /// pop cothread (cannot be called from cothread)
+    PopCoThread,
+    /// switch to/from create cothread
+    SwitchThread,
 }
 
 impl Opcode {
@@ -290,6 +296,9 @@ impl Opcode {
             Opcode::PopErrorGuard => 0x8026,
             Opcode::SetErrorPolicy => 0x8027,
             Opcode::HaltAndSetFinished => 0x8022,
+            Opcode::NewCoThread => 0x8030,
+            Opcode::PopCoThread => 0x8031,
+            Opcode::SwitchThread => 0x8032,
         }
     }
 
