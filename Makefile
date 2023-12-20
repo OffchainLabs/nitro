@@ -52,8 +52,7 @@ replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSig
 replay_wasm=$(output_latest)/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float)
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli forward user_host)
+arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float brotli user_host program_exec)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
@@ -63,7 +62,7 @@ arbitrator_cases=arbitrator/prover/test-cases
 arbitrator_tests_wat=$(wildcard $(arbitrator_cases)/*.wat)
 arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
 
-arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/main
+arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/testcase.wasm
 
 arbitrator_tests_link_info = $(shell cat $(arbitrator_cases)/link.txt | xargs)
 arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info))
@@ -73,7 +72,6 @@ arbitrator_tests_forward_deps = $(arbitrator_tests_forward_wats:wat=wasm)
 
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
-arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
 rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml)
@@ -228,7 +226,7 @@ wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wa
 clean:
 	go clean -testcache
 	rm -rf $(arbitrator_cases)/rust/target
-	rm -f $(arbitrator_cases)/*.wasm $(arbitrator_cases)/go/main
+	rm -f $(arbitrator_cases)/*.wasm $(arbitrator_cases)/go/testcase.wasm
 	rm -rf arbitrator/wasm-testsuite/tests
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
@@ -293,8 +291,8 @@ $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
 
-$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go
-	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
+$(arbitrator_cases)/testcase.wasm: $(arbitrator_cases)/go/*.go
+	cd $(arbitrator_cases)/go && GOOS=wasip1 GOARCH=wasm go build -o $@
 
 $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 	@echo creating ${PWD}/$(arbitrator_generated_header)
@@ -435,11 +433,11 @@ contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prov
 contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
-contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(prover_bin) $(arbitrator_wasm_libs_nogo)
-	$(prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
+contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(prover_bin) $(arbitrator_wasm_libs)
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
 
-contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(prover_bin) $(arbitrator_wasm_libs)
-	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success
+contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/testcase.wasm $(prover_bin) $(arbitrator_wasm_libs) $(arbitrator_tests_link_deps)
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 50000000 --require-success
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
