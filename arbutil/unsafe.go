@@ -12,6 +12,10 @@ func SliceToPointer[T any](slice []T) *T {
 	return &slice[0]
 }
 
+func SliceToUnsafePointer[T any](slice []T) unsafe.Pointer {
+	return unsafe.Pointer(SliceToPointer(slice))
+}
+
 // does a defensive copy due to Go's lake of immutable types
 func PointerToSlice[T any](pointer *T, length int) []T {
 	return CopySlice(unsafe.Slice(pointer, length))
