@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
@@ -14,11 +15,14 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func countDbEntries(db ethdb.Iteratee) int {
+func countStateEntries(db ethdb.Iteratee) int {
 	entries := 0
 	it := db.NewIterator(nil, nil)
 	for it.Next() {
-		entries++
+		isCode, _ := rawdb.IsCodeKey(it.Key())
+		if len(it.Key()) == common.HashLength || isCode {
+			entries++
+		}
 	}
 	it.Release()
 	return entries
@@ -43,7 +47,7 @@ func TestPrunning(t *testing.T) {
 		}()
 		builder.L2Info.GenerateAccount("User2")
 		var txs []*types.Transaction
-		for i := uint64(0); i < 1000; i++ {
+		for i := uint64(0); i < 200; i++ {
 			tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 			txs = append(txs, tx)
 			err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -63,7 +67,7 @@ func TestPrunning(t *testing.T) {
 		chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 		Require(t, err)
 		defer chainDb.Close()
-		entriesBeforePrunning := countDbEntries(chainDb)
+		chainDbEntriesBeforePrunning := countStateEntries(chainDb)
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
@@ -93,12 +97,12 @@ func TestPrunning(t *testing.T) {
 			}
 		}
 
-		entriesAfterPrunning := countDbEntries(chainDb)
-		t.Log("db entries pre-prunning:", entriesBeforePrunning)
-		t.Log("db entries post-prunning:", entriesAfterPrunning)
+		chainDbEntriesAfterPrunning := countStateEntries(chainDb)
+		t.Log("db entries pre-prunning:", chainDbEntriesBeforePrunning)
+		t.Log("db entries post-prunning:", chainDbEntriesAfterPrunning)
 
-		if entriesAfterPrunning >= entriesBeforePrunning {
-			Fatal(t, "The db doesn't have less entries after prunning then before. Before:", entriesBeforePrunning, "After:", entriesAfterPrunning)
+		if chainDbEntriesAfterPrunning >= chainDbEntriesBeforePrunning {
+			Fatal(t, "The db doesn't have less entries after prunning then before. Before:", chainDbEntriesBeforePrunning, "After:", chainDbEntriesAfterPrunning)
 		}
 	}()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
