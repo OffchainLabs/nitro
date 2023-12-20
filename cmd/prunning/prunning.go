@@ -101,7 +101,6 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	genesisNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
 	genesisHash := rawdb.ReadCanonicalHash(chainDb, genesisNum)
 	genesisHeader := rawdb.ReadHeader(chainDb, genesisHash, genesisNum)
-	log.Warn("XXX", "genesisNum", genesisNum, "genesisHash", genesisHash)
 	if genesisHeader == nil {
 		return nil, errors.New("missing L2 genesis block header")
 	}
