@@ -456,13 +456,13 @@ func mainImpl() int {
 			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
 			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
 			if err != nil {
-				log.Error("failed to create machine locator", "err", err)
-				return 1
-			}
-			path := locator.GetMachinePath(moduleRoot)
-			if _, err := os.Stat(path); err != nil {
-				log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-				return 1
+				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
+			} else {
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err != nil {
+					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
+					return 1
+				}
 			}
 		}
 	}
