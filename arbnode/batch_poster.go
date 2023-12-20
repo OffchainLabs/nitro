@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/go-redis/redis/v8"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
@@ -117,6 +118,7 @@ type BatchPosterConfig struct {
 	DataPoster         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl           string                      `koanf:"redis-url"`
 	RedisLock          redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	EnableRedisLock    bool                        `koanf:"enable-redis-lock"`
 	ExtraBatchGas      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
@@ -165,6 +167,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
+	f.Bool(prefix+".enable-redis-lock", DefaultBatchPosterConfig.EnableRedisLock, "if a Redis URL is specified, ensure only one batch poster attempts to post batches at a time")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
@@ -190,6 +193,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
 	RedisLock:          redislock.DefaultCfg,
+	EnableRedisLock:    true,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -215,6 +219,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
+	EnableRedisLock:    true,
 }
 
 type BatchPosterOpts struct {
@@ -254,7 +259,11 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
 		return &simpleRedisLockConfig
 	}
-	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return opts.SyncMonitor.Synced() })
+	var redisClientForLock redis.UniversalClient
+	if opts.Config().EnableRedisLock {
+		redisClientForLock = redisClient
+	}
+	redisLock, err := redislock.NewSimple(redisClientForLock, redisLockConfigFetcher, func() bool { return opts.SyncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
@@ -830,6 +839,8 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 
 const ethPosBlockTime = 12 * time.Second
 
+var errAttemptLockFailed = errors.New("failed to acquire lock; either another batch poster posted a batch or this node fell behind")
+
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
@@ -1006,6 +1017,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if b.daWriter != nil {
+		if !b.redisLock.AttemptLock(ctx) {
+			return false, errAttemptLockFailed
+		}
+
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
@@ -1042,6 +1057,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	})
 	if err != nil {
 		return false, err
+	}
+	if !b.redisLock.AttemptLock(ctx) {
+		return false, errAttemptLockFailed
 	}
 	tx, err := b.dataPoster.PostTransaction(ctx,
 		firstMsgTime,
@@ -1147,8 +1165,16 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
 			}
 		}
-		if !b.redisLock.AttemptLock(ctx) {
+		couldLock, err := b.redisLock.CouldAcquireLock(ctx)
+		if err != nil {
+			log.Warn("Error checking if we could acquire redis lock", "err", err)
+			// Might as well try, worst case we fail to lock
+			couldLock = true
+		}
+		if !couldLock {
+			log.Debug("Not posting batches right now because another batch poster has the lock or this node is behind")
 			b.building = nil
+			b.firstEphemeralError = time.Time{}
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
