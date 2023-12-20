@@ -85,6 +85,8 @@ pub enum Hostio {
     ProgramSetStack,
     ProgramMemorySize,
     ProgramCallMain,
+    ProgramRequest,
+    ProgramContinue,
     ConsoleLogTxt,
     ConsoleLogI32,
     ConsoleLogI64,
@@ -129,6 +131,8 @@ impl FromStr for Hostio {
             ("hostio", "program_set_stack") => ProgramSetStack,
             ("hostio", "program_memory_size") => ProgramMemorySize,
             ("hostio", "program_call_main") => ProgramCallMain,
+            ("hostio", "program_request") => ProgramRequest,
+            ("hostio", "program_continue") => ProgramContinue,
             ("hostio", "user_ink_left") => UserInkLeft,
             ("hostio", "user_ink_status") => UserInkStatus,
             ("hostio", "user_set_ink") => UserSetInk,
@@ -187,6 +191,8 @@ impl Hostio {
             ProgramSetStack             => func!([I32, I32]),        // λ(module, stack_left)
             ProgramMemorySize           => func!([I32], [I32]),      // λ(module) → memory_size
             ProgramCallMain             => func!([I32, I32], [I32]), // λ(module, args_len) → status
+            ProgramRequest              => func!([I32], [I32]),      // λ(status) → response
+            ProgramContinue             => func!([I32, I32], [I32]), // λ(response) → status
             ConsoleLogTxt               => func!([I32, I32]),        // λ(text, len)
             ConsoleLogI32               => func!([I32]),             // λ(value)
             ConsoleLogI64               => func!([I64]),             // λ(value)
@@ -290,10 +296,12 @@ impl Hostio {
                 // λ(module_hash) → module
                 opcode!(LocalGet, 0);
                 opcode!(LinkModule);
+                opcode!(NewCoThread);
             }
             WavmUnlinkModule => {
                 // λ()
                 opcode!(UnlinkModule);
+                opcode!(PopCoThread);
             }
             WavmSetErrorPolicy => {
                 // λ(status)
@@ -328,7 +336,7 @@ impl Hostio {
                 cross_internal!(UserMemorySize);
             }
             ProgramCallMain => {
-                // λ(module, args_len) → status
+                // caller sees: λ(module, args_len) → status
                 opcode!(PushErrorGuard);
                 opcode!(ArbitraryJumpIf, prior + body.len() + 3);
                 opcode!(I32Const, UserOutcomeKind::Failure as u32);
@@ -336,8 +344,33 @@ impl Hostio {
 
                 // jumps here in the happy case
                 opcode!(LocalGet, 1); // args_len
-                cross_internal!(CallMain);
+                opcode!(LocalGet, 0); // module
+                opcode!(MoveFromStackToInternal);
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 1);
+                opcode!(MoveFromInternalToStack);
+                opcode!(MoveFromInternalToStack);
+                opcode!(CrossModuleInternalCall, InternalFunc::CallMain); // consumes module
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 0);
                 opcode!(PopErrorGuard);
+                opcode!(MoveFromInternalToStack);
+            }
+            ProgramContinue => {
+                // caller sees: λ(return_data) → status (returns to caller of ProgramRequest)
+                // code returns return_data to caller of ProgramRequest
+                opcode!(LocalGet, 0); // return_data
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 1);
+                opcode!(MoveFromInternalToStack);
+            }
+            ProgramRequest => {
+                // caller sees: λ(status)->response
+                // code returns status of either ProgramContinue or ProgramCallMain
+                opcode!(LocalGet, 0); // return_data
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 0);
+                opcode!(MoveFromInternalToStack);
             }
             UserInkLeft => {
                 // λ() → ink_left
