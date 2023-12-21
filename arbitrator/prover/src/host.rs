@@ -345,7 +345,6 @@ impl Hostio {
                 opcode!(CrossModuleInternalCall, InternalFunc::CallMain); // consumes module
                 opcode!(MoveFromStackToInternal);
                 opcode!(SwitchThread, 0);
-                opcode!(PopErrorGuard);
                 opcode!(MoveFromInternalToStack);
             }
             ProgramContinue => {

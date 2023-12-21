@@ -18,7 +18,6 @@ pub enum UserOutcome {
 #[repr(u8)]
 pub enum UserOutcomeKind {
     Success,
-    Request,
     Revert,
     Failure,
     OutOfInk,
@@ -83,7 +82,6 @@ impl Display for UserOutcomeKind {
         use UserOutcomeKind::*;
         match self {
             Success => write!(f, "success ({as_u8})"),
-            Request => write!(f, "request ({as_u8})"),
             Revert => write!(f, "revert ({as_u8})"),
             Failure => write!(f, "failure ({as_u8})"),
             OutOfInk => write!(f, "out of ink ({as_u8})"),

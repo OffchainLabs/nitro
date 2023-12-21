@@ -10,9 +10,10 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "C" fn programs__startProgram(
     module: u32,
+    args_len: u32,
 ) -> u32 {
     // call the program
-    program_call_main(module, 0)
+    program_call_main(module, args_len as usize)
 }
 
 #[no_mangle]

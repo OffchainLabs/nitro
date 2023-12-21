@@ -1,15 +1,14 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
-use crate::evm_api::GoEvmApi;
 use arbutil::{
     evm::{
         user::{UserOutcome, UserOutcomeKind},
-        EvmData,
+        EvmData, js::JsEvmApi,
     },
     format::DebugBytes,
     Bytes32,
 };
+use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::prelude::*;
@@ -153,7 +152,7 @@ pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
     config: StylusConfig,
-    go_api: GoEvmApi,
+    req_handler: NativeRequestHandler,
     evm_data: EvmData,
     debug_chain: u32,
     output: *mut RustBytes,
@@ -167,7 +166,7 @@ pub unsafe extern "C" fn stylus_call(
     let ink = pricing.gas_to_ink(*gas);
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
+    let instance = unsafe { NativeInstance::deserialize(module, compile, JsEvmApi::new(req_handler), evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),

@@ -1711,12 +1711,17 @@ impl Machine {
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
-        macro_rules! reset_refs {
+        macro_rules! reset_stack_refs {
             () => {
                 (value_stack, frame_stack) = match self.cothread {
                     false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
                     true => (self.value_stacks.last_mut().unwrap(), self.frame_stacks.last_mut().unwrap()),
                 };
+            };
+        }
+        macro_rules! reset_refs {
+            () => {
+                reset_stack_refs!();
                 module = &mut self.modules[self.pc.module()];
                 func = &module.funcs[self.pc.func()];
             };
@@ -1748,7 +1753,7 @@ impl Machine {
                     }
                     println!("{}", "Recovering...".pink());
                     self.cothread = false;
-                    reset_refs!();
+                    reset_stack_refs!();
                     // recover at the previous stack heights
                     assert!(frame_stack.len() >= guard.frame_stack);
                     assert!(value_stack.len() >= guard.value_stack);
@@ -1757,9 +1762,9 @@ impl Machine {
                     value_stack.truncate(guard.value_stack);
                     self.internal_stack.truncate(guard.inter_stack);
                     self.pc = guard.on_error;
-
                     // indicate an error has occured
                     value_stack.push(0_u32.into());
+                    reset_refs!();
                     continue;
                 } else {
                     print_debug_info(self);
