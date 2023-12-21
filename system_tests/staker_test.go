@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +60,19 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+	httpSrv, srv := newServer(ctx, t)
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
+	go func() {
+		log.Debug("Server is listening on port 1234...")
+		if err := httpSrv.ListenAndServeTLS(signerServerCert, signerServerKey); err != nil && err != http.ErrServerClosed {
+			log.Debug("ListenAndServeTLS() failed", "error", err)
+			return
+		}
+	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -71,6 +85,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)
 	defer cleanupA()
+
+	addNewBatchPoster(ctx, t, builder, srv.address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.address, 30000, big.NewInt(1).Mul(big.NewInt(1e18), big.NewInt(1e18)), nil)})
 
 	l2nodeA := builder.L2.ConsensusNode
 	execNodeA := builder.L2.ExecNode
@@ -133,7 +152,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
-	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.address}, []bool{true, true, true})
 	Require(t, err, "unable to generate setValidator calldata")
 	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
 	Require(t, err, "unable to set validators")
@@ -200,12 +219,13 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Require(t, err)
 	}
 	Require(t, err)
-
-	dpB, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeB.L1Reader, &l1authB, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
+	cfg.Staker.DataPoster.ExternalSigner = *externalSignerTestCfg(srv.address)
+	dpB, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeB.L1Reader, &l1authB, NewFetcherFromConfig(cfg), nil)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB, func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
@@ -367,14 +387,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
-			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, l1authB.From, big.NewInt(1024))
+			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, srv.address, big.NewInt(1024))
 			Require(t, err)
 			if staker.ConflictType(conflictInfo.Ty) == staker.CONFLICT_TYPE_FOUND {
 				cancelBackgroundTxs()
 			}
 		}
 		if faultyStaker && !sawStakerZombie {
-			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, l1authB.From)
+			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, srv.address)
 			Require(t, err)
 		}
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
@@ -395,7 +415,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err)
 		}
 		if !stakerBWasStaked {
-			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, l1authB.From)
+			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, srv.address)
 			Require(t, err)
 		}
 		for j := 0; j < 5; j++ {

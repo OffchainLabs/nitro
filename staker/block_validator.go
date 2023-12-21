@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -127,7 +128,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServer:         rpcclient.DefaultClientConfig,
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
-	PrerecordedBlocks:        128,
+	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
@@ -139,7 +140,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServer:         rpcclient.TestClientConfig,
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
-	PrerecordedBlocks:        64,
+	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,

@@ -28,9 +28,9 @@ type EOA struct {
 	getExtraGas             func() uint64
 }
 
-func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EOA, error) {
+func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, getExtraGas func() uint64) (*EOA, error) {
 	return &EOA{
-		auth:          auth,
+		auth:          dataPoster.Auth(),
 		client:        l1Client,
 		rollupAddress: rollupAddress,
 		dataPoster:    dataPoster,

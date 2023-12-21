@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -53,12 +52,14 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -238,7 +239,8 @@ func mainImpl() int {
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
 		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
-	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
+		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
@@ -419,6 +421,52 @@ func mainImpl() int {
 		}
 	}()
 
+	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
+	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
+		// Fetch current on-chain WASM module root
+		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+		if err != nil {
+			log.Error("failed to create rollupUserLogic", "err", err)
+			return 1
+		}
+		moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			log.Error("failed to get on-chain WASM module root", "err", err)
+			return 1
+		}
+		if (moduleRoot == common.Hash{}) {
+			log.Error("on-chain WASM module root is zero")
+			return 1
+		}
+		// Check if the on-chain WASM module root belongs to the set of allowed module roots
+		allowedWasmModuleRoots := nodeConfig.Validation.Wasm.AllowedWasmModuleRoots
+		if len(allowedWasmModuleRoots) > 0 {
+			moduleRootMatched := false
+			for _, root := range allowedWasmModuleRoots {
+				if common.HexToHash(root) == moduleRoot {
+					moduleRootMatched = true
+					break
+				}
+			}
+			if !moduleRootMatched {
+				log.Error("on-chain WASM module root did not match with any of the allowed WASM module roots")
+				return 1
+			}
+		} else {
+			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
+			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
+			if err != nil {
+				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
+			} else {
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err != nil {
+					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
+					return 1
+				}
+			}
+		}
+	}
+
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
@@ -495,36 +543,35 @@ func mainImpl() int {
 	}
 
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
-	config := liveNodeConfig.Get()
-	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
-	if config.Node.ParentChainReader.Enable {
+	if nodeConfig.Node.ParentChainReader.Enable {
 		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
 		if err != nil {
 			log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
 			return 1
 		}
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
-		seqInboxMaxDataSize = int(res.Int64())
-		if err != nil && !executionRevertedRegexp.MatchString(err.Error()) {
+		if err == nil {
+			seqInboxMaxDataSize = int(res.Int64())
+		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
 	}
 	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
 	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
-	if config.Node.BatchPoster.Enable && !config.Node.DataAvailability.Enable {
-		if config.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
+	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DataAvailability.Enable {
+		if nodeConfig.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
 			log.Error("batchPoster's MaxSize is too large")
 			return 1
 		}
 	}
 	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
 	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
-	if config.Execution.Sequencer.Enable {
-		if config.Execution.Sequencer.MaxTxDataSize > config.Node.BatchPoster.MaxSize-5000 ||
-			config.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
+	if nodeConfig.Execution.Sequencer.Enable {
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 ||
+			nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
 			log.Error("sequencer's MaxTxDataSize too large")
 			return 1
 		}
@@ -739,6 +786,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}
+	if err := c.Execution.Validate(); err != nil {
+		return err
+	}
 	return c.Persistent.Validate()
 }
 
@@ -843,7 +893,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
-	if chainInfo.SequencerUrl != "" {
+	// Only use chainInfo.SequencerUrl as default forwarding-target if sequencer is not enabled
+	if !k.Bool("execution.sequencer.enable") && chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.SecondaryForwardingTarget != "" {
@@ -874,9 +925,12 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
+		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
+		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1000000
+		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {

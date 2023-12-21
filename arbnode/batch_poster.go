@@ -73,6 +73,8 @@ type BatchPoster struct {
 	dataPoster          *dataposter.DataPoster
 	redisLock           *redislock.Simple
 	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
+	messagesPerBatch    *arbmath.MovingAverage[uint64]
+	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
 	backlog         uint64
@@ -271,6 +273,10 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		daWriter:        opts.DAWriter,
 		redisLock:       redisLock,
 	}
+	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
+	if err != nil {
+		return nil, err
+	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &(opts.Config().DataPoster)
 	}
@@ -283,6 +289,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
+			ExtraBacklog:      b.GetBacklogEstimate,
 			RedisKey:          "data-poster.queue",
 		})
 	if err != nil {
@@ -291,6 +298,11 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	// Dataposter sender may be external signer address, so we should initialize
 	// access list after initializing dataposter.
 	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
+		if opts.L1Reader.IsParentChainArbitrum() {
+			// Access lists cost gas instead of saving gas when posting to L2s,
+			// because data is expensive in comparison to computation.
+			return nil
+		}
 		return AccessList(&AccessListOpts{
 			SequencerInboxAddr:       opts.DeployInfo.SequencerInbox,
 			DataPosterAddr:           b.dataPoster.Sender(),
@@ -758,7 +770,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
-func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64) (uint64, error) {
+func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
 	if !useNormalEstimation {
@@ -772,9 +784,10 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	if useNormalEstimation {
 		// If we're at the latest nonce, we can skip the special future tx estimate stuff
 		gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
-			From: b.dataPoster.Sender(),
-			To:   &b.seqInboxAddr,
-			Data: realData,
+			From:       b.dataPoster.Sender(),
+			To:         &b.seqInboxAddr,
+			Data:       realData,
+			AccessList: realAccessList,
 		})
 		if err != nil {
 			return 0, err
@@ -794,6 +807,9 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		From: b.dataPoster.Sender(),
 		To:   &b.seqInboxAddr,
 		Data: data,
+		// This isn't perfect because we're probably estimating the batch at a different sequence number,
+		// but it should overestimate rather than underestimate which is fine.
+		AccessList: realAccessList,
 	})
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
@@ -837,7 +853,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.backlog),
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate()),
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 		}
@@ -1007,6 +1023,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
+	accessList := b.accessList(int(batchPosition.NextSeqNum), int(b.building.segments.delayedMsg))
 	// On restart, we may be trying to estimate gas for a batch whose successor has
 	// already made it into pending state, if not latest state.
 	// In that case, we might get a revert with `DelayedBackwards()`.
@@ -1014,7 +1031,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, nonce)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, nonce, accessList)
 	if err != nil {
 		return false, err
 	}
@@ -1034,9 +1051,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		data,
 		gasLimit,
 		new(big.Int),
-		b.accessList(
-			int(batchPosition.NextSeqNum),
-			int(b.building.segments.delayedMsg)),
+		accessList,
 	)
 	if err != nil {
 		return false, err
@@ -1052,13 +1067,26 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	)
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
+	b.messagesPerBatch.Update(uint64(postedMessages))
 	unpostedMessages := msgCount - b.building.msgCount
-	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
-	if b.backlog > 10 {
+	messagesPerBatch := b.messagesPerBatch.Average()
+	if messagesPerBatch == 0 {
+		// This should be impossible because we always post at least one message in a batch.
+		// That said, better safe than sorry, as we would panic if this remained at 0.
+		log.Warn(
+			"messagesPerBatch is somehow zero",
+			"postedMessages", postedMessages,
+			"buildingFrom", batchPosition.MessageCount,
+			"buildingTo", b.building.msgCount,
+		)
+		messagesPerBatch = 1
+	}
+	backlog := uint64(unpostedMessages) / messagesPerBatch
+	if backlog > 10 {
 		logLevel := log.Warn
 		if recentlyHitL1Bounds {
 			logLevel = log.Info
-		} else if b.backlog > 30 {
+		} else if backlog > 30 {
 			logLevel = log.Error
 		}
 		logLevel(
@@ -1066,16 +1094,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			"recentlyHitL1Bounds", recentlyHitL1Bounds,
 			"currentPosition", b.building.msgCount,
 			"messageCount", msgCount,
-			"lastPostedMessages", postedMessages,
+			"messagesPerBatch", messagesPerBatch,
+			"postedMessages", postedMessages,
 			"unpostedMessages", unpostedMessages,
-			"batchBacklogEstimate", b.backlog,
+			"batchBacklogEstimate", backlog,
 		)
 	}
 	if recentlyHitL1Bounds {
 		// This backlog isn't "real" in that we don't want to post any more messages.
 		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
-		b.backlog = 0
+		backlog = 0
 	}
+	atomic.StoreUint64(&b.backlog, backlog)
 	b.building = nil
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
@@ -1088,6 +1118,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	return true, nil
+}
+
+func (b *BatchPoster) GetBacklogEstimate() uint64 {
+	return atomic.LoadUint64(&b.backlog)
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {

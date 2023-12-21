@@ -5,11 +5,13 @@
 package dataposter
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net/http"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Knetic/govaluate"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -52,13 +55,14 @@ type DataPoster struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
-	sender            common.Address
+	auth              *bind.TransactOpts
 	signer            signerFn
 	redisLock         AttemptLocker
 	config            ConfigFetcher
 	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	extraBacklog      func() uint64
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -71,6 +75,8 @@ type DataPoster struct {
 	nonce      uint64
 	queue      QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
+
+	maxFeeCapExpression *govaluate.EvaluableExpression
 }
 
 // signerFn is a signer function callback when a contract requires a method to
@@ -111,6 +117,7 @@ type DataPosterOpts struct {
 	RedisLock         AttemptLocker
 	Config            ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
 }
 
@@ -152,27 +159,42 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	}
+	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
+	if err != nil {
+		return nil, fmt.Errorf("error creating govaluate evaluable expression for calculating maxFeeCap: %w", err)
+	}
 	dp := &DataPoster{
 		headerReader: opts.HeaderReader,
 		client:       opts.HeaderReader.Client(),
-		sender:       opts.Auth.From,
+		auth:         opts.Auth,
 		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return opts.Auth.Signer(addr, tx)
 		},
-		config:            opts.Config,
-		usingNoOpStorage:  useNoOpStorage,
-		replacementTimes:  replacementTimes,
-		metadataRetriever: opts.MetadataRetriever,
-		queue:             queue,
-		redisLock:         opts.RedisLock,
-		errorCount:        make(map[uint64]int),
+		config:              opts.Config,
+		usingNoOpStorage:    useNoOpStorage,
+		replacementTimes:    replacementTimes,
+		metadataRetriever:   opts.MetadataRetriever,
+		queue:               queue,
+		redisLock:           opts.RedisLock,
+		errorCount:          make(map[uint64]int),
+		maxFeeCapExpression: expression,
+		extraBacklog:        opts.ExtraBacklog,
+	}
+	if dp.extraBacklog == nil {
+		dp.extraBacklog = func() uint64 { return 0 }
 	}
 	if cfg.ExternalSigner.URL != "" {
 		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
 		if err != nil {
 			return nil, err
 		}
-		dp.signer, dp.sender = signer, sender
+		dp.signer = signer
+		dp.auth = &bind.TransactOpts{
+			From: sender,
+			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+				return signer(context.TODO(), address, tx)
+			},
+		}
 	}
 	return dp, nil
 }
@@ -251,8 +273,12 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 	}, sender, nil
 }
 
+func (p *DataPoster) Auth() *bind.TransactOpts {
+	return p.auth
+}
+
 func (p *DataPoster) Sender() common.Address {
-	return p.sender
+	return p.auth.From
 }
 
 func (p *DataPoster) MaxMempoolTransactions() uint64 {
@@ -279,7 +305,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 	// Check that posting a new transaction won't exceed maximum pending
 	// transactions in mempool.
 	if cfg.MaxMempoolTransactions > 0 {
-		unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.Sender(), nil)
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
@@ -322,7 +348,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
-		nonce, err := p.client.NonceAt(ctx, p.sender, nonceQueryBlock)
+		nonce, err := p.client.NonceAt(ctx, p.Sender(), nonceQueryBlock)
 		if err != nil {
 			return 0, nil, false, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
@@ -350,8 +376,46 @@ func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, e
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+// evalMaxFeeCapExpr uses MaxFeeCapFormula from config to calculate the expression's result by plugging in appropriate parameter values
+// backlogOfBatches should already include extraBacklog
+func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Duration) (*big.Int, error) {
 	config := p.config()
+	parameters := map[string]any{
+		"BacklogOfBatches":      float64(backlogOfBatches),
+		"UrgencyGWei":           config.UrgencyGwei,
+		"ElapsedTime":           float64(elapsed),
+		"ElapsedTimeBase":       float64(config.ElapsedTimeBase),
+		"ElapsedTimeImportance": config.ElapsedTimeImportance,
+		"TargetPriceGWei":       config.TargetPriceGwei,
+	}
+	result, err := p.maxFeeCapExpression.Evaluate(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating maxFeeCapExpression: %w", err)
+	}
+	resultFloat, ok := result.(float64)
+	if !ok {
+		// This shouldn't be possible because we only pass in float64s as arguments
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated to non-float64: %v", result)
+	}
+	// 1e9 gwei gas price is practically speaking an infinite gas price, so we cap it there.
+	// This also allows the formula to return positive infinity safely.
+	resultFloat = math.Min(resultFloat, 1e9)
+	resultBig := arbmath.FloatToBig(resultFloat * params.GWei)
+	if resultBig == nil {
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated to float64 not convertible to integer: %v", resultFloat)
+	}
+	if resultBig.Sign() < 0 {
+		return nil, fmt.Errorf("maxFeeCapExpression evaluated < 0: %v", resultFloat)
+	}
+	return resultBig, nil
+}
+
+var big4 = big.NewInt(4)
+
+// The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, error) {
+	config := p.config()
+	dataPosterBacklog += p.extraBacklog()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -360,7 +424,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	softConfBlock := arbmath.BigSubByUint(latestHeader.Number, config.NonceRbfSoftConfs)
-	softConfNonce, err := p.client.NonceAt(ctx, p.sender, softConfBlock)
+	softConfNonce, err := p.client.NonceAt(ctx, p.Sender(), softConfBlock)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
@@ -389,13 +453,10 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	elapsed := time.Since(dataCreatedAt)
-	// MaxFeeCap = (BacklogOfBatches^2 * UrgencyGWei^2 + TargetPriceGWei) * GWei
-	maxFeeCap :=
-		arbmath.FloatToBig(
-			(float64(arbmath.SquareUint(backlogOfBatches))*
-				arbmath.SquareFloat(config.UrgencyGwei) +
-				config.TargetPriceGwei) *
-				params.GWei)
+	maxFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
+	if err != nil {
+		return nil, nil, err
+	}
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
 		log.Warn(
 			"reducing proposed fee cap to current maximum",
@@ -409,17 +470,35 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
 	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
-		// We reserve half the balance for the first transaction, and then split the remaining balance for all after that.
+		// We split the transactions into three groups:
+		// - The first transaction gets 1/2 of the balance.
+		// - The first half of transactions get 1/3 of the balance split among them.
+		// - The remaining transactions get the remaining 1/6 of the balance split among them.
+		// This helps ensure batch posting is reliable under a variety of fee conditions.
 		// With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
 		balanceForTx.Div(balanceForTx, common.Big2)
 		if nonce != softConfNonce && config.MaxMempoolTransactions > 1 {
+			// Compared to dividing the remaining transactions by balance equally,
+			// the first half of transactions should get a 4/3 weight,
+			// and the remaining half should get a 2/3 weight.
+			// This makes sure the average weight is 1, and the first half of transactions
+			// have twice the weight of the second half of transactions.
+			// The +1 and -1 here are to account for the first transaction being handled separately.
+			if nonce > softConfNonce && nonce < softConfNonce+1+(config.MaxMempoolTransactions-1)/2 {
+				balanceForTx.Mul(balanceForTx, big4)
+			} else {
+				balanceForTx.Mul(balanceForTx, common.Big2)
+			}
+			balanceForTx.Div(balanceForTx, common.Big3)
+			// After weighting, split the balance between each of the transactions
+			// other than the first tx which already got half.
 			// balanceForTx /= config.MaxMempoolTransactions-1
 			balanceForTx.Div(balanceForTx, arbmath.UintToBig(config.MaxMempoolTransactions-1))
 		}
 	}
 	balanceFeeCap := arbmath.BigDivByUint(balanceForTx, gasLimit)
 	if arbmath.BigGreaterThan(newFeeCap, balanceFeeCap) {
-		log.Error(
+		log.Warn(
 			"lack of L1 balance prevents posting transaction with desired fee cap",
 			"balance", latestBalance,
 			"maxTransactions", config.MaxMempoolTransactions,
@@ -476,7 +555,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Data:       calldata,
 		AccessList: accessList,
 	}
-	fullTx, err := p.signer(ctx, p.sender, types.NewTx(&inner))
+	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(&inner))
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
@@ -493,8 +572,24 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 
 // the mutex must be held by the caller
 func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
-	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
-		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+	if prevTx != nil {
+		if prevTx.Data.Nonce != newTx.Data.Nonce {
+			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+		}
+
+		// Check if prevTx is the same as newTx and we don't need to do anything
+		oldEnc, err := rlp.EncodeToBytes(prevTx)
+		if err != nil {
+			return fmt.Errorf("failed to encode prevTx: %w", err)
+		}
+		newEnc, err := rlp.EncodeToBytes(newTx)
+		if err != nil {
+			return fmt.Errorf("failed to encode newTx: %w", err)
+		}
+		if bytes.Equal(oldEnc, newEnc) {
+			// No need to save newTx as it's the same as prevTx
+			return nil
+		}
 	}
 	if err := p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx); err != nil {
 		return fmt.Errorf("putting new tx in the queue: %w", err)
@@ -503,10 +598,8 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
-	if prevTx == nil || (newTx.FullTx.Hash() != prevTx.FullTx.Hash()) {
-		if err := p.saveTx(ctx, prevTx, newTx); err != nil {
-			return err
-		}
+	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
+		return err
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
@@ -555,7 +648,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	newTx.Sent = false
 	newTx.Data.GasFeeCap = newFeeCap
 	newTx.Data.GasTipCap = newTipCap
-	newTx.FullTx, err = p.signer(ctx, p.sender, types.NewTx(&newTx.Data))
+	newTx.FullTx, err = p.signer(ctx, p.Sender(), types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
 	}
@@ -578,7 +671,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 	if p.lastBlock != nil && arbmath.BigEquals(p.lastBlock, header.Number) {
 		return nil
 	}
-	nonce, err := p.client.NonceAt(ctx, p.sender, header.Number)
+	nonce, err := p.client.NonceAt(ctx, p.Sender(), header.Number)
 	if err != nil {
 		if p.lastBlock != nil {
 			log.Warn("Failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
@@ -616,7 +709,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 func (p *DataPoster) updateBalance(ctx context.Context) error {
 	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
-	balance, err := p.client.BalanceAt(ctx, p.sender, big.NewInt(-1))
+	balance, err := p.client.BalanceAt(ctx, p.Sender(), big.NewInt(-1))
 	if err != nil {
 		return err
 	}
@@ -671,7 +764,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
 		}
-		unconfirmedNonce, err := p.client.NonceAt(ctx, p.sender, nil)
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.Sender(), nil)
 		if err != nil {
 			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
@@ -756,6 +849,9 @@ type DataPosterConfig struct {
 	LegacyStorageEncoding  bool              `koanf:"legacy-storage-encoding" reload:"hot"`
 	Dangerous              DangerousConfig   `koanf:"dangerous"`
 	ExternalSigner         ExternalSignerCfg `koanf:"external-signer"`
+	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
+	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
+	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
 }
 
 type ExternalSignerCfg struct {
@@ -802,6 +898,11 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
+	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
+		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
+		"Currently available variables to construct the formula are BacklogOfBatches, UrgencyGWei, ElapsedTime, ElapsedTimeBase, ElapsedTimeImportance, and TargetPriceGWei")
+	f.Duration(prefix+".elapsed-time-base", defaultDataPosterConfig.ElapsedTimeBase, "unit to measure the time elapsed since creation of transaction used for maximum fee cap calculation")
+	f.Float64(prefix+".elapsed-time-importance", defaultDataPosterConfig.ElapsedTimeImportance, "weight given to the units of time elapsed used for maximum fee cap calculation")
 
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
@@ -826,7 +927,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 20,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
@@ -836,6 +937,9 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
+	ElapsedTimeBase:        10 * time.Minute,
+	ElapsedTimeImportance:  10,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -850,7 +954,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 20,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
@@ -859,6 +963,9 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
+	ElapsedTimeBase:        10 * time.Minute,
+	ElapsedTimeImportance:  10,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
