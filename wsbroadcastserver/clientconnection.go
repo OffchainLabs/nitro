@@ -134,7 +134,10 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 		msgs := prevSegment.Messages()
 		if prevSegment.Contains(uint64(cc.requestedSeqNum)) {
 			requestedIdx := int(cc.requestedSeqNum) - int(prevSegment.Start())
-			msgs = msgs[requestedIdx:]
+			// This might be false if messages were added after we fetched the segment's messages
+			if len(msgs) > requestedIdx {
+				msgs = msgs[requestedIdx:]
+			}
 		}
 		bm := &m.BroadcastMessage{
 			Version:  m.V1,
