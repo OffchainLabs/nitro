@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -78,7 +79,7 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 1024,
+	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
@@ -426,7 +427,7 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreC
 	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}

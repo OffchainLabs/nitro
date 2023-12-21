@@ -21,8 +21,16 @@ type rlpTimeEncoding struct {
 }
 
 func (b *RlpTime) DecodeRLP(s *rlp.Stream) error {
+	kind, size, err := s.Kind()
+	if err != nil {
+		return err
+	}
+	if kind == rlp.List && size == 0 {
+		// This is an old time.Time without any data
+		return s.Decode(&time.Time{})
+	}
 	var enc rlpTimeEncoding
-	err := s.Decode(&enc)
+	err = s.Decode(&enc)
 	if err != nil {
 		return err
 	}

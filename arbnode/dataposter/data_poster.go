@@ -62,6 +62,7 @@ type DataPoster struct {
 	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	extraBacklog      func() uint64
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -116,6 +117,7 @@ type DataPosterOpts struct {
 	RedisLock         AttemptLocker
 	Config            ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
 }
 
@@ -176,6 +178,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		redisLock:           opts.RedisLock,
 		errorCount:          make(map[uint64]int),
 		maxFeeCapExpression: expression,
+		extraBacklog:        opts.ExtraBacklog,
+	}
+	if dp.extraBacklog == nil {
+		dp.extraBacklog = func() uint64 { return 0 }
 	}
 	if cfg.ExternalSigner.URL != "" {
 		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
@@ -371,6 +377,7 @@ func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, e
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
 // evalMaxFeeCapExpr uses MaxFeeCapFormula from config to calculate the expression's result by plugging in appropriate parameter values
+// backlogOfBatches should already include extraBacklog
 func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Duration) (*big.Int, error) {
 	config := p.config()
 	parameters := map[string]any{
@@ -403,8 +410,12 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 	return resultBig, nil
 }
 
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+var big4 = big.NewInt(4)
+
+// The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, error) {
 	config := p.config()
+	dataPosterBacklog += p.extraBacklog()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -442,7 +453,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	elapsed := time.Since(dataCreatedAt)
-	maxFeeCap, err := p.evalMaxFeeCapExpr(backlogOfBatches, elapsed)
+	maxFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -459,17 +470,35 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
 	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
-		// We reserve half the balance for the first transaction, and then split the remaining balance for all after that.
+		// We split the transactions into three groups:
+		// - The first transaction gets 1/2 of the balance.
+		// - The first half of transactions get 1/3 of the balance split among them.
+		// - The remaining transactions get the remaining 1/6 of the balance split among them.
+		// This helps ensure batch posting is reliable under a variety of fee conditions.
 		// With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
 		balanceForTx.Div(balanceForTx, common.Big2)
 		if nonce != softConfNonce && config.MaxMempoolTransactions > 1 {
+			// Compared to dividing the remaining transactions by balance equally,
+			// the first half of transactions should get a 4/3 weight,
+			// and the remaining half should get a 2/3 weight.
+			// This makes sure the average weight is 1, and the first half of transactions
+			// have twice the weight of the second half of transactions.
+			// The +1 and -1 here are to account for the first transaction being handled separately.
+			if nonce > softConfNonce && nonce < softConfNonce+1+(config.MaxMempoolTransactions-1)/2 {
+				balanceForTx.Mul(balanceForTx, big4)
+			} else {
+				balanceForTx.Mul(balanceForTx, common.Big2)
+			}
+			balanceForTx.Div(balanceForTx, common.Big3)
+			// After weighting, split the balance between each of the transactions
+			// other than the first tx which already got half.
 			// balanceForTx /= config.MaxMempoolTransactions-1
 			balanceForTx.Div(balanceForTx, arbmath.UintToBig(config.MaxMempoolTransactions-1))
 		}
 	}
 	balanceFeeCap := arbmath.BigDivByUint(balanceForTx, gasLimit)
 	if arbmath.BigGreaterThan(newFeeCap, balanceFeeCap) {
-		log.Error(
+		log.Warn(
 			"lack of L1 balance prevents posting transaction with desired fee cap",
 			"balance", latestBalance,
 			"maxTransactions", config.MaxMempoolTransactions,
@@ -898,7 +927,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 20,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
@@ -925,7 +954,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 20,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,

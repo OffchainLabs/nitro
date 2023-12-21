@@ -456,13 +456,13 @@ func mainImpl() int {
 			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
 			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
 			if err != nil {
-				log.Error("failed to create machine locator", "err", err)
-				return 1
-			}
-			path := locator.GetMachinePath(moduleRoot)
-			if _, err := os.Stat(path); err != nil {
-				log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-				return 1
+				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
+			} else {
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err != nil {
+					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
+					return 1
+				}
 			}
 		}
 	}
@@ -925,9 +925,12 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
+		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
+		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1000000
+		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
