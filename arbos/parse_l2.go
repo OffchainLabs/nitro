@@ -168,9 +168,8 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if arbOSVersion != nil && !TxSupportedByArbosVersion(newTx, *arbOSVersion) {
 			return nil, types.ErrTxTypeNotSupported
 		}
-		if newTx.Type() >= types.ArbitrumDepositTxType || newTx.Type() == types.BlobTxType {
+		if newTx.Type() >= types.ArbitrumDepositTxType {
 			// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
-			// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 			return nil, types.ErrTxTypeNotSupported
 		}
 		return types.Transactions{newTx}, nil
@@ -189,7 +188,14 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 }
 
 func TxSupportedByArbosVersion(tx *types.Transaction, arbOSVersion uint64) bool {
-	return tx.Type() != types.ArbitrumSubtypedTxType || arbOSVersion >= arbostypes.RequiredArbosVersionForTxSubtype(types.GetArbitrumTxSubtype(tx))
+	switch tx.Type() {
+	case types.ArbitrumSubtypedTxType:
+		return arbOSVersion >= arbostypes.RequiredArbosVersionForTxSubtype(types.GetArbitrumTxSubtype(tx))
+	case types.BlobTxType:
+		// Arbitrum doesn't support EIP-4844 txs yet.
+		return false
+	}
+	return true
 }
 
 func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, txKind byte) (*types.Transaction, error) {
