@@ -8,7 +8,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -121,9 +120,9 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	sendHash, err := arbosState.KeccakHash(
 		c.caller.Bytes(),
 		destination.Bytes(),
-		math.U256Bytes(evm.Context.BlockNumber),
-		math.U256Bytes(bigL1BlockNum),
-		math.U256Bytes(&t),
+		arbmath.U256Bytes(evm.Context.BlockNumber),
+		arbmath.U256Bytes(bigL1BlockNum),
+		arbmath.U256Bytes(&t),
 		common.BigToHash(value).Bytes(),
 		calldataForL1,
 	)

@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -50,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
@@ -166,6 +168,7 @@ func mainImpl() int {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	stackConf.DBEngine = nodeConfig.Persistent.DBEngine
+	nodeConfig.Rpc.Apply(&stackConf)
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -177,8 +180,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = vcsRevision
+	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
@@ -231,7 +234,10 @@ func mainImpl() int {
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
+	// If sequencer and signing is enabled or batchposter is enabled without
+	// external signing sequencer will need a key.
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
+		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -487,6 +493,43 @@ func mainImpl() int {
 		log.Error("failed to create node", "err", err)
 		return 1
 	}
+
+	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
+	config := liveNodeConfig.Get()
+	executionRevertedRegexp := regexp.MustCompile("(?i)execution reverted")
+	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
+	seqInboxMaxDataSize := 117964
+	if config.Node.ParentChainReader.Enable {
+		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+		if err != nil {
+			log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+			return 1
+		}
+		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
+		seqInboxMaxDataSize = int(res.Int64())
+		if err != nil && !executionRevertedRegexp.MatchString(err.Error()) {
+			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
+			return 1
+		}
+	}
+	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
+	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
+	if config.Node.BatchPoster.Enable && !config.Node.DataAvailability.Enable {
+		if config.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
+			log.Error("batchPoster's MaxSize is too large")
+			return 1
+		}
+	}
+	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
+	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
+	if config.Execution.Sequencer.Enable {
+		if config.Execution.Sequencer.MaxTxDataSize > config.Node.BatchPoster.MaxSize-5000 ||
+			config.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
+			log.Error("sequencer's MaxTxDataSize too large")
+			return 1
+		}
+	}
+
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
 		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
@@ -717,12 +760,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoIpfsUrl := k.String("chain.info-ipfs-url")
 	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
-	if l2ChainId == 0 && l2ChainName == "" {
-		return nil, nil, nil, errors.New("must specify --chain.id or --chain.name to choose rollup")
-	}
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
-	chainFound, err := applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -751,13 +791,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 
 	if nodeConfig.Persistent.Chain == "" {
-		if !chainFound {
-			// If persistent-chain not defined, user not creating custom chain
-			if l2ChainId != 0 {
-				return nil, nil, nil, fmt.Errorf("Unknown chain id: %d, L2ChainInfoFiles: %v.  update chain id, modify --chain.info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
-			}
-			return nil, nil, nil, fmt.Errorf("Unknown chain name: %s, L2ChainInfoFiles: %v.  update chain name, modify --chain.info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
-		}
 		return nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
 
@@ -779,11 +812,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
 	combinedL2ChainInfoFiles := l2ChainInfoFiles
 	if l2ChainInfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
@@ -794,13 +826,13 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
-		return false, err
+		return err
 	}
 	var parentChainIsArbitrum bool
 	if chainInfo.ParentChainIsArbitrum != nil {
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
-		log.Warn("Chain information parentChainIsArbitrum field missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
+		log.Warn("Chain info field parent-chain-is-arbitrum is missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
 		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
@@ -814,13 +846,21 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
+	if chainInfo.SecondaryForwardingTarget != "" {
+		chainDefaults["execution.secondary-forwarding-target"] = strings.Split(chainInfo.SecondaryForwardingTarget, ",")
+	}
 	if chainInfo.FeedUrl != "" {
-		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
+		chainDefaults["node.feed.input.url"] = strings.Split(chainInfo.FeedUrl, ",")
+	}
+	if chainInfo.SecondaryFeedUrl != "" {
+		chainDefaults["node.feed.input.secondary-url"] = strings.Split(chainInfo.SecondaryFeedUrl, ",")
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true
 		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
 		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
+		chainDefaults["node.data-availability.enable"] = true
 	}
 	if !chainInfo.HasGenesisState {
 		chainDefaults["init.empty"] = true
@@ -829,17 +869,20 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		l2MaxTxSize := gethexec.DefaultSequencerConfig.MaxTxDataSize
 		bufferSpace := 5000
 		if l2MaxTxSize < bufferSpace*2 {
-			return false, fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
+			return fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
 		}
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
-		chainDefaults["node.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+	}
+	if chainInfo.DasIndexUrl != "" {
+		chainDefaults["node.batch-poster.max-size"] = 1000000
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return true, nil
+	return nil
 }
 
 type NodeConfigFetcher struct {
