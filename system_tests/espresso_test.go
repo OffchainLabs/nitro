@@ -9,25 +9,31 @@ import (
 	"testing"
 	"time"
 
+	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/jarcoal/httpmock"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 var (
-	validationPort = 54320
-	broadcastPort  = 9642
+	validationPort     = 54320
+	broadcastPort      = 9642
+	startHotShotBlock  = 1
+	maxHotShotBlock    = 100
+	malformedBlockNum  = 5
+	firstGoodBlockNum  = 15
+	secondGoodBlockNum = 25
 )
 
 func espresso_block_txs_generators(t *testing.T, l2Info *BlockchainTestInfo) map[int][][]byte {
 	return map[int][][]byte{
-		5:  onlyMalformedTxs(t),
-		15: userTxs(t, l2Info),
-		25: func(t *testing.T) [][]byte {
+		malformedBlockNum: onlyMalformedTxs(t),
+		firstGoodBlockNum: userTxs(t, l2Info),
+		secondGoodBlockNum: func(t *testing.T) [][]byte {
 			// Contains malformed txes, valid transactions and invalid transactions
 			r := [][]byte{}
 			r = append(r, onlyMalformedTxs(t)...)
@@ -49,12 +55,12 @@ func onlyMalformedTxs(t *testing.T) [][]byte {
 // Two valid transactions and two invalid transactions with invalid nonces
 func userTxs(t *testing.T, l2Info *BlockchainTestInfo) [][]byte {
 	tx1 := l2Info.PrepareTx("Faucet", "Owner", 3e7, big.NewInt(1e16), nil)
-	tx1Bin, err := json.Marshal(tx1)
+	tx1Bin, err := tx1.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	tx2 := l2Info.PrepareTx("Owner", "Faucet", 3e7, big.NewInt(1e16), nil)
-	tx2Bin, err := json.Marshal(tx2)
+	tx2Bin, err := tx2.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -67,7 +73,7 @@ func userTxs(t *testing.T, l2Info *BlockchainTestInfo) [][]byte {
 	}
 }
 
-func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTestInfo) (func(), int) {
+func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTestInfo) func() {
 	httpmock.Activate()
 
 	httpmock.RegisterResponder(
@@ -76,15 +82,13 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 		func(req *http.Request) (*http.Response, error) {
 			log.Info("GET", "url", req.URL)
 			block := uint64(httpmock.MustGetSubmatchAsUint(req, 1))
-			header := espresso.Header{
+			header := espressoTypes.Header{
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
-				// See: arbos/espresso/nmt.go
-				TransactionsRoot: espresso.NmtRoot{Root: []byte{}},
-				Metadata: espresso.Metadata{
-					L1Head:    block,
-					Timestamp: uint64(time.Now().Unix()),
-				},
+				Height:           block,
+				TransactionsRoot: espressoTypes.NmtRoot{Root: []byte{}},
+				L1Head:           0, // Currently not used
+				Timestamp:        uint64(time.Now().Unix()),
 			}
 			return httpmock.NewJsonResponse(200, header)
 		})
@@ -95,40 +99,39 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 		"GET",
 		`=~http://127.0.0.1:50000/availability/block/(\d+)/namespace/100`,
 		func(req *http.Request) (*http.Response, error) {
-			txes := []espresso.Transaction{}
+			txes := []espressoTypes.Transaction{}
 			block := int(httpmock.MustGetSubmatchAsInt(req, 1))
 			data, ok := generators[block]
 			// Since we don't realize the validation of espresso yet,
 			// we can mock the proof easily.
-			// See: arbos/espresso/nmt.go
 			dummyProof, _ := json.Marshal(map[int]int{0: 0})
-			if block > 100 {
+			if block > maxHotShotBlock {
 				// make the debug message cleaner
 				return httpmock.NewJsonResponse(404, 0)
 			}
 			log.Info("GET", "url", req.URL)
 			if !ok {
-				r := espresso.NamespaceResponse{
+				r := espressoClient.NamespaceResponse{
 					Proof:        (*json.RawMessage)(&dummyProof),
-					Transactions: &[]espresso.Transaction{},
+					Transactions: &[]espressoTypes.Transaction{},
 				}
 				return httpmock.NewJsonResponse(200, r)
 			}
 			for _, rawTx := range data {
-				tx := espresso.Transaction{
+				tx := espressoTypes.Transaction{
 					Vm:      100,
 					Payload: rawTx,
 				}
 				txes = append(txes, tx)
 			}
-			resp := espresso.NamespaceResponse{
+			resp := espressoClient.NamespaceResponse{
 				Proof:        (*json.RawMessage)(&dummyProof),
 				Transactions: &txes,
 			}
 			return httpmock.NewJsonResponse(200, resp)
 		})
 
-	return httpmock.DeactivateAndReset, len(generators)
+	return httpmock.DeactivateAndReset
 }
 
 func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestClient, info, func()) {
@@ -221,12 +224,12 @@ func TestEspresso(t *testing.T) {
 	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, "http://127.0.0.1:50000")
 	defer cleanL2Node()
 
-	cleanHotShot, blockCnt := createMockHotShot(ctx, t, l2Info)
+	cleanHotShot := createMockHotShot(ctx, t, l2Info)
 	defer cleanHotShot()
 
 	// An initial message for genesis block and every non-empty espresso block
 	// should lead to a message
-	expectedMsgCnt := 1 + blockCnt
+	expectedMsgCnt := 1 + maxHotShotBlock - startHotShotBlock
 
 	err := waitFor(t, ctx, func() bool {
 		cnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
@@ -255,22 +258,24 @@ func TestEspresso(t *testing.T) {
 	blockNum, err := l2Node.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	if blockNum != uint64(blockCnt) {
-		Fatal(t, "every non-empty espresso block should lead to one L2 block")
+	if blockNum != uint64(maxHotShotBlock)+1-uint64(startHotShotBlock) {
+		Fatal(t, "every espresso block should lead to one L2 block", "expected", blockNum, "recieved", blockNum)
 	}
 
-	block2, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(2))
+	first := firstGoodBlockNum + 1 - startHotShotBlock
+	block2, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(first)))
 	Require(t, err)
 
 	// Every arbitrum block has one internal tx
 	if len(block2.Body().Transactions) != 3 {
-		Fatal(t, "block 2 should contain 2 valid transactions")
+		Fatal(t, "block ", firstGoodBlockNum+1, " should contain 2 valid transactions")
 	}
 
-	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(3))
+	second := secondGoodBlockNum + 1 - startHotShotBlock
+	block3, err := l2Node.Client.BlockByNumber(ctx, big.NewInt(int64(second)))
 	Require(t, err)
 
 	if len(block3.Body().Transactions) != 3 {
-		Fatal(t, "block 3 should contain 2 valid transactions")
+		Fatal(t, "block", secondGoodBlockNum, " should contain 2 valid transactions")
 	}
 }

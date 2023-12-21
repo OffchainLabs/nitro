@@ -116,15 +116,16 @@ fn read_hotshot_commitment_impl(
     name: &str,
 ) -> MaybeEscape {
     let msg_num = sp.read_u64(0);
-    let out_ptr = sp.read_u64(1);
-    let out_len = sp.read_u64(2);
+    let pos_num = sp.read_u64(1);
+    let out_ptr = sp.read_u64(2);
+    let out_len = sp.read_u64(3);
     if out_len != 32 {
         eprintln!("Go trying to read header bytes with out len {out_len} in {name}");
         sp.write_u64(5, 0);
         return Ok(());
     }
 
-    let message = comm_map.get(&msg_num).unwrap_or(&[0; 32]);
+    let message = comm_map.get(&(msg_num, pos_num)).unwrap_or(&[0; 32]);
 
     if out_ptr + 32 > sp.memory_size() {
         let text = format!("memory bounds exceeded in {}", name);
@@ -300,16 +301,17 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let position_within_message = socket::read_u64(stream)?;
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
+    let hotshot_comm = socket::read_bytes32(stream)?;
 
     env.small_globals = [inbox_position, position_within_message];
     env.large_globals = [last_block_hash, last_send_root];
+    env.hotshot_comm_map
+        .insert((inbox_position, position_within_message), hotshot_comm);
 
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
-        let hotshot_comm = socket::read_bytes32(stream)?;
         env.sequencer_messages.insert(position, message);
-        env.hotshot_comm_map.insert(position, hotshot_comm);
     }
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

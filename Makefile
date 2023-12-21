@@ -113,7 +113,7 @@ build-wasm-bin: $(replay_wasm)
 
 build-solidity: .make/solidity
 
-contracts: .make/solgen .make/generate-hotshot-binding
+contracts: .make/solgen
 	@printf $(done)
 
 format fmt: .make/fmt
@@ -362,12 +362,11 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 .make:
 	mkdir .make
 
-.make/generate-hotshot-binding:
-	forge build --root espresso-sequencer --out ../out --extra-output-files abi
-	mv ./out/HotShot.sol/HotShot.abi.json ./arbos/espresso/hotshot
-	rm -rf out
-	abigen --abi ./arbos/espresso/hotshot/HotShot.abi.json --pkg hotshot --out ./arbos/espresso/hotshot/hotshot.go
-	rm ./arbos/espresso/hotshot/HotShot.abi.json
+local-sequencer:
+	./target/bin/nitro --conf.file ./config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://localhost:8548 --graphql.enable --execution.sequencer.espresso --execution.sequencer.hotshot-url "http://localhost:50000" --execution.rpc.espresso --execution.rpc.hotshot-url "http://localhost:50000" --execution.rpc.espresso-namespace 1 --execution.sequencer.espresso-namespace 1
+
+local-validator:
+	./target/bin/nitro --conf.file ./config/validator_config.json --http.port 8247 --http.api net,web3,arb,debug --ws.port 8548
 
 # Makefile settings
 

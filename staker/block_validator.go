@@ -14,11 +14,14 @@ import (
 
 	flag "github.com/spf13/pflag"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -496,7 +499,44 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed)
+	var comm espressoTypes.Commitment
+	if v.config().Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		if err != nil {
+			return false, err
+		}
+		// Check that Espresso block numbers increase consecutively. This ensures that the sequenced L2 chain does not skip an Espresso block.
+		var prevEspressoMsg *arbostypes.L1IncomingMessage
+		for i := pos - 1; i != 0; i-- {
+			msg, err := v.streamer.GetMessage(i)
+			if err != nil {
+				return false, err
+			}
+			if msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
+				prevEspressoMsg = msg.Message
+				break
+			}
+		}
+		if prevEspressoMsg != nil {
+			_, prevJst, err := arbos.ParseEspressoMsg(prevEspressoMsg)
+			if err != nil {
+				return false, err
+			}
+			if prevJst.Header.Height+1 != jst.Header.Height {
+				return false, fmt.Errorf("l2 chain appears to have skipped an espresso block, last espresso block number: %d, current: %d", prevJst.Header.Height, jst.Header.Height)
+			}
+		}
+
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
+		if err != nil {
+			return false, err
+		}
+		if fetchedCommitment == nil {
+			return false, fmt.Errorf("commitment not ready yet")
+		}
+		comm = *fetchedCommitment
+	}
+	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, &comm)
 	if err != nil {
 		return false, err
 	}

@@ -6,27 +6,27 @@ package server_api
 import (
 	"encoding/base64"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 type BatchInfoJson struct {
-	HotShotCommitment espresso.Commitment
-	Number            uint64
-	DataB64           string
+	Number  uint64
+	DataB64 string
 }
 
 type ValidationInputJson struct {
-	Id            uint64
-	HasDelayedMsg bool
-	DelayedMsgNr  uint64
-	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo     []BatchInfoJson
-	DelayedMsgB64 string
-	StartState    validator.GoGlobalState
+	Id                uint64
+	HasDelayedMsg     bool
+	DelayedMsgNr      uint64
+	PreimagesB64      map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo         []BatchInfoJson
+	HotShotCommitment espressoTypes.Commitment
+	DelayedMsgB64     string
+	StartState        validator.GoGlobalState
 }
 
 func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
@@ -35,16 +35,17 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
 	}
 	res := &ValidationInputJson{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:    entry.StartState,
-		PreimagesB64:  jsonPreimagesMap,
+		Id:                entry.Id,
+		HasDelayedMsg:     entry.HasDelayedMsg,
+		DelayedMsgNr:      entry.DelayedMsgNr,
+		DelayedMsgB64:     base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:        entry.StartState,
+		HotShotCommitment: entry.HotShotCommitment,
+		PreimagesB64:      jsonPreimagesMap,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData, HotShotCommitment: binfo.HotShotCommitment})
+		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
 	return res
 }
@@ -55,11 +56,12 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		preimages[ty] = jsonPreimages.Map
 	}
 	valInput := &validator.ValidationInput{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		StartState:    entry.StartState,
-		Preimages:     preimages,
+		Id:                entry.Id,
+		HasDelayedMsg:     entry.HasDelayedMsg,
+		DelayedMsgNr:      entry.DelayedMsgNr,
+		StartState:        entry.StartState,
+		HotShotCommitment: entry.HotShotCommitment,
+		Preimages:         preimages,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
@@ -72,9 +74,8 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			return nil, err
 		}
 		decInfo := validator.BatchInfo{
-			Number:            binfo.Number,
-			Data:              data,
-			HotShotCommitment: binfo.HotShotCommitment,
+			Number: binfo.Number,
+			Data:   data,
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}

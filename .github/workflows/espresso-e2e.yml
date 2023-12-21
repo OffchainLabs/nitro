@@ -1,0 +1,123 @@
+name: Espresso E2E test CI
+
+on:
+  workflow_dispatch:
+  merge_group:
+  pull_request:
+  push:
+    branches:
+      - integration
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Espresso E2E
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: >
+          sudo apt update && sudo apt install -y wabt gotestsum
+          cmake build-essential bison golang clang make wabt
+
+      - name: Setup nodejs
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+
+      - name: Install go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.20.x
+
+      - name: Install wasm-ld
+        run: |
+          sudo apt-get update && sudo apt-get install -y lld-14
+          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+
+      - name: Install rust wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "stable"
+          target: wasm32-unknown-unknown
+
+      - name: Install rust wasm32-wasi
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "stable"
+          target: wasm32-wasi
+
+      - name: Install rust stable
+        uses: actions-rs/toolchain@v1
+        id: install-rust
+        with:
+          profile: minimal
+          toolchain: "stable"
+          override: true
+
+      - name: Install cbindgen
+        run: cargo install cbindgen
+
+      - name: Cache Build Products
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Cache Rust Build Products
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            arbitrator/target/
+            arbitrator/wasm-libraries/target/
+            arbitrator/wasm-libraries/soft-float/SoftFloat/build
+            target/etc/initial-machine-cache/
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+
+      - name: Cache cbrotli
+        uses: actions/cache@v3
+        id: cache-cbrotli
+        with:
+          path: |
+            target/include/brotli/
+            target/lib-wasm/
+            target/lib/libbrotlicommon-static.a
+            target/lib/libbrotlienc-static.a
+            target/lib/libbrotlidec-static.a
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-brotli-
+
+      - name: Build cbrotli-local
+        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -l
+
+      - name: Build
+        run: make build build-replay-env -j
+
+      - name: Install Compose
+        uses: ndeloof/install-compose-action@v0.0.1
+        with:
+          legacy: true # will also install in PATH as `docker-compose`
+
+      - name: Run test
+        run: |
+          packages=`go list ./... | grep system_tests`
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -timeout 5m ./... -run TestEspressoE2E

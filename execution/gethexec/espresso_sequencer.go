@@ -7,9 +7,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
+	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -22,16 +23,16 @@ var (
 )
 
 type HotShotState struct {
-	client          espresso.Client
+	client          espressoClient.Client
 	nextSeqBlockNum uint64
 }
 
-func NewHotShotState(log log.Logger, url string, namespace uint64) *HotShotState {
+func NewHotShotState(log log.Logger, url string) *HotShotState {
 	return &HotShotState{
-		client: *espresso.NewClient(log, url, namespace),
+		client: *espressoClient.NewClient(log, url),
 		// TODO: Load this from the inbox reader so that new sequencers don't read redundant blocks
 		// https://github.com/EspressoSystems/espresso-sequencer/issues/734
-		nextSeqBlockNum: 0,
+		nextSeqBlockNum: 1,
 	}
 }
 
@@ -45,6 +46,7 @@ type EspressoSequencer struct {
 	execEngine   *ExecutionEngine
 	config       SequencerConfigFetcher
 	hotShotState *HotShotState
+	namespace    uint64
 }
 
 func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerConfigFetcher) (*EspressoSequencer, error) {
@@ -55,27 +57,23 @@ func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerCo
 	return &EspressoSequencer{
 		execEngine:   execEngine,
 		config:       configFetcher,
-		hotShotState: NewHotShotState(log.New(), config.HotShotUrl, config.EspressoNamespace),
+		hotShotState: NewHotShotState(log.New(), config.HotShotUrl),
+		namespace:    config.EspressoNamespace,
 	}, nil
 }
 
 func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) {
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
-	header, err := s.hotShotState.client.FetchHeader(ctx, nextSeqBlockNum)
+	header, err := s.hotShotState.client.FetchHeaderByHeight(ctx, nextSeqBlockNum)
 	if err != nil {
 		log.Warn("Unable to fetch header for block number, will retry", "block_num", nextSeqBlockNum)
 		return false
 	}
-	arbTxns, err := s.hotShotState.client.FetchTransactionsInBlock(ctx, nextSeqBlockNum, &header)
+	arbTxns, err := s.hotShotState.client.FetchTransactionsInBlock(ctx, &header, s.namespace)
 	if err != nil {
 		log.Error("Error fetching transactions", "err", err)
 		return false
 
-	}
-
-	if len(arbTxns.Transactions) == 0 {
-		s.hotShotState.advance()
-		return true
 	}
 
 	arbHeader := &arbostypes.L1IncomingMessageHeader{
@@ -122,7 +120,15 @@ func (s *EspressoSequencer) Start(ctxIn context.Context) error {
 
 // Required methods for the TransactionPublisher interface
 func (s *EspressoSequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if err := s.hotShotState.client.SubmitTransaction(parentCtx, tx); err != nil {
+	var txnBytes, err = tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	txn := espressoTypes.Transaction{
+		Vm:      s.namespace,
+		Payload: txnBytes,
+	}
+	if err := s.hotShotState.client.SubmitTransaction(parentCtx, txn); err != nil {
 		log.Error("Failed to submit transaction", err)
 		return err
 	}

@@ -3,13 +3,13 @@ package gethexec
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -279,7 +278,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 
 func (s *ExecutionEngine) SequenceTransactionsEspresso(
 	header *arbostypes.L1IncomingMessageHeader,
-	rawTxes []espresso.Bytes,
+	rawTxes []espressoTypes.Bytes,
 	jst *arbostypes.EspressoBlockJustification,
 ) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
@@ -295,7 +294,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 		txes := types.Transactions{}
 		for _, tx := range rawTxes {
 			var out types.Transaction
-			if err := json.Unmarshal(tx, &out); err != nil {
+			if err := out.UnmarshalBinary(tx); err != nil {
 				log.Warn("Malformed tx is found")
 				continue
 			}
@@ -314,6 +313,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 
 		delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
+		hooks := arbos.NoopSequencingHooks()
 		startTime := time.Now()
 		// Produce a block even if no valid transaction is found
 		block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -324,10 +324,16 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			statedb,
 			s.bc,
 			s.bc.Config(),
-			arbos.NoopSequencingHooks(),
+			hooks,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		for _, err := range hooks.TxErrors {
+			if err != nil {
+				log.Warn(fmt.Sprintf("execute tx error: %v", err.Error()))
+			}
 		}
 		blockCalcTime := time.Since(startTime)
 

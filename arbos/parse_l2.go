@@ -3,26 +3,26 @@ package arbos
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"time"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
-func ParseEspressoMsg(msg *arbostypes.L1IncomingMessage) ([]espresso.Bytes, *arbostypes.EspressoBlockJustification, error) {
+func ParseEspressoMsg(msg *arbostypes.L1IncomingMessage) ([]espressoTypes.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	if msg.Header.Kind != arbostypes.L1MessageType_L2Message {
 		return nil, nil, errors.New("Parsing espresso transactions failed. Invalid L1Message type")
 	}
@@ -199,7 +199,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 				continue
 			}
 			newTx := new(types.Transaction)
-			if err := json.Unmarshal(nextMsg, &newTx); err != nil {
+			if err := newTx.UnmarshalBinary(nextMsg); err != nil {
 				return nil, err
 			}
 			segments = append(segments, newTx)
@@ -218,7 +218,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 	}
 }
 
-func parseEspressoMsg(rd io.Reader) ([]espresso.Bytes, *arbostypes.EspressoBlockJustification, error) {
+func parseEspressoMsg(rd io.Reader) ([]espressoTypes.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, nil, err
@@ -226,7 +226,7 @@ func parseEspressoMsg(rd io.Reader) ([]espresso.Bytes, *arbostypes.EspressoBlock
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_EspressoTx:
-		txs := make([]espresso.Bytes, 0)
+		txs := make([]espressoTypes.Bytes, 0)
 		var jst *arbostypes.EspressoBlockJustification
 		for {
 			nextMsg, err := util.BytestringFromReader(rd, arbostypes.MaxL2MessageSize)
@@ -237,7 +237,7 @@ func parseEspressoMsg(rd io.Reader) ([]espresso.Bytes, *arbostypes.EspressoBlock
 			}
 			if jst == nil {
 				j := new(arbostypes.EspressoBlockJustification)
-				if err := json.Unmarshal(nextMsg, &j); err != nil {
+				if err := rlp.DecodeBytes(nextMsg, &j); err != nil {
 					return nil, nil, err
 				}
 				jst = j
@@ -465,23 +465,18 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 // messageFromEspresso serializes raw data from the espresso block into an arbitrum message,
 // including malformed and invalid transactions.
 // This allows validators to rebuild a block and check the espresso commitment.
-//
-// Note that the raw data is actually in JSON format, which can result in a larger size than necessary.
-// Storing it in L1 call data would lead to some waste. However, for the sake of this Proof of Concept,
-// this is deemed acceptable. Addtionally, after we finish the integration, there is no need to store
-// message in L1.
-func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espresso.Bytes, jst *arbostypes.EspressoBlockJustification) (arbostypes.L1IncomingMessage, error) {
+func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espressoTypes.Bytes, jst *arbostypes.EspressoBlockJustification) (arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
 
 	l2Message = append(l2Message, L2MessageKind_EspressoTx)
-	jstJson, err := json.Marshal(jst)
+	jstBin, err := rlp.EncodeToBytes(jst)
 	if err != nil {
 		return arbostypes.L1IncomingMessage{}, err
 	}
 	sizeBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(sizeBuf, uint64(len(jstJson)))
+	binary.BigEndian.PutUint64(sizeBuf, uint64(len(jstBin)))
 	l2Message = append(l2Message, sizeBuf...)
-	l2Message = append(l2Message, jstJson...)
+	l2Message = append(l2Message, jstBin...)
 	for _, tx := range txes {
 		binary.BigEndian.PutUint64(sizeBuf, uint64(len(tx)))
 		l2Message = append(l2Message, sizeBuf...)

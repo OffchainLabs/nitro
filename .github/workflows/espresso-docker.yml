@@ -1,0 +1,168 @@
+# Build the nitro-node and nitro-node-dev images on ARM64 and AMD64 hosts.
+#
+# The reason for building the ARM image natively instead of with QEMU is that
+# the QEMU build always failed after around 40 minutes. I'm currently not sure
+# why it failed. I did also run into insufficient space issuse on public runners
+# so it's possible this was always the culprit.
+#
+# After building, the images are merged together to make a multiplatform image.
+#
+# The latest wavm machine is also copied and exported as an artifact. In nitro
+# this seems to be later used as machine for the non-dev nitro-node build.
+# For more details on that see the Dockerfile and ./scripts/download.sh
+name: Espresso Docker build CI
+run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+on:
+  workflow_dispatch:
+  merge_group:
+  push:
+    branches:
+      - master
+      - develop
+      - integration
+    tags:
+      # YYYYMMDD
+      - "20[0-9][0-9][0-1][0-9][0-3][0-9]*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker_build:
+    strategy:
+      matrix:
+        platform: [ linux/amd64, linux/arm64 ]
+        include:
+          - platform: linux/amd64
+            runs-on: X64
+          - platform: linux/arm64
+            runs-on: ARM64
+
+    runs-on: [ self-hosted, "${{ matrix.runs-on }}" ]
+
+    steps:
+      # TODO We should be able to remove this but currently it's needed to avoid
+      # permission errors during checkout.
+      - name: Fix submodule permissions check
+        run: |
+          sudo chown -R runner:runner .
+          # Remove potentially leftover files from last run, it's unclear why
+          # this only works with `sudo` despite the chown command above.
+          sudo rm -rfv ./target
+      - name: Fix submodule permissions check
+        run: |
+          git config --global --add safe.directory '*'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Github Container Repo
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner  }}
+          password: ${{ secrets.GITHUB_TOKEN  }}
+
+      - name: Build nitro-node image
+        uses: ./.github/actions/docker-image
+        with:
+          file: Dockerfile.espresso
+          images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
+          target: nitro-node
+          platforms: ${{ matrix.platform }}
+
+      - name: Build nitro-node-dev image
+        uses: ./.github/actions/docker-image
+        id: nitro-node-dev
+        with:
+          file: Dockerfile.espresso
+          images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
+          target: nitro-node-dev
+          platforms: ${{ matrix.platform }}
+
+      # The module root is not identical for the ARM build so we upload
+      # the binary only for AMD64.
+
+      - name: Extract WAVM machine from container and print its root
+        if: matrix.platform == 'linux/amd64'
+        id: module-root
+        run: |
+          # Unfortunately, `docker cp` seems to always result in a "permission denied"
+          # We work around this by piping a tarball through stdout
+          digest="${{ steps.nitro-node-dev.outputs.digest }}"
+          image=ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev@$digest
+          docker run --rm --entrypoint tar $image -cf - target/machines/latest | tar xf -
+          ls -lah target/machines/latest
+          module_root="$(cat "target/machines/latest/module-root.txt")"
+          echo "module-root=$module_root" >> $GITHUB_OUTPUT
+          echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
+
+      - name: Upload WAVM machine as artifact
+        uses: actions/upload-artifact@v3
+        if: matrix.platform == 'linux/amd64'
+        with:
+          name: wavm-machine-${{ steps.module-root.outputs.module-root }}
+          path: target/machines/latest/*
+          if-no-files-found: error
+
+      - name: Release wasm binary
+        uses: softprops/action-gh-release@v1
+        if: matrix.platform == 'linux/amd64' && startsWith(github.ref, 'refs/tags/')
+        with:
+          files: target/machines/latest/*
+
+  # Merge the AMD64 and ARM64 images into the final (multiplatform) image.
+  #
+  # For documentation refer to
+  # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+  merge_into_multiplatform_images:
+    needs:
+      - docker_build
+    strategy:
+      matrix:
+        target: [ nitro-node, nitro-node-dev ]
+        include:
+          - target: nitro-node
+            image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
+          - target: nitro-node-dev
+            image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Github Container Repo
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner  }}
+          password: ${{ secrets.GITHUB_TOKEN  }}
+
+      - name: Download digests
+        uses: actions/download-artifact@v3
+        with:
+          name: "${{ matrix.target }}-digests"
+          path: "${{ runner.temp }}/digests"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+
+      - name: Create manifest list and push
+        working-directory: "${{ runner.temp }}/digests"
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ matrix.image }}@sha256:%s ' *)
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }}

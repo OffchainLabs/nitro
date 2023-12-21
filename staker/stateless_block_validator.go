@@ -11,7 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/espresso"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -74,7 +75,7 @@ type InboxReaderInterface interface {
 }
 
 type HotShotReaderInterface interface {
-	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espresso.Commitment, error)
+	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espressoTypes.Commitment, error)
 }
 
 type GlobalStatePosition struct {
@@ -168,8 +169,9 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
-	DelayedMsg []byte
+	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
+	DelayedMsg        []byte
+	HotShotCommitment espressoTypes.Commitment
 }
 
 func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
@@ -177,13 +179,14 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	return &validator.ValidationInput{
-		Id:            uint64(e.Pos),
-		HasDelayedMsg: e.HasDelayedMsg,
-		DelayedMsgNr:  e.DelayedMsgNr,
-		Preimages:     e.Preimages,
-		BatchInfo:     e.BatchInfo,
-		DelayedMsg:    e.DelayedMsg,
-		StartState:    e.Start,
+		Id:                uint64(e.Pos),
+		HasDelayedMsg:     e.HasDelayedMsg,
+		DelayedMsgNr:      e.DelayedMsgNr,
+		Preimages:         e.Preimages,
+		BatchInfo:         e.BatchInfo,
+		DelayedMsg:        e.DelayedMsg,
+		HotShotCommitment: e.HotShotCommitment,
+		StartState:        e.Start,
 	}, nil
 }
 
@@ -194,6 +197,7 @@ func newValidationEntry(
 	msg *arbostypes.MessageWithMetadata,
 	batch []byte,
 	prevDelayed uint64,
+	hotShotCommitment *espressoTypes.Commitment,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
 		Number: start.Batch,
@@ -208,14 +212,15 @@ func newValidationEntry(
 		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
 	}
 	return &validationEntry{
-		Stage:         ReadyForRecord,
-		Pos:           pos,
-		Start:         start,
-		End:           end,
-		HasDelayedMsg: hasDelayed,
-		DelayedMsgNr:  delayedNum,
-		msg:           msg,
-		BatchInfo:     []validator.BatchInfo{batchInfo},
+		Stage:             ReadyForRecord,
+		Pos:               pos,
+		Start:             start,
+		End:               end,
+		HasDelayedMsg:     hasDelayed,
+		DelayedMsgNr:      delayedNum,
+		msg:               msg,
+		HotShotCommitment: *hotShotCommitment,
+		BatchInfo:         []validator.BatchInfo{batchInfo},
 	}, nil
 }
 
@@ -264,7 +269,6 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
-	usingEspresso := v.config.Espresso
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
@@ -294,19 +298,8 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-	for i, batch := range e.BatchInfo {
-		if usingEspresso {
-			// TODO: Use the inbox tracker to fetch the correct HotShot index
-			// https://github.com/EspressoSystems/espresso-sequencer/issues/782
-			batchNum := batch.Number
-			hotShotCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(batchNum)
-			if err != nil {
-				return fmt.Errorf("error attempting to fetch HotShot commitment for block %d: %w", batchNum, err)
 
-			}
-			log.Info("fetched HotShot commitment", "batchNum", batchNum, "commitment", hotShotCommitment)
-			e.BatchInfo[i].HotShotCommitment = *hotShotCommitment
-		}
+	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
 		}
@@ -389,7 +382,24 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed)
+	var comm espressoTypes.Commitment
+	// Note: this code path is not used in the staker validation pipeline, return to this
+	// when we look into fraud proofs
+	if v.config.Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		if err != nil {
+			return nil, err
+		}
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
+		if err != nil {
+			return nil, err
+		}
+		if fetchedCommitment == nil {
+			return nil, fmt.Errorf("commitment not ready yet")
+		}
+		comm = *fetchedCommitment
+	}
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed, &comm)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,10 @@ on:
       - develop
       - integration
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Go Tests
@@ -139,13 +143,13 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -timeout 20m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/...
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -timeout 20m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -skip TestEspressoE2E
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
         run:  |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- --timeout 20m -race
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- --timeout 20m -race -skip TestEspressoE2E
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'

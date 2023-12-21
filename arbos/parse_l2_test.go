@@ -4,12 +4,12 @@ import (
 	"reflect"
 	"testing"
 
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 )
 
 func TestEspressoParsing(t *testing.T) {
-	expectTxes := []espresso.Bytes{
+	expectTxes := []espressoTypes.Bytes{
 		[]byte{1, 2, 3},
 		[]byte{4},
 	}
@@ -18,12 +18,13 @@ func TestEspressoParsing(t *testing.T) {
 		BlockNumber: 1,
 	}
 	expectJst := &arbostypes.EspressoBlockJustification{
-		Header: espresso.Header{
-			TransactionsRoot: espresso.NmtRoot{Root: []byte{7, 8, 9}},
-			Metadata: espresso.Metadata{
-				L1Head:    1,
-				Timestamp: 2,
-			},
+		Header: espressoTypes.Header{
+			TransactionsRoot:  espressoTypes.NmtRoot{Root: []byte{7, 8, 9}},
+			L1Head:            1,
+			Timestamp:         2,
+			Height:            3,
+			L1Finalized:       &espressoTypes.L1BlockInfo{},
+			PayloadCommitment: espressoTypes.Bytes{1, 2, 3},
 		},
 		Proof: []byte{9},
 	}

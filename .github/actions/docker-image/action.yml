@@ -1,0 +1,61 @@
+name: Espresso Docker Image
+
+inputs:
+  images:
+    required: true
+    type: string
+  target:
+    required: true
+    type: string
+  platforms:
+    required: true
+    type: string
+  file:
+    required: true
+    type: string
+
+outputs:
+  digest:
+    value: "${{ steps.build.outputs.digest }}"
+
+runs:
+  using: composite
+  steps:
+
+    - name: Generate docker metadata
+      uses: docker/metadata-action@v5
+      id: metadata
+      with:
+        images: ${{ inputs.images }}
+
+    # Build docker images and push to registry "by digest" later the images for
+    # ARM64 and AMD64 are merged and tagged as the final image.
+    #
+    # This step does not use `tags`. With tags (e.g. :main) push by digest fails.
+    - name: Build and push docker
+      uses: docker/build-push-action@v5
+      id: build
+      with:
+        file: ${{ inputs.file }}
+        target: ${{ inputs.target }}
+        labels: ${{ steps.metadata.outputs.labels  }}
+        platforms: ${{ inputs.platforms }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        outputs: type=image,name=${{ inputs.images }},push-by-digest=true,name-canonical=true,push=true
+
+    - name: Export digest
+      shell: bash
+      run: |
+        digest_dir="${{ runner.temp }}/${{ inputs.target }}-digests"
+        mkdir -p "${digest_dir}"
+        digest="${{ steps.build.outputs.digest }}"
+        touch "${digest_dir}/${digest#sha256:}"
+
+    - name: Upload digest
+      uses: actions/upload-artifact@v3
+      with:
+        name: "${{ inputs.target }}-digests"
+        path: "${{ runner.temp }}/${{ inputs.target }}-digests/*"
+        if-no-files-found: error
+        retention-days: 1

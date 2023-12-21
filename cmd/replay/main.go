@@ -21,11 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	espressoNmt "github.com/EspressoSystems/espresso-sequencer-go/nmt"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbos/espresso"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -45,12 +46,6 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
 	return header
-}
-
-func getHotShotCommitment(seqNum uint64) *espresso.Commitment {
-	headerBytes := espresso.Commitment(wavmio.ReadHotShotCommitment(seqNum))
-	log.Info("HotShot commitment", "commit", headerBytes)
-	return &headerBytes
 }
 
 type WavmChainContext struct{}
@@ -238,6 +233,10 @@ func main() {
 				panic(err)
 			}
 		}
+		// Fetch these before the message, because readMessage will increment the
+		// inbox position
+		inboxPos := wavmio.GetInboxPosition()
+		posInInbox := wavmio.GetPositionWithinMessage()
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
@@ -245,11 +244,10 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		seqNum := wavmio.GetInboxPosition()
 		// Espresso-specific validation
 		// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
-		if chainConfig.Espresso {
-			hotShotCommitment := getHotShotCommitment(seqNum)
+		isL2Message := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message
+		if isL2Message && chainConfig.Espresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
@@ -258,17 +256,19 @@ func main() {
 				panic("batch missing espresso justification")
 			}
 			hotshotHeader := jst.Header
-			if *hotShotCommitment != hotshotHeader.Commit() {
-				panic("invalid hotshot header")
+			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
+			if !commitment.Equals(hotshotHeader.Commit()) {
+				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v. seqNum %v posInInbox %v", hotshotHeader.Commit(), commitment, inboxPos, posInInbox))
 			}
-			var roots = []*espresso.NmtRoot{&hotshotHeader.TransactionsRoot}
-			var proofs = []*espresso.NmtProof{&jst.Proof}
+			var roots = []*espressoTypes.NmtRoot{&hotshotHeader.TransactionsRoot}
+			var proofs = []*espressoTypes.NmtProof{&jst.Proof}
 
-			err = espresso.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
+			err = espressoNmt.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
 			if err != nil {
 				panic(err)
 			}
 		}
+
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
