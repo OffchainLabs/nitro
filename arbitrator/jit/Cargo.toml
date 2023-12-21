@@ -10,7 +10,6 @@ stylus = { path = "../stylus/", default-features = false }
 wasmer = { path = "../tools/wasmer/lib/api/" }
 wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm/", optional = true }
 wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift/" }
-go-js = { path = "../wasm-libraries/go-js" }
 eyre = "0.6.5"
 parking_lot = "0.12.1"
 rand = { version = "0.8.4", default-features = false }

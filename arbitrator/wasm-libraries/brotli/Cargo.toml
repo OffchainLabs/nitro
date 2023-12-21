@@ -8,5 +8,4 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-go-abi = { path = "../go-abi" }
 arbutil = { path = "../../arbutil", features = ["wavm"] }

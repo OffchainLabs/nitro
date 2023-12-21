@@ -9,4 +9,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
-go-abi = { path = "../go-abi" }

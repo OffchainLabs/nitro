@@ -3,6 +3,7 @@
 
 use eyre::ErrReport;
 use std::fmt::Display;
+use num_enum::{TryFromPrimitive, IntoPrimitive};
 
 #[derive(Debug)]
 pub enum UserOutcome {
@@ -13,7 +14,7 @@ pub enum UserOutcome {
     OutOfStack,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u8)]
 pub enum UserOutcomeKind {
     Success,
@@ -57,12 +58,6 @@ impl From<&UserOutcome> for UserOutcomeKind {
 impl From<&UserOutcome> for u8 {
     fn from(value: &UserOutcome) -> Self {
         UserOutcomeKind::from(value).into()
-    }
-}
-
-impl From<UserOutcomeKind> for u8 {
-    fn from(value: UserOutcomeKind) -> Self {
-        value as u8
     }
 }
 
