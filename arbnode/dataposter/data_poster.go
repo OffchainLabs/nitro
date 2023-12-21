@@ -86,6 +86,7 @@ type signerFn func(context.Context, common.Address, *types.Transaction) (*types.
 
 type AttemptLocker interface {
 	AttemptLock(context.Context) bool
+	CouldAcquireLock(context.Context) (bool, error)
 }
 
 func parseReplacementTimes(val string) ([]time.Duration, error) {
@@ -745,9 +746,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
-		if !p.redisLock.AttemptLock(ctx) {
-			return minWait
-		}
 		err := p.updateBalance(ctx)
 		if err != nil {
 			log.Warn("failed to update tx poster balance", "err", err)
@@ -777,10 +775,16 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Error("Failed to fetch tx queue contents", "err", err)
 			return minWait
 		}
+		tryToReplace, err := p.redisLock.CouldAcquireLock(ctx)
+		if err != nil {
+			log.Warn("Error checking if we could acquire redis lock", "err", err)
+			// Might as well try, worst case we hit contention on redis and fail
+			tryToReplace = true
+		}
 		for index, tx := range queueContents {
 			backlogOfBatches := len(queueContents) - index - 1
 			replacing := false
-			if now.After(tx.NextReplacement) {
+			if tryToReplace && now.After(tx.NextReplacement) {
 				replacing = true
 				err := p.replaceTx(ctx, tx, uint64(backlogOfBatches))
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
