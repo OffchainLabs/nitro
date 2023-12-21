@@ -407,7 +407,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
-	ephemeralError := time.Time{}
+	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce")
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
@@ -440,7 +440,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			}
 		}
 		if err == nil {
-			ephemeralError = time.Time{}
+			ephemeralErrorHandler.Reset()
 			backoff = time.Second
 			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 			stakerActionSuccessCounter.Inc(1)
@@ -458,7 +458,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		} else {
 			logLevel = log.Warn
 		}
-		logLevel = util.LogLevelEphemeralError(err, "is ahead of on-chain nonce", 10*time.Minute, &ephemeralError, logLevel)
+		logLevel = ephemeralErrorHandler.LogLevel(err, logLevel)
 		logLevel("error acting as staker", "err", err)
 		return backoff
 	})

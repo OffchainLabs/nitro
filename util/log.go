@@ -7,36 +7,48 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// LogLevelEphemeralError is a convenient intermediary level between log levels Warn and Error
-//
-// For a given error, errorSubstring, duration, firstOccurrenceTime and logLevel
-// the function defaults to returning the given logLevel if the error doesnt contain the errorSubstring,
+// EphemeralErrorHandler handles errors that are ephemeral in nature i.h these are errors
+// that we would like to log as a warning unless they repeat for more than a certain duration of time.
+type EphemeralErrorHandler struct {
+	Duration        time.Duration
+	ErrorString     string
+	FirstOccurrence *time.Time
+}
+
+func NewEphemeralErrorHandler(duration time.Duration, errorString string) *EphemeralErrorHandler {
+	return &EphemeralErrorHandler{
+		Duration:        duration,
+		ErrorString:     errorString,
+		FirstOccurrence: &time.Time{},
+	}
+}
+
+// LogLevel method defaults to returning the input currentLogLevel if the givenerror doesnt contain the errorSubstring,
 // but if it does, then returns one of the corresponding loglevels as follows
-//   - Warn: For firstOccurrenceTime of error being less than the duration amount of time from Now
-//   - Error: Otherwise
+//   - log.Warn - if the error has been repeating for less than the given duration of time
+//   - log.Error - Otherwise
 //
 // # Usage Examples
 //
-//	log.LogLevelEphemeralError(err, "not supported yet", 5*time.Minute, &firstEphemeralError, log.Error)("msg")
-//	log.LogLevelEphemeralError(err, "not supported yet", 5*time.Minute, &firstEphemeralError, log.Error)("msg", "key1", val1)
-//	log.LogLevelEphemeralError(err, "not supported yet", 5*time.Minute, &firstEphemeralError, log.Error)("msg", "key1", val1, "key2", val2)
-func LogLevelEphemeralError(
-	err error,
-	errorSubstring string,
-	ephemeralDuration time.Duration,
-	firstOccurrenceTime *time.Time,
-	currentLogLevel func(msg string, ctx ...interface{})) func(string, ...interface{}) {
-	if strings.Contains(err.Error(), errorSubstring) || errorSubstring == "" {
-		logLevel := log.Error
-		if *firstOccurrenceTime == (time.Time{}) {
-			*firstOccurrenceTime = time.Now()
-			logLevel = log.Warn
-		} else if time.Since(*firstOccurrenceTime) < ephemeralDuration {
-			logLevel = log.Warn
-		}
-		return logLevel
-	} else {
-		*firstOccurrenceTime = time.Time{}
+//	ephemeralErrorHandler.Loglevel(err, log.Error)("msg")
+//	ephemeralErrorHandler.Loglevel(err, log.Error)("msg", "key1", val1, "key2", val2)
+//	ephemeralErrorHandler.Loglevel(err, log.Error)("msg", "key1", val1)
+func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg string, ctx ...interface{})) func(string, ...interface{}) {
+	if h.ErrorString != "" && !strings.Contains(err.Error(), h.ErrorString) {
+		h.Reset()
 		return currentLogLevel
 	}
+
+	logLevel := log.Error
+	if *h.FirstOccurrence == (time.Time{}) {
+		*h.FirstOccurrence = time.Now()
+		logLevel = log.Warn
+	} else if time.Since(*h.FirstOccurrence) < h.Duration {
+		logLevel = log.Warn
+	}
+	return logLevel
+}
+
+func (h *EphemeralErrorHandler) Reset() {
+	*h.FirstOccurrence = time.Time{}
 }

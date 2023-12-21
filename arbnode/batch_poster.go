@@ -58,21 +58,22 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader        *headerreader.HeaderReader
-	inbox           *InboxTracker
-	streamer        *TransactionStreamer
-	config          BatchPosterConfigFetcher
-	seqInbox        *bridgegen.SequencerInbox
-	bridge          *bridgegen.Bridge
-	syncMonitor     *SyncMonitor
-	seqInboxABI     *abi.ABI
-	seqInboxAddr    common.Address
-	bridgeAddr      common.Address
-	gasRefunderAddr common.Address
-	building        *buildingBatch
-	daWriter        das.DataAvailabilityServiceWriter
-	dataPoster      *dataposter.DataPoster
-	redisLock       *redislock.Simple
+	l1Reader         *headerreader.HeaderReader
+	inbox            *InboxTracker
+	streamer         *TransactionStreamer
+	config           BatchPosterConfigFetcher
+	seqInbox         *bridgegen.SequencerInbox
+	bridge           *bridgegen.Bridge
+	syncMonitor      *SyncMonitor
+	seqInboxABI      *abi.ABI
+	seqInboxAddr     common.Address
+	bridgeAddr       common.Address
+	gasRefunderAddr  common.Address
+	building         *buildingBatch
+	daWriter         das.DataAvailabilityServiceWriter
+	dataPoster       *dataposter.DataPoster
+	redisLock        *redislock.Simple
+	messagesPerBatch *arbmath.MovingAverage[uint64]
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -271,6 +272,10 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		bridgeAddr:      opts.DeployInfo.Bridge,
 		daWriter:        opts.DAWriter,
 		redisLock:       redisLock,
+	}
+	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
+	if err != nil {
+		return nil, err
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &(opts.Config().DataPoster)
@@ -1062,8 +1067,21 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	)
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
+	b.messagesPerBatch.Update(uint64(postedMessages))
 	unpostedMessages := msgCount - b.building.msgCount
-	backlog := uint64(unpostedMessages) / uint64(postedMessages)
+	messagesPerBatch := b.messagesPerBatch.Average()
+	if messagesPerBatch == 0 {
+		// This should be impossible because we always post at least one message in a batch.
+		// That said, better safe than sorry, as we would panic if this remained at 0.
+		log.Warn(
+			"messagesPerBatch is somehow zero",
+			"postedMessages", postedMessages,
+			"buildingFrom", batchPosition.MessageCount,
+			"buildingTo", b.building.msgCount,
+		)
+		messagesPerBatch = 1
+	}
+	backlog := uint64(unpostedMessages) / messagesPerBatch
 	if backlog > 10 {
 		logLevel := log.Warn
 		if recentlyHitL1Bounds {
@@ -1076,7 +1094,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			"recentlyHitL1Bounds", recentlyHitL1Bounds,
 			"currentPosition", b.building.msgCount,
 			"messageCount", msgCount,
-			"lastPostedMessages", postedMessages,
+			"messagesPerBatch", messagesPerBatch,
+			"postedMessages", postedMessages,
 			"unpostedMessages", unpostedMessages,
 			"batchBacklogEstimate", backlog,
 		)
@@ -1110,8 +1129,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
-	commonEphemeralError := time.Time{}
-	exceedMaxMempoolSizeEphemeralError := time.Time{}
+	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "")
+	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, "will exceed max mempool size")
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -1136,16 +1155,16 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
-			commonEphemeralError = time.Time{}
-			exceedMaxMempoolSizeEphemeralError = time.Time{}
+			commonEphemeralErrorHandler.Reset()
+			exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
 		}
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
-			logLevel = util.LogLevelEphemeralError(err, "", time.Minute, &commonEphemeralError, logLevel)
-			logLevel = util.LogLevelEphemeralError(err, "will exceed max mempool size", 5*time.Minute, &exceedMaxMempoolSizeEphemeralError, logLevel)
+			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
