@@ -33,7 +33,7 @@ func TestTippingTxBinaryMarshalling(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 	tippingBytes, err := tippingTx.MarshalBinary()
 	testhelpers.RequireImpl(t, err)
-	if len(tippingBytes) < 2 {
+	if len(tippingBytes) < 3 {
 		testhelpers.FailImpl(t, "got too short binary for tipping tx")
 	}
 	if tippingBytes[0] != types.ArbitrumSubtypedTxType {
@@ -42,8 +42,11 @@ func TestTippingTxBinaryMarshalling(t *testing.T) {
 	if tippingBytes[1] != types.ArbitrumTippingTxSubtype {
 		testhelpers.FailImpl(t, "got wrong second byte (tx subtype), want:", types.ArbitrumTippingTxSubtype, "got:", tippingBytes[0])
 	}
-	if !bytes.Equal(tippingBytes[2:], dynamicBytes[1:]) {
+	if !bytes.Equal(tippingBytes[3:], dynamicBytes[1:]) {
 		testhelpers.FailImpl(t, "unexpected tipping tx binary")
+	}
+	if int(tippingBytes[2])-0xc0 != len(tippingBytes[3:]) {
+		testhelpers.FailImpl(t, "got unexpected list header, have:", int(tippingBytes[2])-0xc0, "want", len(tippingBytes[3:]))
 	}
 	unmarshalledTx := new(types.Transaction)
 	err = unmarshalledTx.UnmarshalBinary(tippingBytes)
@@ -94,7 +97,7 @@ func TestTippingTxJsonMarshalling(t *testing.T) {
 	tippingTx := info.SignTxAs("tester", tipping)
 	tippingJson, err := tippingTx.MarshalJSON()
 	testhelpers.RequireImpl(t, err)
-	expectedJson := []byte(`{"type":"0x63","chainId":"0x539","nonce":"0x2c","to":"0x00000000000000000000000000000000deadbeef","gas":"0x33450","gasPrice":"0x0","maxPriorityFeePerGas":"0x7","maxFeePerGas":"0xd","value":"0x8","input":"0xdeadbeef","accessList":[{"address":"0x00000000000000000000000000000000deadbeef","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"v":"0x0","r":"0xa1601a4ded28737bc73dd6c9fc65e27926c5ba50fbae447f4b8bf2c8319ad084","s":"0x2c2fe6def81bad41bdf4163fef307d98466dadb2c83531dfd6330aaa42fb86a1","subtype":"0x1","hash":"0x9fb176470d1bd930e9b612a7e890eb006fe92b600f9b3abe52c3fa6225f89ba4"}`)
+	expectedJson := []byte(`{"type":"0x63","chainId":"0x539","nonce":"0x2c","to":"0x00000000000000000000000000000000deadbeef","gas":"0x33450","gasPrice":"0x0","maxPriorityFeePerGas":"0x7","maxFeePerGas":"0xd","value":"0x8","input":"0xdeadbeef","accessList":[{"address":"0x00000000000000000000000000000000deadbeef","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"v":"0x0","r":"0xa1601a4ded28737bc73dd6c9fc65e27926c5ba50fbae447f4b8bf2c8319ad084","s":"0x2c2fe6def81bad41bdf4163fef307d98466dadb2c83531dfd6330aaa42fb86a1","subtype":"0x1","hash":"0x058cf0b0c5f67625a4a271ac9a444fba73ce9ef299049ebc4cf021ab921f8b57"}`)
 	if !bytes.Equal(tippingJson, expectedJson) {
 		testhelpers.FailImpl(t, "Unexpected json result, want:\n\t", string(expectedJson), "\ngot:\n\t", string(tippingJson))
 	}
