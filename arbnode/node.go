@@ -301,6 +301,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
+	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	if transactOpts == nil && cfg.Staker.DataPoster.ExternalSigner.URL == "" {
@@ -339,6 +340,7 @@ func StakerDataposter(
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
 			RedisKey:          sender + ".staker-data-poster.queue",
+			ParentChainID:     parentChainID,
 		})
 }
 
@@ -568,6 +570,11 @@ func createNodeImpl(
 	var stakerObj *staker.Staker
 	var messagePruner *MessagePruner
 
+	parentChainID, err := l1client.ChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting parent chain id: %w", err)
+	}
+
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
 			ctx,
@@ -576,6 +583,7 @@ func createNodeImpl(
 			txOptsValidator,
 			configFetcher,
 			syncMonitor,
+			parentChainID,
 		)
 		if err != nil {
 			return nil, err
@@ -643,15 +651,16 @@ func createNodeImpl(
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB: rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
-			L1Reader:     l1Reader,
-			Inbox:        inboxTracker,
-			Streamer:     txStreamer,
-			SyncMonitor:  syncMonitor,
-			Config:       func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:   deployInfo,
-			TransactOpts: txOptsBatchPoster,
-			DAWriter:     daWriter,
+			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			L1Reader:      l1Reader,
+			Inbox:         inboxTracker,
+			Streamer:      txStreamer,
+			SyncMonitor:   syncMonitor,
+			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:    deployInfo,
+			TransactOpts:  txOptsBatchPoster,
+			DAWriter:      daWriter,
+			ParentChainID: parentChainID,
 		})
 		if err != nil {
 			return nil, err

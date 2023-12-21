@@ -64,6 +64,7 @@ type DataPoster struct {
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	extraBacklog      func() uint64
+	parentChainID     *big.Int
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -120,6 +121,7 @@ type DataPosterOpts struct {
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
+	ParentChainID     *big.Int
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
@@ -180,6 +182,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		errorCount:          make(map[uint64]int),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
+		parentChainID:       opts.ParentChainID,
 	}
 	if dp.extraBacklog == nil {
 		dp.extraBacklog = func() uint64 { return 0 }
@@ -197,6 +200,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 			},
 		}
 	}
+
 	return dp, nil
 }
 
@@ -240,10 +244,11 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 // txToSendTxArgs converts transaction to SendTxArgs. This is needed for
 // external signer to specify From field.
 func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
-	if tx.To() == nil {
-		return nil, fmt.Errorf("transaction %v has no destination", tx.Hash())
+	var to *common.MixedcaseAddress
+	if tx.To() != nil {
+		to = new(common.MixedcaseAddress)
+		*to = common.NewMixedcaseAddress(*tx.To())
 	}
-	to := common.NewMixedcaseAddress(*tx.To())
 	data := (hexutil.Bytes)(tx.Data())
 	val := (*hexutil.Big)(tx.Value())
 	if val == nil {
@@ -252,7 +257,7 @@ func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 	al := tx.AccessList()
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
-		To:                   &to,
+		To:                   to,
 		Gas:                  hexutil.Uint64(tx.Gas()),
 		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
 		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
@@ -288,17 +293,17 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
 		if err := client.CallContext(ctx, &data, opts.Method, args); err != nil {
-			return nil, fmt.Errorf("signing transaction: %w", err)
+			return nil, fmt.Errorf("making signing request to external signer: %w", err)
 		}
-		var signedTx types.Transaction
-		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
-			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
+		signedTx := &types.Transaction{}
+		if err := signedTx.UnmarshalBinary(data); err != nil {
+			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
 		hasher := types.LatestSignerForChainID(tx.ChainId())
-		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(&signedTx) {
-			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), h)
+		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
-		return &signedTx, nil
+		return signedTx, nil
 	}, sender, nil
 }
 
@@ -583,6 +588,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Value:      value,
 		Data:       calldata,
 		AccessList: accessList,
+		ChainID:    p.parentChainID,
 	}
 	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(&inner))
 	if err != nil {
