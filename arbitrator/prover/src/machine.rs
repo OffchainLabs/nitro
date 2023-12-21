@@ -5,7 +5,7 @@ use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
-    error_guard::{ErrorGuard, ErrorGuardProof, ErrorGuardStack},
+    error_guard::{ErrorGuard, ErrorGuardProof},
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -791,7 +791,7 @@ pub struct Machine {
     value_stacks: Vec<Vec<Value>>,
     internal_stack: Vec<Value>,
     frame_stacks: Vec<Vec<StackFrame>>,
-    guards: ErrorGuardStack,
+    guards: Vec<ErrorGuard>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -1741,7 +1741,7 @@ impl Machine {
                     machine.print_backtrace(true);
                 };
 
-                if self.guards.enabled && !self.guards.is_empty() {
+                if self.cothread && !self.guards.is_empty() {
                     let guard = self.guards.pop().unwrap();
                     if self.debug_info {
                         print_debug_info(self);
@@ -2348,10 +2348,6 @@ impl Machine {
                 Opcode::PopErrorGuard => {
                     self.guards.pop();
                 }
-                Opcode::SetErrorPolicy => {
-                    let status = value_stack.pop().unwrap().assume_u32();
-                    self.guards.enabled = status != 0;
-                }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
                     break;
@@ -2555,9 +2551,8 @@ impl Machine {
                 h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
 
-                if !guards.is_empty() || self.guards.enabled {
+                if !guards.is_empty() {
                     h.update(b"With guards:");
-                    h.update([self.guards.enabled as u8]);
                     h.update(ErrorGuardProof::hash_guards(&guards));
                 }
             }
@@ -2840,10 +2835,8 @@ impl Machine {
     fn prove_guards(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(34); // size in the empty case
         let guards = self.stack_hashes().3;
-        let enabled = self.guards.enabled;
         let empty = self.guards.is_empty();
 
-        data.push(enabled as u8);
         data.push(empty as u8);
         if empty {
             data.extend(Bytes32::default());

@@ -8,30 +8,7 @@ use crate::{
 use arbutil::{Bytes32, Color};
 use digest::Digest;
 use sha3::Keccak256;
-use std::{
-    fmt::{self, Display},
-    ops::{Deref, DerefMut},
-};
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct ErrorGuardStack {
-    pub guards: Vec<ErrorGuard>,
-    pub enabled: bool,
-}
-
-impl Deref for ErrorGuardStack {
-    type Target = Vec<ErrorGuard>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.guards
-    }
-}
-
-impl DerefMut for ErrorGuardStack {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.guards
-    }
-}
+use std::fmt::{self, Display};
 
 #[derive(Clone, Debug)]
 pub struct ErrorGuard {

@@ -3,7 +3,6 @@
 
 use crate::{
     evm_api::ApiCaller,
-    guard::{self, ErrorPolicy},
     program::Program,
 };
 use arbutil::{

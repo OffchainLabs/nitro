@@ -1,7 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::guard::{self, ErrorPolicy};
 use arbutil::evm::{
     api::EvmApiMethod,
     js::{ApiValue, JsCallIntoGo},
