@@ -19,6 +19,8 @@ var (
 	errOutOfBounds        = errors.New("message not found in backlog")
 
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
+	backlogSizeInBytesGauge      = metrics.NewRegisteredGauge("arb/feed/backlog/sizeinbytes", nil)
+	backlogSizeGauge             = metrics.NewRegisteredGauge("arb/feed/backlog/size", nil)
 )
 
 // Backlog defines the interface for backlog.
@@ -54,6 +56,26 @@ func (b *backlog) Head() BacklogSegment {
 	return b.head.Load()
 }
 
+func (b *backlog) backlogSizeInBytes() uint64 {
+	if b.head.Load() == nil || b.tail.Load() == nil {
+		return 0
+	}
+	headSeg := b.head.Load()
+	headSeg.messagesLock.RLock()
+	headMsg := headSeg.messages[0]
+	headSeg.messagesLock.RUnlock()
+
+	tailSeg := b.tail.Load()
+	tailSeg.messagesLock.RLock()
+	tailMsg := tailSeg.messages[len(tailSeg.messages)-1]
+	size := tailMsg.CumulativeSumMsgSize
+	tailSeg.messagesLock.RUnlock()
+
+	size -= headMsg.CumulativeSumMsgSize
+	size += uint64(len(headMsg.Signature) + len(headMsg.Message.Message.L2msg) + 160)
+	return size
+}
+
 // Append will add the given messages to the backlogSegment at head until
 // that segment reaches its limit. If messages remain to be added a new segment
 // will be created.
@@ -74,6 +96,10 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 		prevMsgIdx := segment.End()
 		if segment.count() >= b.config().SegmentLimit {
+			segment.messagesLock.RLock()
+			msg.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
+			segment.messagesLock.RUnlock()
+
 			nextSegment := newBacklogSegment()
 			segment.nextSegment.Store(nextSegment)
 			prevMsgIdx = segment.End()
@@ -100,6 +126,8 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		b.messageCount.Add(1)
 	}
 
+	backlogSizeInBytesGauge.Update(int64(b.backlogSizeInBytes()))
+	backlogSizeGauge.Update(int64(b.Count()))
 	return nil
 }
 
@@ -238,6 +266,8 @@ func (b *backlog) reset() {
 	b.tail = atomic.Pointer[backlogSegment]{}
 	b.lookupByIndex = &containers.SyncMap[uint64, *backlogSegment]{}
 	b.messageCount.Store(0)
+	backlogSizeInBytesGauge.Update(0)
+	backlogSizeGauge.Update(0)
 }
 
 // BacklogSegment defines the interface for backlogSegment.
@@ -361,9 +391,15 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 	s.messagesLock.Lock()
 	defer s.messagesLock.Unlock()
 
+	prevCumulativeSum := uint64(0)
+	if len(s.messages) > 0 {
+		prevCumulativeSum = s.messages[len(s.messages)-1].CumulativeSumMsgSize
+	}
 	if expSeqNum := prevMsgIdx + 1; prevMsgIdx == 0 || uint64(msg.SequenceNumber) == expSeqNum {
+		msg.UpdateCumulativeSumMsgSize(prevCumulativeSum)
 		s.messages = append(s.messages, msg)
 	} else if uint64(msg.SequenceNumber) > expSeqNum {
+		msg.UpdateCumulativeSumMsgSize(prevCumulativeSum)
 		s.messages = nil
 		s.messages = append(s.messages, msg)
 		return fmt.Errorf("new message sequence number (%d) is greater than the expected sequence number (%d): %w", msg.SequenceNumber, expSeqNum, errDropSegments)

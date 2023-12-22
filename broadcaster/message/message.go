@@ -35,6 +35,12 @@ type BroadcastFeedMessage struct {
 	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	Signature      []byte                         `json:"signature"`
+
+	CumulativeSumMsgSize uint64 `json:"-"`
+}
+
+func (m *BroadcastFeedMessage) UpdateCumulativeSumMsgSize(val uint64) {
+	m.CumulativeSumMsgSize += val + uint64(len(m.Signature)+len(m.Message.Message.L2msg)+160)
 }
 
 func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
