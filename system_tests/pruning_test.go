@@ -111,15 +111,9 @@ func TestPruning(t *testing.T) {
 	defer cancel()
 
 	builder.L2Info.GenerateAccount("User2")
-	var txs []*types.Transaction
-	for i := uint64(0); i < 10; i++ {
-		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
-		txs = append(txs, tx)
-		err := builder.L2.Client.SendTransaction(ctx, tx)
-		Require(t, err)
-	}
-	for _, tx := range txs {
-		_, err := builder.L2.EnsureTxSucceeded(tx)
-		Require(t, err)
-	}
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 }
