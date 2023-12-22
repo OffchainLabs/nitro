@@ -83,11 +83,6 @@ type DataPoster struct {
 // This can be local or external, hence the context parameter.
 type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
 
-type AttemptLocker interface {
-	AttemptLock(context.Context) bool
-	CouldAcquireLock(context.Context) (bool, error)
-}
-
 func parseReplacementTimes(val string) ([]time.Duration, error) {
 	var res []time.Duration
 	var lastReplacementTime time.Duration

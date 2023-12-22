@@ -1180,6 +1180,10 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			b.firstEphemeralError = time.Time{}
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				// Shutting down. No need to print the context canceled error.
+				return 0
+			}
 			b.building = nil
 			logLevel := log.Error
 			if b.firstEphemeralError == (time.Time{}) {
@@ -1194,8 +1198,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			ignoreAtFirst := errors.Is(err, dataposter.ErrExceedsMaxMempoolSize) ||
 				errors.Is(err, storage.ErrStorageRace) ||
 				errors.Is(err, ErrNormalGasEstimationFailed) ||
-				errors.Is(err, AccumulatorNotFoundErr) ||
-				errors.Is(err, context.Canceled)
+				errors.Is(err, AccumulatorNotFoundErr)
 			if sinceFirstEphemeralError < time.Minute {
 				if ignoreAtFirst {
 					logLevel = log.Debug
