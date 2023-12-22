@@ -87,7 +87,6 @@ type L1ValidatorConfig struct {
 	GasRefunderAddress        string                      `koanf:"gas-refunder-address"`
 	DataPoster                dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                  string                      `koanf:"redis-url"`
-	RedisLock                 redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
 	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
@@ -154,7 +153,6 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	GasRefunderAddress:        "",
 	DataPoster:                dataposter.DefaultDataPosterConfigForValidator,
 	RedisUrl:                  "",
-	RedisLock:                 redislock.DefaultCfg,
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
@@ -175,7 +173,6 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	GasRefunderAddress:        "",
 	DataPoster:                dataposter.TestDataPosterConfigForValidator,
 	RedisUrl:                  "",
-	RedisLock:                 redislock.DefaultCfg,
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,

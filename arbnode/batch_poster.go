@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"github.com/go-redis/redis/v8"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
@@ -30,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -118,7 +118,6 @@ type BatchPosterConfig struct {
 	DataPoster         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl           string                      `koanf:"redis-url"`
 	RedisLock          redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	EnableRedisLock    bool                        `koanf:"enable-redis-lock"`
 	ExtraBatchGas      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
@@ -167,7 +166,6 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
-	f.Bool(prefix+".enable-redis-lock", DefaultBatchPosterConfig.EnableRedisLock, "if a Redis URL is specified, ensure only one batch poster attempts to post batches at a time")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
@@ -193,7 +191,6 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
 	RedisLock:          redislock.DefaultCfg,
-	EnableRedisLock:    true,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -219,7 +216,6 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
-	EnableRedisLock:    true,
 }
 
 type BatchPosterOpts struct {
@@ -259,11 +255,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
 		return &simpleRedisLockConfig
 	}
-	var redisClientForLock redis.UniversalClient
-	if opts.Config().EnableRedisLock {
-		redisClientForLock = redisClient
-	}
-	redisLock, err := redislock.NewSimple(redisClientForLock, redisLockConfigFetcher, func() bool { return opts.SyncMonitor.Synced() })
+	redisLock, err := redislock.NewSimple(redisClient, redisLockConfigFetcher, func() bool { return opts.SyncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +287,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			HeaderReader:      opts.L1Reader,
 			Auth:              opts.TransactOpts,
 			RedisClient:       redisClient,
-			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
@@ -779,6 +770,8 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
+var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
+
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
@@ -799,7 +792,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 			AccessList: realAccessList,
 		})
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
 		}
 		return gas + config.ExtraBatchGas, nil
 	}
@@ -1021,6 +1014,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, errAttemptLockFailed
 		}
 
+		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		if err != nil {
+			return false, err
+		}
+		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
@@ -1057,9 +1058,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	})
 	if err != nil {
 		return false, err
-	}
-	if !b.redisLock.AttemptLock(ctx) {
-		return false, errAttemptLockFailed
 	}
 	tx, err := b.dataPoster.PostTransaction(ctx,
 		firstMsgTime,
@@ -1184,14 +1182,27 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			// Likely the inbox tracker just isn't caught up.
-			// Let's see if this error disappears naturally.
 			if b.firstEphemeralError == (time.Time{}) {
 				b.firstEphemeralError = time.Now()
-				logLevel = log.Warn
-			} else if time.Since(b.firstEphemeralError) < time.Minute {
-				logLevel = log.Warn
-			} else if time.Since(b.firstEphemeralError) < time.Minute*5 && strings.Contains(err.Error(), "will exceed max mempool size") {
+			}
+			// Likely the inbox tracker just isn't caught up, or there's some other ephemeral error.
+			// Let's see if this error disappears naturally.
+			sinceFirstEphemeralError := time.Since(b.firstEphemeralError)
+			// If the error matches one of these, it's only logged at debug for the first minute,
+			// then at warn for the next 4 minutes, then at error. If the error isn't one of these,
+			// it'll be logged at warn for the first minute, then at error.
+			ignoreAtFirst := errors.Is(err, dataposter.ErrExceedsMaxMempoolSize) ||
+				errors.Is(err, storage.ErrStorageRace) ||
+				errors.Is(err, ErrNormalGasEstimationFailed) ||
+				errors.Is(err, AccumulatorNotFoundErr) ||
+				errors.Is(err, context.Canceled)
+			if sinceFirstEphemeralError < time.Minute {
+				if ignoreAtFirst {
+					logLevel = log.Debug
+				} else {
+					logLevel = log.Warn
+				}
+			} else if sinceFirstEphemeralError < time.Minute*5 && ignoreAtFirst {
 				logLevel = log.Warn
 			}
 			logLevel("error posting batch", "err", err)

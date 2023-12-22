@@ -57,7 +57,6 @@ type DataPoster struct {
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
 	signer            signerFn
-	redisLock         AttemptLocker
 	config            ConfigFetcher
 	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
@@ -115,7 +114,6 @@ type DataPosterOpts struct {
 	HeaderReader      *headerreader.HeaderReader
 	Auth              *bind.TransactOpts
 	RedisClient       redis.UniversalClient
-	RedisLock         AttemptLocker
 	Config            ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
@@ -176,7 +174,6 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		replacementTimes:    replacementTimes,
 		metadataRetriever:   opts.MetadataRetriever,
 		queue:               queue,
-		redisLock:           opts.RedisLock,
 		errorCount:          make(map[uint64]int),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
@@ -289,6 +286,8 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	return p.config().MaxMempoolTransactions
 }
 
+var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
+
 // Does basic check whether posting transaction with specified nonce would
 // result in exceeding maximum queue length or maximum transactions in mempool.
 func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) error {
@@ -311,7 +310,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
-			return fmt.Errorf("posting a transaction with nonce: %d will exceed max mempool size: %d, unconfirmed nonce: %d", nextNonce, cfg.MaxMempoolTransactions, unconfirmedNonce)
+			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
 		}
 	}
 	return nil
@@ -534,7 +533,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, err
 	}
 	if nonce != expectedNonce {
-		return nil, fmt.Errorf("data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", expectedNonce, nonce)
+		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce, nonce)
 	}
 
 	err = p.updateBalance(ctx)
@@ -775,16 +774,10 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Error("Failed to fetch tx queue contents", "err", err)
 			return minWait
 		}
-		tryToReplace, err := p.redisLock.CouldAcquireLock(ctx)
-		if err != nil {
-			log.Warn("Error checking if we could acquire redis lock", "err", err)
-			// Might as well try, worst case we hit contention on redis and fail
-			tryToReplace = true
-		}
 		for index, tx := range queueContents {
 			backlogOfBatches := len(queueContents) - index - 1
 			replacing := false
-			if tryToReplace && now.After(tx.NextReplacement) {
+			if now.After(tx.NextReplacement) {
 				replacing = true
 				err := p.replaceTx(ctx, tx, uint64(backlogOfBatches))
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")

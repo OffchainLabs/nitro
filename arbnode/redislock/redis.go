@@ -29,6 +29,7 @@ type Simple struct {
 }
 
 type SimpleCfg struct {
+	Enable          bool          `koanf:"enable"`
 	MyId            string        `koanf:"my-id"`
 	LockoutDuration time.Duration `koanf:"lockout-duration" reload:"hot"`
 	RefreshDuration time.Duration `koanf:"refresh-duration" reload:"hot"`
@@ -39,6 +40,7 @@ type SimpleCfg struct {
 type SimpleCfgFetcher func() *SimpleCfg
 
 func AddConfigOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultCfg.Enable, "if false, always treat this as locked and don't write the lock to redis")
 	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultCfg.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultCfg.RefreshDuration, "how long between consecutive calls to redis")
@@ -60,6 +62,7 @@ func NewSimple(client redis.UniversalClient, config SimpleCfgFetcher, readyToLoc
 }
 
 var DefaultCfg = SimpleCfg{
+	Enable:          true,
 	LockoutDuration: time.Minute,
 	RefreshDuration: time.Second * 10,
 	Key:             "",
@@ -137,7 +140,7 @@ func (l *Simple) AttemptLock(ctx context.Context) bool {
 }
 
 func (l *Simple) Locked() bool {
-	if l.client == nil {
+	if l.client == nil || !l.config().Enable {
 		return true
 	}
 	return time.Now().Before(atomicTimeRead(&l.lockedUntil))
