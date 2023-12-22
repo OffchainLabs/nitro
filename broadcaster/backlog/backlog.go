@@ -379,7 +379,7 @@ func (s *backlogSegment) Contains(i uint64) bool {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
 	start := s.start()
-	if i < start || i > s.end() {
+	if i < start || i > s.end() || len(s.messages) == 0 {
 		return false
 	}
 
