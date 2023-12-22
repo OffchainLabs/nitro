@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
-	"github.com/offchainlabs/nitro/cmd/prunning"
+	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -167,7 +167,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, err
 				}
-				err = prunning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
+				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
@@ -363,7 +363,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return chainDb, l2BlockChain, err
 	}
 
-	err = prunning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
+	err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 	if err != nil {
 		return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 	}

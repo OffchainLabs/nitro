@@ -1,4 +1,4 @@
-package prunning
+package pruning
 
 import (
 	"context"
