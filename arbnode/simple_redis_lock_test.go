@@ -48,6 +48,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 	Require(t, redisClient.Del(ctx, redisKey).Err())
 
 	conf := &redislock.SimpleCfg{
+		Enable:          true,
 		LockoutDuration: test_delay * test_attempts * 10,
 		RefreshDuration: test_delay * 2,
 		Key:             redisKey,
