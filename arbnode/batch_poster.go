@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -286,7 +287,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			HeaderReader:      opts.L1Reader,
 			Auth:              opts.TransactOpts,
 			RedisClient:       redisClient,
-			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
@@ -770,6 +770,8 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
+var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
+
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
@@ -790,7 +792,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 			AccessList: realAccessList,
 		})
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
 		}
 		return gas + config.ExtraBatchGas, nil
 	}
@@ -829,6 +831,8 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 }
 
 const ethPosBlockTime = 12 * time.Second
+
+var errAttemptLockFailed = errors.New("failed to acquire lock; either another batch poster posted a batch or this node fell behind")
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	if b.batchReverted.Load() {
@@ -1006,6 +1010,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if b.daWriter != nil {
+		if !b.redisLock.AttemptLock(ctx) {
+			return false, errAttemptLockFailed
+		}
+
+		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		if err != nil {
+			return false, err
+		}
+		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
@@ -1149,8 +1165,17 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
 			}
 		}
-		if !b.redisLock.AttemptLock(ctx) {
+		couldLock, err := b.redisLock.CouldAcquireLock(ctx)
+		if err != nil {
+			log.Warn("Error checking if we could acquire redis lock", "err", err)
+			// Might as well try, worst case we fail to lock
+			couldLock = true
+		}
+		if !couldLock {
+			log.Debug("Not posting batches right now because another batch poster has the lock or this node is behind")
 			b.building = nil
+			commonEphemeralErrorHandler.Reset()
+			exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
@@ -1159,6 +1184,10 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				// Shutting down. No need to print the context canceled error.
+				return 0
+			}
 			b.building = nil
 			logLevel := log.Error
 			// Likely the inbox tracker just isn't caught up.
