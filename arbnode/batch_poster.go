@@ -1164,7 +1164,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
 			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
-			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = exceedMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
