@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,10 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/relay"
 )
-
-func init() {
-	http.DefaultServeMux = http.NewServeMux()
-}
 
 func main() {
 	if err := startup(); err != nil {

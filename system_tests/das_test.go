@@ -179,7 +179,7 @@ func TestDASRekey(t *testing.T) {
 	l2chainDb, err := l2stackA.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
 
-	l2arbDb, err := l2stackA.OpenDatabase("arbdb", 0, 0, "", false)
+	l2arbDb, err := l2stackA.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	Require(t, err)
 
 	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, nil, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
