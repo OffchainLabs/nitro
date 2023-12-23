@@ -77,7 +77,6 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			nextSegment := newBacklogSegment()
 			segment.nextSegment.Store(nextSegment)
 			prevMsgIdx = segment.End()
-			nextSegment.previousSegment.Store(segment)
 			segment = nextSegment
 			b.tail.Store(segment)
 		}
@@ -253,10 +252,9 @@ type BacklogSegment interface {
 // backlogSegment stores messages up to a limit defined by the backlog. It also
 // points to the next backlogSegment in the list.
 type backlogSegment struct {
-	messagesLock    sync.RWMutex
-	messages        []*m.BroadcastFeedMessage
-	nextSegment     atomic.Pointer[backlogSegment]
-	previousSegment atomic.Pointer[backlogSegment]
+	messagesLock sync.RWMutex
+	messages     []*m.BroadcastFeedMessage
+	nextSegment  atomic.Pointer[backlogSegment]
 }
 
 // newBacklogSegment creates a backlogSegment object with an empty slice of
