@@ -731,8 +731,6 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	// config is the static config at start, not a dynamic config
-	config := n.configFetcher.Get()
 	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {
 		execClient = nil
