@@ -764,7 +764,7 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
 		}
 	}
-	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer {
+	if n.InboxTracker != nil && n.BroadcastServer != nil {
 		// Even if the sequencer coordinator will populate this backlog,
 		// we want to make sure it's populated before any clients connect.
 		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
