@@ -205,6 +205,8 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	f.targets = targets
 	if len(f.rpcClients) > 0 {
 		f.enabled.Store(true)
+	} else if lastError == nil {
+		return errors.New("no non-empty forwarding targets specified")
 	} else {
 		return lastError
 	}

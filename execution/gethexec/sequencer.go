@@ -487,7 +487,7 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 func (s *Sequencer) ForwardTarget() string {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
-	if s.forwarder == nil {
+	if s.forwarder == nil || len(s.forwarder.targets) == 0 {
 		return ""
 	}
 	return s.forwarder.targets[0]
@@ -497,7 +497,7 @@ func (s *Sequencer) ForwardTo(url string) error {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
-		if s.forwarder.targets[0] == url {
+		if len(s.forwarder.targets) > 0 && s.forwarder.targets[0] == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
 			return nil
 		}
