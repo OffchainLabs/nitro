@@ -161,7 +161,7 @@ const maxHealthTimeout = 10 * time.Second
 
 // CheckHealth returns health of the highest priority forwarding target
 func (f *TxForwarder) CheckHealth(inctx context.Context) error {
-	// If f.enabled is false, len(f.rpcClients) should always be greater than zero,
+	// If f.enabled is true, len(f.rpcClients) should always be greater than zero,
 	// but better safe than sorry.
 	if !f.enabled.Load() || len(f.rpcClients) == 0 {
 		return ErrNoSequencer
