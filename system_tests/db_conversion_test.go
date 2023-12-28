@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -9,24 +10,25 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 )
 
 func TestDatabaseConversion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var dataDir string
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l2StackConfig.DBEngine = "leveldb"
 	builder.l2StackConfig.Name = "testl2"
 	builder.execConfig.Caching.Archive = true
-	cleanup := builder.Build(t)
-	dataDir = builder.dataDir
-	cleanupDone := false
-	defer func() {
-		if !cleanupDone { // TODO we should be able to call cleanup twice, rn it gets stuck then
-			cleanup()
+	_ = builder.Build(t)
+	dataDir := builder.dataDir
+	l2CleanupDone := false
+	defer func() { // TODO we should be able to call cleanup twice, rn it gets stuck then
+		if !l2CleanupDone {
+			builder.L2.cleanup()
 		}
+		builder.L1.cleanup()
 	}()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
@@ -40,60 +42,60 @@ func TestDatabaseConversion(t *testing.T) {
 		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
-	cleanupDone = true
-	cleanup()
+	l2CleanupDone = true
+	builder.L2.cleanup()
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
-	err := os.Rename(filepath.Join(instanceDir, "chaindb"), filepath.Join(instanceDir, "chaindb_old"))
-	Require(t, err)
-	t.Log("converting chaindb...")
-	func() {
-		oldDBConfig := dbconv.DBConfigDefault
-		oldDBConfig.Data = path.Join(instanceDir, "chaindb_old")
-		oldDBConfig.DBEngine = "leveldb"
-		newDBConfig := dbconv.DBConfigDefault
-		newDBConfig.Data = path.Join(instanceDir, "chaindb")
-		newDBConfig.DBEngine = "pebble"
-		convConfig := dbconv.DefaultDBConvConfig
-		convConfig.Src = oldDBConfig
-		convConfig.Dst = newDBConfig
-		convConfig.Threads = 32
-		conv := dbconv.NewDBConverter(&convConfig)
-		err := conv.Convert(ctx)
+	for _, dbname := range []string{"chaindb", "arbitrumdata"} {
+		err := os.Rename(filepath.Join(instanceDir, dbname), filepath.Join(instanceDir, fmt.Sprintf("%s_old", dbname)))
 		Require(t, err)
-	}()
-	t.Log("converting arbitrumdata...")
-	err = os.Rename(filepath.Join(instanceDir, "arbitrumdata"), filepath.Join(instanceDir, "arbitrumdata_old"))
-	Require(t, err)
-	func() {
-		oldDBConfig := dbconv.DBConfigDefault
-		oldDBConfig.Data = path.Join(instanceDir, "arbitrumdata_old")
-		oldDBConfig.DBEngine = "leveldb"
-		newDBConfig := dbconv.DBConfigDefault
-		newDBConfig.Data = path.Join(instanceDir, "arbitrumdata")
-		newDBConfig.DBEngine = "pebble"
-		convConfig := dbconv.DefaultDBConvConfig
-		convConfig.Src = oldDBConfig
-		convConfig.Dst = newDBConfig
-		convConfig.Threads = 32
-		conv := dbconv.NewDBConverter(&convConfig)
-		err := conv.Convert(ctx)
-		Require(t, err)
-	}()
+		t.Log("converting:", dbname)
+		func() {
+			oldDBConfig := dbconv.DBConfigDefault
+			oldDBConfig.Data = path.Join(instanceDir, fmt.Sprintf("%s_old", dbname))
+			oldDBConfig.DBEngine = "leveldb"
+			newDBConfig := dbconv.DBConfigDefault
+			newDBConfig.Data = path.Join(instanceDir, dbname)
+			newDBConfig.DBEngine = "pebble"
+			convConfig := dbconv.DefaultDBConvConfig
+			convConfig.Src = oldDBConfig
+			convConfig.Dst = newDBConfig
+			convConfig.Threads = 32
+			conv := dbconv.NewDBConverter(&convConfig)
+			err := conv.Convert(ctx)
+			Require(t, err)
+		}()
+	}
 
-	builder = NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.l2StackConfig.Name = "testl2"
 	builder.l2StackConfig.DBEngine = "pebble"
-	builder.dataDir = dataDir
-	cleanup = builder.Build(t)
+	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
 	defer cleanup()
 
-	builder.L2Info.GenerateAccount("User2")
 	t.Log("sending test tx")
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
-	err = builder.L2.Client.SendTransaction(ctx, tx)
+	err := testClient.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
+	_, err = testClient.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	bc = testClient.ExecNode.Backend.ArbInterface().BlockChain()
+	current := bc.CurrentBlock()
+	if current == nil {
+		Fatal(t, "failed to get current block header")
+	}
+	triedb := bc.StateCache().TrieDB()
+	for i := uint64(0); i <= current.Number.Uint64(); i++ {
+		header := bc.GetHeaderByNumber(i)
+		_, err := bc.StateAt(header.Root)
+		Require(t, err)
+		tr, err := trie.New(trie.TrieID(header.Root), triedb)
+		Require(t, err)
+		it, err := tr.NodeIterator(nil)
+		Require(t, err)
+		for it.Next(true) {
+		}
+		Require(t, it.Error())
+	}
 }
