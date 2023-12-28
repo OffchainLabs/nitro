@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -38,42 +37,23 @@ func (c *DBConverter) copyEntries(ctx context.Context, prefix []byte) error {
 	it := c.src.NewIterator(prefix, nil)
 	defer it.Release()
 	batch := c.dst.NewBatch()
-	var lastKey []byte
-	var lastKeyInBatch []byte
+	// TODO support restarting in case of an interruption
 	for it.Next() && ctx.Err() == nil {
 		key, value := it.Key(), it.Value()
 		if err := batch.Put(key, value); err != nil {
 			return err
 		}
-		lastKeyInBatch = key
 		if batch.ValueSize() >= ethdb.IdealBatchSize {
 			if err := batch.Write(); err != nil {
 				return err
 			}
-			lastKey = lastKeyInBatch
 			batch.Reset()
 		}
 	}
 	if err := batch.Write(); err != nil {
 		return err
 	}
-	lastKey = lastKeyInBatch
-	_ = lastKey // TODO add saving info about last written key and allow restarting in case of an interruption
 	return nil
-}
-
-func entriesAndShortestKey(db ethdb.Database) (entries uint, shortest int) {
-	shortest = math.MaxInt
-	it := db.NewIterator(nil, nil)
-	for it.Next() {
-		entries++
-		key := it.Key()
-		if len(key) < shortest {
-			shortest = len(key)
-		}
-	}
-	it.Release()
-	return
 }
 
 func (c *DBConverter) Convert(ctx context.Context) error {
