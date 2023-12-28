@@ -259,11 +259,11 @@ func (ps *L1PricingState) AddToL1FeesAvailable(delta *big.Int) (*big.Int, error)
 	if err != nil {
 		return nil, err
 	}
-	newFee := new(big.Int).Add(old, delta)
-	if err := ps.SetL1FeesAvailable(newFee); err != nil {
+	new := new(big.Int).Add(old, delta)
+	if err := ps.SetL1FeesAvailable(new); err != nil {
 		return nil, err
 	}
-	return newFee, nil
+	return new, nil
 }
 
 func (ps *L1PricingState) TransferFromL1FeesAvailable(

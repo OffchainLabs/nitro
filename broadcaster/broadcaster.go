@@ -89,8 +89,8 @@ func (b *Broadcaster) BroadcastMessages(messages []arbostypes.MessageWithMetadat
 		}
 	}()
 	var feedMessages []*m.BroadcastFeedMessage
-	for _, msg := range messages {
-		bfm, err := b.NewBroadcastFeedMessage(msg, seq)
+	for i, msg := range messages {
+		bfm, err := b.NewBroadcastFeedMessage(msg, seq+arbutil.MessageIndex(i))
 		if err != nil {
 			return err
 		}
