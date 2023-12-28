@@ -42,7 +42,6 @@ func TestConversion(t *testing.T) {
 	config.Dst = newDBConfig
 	config.Threads = 32
 	conv := NewDBConverter(&config)
-	defer conv.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	err := conv.Convert(ctx)
@@ -61,12 +60,12 @@ func TestConversion(t *testing.T) {
 		defer it.Release()
 		for it.Next() {
 			if has, _ := newDb.Has(it.Key()); !has {
-				t.Log("Missing key in converted db, key:", it.Key())
+				t.Log("Missing key in the converted db, key:", it.Key())
 			}
 			newValue, err := newDb.Get(it.Key())
 			Require(t, err)
 			if !bytes.Equal(newValue, it.Value()) {
-				Fail(t, "Value missmatch, old:", it.Value(), "new:", newValue)
+				Fail(t, "Value mismatch, old:", it.Value(), "new:", newValue)
 			}
 		}
 	}()
@@ -75,7 +74,7 @@ func TestConversion(t *testing.T) {
 		defer it.Release()
 		for it.Next() {
 			if has, _ := oldDb.Has(it.Key()); !has {
-				t.Log("Unexpected key in converted db, key:", it.Key())
+				Fail(t, "Unexpected key in the converted db, key:", it.Key())
 			}
 		}
 	}()
