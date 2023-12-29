@@ -2,14 +2,20 @@
 set -euo pipefail
 
 make all
+echo "Build passed"
 
 make lint
+echo "Lint passed"
 
 make test-go
+echo "Go tests passed"
+
 make test-go-challenge
+echo "Go challenge tests passed"
 
 container=$(docker run -d -p 6379:6379 redis)
 trap "exit" INT TERM
 trap "docker rm -f $container" EXIT
 
 make test-go-redis
+echo "Redis tests passed"
