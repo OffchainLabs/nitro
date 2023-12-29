@@ -137,6 +137,7 @@ func (c *Config) ValidatorRequired() bool {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
+	f.Bool(prefix+".espresso", ConfigDefault.Espresso, "enable the espresso sequencer integration")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
@@ -155,6 +156,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 
 var ConfigDefault = Config{
 	Sequencer:           false,
+	Espresso:            false,
 	ParentChainReader:   headerreader.DefaultConfig,
 	InboxReader:         DefaultInboxReaderConfig,
 	DelayedSequencer:    DefaultDelayedSequencerConfig,
