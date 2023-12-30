@@ -86,6 +86,7 @@ func TestDatabaseConversion(t *testing.T) {
 		Fatal(t, "failed to get current block header")
 	}
 	triedb := bc.StateCache().TrieDB()
+	visited := 0
 	for i := uint64(0); i <= current.Number.Uint64(); i++ {
 		header := bc.GetHeaderByNumber(i)
 		_, err := bc.StateAt(header.Root)
@@ -95,7 +96,9 @@ func TestDatabaseConversion(t *testing.T) {
 		it, err := tr.NodeIterator(nil)
 		Require(t, err)
 		for it.Next(true) {
+			visited++
 		}
 		Require(t, it.Error())
 	}
+	t.Log("visited nodes:", visited)
 }

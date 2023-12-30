@@ -1,13 +1,16 @@
 package dbconv
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type DBConverter struct {
@@ -33,27 +36,106 @@ func openDB(config *DBConfig, readonly bool) (ethdb.Database, error) {
 	})
 }
 
-func (c *DBConverter) copyEntries(ctx context.Context, prefix []byte) error {
-	it := c.src.NewIterator(prefix, nil)
+func middleKey(start []byte, end []byte) []byte {
+	if len(end) == 0 {
+		end = make([]byte, len(start))
+		for i := range end {
+			end[i] = 0xff
+		}
+	}
+	if len(start) > len(end) {
+		tmp := make([]byte, len(start))
+		copy(tmp, end)
+		end = tmp
+	} else if len(start) < len(end) {
+		tmp := make([]byte, len(end))
+		copy(tmp, start)
+		start = tmp
+	}
+	s := new(big.Int).SetBytes(start)
+	e := new(big.Int).SetBytes(end)
+	sum := new(big.Int).Add(s, e)
+	var m big.Int
+	var mid []byte
+	if sum.Bit(0) == 1 {
+		m.Lsh(sum, 7)
+		mid = make([]byte, len(start)+1)
+	} else {
+		m.Rsh(sum, 1)
+		mid = make([]byte, len(start))
+	}
+	m.FillBytes(mid)
+	return mid
+}
+
+func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte, wg *sync.WaitGroup, results chan error) {
+	log.Debug("copyEntries", "start", start, "end", end)
+	it := c.src.NewIterator(nil, start)
 	defer it.Release()
+	var err error
+	defer func() {
+		results <- err
+	}()
+
 	batch := c.dst.NewBatch()
 	// TODO support restarting in case of an interruption
+	n := 0
+	canFork := true
 	for it.Next() && ctx.Err() == nil {
-		key, value := it.Key(), it.Value()
-		if err := batch.Put(key, value); err != nil {
-			return err
+		key := it.Key()
+		n++
+		if n%10000 == 1 {
+			log.Debug("entry", "start", start, "end", end, "n", n, "len(key)", len(key))
 		}
-		if batch.ValueSize() >= ethdb.IdealBatchSize {
-			if err := batch.Write(); err != nil {
-				return err
+		if len(end) > 0 && bytes.Compare(key, end) >= 0 {
+			break
+		}
+		if err = batch.Put(key, it.Value()); err != nil {
+			return
+		}
+		if batch.ValueSize() >= c.config.IdealBatchSize {
+			if err = batch.Write(); err != nil {
+				return
 			}
 			batch.Reset()
+			if canFork {
+				select {
+				case err = <-results:
+					if err != nil {
+						return
+					}
+					if err = ctx.Err(); err != nil {
+						return
+					}
+					middle := middleKey(key, end)
+					if bytes.Compare(middle, key) > 0 && (len(end) == 0 || bytes.Compare(middle, end) < 0) {
+						// find next existing key after the middle to prevent the keys from growing too long
+						m := c.src.NewIterator(nil, middle)
+						if m.Next() {
+							middle = m.Key()
+							wg.Add(1)
+							go c.copyEntries(ctx, middle, end, wg, results)
+						} else {
+							results <- nil
+						}
+						end = middle
+						m.Release()
+					} else {
+						log.Warn("no more forking", "key", key, "middle", middle, "end", end)
+						canFork = false
+						results <- nil
+					}
+				default:
+				}
+			}
 		}
 	}
-	if err := batch.Write(); err != nil {
-		return err
+	if err = ctx.Err(); err == nil {
+		err = batch.Write()
 	}
-	return nil
+	log.Info("copyEntries done", "start", start, "end", end, "n", n)
+	wg.Done()
+	return
 }
 
 func (c *DBConverter) Convert(ctx context.Context) error {
@@ -88,18 +170,8 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		results <- nil
 	}
 	var wg sync.WaitGroup
-	for i := 0; ctx.Err() == nil && i <= 0xff; i++ {
-		err = <-results
-		if err != nil {
-			return err
-		}
-		prefix := []byte{byte(i)} // TODO make better prefixes, for now we are assuming that majority of keys are 32 byte hashes representing legacy trie nodes
-		wg.Add(1)
-		go func() {
-			results <- c.copyEntries(ctx, prefix)
-			wg.Done()
-		}()
-	}
+	wg.Add(1)
+	go c.copyEntries(ctx, []byte{0}, nil, &wg, results)
 	wg.Wait()
 drainLoop:
 	for {

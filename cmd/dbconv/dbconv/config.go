@@ -1,6 +1,7 @@
 package dbconv
 
 import (
+	"github.com/ethereum/go-ethereum/ethdb"
 	flag "github.com/spf13/pflag"
 )
 
@@ -23,15 +24,17 @@ func DBConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type DBConvConfig struct {
-	Src     DBConfig `koanf:"src"`
-	Dst     DBConfig `koanf:"dst"`
-	Threads uint8    `koanf:"threads"`
+	Src            DBConfig `koanf:"src"`
+	Dst            DBConfig `koanf:"dst"`
+	Threads        uint8    `koanf:"threads"`
+	IdealBatchSize int      `koanf:"ideal-batch"`
 }
 
-var DefaultDBConvConfig = DBConvConfig{}
+var DefaultDBConvConfig = DBConvConfig{IdealBatchSize: ethdb.IdealBatchSize}
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {
-	DBConfigAddOptions(".src", f)
-	DBConfigAddOptions(".dst", f)
+	DBConfigAddOptions("src", f)
+	DBConfigAddOptions("dst", f)
 	f.Uint8("threads", DefaultDBConvConfig.Threads, "number of threads to use (1-255, 0 = auto)")
+	f.Uint8("ideal-batch", DefaultDBConvConfig.Threads, "ideal write batch size") // TODO
 }
