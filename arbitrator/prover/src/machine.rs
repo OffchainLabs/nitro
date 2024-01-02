@@ -4,6 +4,7 @@
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
     host,
+    kzg::{BLS_MODULUS, ETHEREUM_KZG_SETTINGS, ROOT_OF_UNITY},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -15,13 +16,15 @@ use crate::{
     },
 };
 use arbutil::{Color, PreimageType};
+use c_kzg::FIELD_ELEMENTS_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
-use num::{traits::PrimInt, Zero};
+use num::{traits::PrimInt, BigUint, Zero};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use sha2::Sha256;
 use sha3::Keccak256;
 use smallvec::SmallVec;
 use std::{
@@ -1865,10 +1868,24 @@ impl Machine {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     let preimage_ty = PreimageType::try_from(u8::try_from(inst.argument_data)?)?;
+                    // Preimage reads must be word aligned
+                    if offset % 32 != 0 {
+                        error!();
+                    }
                     if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
                         if let Some(preimage) =
                             self.preimage_resolver.get(self.context, preimage_ty, hash)
                         {
+                            if preimage_ty == PreimageType::EthVersionedHash
+                                && preimage.len() != 32 * FIELD_ELEMENTS_PER_BLOB
+                            {
+                                bail!(
+                                    "kzg hash {} preimage should be {} bytes long but is instead {}",
+                                    hash,
+                                    32 * FIELD_ELEMENTS_PER_BLOB,
+                                    preimage.len(),
+                                );
+                            }
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                             let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -2269,6 +2286,11 @@ impl Machine {
                 next_inst.opcode,
                 Opcode::ReadPreImage | Opcode::ReadInboxMessage,
             ) {
+                let offset = self
+                    .value_stack
+                    .get(self.value_stack.len() - 1)
+                    .unwrap()
+                    .assume_u32();
                 let ptr = self
                     .value_stack
                     .get(self.value_stack.len() - 2)
@@ -2296,7 +2318,70 @@ impl Machine {
                                 None => panic!("Missing requested preimage for hash {}", hash),
                             };
                         data.push(0); // preimage proof type
-                        data.extend(preimage);
+                        match preimage_ty {
+                            PreimageType::Keccak256 | PreimageType::Sha2_256 => {
+                                // The proofs for these preimage types are just the raw preimages.
+                                data.extend(preimage);
+                            }
+                            PreimageType::EthVersionedHash => {
+                                let blob = c_kzg::Blob::from_bytes(&preimage)
+                                    .expect("Failed to generate KZG blob from preimage");
+                                let commitment = c_kzg::KzgCommitment::blob_to_kzg_commitment(
+                                    &blob,
+                                    &ETHEREUM_KZG_SETTINGS,
+                                )
+                                .expect("Failed to generate KZG commitment from blob");
+                                let mut expected_hash: Bytes32 =
+                                    Sha256::digest(&*commitment).into();
+                                expected_hash[0] = 1;
+                                if hash != expected_hash {
+                                    panic!(
+                                        "Trying to prove versioned hash {} preimage but recomputed hash {}",
+                                        hash,
+                                        expected_hash,
+                                    );
+                                }
+                                if offset % 32 != 0 {
+                                    panic!(
+                                        "Cannot prove blob preimage at unaligned offset {}",
+                                        offset,
+                                    );
+                                }
+                                let offset_usize = usize::try_from(offset).unwrap();
+                                let mut proving_offset = offset;
+                                let proving_past_end = offset_usize >= preimage.len();
+                                if proving_past_end {
+                                    // Proving any offset proves the length which is all we need here,
+                                    // because we're past the end of the preimage.
+                                    proving_offset = 0;
+                                }
+                                let exp = (proving_offset / 32).reverse_bits()
+                                    >> (u32::BITS - FIELD_ELEMENTS_PER_BLOB.trailing_zeros());
+                                let z = ROOT_OF_UNITY.modpow(&BigUint::from(exp), &BLS_MODULUS);
+                                let z_bytes = z.to_bytes_be();
+                                let mut padded_z_bytes = [0u8; 32];
+                                padded_z_bytes[32 - z_bytes.len()..].copy_from_slice(&z_bytes);
+                                let z_bytes = c_kzg::Bytes32::from(padded_z_bytes);
+                                let (kzg_proof, proven_y) = c_kzg::KzgProof::compute_kzg_proof(
+                                    &blob,
+                                    &z_bytes,
+                                    &ETHEREUM_KZG_SETTINGS,
+                                )
+                                .expect("Failed to generate KZG proof from blob and z");
+                                if !proving_past_end {
+                                    assert_eq!(
+                                        &*proven_y,
+                                        &preimage[offset_usize..offset_usize + 32],
+                                        "KZG proof produced wrong preimage",
+                                    );
+                                }
+                                data.extend(hash);
+                                data.extend(*z_bytes);
+                                data.extend(*proven_y);
+                                data.extend(*commitment);
+                                data.extend(kzg_proof.to_bytes().as_slice());
+                            }
+                        }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
                         let msg_idx = self
                             .value_stack
