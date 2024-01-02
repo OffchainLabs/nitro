@@ -48,7 +48,7 @@ lazy_static::lazy_static! {
         // order 2^32
         let root: BigUint = "10238227357739495823651030575849232062558860180284477541189508159991286009131".parse().unwrap();
         let exponent = (1_u64 << 32) / (FIELD_ELEMENTS_PER_BLOB as u64);
-        root.modpow(&BigUint::from(exponent), &*BLS_MODULUS)
+        root.modpow(&BigUint::from(exponent), &BLS_MODULUS)
     };
 }
 
