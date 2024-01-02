@@ -1145,8 +1145,18 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
-	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "")
-	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, "will exceed max mempool size")
+	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0, nil)
+	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute, log.Debug)
+	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute, log.Debug)
+	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute, log.Debug)
+	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute, log.Debug)
+	resetAllEphemeralErrs := func() {
+		commonEphemeralErrorHandler.Reset()
+		exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
+		storageRaceEphemeralErrorHandler.Reset()
+		normalGasEstimationFailedEphemeralErrorHandler.Reset()
+		accumulatorNotFoundEphemeralErrorHandler.Reset()
+	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -1174,14 +1184,12 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if !couldLock {
 			log.Debug("Not posting batches right now because another batch poster has the lock or this node is behind")
 			b.building = nil
-			commonEphemeralErrorHandler.Reset()
-			exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
+			resetAllEphemeralErrs()
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
-			commonEphemeralErrorHandler.Reset()
-			exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
+			resetAllEphemeralErrs()
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1193,7 +1201,13 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
 			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
+			// If the error matches one of these, it's only logged at debug for the first minute,
+			// then at warn for the next 4 minutes, then at error. If the error isn't one of these,
+			// it'll be logged at warn for the first minute, then at error.
 			logLevel = exceedMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = storageRaceEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = normalGasEstimationFailedEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = accumulatorNotFoundEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {

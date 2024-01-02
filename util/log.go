@@ -13,13 +13,18 @@ type EphemeralErrorHandler struct {
 	Duration        time.Duration
 	ErrorString     string
 	FirstOccurrence *time.Time
+
+	IgnoreDuration     time.Duration
+	IgnoredErrLogLevel func(string, ...interface{}) // Default IgnoredErrLogLevel is log.Debug
 }
 
-func NewEphemeralErrorHandler(duration time.Duration, errorString string) *EphemeralErrorHandler {
+func NewEphemeralErrorHandler(duration time.Duration, errorString string, ignoreDuration time.Duration, ignoredErrLogLevel func(msg string, ctx ...interface{})) *EphemeralErrorHandler {
 	return &EphemeralErrorHandler{
-		Duration:        duration,
-		ErrorString:     errorString,
-		FirstOccurrence: &time.Time{},
+		Duration:           duration,
+		ErrorString:        errorString,
+		FirstOccurrence:    &time.Time{},
+		IgnoreDuration:     ignoreDuration,
+		IgnoredErrLogLevel: ignoredErrLogLevel,
 	}
 }
 
@@ -37,6 +42,13 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 	if h.ErrorString != "" && !strings.Contains(err.Error(), h.ErrorString) {
 		h.Reset()
 		return currentLogLevel
+	}
+
+	if h.IgnoreDuration != 0 && time.Since(*h.FirstOccurrence) < h.IgnoreDuration {
+		if h.IgnoredErrLogLevel != nil {
+			return h.IgnoredErrLogLevel
+		}
+		return log.Debug
 	}
 
 	logLevel := log.Error
