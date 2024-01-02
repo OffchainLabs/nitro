@@ -402,7 +402,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
-	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0, nil)
+	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()

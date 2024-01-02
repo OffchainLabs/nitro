@@ -18,18 +18,19 @@ type EphemeralErrorHandler struct {
 	IgnoredErrLogLevel func(string, ...interface{}) // Default IgnoredErrLogLevel is log.Debug
 }
 
-func NewEphemeralErrorHandler(duration time.Duration, errorString string, ignoreDuration time.Duration, ignoredErrLogLevel func(msg string, ctx ...interface{})) *EphemeralErrorHandler {
+func NewEphemeralErrorHandler(duration time.Duration, errorString string, ignoreDuration time.Duration) *EphemeralErrorHandler {
 	return &EphemeralErrorHandler{
 		Duration:           duration,
 		ErrorString:        errorString,
 		FirstOccurrence:    &time.Time{},
 		IgnoreDuration:     ignoreDuration,
-		IgnoredErrLogLevel: ignoredErrLogLevel,
+		IgnoredErrLogLevel: log.Debug,
 	}
 }
 
-// LogLevel method defaults to returning the input currentLogLevel if the givenerror doesnt contain the errorSubstring,
+// LogLevel method defaults to returning the input currentLogLevel if the given error doesnt contain the errorSubstring,
 // but if it does, then returns one of the corresponding loglevels as follows
+//   - IgnoredErrLogLevel - if the error has been repeating for less than the IgnoreDuration of time. Defaults to log.Debug
 //   - log.Warn - if the error has been repeating for less than the given duration of time
 //   - log.Error - Otherwise
 //
@@ -44,6 +45,10 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 		return currentLogLevel
 	}
 
+	if *h.FirstOccurrence == (time.Time{}) {
+		*h.FirstOccurrence = time.Now()
+	}
+
 	if h.IgnoreDuration != 0 && time.Since(*h.FirstOccurrence) < h.IgnoreDuration {
 		if h.IgnoredErrLogLevel != nil {
 			return h.IgnoredErrLogLevel
@@ -51,14 +56,10 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 		return log.Debug
 	}
 
-	logLevel := log.Error
-	if *h.FirstOccurrence == (time.Time{}) {
-		*h.FirstOccurrence = time.Now()
-		logLevel = log.Warn
-	} else if time.Since(*h.FirstOccurrence) < h.Duration {
-		logLevel = log.Warn
+	if time.Since(*h.FirstOccurrence) < h.Duration {
+		return log.Warn
 	}
-	return logLevel
+	return log.Error
 }
 
 func (h *EphemeralErrorHandler) Reset() {
