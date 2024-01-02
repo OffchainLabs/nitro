@@ -456,13 +456,13 @@ func mainImpl() int {
 			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
 			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
 			if err != nil {
-				log.Error("failed to create machine locator", "err", err)
-				return 1
-			}
-			path := locator.GetMachinePath(moduleRoot)
-			if _, err := os.Stat(path); err != nil {
-				log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-				return 1
+				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
+			} else {
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err != nil {
+					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
+					return 1
+				}
 			}
 		}
 	}
@@ -677,7 +677,7 @@ type NodeConfig struct {
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf         bool                            `koanf:"pprof"`
 	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
-	Init          InitConfig                      `koanf:"init"`
+	Init          conf.InitConfig                 `koanf:"init"`
 	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
 
@@ -699,7 +699,7 @@ var NodeConfigDefault = NodeConfig{
 	GraphQL:       genericconf.GraphQLConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
-	Init:          InitConfigDefault,
+	Init:          conf.InitConfigDefault,
 	Rpc:           genericconf.DefaultRpcConfig,
 	PProf:         false,
 	PprofCfg:      genericconf.PProfDefault,
@@ -726,7 +726,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("pprof", NodeConfigDefault.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
-	InitConfigAddOptions("init", f)
+	conf.InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 }
 
@@ -784,6 +784,9 @@ func (c *NodeConfig) Validate() error {
 		return err
 	}
 	if err := c.Node.Validate(); err != nil {
+		return err
+	}
+	if err := c.Execution.Validate(); err != nil {
 		return err
 	}
 	return c.Persistent.Validate()
@@ -890,7 +893,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
-	if chainInfo.SequencerUrl != "" {
+	// Only use chainInfo.SequencerUrl as default forwarding-target if sequencer is not enabled
+	if !k.Bool("execution.sequencer.enable") && chainInfo.SequencerUrl != "" {
 		chainDefaults["execution.forwarding-target"] = chainInfo.SequencerUrl
 	}
 	if chainInfo.SecondaryForwardingTarget != "" {
@@ -921,9 +925,12 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
+		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
+		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
+		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1000000
+		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
