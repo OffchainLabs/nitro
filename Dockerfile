@@ -85,7 +85,7 @@ FROM rust:1.70-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make && \
+    apt-get install -y make clang && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
 COPY ./Makefile ./
@@ -97,15 +97,12 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.70-slim-bullseye as prover-builder
+FROM rust:1.75-slim-bookworm as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev wabt
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-12 main' && \
-    apt-get update && \
-    apt-get install -y llvm-12-dev libclang-common-12-dev
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev \
+        libstdc++-11-dev wabt clang llvm-dev libclang-common-14-dev libpolly-14-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
