@@ -461,6 +461,28 @@ pub trait UserHost: GasMeteredMachine {
         trace!("account_balance", self, address, balance)
     }
 
+    /// Copies the code of the given account into `dest`. Start at `offset`
+    /// bytes into the code, and write at most `size` bytes.  Returns the number
+    /// of bytes actually written.
+    ///
+    /// ['CODECOPY'] https://www.evm.codes/#39
+    fn account_code(
+        &mut self,
+        address: u32,
+        offset: u32,
+        size: u32,
+        dest: u32,
+    ) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK + EVM_API_INK + size as u64)?;
+        let address = self.read_bytes20(address)?;
+
+        let (code, gas_cost) = self.evm_api().account_code(address, offset, size);
+        self.write_slice(dest, &code)?;
+
+        self.buy_gas(gas_cost)?;
+        trace!("account_code", self, address, be!(size), code.len() as u32)
+    }
+
     /// Gets the code hash of the account at the given address. The semantics are equivalent
     /// to that of the EVM's [`EXT_CODEHASH`] opcode. Note that the code hash of an account without
     /// code will be the empty hash
@@ -475,6 +497,18 @@ pub trait UserHost: GasMeteredMachine {
         self.buy_gas(gas_cost)?;
         self.write_bytes32(ptr, hash)?;
         trace!("account_codehash", self, address, hash)
+    }
+
+    /// Return the size of the code at the given `address`.
+    ///
+    /// ['CODESIZE'] https://www.evm.codes/#38
+    fn account_code_size(&mut self, address: u32) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        let address = self.read_bytes20(address)?;
+
+        let (len, gas_cost) = self.evm_api().account_code_size(address);
+        self.buy_gas(gas_cost)?;
+        trace!("account_code_size", self, address, &[], len)
     }
 
     /// Gets the basefee of the current block. The semantics are equivalent to that of the EVM's

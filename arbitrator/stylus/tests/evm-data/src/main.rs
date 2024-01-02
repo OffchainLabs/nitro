@@ -3,6 +3,9 @@
 
 #![no_main]
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},
     block,
@@ -24,6 +27,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let eth_precompile_codehash = eth_precompile_addr.codehash();
     let arb_precompile_codehash = arb_test_addr.codehash();
     let contract_codehash = contract_addr.codehash();
+    let code = contract_addr.code();
     let basefee = block::basefee();
     let chainid = block::chainid();
     let coinbase = block::coinbase();
@@ -64,6 +68,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(contract_codehash);
     output.extend(arb_precompile_codehash);
     output.extend(eth_precompile_codehash);
+    output.extend(code);
 
     output.extend(ink_price.to_be_bytes());
     output.extend(gas_left_before.to_be_bytes());

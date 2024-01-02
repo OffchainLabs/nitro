@@ -247,12 +247,34 @@ func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
 	return hashToBytes32(balance)
 }
 
+//export accountCodeImpl
+func accountCodeImpl(api usize, output *rustBytes, address bytes20, offset u32, size u32, cost *u64) {
+	closures := getApi(api)
+	code, gas := closures.accountCode(address.toAddress())
+	if int(offset) < len(code) {
+		end := int(offset + size)
+		if len(code) < end {
+			end = len(code)
+		}
+		output.setBytes(code[offset:end])
+	}
+	*cost = u64(gas)
+}
+
 //export accountCodeHashImpl
 func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	closures := getApi(api)
 	codehash, gas := closures.accountCodeHash(address.toAddress())
 	*cost = u64(gas)
 	return hashToBytes32(codehash)
+}
+
+//export accountCodeSizeImpl
+func accountCodeSizeImpl(api usize, address bytes20, cost *u64) u32 {
+	closures := getApi(api)
+	size, gas := closures.accountCodeSize(address.toAddress())
+	*cost = u64(gas)
+	return u32(size)
 }
 
 //export addPagesImpl

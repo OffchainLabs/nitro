@@ -43,6 +43,8 @@ type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
+type accountCodeType func(address common.Address) ([]byte, uint64)
+type accountCodeSizeType func(address common.Address) (uint32, uint64)
 type addPagesType func(pages uint16) (cost uint64)
 type captureHostioType func(name string, args, outs []byte, startInk, endInk uint64)
 
@@ -57,7 +59,9 @@ type goClosures struct {
 	getReturnData   getReturnDataType
 	emitLog         emitLogType
 	accountBalance  accountBalanceType
+	accountCode     accountCodeType
 	accountCodeHash accountCodehashType
+	accountCodeSize accountCodeSizeType
 	addPages        addPagesType
 	captureHostio   captureHostioType
 }
@@ -260,12 +264,20 @@ func newApiClosures(
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	accountCodehash := func(address common.Address) (common.Hash, uint64) {
+	accountCode := func(address common.Address) ([]byte, uint64) {
 		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
 		if !evm.StateDB.Empty(address) {
-			return evm.StateDB.GetCodeHash(address), cost
+			return evm.StateDB.GetCode(address), cost
 		}
-		return common.Hash{}, cost
+		return []byte{}, cost
+	}
+	accountCodehash := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		return evm.StateDB.GetCodeHash(address), cost
+	}
+	accountCodeSize := func(address common.Address) (uint32, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		return uint32(evm.StateDB.GetCodeSize(address)), cost
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
@@ -286,7 +298,9 @@ func newApiClosures(
 		getReturnData:   getReturnData,
 		emitLog:         emitLog,
 		accountBalance:  accountBalance,
+		accountCode:     accountCode,
 		accountCodeHash: accountCodehash,
+		accountCodeSize: accountCodeSize,
 		addPages:        addPages,
 		captureHostio:   captureHostio,
 	}

@@ -64,8 +64,18 @@ pub struct GoEvmApi {
         unsafe extern "C" fn(id: usize, data: *mut RustBytes, topics: u32) -> EvmApiStatus,
     pub account_balance:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // balance
+    pub account_code: unsafe extern "C" fn(
+        id: usize,
+        code: *mut RustBytes,
+        address: Bytes20,
+        offset: u32,
+        size: u32,
+        gas_cost: *mut u64,
+    ), // code,
     pub account_codehash:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // codehash
+    pub account_code_size:
+        unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> u32, // code_size,
     pub add_pages: unsafe extern "C" fn(id: usize, pages: u16) -> u64, // gas cost
     pub capture_hostio: unsafe extern "C" fn(
         id: usize,
@@ -250,10 +260,31 @@ impl EvmApi for GoEvmApi {
         (value, cost)
     }
 
+    fn account_code(&mut self, address: Bytes20, offset: u32, size: u32) -> (Vec<u8>, u64) {
+        let mut data = RustBytes::new(vec![]);
+        let mut cost = 0;
+        call!(
+            self,
+            account_code,
+            ptr!(data),
+            address,
+            offset,
+            size,
+            ptr!(cost)
+        );
+        (into_vec!(data), cost)
+    }
+
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let mut cost = 0;
         let value = call!(self, account_codehash, address, ptr!(cost));
         (value, cost)
+    }
+
+    fn account_code_size(&mut self, address: Bytes20) -> (u32, u64) {
+        let mut cost = 0;
+        let size = call!(self, account_code_size, address, ptr!(cost));
+        (size, cost)
     }
 
     fn add_pages(&mut self, pages: u16) -> u64 {
