@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim as brotli-wasm-builder
+FROM debian:bookworm-slim as brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
@@ -13,7 +13,7 @@ RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /wo
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
 
-FROM debian:bullseye-slim as brotli-library-builder
+FROM debian:bookworm-slim as brotli-library-builder
 WORKDIR /workspace
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -24,7 +24,7 @@ RUN apt-get update && \
 FROM scratch as brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:16-bullseye-slim as contracts-builder
+FROM node:16-bookworm-slim as contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++
 WORKDIR /workspace
@@ -34,7 +34,7 @@ COPY contracts contracts/
 COPY Makefile .
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
-FROM debian:bullseye-20211220 as wasm-base
+FROM debian:bookworm-20211220 as wasm-base
 WORKDIR /workspace
 RUN apt-get update && apt-get install -y curl build-essential=12.9
 
@@ -81,7 +81,7 @@ COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upg
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.70-slim-bullseye as prover-header-builder
+FROM rust:1.70-slim-bookworm as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -124,7 +124,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
 
-FROM debian:bullseye-slim as module-root-calc
+FROM debian:bookworm-slim as module-root-calc
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -141,7 +141,7 @@ COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
-FROM debian:bullseye-slim as machine-versions
+FROM debian:bookworm-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 # Download WAVM machines
@@ -163,7 +163,7 @@ RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd3
 RUN ./download-machine.sh consensus-v10.3 0xf559b6d4fa869472dabce70fe1c15221bdda837533dfd891916836975b434dec
 RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
 
-FROM golang:1.20-bullseye as node-builder
+FROM golang:1.20-bookworm as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -193,13 +193,13 @@ FROM node-builder as fuzz-builder
 RUN mkdir fuzzers/
 RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
 
-FROM debian:bullseye-slim as nitro-fuzzer
+FROM debian:bookworm-slim as nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
 COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
 ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
-FROM debian:bullseye-slim as nitro-node-slim
+FROM debian:bookworm-slim as nitro-node-slim
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
