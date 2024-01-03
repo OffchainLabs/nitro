@@ -144,7 +144,6 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 	}
 	log.Info("copy entries done", "start", start, "end", end, "n", n, "forked", f)
 	wg.Done()
-	return
 }
 
 func (c *DBConverter) Convert(ctx context.Context) error {
