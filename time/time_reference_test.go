@@ -28,7 +28,7 @@ func TestRealTimeReference_SleepUntil(t *testing.T) {
 	rtRef.SleepUntil(wakeTime)
 	now := rtRef.Get()
 	if now.Before(wakeTime) {
-		t.Errorf("SleepUntil failed to sleep until the correct time")
+		t.Errorf("SleepUntil did not sleep until the correct time")
 	}
 }
 
@@ -51,7 +51,7 @@ func TestArtificialTimeReference_GetSet(t *testing.T) {
 	atRef.Set(time1)
 	time2 := atRef.Get()
 	if !time1.Equal(time2) {
-		t.Errorf("Failed to get/set time as expected")
+		t.Errorf("Did not get/set time as expected")
 	}
 }
 

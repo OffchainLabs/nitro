@@ -63,12 +63,12 @@ func TestComputeAncestorsWithTimers(t *testing.T) {
 	smallStepRootEdges.Push(tree.edges.Get(id("smol-0.a-16.a")))
 	blockNum := uint64(30)
 
-	t.Run("junk edge fails", func(t *testing.T) {
+	t.Run("junk edge errored", func(t *testing.T) {
 		// We start by querying for ancestors for a block edge id.
 		_, err := tree.ComputeAncestorsWithTimers(ctx, id("foo"), blockNum)
 		require.ErrorContains(t, err, "not found in honest challenge tree")
 	})
-	t.Run("dishonest edge lookup fails", func(t *testing.T) {
+	t.Run("dishonest edge lookup errored", func(t *testing.T) {
 		_, err := tree.ComputeAncestorsWithTimers(ctx, id("blk-0.a-16.b"), blockNum)
 		require.ErrorContains(t, err, "not found in honest challenge tree")
 	})

@@ -321,7 +321,7 @@ type FlakyEthClient struct {
 }
 
 func (f *FlakyEthClient) flaky() error {
-	// 10% chance of failure
+	// 10% chance of error
 	if rand.Intn(10) > 8 {
 		return errors.New("flaky error")
 	}
@@ -416,7 +416,9 @@ func testChallengeProtocol_AliceAndBob(t *testing.T, be backend.Backend, useFlak
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 		defer cancel()
 
-		rollup, err := be.DeployRollup(opts...)
+		rollup, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+			return be.DeployRollup(opts...)
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -508,7 +510,9 @@ func testSyncBobStopsCharlieJoins(t *testing.T, be backend.Backend, s *Challenge
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 		defer cancel()
 
-		rollup, err := be.DeployRollup(opts...)
+		rollup, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+			return be.DeployRollup(opts...)
+		})
 		require.NoError(t, err)
 
 		// Bad Alice
@@ -571,7 +575,9 @@ func testSyncAliceStopsBobRemains(t *testing.T, be backend.Backend, s *Challenge
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 		defer cancel()
 
-		rollup, err := be.DeployRollup(opts...)
+		rollup, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+			return be.DeployRollup(opts...)
+		})
 		require.NoError(t, err)
 
 		// Bad Alice

@@ -109,7 +109,7 @@ func TestListAssertions(t *testing.T) {
 	// Check the response body is what we expect.
 	var resp []*api.Assertion
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Failed to unmarshal response: %v", err)
+		t.Fatalf("Could not unmarshal response: %v", err)
 	}
 
 	for i, a := range resp {

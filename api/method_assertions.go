@@ -30,6 +30,6 @@ func (s *Server) listAssertionsHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getAssertionHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 	if _, err := w.Write([]byte("not implemented")); err != nil {
-		log.Error("failed to write response body", "err", err)
+		log.Error("Could not write response body", "err", err)
 	}
 }

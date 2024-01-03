@@ -300,7 +300,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 		)
 	})
 	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {
-		return nil, fmt.Errorf("failed to create assertion: %w", createErr)
+		return nil, fmt.Errorf("could not create assertion: %w", createErr)
 	}
 	if len(receipt.Logs) == 0 {
 		return nil, errors.New("no logs observed from assertion creation")

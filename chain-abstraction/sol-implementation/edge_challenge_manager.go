@@ -627,7 +627,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	if err != nil {
 		return errors.Wrapf(
 			err,
-			"failed to pre-check one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
+			"could not pre-check one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
 			machineStep,
 			oneStepData.BeforeHash,
 			oneStepData.AfterHash,
@@ -658,7 +658,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 		}); err != nil {
 		return errors.Wrapf(
 			err,
-			"failed to confirm one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
+			"could not confirm one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
 			machineStep,
 			oneStepData.BeforeHash,
 			oneStepData.AfterHash,
@@ -669,7 +669,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	return err
 }
 
-// Like abi.NewType but panics if it fails for use in constants
+// Like abi.NewType but panics if it errors for use in constants
 func newStaticType(t string, internalType string, components []abi.ArgumentMarshaling) abi.Type {
 	ty, err := abi.NewType(t, internalType, components)
 	if err != nil {
@@ -754,7 +754,7 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 ) (protocol.VerifiedHonestEdge, error) {
 	assertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
-		return nil, fmt.Errorf("failed to read assertion %#x creation info: %w", assertion.Id(), err)
+		return nil, fmt.Errorf("could not read assertion %#x creation info: %w", assertion.Id(), err)
 	}
 	prevId, err := assertion.PrevId(ctx)
 	if err != nil {

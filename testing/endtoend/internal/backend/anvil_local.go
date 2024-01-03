@@ -242,14 +242,14 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 		return common.Address{}, errors.Wrap(err, "could not deploy test weth")
 	}
 	if waitErr := challenge_testing.WaitForTx(ctx, a.client, tx); waitErr != nil {
-		return common.Address{}, errors.Wrap(waitErr, "failed waiting for transaction")
+		return common.Address{}, errors.Wrap(waitErr, "errored waiting for transaction")
 	}
 	receipt, err := a.client.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "could not get tx hash")
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return common.Address{}, errors.New("receipt failed")
+		return common.Address{}, errors.New("receipt not successful")
 	}
 
 	result, err := setup.DeployFullRollupStack(
@@ -287,14 +287,14 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 		return common.Address{}, errors.Wrap(err, "could not mint test weth")
 	}
 	if waitErr := challenge_testing.WaitForTx(ctx, a.client, mintTx); waitErr != nil {
-		return common.Address{}, errors.Wrap(waitErr, "failed waiting for transaction")
+		return common.Address{}, errors.Wrap(waitErr, "errored waiting for transaction")
 	}
 	receipt, err = a.client.TransactionReceipt(ctx, mintTx.Hash())
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "could not get tx hash")
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return common.Address{}, errors.New("receipt failed")
+		return common.Address{}, errors.New("receipt errored")
 	}
 	a.deployer.Value = big.NewInt(0)
 	rollupCaller, err := rollupgen.NewRollupUserLogicCaller(result.Rollup, a.client)
@@ -316,42 +316,42 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 			return common.Address{}, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, a.client, transferTx); waitErr != nil {
-			return common.Address{}, errors.Wrap(waitErr, "failed waiting for transfer transaction")
+			return common.Address{}, errors.Wrap(waitErr, "errored waiting for transfer transaction")
 		}
 		receipt, err := a.client.TransactionReceipt(ctx, transferTx.Hash())
 		if err != nil {
 			return common.Address{}, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return common.Address{}, errors.New("receipt failed")
+			return common.Address{}, errors.New("receipt not successful")
 		}
 		approveTx, err := tokenBindings.TestWETH9Transactor.Approve(acc, result.Rollup, value)
 		if err != nil {
 			return common.Address{}, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, a.client, approveTx); waitErr != nil {
-			return common.Address{}, errors.Wrap(waitErr, "failed waiting for approval transaction")
+			return common.Address{}, errors.Wrap(waitErr, "errored waiting for approval transaction")
 		}
 		receipt, err = a.client.TransactionReceipt(ctx, approveTx.Hash())
 		if err != nil {
 			return common.Address{}, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return common.Address{}, errors.New("receipt failed")
+			return common.Address{}, errors.New("receipt not successful")
 		}
 		approveTx, err = tokenBindings.TestWETH9Transactor.Approve(acc, chalManagerAddr, value)
 		if err != nil {
 			return common.Address{}, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, a.client, approveTx); waitErr != nil {
-			return common.Address{}, errors.Wrap(waitErr, "failed waiting for approval transaction")
+			return common.Address{}, errors.Wrap(waitErr, "errored waiting for approval transaction")
 		}
 		receipt, err = a.client.TransactionReceipt(ctx, approveTx.Hash())
 		if err != nil {
 			return common.Address{}, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return common.Address{}, errors.New("receipt failed")
+			return common.Address{}, errors.New("receipt not successful")
 		}
 	}
 

@@ -555,7 +555,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 	endHeight, _ := et.edge.EndCommitment()
 	bisectTo, err := math.Bisect(uint64(startHeight), uint64(endHeight))
 	if err != nil {
-		return commitments.History{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", startHeight, endHeight)
+		return commitments.History{}, nil, errors.Wrapf(err, "determining bisection point errored for %d and %d", startHeight, endHeight)
 	}
 	challengeLevel := et.edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
@@ -665,7 +665,7 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 		"bisectedToMerkle":   containers.Trunc(historyCommit.Merkle.Bytes()),
 	})
 	if addVerifiedErr := et.chainWatcher.AddVerifiedHonestEdge(ctx, firstChild); addVerifiedErr != nil {
-		// We simply log an error, as if this fails, it will be added later on by the chain watcher
+		// We simply log an error, as if this errored, it will be added later on by the chain watcher
 		// scraping events from the chain, but this is a helpful optimization.
 		srvlog.Error("Could not add verified honest edge to chain watcher", log.Ctx{"err": addVerifiedErr})
 	}
@@ -886,7 +886,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	srvlog.Info("Created subchallenge edge", fields)
 
 	if addVerifiedErr := et.chainWatcher.AddVerifiedHonestEdge(ctx, addedLeaf); addVerifiedErr != nil {
-		// We simply log an error, as if this fails, it will be added later on by the chain watcher
+		// We simply log an error, as if this errored, it will be added later on by the chain watcher
 		// scraping events from the chain, but this is a helpful optimization.
 		srvlog.Error("Could not add verified honest edge to chain watcher", log.Ctx{"err": addVerifiedErr})
 	}

@@ -26,8 +26,8 @@ type ChainCommitter interface {
 // chain backend supports committing directly, we call the commit function before
 // returning. This function additionally waits for the transaction to complete and returns
 // an optional transaction receipt. It returns an error if the
-// transaction had a failed status on-chain, or if the execution of the callback
-// failed directly.
+// transaction had a non-successful status on-chain, or if the execution of the callback
+// errored directly.
 func (a *AssertionChain) transact(
 	ctx context.Context,
 	backend ChainBackend,
@@ -41,7 +41,7 @@ func (a *AssertionChain) transact(
 	opts.NoSend = true
 	tx, err := fn(opts)
 	if err != nil {
-		return nil, errors.Wrap(err, "test execution of tx failed before sending payable tx")
+		return nil, errors.Wrap(err, "test execution of tx errored before sending payable tx")
 	}
 	// Convert the transaction into a CallMsg.
 	msg := ethereum.CallMsg{
@@ -53,11 +53,11 @@ func (a *AssertionChain) transact(
 		Data:     tx.Data(),
 	}
 
-	// Estimate the gas required for the transaction. This will catch failures early
+	// Estimate the gas required for the transaction. This will catch errors early
 	// without needing to pay for the transaction and waste funds.
 	gas, err := backend.EstimateGas(ctx, msg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "gas estimation failed for tx with hash %s", containers.Trunc(tx.Hash().Bytes()))
+		return nil, errors.Wrapf(err, "gas estimation errored for tx with hash %s", containers.Trunc(tx.Hash().Bytes()))
 	}
 
 	// Now, we send the tx with the estimated gas.
@@ -86,7 +86,7 @@ func (a *AssertionChain) transact(
 			AccessList: tx.AccessList(),
 		}
 		if _, err := backend.CallContract(ctx, callMsg, nil); err != nil {
-			return nil, errors.Wrap(err, "failed transaction")
+			return nil, errors.Wrap(err, "transaction errored")
 		}
 	}
 	return receipt, nil

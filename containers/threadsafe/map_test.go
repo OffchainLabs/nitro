@@ -83,6 +83,6 @@ func TestForEach(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Errorf("ForEach failed: %v", err)
+		t.Errorf("ForEach errored: %v", err)
 	}
 }

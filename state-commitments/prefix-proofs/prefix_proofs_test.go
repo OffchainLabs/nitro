@@ -43,7 +43,7 @@ func TestAppendCompleteSubTree(t *testing.T) {
 
 	// Test case: Level >= len(me)
 	_, err = prefixproofs.AppendCompleteSubTree([]common.Hash{{1}}, 2, common.Hash{2})
-	require.ErrorContains(t, err, "failing before for loop: level too high")
+	require.ErrorContains(t, err, "errored before for loop: level too high")
 }
 
 func TestGeneratePrefixProof(t *testing.T) {
@@ -384,10 +384,10 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 		)
 
 		if goErr == nil && solErr != nil {
-			t.Errorf("Go verified, but solidity failed to verify: %+v", cfg)
+			t.Errorf("Go verified, but solidity did not verify: %+v", cfg)
 		}
 		if goErr != nil && solErr == nil {
-			t.Errorf("Solidity verified, but go failed to verify: %+v", cfg)
+			t.Errorf("Solidity verified, but go did not verify: %+v", cfg)
 		}
 	})
 }

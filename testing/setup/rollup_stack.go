@@ -71,7 +71,7 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	// Advance the backend by some blocks to get over time delta failures when
+	// Advance the backend by some blocks to get over time delta errors when
 	// using the assertion chain.
 	for i := 0; i < 100; i++ {
 		setup.Backend.Commit()
@@ -207,14 +207,14 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		return nil, err
 	}
 	if waitErr := challenge_testing.WaitForTx(ctx, backend, tx); waitErr != nil {
-		return nil, errors.Wrap(waitErr, "failed waiting for transaction")
+		return nil, errors.Wrap(waitErr, "errored waiting for transaction")
 	}
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
 		return nil, err
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return nil, errors.New("receipt failed")
+		return nil, errors.New("receipt not successful")
 	}
 	value, ok := new(big.Int).SetString("10000000000000000000000", 10)
 	if !ok {
@@ -226,14 +226,14 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		return nil, err
 	}
 	if waitErr := challenge_testing.WaitForTx(ctx, backend, mintTx); waitErr != nil {
-		return nil, errors.Wrap(waitErr, "failed waiting for transaction")
+		return nil, errors.Wrap(waitErr, "errored waiting for transaction")
 	}
 	receipt, err = backend.TransactionReceipt(ctx, mintTx.Hash())
 	if err != nil {
 		return nil, err
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return nil, errors.New("receipt failed")
+		return nil, errors.New("receipt not successful")
 	}
 	accs[0].TxOpts.Value = big.NewInt(0)
 
@@ -322,42 +322,42 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, backend, transferTx); waitErr != nil {
-			return nil, errors.Wrap(waitErr, "failed waiting for transfer transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for transfer transaction")
 		}
 		receipt, err := backend.TransactionReceipt(ctx, transferTx.Hash())
 		if err != nil {
 			return nil, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return nil, errors.New("receipt failed")
+			return nil, errors.New("receipt not successful")
 		}
 		approveTx, err := tokenBindings.TestWETH9Transactor.Approve(acc.TxOpts, addresses.Rollup, value)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, backend, approveTx); waitErr != nil {
-			return nil, errors.Wrap(waitErr, "failed waiting for approval transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for approval transaction")
 		}
 		receipt, err = backend.TransactionReceipt(ctx, approveTx.Hash())
 		if err != nil {
 			return nil, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return nil, errors.New("receipt failed")
+			return nil, errors.New("receipt not successful")
 		}
 		approveTx, err = tokenBindings.TestWETH9Transactor.Approve(acc.TxOpts, chalManagerAddr, value)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, backend, approveTx); waitErr != nil {
-			return nil, errors.Wrap(waitErr, "failed waiting for approval transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for approval transaction")
 		}
 		receipt, err = backend.TransactionReceipt(ctx, approveTx.Hash())
 		if err != nil {
 			return nil, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return nil, errors.New("receipt failed")
+			return nil, errors.New("receipt not successful")
 		}
 	}
 
@@ -441,7 +441,7 @@ func DeployFullRollupStack(
 				return nil, err2
 			}
 			if waitErr := challenge_testing.WaitForTx(ctx, backend, batchTx); waitErr != nil {
-				return nil, errors.Wrap(waitErr, "failed waiting for sequencerInbox.SetIsBatchPoster transaction")
+				return nil, errors.Wrap(waitErr, "errored waiting for sequencerInbox.SetIsBatchPoster transaction")
 			}
 			return batchTx, nil
 		})
@@ -462,7 +462,7 @@ func DeployFullRollupStack(
 			return nil, err2
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, backend, setTx); waitErr != nil {
-			return nil, errors.Wrap(waitErr, "failed waiting for rollup.SetValidatorWhitelistDisabled transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for rollup.SetValidatorWhitelistDisabled transaction")
 		}
 		return setTx, nil
 	})

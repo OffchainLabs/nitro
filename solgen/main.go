@@ -89,7 +89,7 @@ func main() {
 
 		artifact := HardHatArtifact{}
 		if err := json.Unmarshal(data, &artifact); err != nil {
-			log.Fatal("failed to parse contract", name, err)
+			log.Fatal("errored when parsing contract", name, err)
 		}
 		modInfo := modules[module]
 		if modInfo == nil {

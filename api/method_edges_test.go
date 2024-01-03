@@ -82,7 +82,7 @@ func TestListEdges(t *testing.T) {
 
 	var resp []*api.Edge
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Failed to unmarshal response: %v", err)
+		t.Fatalf("Could not unmarshal response: %v", err)
 	}
 
 	respAsMockEdges := edgesToMockEdges(resp)

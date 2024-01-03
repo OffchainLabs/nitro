@@ -32,7 +32,7 @@ func TestAddEdge(t *testing.T) {
 	ctx := context.Background()
 	edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1, claimId: "foo"})
 
-	t.Run("getting top level assertion fails", func(t *testing.T) {
+	t.Run("getting top level assertion errored", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
 			assertionErr: errors.New("bad request"),
 		}
@@ -47,7 +47,7 @@ func TestAddEdge(t *testing.T) {
 		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorIs(t, err, ErrMismatchedChallengeAssertionHash)
 	})
-	t.Run("getting claim heights fails", func(t *testing.T) {
+	t.Run("getting claim heights errored", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
 			assertionErr:    nil,
 			assertionHash:   ht.topLevelAssertionHash,
@@ -59,7 +59,7 @@ func TestAddEdge(t *testing.T) {
 		_, err := ht.AddEdge(ctx, edge)
 		require.ErrorContains(t, err, "could not get claim heights for edge")
 	})
-	t.Run("checking if agrees with commit fails", func(t *testing.T) {
+	t.Run("checking if agrees with commit errored", func(t *testing.T) {
 		ht.metadataReader = &mockMetadataReader{
 			assertionErr:  nil,
 			assertionHash: ht.topLevelAssertionHash,

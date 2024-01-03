@@ -110,13 +110,13 @@ func TestFindLastAgreedWithAncestor(t *testing.T) {
 			&protocol.AssertionCreatedInfo{AssertionHash: parent, ParentAssertionHash: genesis}, nil,
 		)
 
-		stateProvider.On("AgreesWithExecutionState", ctx, mock.Anything).Return(errors.New("failed"))
+		stateProvider.On("AgreesWithExecutionState", ctx, mock.Anything).Return(errors.New("errored"))
 		manager := &Manager{chain: chain, stateProvider: stateProvider}
 
 		_, err := manager.findLastAgreedWithAncestor(ctx, &protocol.AssertionCreatedInfo{
 			AssertionHash:       latest,
 			ParentAssertionHash: parent,
 		})
-		assert.ErrorContains(t, err, "failed")
+		assert.ErrorContains(t, err, "errored")
 	})
 }

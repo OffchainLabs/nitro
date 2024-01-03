@@ -34,7 +34,7 @@ func TxSucceeded(
 		return err
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return errors.New("tx failed")
+		return errors.New("tx receipt not successful")
 	}
 	code, err := backend.CodeAt(ctx, addr, nil)
 	if err != nil {

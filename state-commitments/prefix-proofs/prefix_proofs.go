@@ -226,7 +226,7 @@ func AppendCompleteSubTree(
 	if level >= uint64(len(me)) {
 		// This technically isn't necessary since it would be caught by the i < level check
 		// on the last loop of the for-loop below, but we add it for a clearer error message
-		return nil, errors.Wrap(ErrLevelTooHigh, "failing before for loop")
+		return nil, errors.Wrap(ErrLevelTooHigh, "errored before for loop")
 	}
 
 	accumHash := subtreeRoot
