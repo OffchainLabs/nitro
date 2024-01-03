@@ -69,7 +69,7 @@ func middleKey(start []byte, end []byte) []byte {
 }
 
 func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte, wg *sync.WaitGroup, results chan error) {
-	log.Debug("copyEntries", "start", start, "end", end)
+	log.Debug("copy entries", "start", start, "end", end)
 	it := c.src.NewIterator(nil, start)
 	defer it.Release()
 	var err error
@@ -80,12 +80,14 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 	batch := c.dst.NewBatch()
 	// TODO support restarting in case of an interruption
 	n := 0
+	f := 0
 	canFork := true
+	batchesSinceLastFork := 0
 	for it.Next() && ctx.Err() == nil {
 		key := it.Key()
 		n++
 		if n%10000 == 1 {
-			log.Debug("entry", "start", start, "end", end, "n", n, "len(key)", len(key))
+			log.Debug("progress", "start", start, "end", end, "n", n, "forked", f)
 		}
 		if len(end) > 0 && bytes.Compare(key, end) >= 0 {
 			break
@@ -98,42 +100,49 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 				return
 			}
 			batch.Reset()
-			if canFork {
-				select {
-				case err = <-results:
-					if err != nil {
-						return
-					}
-					if err = ctx.Err(); err != nil {
-						return
-					}
-					middle := middleKey(key, end)
-					if bytes.Compare(middle, key) > 0 && (len(end) == 0 || bytes.Compare(middle, end) < 0) {
-						// find next existing key after the middle to prevent the keys from growing too long
-						m := c.src.NewIterator(nil, middle)
-						if m.Next() {
-							middle = m.Key()
+			batchesSinceLastFork++
+		}
+		if canFork && batchesSinceLastFork >= c.config.MinBatchesBeforeFork {
+			select {
+			case err = <-results:
+				if err != nil {
+					return
+				}
+				if err = ctx.Err(); err != nil {
+					return
+				}
+				middle := middleKey(key, end)
+				if bytes.Compare(middle, key) > 0 && (len(end) == 0 || bytes.Compare(middle, end) < 0) {
+					// find next existing key after the middle to prevent the keys from growing too long
+					m := c.src.NewIterator(nil, middle)
+					if m.Next() {
+						foundMiddle := m.Key()
+						if len(end) == 0 || bytes.Compare(foundMiddle, end) < 0 {
 							wg.Add(1)
-							go c.copyEntries(ctx, middle, end, wg, results)
+							go c.copyEntries(ctx, foundMiddle, end, wg, results)
+							middle = foundMiddle
+							f++
 						} else {
+							// no entries either after the middle key or for the middle key
 							results <- nil
 						}
-						end = middle
-						m.Release()
-					} else {
-						log.Warn("no more forking", "key", key, "middle", middle, "end", end)
-						canFork = false
-						results <- nil
 					}
-				default:
+					end = middle
+					m.Release()
+					batchesSinceLastFork = 0
+				} else {
+					log.Warn("no more forking", "key", key, "middle", middle, "end", end)
+					canFork = false
+					results <- nil
 				}
+			default:
 			}
 		}
 	}
 	if err = ctx.Err(); err == nil {
 		err = batch.Write()
 	}
-	log.Info("copyEntries done", "start", start, "end", end, "n", n)
+	log.Info("copy entries done", "start", start, "end", end, "n", n, "forked", f)
 	wg.Done()
 	return
 }
@@ -149,8 +158,9 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if c.config.Threads == uint8(0) {
-		return errors.New("threads count can't be 0")
+	// TODO
+	if c.config.Threads <= 0 {
+		return errors.New("invalid threads count")
 	}
 
 	// copy empty key entry
@@ -166,7 +176,7 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 	}
 
 	results := make(chan error, c.config.Threads)
-	for i := uint8(0); i < c.config.Threads; i++ {
+	for i := 0; i < c.config.Threads-1; i++ {
 		results <- nil
 	}
 	var wg sync.WaitGroup

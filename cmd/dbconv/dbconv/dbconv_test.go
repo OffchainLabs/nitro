@@ -30,6 +30,12 @@ func TestMiddleKey(t *testing.T) {
 		}
 	}
 
+	//	for i := 0; i < 1000; i++ {
+	//		for j := 0; j < 1000; j++ {
+	//			start := new(big.Int.)
+	//			m := moddleKey({i}, {j})
+	//		}
+	//	}
 }
 
 func TestConversion(t *testing.T) {
@@ -69,8 +75,9 @@ func TestConversion(t *testing.T) {
 	config := DefaultDBConvConfig
 	config.Src = oldDBConfig
 	config.Dst = newDBConfig
-	config.Threads = 2
+	config.Threads = 512
 	config.IdealBatchSize = 100
+	config.MinBatchesBeforeFork = 10
 	conv := NewDBConverter(&config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

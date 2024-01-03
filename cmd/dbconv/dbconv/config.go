@@ -24,17 +24,23 @@ func DBConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type DBConvConfig struct {
-	Src            DBConfig `koanf:"src"`
-	Dst            DBConfig `koanf:"dst"`
-	Threads        uint8    `koanf:"threads"`
-	IdealBatchSize int      `koanf:"ideal-batch"`
+	Src                  DBConfig `koanf:"src"`
+	Dst                  DBConfig `koanf:"dst"`
+	Threads              int      `koanf:"threads"`
+	IdealBatchSize       int      `koanf:"ideal-batch"`
+	MinBatchesBeforeFork int      `koanf:"min-batches-before-fork"`
 }
 
-var DefaultDBConvConfig = DBConvConfig{IdealBatchSize: ethdb.IdealBatchSize}
+var DefaultDBConvConfig = DBConvConfig{
+	IdealBatchSize:       ethdb.IdealBatchSize,
+	MinBatchesBeforeFork: 100,
+	Threads:              0,
+}
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {
 	DBConfigAddOptions("src", f)
 	DBConfigAddOptions("dst", f)
-	f.Uint8("threads", DefaultDBConvConfig.Threads, "number of threads to use (1-255, 0 = auto)")
-	f.Uint8("ideal-batch", DefaultDBConvConfig.Threads, "ideal write batch size") // TODO
+	f.Int("threads", DefaultDBConvConfig.Threads, "number of threads to use (0 = auto)")
+	f.Int("ideal-batch", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")                                              // TODO
+	f.Int("min-batches-before-fork", DefaultDBConvConfig.MinBatchesBeforeFork, "minimal number of batches before forking a thread") // TODO
 }
