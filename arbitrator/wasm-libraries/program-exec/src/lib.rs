@@ -7,19 +7,36 @@ extern "C" {
     fn program_call_main(module: u32, args_len: usize) -> u32;
 }
 
+#[link(wasm_import_module = "program_internal")]
+extern "C" {
+    fn set_done(status: u32) -> u32;
+    fn args_len(module: u32) -> usize;
+}
+
+
+fn check_program_done(mut req_id: u32) -> u32 {
+    if req_id < 0x100 {
+        unsafe {
+            req_id = set_done(req_id);
+        }
+    }
+    req_id
+}
+
+
 #[no_mangle]
-pub unsafe extern "C" fn programs__startProgram(
+pub unsafe extern "C" fn programs__start_program(
     module: u32,
-    args_len: u32,
 ) -> u32 {
     // call the program
-    program_call_main(module, args_len as usize)
+    let args_len = args_len(module);
+    check_program_done(program_call_main(module, args_len))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn programs__sendResponse(
+pub unsafe extern "C" fn programs__send_response(
     req_id: u32,
 ) -> u32 {
     // call the program
-    program_continue(req_id, 0)
+    check_program_done(program_continue(req_id, 0))
 }

@@ -162,6 +162,11 @@ impl Program {
         unsafe { program_memory_size(self.module) }
     }
 
+    /// Reads the program's memory size in pages
+    pub fn args_len(&self) -> usize {
+        return self.args.len()
+    }
+
     /// Ensures an access is within bounds
     fn check_memory_access(&self, ptr: u32, bytes: u32) -> Result<(), MemoryBoundsError> {
         let last_page = ptr.saturating_add(bytes) / wavm::PAGE_SIZE;
@@ -237,9 +242,13 @@ impl UserHost for Program {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&self, name: &str, args: &[u8], outs: &[u8], _end_ink: u64) {
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _start_ink: u64, _end_ink: u64) {
         let args = hex::encode(args);
         let outs = hex::encode(outs);
         println!("Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}");
+    }
+
+    fn start_ink(&self) -> Result<u64,Self::Err> {
+        return Err(eyre!("recording start ink while proving").into())
     }
 }

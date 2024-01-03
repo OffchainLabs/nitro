@@ -24,11 +24,12 @@ macro_rules! trace {
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data().tracing {
             let end_ink = $env.ink_ready()?;
+            let start_ink = $env.start_ink()?;
             let mut args = vec![];
             $(args.extend($args);)*
             let mut outs = vec![];
             $(outs.extend($outs);)*
-            $env.trace($name, &args, &outs, end_ink);
+            $env.trace($name, &args, &outs, start_ink, end_ink);
         }
         Ok($ret)
     }};
@@ -70,8 +71,10 @@ pub trait UserHost: GasMeteredMachine {
     fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), Self::MemoryErr>;
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr>;
 
+    // ink when call stated, only used for tracing, Err if unavailable.
+    fn start_ink(&self) -> Result<u64,Self::Err>;
     fn say<D: Display>(&self, text: D);
-    fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64);
 
     /// Reads the program calldata. The semantics are equivalent to that of the EVM's
     /// [`CALLDATA_COPY`] opcode when requesting the entirety of the current call's calldata.

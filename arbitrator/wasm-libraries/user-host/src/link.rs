@@ -81,22 +81,22 @@ pub unsafe extern "C" fn programs__activate(
 /// Links and executes a user wasm.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn programs__newProgram(
+pub unsafe extern "C" fn programs__new_program(
     compiled_hash_ptr: Uptr,
     calldata_ptr: Uptr,
     calldata_size: usize,
-    config_box: *mut StylusConfig,
-    evm_data_box: *mut EvmData,
-    gas_ptr: Uptr,
+    config_box: u64,
+    evm_data_box: u64,
+    gas: u64,
 ) -> u32 {
     let compiled_hash = wavm::read_bytes32_usize(compiled_hash_ptr);
     let calldata = wavm::read_slice_usize(calldata_ptr, calldata_size);
-    let config: StylusConfig = *Box::from_raw(config_box);
-    let evm_data: EvmData = *Box::from_raw(evm_data_box);
+    let config: StylusConfig = *Box::from_raw(config_box as *mut StylusConfig);
+    let evm_data: EvmData = *Box::from_raw(evm_data_box as *mut EvmData);
 
     // buy ink
     let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(wavm::caller_load64(gas_ptr));
+    let ink = pricing.gas_to_ink(gas);
 
     // link the program and ready its instrumentation
     let module = wavm_link_module(&MemoryLeaf(*compiled_hash));
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn programs__pop() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn programs__set_done(gas_ptr: Uptr, mut status: u8) -> u32 {
+pub unsafe extern "C" fn program_internal__set_done(mut status: u8) -> u32 {
     let program = Program::current();
     let module = program.module;
     let mut outs = &program.outs;
@@ -136,12 +136,23 @@ pub unsafe extern "C" fn programs__set_done(gas_ptr: Uptr, mut status: u8) -> u3
         outs = &empty_vec;
         ink_left = 0;
     }
-    wavm::caller_store64(gas_ptr, program.config.pricing.ink_to_gas(ink_left));
-    program.evm_api.request_handler().set_request(status as u32, outs)
+    let gas_left = program.config.pricing.ink_to_gas(ink_left);
+    let mut output = gas_left.to_be_bytes().to_vec();
+    output.extend(outs.iter());
+    program.evm_api.request_handler().set_request(status as u32, &output)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn programs__setResponse(
+pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
+    let program = Program::current();
+    if program.module != module {
+        panic!("args_len requested for wrong module");
+    }
+    program.args_len()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn programs__set_response(
     id: u32,
     gas: u64,
     reponse_ptr: Uptr,
@@ -152,7 +163,7 @@ pub unsafe extern "C" fn programs__setResponse(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn programs__getRequest(id: u32, len_ptr: usize) -> u32 {
+pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: usize) -> u32 {
     let (req_type, data) = Program::current().evm_api.request_handler().get_request(id);
     if len_ptr != 0 {
         wavm::caller_store32(len_ptr, data.len() as u32);
@@ -161,18 +172,19 @@ pub unsafe extern "C" fn programs__getRequest(id: u32, len_ptr: usize) -> u32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn programs__getRequestData(id: u32, data_ptr: usize) {
+pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: usize) {
     let (_, data) = Program::current().evm_api.request_handler().get_request(id);
     wavm::write_slice_usize(&data, data_ptr);
 }
 
 /// Creates a `StylusConfig` from its component parts.
 #[no_mangle]
-pub unsafe extern "C" fn programs__createStylusConfig(
+pub unsafe extern "C" fn programs__create_stylus_config(
     version: u16,
     max_depth: u32,
     ink_price: u32,
-) -> u32 {
+    _debug: u32,
+) -> u64 {
     let config = StylusConfig {
         version,
         max_depth,
@@ -180,20 +192,13 @@ pub unsafe extern "C" fn programs__createStylusConfig(
             ink_price,
         },
     };
-    heapify(config) as u32
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn programs__destroyStylusConfig(
-    handler: u32,
-) {
-    drop(Box::from_raw(handler as *mut StylusConfig))
+    heapify(config) as u64
 }
 
 /// Creates an `EvmData` handler from its component parts.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn programs__createEvmData(
+pub unsafe extern "C" fn programs__create_evm_data(
     block_basefee_ptr: Uptr,
     chainid: u64,
     block_coinbase_ptr: Uptr,
@@ -206,7 +211,7 @@ pub unsafe extern "C" fn programs__createEvmData(
     tx_gas_price_ptr: Uptr,
     tx_origin_ptr: Uptr,
     reentrant: u32,
-) -> u32 {
+) -> u64 {
     let evm_data = EvmData {
         block_basefee: wavm::read_bytes32_usize(block_basefee_ptr),
         chainid,
@@ -223,12 +228,5 @@ pub unsafe extern "C" fn programs__createEvmData(
         return_data_len: 0,
         tracing: false,
     };
-    heapify(evm_data) as u32
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn programs__destroyEvmData(
-    handler: u32,
-) {
-    drop(Box::from_raw(handler as *mut EvmData))
+    heapify(evm_data) as u64
 }

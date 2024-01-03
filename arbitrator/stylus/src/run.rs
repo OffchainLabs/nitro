@@ -107,7 +107,7 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
             }
         };
 
-        let env = self.env();
+        let env = self.env.as_mut(store);
         if env.evm_data.tracing {
             env.evm_api
                 .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink, ink);

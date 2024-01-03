@@ -1,8 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build !js
-// +build !js
+//go:build !wasm
+// +build !wasm
 
 package programs
 
@@ -136,136 +136,15 @@ type apiStatus = C.EvmApiStatus
 const apiSuccess C.EvmApiStatus = C.EvmApiStatus_Success
 const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 
-//export getBytes32Impl
-func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
-	closures := getApi(api)
-	value, gas := closures.getBytes32(key.toHash())
-	*cost = u64(gas)
-	return hashToBytes32(value)
-}
-
-//export setBytes32Impl
-func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustBytes) apiStatus {
-	closures := getApi(api)
-
-	gas, err := closures.setBytes32(key.toHash(), value.toHash())
-	if err != nil {
-		errVec.setString(err.Error())
-		return apiFailure
-	}
-	*cost = u64(gas)
+//export handleReqImpl
+func handleReqImpl(api usize, req_type u32, data *rustBytes, costPtr *u64, output *rustBytes) apiStatus {
+	closure := getApi(api)
+	reqData := data.read()
+	reqType := RequestType(req_type - 0x10000000)
+	res, cost := closure(reqType, reqData)
+	*costPtr = u64(cost)
+	output.setBytes(res)
 	return apiSuccess
-}
-
-//export contractCallImpl
-func contractCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, value bytes32, len *u32) apiStatus {
-	closures := getApi(api)
-	ret_len, cost, err := closures.contractCall(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
-	*evmGas = u64(cost) // evmGas becomes the call's cost
-	*len = u32(ret_len)
-	if err != nil {
-		return apiFailure
-	}
-	return apiSuccess
-}
-
-//export delegateCallImpl
-func delegateCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, len *u32) apiStatus {
-	closures := getApi(api)
-	ret_len, cost, err := closures.delegateCall(contract.toAddress(), data.read(), uint64(*evmGas))
-	*evmGas = u64(cost) // evmGas becomes the call's cost
-	*len = u32(ret_len)
-	if err != nil {
-		return apiFailure
-	}
-	return apiSuccess
-}
-
-//export staticCallImpl
-func staticCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, len *u32) apiStatus {
-	closures := getApi(api)
-	ret_len, cost, err := closures.staticCall(contract.toAddress(), data.read(), uint64(*evmGas))
-	*evmGas = u64(cost) // evmGas becomes the call's cost
-	*len = u32(ret_len)
-	if err != nil {
-		return apiFailure
-	}
-	return apiSuccess
-}
-
-//export create1Impl
-func create1Impl(api usize, code *rustBytes, endowment bytes32, evmGas *u64, len *u32) apiStatus {
-	closures := getApi(api)
-	addr, ret_len, cost, err := closures.create1(code.read(), endowment.toBig(), uint64(*evmGas))
-	*evmGas = u64(cost) // evmGas becomes the call's cost
-	*len = u32(ret_len)
-	if err != nil {
-		code.setString(err.Error())
-		return apiFailure
-	}
-	code.setBytes(addr.Bytes())
-	return apiSuccess
-}
-
-//export create2Impl
-func create2Impl(api usize, code *rustBytes, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
-	closures := getApi(api)
-	addr, ret_len, cost, err := closures.create2(code.read(), endowment.toBig(), salt.toBig(), uint64(*evmGas))
-	*evmGas = u64(cost) // evmGas becomes the call's cost
-	*len = u32(ret_len)
-	if err != nil {
-		code.setString(err.Error())
-		return apiFailure
-	}
-	code.setBytes(addr.Bytes())
-	return apiSuccess
-}
-
-//export getReturnDataImpl
-func getReturnDataImpl(api usize, output *rustBytes, offset u32, size u32) {
-	closures := getApi(api)
-	returnData := closures.getReturnData(uint32(offset), uint32(size))
-	output.setBytes(returnData)
-}
-
-//export emitLogImpl
-func emitLogImpl(api usize, data *rustBytes, topics u32) apiStatus {
-	closures := getApi(api)
-	err := closures.emitLog(data.read(), uint32(topics))
-	if err != nil {
-		data.setString(err.Error())
-		return apiFailure
-	}
-	return apiSuccess
-}
-
-//export accountBalanceImpl
-func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
-	closures := getApi(api)
-	balance, gas := closures.accountBalance(address.toAddress())
-	*cost = u64(gas)
-	return hashToBytes32(balance)
-}
-
-//export accountCodeHashImpl
-func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
-	closures := getApi(api)
-	codehash, gas := closures.accountCodeHash(address.toAddress())
-	*cost = u64(gas)
-	return hashToBytes32(codehash)
-}
-
-//export addPagesImpl
-func addPagesImpl(api usize, pages u16) u64 {
-	closures := getApi(api)
-	cost := closures.addPages(uint16(pages))
-	return u64(cost)
-}
-
-//export captureHostioImpl
-func captureHostioImpl(api usize, name *rustSlice, args *rustSlice, outs *rustSlice, startInk, endInk u64) {
-	closures := getApi(api)
-	closures.captureHostio(string(name.read()), args.read(), outs.read(), uint64(startInk), uint64(endInk))
 }
 
 func (value bytes20) toAddress() common.Address {

@@ -10,7 +10,7 @@ use arbutil::{
     evm::{api::EvmApi, EvmData},
     Bytes20, Bytes32, Color,
 };
-use eyre::Result;
+use eyre::{Result, eyre};
 use prover::value::Value;
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
@@ -80,10 +80,16 @@ impl<'a, A: EvmApi> UserHost for HostioInfo<'a, A> {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64) {
-        let start_ink = self.start_ink;
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
         self.evm_api
             .capture_hostio(name, args, outs, start_ink, end_ink);
+    }
+
+    fn start_ink(&self) -> Result<u64,Self::Err> {
+        if !self.env.evm_data.tracing {
+            return Err(eyre!("recording start ink when not captured").into())
+        }
+        Ok(self.start_ink)
     }
 }
 

@@ -49,6 +49,44 @@ impl<T: RequestHandler> JsEvmApi<T> {
     pub fn request_handler(&mut self) -> &mut T {
         &mut self.handler
     }
+
+    fn create_request(
+        &mut self,
+        create_type: EvmApiMethod,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        salt: Option<Bytes32>,
+        gas: u64,
+    ) -> (Result<Bytes20>, u32, u64) {
+        let mut request = vec![];
+        request.extend_from_slice(&gas.to_be_bytes());
+        request.extend_from_slice(endowment.as_slice());
+        if let Some(salt) = salt {
+            request.extend_from_slice(salt.as_slice());
+        }
+        request.extend_from_slice(&code);
+
+        let (mut res, cost) = self.handler.handle_request(create_type, &request);
+        if res.len() < 21 || res[0] == 0 {
+            let mut err_string = String::from("create_response_malformed");
+            if res.len() > 1 {
+                let res = res.drain(1..).collect();
+                match String::from_utf8(res) {
+                    Ok(str) => err_string = str,
+                    Err(_) => {}
+                }
+            };
+            self.last_call_result = err_string.as_bytes().to_vec();
+            return (Err(eyre!(err_string)), self.last_call_result.len() as u32, cost);
+        }
+        let address = res.get(1..21).unwrap().try_into().unwrap();
+        self.last_call_result = if res.len() > 21 {
+            res.drain(21..).collect()
+        } else {
+            vec![]
+        };
+        return (Ok(address), self.last_call_result.len() as u32, cost)
+    }
 }
 
 impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
@@ -99,29 +137,46 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
 
     fn create1(
         &mut self,
-        _code: Vec<u8>,
-        _endowment: Bytes32,
-        _gas: u64,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
-        (Err(eyre!("TODO")), 0, 0)
+        self.create_request(EvmApiMethod::Create1, code, endowment, None, gas)
     }
 
     fn create2(
         &mut self,
-        _code: Vec<u8>,
-        _endowment: Bytes32,
-        _salt: Bytes32,
-        _gas: u64,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        salt: Bytes32,
+        gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
-        (Err(eyre!("TODO")), 0, 0)
+        self.create_request(EvmApiMethod::Create2, code, endowment, Some(salt), gas)
     }
 
-    fn get_return_data(&mut self, _offset: u32, _size: u32) -> Vec<u8> {
-        self.last_call_result.clone()
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
+        let data = self.last_call_result.as_slice();
+        let data_len = data.len();
+        let offset = offset as usize;
+        let mut size = size as usize;
+        if offset >= data_len {
+            return vec![];
+        }
+        if offset + size > data_len {
+            size = data_len - offset;
+        }
+        data[offset..size].to_vec()
     }
 
-    fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {
-        Err(eyre!("TODO"))
+    fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
+        let mut request = topics.to_be_bytes().to_vec();
+        request.extend(data.iter());
+        let (res, _) = self.handler.handle_request(EvmApiMethod::EmitLog, &request);
+        if res.is_empty() {
+            Ok(())
+        } else {
+            Err(eyre!(String::from_utf8(res).unwrap_or(String::from("malformed emit-log response"))))
+        }
     }
 
     fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
@@ -139,11 +194,17 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
         cost
     }
 
-    fn capture_hostio(&self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, _end_ink: u64) {
-        let args = hex::encode(args);
-        let outs = hex::encode(outs);
-        println!(
-            "Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}, {start_ink}"
-        );
+    fn capture_hostio(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
+        let mut request = vec![];
+
+        request.extend_from_slice(&start_ink.to_be_bytes());
+        request.extend_from_slice(&end_ink.to_be_bytes());
+        request.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        request.extend_from_slice(&(args.len() as u16).to_be_bytes());
+        request.extend_from_slice(&(outs.len() as u16).to_be_bytes());
+        request.extend_from_slice(name.as_bytes());
+        request.extend_from_slice(args);
+        request.extend_from_slice(outs);
+        self.handler.handle_request(EvmApiMethod::CaptureHostIO, &request);
     }
 }
