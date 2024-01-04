@@ -24,6 +24,7 @@ type Config struct {
 	Address            string
 	EdgesProvider      EdgesProvider
 	AssertionsProvider AssertionsProvider
+	DBConfig           *DBConfig
 }
 
 type Server struct {
@@ -31,6 +32,7 @@ type Server struct {
 
 	edges      EdgesProvider
 	assertions AssertionsProvider
+	database   *Database
 
 	router *mux.Router
 
@@ -67,6 +69,13 @@ func NewServer(cfg *Config) (*Server, error) {
 		assertions: cfg.AssertionsProvider,
 		router:     r,
 	}
+	if cfg.DBConfig != nil && cfg.DBConfig.Enable {
+		database, err := NewDatabase(cfg.DBConfig, cfg.EdgesProvider)
+		if err != nil {
+			return nil, err
+		}
+		s.database = database
+	}
 
 	if err := s.registerMethods(); err != nil {
 		return nil, err
@@ -75,11 +84,13 @@ func NewServer(cfg *Config) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
+	go s.database.Start(ctx)
 	return s.srv.ListenAndServe()
 }
 
 func (s *Server) Stop(ctx context.Context) error {
+	s.database.close()
 	return s.srv.Shutdown(ctx)
 }
 
@@ -103,6 +114,12 @@ func (s *Server) registerMethods() error {
 
 	// Stakes
 	s.router.HandleFunc("/mini-stakes", s.listMiniStakesHandler).Methods("GET")
+
+	// Database query
+	if s.database != nil {
+		s.router.HandleFunc("/query-database/{query}", s.queryDatabaseHandler).Methods("GET")
+		s.router.HandleFunc("/update-database", s.updateDatabaseHandler).Methods("PUT")
+	}
 	s.registered = true
 	return nil
 }

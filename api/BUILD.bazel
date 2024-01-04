@@ -8,6 +8,7 @@ go_library(
         "edges.go",
         "log.go",
         "method_assertions.go",
+        "method_database.go",
         "method_edges.go",
         "method_healthz.go",
         "server.go",
@@ -20,6 +21,7 @@ go_library(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//log",
         "@com_github_gorilla_mux//:mux",
+        "@com_github_jmoiron_sqlx//:sqlx",
         "@org_golang_x_sync//errgroup",
     ],
 )

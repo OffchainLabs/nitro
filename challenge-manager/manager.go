@@ -72,8 +72,9 @@ type Manager struct {
 
 	challengedAssertions *threadsafe.Set[protocol.AssertionHash]
 	// API
-	apiAddr string
-	api     *api.Server
+	apiAddr     string
+	api         *api.Server
+	apiDBConfig *api.DBConfig
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -127,6 +128,13 @@ func WithMode(m types.Mode) Opt {
 func WithAPIEnabled(addr string) Opt {
 	return func(val *Manager) {
 		val.apiAddr = addr
+	}
+}
+
+// WithAPIDB specifies whether to enable the APIDB and adds DB-specific parameters.
+func WithAPIDB(config *api.DBConfig) Opt {
+	return func(val *Manager) {
+		val.apiDBConfig = config
 	}
 }
 
@@ -234,6 +242,7 @@ func New(
 			Address:            m.apiAddr,
 			EdgesProvider:      m.watcher,
 			AssertionsProvider: m.chain,
+			DBConfig:           m.apiDBConfig,
 		})
 		if err != nil {
 			return nil, err
@@ -368,7 +377,7 @@ func (m *Manager) Start(ctx context.Context) {
 
 	if m.api != nil {
 		go func() {
-			if err := m.api.Start(); err != nil {
+			if err := m.api.Start(ctx); err != nil {
 				srvlog.Error("Could not start API server", log.Ctx{
 					"address": m.apiAddr,
 					"err":     err,
