@@ -564,6 +564,35 @@ func (w *Watcher) GetHonestConfirmableEdges(ctx context.Context) (map[string][]p
 	return confirmableEdges, nil
 }
 
+func (w *Watcher) GetEvilConfirmedEdges(ctx context.Context) ([]protocol.SpecEdge, error) {
+	edges, err := w.GetEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	honestEdges := w.GetHonestEdges()
+	honestEdgesMap := make(map[common.Hash]protocol.SpecEdge)
+	for _, honestEdge := range honestEdges {
+		honestEdgesMap[honestEdge.Id().Hash] = honestEdge
+	}
+	evilEdges := make([]protocol.SpecEdge, 0)
+	for _, edge := range edges {
+		if _, ok := honestEdgesMap[edge.Id().Hash]; !ok {
+			evilEdges = append(evilEdges, edge)
+		}
+	}
+	evilConfirmedEdges := make([]protocol.SpecEdge, 0)
+	for _, evilEdge := range evilEdges {
+		status, err := evilEdge.Status(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get edge status")
+		}
+		if status == protocol.EdgeConfirmed {
+			evilConfirmedEdges = append(evilConfirmedEdges, evilEdge)
+		}
+	}
+	return evilConfirmedEdges, nil
+}
+
 // AddVerifiedHonestEdge adds an edge known to be honest to the chain watcher's internally
 // tracked challenge trees and spawns an edge tracker for it. Should be called after the challenge
 // manager creates a new edge, or bisects an edge and produces two children from that move.

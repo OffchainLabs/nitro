@@ -99,6 +99,7 @@ func (s *Server) registerMethods() error {
 	s.router.HandleFunc("/edges", s.listEdgesHandler).Methods("GET")
 	s.router.HandleFunc("/edges/{id}", s.getEdgeHandler).Methods("GET")
 	s.router.HandleFunc("/honest-confirmable-edges", s.listHonestConfirmableEdgesHandler).Methods("GET")
+	s.router.HandleFunc("/evil-confirmed-edges", s.listEvilConfirmedEdgesHandler).Methods("GET")
 
 	// Stakes
 	s.router.HandleFunc("/mini-stakes", s.listMiniStakesHandler).Methods("GET")

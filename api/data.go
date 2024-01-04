@@ -13,6 +13,7 @@ type EdgesProvider interface {
 	GetEdges(ctx context.Context) ([]protocol.SpecEdge, error)
 	GetEdge(ctx context.Context, hash common.Hash) (protocol.SpecEdge, error)
 	GetHonestConfirmableEdges(ctx context.Context) (map[string][]protocol.SpecEdge, error)
+	GetEvilConfirmedEdges(ctx context.Context) ([]protocol.SpecEdge, error)
 	ComputeHonestPathTimer(ctx context.Context, topLevelAssertionHash protocol.AssertionHash, edgeId protocol.EdgeId) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error)
 }
 

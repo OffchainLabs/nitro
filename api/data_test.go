@@ -43,6 +43,10 @@ func (f *FakeEdgesProvider) GetHonestConfirmableEdges(ctx context.Context) (map[
 	return honestConfirmableEdges, nil
 }
 
+func (f *FakeEdgesProvider) GetEvilConfirmedEdges(ctx context.Context) ([]protocol.SpecEdge, error) {
+	return f.Edges, nil
+}
+
 func (f *FakeEdgesProvider) ComputeHonestPathTimer(ctx context.Context, topLevelAssertionHash protocol.AssertionHash, edgeId protocol.EdgeId) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error) {
 	return 0, nil, nil, nil
 }
