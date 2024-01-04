@@ -213,6 +213,52 @@ drainLoop:
 	return nil
 }
 
+func (c *DBConverter) Verify(ctx context.Context) error {
+	if c.config.Verify == 1 {
+		log.Info("Starting quick verification - verifying only keys existence")
+	} else {
+		log.Info("Starting full verification - verifying keys and values")
+	}
+	var err error
+	defer c.Close()
+	c.src, err = openDB(&c.config.Src, true)
+	if err != nil {
+		return err
+	}
+	c.dst, err = openDB(&c.config.Dst, true)
+	if err != nil {
+		return err
+	}
+
+	c.stats.Reset()
+	c.stats.AddThread()
+	it := c.src.NewIterator(nil, nil)
+	defer it.Release()
+	for it.Next() {
+		switch c.config.Verify {
+		case 1:
+			if has, err := c.dst.Has(it.Key()); !has {
+				return fmt.Errorf("Missing key in destination db, key: %v, err: %w", it.Key(), err)
+			}
+			c.stats.AddBytes(int64(len(it.Key())))
+		case 2:
+			dstValue, err := c.dst.Get(it.Key())
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(dstValue, it.Value()) {
+				return fmt.Errorf("Value mismatch for key: %v, src value: %v, dst value: %s", it.Key(), it.Value(), dstValue)
+			}
+			c.stats.AddBytes(int64(len(it.Key()) + len(dstValue)))
+		default:
+			return fmt.Errorf("Invalid verify config value: %v", c.config.Verify)
+		}
+		c.stats.AddEntries(1)
+	}
+	c.stats.DecThread()
+	return nil
+}
+
 func (c *DBConverter) Stats() *Stats {
 	return &c.stats
 }

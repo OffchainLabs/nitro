@@ -1,7 +1,9 @@
 package dbconv
 
 import (
-	"github.com/ethereum/go-ethereum/ethdb"
+	"fmt"
+
+	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 )
 
@@ -29,12 +31,16 @@ type DBConvConfig struct {
 	Threads              int      `koanf:"threads"`
 	IdealBatchSize       int      `koanf:"ideal-batch-size"`
 	MinBatchesBeforeFork int      `koanf:"min-batches-before-fork"`
+	Verify               int      `koanf:"verify"`
+	VerifyOnly           bool     `koanf:"verify-only"`
 }
 
 var DefaultDBConvConfig = DBConvConfig{
-	IdealBatchSize:       ethdb.IdealBatchSize,
+	IdealBatchSize:       100 * 1024 * 1024, // 100 MB
 	MinBatchesBeforeFork: 10,
 	Threads:              0,
+	Verify:               1,
+	VerifyOnly:           false,
 }
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {
@@ -43,4 +49,17 @@ func DBConvConfigAddOptions(f *flag.FlagSet) {
 	f.Int("threads", DefaultDBConvConfig.Threads, "number of threads to use (0 = auto)")
 	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")                                         // TODO
 	f.Int("min-batches-before-fork", DefaultDBConvConfig.MinBatchesBeforeFork, "minimal number of batches before forking a thread") // TODO
+	f.Int("verify", DefaultDBConvConfig.Verify, "enables verification (0 = disabled, 1 = only keys, 2 = keys and values)")          // TODO
+	f.Bool("verify-only", DefaultDBConvConfig.VerifyOnly, "skips conversion, runs verification only")                               // TODO
+}
+
+func (c *DBConvConfig) Validate() error {
+	if c.Verify < 0 || c.Verify > 2 {
+		return fmt.Errorf("Invalid verify config value: %v", c.Verify)
+	}
+	if c.VerifyOnly && c.Verify == 0 {
+		log.Info("enabling keys verification as --verify-only flag is set")
+		c.Verify = 1
+	}
+	return nil
 }

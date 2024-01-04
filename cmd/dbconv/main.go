@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -26,20 +27,36 @@ func parseDBConv(args []string) (*dbconv.DBConvConfig, error) {
 	return &config, nil
 }
 
+func printSampleUsage(name string) {
+	fmt.Printf("Sample usage: %s [OPTIONS] \n\n", name)
+	fmt.Printf("Options:\n")
+	fmt.Printf("  --help\n")
+	fmt.Printf("  --src.db-engine <leveldb or pebble>\n")
+	fmt.Printf("  --src.data <source database directory>\n")
+	fmt.Printf("  --dst.db-engine <leveldb or pebble>\n")
+	fmt.Printf("  --dst.data <destination database directory>\n")
+}
 func main() {
 	args := os.Args[1:]
 	config, err := parseDBConv(args)
 	if err != nil {
-		panic(err)
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		return
 	}
 	err = genericconf.InitLog("plaintext", log.LvlDebug, &genericconf.FileLoggingConfig{Enable: false}, nil)
 	if err != nil {
-		panic(err)
+		log.Error("Failed to init logging", "err", err)
+		return
 	}
 
+	if err = config.Validate(); err != nil {
+		log.Error("Invalid config", "err", err)
+		return
+	}
 	conv := dbconv.NewDBConverter(config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
@@ -55,10 +72,23 @@ func main() {
 		}
 	}()
 
-	err = conv.Convert(ctx)
-	if err != nil {
-		panic(err)
+	if !config.VerifyOnly {
+		err = conv.Convert(ctx)
+		if err != nil {
+			log.Error("Conversion error", "err", err)
+			return
+		}
+		stats := conv.Stats()
+		log.Info("Conversion finished.", "entries", stats.Entries(), "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
 	}
-	stats := conv.Stats()
-	log.Info("Conversion finished.", "entries", stats.Entries(), "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
+
+	if config.Verify > 0 {
+		err = conv.Verify(ctx)
+		if err != nil {
+			log.Error("Verification error", "err", err)
+			return
+		}
+		stats := conv.Stats()
+		log.Info("Verification completed successfully.", "elapsed:", stats.Elapsed())
+	}
 }
