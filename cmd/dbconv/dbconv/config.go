@@ -33,7 +33,7 @@ type DBConvConfig struct {
 
 var DefaultDBConvConfig = DBConvConfig{
 	IdealBatchSize:       ethdb.IdealBatchSize,
-	MinBatchesBeforeFork: 100,
+	MinBatchesBeforeFork: 10,
 	Threads:              0,
 }
 

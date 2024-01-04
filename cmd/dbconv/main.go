@@ -47,7 +47,8 @@ func main() {
 			select {
 			case <-ticker.C:
 				stats := conv.Stats()
-				log.Info("Progress", "entries", stats.Entries(), "entires/s", stats.EntriesPerSecond(), "MB", float64(stats.Bytes())/1024/1024, "MB/s", stats.BytesPerSecond()/1024/1024, "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024)
+				log.Info("Progress:\n", "entries", stats.Entries(), "entires/s", stats.EntriesPerSecond(), "avg e/s", stats.AverageEntriesPerSecond(), "MB/s", float64(stats.Bytes())/1024/1024, "MB/s", stats.BytesPerSecond()/1024/1024, "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "forks", stats.Forks(), "threads", stats.Threads(), "elapsed", stats.Elapsed())
+
 			case <-ctx.Done():
 				return
 			}
@@ -58,4 +59,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	stats := conv.Stats()
+	log.Info("Conversion finished.", "entries", stats.Entries(), "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
 }

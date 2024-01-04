@@ -73,6 +73,7 @@ func middleKey(start []byte, end []byte) []byte {
 
 func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte, wg *sync.WaitGroup, results chan error) {
 	log.Debug("copy entries", "start", start, "end", end)
+	c.stats.AddThread()
 	it := c.src.NewIterator(nil, start)
 	defer it.Release()
 	var err error
@@ -126,15 +127,19 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 							wg.Add(1)
 							go c.copyEntries(ctx, foundMiddle, end, wg, results)
 							middle = foundMiddle
+							batchesSinceLastFork = 0
+							c.stats.AddFork()
 							f++
 						} else {
 							// no entries either after the middle key or for the middle key
 							results <- nil
 						}
+					} else {
+						// no entries either after the middle key or for the middle key
+						results <- nil
 					}
 					end = middle
 					m.Release()
-					batchesSinceLastFork = 0
 				} else {
 					log.Warn("no more forking", "key", key, "middle", middle, "end", end)
 					canFork = false
@@ -151,6 +156,7 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 		c.stats.AddBytes(int64(batchSize))
 	}
 	log.Info("copy entries done", "start", start, "end", end, "n", n, "forked", f)
+	c.stats.DecThread()
 	wg.Done()
 }
 
