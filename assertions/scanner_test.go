@@ -32,7 +32,6 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	//
 	// and then we have another validator that disagrees with 4, so Charlie
 	// should open a 4' that branches off 3.
-	ctx := context.Background()
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockBridge(),
 		setup.WithMockOneStepProver(),
@@ -62,6 +61,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	aliceChain := setup.Chains[0]
 	bobChain := setup.Chains[1]
 
+	ctx := context.Background()
 	genesisHash, err := setup.Chains[1].GenesisAssertionHash(ctx)
 	require.NoError(t, err)
 	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})

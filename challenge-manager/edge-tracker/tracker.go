@@ -371,8 +371,8 @@ func (et *Tracker) ShouldDespawn(ctx context.Context) bool {
 	if err != nil {
 		if errors.Is(err, challengetree.ErrNoLowerChildYet) {
 			srvlog.Info(
-				"Edge %s does not yet have a child, perhaps its creation event is still being processed",
-				containers.Trunc(et.EdgeId().Hash.Bytes()),
+				"Edge does not yet have a child, perhaps its creation event is still being processed",
+				et.uniqueTrackerLogFields(),
 			)
 			return false
 		}
@@ -524,8 +524,8 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 	if err != nil {
 		if errors.Is(err, challengetree.ErrNoLowerChildYet) {
 			srvlog.Info(
-				"Edge %s does not yet have a child, perhaps its creation event is still being processed",
-				containers.Trunc(et.EdgeId().Hash.Bytes()),
+				"Edge does not yet have a child, perhaps its creation event is still being processed",
+				et.uniqueTrackerLogFields(),
 			)
 			return false, nil
 		}

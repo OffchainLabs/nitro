@@ -29,20 +29,11 @@ import (
 var _ Backend = &AnvilLocal{}
 
 type AnvilLocal struct {
-	cancel context.CancelFunc
-
-	alice   *bind.TransactOpts
-	bob     *bind.TransactOpts
-	charlie *bind.TransactOpts
-
-	ctx    context.Context
-	client *ethclient.Client
-	rpc    *rpc.Client
-	cmd    *exec.Cmd
-
-	deployer *bind.TransactOpts
-
+	client    *ethclient.Client
+	rpc       *rpc.Client
+	cmd       *exec.Cmd
 	addresses *setup.RollupAddresses
+	accounts  []*bind.TransactOpts
 }
 
 var anvilLocalChainID = big.NewInt(1002)
@@ -53,81 +44,41 @@ var anvilLocalChainID = big.NewInt(1002)
 //
 // You must call Start() on the returned backend to start the backend.
 func NewAnvilLocal(ctx context.Context) (*AnvilLocal, error) {
-	ctx, cancel := context.WithCancel(ctx)
-
-	a := &AnvilLocal{
-		cancel: cancel,
-
-		ctx: ctx,
-	}
-
+	a := &AnvilLocal{}
 	if err := a.loadAccounts(); err != nil {
 		return nil, err
 	}
-
 	c, err := rpc.DialContext(ctx, "http://localhost:8686")
 	if err != nil {
 		return nil, err
 	}
-
 	a.rpc = c
 	a.client = ethclient.NewClient(c)
-
 	return a, nil
 }
 
 // Load accounts from test mnemonic. These are not real accounts. Don't even try to use them.
 func (a *AnvilLocal) loadAccounts() error {
-	// Load deployer from first account in test mnemonic.
-	deployerPK, err := crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-	if err != nil {
-		return err
+	accounts := make([]*bind.TransactOpts, 0)
+	for i := 0; i < len(anvilPrivKeyHexStrings); i++ {
+		privKeyHex := hexutil.MustDecode(anvilPrivKeyHexStrings[i])
+		privKey, err := crypto.ToECDSA(privKeyHex)
+		if err != nil {
+			return err
+		}
+		txOpts, err := bind.NewKeyedTransactorWithChainID(privKey, anvilLocalChainID)
+		if err != nil {
+			return err
+		}
+		accounts = append(accounts, txOpts)
 	}
-	deployerOpts, err := bind.NewKeyedTransactorWithChainID(deployerPK, anvilLocalChainID)
-	if err != nil {
-		return err
-	}
-	a.deployer = deployerOpts
-
-	// Load Alice from second account in test mnemonic.
-	alicePK, err := crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
-	if err != nil {
-		return err
-	}
-	aliceOpts, err := bind.NewKeyedTransactorWithChainID(alicePK, anvilLocalChainID)
-	if err != nil {
-		return err
-	}
-	a.alice = aliceOpts
-
-	// Load Bob from third account in test mnemonic.
-	bobPK, err := crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
-	if err != nil {
-		return err
-	}
-	bobOpts, err := bind.NewKeyedTransactorWithChainID(bobPK, anvilLocalChainID)
-	if err != nil {
-		return err
-	}
-	a.bob = bobOpts
-
-	// Load Charlie from fourth account in test mnemonic.
-	charliePK, err := crypto.HexToECDSA("2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6")
-	if err != nil {
-		return err
-	}
-	charlieOpts, err := bind.NewKeyedTransactorWithChainID(charliePK, anvilLocalChainID)
-	if err != nil {
-		return err
-	}
-	a.charlie = charlieOpts
-
+	a.accounts = accounts
 	return nil
 }
 
 // Start the actual backend and wait for it to be ready to serve requests.
 // This process also initializes the anvil blockchain by mining 100 blocks.
-func (a *AnvilLocal) Start() error {
+func (a *AnvilLocal) Start(ctx context.Context) error {
 	// If the user has told us where the anvil binary is, we will use that.
 	// When using bazel, the user can provide --test_env=ANVIL=$(which anvil).
 	binaryPath, ok := os.LookupEnv("ANVIL")
@@ -147,7 +98,7 @@ func (a *AnvilLocal) Start() error {
 		"--port=8686",
 	}
 
-	cmd := exec.CommandContext(a.ctx, binaryPath, args...) // #nosec G204 -- Test only code.
+	cmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- Test only code.
 
 	// Pipe stdout and stderr to test logs directory, if known.
 	if outputsDir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
@@ -177,7 +128,7 @@ func (a *AnvilLocal) Start() error {
 
 	// Wait until ready to serve a request.
 	// It should be very fast.
-	waitCtx, cancel := context.WithTimeout(a.ctx, 1*time.Second)
+	waitCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 	for waitCtx.Err() == nil {
 		cID, _ := a.client.ChainID(waitCtx)
@@ -188,40 +139,34 @@ func (a *AnvilLocal) Start() error {
 
 	a.cmd = cmd
 
+	go func() {
+		<-ctx.Done()
+		a.rpc.Close()
+		if err := a.cmd.Process.Kill(); err != nil {
+			fmt.Printf("Could not kill anvil process: %v\n", err)
+		}
+	}()
+
 	return nil
 }
 
-// Stop the backend and terminate the anvil process.
-func (a *AnvilLocal) Stop() error {
-	a.cancel()
-	a.rpc.Close()
-	return a.cmd.Process.Kill()
-}
-
 // Client returns the ethclient associated with the backend.
-func (a *AnvilLocal) Client() *ethclient.Client {
+func (a *AnvilLocal) Client() setup.Backend {
 	return a.client
 }
 
-// Alice returns the transactor for Alice's account.
-func (a *AnvilLocal) Alice() *bind.TransactOpts {
-	return a.alice
+func (a *AnvilLocal) Accounts() []*bind.TransactOpts {
+	return a.accounts
 }
 
-// Bob returns the transactor for Bob's account.`s`
-func (a *AnvilLocal) Bob() *bind.TransactOpts {
-	return a.bob
+func (a *AnvilLocal) Commit() common.Hash {
+	return common.Hash{}
 }
 
-// Charlie returns the transactor for Charlie's account.`s`
-func (a *AnvilLocal) Charlie() *bind.TransactOpts {
-	return a.charlie
-}
-
-func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address, error) {
+func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing.Opt) (common.Address, error) {
 	prod := false
 	wasmModuleRoot := common.Hash{}
-	rollupOwner := a.deployer.From
+	rollupOwner := a.accounts[0].From
 	loserStakeEscrow := common.Address{}
 	anyTrustFastConfirmer := common.Address{}
 	genesisExecutionState := rollupgen.ExecutionState{
@@ -231,9 +176,8 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 	genesisInboxCount := big.NewInt(0)
 	miniStake := big.NewInt(1)
 
-	ctx := context.TODO()
 	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
-		a.deployer,
+		a.accounts[0],
 		a.client,
 		"Weth",
 		"WETH",
@@ -253,9 +197,9 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 	}
 
 	result, err := setup.DeployFullRollupStack(
-		a.ctx,
+		ctx,
 		a.client,
-		a.deployer,
+		a.accounts[0],
 		common.Address{}, // Sequencer
 		challenge_testing.GenerateRollupConfig(
 			prod,
@@ -281,8 +225,8 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 	if !ok {
 		return common.Address{}, errors.New("could not set value")
 	}
-	a.deployer.Value = value
-	mintTx, err := tokenBindings.Deposit(a.deployer)
+	a.accounts[0].Value = value
+	mintTx, err := tokenBindings.Deposit(a.accounts[0])
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "could not mint test weth")
 	}
@@ -296,7 +240,7 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		return common.Address{}, errors.New("receipt errored")
 	}
-	a.deployer.Value = big.NewInt(0)
+	a.accounts[0].Value = big.NewInt(0)
 	rollupCaller, err := rollupgen.NewRollupUserLogicCaller(result.Rollup, a.client)
 	if err != nil {
 		return common.Address{}, err
@@ -305,13 +249,12 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 	if err != nil {
 		return common.Address{}, err
 	}
-	accs := []*bind.TransactOpts{a.alice, a.bob, a.charlie}
 	seed, ok := new(big.Int).SetString("1000", 10)
 	if !ok {
 		return common.Address{}, errors.New("could not set big int")
 	}
-	for _, acc := range accs {
-		transferTx, err := tokenBindings.TestWETH9Transactor.Transfer(a.deployer, acc.From, seed)
+	for _, acc := range a.accounts[1:] {
+		transferTx, err := tokenBindings.TestWETH9Transactor.Transfer(a.accounts[0], acc.From, seed)
 		if err != nil {
 			return common.Address{}, errors.Wrap(err, "could not approve account")
 		}
@@ -357,12 +300,12 @@ func (a *AnvilLocal) DeployRollup(opts ...challenge_testing.Opt) (common.Address
 
 	a.addresses = result
 
-	return result.Rollup, a.MineBlocks(100) // At least 75 blocks should be mined for a challenge to be possible.
+	return result.Rollup, a.MineBlocks(ctx, 100) // At least 100 blocks should be mined for a challenge to be possible.
 }
 
 // MineBlocks will call anvil to instantly mine n blocks.
-func (a *AnvilLocal) MineBlocks(n uint64) error {
-	return a.rpc.CallContext(a.ctx, nil, "anvil_mine", hexutil.EncodeUint64(n))
+func (a *AnvilLocal) MineBlocks(ctx context.Context, n uint64) error {
+	return a.rpc.CallContext(ctx, nil, "anvil_mine", hexutil.EncodeUint64(n))
 }
 
 func (a *AnvilLocal) ContractAddresses() *setup.RollupAddresses {

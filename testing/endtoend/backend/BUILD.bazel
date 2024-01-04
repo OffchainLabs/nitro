@@ -5,9 +5,11 @@ go_library(
     testonly = 1,
     srcs = [
         "anvil_local.go",
+        "anvil_priv_keys.go",
         "backend.go",
+        "simulated.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/testing/endtoend/internal/backend",
+    importpath = "github.com/OffchainLabs/bold/testing/endtoend/backend",
     visibility = ["//testing/endtoend:__subpackages__"],
     deps = [
         "//solgen/go/mocksgen",
@@ -34,4 +36,8 @@ go_test(
         "manual",
     ],
     visibility = ["//testing/endtoend:__subpackages__"],
+    deps = [
+        "//runtime",
+        "@com_github_stretchr_testify//require",
+    ],
 )

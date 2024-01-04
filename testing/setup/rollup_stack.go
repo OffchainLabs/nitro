@@ -156,6 +156,7 @@ type ChainSetup struct {
 	RollupConfig         rollupgen.Config
 	useMockBridge        bool
 	useMockOneStepProver bool
+	numAccountsToGen     uint64
 	challengeTestingOpts []challenge_testing.Opt
 	StateManagerOpts     []statemanager.Opt
 }
@@ -186,13 +187,24 @@ func WithStateManagerOpts(opts ...statemanager.Opt) Opt {
 	}
 }
 
+func WithNumAccounts(n uint64) Opt {
+	return func(setup *ChainSetup) {
+		setup.numAccountsToGen = n
+	}
+}
+
 func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	ctx := context.Background()
-	setp := &ChainSetup{}
+	setp := &ChainSetup{
+		numAccountsToGen: 4,
+	}
 	for _, o := range opts {
 		o(setp)
 	}
-	accs, backend, err := Accounts(4)
+	if setp.numAccountsToGen < 3 {
+		setp.numAccountsToGen = 3
+	}
+	accs, backend, err := Accounts(setp.numAccountsToGen)
 	if err != nil {
 		return nil, err
 	}
@@ -275,38 +287,19 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		return nil, err
 	}
 
-	chains := make([]*solimpl.AssertionChain, 3)
-	chain1, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[1].TxOpts,
-		backend,
-	)
-	if err != nil {
-		return nil, err
+	chains := make([]*solimpl.AssertionChain, 0)
+	for _, acc := range accs[1:] {
+		chain, chainErr := solimpl.NewAssertionChain(
+			ctx,
+			addresses.Rollup,
+			acc.TxOpts,
+			backend,
+		)
+		if chainErr != nil {
+			return nil, chainErr
+		}
+		chains = append(chains, chain)
 	}
-	chains[0] = chain1
-	chain2, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[2].TxOpts,
-		backend,
-	)
-	if err != nil {
-		return nil, err
-	}
-	chains[1] = chain2
-	chain3, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[3].TxOpts,
-		backend,
-	)
-	if err != nil {
-		return nil, err
-	}
-	chains[2] = chain3
-
 	chalManager, err := chains[1].SpecChallengeManager(ctx)
 	if err != nil {
 		return nil, err
@@ -473,6 +466,7 @@ func DeployFullRollupStack(
 	if !creationReceipt.BlockNumber.IsUint64() {
 		return nil, errors.New("block number was not a uint64")
 	}
+	srvlog.Info("Done deploying")
 
 	return &RollupAddresses{
 		Bridge:                 info.Bridge,

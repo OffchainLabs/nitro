@@ -5,31 +5,33 @@ test_suite(
     tags = ["manual"],
     tests = [
         ":endtoend_test",
-        "//testing/endtoend/internal/backend:backend_test",
+        "//testing/endtoend/backend:backend_test",
     ],
 )
 
 go_test(
     name = "endtoend_test",
     timeout = "long",
-    srcs = ["basic_local_test.go"],
+    srcs = [
+        "e2e_test.go",
+        "helpers_test.go",
+    ],
     embed = [":endtoend"],
     tags = [
         "exclusive-if-local",
         "manual",
     ],
     deps = [
-        "//assertions",
         "//chain-abstraction:protocol",
         "//chain-abstraction/sol-implementation",
         "//challenge-manager",
         "//challenge-manager/types",
-        "//containers/option",
         "//layer2-state-provider",
-        "//runtime",
+        "//solgen/go/rollupgen",
         "//testing",
-        "//testing/endtoend/internal/backend",
+        "//testing/endtoend/backend",
         "//testing/mocks/state-provider",
+        "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//:go-ethereum",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
@@ -43,18 +45,14 @@ go_test(
 go_library(
     name = "endtoend",
     testonly = 1,
-    srcs = [
-        "expect.go",
-        "helpers.go",
-    ],
+    srcs = ["expectations.go"],
     importpath = "github.com/OffchainLabs/bold/testing/endtoend",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
         "//runtime",
-        "//solgen/go/challengeV2gen",
         "//solgen/go/rollupgen",
-        "//testing/endtoend/internal/backend",
+        "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_stretchr_testify//require",
     ],
