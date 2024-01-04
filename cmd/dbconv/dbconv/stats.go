@@ -3,8 +3,6 @@ package dbconv
 import (
 	"sync/atomic"
 	"time"
-
-	"github.com/ethereum/go-ethereum/log"
 )
 
 type Stats struct {
@@ -70,7 +68,6 @@ func (s *Stats) BytesPerSecond() float64 {
 	db := current - s.prevBytes
 	s.prevBytes = current
 	s.prevBytesTimestamp = now
-	log.Debug("BytesPerSecond", "dt", dt, "current", current)
 	return float64(db) * 1e9 / float64(dt)
 }
 
