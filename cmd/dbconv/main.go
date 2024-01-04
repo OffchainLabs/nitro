@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
@@ -37,7 +38,23 @@ func main() {
 	}
 
 	conv := dbconv.NewDBConverter(config)
-	err = conv.Convert(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				stats := conv.Stats()
+				log.Info("Progress", "entries", stats.Entries(), "entires/s", stats.EntriesPerSecond(), "MB", float64(stats.Bytes())/1024/1024, "MB/s", stats.BytesPerSecond()/1024/1024, "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	err = conv.Convert(ctx)
 	if err != nil {
 		panic(err)
 	}

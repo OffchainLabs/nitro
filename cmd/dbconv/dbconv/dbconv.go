@@ -15,13 +15,16 @@ import (
 
 type DBConverter struct {
 	config *DBConvConfig
+	stats  Stats
 
 	src ethdb.Database
 	dst ethdb.Database
 }
 
 func NewDBConverter(config *DBConvConfig) *DBConverter {
-	return &DBConverter{config: config}
+	return &DBConverter{
+		config: config,
+	}
 }
 
 func openDB(config *DBConfig, readonly bool) (ethdb.Database, error) {
@@ -82,23 +85,25 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 	n := 0
 	f := 0
 	canFork := true
+	entriesInBatch := 0
 	batchesSinceLastFork := 0
 	for it.Next() && ctx.Err() == nil {
 		key := it.Key()
 		n++
-		if n%10000 == 1 {
-			log.Debug("progress", "start", start, "end", end, "n", n, "forked", f)
-		}
 		if len(end) > 0 && bytes.Compare(key, end) >= 0 {
 			break
 		}
 		if err = batch.Put(key, it.Value()); err != nil {
 			return
 		}
-		if batch.ValueSize() >= c.config.IdealBatchSize {
+		entriesInBatch++
+		if batchSize := batch.ValueSize(); batchSize >= c.config.IdealBatchSize {
 			if err = batch.Write(); err != nil {
 				return
 			}
+			c.stats.AddEntries(int64(entriesInBatch))
+			c.stats.AddBytes(int64(batchSize))
+			entriesInBatch = 0
 			batch.Reset()
 			batchesSinceLastFork++
 		}
@@ -140,7 +145,10 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 		}
 	}
 	if err = ctx.Err(); err == nil {
+		batchSize := batch.ValueSize()
 		err = batch.Write()
+		c.stats.AddEntries(int64(entriesInBatch))
+		c.stats.AddBytes(int64(batchSize))
 	}
 	log.Info("copy entries done", "start", start, "end", end, "n", n, "forked", f)
 	wg.Done()
@@ -162,6 +170,8 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		return errors.New("invalid threads count")
 	}
 
+	c.stats.Reset()
+
 	// copy empty key entry
 	if has, _ := c.src.Has([]byte{}); has {
 		value, err := c.src.Get([]byte{})
@@ -172,8 +182,9 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("Destination database: failed to put value for an empty key: %w", err)
 		}
+		c.stats.AddEntries(1)
+		c.stats.AddBytes(int64(len(value))) // adding only value len as key is empty
 	}
-
 	results := make(chan error, c.config.Threads)
 	for i := 0; i < c.config.Threads-1; i++ {
 		results <- nil
@@ -194,6 +205,10 @@ drainLoop:
 		}
 	}
 	return nil
+}
+
+func (c *DBConverter) Stats() *Stats {
+	return &c.stats
 }
 
 func (c *DBConverter) Close() {

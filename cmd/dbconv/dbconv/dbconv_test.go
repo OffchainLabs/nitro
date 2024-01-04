@@ -3,6 +3,7 @@ package dbconv
 import (
 	"bytes"
 	"context"
+	"math/big"
 	"math/rand"
 	"testing"
 
@@ -15,14 +16,13 @@ func TestMiddleKey(t *testing.T) {
 		{0}, {0, 0}, {0, 0},
 		{1}, {1, 1}, {1, 0, 128},
 		{1}, {1, 0}, {1, 0},
-		{1, 1}, {2}, {1, 128, 128},
 		{1}, {2}, {1, 128},
 		{1}, {2, 1}, {1, 128, 128},
 		{0}, {255}, {127, 128},
 		{0}, {}, {127, 128},
 		{0, 0}, {}, {127, 255, 128},
+		{1, 1}, {2}, {1, 128, 128},
 	}
-
 	for i := 0; i < len(triples)-2; i += 3 {
 		start, end, expected := triples[i], triples[i+1], triples[i+2]
 		if mid := middleKey(start, end); !bytes.Equal(mid, expected) {
@@ -30,12 +30,23 @@ func TestMiddleKey(t *testing.T) {
 		}
 	}
 
-	//	for i := 0; i < 1000; i++ {
-	//		for j := 0; j < 1000; j++ {
-	//			start := new(big.Int.)
-	//			m := moddleKey({i}, {j})
-	//		}
-	//	}
+	for i := int64(0); i < 1000-1; i++ {
+		for j := int64(0); j < 1000; j++ {
+			start := big.NewInt(i).Bytes()
+			end := big.NewInt(j).Bytes()
+			if bytes.Compare(start, end) > 0 {
+				start, end = end, start
+			}
+			middle := middleKey(start, end)
+			if bytes.Compare(middle, start) < 0 {
+				Fail(t, "middle < start, start:", start, "end:", end, "middle:", middle)
+			}
+			if bytes.Compare(middle, end) > 0 {
+				Fail(t, "middle > end, start:", start, "end:", end, "middle:", middle)
+			}
+		}
+	}
+
 }
 
 func TestConversion(t *testing.T) {
@@ -64,7 +75,7 @@ func TestConversion(t *testing.T) {
 		}
 		err = oldDb.Put([]byte{}, []byte{0xde, 0xed, 0xbe, 0xef})
 		Require(t, err)
-		for i := 0; i < 10000; i++ {
+		for i := 0; i < 100000; i++ {
 			size := 1 + rand.Uint64()%100
 			randomBytes := testhelpers.RandomizeSlice(make([]byte, size))
 			err = oldDb.Put(randomBytes, []byte{byte(i)})
