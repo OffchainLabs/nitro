@@ -94,6 +94,6 @@ func main() {
 			return
 		}
 		stats := conv.Stats()
-		log.Info("Verification completed successfully.", "elapsed:", stats.Elapsed())
+		log.Info("Verification completed successfully.", "elapsed", stats.Elapsed())
 	}
 }
