@@ -43,7 +43,7 @@ func main() {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 		return
 	}
-	err = genericconf.InitLog("plaintext", log.LvlDebug, &genericconf.FileLoggingConfig{Enable: false}, nil)
+	err = genericconf.InitLog("plaintext", log.Lvl(config.LogLevel), &genericconf.FileLoggingConfig{Enable: false}, nil)
 	if err != nil {
 		log.Error("Failed to init logging", "err", err)
 		return
@@ -64,7 +64,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				stats := conv.Stats()
-				log.Info("Progress:\n", "entries", stats.Entries(), "entires/s", stats.EntriesPerSecond(), "avg e/s", stats.AverageEntriesPerSecond(), "MB/s", float64(stats.Bytes())/1024/1024, "MB/s", stats.BytesPerSecond()/1024/1024, "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "forks", stats.Forks(), "threads", stats.Threads(), "elapsed", stats.Elapsed())
+				fmt.Printf("Progress:\n\tprocessed entries: %v\n\tprocessed data (MB): %v\n\telapsed: %v\n\tcurrent:\tentr/s: %v\tMB/s: %v\n\taverage:\tentr/s: %v\tMB/s: %v\n\tthreads: %v\tforks: %v\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond(), stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond(), stats.AverageBytesPerSecond()/1024/1024, stats.Threads(), stats.Forks())
 
 			case <-ctx.Done():
 				return
@@ -79,7 +79,7 @@ func main() {
 			return
 		}
 		stats := conv.Stats()
-		log.Info("Conversion finished.", "entries", stats.Entries(), "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
+		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
 	}
 
 	if config.Verify > 0 {

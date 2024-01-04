@@ -72,7 +72,7 @@ func middleKey(start []byte, end []byte) []byte {
 }
 
 func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte, wg *sync.WaitGroup, results chan error) {
-	log.Debug("copy entries", "start", start, "end", end)
+	log.Debug("new conversion worker", "start", start, "end", end)
 	c.stats.AddThread()
 	it := c.src.NewIterator(nil, start)
 	defer it.Release()
@@ -155,7 +155,7 @@ func (c *DBConverter) copyEntries(ctx context.Context, start []byte, end []byte,
 		c.stats.AddEntries(int64(entriesInBatch))
 		c.stats.AddBytes(int64(batchSize))
 	}
-	log.Info("copy entries done", "start", start, "end", end, "n", n, "forked", f)
+	log.Debug("worker done", "start", start, "end", end, "n", n, "forked", f)
 	c.stats.DecThread()
 	wg.Done()
 }
