@@ -28,14 +28,9 @@ func parseDBConv(args []string) (*dbconv.DBConvConfig, error) {
 }
 
 func printSampleUsage(name string) {
-	fmt.Printf("Sample usage: %s [OPTIONS] \n\n", name)
-	fmt.Printf("Options:\n")
-	fmt.Printf("  --help\n")
-	fmt.Printf("  --src.db-engine <leveldb or pebble>\n")
-	fmt.Printf("  --src.data <source database directory>\n")
-	fmt.Printf("  --dst.db-engine <leveldb or pebble>\n")
-	fmt.Printf("  --dst.data <destination database directory>\n")
+	fmt.Printf("Sample usage: %s --help \n\n", name)
 }
+
 func main() {
 	args := os.Args[1:]
 	config, err := parseDBConv(args)
@@ -57,8 +52,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	ticker := time.NewTicker(10 * time.Second)
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -72,7 +67,7 @@ func main() {
 		}
 	}()
 
-	if !config.VerifyOnly {
+	if config.Convert {
 		err = conv.Convert(ctx)
 		if err != nil {
 			log.Error("Conversion error", "err", err)
@@ -82,7 +77,17 @@ func main() {
 		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
 	}
 
+	if config.Compact {
+		ticker.Stop()
+		err = conv.CompactDestination()
+		if err != nil {
+			log.Error("Compaction error", "err", err)
+			return
+		}
+	}
+
 	if config.Verify > 0 {
+		ticker.Reset(10 * time.Second)
 		err = conv.Verify(ctx)
 		if err != nil {
 			log.Error("Verification error", "err", err)

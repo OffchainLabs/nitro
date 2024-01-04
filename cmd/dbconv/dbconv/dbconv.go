@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -213,6 +214,22 @@ drainLoop:
 	return nil
 }
 
+func (c *DBConverter) CompactDestination() error {
+	var err error
+	c.dst, err = openDB(&c.config.Dst, false)
+	if err != nil {
+		return err
+	}
+	defer c.dst.Close()
+	start := time.Now()
+	log.Info("Compacting destination database", "data", c.config.Dst.Data)
+	if err := c.dst.Compact(nil, nil); err != nil {
+		return err
+	}
+	log.Info("Compaction done", "elapsed", time.Since(start))
+	return nil
+}
+
 func (c *DBConverter) Verify(ctx context.Context) error {
 	if c.config.Verify == 1 {
 		log.Info("Starting quick verification - verifying only keys existence")
@@ -234,7 +251,7 @@ func (c *DBConverter) Verify(ctx context.Context) error {
 	c.stats.AddThread()
 	it := c.src.NewIterator(nil, nil)
 	defer it.Release()
-	for it.Next() {
+	for it.Next() && ctx.Err() == nil {
 		switch c.config.Verify {
 		case 1:
 			if has, err := c.dst.Has(it.Key()); !has {
@@ -256,7 +273,7 @@ func (c *DBConverter) Verify(ctx context.Context) error {
 		c.stats.AddEntries(1)
 	}
 	c.stats.DecThread()
-	return nil
+	return ctx.Err()
 }
 
 func (c *DBConverter) Stats() *Stats {

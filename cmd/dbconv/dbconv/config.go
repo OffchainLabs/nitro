@@ -1,6 +1,7 @@
 package dbconv
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -31,8 +32,9 @@ type DBConvConfig struct {
 	Threads              int      `koanf:"threads"`
 	IdealBatchSize       int      `koanf:"ideal-batch-size"`
 	MinBatchesBeforeFork int      `koanf:"min-batches-before-fork"`
+	Convert              bool     `koanf:"convert"`
+	Compact              bool     `koanf:"compact"`
 	Verify               int      `koanf:"verify"`
-	VerifyOnly           bool     `koanf:"verify-only"`
 	LogLevel             int      `koanf:"log-level"`
 }
 
@@ -40,8 +42,9 @@ var DefaultDBConvConfig = DBConvConfig{
 	IdealBatchSize:       100 * 1024 * 1024, // 100 MB
 	MinBatchesBeforeFork: 10,
 	Threads:              1,
-	Verify:               1,
-	VerifyOnly:           false,
+	Convert:              false,
+	Compact:              false,
+	Verify:               0,
 	LogLevel:             int(log.LvlDebug),
 }
 
@@ -49,11 +52,12 @@ func DBConvConfigAddOptions(f *flag.FlagSet) {
 	DBConfigAddOptions("src", f)
 	DBConfigAddOptions("dst", f)
 	f.Int("threads", DefaultDBConvConfig.Threads, "number of threads to use")
-	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")                                         // TODO
-	f.Int("min-batches-before-fork", DefaultDBConvConfig.MinBatchesBeforeFork, "minimal number of batches before forking a thread") // TODO
-	f.Int("verify", DefaultDBConvConfig.Verify, "enables verification (0 = disabled, 1 = only keys, 2 = keys and values)")          // TODO
-	f.Bool("verify-only", DefaultDBConvConfig.VerifyOnly, "skips conversion, runs verification only")                               // TODO
-	f.Int("log-level", DefaultDBConvConfig.LogLevel, "log level (0 crit - 5 trace)")                                                // TODO
+	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")
+	f.Int("min-batches-before-fork", DefaultDBConvConfig.MinBatchesBeforeFork, "minimal number of batches before forking a thread")
+	f.Bool("convert", DefaultDBConvConfig.Convert, "enables conversion step")
+	f.Bool("compact", DefaultDBConvConfig.Compact, "enables compaction step")
+	f.Int("verify", DefaultDBConvConfig.Verify, "enables verification step (0 = disabled, 1 = only keys, 2 = keys and values)")
+	f.Int("log-level", DefaultDBConvConfig.LogLevel, "log level (0 crit - 5 trace)")
 }
 
 func (c *DBConvConfig) Validate() error {
@@ -63,9 +67,8 @@ func (c *DBConvConfig) Validate() error {
 	if c.Verify < 0 || c.Verify > 2 {
 		return fmt.Errorf("Invalid verify config value: %v", c.Verify)
 	}
-	if c.VerifyOnly && c.Verify == 0 {
-		log.Info("enabling keys verification as --verify-only flag is set")
-		c.Verify = 1
+	if !c.Convert && c.Verify == 0 && !c.Compact {
+		return errors.New("nothing to be done, conversion, verification and compaction disabled")
 	}
 	return nil
 }
