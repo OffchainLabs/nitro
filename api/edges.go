@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
+
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/sync/errgroup"
 )
@@ -28,6 +31,7 @@ type Edge struct {
 	Status              string                  `json:"status"`
 	HasLengthOneRival   bool                    `json:"hasLengthOneRival"`
 	TopLevelClaimHeight *protocol.OriginHeights `json:"topLevelClaimHeight"`
+	CumulativePathTimer uint64                  `json:"cumulativePathTimer"`
 
 	// Validator's point of view
 	// IsHonest bool `json:"isHonest"`
@@ -56,7 +60,7 @@ type Commitment struct {
 	Hash   common.Hash `json:"hash"`
 }
 
-func convertSpecEdgeEdgesToEdges(ctx context.Context, e []protocol.SpecEdge) ([]*Edge, error) {
+func convertSpecEdgeEdgesToEdges(ctx context.Context, e []protocol.SpecEdge, edgesProvider EdgesProvider) ([]*Edge, error) {
 	// Convert concurrently as some of the underlying methods are API calls.
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -66,14 +70,14 @@ func convertSpecEdgeEdgesToEdges(ctx context.Context, e []protocol.SpecEdge) ([]
 		ee := edge
 
 		eg.Go(func() (err error) {
-			edges[index], err = convertSpecEdgeEdgeToEdge(ctx, ee)
+			edges[index], err = convertSpecEdgeEdgeToEdge(ctx, ee, edgesProvider)
 			return
 		})
 	}
 	return edges, eg.Wait()
 }
 
-func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge, error) {
+func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge, edgesProvider EdgesProvider) (*Edge, error) {
 	challengeLevel := e.GetChallengeLevel()
 	edge := &Edge{
 		ID:              e.Id().Hash,
@@ -144,6 +148,15 @@ func convertSpecEdgeEdgeToEdge(ctx context.Context, e protocol.SpecEdge) (*Edge,
 			return fmt.Errorf("could not get edge assertion hash: %w", err)
 		}
 		edge.AssertionHash = ah.Hash
+
+		cumulativePathTimer, _, _, err := edgesProvider.ComputeHonestPathTimer(ctx, ah, e.Id())
+		if err != nil {
+			if errors.Is(err, challengetree.ErrNoLowerChildYet) {
+				return nil
+			}
+			return fmt.Errorf("failed to get edge cumulative path timer: %w", err)
+		}
+		edge.CumulativePathTimer = uint64(cumulativePathTimer)
 		return nil
 	})
 

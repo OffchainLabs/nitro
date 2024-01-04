@@ -17,11 +17,13 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
+	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -36,6 +38,13 @@ var (
 	edgeConfirmedByTimeCounter     = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_time", nil)
 	edgeConfirmedByOSPCounter      = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_osp", nil)
 	edgeConfirmedByClaimCounter    = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_claim", nil)
+)
+
+const (
+	ConfirmableByChildren = "confirmable_by_children"
+	ConfirmableByClaim    = "confirmable_by_claim"
+	ConfirmableByTimer    = "confirmable_by_timer"
+	ConfirmableByOSP      = "confirmable_by_osp"
 )
 
 func init() {
@@ -469,6 +478,90 @@ func (w *Watcher) GetHonestEdges() []protocol.SpecEdge {
 		return nil
 	})
 	return syncEdges
+}
+
+func (w *Watcher) GetHonestConfirmableEdges(ctx context.Context) (map[string][]protocol.SpecEdge, error) {
+	honestEdges := w.GetHonestEdges()
+	confirmableEdges := make(map[string][]protocol.SpecEdge)
+	confirmableEdges[ConfirmableByChildren] = make([]protocol.SpecEdge, 0)
+	confirmableEdges[ConfirmableByClaim] = make([]protocol.SpecEdge, 0)
+	confirmableEdges[ConfirmableByTimer] = make([]protocol.SpecEdge, 0)
+	confirmableEdges[ConfirmableByOSP] = make([]protocol.SpecEdge, 0)
+	for _, honestEdge := range honestEdges {
+		status, err := honestEdge.Status(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get edge status")
+		}
+		if status == protocol.EdgeConfirmed {
+			continue
+		}
+
+		// Check if we can confirm by one step proof.
+		canOsp, err := edgetracker.CanOneStepProve(ctx, honestEdge)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not check if edge can be one step proven")
+		}
+		if canOsp {
+			confirmableEdges[ConfirmableByOSP] = append(confirmableEdges[ConfirmableByOSP], honestEdge)
+			continue
+		}
+
+		hasConfirmedRival, err := honestEdge.HasConfirmedRival(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not check if edge has confirmed rival")
+		}
+		if hasConfirmedRival {
+			// Cannot be confirmed if it has a confirmed rival edge.
+			continue
+		}
+
+		assertionHash, err := honestEdge.AssertionHash(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get prev assertion hash")
+		}
+		manager, err := w.chain.SpecChallengeManager(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get challenge manager")
+		}
+
+		// Check if we can confirm by children.
+		childrenConfirmed, err := edgetracker.ChildrenAreConfirmed(ctx, honestEdge, manager)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not check if children are confirmed")
+		}
+		if childrenConfirmed {
+			confirmableEdges[ConfirmableByChildren] = append(confirmableEdges[ConfirmableByChildren], honestEdge)
+			continue
+		}
+
+		// Check if we can confirm by claim.
+		_, ok := w.ConfirmedEdgeWithClaimExists(
+			assertionHash,
+			protocol.ClaimId(honestEdge.Id().Hash),
+		)
+		if ok {
+			confirmableEdges[ConfirmableByClaim] = append(confirmableEdges[ConfirmableByClaim], honestEdge)
+			continue
+		}
+
+		// Check if we can confirm by time.
+		timer, _, _, err := w.ComputeHonestPathTimer(ctx, assertionHash, honestEdge.Id())
+		if err != nil {
+			if errors.Is(err, challengetree.ErrNoLowerChildYet) {
+				continue
+			}
+			return nil, errors.Wrap(err, "could not compute honest path timer")
+		}
+		chalPeriod, err := manager.ChallengePeriodBlocks(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not check the challenge period length")
+		}
+		if timer >= challengetree.PathTimer(chalPeriod) {
+			confirmableEdges[ConfirmableByTimer] = append(confirmableEdges[ConfirmableByTimer], honestEdge)
+			continue
+		}
+	}
+	return confirmableEdges, nil
 }
 
 // AddVerifiedHonestEdge adds an edge known to be honest to the chain watcher's internally

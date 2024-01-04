@@ -7,6 +7,8 @@ import (
 
 	"github.com/OffchainLabs/bold/api"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
+	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -33,6 +35,16 @@ func (f *FakeEdgesProvider) GetEdge(ctx context.Context, edgeId common.Hash) (pr
 		}
 	}
 	return nil, fmt.Errorf("no edge found with id %#x", edgeId)
+}
+
+func (f *FakeEdgesProvider) GetHonestConfirmableEdges(ctx context.Context) (map[string][]protocol.SpecEdge, error) {
+	honestConfirmableEdges := make(map[string][]protocol.SpecEdge)
+	honestConfirmableEdges[watcher.ConfirmableByTimer] = f.Edges
+	return honestConfirmableEdges, nil
+}
+
+func (f *FakeEdgesProvider) ComputeHonestPathTimer(ctx context.Context, topLevelAssertionHash protocol.AssertionHash, edgeId protocol.EdgeId) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error) {
+	return 0, nil, nil, nil
 }
 
 type FakeAssertionProvider struct {
