@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package programs
@@ -30,13 +30,17 @@ type Programs struct {
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
 	callScalar     storage.StorageBackedUint16
+	expiryDays     storage.StorageBackedUint16
+	keepaliveDays  storage.StorageBackedUint16
 	version        storage.StorageBackedUint16 // Must only be changed during ArbOS upgrades
 }
 
 type Program struct {
-	wasmSize  uint16 // Unit is half of a kb
-	footprint uint16
-	version   uint16
+	version     uint16
+	wasmSize    uint16 // Unit is half of a kb
+	footprint   uint16
+	activatedAt uint64 // Last activation timestamp
+	secondsLeft uint64 // Not stored in state
 }
 
 type uint24 = arbmath.Uint24
@@ -53,21 +57,27 @@ const (
 	pageRampOffset
 	pageLimitOffset
 	callScalarOffset
+	expiryDaysOffset
+	keepaliveDaysOffset
 )
 
 var ErrProgramActivation = errors.New("program activation failed")
 
 var ProgramNotActivatedError func() error
-var ProgramOutOfDateError func(version uint16) error
+var ProgramNeedsUpgradeError func(version, stylusVersion uint16) error
+var ProgramExpiredError func(age uint64) error
 var ProgramUpToDateError func() error
+var ProgramKeepaliveTooSoon func(age uint64) error
 
 const MaxWasmSize = 128 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
-const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
-const initialPageLimit = 128      // reject wasms with memories larger than 8MB
-const initialInkPrice = 10000     // 1 evm gas buys 10k ink
+const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term.
+const initialPageLimit = 128      // reject wasms with memories larger than 8MB.
+const initialInkPrice = 10000     // 1 evm gas buys 10k ink.
 const initialCallScalar = 8       // call cost per half kb.
+const initialExpiryDays = 365     // deactivate after 1 year.
+const initialKeepaliveDays = 31   // wait a month before allowing reactivation
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
@@ -77,6 +87,8 @@ func Initialize(sto *storage.Storage) {
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
 	callScalar := sto.OpenStorageBackedUint16(callScalarOffset)
+	expiryDays := sto.OpenStorageBackedUint16(expiryDaysOffset)
+	keepaliveDays := sto.OpenStorageBackedUint16(keepaliveDaysOffset)
 	version := sto.OpenStorageBackedUint16(versionOffset)
 	_ = inkPrice.Set(initialInkPrice)
 	_ = maxStackDepth.Set(math.MaxUint32)
@@ -85,6 +97,8 @@ func Initialize(sto *storage.Storage) {
 	_ = pageRamp.Set(initialPageRamp)
 	_ = pageLimit.Set(initialPageLimit)
 	_ = callScalar.Set(initialCallScalar)
+	_ = expiryDays.Set(initialExpiryDays)
+	_ = keepaliveDays.Set(initialKeepaliveDays)
 	_ = version.Set(1)
 }
 
@@ -100,6 +114,8 @@ func Open(sto *storage.Storage) *Programs {
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
 		callScalar:     sto.OpenStorageBackedUint16(callScalarOffset),
+		expiryDays:     sto.OpenStorageBackedUint16(expiryDaysOffset),
+		keepaliveDays:  sto.OpenStorageBackedUint16(keepaliveDaysOffset),
 		version:        sto.OpenStorageBackedUint16(versionOffset),
 	}
 }
@@ -168,6 +184,22 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
+func (p Programs) ExpiryDays() (uint16, error) {
+	return p.expiryDays.Get()
+}
+
+func (p Programs) SetExpiryDays(days uint16) error {
+	return p.expiryDays.Set(days)
+}
+
+func (p Programs) KeepaliveDays() (uint16, error) {
+	return p.keepaliveDays.Get()
+}
+
+func (p Programs) SetKeepaliveDays(days uint16) error {
+	return p.keepaliveDays.Set(days)
+}
+
 func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (
 	uint16, common.Hash, common.Hash, bool, error,
 ) {
@@ -179,7 +211,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	if err != nil {
 		return 0, codeHash, common.Hash{}, false, err
 	}
-	latest, err := p.CodehashVersion(codeHash)
+	latest, err := p.programExists(codeHash)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, false, err
 	}
@@ -211,9 +243,10 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
-		wasmSize:  wasmSize,
-		footprint: footprint,
-		version:   version,
+		version:     version,
+		wasmSize:    wasmSize,
+		footprint:   footprint,
+		activatedAt: evm.Context.Time,
 	}
 	return version, codeHash, moduleHash, false, p.setProgram(codeHash, programData)
 }
@@ -226,36 +259,22 @@ func (p Programs) CallProgram(
 	calldata []byte,
 	reentrant bool,
 ) ([]byte, error) {
-
-	// ensure the program is runnable
-	stylusVersion, err := p.StylusVersion()
-	if err != nil {
-		return nil, err
-	}
+	evm := interpreter.Evm()
 	contract := scope.Contract
-	program, err := p.getProgram(contract)
+	debugMode := evm.ChainConfig().DebugMode()
+
+	program, err := p.getProgram(contract.CodeHash, evm.Context.Time)
 	if err != nil {
 		return nil, err
 	}
-	if program.version == 0 {
-		return nil, ProgramNotActivatedError()
-	}
-	if program.version != stylusVersion {
-		return nil, ProgramOutOfDateError(program.version)
-	}
-
 	moduleHash, err := p.moduleHashes.Get(contract.CodeHash)
 	if err != nil {
 		return nil, err
 	}
-
-	debugMode := interpreter.Evm().ChainConfig().DebugMode()
 	params, err := p.goParams(program.version, debugMode)
 	if err != nil {
 		return nil, err
 	}
-
-	evm := interpreter.Evm()
 	l1BlockNumber, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
 	if err != nil {
 		return nil, err
@@ -318,43 +337,102 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
-func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
-	return p.deserializeProgram(contract.CodeHash)
-}
-
-func (p Programs) deserializeProgram(codeHash common.Hash) (Program, error) {
+func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error) {
 	data, err := p.programs.Get(codeHash)
-	return Program{
-		wasmSize:  arbmath.BytesToUint16(data[26:28]),
-		footprint: arbmath.BytesToUint16(data[28:30]),
-		version:   arbmath.BytesToUint16(data[30:]),
-	}, err
+	if err != nil {
+		return Program{}, err
+	}
+	program := Program{
+		version:     arbmath.BytesToUint16(data[:2]),
+		wasmSize:    arbmath.BytesToUint16(data[2:4]),
+		footprint:   arbmath.BytesToUint16(data[4:6]),
+		activatedAt: arbmath.BytesToUint(data[6:14]),
+	}
+	if program.version == 0 {
+		return program, ProgramNotActivatedError()
+	}
+
+	// check that the program is up to date
+	stylusVersion, err := p.StylusVersion()
+	if err != nil {
+		return program, err
+	}
+	if program.version != stylusVersion {
+		return program, ProgramNeedsUpgradeError(program.version, stylusVersion)
+	}
+
+	// ensure the program hasn't expired
+	expiryDays, err := p.ExpiryDays()
+	if err != nil {
+		return program, err
+	}
+	age := time - program.activatedAt
+	expirySeconds := arbmath.DaysToSeconds(expiryDays)
+	if age > expirySeconds {
+		return program, ProgramExpiredError(age)
+	}
+	program.secondsLeft = arbmath.SaturatingUSub(expirySeconds, age)
+	return program, nil
 }
 
 func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(program.wasmSize))
-	copy(data[28:], arbmath.Uint16ToBytes(program.footprint))
-	copy(data[30:], arbmath.Uint16ToBytes(program.version))
+	copy(data[0:], arbmath.Uint16ToBytes(program.version))
+	copy(data[2:], arbmath.Uint16ToBytes(program.wasmSize))
+	copy(data[4:], arbmath.Uint16ToBytes(program.footprint))
+	copy(data[6:], arbmath.UintToBytes(program.activatedAt))
 	return p.programs.Set(codehash, data)
 }
 
-func (p Programs) CodehashVersion(codeHash common.Hash) (uint16, error) {
-	program, err := p.deserializeProgram(codeHash)
+func (p Programs) programExists(codeHash common.Hash) (uint16, error) {
+	data, err := p.programs.Get(codeHash)
+	return arbmath.BytesToUint16(data[:2]), err
+}
+
+func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) error {
+	program, err := p.getProgram(codeHash, time)
+	if err != nil {
+		return err
+	}
+	keepaliveDays, err := p.KeepaliveDays()
+	if err != nil {
+		return err
+	}
+	if program.secondsLeft < arbmath.DaysToSeconds(keepaliveDays) {
+		return ProgramKeepaliveTooSoon(time - program.activatedAt)
+	}
+
+	// TODO: charge gas to keep alive
+
+	program.activatedAt = time
+	return p.setProgram(codeHash, program)
+
+}
+
+func (p Programs) CodehashVersion(codeHash common.Hash, time uint64) (uint16, error) {
+	program, err := p.getProgram(codeHash, time)
 	if err != nil {
 		return 0, err
 	}
 	return program.version, nil
 }
 
-func (p Programs) ProgramSize(codeHash common.Hash) (uint32, error) {
-	program, err := p.deserializeProgram(codeHash)
+func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64) (uint64, error) {
+	program, err := p.getProgram(codeHash, time)
+	if err != nil {
+		return 0, err
+	}
+	return program.secondsLeft, nil
+}
+
+func (p Programs) ProgramSize(codeHash common.Hash, time uint64) (uint32, error) {
+	program, err := p.getProgram(codeHash, time)
 	// wasmSize represents the number of half kb units, return as bytes
 	return uint32(program.wasmSize) * 512, err
 }
 
-func (p Programs) ProgramMemoryFootprint(codeHash common.Hash) (uint16, error) {
-	program, err := p.deserializeProgram(codeHash)
+func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64) (uint16, error) {
+	program, err := p.getProgram(codeHash, time)
 	return program.footprint, err
 }
 

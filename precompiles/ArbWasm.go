@@ -6,11 +6,13 @@ package precompiles
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramActivated         func(ctx, mech, hash, hash, addr, uint16) error
-	ProgramActivatedGasCost  func(hash, hash, addr, uint16) (uint64, error)
-	ProgramNotActivatedError func() error
-	ProgramOutOfDateError    func(version uint16) error
-	ProgramUpToDateError     func() error
+	ProgramActivated             func(ctx, mech, hash, hash, addr, uint16) error
+	ProgramActivatedGasCost      func(hash, hash, addr, uint16) (uint64, error)
+	ProgramNotActivatedError     func() error
+	ProgramNeedsUpgradeError     func(version, stylusVersion uint16) error
+	ProgramExpiredError          func(age uint64) error
+	ProgramUpToDateError         func() error
+	ProgramKeepaliveTooSoonError func(age uint64) error
 }
 
 // Compile a wasm program with the latest instrumentation
@@ -32,7 +34,7 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error
 }
 
 // Gets the latest stylus version
-func (con ArbWasm) StylusVersion(c ctx, _ mech) (uint16, error) {
+func (con ArbWasm) StylusVersion(c ctx, evm mech) (uint16, error) {
 	return c.State.Programs().StylusVersion()
 }
 
@@ -67,12 +69,17 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().PageLimit()
 }
 
-// CodehashVersion returns the stylus version that program with codehash was most recently compiled with
-func (con ArbWasm) CodehashVersion(c ctx, _ mech, codehash bytes32) (uint16, error) {
-	return c.State.Programs().CodehashVersion(codehash)
+// Gets the stylus version that program with codehash was most recently compiled with
+func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, error) {
+	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time)
 }
 
-// ProgramVersion returns the stylus version that program at addr was most recently compiled with
+// @notice extends a program's lifetime (reverts if too soon)
+func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, codehash bytes32) error {
+	return c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
+}
+
+// Gets the stylus version that program at addr was most recently compiled with
 func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error) {
 	codehash, err := c.GetCodeHash(program)
 	if err != nil {
@@ -81,25 +88,44 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 	return con.CodehashVersion(c, evm, codehash)
 }
 
-// ProgramSize returns the uncompressed size of program at addr
-func (con ArbWasm) ProgramSize(c ctx, _ mech, program addr) (uint32, error) {
+// Gets the uncompressed size of program at addr
+func (con ArbWasm) ProgramSize(c ctx, evm mech, program addr) (uint32, error) {
 	codehash, err := c.GetCodeHash(program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramSize(codehash)
+	return c.State.Programs().ProgramSize(codehash, evm.Context.Time)
 }
 
-// ProgramMemoryFootprint returns the footprint of program at addr
-func (con ArbWasm) ProgramMemoryFootprint(c ctx, _ mech, program addr) (uint16, error) {
+// Gets the footprint of program at addr
+func (con ArbWasm) ProgramMemoryFootprint(c ctx, evm mech, program addr) (uint16, error) {
 	codehash, err := c.GetCodeHash(program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramMemoryFootprint(codehash)
+	return c.State.Programs().ProgramMemoryFootprint(codehash, evm.Context.Time)
+}
+
+// Gets returns the amount of time remaining until the program expires
+func (con ArbWasm) ProgramTimeLeft(c ctx, evm mech, program addr) (uint64, error) {
+	codehash, err := c.GetCodeHash(program)
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().ProgramTimeLeft(codehash, evm.Context.Time)
 }
 
 // Gets the added wasm call cost paid per half kb uncompressed wasm
 func (con ArbWasm) CallScalar(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().CallScalar()
+}
+
+// Gets the number of days after which programs deactivate
+func (con ArbWasm) ExpiryDays(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().ExpiryDays()
+}
+
+// Gets the number of days after which programs deactivate
+func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().KeepaliveDays()
 }
