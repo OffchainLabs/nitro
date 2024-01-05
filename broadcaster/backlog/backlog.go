@@ -19,8 +19,8 @@ var (
 	errOutOfBounds        = errors.New("message not found in backlog")
 
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
-	backlogSizeInBytesGauge      = metrics.NewRegisteredGauge("arb/feed/backlog/sizeinbytes", nil)
-	backlogSizeGauge             = metrics.NewRegisteredGauge("arb/feed/backlog/size", nil)
+	backlogSizeInBytesGauge      = metrics.NewRegisteredGauge("arb/feed/backlog/bytes", nil)
+	backlogSizeGauge             = metrics.NewRegisteredGauge("arb/feed/backlog/messages", nil)
 )
 
 // Backlog defines the interface for backlog.
