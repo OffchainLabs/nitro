@@ -248,7 +248,7 @@ func CreateExecutionNode(
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, sync arbitrum.SyncProgressBackend) error {
-	n.ArbInterface.Initialize(n)
+	n.ArbInterface.Initialize(arbnode)
 	err := n.Backend.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth backend: %w", err)
