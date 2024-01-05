@@ -650,6 +650,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
 				}
 			}
+			// This should be redundant now that even non-primary sequencers broadcast over the feed,
+			// but the backlog efficiently deduplicates messages, so better safe than sorry.
 			err = c.streamer.PopulateFeedBacklog()
 			if err != nil {
 				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)

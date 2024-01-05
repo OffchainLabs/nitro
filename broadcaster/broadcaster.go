@@ -5,6 +5,7 @@ package broadcaster
 
 import (
 	"context"
+	"errors"
 	"net"
 
 	"github.com/gobwas/ws"
@@ -56,10 +57,11 @@ func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMeta
 	}, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) error {
+func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error("recovered error in BroadcastSingle", "recover", r)
+			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
 	bfm, err := b.NewBroadcastFeedMessage(msg, seq)
@@ -77,6 +79,27 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
 	b.BroadcastFeedMessages(broadcastFeedMessages)
+}
+
+func (b *Broadcaster) BroadcastMessages(messages []arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("recovered error in BroadcastMessages", "recover", r)
+			err = errors.New("panic in BroadcastMessages")
+		}
+	}()
+	var feedMessages []*m.BroadcastFeedMessage
+	for i, msg := range messages {
+		bfm, err := b.NewBroadcastFeedMessage(msg, seq+arbutil.MessageIndex(i))
+		if err != nil {
+			return err
+		}
+		feedMessages = append(feedMessages, bfm)
+	}
+
+	b.BroadcastFeedMessages(feedMessages)
+
+	return nil
 }
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
