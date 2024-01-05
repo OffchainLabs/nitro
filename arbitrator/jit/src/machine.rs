@@ -280,7 +280,7 @@ impl WasmEnv {
         Ok(env)
     }
 
-    pub fn send_results(&mut self, error: Option<String>) {
+    pub fn send_results(&mut self, error: Option<String>, memory_used: u64) {
         let writer = match &mut self.process.socket {
             Some((writer, _)) => writer,
             None => return,
@@ -307,6 +307,7 @@ impl WasmEnv {
         check!(socket::write_u64(writer, self.small_globals[1]));
         check!(socket::write_bytes32(writer, &self.large_globals[0]));
         check!(socket::write_bytes32(writer, &self.large_globals[1]));
+        check!(socket::write_u64(writer, memory_used));
         check!(writer.flush());
     }
 }
