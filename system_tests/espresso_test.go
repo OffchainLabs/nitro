@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -76,6 +77,14 @@ func userTxs(t *testing.T, l2Info *BlockchainTestInfo) [][]byte {
 
 func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTestInfo) func() {
 	httpmock.Activate()
+
+	httpmock.RegisterResponder(
+		"GET",
+		`=~http://127.0.0.1:50000/status/latest_block_height`,
+		func(r *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(200, strconv.Itoa(startHotShotBlock)), nil
+		},
+	)
 
 	httpmock.RegisterResponder(
 		"GET",
@@ -257,12 +266,6 @@ func TestEspresso(t *testing.T) {
 		cnt := node.ConsensusNode.BlockValidator.Validated(t)
 		expected := arbutil.MessageIndex(expectedMsgCnt)
 		return cnt >= expected
-	})
-	Require(t, err)
-
-	// To reproduce the bug.
-	err = waitFor(t, ctx, func() bool {
-		return false
 	})
 	Require(t, err)
 

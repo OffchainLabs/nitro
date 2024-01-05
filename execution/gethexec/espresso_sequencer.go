@@ -29,10 +29,8 @@ type HotShotState struct {
 
 func NewHotShotState(log log.Logger, url string) *HotShotState {
 	return &HotShotState{
-		client: *espressoClient.NewClient(log, url),
-		// TODO: Load this from the inbox reader so that new sequencers don't read redundant blocks
-		// https://github.com/EspressoSystems/espresso-sequencer/issues/734
-		nextSeqBlockNum: 1,
+		client:          *espressoClient.NewClient(log, url),
+		nextSeqBlockNum: 0,
 	}
 }
 
@@ -63,6 +61,18 @@ func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerCo
 }
 
 func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) {
+	// When the sequencer attempts to create a block for the first time, it will pull
+	// transactions starting from the latest block on the current hotshot.
+	// This is done to avoid fetching transactions that have become stale on HotShot,
+	// as both their timestamps and fees are outdated.
+	if s.hotShotState.nextSeqBlockNum == 0 {
+		latestBlock, err := s.hotShotState.client.FetchLatestBlockHeight(ctx)
+		if err != nil || latestBlock == 0 {
+			log.Warn("Unable to fetch the latest hotshot block")
+			return false
+		}
+		s.hotShotState.nextSeqBlockNum = latestBlock
+	}
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
 	header, err := s.hotShotState.client.FetchHeaderByHeight(ctx, nextSeqBlockNum)
 	if err != nil {
