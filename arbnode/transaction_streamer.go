@@ -79,7 +79,7 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 1024,
+	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
@@ -862,12 +862,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 		return err
 	}
 
-	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
-			log.Error("failed broadcasting message", "pos", pos, "err", err)
-		}
-	}
-
 	return nil
 }
 
@@ -925,6 +919,12 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	select {
 	case s.newMessageNotifier <- struct{}{}:
 	default:
+	}
+
+	if s.broadcastServer != nil {
+		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
+			log.Error("failed broadcasting message", "pos", pos, "err", err)
+		}
 	}
 
 	return nil
