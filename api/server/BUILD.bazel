@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "server",
+    srcs = [
+        "methods.go",
+        "server.go",
+        "types.go",
+    ],
+    importpath = "github.com/OffchainLabs/bold/api/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "@com_github_ethereum_go_ethereum//common",
+    ],
+)

@@ -1,0 +1,11 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "db",
+    srcs = [
+        "db.go",
+        "schema.go",
+    ],
+    importpath = "github.com/OffchainLabs/bold/api/db",
+    visibility = ["//visibility:public"],
+)
