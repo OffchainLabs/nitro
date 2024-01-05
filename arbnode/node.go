@@ -25,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -313,13 +312,6 @@ func StakerDataposter(
 	if err != nil {
 		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
-	lockCfgFetcher := func() *redislock.SimpleCfg {
-		return &cfg.Staker.RedisLock
-	}
-	redisLock, err := redislock.NewSimple(redisC, lockCfgFetcher, func() bool { return syncMonitor.Synced() })
-	if err != nil {
-		return nil, err
-	}
 	dpCfg := func() *dataposter.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
@@ -335,7 +327,6 @@ func StakerDataposter(
 			HeaderReader:      l1Reader,
 			Auth:              transactOpts,
 			RedisClient:       redisC,
-			RedisLock:         redisLock,
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
 			RedisKey:          sender + ".staker-data-poster.queue",
@@ -740,8 +731,6 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	// config is the static config at start, not a dynamic config
-	config := n.configFetcher.Get()
 	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {
 		execClient = nil
@@ -773,7 +762,7 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
 		}
 	}
-	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer {
+	if n.InboxTracker != nil && n.BroadcastServer != nil {
 		// Even if the sequencer coordinator will populate this backlog,
 		// we want to make sure it's populated before any clients connect.
 		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
