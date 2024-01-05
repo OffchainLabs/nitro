@@ -238,6 +238,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
+	rm -f arbitrator/wasm-libraries/forward/*.wat
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*

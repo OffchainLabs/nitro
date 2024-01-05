@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
@@ -74,7 +74,7 @@ func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, e
 	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time)
 }
 
-// @notice extends a program's lifetime (reverts if too soon)
+// @notice extends a program's expiration date (reverts if too soon)
 func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, codehash bytes32) error {
 	return c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
 }
@@ -125,7 +125,7 @@ func (con ArbWasm) ExpiryDays(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().ExpiryDays()
 }
 
-// Gets the number of days after which programs deactivate
+// Gets the age a program must be to perform a keepalive
 func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().KeepaliveDays()
 }
