@@ -40,7 +40,7 @@ type DBConvConfig struct {
 
 var DefaultDBConvConfig = DBConvConfig{
 	IdealBatchSize:       100 * 1024 * 1024, // 100 MB
-	MinBatchesBeforeFork: 10,
+	MinBatchesBeforeFork: 2,
 	Threads:              1,
 	Convert:              false,
 	Compact:              false,

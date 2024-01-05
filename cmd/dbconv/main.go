@@ -59,7 +59,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				stats := conv.Stats()
-				fmt.Printf("Progress:\n\tprocessed entries: %v\n\tprocessed data (MB): %v\n\telapsed: %v\n\tcurrent:\tentr/s: %v\tMB/s: %v\n\taverage:\tentr/s: %v\tMB/s: %v\n\tthreads: %v\tforks: %v\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond(), stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond(), stats.AverageBytesPerSecond()/1024/1024, stats.Threads(), stats.Forks())
+				fmt.Printf("Progress:\n\tprocessed entries: %v\n\tprocessed data (MB): %v\n\telapsed: %v\n\tcurrent:\tMe/s: %v\tMB/s: %v\n\taverage:\tMe/s: %v\tMB/s: %v\n\tthreads: %v\tforks: %v\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond()/1000/1000, stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond()/1000/1000, stats.AverageBytesPerSecond()/1024/1024, stats.Threads(), stats.Forks())
 
 			case <-ctx.Done():
 				return
@@ -74,7 +74,7 @@ func main() {
 			return
 		}
 		stats := conv.Stats()
-		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg e/s", stats.AverageEntriesPerSecond(), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
+		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg Me/s", stats.AverageEntriesPerSecond()/1000/1000, "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
 	}
 
 	if config.Compact {
