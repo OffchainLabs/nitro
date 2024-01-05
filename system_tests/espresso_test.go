@@ -22,7 +22,8 @@ import (
 var (
 	validationPort     = 54320
 	broadcastPort      = 9642
-	startHotShotBlock  = 1
+	staleBlocks        = 10
+	startHotShotBlock  = staleBlocks + 1
 	maxHotShotBlock    = 100
 	malformedBlockNum  = 5
 	firstGoodBlockNum  = 15
@@ -82,13 +83,17 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 		func(req *http.Request) (*http.Response, error) {
 			log.Info("GET", "url", req.URL)
 			block := uint64(httpmock.MustGetSubmatchAsUint(req, 1))
+			timestamp := uint64(time.Now().Unix())
+			if block < uint64(staleBlocks) {
+				timestamp = 0
+			}
 			header := espressoTypes.Header{
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
 				Height:           block,
 				TransactionsRoot: espressoTypes.NmtRoot{Root: []byte{}},
 				L1Head:           0, // Currently not used
-				Timestamp:        uint64(time.Now().Unix()),
+				Timestamp:        timestamp,
 			}
 			return httpmock.NewJsonResponse(200, header)
 		})
@@ -252,6 +257,12 @@ func TestEspresso(t *testing.T) {
 		cnt := node.ConsensusNode.BlockValidator.Validated(t)
 		expected := arbutil.MessageIndex(expectedMsgCnt)
 		return cnt >= expected
+	})
+	Require(t, err)
+
+	// To reproduce the bug.
+	err = waitFor(t, ctx, func() bool {
+		return false
 	})
 	Require(t, err)
 
