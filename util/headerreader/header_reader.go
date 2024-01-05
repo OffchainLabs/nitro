@@ -53,6 +53,7 @@ type HeaderReader struct {
 
 type cachedHeader struct {
 	mutex          sync.Mutex
+	blockTag       string // "safe" or "finalized"
 	rpcBlockNum    *big.Int
 	headWhenCached *types.Header
 	header         *types.Header
@@ -135,8 +136,8 @@ func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, 
 		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
-		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
-		finalized:             cachedHeader{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
+		safe:                  cachedHeader{blockTag: "safe", rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:             cachedHeader{blockTag: "finalized", rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}, nil
 }
 
@@ -470,6 +471,11 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)
 	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			log.Warn("Failed to get latest confirmed block", "blockTag", c.blockTag, "err", err)
+			// Hide error to caller to avoid exposing potentially sensitive L1 information.
+			err = fmt.Errorf("failed to get latest %v block", c.blockTag)
+		}
 		return nil, err
 	}
 	c.header = header
