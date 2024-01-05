@@ -11,6 +11,7 @@ import (
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	bisection "github.com/OffchainLabs/bold/math"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -57,8 +58,17 @@ func (ht *HonestChallengeTree) HasConfirmableAncestor(
 	if len(honestAncestorLocalTimers) == 0 {
 		return false, nil
 	}
+
+	blockRootEdge, err := ht.HonestBlockChallengeRootEdge()
+	if err != nil {
+		return false, err
+	}
+	if blockRootEdge.ClaimId().IsNone() {
+		return false, fmt.Errorf("expected claimId to be found on block level root edge %#x", blockRootEdge.Id())
+	}
+
 	assertionUnrivaledNumBlocks, err := ht.metadataReader.AssertionUnrivaledBlocks(
-		ctx, ht.topLevelAssertionHash,
+		ctx, protocol.AssertionHash{Hash: common.Hash(blockRootEdge.ClaimId().Unwrap())},
 	)
 	if err != nil {
 		return false, err
@@ -91,8 +101,17 @@ func (ht *HonestChallengeTree) ComputeHonestPathTimer(
 		return 0, err
 	}
 	total := PathTimer(edgeLocalTimer)
+
+	blockRootEdge, err := ht.HonestBlockChallengeRootEdge()
+	if err != nil {
+		return 0, err
+	}
+	if blockRootEdge.ClaimId().IsNone() {
+		return 0, fmt.Errorf("expected claimId to be found on block level root edge when computing honest path timer %#x", blockRootEdge.Id())
+	}
+
 	assertionUnrivaledTimer, err := ht.metadataReader.AssertionUnrivaledBlocks(
-		ctx, ht.topLevelAssertionHash,
+		ctx, protocol.AssertionHash{Hash: common.Hash(blockRootEdge.ClaimId().Unwrap())},
 	)
 	if err != nil {
 		return 0, err

@@ -63,11 +63,11 @@ func buildEdges(allEdges ...*mock.Edge) map[mock.EdgeId]*mock.Edge {
 //	      \--5'--6'----8'----------16' = Bob
 //
 // and then inserts the respective edges into a challenge tree.
-func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree) {
+func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
 	t.Helper()
 	aliceEdges := buildEdges(
 		// Alice.
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", claimId: claimId, createdAt: 1}),
 		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.a", createdAt: 3}),
 		newEdge(&newCfg{t: t, edgeId: "blk-8.a-16.a", createdAt: 3}),
 		newEdge(&newCfg{t: t, edgeId: "blk-0.a-4.a", createdAt: 5}),

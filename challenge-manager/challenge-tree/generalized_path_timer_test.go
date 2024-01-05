@@ -8,7 +8,10 @@ import (
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
+	"github.com/OffchainLabs/bold/testing/mocks"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +53,7 @@ func TestComputeAncestorsWithTimers(t *testing.T) {
 
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
-	setupBlockChallengeTreeSnapshot(t, tree)
+	setupBlockChallengeTreeSnapshot(t, tree, "ass.a")
 	blockRootEdges := tree.honestRootEdgesByLevel.Get(2 /* big step level */)
 	blockRootEdges.Push(tree.edges.Get(id("blk-0.a-16.a")))
 	claimId := "blk-4.a-5.a"
@@ -175,21 +178,35 @@ func TestComputeAncestorsWithTimers(t *testing.T) {
 	})
 }
 
+func addMockBlockRootEdge(hct *HonestChallengeTree) {
+	honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+	edge := &mocks.MockSpecEdge{}
+	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(common.Hash{})))
+	honestRootEdges.Push(edge)
+	hct.honestRootEdgesByLevel.Put(2, honestRootEdges)
+}
+
 func TestHasConfirmableAncestor(t *testing.T) {
 	ctx := context.Background()
 	challengePeriodBlocks := uint64(10)
 	t.Run("empty ancestor timers", func(t *testing.T) {
 		ht := &HonestChallengeTree{
-			metadataReader: &mockMetadataReader{},
+			metadataReader:         &mockMetadataReader{},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
 		has, err := ht.HasConfirmableAncestor(ctx, nil, challengePeriodBlocks)
 		require.NoError(t, err)
 		require.Equal(t, false, has)
 	})
 	t.Run("single ancestor not enough timer", func(t *testing.T) {
+
 		ht := &HonestChallengeTree{
-			metadataReader: &mockMetadataReader{},
+			metadataReader:         &mockMetadataReader{},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
+		addMockBlockRootEdge(ht)
 		has, err := ht.HasConfirmableAncestor(
 			ctx,
 			[]EdgeLocalTimer{
@@ -205,7 +222,10 @@ func TestHasConfirmableAncestor(t *testing.T) {
 			metadataReader: &mockMetadataReader{
 				unrivaledAssertionBlocks: 1,
 			},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
+		addMockBlockRootEdge(ht)
 		has, err := ht.HasConfirmableAncestor(
 			ctx,
 			[]EdgeLocalTimer{
@@ -221,7 +241,10 @@ func TestHasConfirmableAncestor(t *testing.T) {
 			metadataReader: &mockMetadataReader{
 				unrivaledAssertionBlocks: 0,
 			},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
+		addMockBlockRootEdge(ht)
 		has, err := ht.HasConfirmableAncestor(
 			ctx,
 			[]EdgeLocalTimer{
@@ -240,7 +263,10 @@ func TestHasConfirmableAncestor(t *testing.T) {
 			metadataReader: &mockMetadataReader{
 				unrivaledAssertionBlocks: 1,
 			},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
+		addMockBlockRootEdge(ht)
 		has, err := ht.HasConfirmableAncestor(
 			ctx,
 			[]EdgeLocalTimer{
@@ -259,7 +285,10 @@ func TestHasConfirmableAncestor(t *testing.T) {
 			metadataReader: &mockMetadataReader{
 				unrivaledAssertionBlocks: 0,
 			},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
+		addMockBlockRootEdge(ht)
 		has, err := ht.HasConfirmableAncestor(
 			ctx,
 			[]EdgeLocalTimer{
@@ -284,7 +313,10 @@ func TestHasConfirmableAncestor(t *testing.T) {
 			metadataReader: &mockMetadataReader{
 				unrivaledAssertionBlocks: 0,
 			},
+			honestRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+			totalChallengeLevels:   3,
 		}
+		addMockBlockRootEdge(ht)
 		has, err := ht.HasConfirmableAncestor(
 			ctx,
 			[]EdgeLocalTimer{
@@ -329,13 +361,13 @@ func TestHasConfirmableAncestor(t *testing.T) {
 func TestComputeHonestPathTimer(t *testing.T) {
 	edges := buildEdges(
 		// Alice.
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1, claimId: "ass.a"}),
 		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.a", createdAt: 3}),
 		newEdge(&newCfg{t: t, edgeId: "blk-8.a-16.a", createdAt: 3}),
 		newEdge(&newCfg{t: t, edgeId: "blk-0.a-4.a", createdAt: 5}),
 		newEdge(&newCfg{t: t, edgeId: "blk-4.a-8.a", createdAt: 5}),
 		// Bob.
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.b", createdAt: 2}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.b", createdAt: 2, claimId: "ass.b"}),
 		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.b", createdAt: 4}),
 		newEdge(&newCfg{t: t, edgeId: "blk-8.b-16.b", createdAt: 4}),
 		newEdge(&newCfg{t: t, edgeId: "blk-4.a-8.b", createdAt: 6}),
@@ -593,8 +625,8 @@ func TestComputePathTimer_AllChallengeLevels(t *testing.T) {
 
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
-	setupBlockChallengeTreeSnapshot(t, ht)
-	blockRootEdges := ht.honestRootEdgesByLevel.Get(2 /* big step level */)
+	setupBlockChallengeTreeSnapshot(t, ht, "ass.a")
+	blockRootEdges := ht.honestRootEdgesByLevel.Get(2 /* block step level */)
 	blockRootEdges.Push(ht.edges.Get(id("blk-0.a-16.a")))
 	claimId := "blk-4.a-5.a"
 	setupBigStepChallengeSnapshot(t, ht, claimId)
