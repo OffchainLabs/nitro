@@ -98,11 +98,6 @@ type BlockValidatorConfig struct {
 func (c *BlockValidatorConfig) Validate() error {
 	if c.MemoryFreeLimit == "default" {
 		c.memoryFreeLimit = 1073741824 // 1GB
-		_, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(c.memoryFreeLimit)
-		if err != nil {
-			log.Warn("Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled")
-			c.MemoryFreeLimit = ""
-		}
 	} else if c.MemoryFreeLimit != "" {
 		limit, err := resourcemanager.ParseMemLimit(c.MemoryFreeLimit)
 		if err != nil {
@@ -241,9 +236,14 @@ func NewBlockValidator(
 	if config().MemoryFreeLimit != "" {
 		limtchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
+			if config().MemoryFreeLimit == "default" {
+				log.Warn("Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled")
+			} else {
+				return nil, fmt.Errorf("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
+			}
+		} else {
+			ret.MemoryFreeLimitChecker = limtchecker
 		}
-		ret.MemoryFreeLimitChecker = limtchecker
 	}
 	return ret, nil
 }
