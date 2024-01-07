@@ -6,6 +6,7 @@ package programs
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -23,6 +24,7 @@ type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
+	dataPricer     *dataPricer
 	inkPrice       storage.StorageBackedUint24
 	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
@@ -47,6 +49,7 @@ type uint24 = arbmath.Uint24
 
 var programDataKey = []byte{0}
 var moduleHashesKey = []byte{1}
+var dataPricerKey = []byte{2}
 
 const (
 	versionOffset uint64 = iota
@@ -107,6 +110,7 @@ func Open(sto *storage.Storage) *Programs {
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
+		dataPricer:     openDataPricer(sto.OpenSubStorage(dataPricerKey)),
 		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
 		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
@@ -207,16 +211,16 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	codeHash := statedb.GetCodeHash(address)
 	burner := p.programs.Burner()
 
-	version, err := p.StylusVersion()
+	stylusVersion, err := p.StylusVersion()
 	if err != nil {
 		return 0, codeHash, common.Hash{}, false, err
 	}
-	latest, err := p.programExists(codeHash)
+	currentVersion, err := p.programExists(codeHash)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, false, err
 	}
-	// Already compiled and found in the machine versions mapping.
-	if latest >= version {
+	if currentVersion == stylusVersion {
+		// already activated and up to date
 		return 0, codeHash, common.Hash{}, false, ProgramUpToDateError()
 	}
 	wasm, err := getWasm(statedb, address)
@@ -231,7 +235,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	moduleHash, footprint, err := activateProgram(statedb, address, wasm, pageLimit, version, debugMode, burner)
+	moduleHash, footprint, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, true, err
 	}
@@ -243,12 +247,12 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
-		version:     version,
+		version:     stylusVersion,
 		wasmSize:    wasmSize,
 		footprint:   footprint,
 		activatedAt: evm.Context.Time,
 	}
-	return version, codeHash, moduleHash, false, p.setProgram(codeHash, programData)
+	return stylusVersion, codeHash, moduleHash, false, p.setProgram(codeHash, programData)
 }
 
 func (p Programs) CallProgram(
@@ -389,23 +393,35 @@ func (p Programs) programExists(codeHash common.Hash) (uint16, error) {
 	return arbmath.BytesToUint16(data[:2]), err
 }
 
-func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) error {
+func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int, error) {
 	program, err := p.getProgram(codeHash, time)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	keepaliveDays, err := p.KeepaliveDays()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if program.secondsLeft < arbmath.DaysToSeconds(keepaliveDays) {
-		return ProgramKeepaliveTooSoon(time - program.activatedAt)
+		return nil, ProgramKeepaliveTooSoon(time - program.activatedAt)
 	}
 
-	// TODO: charge gas to keep alive
+	stylusVersion, err := p.StylusVersion()
+	if err != nil {
+		return nil, err
+	}
+	if program.version != stylusVersion {
+		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
+	}
+
+	naive := int64(5 * 1024 * 1024)
+	cost, err := p.dataPricer.updateModel(naive, time)
+	if err != nil {
+		return nil, err
+	}
 
 	program.activatedAt = time
-	return p.setProgram(codeHash, program)
+	return cost, p.setProgram(codeHash, program)
 
 }
 

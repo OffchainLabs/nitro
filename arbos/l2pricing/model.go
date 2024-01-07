@@ -46,7 +46,7 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	if backlog > tolerance*speedLimit {
 		excess := int64(backlog - tolerance*speedLimit)
 		exponentBips := arbmath.NaturalToBips(excess) / arbmath.Bips(inertia*speedLimit)
-		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips))
+		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
 	_ = ps.SetBaseFeeWei(baseFee)
 }

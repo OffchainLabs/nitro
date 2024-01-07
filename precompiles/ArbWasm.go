@@ -76,7 +76,12 @@ func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, e
 
 // @notice extends a program's expiration date (reverts if too soon)
 func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, codehash bytes32) error {
-	return c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
+	cost, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
+	if err != nil {
+		return err
+	}
+	_ = cost // consume value
+	return nil
 }
 
 // Gets the stylus version that program at addr was most recently compiled with

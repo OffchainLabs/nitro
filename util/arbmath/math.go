@@ -347,21 +347,30 @@ func SaturatingCastToUint(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
+// Negates an int without underflow
+func SaturatingNeg[T Signed](value T) T {
+	if value == ^T(0) {
+		return (^T(0)) >> 1
+	}
+	return -value
+}
+
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
-// This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
-func ApproxExpBasisPoints(value Bips) Bips {
+// The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
+func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
 	input := value
 	negative := value < 0
 	if negative {
 		input = -value
 	}
 	x := uint64(input)
-
 	bips := uint64(OneInBips)
-	res := bips + x/4
-	res = bips + SaturatingUMul(res, x)/(3*bips)
-	res = bips + SaturatingUMul(res, x)/(2*bips)
-	res = bips + SaturatingUMul(res, x)/(1*bips)
+
+	res := bips + x/degree
+	for i := uint64(1); i < degree; i++ {
+		res = bips + SaturatingUMul(res, x)/((degree-i)*bips)
+	}
+
 	if negative {
 		return Bips(SaturatingCast(bips * bips / res))
 	} else {
