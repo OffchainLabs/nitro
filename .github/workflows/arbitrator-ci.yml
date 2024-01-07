@@ -135,13 +135,6 @@ jobs:
       - name: Make arbitrator libraries
         run: make -j wasm-ci-build
 
-      - name: Enable rust instrumentation
-        run: |
-          echo LLVM_PROFILE_FILE="your_name-%p-%m.profraw" >> $GITHUB_ENV
-          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
-          echo RUSTFLAGS="-Cinstrument-coverage" >> $GITHUB_ENV
-          echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
-
       - name: Clippy check
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
@@ -153,18 +146,6 @@ jobs:
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
-
-      - name: Create code-coverage files
-        run: |
-          grcov . --binary-path arbitrator/target/release/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
-
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info
-          fail_ci_if_error: true
-          verbose: false
 
       - name: Start geth server
         run: |
