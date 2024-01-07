@@ -862,9 +862,6 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	if n.Execution != nil {
-		n.Execution.StopAndWait()
-	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}
@@ -917,7 +914,10 @@ func (n *Node) StopAndWait() {
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
+	if n.Execution != nil {
+		n.Execution.StopAndWait()
+	}
 	if err := n.Stack.Close(); err != nil {
-		log.Error("error on stak close", "err", err)
+		log.Error("error on stack close", "err", err)
 	}
 }
