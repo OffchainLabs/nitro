@@ -115,6 +115,7 @@ type RollupAddresses struct {
 	Bridge                 common.Address `json:"bridge"`
 	Inbox                  common.Address `json:"inbox"`
 	SequencerInbox         common.Address `json:"sequencer-inbox"`
+	LegacySequencerInbox   common.Address `json:"legacy-sequencer-inbox"`
 	Rollup                 common.Address `json:"rollup"`
 	NativeToken            common.Address `json:"native-token"`
 	UpgradeExecutor        common.Address `json:"upgrade-executor"`

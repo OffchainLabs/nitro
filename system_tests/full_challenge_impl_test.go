@@ -169,7 +169,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
 
-	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, bridgeAddr, 0)
+	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, common.Address{}, bridgeAddr, 0)
 	Require(t, err)
 	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
 	Require(t, err)

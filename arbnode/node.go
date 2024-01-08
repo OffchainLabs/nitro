@@ -485,7 +485,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, deployInfo.Bridge, int64(deployInfo.DeployedAt))
+	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, deployInfo.LegacySequencerInbox, deployInfo.Bridge, int64(deployInfo.DeployedAt))
 	if err != nil {
 		return nil, err
 	}

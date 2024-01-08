@@ -23,6 +23,7 @@ import (
 var sequencerInboxABI *abi.ABI
 var bridgeABI *abi.ABI
 var batchDeliveredID common.Hash
+var legacyBatchDeliveredID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 
@@ -46,23 +47,35 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	legacySequencerInboxABI, err := bridgegen.ILegacySequencerInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
 
 	batchDeliveredID = bridgeABI.Events["SequencerBatchDelivered"].ID
+	legacyBatchDeliveredID = legacySequencerInboxABI.Events["SequencerBatchDelivered"].ID
 	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
 	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 }
 
 type SequencerInbox struct {
-	inboxContract  *bridgegen.SequencerInbox
-	inboxAddress   common.Address
-	bridgeContract *bridgegen.AbsBridge
-	bridgeAddress  common.Address
-	fromBlock      int64
-	client         arbutil.L1Interface
+	inboxContract                *bridgegen.SequencerInbox
+	inboxAddress                 common.Address
+	legacySequencerInboxContract *bridgegen.ILegacySequencerInbox
+	legacySequencerInboxAddress  common.Address
+	bridgeContract               *bridgegen.AbsBridge
+	bridgeAddress                common.Address
+	fromBlock                    int64
+	client                       arbutil.L1Interface
 }
 
-func NewSequencerInbox(client arbutil.L1Interface, inboxAddress, bridgeAddress common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client arbutil.L1Interface, inboxAddress, legacySequencerInboxAddress, bridgeAddress common.Address, fromBlock int64) (*SequencerInbox, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(inboxAddress, client)
+	if err != nil {
+		return nil, err
+	}
+
+	legacySequencerInboxContract, err := bridgegen.NewILegacySequencerInbox(legacySequencerInboxAddress, client)
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +86,14 @@ func NewSequencerInbox(client arbutil.L1Interface, inboxAddress, bridgeAddress c
 	}
 
 	return &SequencerInbox{
-		inboxContract:  inboxContract,
-		inboxAddress:   inboxAddress,
-		bridgeContract: bridgeContract,
-		bridgeAddress:  bridgeAddress,
-		fromBlock:      fromBlock,
-		client:         client,
+		inboxContract:                inboxContract,
+		inboxAddress:                 inboxAddress,
+		legacySequencerInboxContract: legacySequencerInboxContract,
+		legacySequencerInboxAddress:  legacySequencerInboxAddress,
+		bridgeContract:               bridgeContract,
+		bridgeAddress:                bridgeAddress,
+		fromBlock:                    fromBlock,
+		client:                       client,
 	}, nil
 }
 
@@ -205,8 +220,8 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	query := ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
-		Addresses: []common.Address{i.bridgeAddress},
-		Topics:    [][]common.Hash{{batchDeliveredID}},
+		Addresses: []common.Address{i.bridgeAddress, i.legacySequencerInboxAddress},
+		Topics:    [][]common.Hash{{batchDeliveredID, legacyBatchDeliveredID}},
 	}
 	logs, err := i.client.FilterLogs(ctx, query)
 	if err != nil {
@@ -215,13 +230,37 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	messages := make([]*SequencerInboxBatch, 0, len(logs))
 	var lastSeqNum *uint64
 	for _, log := range logs {
-		if log.Topics[0] != batchDeliveredID {
+		if log.Topics[0] != batchDeliveredID &&
+			log.Topics[0] != legacyBatchDeliveredID {
 			return nil, errors.New("unexpected log selector")
 		}
-		parsedLog, err := i.bridgeContract.ParseSequencerBatchDelivered(log)
-		if err != nil {
-			return nil, err
+
+		var parsedLog bridgegen.AbsBridgeSequencerBatchDelivered
+		if log.Topics[0] == batchDeliveredID {
+			parsedLog_, err := i.bridgeContract.ParseSequencerBatchDelivered(log)
+			if err != nil {
+				return nil, err
+			}
+			parsedLog = *parsedLog_
+		} else if log.Topics[0] == legacyBatchDeliveredID {
+			parsedLog_, err := i.legacySequencerInboxContract.ParseSequencerBatchDelivered(log)
+			if err != nil {
+				return nil, err
+			}
+			parsedLog = bridgegen.AbsBridgeSequencerBatchDelivered{
+				BatchSequenceNumber:      parsedLog_.BatchSequenceNumber,
+				BeforeAcc:                parsedLog_.BeforeAcc,
+				AfterAcc:                 parsedLog_.AfterAcc,
+				DelayedAcc:               parsedLog_.DelayedAcc,
+				AfterDelayedMessagesRead: parsedLog_.AfterDelayedMessagesRead,
+				TimeBounds:               parsedLog_.TimeBounds,
+				DataLocation:             parsedLog_.DataLocation,
+				SequencerInbox:           [20]byte{}, // Legacy event lacks this field
+				//Raw:                      parsedLog_.Raw, // unused, linter complains
+			}
+
 		}
+
 		if !parsedLog.BatchSequenceNumber.IsUint64() {
 			return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
 		}
