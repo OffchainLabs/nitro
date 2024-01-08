@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -75,6 +76,8 @@ type BlockValidator struct {
 	testingProgressMadeChan chan struct{}
 
 	fatalErr chan<- error
+
+	MemoryFreeLimitChecker resourcemanager.LimitChecker
 }
 
 type BlockValidatorConfig struct {
@@ -87,9 +90,21 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit          string                        `koanf:"memory-free-limit" reload:"hot"`
+
+	memoryFreeLimit int
 }
 
 func (c *BlockValidatorConfig) Validate() error {
+	if c.MemoryFreeLimit == "default" {
+		c.memoryFreeLimit = 1073741824 // 1GB
+	} else if c.MemoryFreeLimit != "" {
+		limit, err := resourcemanager.ParseMemLimit(c.MemoryFreeLimit)
+		if err != nil {
+			return fmt.Errorf("failed to parse block-validator config memory-free-limit string: %w", err)
+		}
+		c.memoryFreeLimit = limit
+	}
 	return c.ValidationServer.Validate()
 }
 
@@ -109,6 +124,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -125,6 +141,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:          "default",
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -137,6 +154,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:          "default",
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -215,6 +233,18 @@ func NewBlockValidator(
 	}
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
+	if config().MemoryFreeLimit != "" {
+		limtchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
+		if err != nil {
+			if config().MemoryFreeLimit == "default" {
+				log.Warn("Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled")
+			} else {
+				return nil, fmt.Errorf("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
+			}
+		} else {
+			ret.MemoryFreeLimitChecker = limtchecker
+		}
+	}
 	return ret, nil
 }
 
@@ -521,6 +551,15 @@ func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ig
 }
 
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
+	if v.MemoryFreeLimitChecker != nil {
+		exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
+		if err != nil {
+			log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
+		}
+		if exceeded {
+			return false, nil
+		}
+	}
 	v.reorgMutex.RLock()
 	pos := v.recordSent()
 	created := v.created()
@@ -550,6 +589,15 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 		return true, nil
 	}
 	for pos <= recordUntil {
+		if v.MemoryFreeLimitChecker != nil {
+			exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
+			if err != nil {
+				log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
+			}
+			if exceeded {
+				return false, nil
+			}
+		}
 		validationStatus, found := v.validations.Load(pos)
 		if !found {
 			return false, fmt.Errorf("not found entry for pos %d", pos)
@@ -698,6 +746,15 @@ validationsLoop:
 		if room == 0 {
 			log.Trace("advanceValidations: no more room", "pos", pos)
 			return nil, nil
+		}
+		if v.MemoryFreeLimitChecker != nil {
+			exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
+			if err != nil {
+				log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
+			}
+			if exceeded {
+				return nil, nil
+			}
 		}
 		if currentStatus == Prepared {
 			input, err := validationStatus.Entry.ToInput()
