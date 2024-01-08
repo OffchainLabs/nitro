@@ -121,6 +121,6 @@ func (c *RpcConfig) Apply(stackConf *node.Config) {
 }
 
 func RpcConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-batch-response-size", DefaultRpcConfig.MaxBatchResponseSize, "the maximum response size for a JSON-RPC request measured in bytes (-1 means no limit)")
-	f.Int(prefix+".batch-request-limit", DefaultRpcConfig.BatchRequestLimit, "the maximum number of requests in a batch")
+	f.Int(prefix+".max-batch-response-size", DefaultRpcConfig.MaxBatchResponseSize, "the maximum response size for a JSON-RPC request measured in bytes (0 means no limit)")
+	f.Int(prefix+".batch-request-limit", DefaultRpcConfig.BatchRequestLimit, "the maximum number of requests in a batch (0 means no limit)")
 }
