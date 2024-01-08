@@ -70,6 +70,7 @@ type SequencerConfig struct {
 	Espresso          bool   `koanf:"espresso"`
 	HotShotUrl        string `koanf:"hotshot-url"`
 	EspressoNamespace uint64 `koanf:"espresso-namespace"`
+	StartHotShotBlock uint64 `koanf:"start-hotshot-block"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -134,6 +135,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "if true, transactions will be fetched from the espresso sequencer network")
 	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
 	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
+	f.Uint64(prefix+".start-hotshot-block", DefaultSequencerConfig.StartHotShotBlock, "the starting block number of hotshot")
 }
 
 type txQueueItem struct {

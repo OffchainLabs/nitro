@@ -27,10 +27,10 @@ type HotShotState struct {
 	nextSeqBlockNum uint64
 }
 
-func NewHotShotState(log log.Logger, url string) *HotShotState {
+func NewHotShotState(log log.Logger, url string, startBlock uint64) *HotShotState {
 	return &HotShotState{
 		client:          *espressoClient.NewClient(log, url),
-		nextSeqBlockNum: 0,
+		nextSeqBlockNum: startBlock,
 	}
 }
 
@@ -55,16 +55,12 @@ func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerCo
 	return &EspressoSequencer{
 		execEngine:   execEngine,
 		config:       configFetcher,
-		hotShotState: NewHotShotState(log.New(), config.HotShotUrl),
+		hotShotState: NewHotShotState(log.New(), config.HotShotUrl, config.StartHotShotBlock),
 		namespace:    config.EspressoNamespace,
 	}, nil
 }
 
 func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) {
-	// When the sequencer attempts to create a block for the first time, it will pull
-	// transactions starting from the latest block on the current hotshot.
-	// This is done to avoid fetching transactions that have become stale on HotShot,
-	// as both their timestamps and fees are outdated.
 	if s.hotShotState.nextSeqBlockNum == 0 {
 		latestBlock, err := s.hotShotState.client.FetchLatestBlockHeight(ctx)
 		if err != nil || latestBlock == 0 {
