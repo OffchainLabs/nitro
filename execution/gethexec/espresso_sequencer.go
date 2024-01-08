@@ -27,12 +27,10 @@ type HotShotState struct {
 	nextSeqBlockNum uint64
 }
 
-func NewHotShotState(log log.Logger, url string) *HotShotState {
+func NewHotShotState(log log.Logger, url string, startBlock uint64) *HotShotState {
 	return &HotShotState{
-		client: *espressoClient.NewClient(log, url),
-		// TODO: Load this from the inbox reader so that new sequencers don't read redundant blocks
-		// https://github.com/EspressoSystems/espresso-sequencer/issues/734
-		nextSeqBlockNum: 1,
+		client:          *espressoClient.NewClient(log, url),
+		nextSeqBlockNum: startBlock,
 	}
 }
 
@@ -57,12 +55,21 @@ func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerCo
 	return &EspressoSequencer{
 		execEngine:   execEngine,
 		config:       configFetcher,
-		hotShotState: NewHotShotState(log.New(), config.HotShotUrl),
+		hotShotState: NewHotShotState(log.New(), config.HotShotUrl, config.StartHotShotBlock),
 		namespace:    config.EspressoNamespace,
 	}, nil
 }
 
 func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) {
+	if s.hotShotState.nextSeqBlockNum == 0 {
+		latestBlock, err := s.hotShotState.client.FetchLatestBlockHeight(ctx)
+		if err != nil || latestBlock == 0 {
+			log.Warn("Unable to fetch the latest hotshot block")
+			return false
+		}
+		log.Info("Starting sequencing at the latest hotshot block", "block number", latestBlock)
+		s.hotShotState.nextSeqBlockNum = latestBlock
+	}
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
 	header, err := s.hotShotState.client.FetchHeaderByHeight(ctx, nextSeqBlockNum)
 	if err != nil {
