@@ -86,9 +86,9 @@ func TestConversion(t *testing.T) {
 	config := DefaultDBConvConfig
 	config.Src = oldDBConfig
 	config.Dst = newDBConfig
-	config.Threads = 512
-	config.IdealBatchSize = 100
-	config.MinBatchesBeforeFork = 10
+	config.Threads = 16
+	config.IdealBatchSize = 512
+	config.MinBatchesBeforeFork = 3
 	conv := NewDBConverter(&config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
