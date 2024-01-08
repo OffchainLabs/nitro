@@ -67,6 +67,7 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 			log.Warn("Unable to fetch the latest hotshot block")
 			return false
 		}
+                log.Info("Starting sequencing at the latest hotshot block", "block number", latestBlock)
 		s.hotShotState.nextSeqBlockNum = latestBlock
 	}
 	nextSeqBlockNum := s.hotShotState.nextSeqBlockNum
