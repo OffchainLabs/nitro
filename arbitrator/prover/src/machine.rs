@@ -4,7 +4,7 @@
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
     host,
-    kzg::{BLS_MODULUS, ETHEREUM_KZG_SETTINGS, ROOT_OF_UNITY},
+    kzg::prove_kzg_preimage,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -20,11 +20,10 @@ use c_kzg::FIELD_ELEMENTS_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
-use num::{traits::PrimInt, BigUint, Zero};
+use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use sha2::Sha256;
 use sha3::Keccak256;
 use smallvec::SmallVec;
 use std::{
@@ -2320,62 +2319,8 @@ impl Machine {
                                 data.extend(preimage);
                             }
                             PreimageType::EthVersionedHash => {
-                                let blob = c_kzg::Blob::from_bytes(&preimage)
-                                    .expect("Failed to generate KZG blob from preimage");
-                                let commitment = c_kzg::KzgCommitment::blob_to_kzg_commitment(
-                                    &blob,
-                                    &ETHEREUM_KZG_SETTINGS,
-                                )
-                                .expect("Failed to generate KZG commitment from blob");
-                                let mut expected_hash: Bytes32 =
-                                    Sha256::digest(&*commitment).into();
-                                expected_hash[0] = 1;
-                                if hash != expected_hash {
-                                    panic!(
-                                        "Trying to prove versioned hash {} preimage but recomputed hash {}",
-                                        hash,
-                                        expected_hash,
-                                    );
-                                }
-                                if offset % 32 != 0 {
-                                    panic!(
-                                        "Cannot prove blob preimage at unaligned offset {}",
-                                        offset,
-                                    );
-                                }
-                                let offset_usize = usize::try_from(offset).unwrap();
-                                let mut proving_offset = offset;
-                                let proving_past_end = offset_usize >= preimage.len();
-                                if proving_past_end {
-                                    // Proving any offset proves the length which is all we need here,
-                                    // because we're past the end of the preimage.
-                                    proving_offset = 0;
-                                }
-                                let exp = (proving_offset / 32).reverse_bits()
-                                    >> (u32::BITS - FIELD_ELEMENTS_PER_BLOB.trailing_zeros());
-                                let z = ROOT_OF_UNITY.modpow(&BigUint::from(exp), &BLS_MODULUS);
-                                let z_bytes = z.to_bytes_be();
-                                let mut padded_z_bytes = [0u8; 32];
-                                padded_z_bytes[32 - z_bytes.len()..].copy_from_slice(&z_bytes);
-                                let z_bytes = c_kzg::Bytes32::from(padded_z_bytes);
-                                let (kzg_proof, proven_y) = c_kzg::KzgProof::compute_kzg_proof(
-                                    &blob,
-                                    &z_bytes,
-                                    &ETHEREUM_KZG_SETTINGS,
-                                )
-                                .expect("Failed to generate KZG proof from blob and z");
-                                if !proving_past_end {
-                                    assert_eq!(
-                                        &*proven_y,
-                                        &preimage[offset_usize..offset_usize + 32],
-                                        "KZG proof produced wrong preimage",
-                                    );
-                                }
-                                data.extend(hash);
-                                data.extend(*z_bytes);
-                                data.extend(*proven_y);
-                                data.extend(*commitment);
-                                data.extend(kzg_proof.to_bytes().as_slice());
+                                prove_kzg_preimage(hash, &preimage, offset, &mut data)
+                                    .expect("Failed to generate KZG preimage proof");
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
