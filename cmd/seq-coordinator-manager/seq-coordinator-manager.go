@@ -34,6 +34,7 @@ type manager struct {
 	livelinessSet    map[string]bool
 	priorityList     []string
 	nonPriorityList  []string
+	maxURLSize       int
 }
 
 func main() {
@@ -57,6 +58,9 @@ func main() {
 		},
 		prioritiesSet: make(map[string]bool),
 		livelinessSet: make(map[string]bool),
+		// maxURLSize dictates the allowed max length for sequencer urls
+		// urls exceeding this size will be truncated with an ellipsis
+		maxURLSize: 100,
 	}
 
 	seqManager.refreshAllLists(ctx)
@@ -160,11 +164,11 @@ func main() {
 	flex.SetDirection(tview.FlexRow).
 		AddItem(priorityHeading, 0, 1, false).
 		AddItem(tview.NewFlex().
-			AddItem(prioritySeqList, 0, 2, true).
+			AddItem(prioritySeqList, seqManager.maxURLSize+20, 0, true).
 			AddItem(priorityForm, 0, 3, true), 0, 12, true).
 		AddItem(nonPriorityHeading, 0, 1, false).
 		AddItem(tview.NewFlex().
-			AddItem(nonPrioritySeqList, 0, 2, true).
+			AddItem(nonPrioritySeqList, seqManager.maxURLSize+20, 0, true).
 			AddItem(nonPriorityForm, 0, 3, true), 0, 12, true).
 		AddItem(instructions, 0, 3, false).SetBorder(true)
 
@@ -243,13 +247,22 @@ func (sm *manager) populateLists(ctx context.Context) {
 		if _, ok := sm.livelinessSet[seqURL]; ok {
 			status = fmt.Sprintf("(%d) %v ", index, emoji.GreenCircle)
 		}
-		prioritySeqList.AddItem(status+seqURL+sec, "", rune(0), nil).SetSecondaryTextColor(tcell.ColorPurple)
+		url := seqURL
+		if len(seqURL) > sm.maxURLSize {
+			url = seqURL[:sm.maxURLSize] + "..."
+		}
+		prioritySeqList.AddItem(status+url+sec, "", rune(0), nil).SetSecondaryTextColor(tcell.ColorPurple)
+
 	}
 
 	nonPrioritySeqList.Clear()
 	status := fmt.Sprintf("(-) %v ", emoji.GreenCircle)
 	for _, seqURL := range sm.nonPriorityList {
-		nonPrioritySeqList.AddItem(status+seqURL, "", rune(0), nil)
+		url := seqURL
+		if len(seqURL) > sm.maxURLSize {
+			url = seqURL[:sm.maxURLSize] + "..."
+		}
+		nonPrioritySeqList.AddItem(status+url, "", rune(0), nil)
 	}
 }
 
