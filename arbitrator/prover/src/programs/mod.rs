@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -364,10 +364,13 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct StylusData {
-    pub ink_left: GlobalIndex,
-    pub ink_status: GlobalIndex,
-    pub depth_left: GlobalIndex,
+    pub ink_left: u32,   // global index
+    pub ink_status: u32, // global index
+    pub depth_left: u32, // global index
+    pub init_gas: u32,
+    pub asm_size: u32,
     pub footprint: u16,
     pub user_main: u32,
 }
@@ -375,9 +378,9 @@ pub struct StylusData {
 impl StylusData {
     pub fn global_offsets(&self) -> (u64, u64, u64) {
         (
-            self.ink_left.as_u32() as u64,
-            self.ink_status.as_u32() as u64,
-            self.depth_left.as_u32() as u64,
+            self.ink_left as u64,
+            self.ink_status as u64,
+            self.depth_left as u64,
         )
     }
 }
@@ -389,10 +392,10 @@ impl Module {
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
-    ) -> Result<(Self, u16)> {
+    ) -> Result<(Self, StylusData)> {
         // paid for by the 3 million gas charge in program.go
         let compile = CompileConfig::version(version, debug);
-        let (bin, stylus_data, footprint) =
+        let (bin, stylus_data) =
             WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
 
         // naively charge 11 million gas to do the rest.
@@ -406,6 +409,6 @@ impl Module {
         let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
             .wrap_err("failed to build user module")?;
 
-        Ok((module, footprint))
+        Ok((module, stylus_data))
     }
 }

@@ -192,9 +192,9 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return c.State.Programs().SetPageLimit(limit)
 }
 
-// Sets the added wasm call cost based on binary size
-func (con ArbOwner) SetWasmCallScalar(c ctx, _ mech, gas uint16) error {
-	return c.State.Programs().SetCallScalar(gas)
+// Sets the minimum cost to invoke a program
+func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas uint16) error {
+	return c.State.Programs().SetMinInitGas(gas)
 }
 
 // Sets the number of days after which programs deactivate

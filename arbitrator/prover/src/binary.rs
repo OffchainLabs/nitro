@@ -571,12 +571,20 @@ impl<'a> WasmBinary<'a> {
         let ty = FunctionType::new([ArbValueType::I32], [ArbValueType::I32]);
         let user_main = self.check_func(STYLUS_ENTRY_POINT, ty)?;
 
+        // naively assume for now an upper bound of 5Mb
+        let asm_size = 5 * 1024 * 1024;
+
+        // TODO: determine safe value
+        let init_gas = 2048;
+
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
         Ok(StylusData {
-            ink_left,
-            ink_status,
-            depth_left,
+            ink_left: ink_left.as_u32(),
+            ink_status: ink_status.as_u32(),
+            depth_left: depth_left.as_u32(),
+            init_gas,
+            asm_size,
             footprint,
             user_main,
         })
@@ -587,7 +595,7 @@ impl<'a> WasmBinary<'a> {
         wasm: &'a [u8],
         page_limit: u16,
         compile: &CompileConfig,
-    ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
+    ) -> Result<(WasmBinary<'a>, StylusData)> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
 
@@ -644,7 +652,7 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
-        Ok((bin, stylus_data, pages as u16))
+        Ok((bin, stylus_data))
     }
 
     /// Ensures a func exists and has the right type.

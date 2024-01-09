@@ -21,7 +21,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -52,11 +51,11 @@ func activateProgram(
 	version uint16,
 	debug bool,
 	burner burn.Burner,
-) (common.Hash, uint16, error) {
+) (*activationInfo, error) {
 	output := &rustBytes{}
 	asmLen := usize(0)
 	moduleHash := &bytes32{}
-	footprint := uint16(math.MaxUint16)
+	stylusData := &C.StylusData{}
 
 	status := userStatus(C.stylus_activate(
 		goSlice(wasm),
@@ -66,7 +65,7 @@ func activateProgram(
 		output,
 		&asmLen,
 		moduleHash,
-		(*u16)(&footprint),
+		stylusData,
 		(*u64)(burner.GasLeft()),
 	))
 
@@ -76,9 +75,9 @@ func activateProgram(
 			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return common.Hash{}, footprint, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+			return nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
-		return common.Hash{}, footprint, err
+		return nil, err
 	}
 
 	hash := moduleHash.toHash()
@@ -86,8 +85,14 @@ func activateProgram(
 	asm := data[:split]
 	module := data[split:]
 
+	info := &activationInfo{
+		moduleHash: hash,
+		initGas:    uint32(stylusData.init_gas),
+		asmSize:    uint32(stylusData.asm_size),
+		footprint:  uint16(stylusData.footprint),
+	}
 	db.ActivateWasm(hash, asm, module)
-	return hash, footprint, err
+	return info, err
 }
 
 func callProgram(

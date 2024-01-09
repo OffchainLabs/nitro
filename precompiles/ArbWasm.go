@@ -106,13 +106,13 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 	return con.CodehashVersion(c, evm, codehash)
 }
 
-// Gets the uncompressed size of program at addr
-func (con ArbWasm) ProgramSize(c ctx, evm mech, program addr) (uint32, error) {
+// Gets the cost to invoke the program (not including MinInitGas)
+func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint32, error) {
 	codehash, err := c.GetCodeHash(program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramSize(codehash, evm.Context.Time)
+	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time)
 }
 
 // Gets the footprint of program at addr
@@ -133,9 +133,9 @@ func (con ArbWasm) ProgramTimeLeft(c ctx, evm mech, program addr) (uint64, error
 	return c.State.Programs().ProgramTimeLeft(codehash, evm.Context.Time)
 }
 
-// Gets the added wasm call cost paid per half kb uncompressed wasm
-func (con ArbWasm) CallScalar(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().CallScalar()
+// Gets the minimum cost to invoke a program
+func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().MinInitGas()
 }
 
 // Gets the number of days after which programs deactivate

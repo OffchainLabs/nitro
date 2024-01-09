@@ -31,7 +31,7 @@ type Programs struct {
 	pageGas        storage.StorageBackedUint16
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
-	callScalar     storage.StorageBackedUint16
+	minInitGas     storage.StorageBackedUint16
 	expiryDays     storage.StorageBackedUint16
 	keepaliveDays  storage.StorageBackedUint16
 	version        storage.StorageBackedUint16 // Must only be changed during ArbOS upgrades
@@ -39,7 +39,8 @@ type Programs struct {
 
 type Program struct {
 	version     uint16
-	wasmSize    uint16 // Unit is half of a kb
+	initGas     uint24
+	asmSize     uint24 // Unit is a kb (predicted canonically)
 	footprint   uint16
 	activatedAt uint64 // Last activation timestamp
 	secondsLeft uint64 // Not stored in state
@@ -59,7 +60,7 @@ const (
 	pageGasOffset
 	pageRampOffset
 	pageLimitOffset
-	callScalarOffset
+	minInitGasOffset
 	expiryDaysOffset
 	keepaliveDaysOffset
 )
@@ -78,7 +79,7 @@ const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term.
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB.
 const initialInkPrice = 10000     // 1 evm gas buys 10k ink.
-const initialCallScalar = 8       // call cost per half kb.
+const initialMinCallGas = 0       // assume pricer is correct
 const initialExpiryDays = 365     // deactivate after 1 year.
 const initialKeepaliveDays = 31   // wait a month before allowing reactivation
 
@@ -89,7 +90,7 @@ func Initialize(sto *storage.Storage) {
 	pageGas := sto.OpenStorageBackedUint16(pageGasOffset)
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
-	callScalar := sto.OpenStorageBackedUint16(callScalarOffset)
+	minInitGas := sto.OpenStorageBackedUint16(minInitGasOffset)
 	expiryDays := sto.OpenStorageBackedUint16(expiryDaysOffset)
 	keepaliveDays := sto.OpenStorageBackedUint16(keepaliveDaysOffset)
 	version := sto.OpenStorageBackedUint16(versionOffset)
@@ -99,7 +100,7 @@ func Initialize(sto *storage.Storage) {
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
 	_ = pageLimit.Set(initialPageLimit)
-	_ = callScalar.Set(initialCallScalar)
+	_ = minInitGas.Set(initialMinCallGas)
 	_ = expiryDays.Set(initialExpiryDays)
 	_ = keepaliveDays.Set(initialKeepaliveDays)
 	_ = version.Set(1)
@@ -117,7 +118,7 @@ func Open(sto *storage.Storage) *Programs {
 		pageGas:        sto.OpenStorageBackedUint16(pageGasOffset),
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
-		callScalar:     sto.OpenStorageBackedUint16(callScalarOffset),
+		minInitGas:     sto.OpenStorageBackedUint16(minInitGasOffset),
 		expiryDays:     sto.OpenStorageBackedUint16(expiryDaysOffset),
 		keepaliveDays:  sto.OpenStorageBackedUint16(keepaliveDaysOffset),
 		version:        sto.OpenStorageBackedUint16(versionOffset),
@@ -180,12 +181,12 @@ func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
 }
 
-func (p Programs) CallScalar() (uint16, error) {
-	return p.callScalar.Get()
+func (p Programs) MinInitGas() (uint16, error) {
+	return p.minInitGas.Get()
 }
 
-func (p Programs) SetCallScalar(scalar uint16) error {
-	return p.callScalar.Set(scalar)
+func (p Programs) SetMinInitGas(gas uint16) error {
+	return p.minInitGas.Set(gas)
 }
 
 func (p Programs) ExpiryDays() (uint16, error) {
@@ -235,24 +236,31 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
-	moduleHash, footprint, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, true, err
 	}
-	if err := p.moduleHashes.Set(codeHash, moduleHash); err != nil {
+	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, true, err
 	}
 
-	// wasmSize is stored as half kb units, rounding up
-	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
+	asmSizeKb, err := arbmath.IntToUint24((info.asmSize + 1023) / 1024) // stored in kilobytes
+	if err != nil {
+		return 0, codeHash, common.Hash{}, true, err
+	}
+	initGas24, err := arbmath.IntToUint24(info.initGas)
+	if err != nil {
+		return 0, codeHash, common.Hash{}, true, err
+	}
 
 	programData := Program{
 		version:     stylusVersion,
-		wasmSize:    wasmSize,
-		footprint:   footprint,
+		initGas:     initGas24,
+		asmSize:     asmSizeKb,
+		footprint:   info.footprint,
 		activatedAt: evm.Context.Time,
 	}
-	return stylusVersion, codeHash, moduleHash, false, p.setProgram(codeHash, programData)
+	return stylusVersion, codeHash, info.moduleHash, false, p.setProgram(codeHash, programData)
 }
 
 func (p Programs) CallProgram(
@@ -291,11 +299,11 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	memoryCost := model.GasCost(program.footprint, open, ever)
-	callScalar, err := p.CallScalar()
+	minInitGas, err := p.MinInitGas()
 	if err != nil {
 		return nil, err
 	}
-	callCost := uint64(program.wasmSize) * uint64(callScalar)
+	callCost := uint64(program.initGas) + uint64(minInitGas)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
@@ -348,9 +356,10 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error)
 	}
 	program := Program{
 		version:     arbmath.BytesToUint16(data[:2]),
-		wasmSize:    arbmath.BytesToUint16(data[2:4]),
-		footprint:   arbmath.BytesToUint16(data[4:6]),
-		activatedAt: arbmath.BytesToUint(data[6:14]),
+		initGas:     arbmath.BytesToUint24(data[2:5]),
+		asmSize:     arbmath.BytesToUint24(data[5:8]),
+		footprint:   arbmath.BytesToUint16(data[8:10]),
+		activatedAt: arbmath.BytesToUint(data[10:18]),
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -382,9 +391,10 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error)
 func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
 	copy(data[0:], arbmath.Uint16ToBytes(program.version))
-	copy(data[2:], arbmath.Uint16ToBytes(program.wasmSize))
-	copy(data[4:], arbmath.Uint16ToBytes(program.footprint))
-	copy(data[6:], arbmath.UintToBytes(program.activatedAt))
+	copy(data[3:], arbmath.Uint24ToBytes(program.initGas))
+	copy(data[5:], arbmath.Uint24ToBytes(program.asmSize))
+	copy(data[8:], arbmath.Uint16ToBytes(program.footprint))
+	copy(data[10:], arbmath.UintToBytes(program.activatedAt))
 	return p.programs.Set(codehash, data)
 }
 
@@ -414,12 +424,10 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
-	naive := uint32(5 * 1024 * 1024)
-	cost, err := p.dataPricer.updateModel(naive, time)
+	cost, err := p.dataPricer.updateModel(program.asmSize.ToUint32(), time)
 	if err != nil {
 		return nil, err
 	}
-
 	program.activatedAt = time
 	return cost, p.setProgram(codeHash, program)
 
@@ -441,10 +449,9 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64) (uint64, er
 	return program.secondsLeft, nil
 }
 
-func (p Programs) ProgramSize(codeHash common.Hash, time uint64) (uint32, error) {
+func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64) (uint32, error) {
 	program, err := p.getProgram(codeHash, time)
-	// wasmSize represents the number of half kb units, return as bytes
-	return uint32(program.wasmSize) * 512, err
+	return uint32(program.initGas), err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64) (uint16, error) {
@@ -494,6 +501,13 @@ type evmData struct {
 	txOrigin        common.Address
 	reentrant       uint32
 	tracing         bool
+}
+
+type activationInfo struct {
+	moduleHash common.Hash
+	initGas    uint32
+	asmSize    uint32
+	footprint  uint16
 }
 
 type userStatus uint8

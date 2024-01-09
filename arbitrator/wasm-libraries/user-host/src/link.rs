@@ -52,7 +52,8 @@ struct MemoryLeaf([u8; 32]);
 ///     λ(wasm []byte, pageLimit, version u16, debug u32, modHash *hash, gas *u64) (footprint u16, err *Vec<u8>)
 ///
 /// These values are placed on the stack as follows
-///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
+///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || initGas | asmSize ||
+///     || footprint | 6 pad || err ptr ||
 ///
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activateProgramRustImpl(
@@ -72,19 +73,21 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activa
             wavm::caller_store64(gas, 0);
             wavm::write_bytes32(module_hash, Bytes32::default());
             sp.skip_space();
+            sp.skip_space();
             sp.write_ptr(heapify(error));
             return;
         }};
     }
 
     let gas_left = &mut wavm::caller_load64(gas);
-    let (module, pages) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+    let (module, info) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
         Ok(data) => data,
         Err(error) => error!("failed to activate", error),
     };
     wavm::caller_store64(gas, *gas_left);
     wavm::write_bytes32(module_hash, module.hash());
-    sp.write_u16(pages).skip_space();
+    sp.write_u32(info.init_gas).write_u32(info.asm_size);
+    sp.write_u16(info.footprint).skip_space();
     sp.write_nullptr();
 }
 

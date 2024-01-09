@@ -320,8 +320,9 @@ func SaturatingMul[T Signed](a, b T) T {
 // SaturatingCast cast an unsigned integer to a signed one, clipping to [0, S::MAX]
 func SaturatingCast[S Signed, T Unsigned](value T) S {
 	tBig := unsafe.Sizeof(T(0)) >= unsafe.Sizeof(S(0))
-	if tBig && value > T(^S(0)>>1) {
-		return ^S(0) >> 1
+	sMax := T(1<<(8*unsafe.Sizeof(S(0)))-1) >> 1
+	if tBig && value > sMax {
+		return S(sMax)
 	}
 	return S(value)
 }

@@ -4,6 +4,7 @@
 package arbmath
 
 import (
+	"encoding/binary"
 	"errors"
 	"math/big"
 )
@@ -36,4 +37,17 @@ func BigToUint24OrPanic(value *big.Int) Uint24 {
 		panic("big.Int value exceeds the max Uint24")
 	}
 	return Uint24(value.Uint64())
+}
+
+// creates a uint24 from its big-endian representation
+func BytesToUint24(value []byte) Uint24 {
+	value32 := ConcatByteSlices([]byte{0}, value)
+	return Uint24(binary.BigEndian.Uint32(value32))
+}
+
+// casts a uint24 to its big-endian representation
+func Uint24ToBytes(value Uint24) []byte {
+	result := make([]byte, 4)
+	binary.BigEndian.PutUint32(result, value.ToUint32())
+	return result[1:]
 }

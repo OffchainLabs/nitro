@@ -1119,22 +1119,11 @@ func deployWasm(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
 ) common.Address {
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
-	wasm, uncompressed := readWasmFile(t, file)
+	wasm, _ := readWasmFile(t, file)
 	auth.GasLimit = 32000000 // skip gas estimation
 	program := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey(name, ": deployed to ", program.Hex())
 	activateWasm(t, ctx, auth, l2client, program, name)
-
-	// check that program size matches
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
-	Require(t, err)
-	programSize, err := arbWasm.ProgramSize(nil, program)
-	Require(t, err)
-	expected := (len(uncompressed) + 511) / 512 * 512
-	if int(programSize) != expected {
-		Fatal(t, "unexpected program size", name, programSize, expected, len(wasm))
-	}
-
 	return program
 }
 
