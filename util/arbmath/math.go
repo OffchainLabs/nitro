@@ -317,12 +317,13 @@ func SaturatingMul[T Signed](a, b T) T {
 	return product
 }
 
-// SaturatingCast cast a uint64 to an int64, clipping to [0, 2^63-1]
-func SaturatingCast(value uint64) int64 {
-	if value > math.MaxInt64 {
-		return math.MaxInt64
+// SaturatingCast cast an unsigned integer to a signed one, clipping to [0, S::MAX]
+func SaturatingCast[S Signed, T Unsigned](value T) S {
+	tBig := unsafe.Sizeof(T(0)) >= unsafe.Sizeof(S(0))
+	if tBig && value > T(^S(0)>>1) {
+		return ^S(0) >> 1
 	}
-	return int64(value)
+	return S(value)
 }
 
 // SaturatingUCast cast a signed integer to an unsigned one, clipping to [0, T::MAX]
@@ -335,6 +336,15 @@ func SaturatingUCast[T Unsigned, S Signed](value S) T {
 		return ^T(0)
 	}
 	return T(value)
+}
+
+// SaturatingUUCast cast an unsigned integer to another, clipping to [0, U::MAX]
+func SaturatingUUCast[U, T Unsigned](value T) U {
+	tBig := unsafe.Sizeof(T(0)) > unsafe.Sizeof(U(0))
+	if tBig && value > T(^U(0)) {
+		return ^U(0)
+	}
+	return U(value)
 }
 
 func SaturatingCastToUint(value *big.Int) uint64 {
@@ -372,9 +382,9 @@ func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
 	}
 
 	if negative {
-		return Bips(SaturatingCast(bips * bips / res))
+		return Bips(SaturatingCast[int64](bips * bips / res))
 	} else {
-		return Bips(SaturatingCast(res))
+		return Bips(SaturatingCast[int64](res))
 	}
 }
 

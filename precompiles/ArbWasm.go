@@ -3,20 +3,26 @@
 
 package precompiles
 
+import (
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
+)
+
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramActivated             func(ctx, mech, hash, hash, addr, uint16) error
-	ProgramActivatedGasCost      func(hash, hash, addr, uint16) (uint64, error)
-	ProgramNotActivatedError     func() error
-	ProgramNeedsUpgradeError     func(version, stylusVersion uint16) error
-	ProgramExpiredError          func(age uint64) error
-	ProgramUpToDateError         func() error
-	ProgramKeepaliveTooSoonError func(age uint64) error
+	ProgramActivated              func(ctx, mech, hash, hash, addr, uint16) error
+	ProgramActivatedGasCost       func(hash, hash, addr, uint16) (uint64, error)
+	ProgramNotActivatedError      func() error
+	ProgramNeedsUpgradeError      func(version, stylusVersion uint16) error
+	ProgramExpiredError           func(age uint64) error
+	ProgramUpToDateError          func() error
+	ProgramKeepaliveTooSoonError  func(age uint64) error
+	ProgramInsufficientValueError func(have, want huge) error
 }
 
 // Compile a wasm program with the latest instrumentation
-func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
+func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, error) {
 	debug := evm.ChainConfig().DebugMode()
 
 	// charge 3 million up front to begin activation
@@ -75,13 +81,20 @@ func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, e
 }
 
 // @notice extends a program's expiration date (reverts if too soon)
-func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, codehash bytes32) error {
+func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, value huge, codehash bytes32) error {
 	cost, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
 	if err != nil {
 		return err
 	}
-	_ = cost // consume value
-	return nil
+	if arbmath.BigLessThan(value, cost) {
+		return con.ProgramInsufficientValueError(value, cost)
+	}
+	network, err := c.State.NetworkFeeAccount()
+	if err != nil {
+		return err
+	}
+	scenario := util.TracingDuringEVM
+	return util.TransferBalance(&con.Address, &network, value, evm, scenario, "activate")
 }
 
 // Gets the stylus version that program at addr was most recently compiled with

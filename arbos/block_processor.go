@@ -418,7 +418,7 @@ func ProduceBlockAdvanced(
 
 		// Add gas used since startup to prometheus metric.
 		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
-		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
+		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast[int64](gasUsed))
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)

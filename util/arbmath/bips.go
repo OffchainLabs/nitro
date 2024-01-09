@@ -36,9 +36,13 @@ func UintMulByBips(value uint64, bips Bips) uint64 {
 }
 
 func SaturatingCastToBips(value uint64) Bips {
-	return Bips(SaturatingCast(value))
+	return Bips(SaturatingCast[int64](value))
 }
 
 func (bips UBips) Uint64() uint64 {
+	return uint64(bips)
+}
+
+func (bips Bips) Uint64() uint64 {
 	return uint64(bips)
 }

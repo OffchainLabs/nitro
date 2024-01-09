@@ -414,7 +414,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
-	naive := int64(5 * 1024 * 1024)
+	naive := uint32(5 * 1024 * 1024)
 	cost, err := p.dataPricer.updateModel(naive, time)
 	if err != nil {
 		return nil, err

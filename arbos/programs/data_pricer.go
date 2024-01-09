@@ -11,38 +11,35 @@ import (
 )
 
 type dataPricer struct {
-	backingStorage     *storage.Storage
-	poolBytes          storage.StorageBackedInt64
-	poolBytesPerSecond storage.StorageBackedInt64
-	maxPoolBytes       storage.StorageBackedInt64
-	lastUpdateTime     storage.StorageBackedUint64
-	minPrice           storage.StorageBackedUint32
-	inertia            storage.StorageBackedUint64
+	backingStorage *storage.Storage
+	demand         storage.StorageBackedUint32
+	bytesPerSecond storage.StorageBackedUint32
+	lastUpdateTime storage.StorageBackedUint64
+	minPrice       storage.StorageBackedUint32
+	inertia        storage.StorageBackedUint32
 }
 
-const initialPoolBytes = initialMaxPoolBytes
-const initialPoolBytesPerSecond = initialMaxPoolBytes / (60 * 60) // refill each hour
-const initialMaxPoolBytes = 4 * (1 << 40) / (365 * 24)            // 4Tb total footprint
-const initialLastUpdateTime = 1421388000                          // the day it all began
-const initialMinPrice = 10                                        // one USD
-const initialInertia = 70832408                                   // expensive at 4Tb
+const initialDemand = 0                                      // no demand
+const initialHourlyBytes = 4 * (1 << 40) / (365 * 24)        // 4Tb total footprint
+const initialBytesPerSecond = initialHourlyBytes / (60 * 60) // refill each hour
+const initialLastUpdateTime = 1421388000                     // the day it all began
+const initialMinPrice = 82928201                             // 5Mb = $1
+const initialInertia = 70177364                              // expensive at 4Tb
 
 func openDataPricer(sto *storage.Storage) *dataPricer {
 	return &dataPricer{
-		backingStorage:     sto,
-		poolBytes:          sto.OpenStorageBackedInt64(initialPoolBytes),
-		poolBytesPerSecond: sto.OpenStorageBackedInt64(initialPoolBytesPerSecond),
-		maxPoolBytes:       sto.OpenStorageBackedInt64(initialMaxPoolBytes),
-		lastUpdateTime:     sto.OpenStorageBackedUint64(initialLastUpdateTime),
-		minPrice:           sto.OpenStorageBackedUint32(initialMinPrice),
-		inertia:            sto.OpenStorageBackedUint64(initialInertia),
+		backingStorage: sto,
+		demand:         sto.OpenStorageBackedUint32(initialDemand),
+		bytesPerSecond: sto.OpenStorageBackedUint32(initialBytesPerSecond),
+		lastUpdateTime: sto.OpenStorageBackedUint64(initialLastUpdateTime),
+		minPrice:       sto.OpenStorageBackedUint32(initialMinPrice),
+		inertia:        sto.OpenStorageBackedUint32(initialInertia),
 	}
 }
 
-func (p *dataPricer) updateModel(tempBytes int64, time uint64) (*big.Int, error) {
-	poolBytes, _ := p.poolBytes.Get()
-	poolBytesPerSecond, _ := p.poolBytesPerSecond.Get()
-	maxPoolBytes, _ := p.maxPoolBytes.Get()
+func (p *dataPricer) updateModel(tempBytes uint32, time uint64) (*big.Int, error) {
+	demand, _ := p.demand.Get()
+	bytesPerSecond, _ := p.bytesPerSecond.Get()
 	lastUpdateTime, _ := p.lastUpdateTime.Get()
 	minPrice, _ := p.minPrice.Get()
 	inertia, err := p.inertia.Get()
@@ -50,21 +47,18 @@ func (p *dataPricer) updateModel(tempBytes int64, time uint64) (*big.Int, error)
 		return nil, err
 	}
 
-	timeDelta := arbmath.SaturatingCast(time - lastUpdateTime)
-	credit := arbmath.SaturatingMul(poolBytesPerSecond, timeDelta)
-	poolBytes = arbmath.MinInt(arbmath.SaturatingAdd(poolBytes, credit), maxPoolBytes)
-	poolBytes = arbmath.SaturatingSub(poolBytes, tempBytes)
+	timeDelta := arbmath.SaturatingUUCast[uint32](time - lastUpdateTime)
+	credit := arbmath.SaturatingUMul(bytesPerSecond, timeDelta)
+	demand = arbmath.SaturatingUSub(demand, credit)
+	demand = arbmath.SaturatingUAdd(demand, tempBytes)
 
-	if err := p.poolBytes.Set(poolBytes); err != nil {
+	if err := p.demand.Set(demand); err != nil {
 		return nil, err
 	}
 
-	cost := big.NewInt(arbmath.SaturatingMul(int64(minPrice), tempBytes))
-
-	if poolBytes < 0 {
-		excess := arbmath.SaturatingNeg(poolBytes)
-		exponent := arbmath.NaturalToBips(excess) / arbmath.Bips(inertia)
-		cost = arbmath.BigMulByBips(cost, arbmath.ApproxExpBasisPoints(exponent, 12))
-	}
-	return cost, nil
+	exponent := arbmath.OneInBips * arbmath.Bips(demand) / arbmath.Bips(inertia)
+	multiplier := arbmath.ApproxExpBasisPoints(exponent, 12).Uint64()
+	costPerByte := arbmath.SaturatingUMul(uint64(minPrice), multiplier)
+	costInWei := arbmath.SaturatingUMul(costPerByte, uint64(tempBytes))
+	return arbmath.UintToBig(costInWei), nil
 }

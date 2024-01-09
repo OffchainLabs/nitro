@@ -104,7 +104,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if err != nil {
 			log.Warn("L1Pricing PerBatchGas failed", "err", err)
 		}
-		gasSpent := arbmath.SaturatingAdd(perBatchGas, arbmath.SaturatingCast(batchDataGas))
+		gasSpent := arbmath.SaturatingAdd(perBatchGas, arbmath.SaturatingCast[int64](batchDataGas))
 		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, arbmath.SaturatingUCast[uint64](gasSpent))
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
