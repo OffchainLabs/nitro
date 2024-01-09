@@ -247,7 +247,9 @@ func main() {
 		// Espresso-specific validation
 		// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
 		isL2Message := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message
-		if isL2Message && chainConfig.Espresso {
+		commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
+		validatingAgainstEspresso := commitment != [32]byte{}
+		if isL2Message && validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
@@ -256,7 +258,6 @@ func main() {
 				panic("batch missing espresso justification")
 			}
 			hotshotHeader := jst.Header
-			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v. seqNum %v posInInbox %v", hotshotHeader.Commit(), commitment, inboxPos, posInInbox))
 			}

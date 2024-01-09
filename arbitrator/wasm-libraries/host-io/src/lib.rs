@@ -77,7 +77,21 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotCom
 ) {
     // TODO implement for fault proofs
     // https://github.com/EspressoSystems/espresso-sequencer/issues/671
-    return unimplemented!();
+    let _msg_num = sp.read_u64(0);
+    let _pos_num = sp.read_u64(1);
+    let out_ptr = sp.read_u64(2);
+    let out_len = sp.read_u64(3);
+    if out_len != 32 {
+        eprintln!(
+            "Go attempting to read hotshot commitment without len {}",
+            out_len,
+        );
+        sp.write_u64(5, 0);
+        return;
+    }
+    let out_buf = [0u8; 32];
+    write_slice(&out_buf, out_ptr);
+    sp.write_u64(5, 32);
 }
 
 #[no_mangle]
