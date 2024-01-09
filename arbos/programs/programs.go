@@ -104,6 +104,8 @@ func Initialize(sto *storage.Storage) {
 	_ = expiryDays.Set(initialExpiryDays)
 	_ = keepaliveDays.Set(initialKeepaliveDays)
 	_ = version.Set(1)
+
+	initDataPricer(sto.OpenSubStorage(dataPricerKey))
 }
 
 func Open(sto *storage.Storage) *Programs {
@@ -206,7 +208,7 @@ func (p Programs) SetKeepaliveDays(days uint16) error {
 }
 
 func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (
-	uint16, common.Hash, common.Hash, bool, error,
+	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(address)
@@ -214,43 +216,48 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
-		return 0, codeHash, common.Hash{}, false, err
+		return 0, codeHash, common.Hash{}, nil, false, err
 	}
 	currentVersion, err := p.programExists(codeHash)
 	if err != nil {
-		return 0, codeHash, common.Hash{}, false, err
+		return 0, codeHash, common.Hash{}, nil, false, err
 	}
 	if currentVersion == stylusVersion {
 		// already activated and up to date
-		return 0, codeHash, common.Hash{}, false, ProgramUpToDateError()
+		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
 	wasm, err := getWasm(statedb, address)
 	if err != nil {
-		return 0, codeHash, common.Hash{}, false, err
+		return 0, codeHash, common.Hash{}, nil, false, err
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit, err := p.PageLimit()
 	if err != nil {
-		return 0, codeHash, common.Hash{}, false, err
+		return 0, codeHash, common.Hash{}, nil, false, err
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
 	info, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
 	if err != nil {
-		return 0, codeHash, common.Hash{}, true, err
+		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
-		return 0, codeHash, common.Hash{}, true, err
+		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
 	estimateKb, err := arbmath.IntToUint24((info.asmEstimate + 1023) / 1024) // stored in kilobytes
 	if err != nil {
-		return 0, codeHash, common.Hash{}, true, err
+		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 	initGas24, err := arbmath.IntToUint24(info.initGas)
 	if err != nil {
-		return 0, codeHash, common.Hash{}, true, err
+		return 0, codeHash, common.Hash{}, nil, true, err
+	}
+
+	dataFee, err := p.dataPricer.updateModel(info.asmEstimate, evm.Context.Time)
+	if err != nil {
+		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
 	programData := Program{
@@ -260,7 +267,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		footprint:   info.footprint,
 		activatedAt: evm.Context.Time,
 	}
-	return stylusVersion, codeHash, info.moduleHash, false, p.setProgram(codeHash, programData)
+	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
 
 func (p Programs) CallProgram(

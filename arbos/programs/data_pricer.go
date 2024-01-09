@@ -19,6 +19,14 @@ type dataPricer struct {
 	inertia        storage.StorageBackedUint32
 }
 
+const (
+	demandOffset uint64 = iota
+	bytesPerSecondOffset
+	lastUpdateTimeOffset
+	minPriceOffset
+	inertiaOffset
+)
+
 const initialDemand = 0                                      // no demand
 const initialHourlyBytes = 4 * (1 << 40) / (365 * 24)        // 4Tb total footprint
 const initialBytesPerSecond = initialHourlyBytes / (60 * 60) // refill each hour
@@ -26,14 +34,27 @@ const initialLastUpdateTime = 1421388000                     // the day it all b
 const initialMinPrice = 82928201                             // 5Mb = $1
 const initialInertia = 70177364                              // expensive at 4Tb
 
+func initDataPricer(sto *storage.Storage) {
+	demand := sto.OpenStorageBackedUint32(demandOffset)
+	bytesPerSecond := sto.OpenStorageBackedUint32(bytesPerSecondOffset)
+	lastUpdateTime := sto.OpenStorageBackedUint64(lastUpdateTimeOffset)
+	minPrice := sto.OpenStorageBackedUint32(minPriceOffset)
+	inertia := sto.OpenStorageBackedUint32(inertiaOffset)
+	_ = demand.Set(initialDemand)
+	_ = bytesPerSecond.Set(initialBytesPerSecond)
+	_ = lastUpdateTime.Set(initialLastUpdateTime)
+	_ = minPrice.Set(initialMinPrice)
+	_ = inertia.Set(initialInertia)
+}
+
 func openDataPricer(sto *storage.Storage) *dataPricer {
 	return &dataPricer{
 		backingStorage: sto,
-		demand:         sto.OpenStorageBackedUint32(initialDemand),
-		bytesPerSecond: sto.OpenStorageBackedUint32(initialBytesPerSecond),
-		lastUpdateTime: sto.OpenStorageBackedUint64(initialLastUpdateTime),
-		minPrice:       sto.OpenStorageBackedUint32(initialMinPrice),
-		inertia:        sto.OpenStorageBackedUint32(initialInertia),
+		demand:         sto.OpenStorageBackedUint32(demandOffset),
+		bytesPerSecond: sto.OpenStorageBackedUint32(bytesPerSecondOffset),
+		lastUpdateTime: sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
+		minPrice:       sto.OpenStorageBackedUint32(minPriceOffset),
+		inertia:        sto.OpenStorageBackedUint32(inertiaOffset),
 	}
 }
 
@@ -59,6 +80,6 @@ func (p *dataPricer) updateModel(tempBytes uint32, time uint64) (*big.Int, error
 	exponent := arbmath.OneInBips * arbmath.Bips(demand) / arbmath.Bips(inertia)
 	multiplier := arbmath.ApproxExpBasisPoints(exponent, 12).Uint64()
 	costPerByte := arbmath.SaturatingUMul(uint64(minPrice), multiplier)
-	costInWei := arbmath.SaturatingUMul(costPerByte, uint64(tempBytes))
+	costInWei := arbmath.SaturatingUMul(costPerByte, uint64(tempBytes)) / 10000
 	return arbmath.UintToBig(costInWei), nil
 }

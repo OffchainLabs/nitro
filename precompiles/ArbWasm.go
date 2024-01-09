@@ -29,14 +29,37 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	if err := c.Burn(1659168); err != nil {
 		return 0, err
 	}
-	version, codeHash, moduleHash, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
 	if err != nil {
 		return version, err
 	}
+	if err := con.payActivationDataFee(c, evm, value, dataFee); err != nil {
+		return version, err
+	}
 	return version, con.ProgramActivated(c, evm, codeHash, moduleHash, program, version)
+}
+
+// Pays the data component of activation costs
+func (con ArbWasm) payActivationDataFee(c ctx, evm mech, value, dataFee huge) error {
+	if arbmath.BigLessThan(value, dataFee) {
+		return con.ProgramInsufficientValueError(value, dataFee)
+	}
+	network, err := c.State.NetworkFeeAccount()
+	if err != nil {
+		return err
+	}
+	scenario := util.TracingDuringEVM
+	repay := arbmath.BigSub(value, dataFee)
+
+	// transfer the fee to the network account, and the rest back to the user
+	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, "activate")
+	if err != nil {
+		return err
+	}
+	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, "reimburse")
 }
 
 // Gets the latest stylus version
@@ -80,21 +103,13 @@ func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, e
 	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time)
 }
 
-// @notice extends a program's expiration date (reverts if too soon)
+// Extends a program's expiration date (reverts if too soon)
 func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, value huge, codehash bytes32) error {
-	cost, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
+	dataFee, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
 	if err != nil {
 		return err
 	}
-	if arbmath.BigLessThan(value, cost) {
-		return con.ProgramInsufficientValueError(value, cost)
-	}
-	network, err := c.State.NetworkFeeAccount()
-	if err != nil {
-		return err
-	}
-	scenario := util.TracingDuringEVM
-	return util.TransferBalance(&con.Address, &network, value, evm, scenario, "activate")
+	return con.payActivationDataFee(c, evm, value, dataFee)
 }
 
 // Gets the stylus version that program at addr was most recently compiled with

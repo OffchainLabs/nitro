@@ -42,6 +42,8 @@ import (
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
+var oneEth = arbmath.UintToBig(1e18)
+
 func TestProgramKeccak(t *testing.T) {
 	t.Parallel()
 	keccakTest(t, true)
@@ -203,18 +205,18 @@ func testActivateTwice(t *testing.T, jit bool) {
 	args := argsForMulticall(vm.CALL, types.ArbWasmAddress, nil, pack(activateProgram(keccakA)))
 	args = multicallAppend(args, vm.CALL, types.ArbDebugAddress, pack(legacyError()))
 
-	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
 
-	// Compile keccak program A, then call into B, which should succeed due to being the same codehash
-	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, nil, pack(activateProgram(keccakA)))
+	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
+	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
 	args = multicallAppend(args, vm.CALL, mockAddr, pack(callKeccak(keccakB, keccakArgs)))
 
-	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	validateBlocks(t, 7, jit, ctx, node, l2client)
@@ -611,6 +613,8 @@ func testCreate(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 	createAddr := deployWasm(t, ctx, auth, l2client, rustFile("create"))
+	activateAuth := auth
+	activateAuth.Value = oneEth
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -639,10 +643,10 @@ func testCreate(t *testing.T, jit bool) {
 			Fatal(t, "storage.wasm has the wrong balance", balance, startValue)
 		}
 
-		// compile the program
+		// activate the program
 		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 		Require(t, err)
-		tx, err = arbWasm.ActivateProgram(&auth, storeAddr)
+		tx, err = arbWasm.ActivateProgram(&activateAuth, storeAddr)
 		if err != nil {
 			if !strings.Contains(err.Error(), "ProgramUpToDate") {
 				Fatal(t, err)
@@ -825,7 +829,7 @@ func testMemory(t *testing.T, jit bool) {
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
 
-	expectFailure := func(to common.Address, data []byte) {
+	expectFailure := func(to common.Address, data []byte, value *big.Int) {
 		t.Helper()
 		msg := ethereum.CallMsg{
 			To:    &to,
@@ -839,7 +843,7 @@ func testMemory(t *testing.T, jit bool) {
 		}
 
 		// execute onchain for proving's sake
-		tx := l2info.PrepareTxTo("Owner", &to, 1e9, nil, data)
+		tx := l2info.PrepareTxTo("Owner", &to, 1e9, value, data)
 		Require(t, l2client.SendTransaction(ctx, tx))
 		EnsureTxFailed(t, ctx, l2client, tx)
 	}
@@ -863,9 +867,9 @@ func testMemory(t *testing.T, jit bool) {
 
 	// check that we'd normally run out of gas
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 32000000))
-	expectFailure(multiAddr, args)
+	expectFailure(multiAddr, args, oneEth)
 
-	// check that compilation fails when out of memory
+	// check that activation fails when out of memory
 	wasm, _ := readWasmFile(t, watFile("grow-120"))
 	growHugeAddr := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey("memory.wat        ", memoryAddr)
@@ -878,16 +882,16 @@ func testMemory(t *testing.T, jit bool) {
 		return data
 	}
 	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
-	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
+	expectFailure(growCallAddr, args, oneEth) // consumes 64, then tries to compile something 120
 
-	// check that compilation then succeeds
+	// check that arctivation then succeeds
 	args[0] = 0x00
-	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, nil, args)
+	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx)) // TODO: check receipt after compilation pricing
 
 	// check footprint can induce a revert
 	args = arbmath.ConcatByteSlices([]byte{122}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
-	expectFailure(growCallAddr, args)
+	expectFailure(growCallAddr, args, oneEth)
 
 	// check same call would have succeeded with fewer pages
 	args = arbmath.ConcatByteSlices([]byte{119}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
@@ -927,6 +931,7 @@ func testActivateFails(t *testing.T, jit bool) {
 
 	blockToValidate := uint64(0)
 	timed(t, "activate bad-export", func() {
+		auth.Value = oneEth
 		tx, err := arbWasm.ActivateProgram(&auth, badExportAddr)
 		Require(t, err)
 		txRes, err := WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
@@ -1009,7 +1014,7 @@ func testSdkStorage(t *testing.T, jit bool) {
 	check()
 }
 
-func TestProgramAcivationLogs(t *testing.T) {
+func TestProgramActivationLogs(t *testing.T) {
 	t.Parallel()
 	ctx, _, _, l2client, auth, cleanup := setupProgramTest(t, true)
 	defer cleanup()
@@ -1023,6 +1028,7 @@ func TestProgramAcivationLogs(t *testing.T) {
 
 	programAddress := deployContract(t, ctx, nolimitAuth, l2client, wasm)
 
+	auth.Value = oneEth
 	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
@@ -1139,6 +1145,7 @@ func activateWasm(
 	Require(t, err)
 
 	timed(t, "activate "+name, func() {
+		auth.Value = oneEth
 		tx, err := arbWasm.ActivateProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
