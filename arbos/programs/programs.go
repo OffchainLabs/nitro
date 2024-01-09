@@ -398,7 +398,7 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error)
 func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
 	copy(data[0:], arbmath.Uint16ToBytes(program.version))
-	copy(data[3:], arbmath.Uint24ToBytes(program.initGas))
+	copy(data[2:], arbmath.Uint24ToBytes(program.initGas))
 	copy(data[5:], arbmath.Uint24ToBytes(program.asmEstimate))
 	copy(data[8:], arbmath.Uint16ToBytes(program.footprint))
 	copy(data[10:], arbmath.UintToBytes(program.activatedAt))
