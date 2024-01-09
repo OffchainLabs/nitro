@@ -39,14 +39,14 @@ func Init(conf *Config) error {
 		return nil
 	}
 
-	limit, err := parseMemLimit(conf.MemFreeLimit)
+	limit, err := ParseMemLimit(conf.MemFreeLimit)
 	if err != nil {
 		return err
 	}
 
 	node.WrapHTTPHandler = func(srv http.Handler) (http.Handler, error) {
-		var c limitChecker
-		c, err := newCgroupsMemoryLimitCheckerIfSupported(limit)
+		var c LimitChecker
+		c, err := NewCgroupsMemoryLimitCheckerIfSupported(limit)
 		if errors.Is(err, errNotSupported) {
 			log.Error("No method for determining memory usage and limits was discovered, disabled memory limit RPC throttling")
 			c = &trivialLimitChecker{}
@@ -57,7 +57,7 @@ func Init(conf *Config) error {
 	return nil
 }
 
-func parseMemLimit(limitStr string) (int, error) {
+func ParseMemLimit(limitStr string) (int, error) {
 	var (
 		limit int = 1
 		s     string
@@ -105,10 +105,10 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // limit check.
 type httpServer struct {
 	inner http.Handler
-	c     limitChecker
+	c     LimitChecker
 }
 
-func newHttpServer(inner http.Handler, c limitChecker) *httpServer {
+func newHttpServer(inner http.Handler, c LimitChecker) *httpServer {
 	return &httpServer{inner: inner, c: c}
 }
 
@@ -116,7 +116,7 @@ func newHttpServer(inner http.Handler, c limitChecker) *httpServer {
 // limit is exceeded, in which case it returns a HTTP 429 error.
 func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	start := time.Now()
-	exceeded, err := s.c.isLimitExceeded()
+	exceeded, err := s.c.IsLimitExceeded()
 	limitCheckDurationHistogram.Update(time.Since(start).Nanoseconds())
 	if err != nil {
 		log.Error("Error checking memory limit", "err", err, "checker", s.c.String())
@@ -130,19 +130,19 @@ func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	s.inner.ServeHTTP(w, req)
 }
 
-type limitChecker interface {
-	isLimitExceeded() (bool, error)
+type LimitChecker interface {
+	IsLimitExceeded() (bool, error)
 	String() string
 }
 
-func isSupported(c limitChecker) bool {
-	_, err := c.isLimitExceeded()
+func isSupported(c LimitChecker) bool {
+	_, err := c.IsLimitExceeded()
 	return err == nil
 }
 
-// newCgroupsMemoryLimitCheckerIfSupported attempts to auto-discover whether
+// NewCgroupsMemoryLimitCheckerIfSupported attempts to auto-discover whether
 // Cgroups V1 or V2 is supported for checking system memory limits.
-func newCgroupsMemoryLimitCheckerIfSupported(memLimitBytes int) (*cgroupsMemoryLimitChecker, error) {
+func NewCgroupsMemoryLimitCheckerIfSupported(memLimitBytes int) (*cgroupsMemoryLimitChecker, error) {
 	c := newCgroupsMemoryLimitChecker(cgroupsV1MemoryFiles, memLimitBytes)
 	if isSupported(c) {
 		log.Info("Cgroups v1 detected, enabling memory limit RPC throttling")
@@ -161,7 +161,7 @@ func newCgroupsMemoryLimitCheckerIfSupported(memLimitBytes int) (*cgroupsMemoryL
 // trivialLimitChecker checks no limits, so its limits are never exceeded.
 type trivialLimitChecker struct{}
 
-func (_ trivialLimitChecker) isLimitExceeded() (bool, error) {
+func (_ trivialLimitChecker) IsLimitExceeded() (bool, error) {
 	return false, nil
 }
 
@@ -202,7 +202,7 @@ func newCgroupsMemoryLimitChecker(files cgroupsMemoryFiles, memLimitBytes int) *
 	}
 }
 
-// isLimitExceeded checks if the system memory free is less than the limit.
+// IsLimitExceeded checks if the system memory free is less than the limit.
 // It returns true if the limit is exceeded.
 //
 // container_memory_working_set_bytes in prometheus is calculated as
@@ -223,7 +223,7 @@ func newCgroupsMemoryLimitChecker(files cgroupsMemoryFiles, memLimitBytes int) *
 // free memory for the page cache, to avoid cache thrashing on chain state
 // access. How much "reasonable" is will depend on access patterns, state
 // size, and your application's tolerance for latency.
-func (c *cgroupsMemoryLimitChecker) isLimitExceeded() (bool, error) {
+func (c *cgroupsMemoryLimitChecker) IsLimitExceeded() (bool, error) {
 	var limit, usage, active, inactive int
 	var err error
 	if limit, err = readIntFromFile(c.files.limitFile); err != nil {

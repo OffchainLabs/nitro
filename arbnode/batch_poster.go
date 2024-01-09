@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -58,23 +59,22 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader            *headerreader.HeaderReader
-	inbox               *InboxTracker
-	streamer            *TransactionStreamer
-	config              BatchPosterConfigFetcher
-	seqInbox            *bridgegen.SequencerInbox
-	bridge              *bridgegen.Bridge
-	syncMonitor         *SyncMonitor
-	seqInboxABI         *abi.ABI
-	seqInboxAddr        common.Address
-	bridgeAddr          common.Address
-	gasRefunderAddr     common.Address
-	building            *buildingBatch
-	daWriter            das.DataAvailabilityServiceWriter
-	dataPoster          *dataposter.DataPoster
-	redisLock           *redislock.Simple
-	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
-	messagesPerBatch    *arbmath.MovingAverage[uint64]
+	l1Reader         *headerreader.HeaderReader
+	inbox            *InboxTracker
+	streamer         *TransactionStreamer
+	config           BatchPosterConfigFetcher
+	seqInbox         *bridgegen.SequencerInbox
+	bridge           *bridgegen.Bridge
+	syncMonitor      *SyncMonitor
+	seqInboxABI      *abi.ABI
+	seqInboxAddr     common.Address
+	bridgeAddr       common.Address
+	gasRefunderAddr  common.Address
+	building         *buildingBatch
+	daWriter         das.DataAvailabilityServiceWriter
+	dataPoster       *dataposter.DataPoster
+	redisLock        *redislock.Simple
+	messagesPerBatch *arbmath.MovingAverage[uint64]
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -1145,6 +1145,18 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
+	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
+	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute)
+	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
+	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
+	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)
+	resetAllEphemeralErrs := func() {
+		commonEphemeralErrorHandler.Reset()
+		exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
+		storageRaceEphemeralErrorHandler.Reset()
+		normalGasEstimationFailedEphemeralErrorHandler.Reset()
+		accumulatorNotFoundEphemeralErrorHandler.Reset()
+	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -1172,12 +1184,12 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if !couldLock {
 			log.Debug("Not posting batches right now because another batch poster has the lock or this node is behind")
 			b.building = nil
-			b.firstEphemeralError = time.Time{}
+			resetAllEphemeralErrs()
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
-			b.firstEphemeralError = time.Time{}
+			resetAllEphemeralErrs()
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1186,28 +1198,16 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			}
 			b.building = nil
 			logLevel := log.Error
-			if b.firstEphemeralError == (time.Time{}) {
-				b.firstEphemeralError = time.Now()
-			}
-			// Likely the inbox tracker just isn't caught up, or there's some other ephemeral error.
+			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
-			sinceFirstEphemeralError := time.Since(b.firstEphemeralError)
+			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
 			// If the error matches one of these, it's only logged at debug for the first minute,
 			// then at warn for the next 4 minutes, then at error. If the error isn't one of these,
 			// it'll be logged at warn for the first minute, then at error.
-			ignoreAtFirst := errors.Is(err, dataposter.ErrExceedsMaxMempoolSize) ||
-				errors.Is(err, storage.ErrStorageRace) ||
-				errors.Is(err, ErrNormalGasEstimationFailed) ||
-				errors.Is(err, AccumulatorNotFoundErr)
-			if sinceFirstEphemeralError < time.Minute {
-				if ignoreAtFirst {
-					logLevel = log.Debug
-				} else {
-					logLevel = log.Warn
-				}
-			} else if sinceFirstEphemeralError < time.Minute*5 && ignoreAtFirst {
-				logLevel = log.Warn
-			}
+			logLevel = exceedMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = storageRaceEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = normalGasEstimationFailedEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = accumulatorNotFoundEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
