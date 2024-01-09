@@ -401,6 +401,8 @@ impl Module {
         debug: bool,
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
+        // converts a number of microseconds to gas
+        // TODO: collapse to a single value after finalizing factors
         let us_to_gas = |us: u64| {
             let fudge = 2;
             let sync_rate = 1_000_000 / 2;
