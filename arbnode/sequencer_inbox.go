@@ -24,7 +24,7 @@ var sequencerInboxABI *abi.ABI
 var bridgeABI *abi.ABI
 var batchDeliveredID common.Hash
 var legacyBatchDeliveredID common.Hash
-var addSequencerL2BatchFromOriginCallABI abi.Method
+var addSequencerL2BatchFromOriginMinimalCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 
 const sequencerBatchDataEvent = "SequencerBatchData"
@@ -55,7 +55,7 @@ func init() {
 	batchDeliveredID = bridgeABI.Events["SequencerBatchDelivered"].ID
 	legacyBatchDeliveredID = legacySequencerInboxABI.Events["SequencerBatchDelivered"].ID
 	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
+	addSequencerL2BatchFromOriginMinimalCallABI = legacySequencerInboxABI.Methods["addSequencerL2BatchFromOriginMinimal"]
 }
 
 type SequencerInbox struct {
@@ -147,7 +147,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 			return nil, err
 		}
 		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
+		err = addSequencerL2BatchFromOriginMinimalCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
 			return nil, err
 		}
