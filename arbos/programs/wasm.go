@@ -33,7 +33,7 @@ type rustEvmData byte
 
 func activateProgramRustImpl(
 	wasm []byte, pageLimit, version u16, debugMode u32, moduleHash *hash, gas *u64,
-) (initGas, asmSize u32, footprint u16, err *rustVec)
+) (initGas, asmEstimate u32, footprint u16, err *rustVec)
 
 func callProgramRustImpl(
 	moduleHash *hash, calldata []byte, params *rustConfig, evmApi uint32, evmData *rustEvmData, gas *u64,
@@ -71,14 +71,14 @@ func activateProgram(
 	moduleHash := common.Hash{}
 	gasPtr := burner.GasLeft()
 
-	initGas, asmSize, footprint, err := activateProgramRustImpl(
+	initGas, asmEstimate, footprint, err := activateProgramRustImpl(
 		wasm, pageLimit, version, debugMode, &moduleHash, gasPtr,
 	)
 	if err != nil {
 		_, _, err := userFailure.toResult(err.intoSlice(), debug)
 		return nil, err
 	}
-	return &activationInfo{moduleHash, initGas, asmSize, footprint}, nil
+	return &activationInfo{moduleHash, initGas, asmEstimate, footprint}, nil
 }
 
 func callProgram(

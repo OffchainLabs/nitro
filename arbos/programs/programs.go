@@ -40,7 +40,7 @@ type Programs struct {
 type Program struct {
 	version     uint16
 	initGas     uint24
-	asmSize     uint24 // Unit is a kb (predicted canonically)
+	asmEstimate uint24 // Unit is a kb (predicted canonically)
 	footprint   uint16
 	activatedAt uint64 // Last activation timestamp
 	secondsLeft uint64 // Not stored in state
@@ -244,7 +244,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		return 0, codeHash, common.Hash{}, true, err
 	}
 
-	asmSizeKb, err := arbmath.IntToUint24((info.asmSize + 1023) / 1024) // stored in kilobytes
+	estimateKb, err := arbmath.IntToUint24((info.asmEstimate + 1023) / 1024) // stored in kilobytes
 	if err != nil {
 		return 0, codeHash, common.Hash{}, true, err
 	}
@@ -256,7 +256,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	programData := Program{
 		version:     stylusVersion,
 		initGas:     initGas24,
-		asmSize:     asmSizeKb,
+		asmEstimate: estimateKb,
 		footprint:   info.footprint,
 		activatedAt: evm.Context.Time,
 	}
@@ -357,7 +357,7 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error)
 	program := Program{
 		version:     arbmath.BytesToUint16(data[:2]),
 		initGas:     arbmath.BytesToUint24(data[2:5]),
-		asmSize:     arbmath.BytesToUint24(data[5:8]),
+		asmEstimate: arbmath.BytesToUint24(data[5:8]),
 		footprint:   arbmath.BytesToUint16(data[8:10]),
 		activatedAt: arbmath.BytesToUint(data[10:18]),
 	}
@@ -392,7 +392,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
 	copy(data[0:], arbmath.Uint16ToBytes(program.version))
 	copy(data[3:], arbmath.Uint24ToBytes(program.initGas))
-	copy(data[5:], arbmath.Uint24ToBytes(program.asmSize))
+	copy(data[5:], arbmath.Uint24ToBytes(program.asmEstimate))
 	copy(data[8:], arbmath.Uint16ToBytes(program.footprint))
 	copy(data[10:], arbmath.UintToBytes(program.activatedAt))
 	return p.programs.Set(codehash, data)
@@ -424,7 +424,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
-	cost, err := p.dataPricer.updateModel(program.asmSize.ToUint32(), time)
+	cost, err := p.dataPricer.updateModel(program.asmEstimate.ToUint32(), time)
 	if err != nil {
 		return nil, err
 	}
@@ -504,10 +504,10 @@ type evmData struct {
 }
 
 type activationInfo struct {
-	moduleHash common.Hash
-	initGas    uint32
-	asmSize    uint32
-	footprint  uint16
+	moduleHash  common.Hash
+	initGas     uint32
+	asmEstimate uint32
+	footprint   uint16
 }
 
 type userStatus uint8

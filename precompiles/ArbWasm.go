@@ -25,8 +25,8 @@ type ArbWasm struct {
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, error) {
 	debug := evm.ChainConfig().DebugMode()
 
-	// charge 3 million up front to begin activation
-	if err := c.Burn(3000000); err != nil {
+	// charge a fixed cost up front to begin activation
+	if err := c.Burn(1659168); err != nil {
 		return 0, err
 	}
 	version, codeHash, moduleHash, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)

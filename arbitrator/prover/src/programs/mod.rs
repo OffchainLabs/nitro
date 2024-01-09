@@ -8,7 +8,7 @@ use crate::{
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::Color;
+use arbutil::{math::SaturatingSum, Color};
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
@@ -401,18 +401,47 @@ impl Module {
         debug: bool,
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
-        // paid for by the 3 million gas charge in program.go
+        let us_to_gas = |us: u64| {
+            let fudge = 2;
+            let sync_rate = 1_000_000 / 2;
+            let speed = 7_000_000;
+            us.saturating_mul(fudge * speed) / sync_rate
+        };
+
+        macro_rules! pay {
+            ($us:expr) => {
+                let amount = us_to_gas($us);
+                if *gas < amount {
+                    *gas = 0;
+                    bail!("out of gas");
+                }
+                *gas -= amount;
+            };
+        }
+
+        // pay for wasm
+        let wasm_len = wasm.len() as u64;
+        pay!(wasm_len.saturating_mul(31_733 / 100_000));
+
         let compile = CompileConfig::version(version, debug);
         let (bin, stylus_data) =
             WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
 
-        // naively charge 11 million gas to do the rest.
-        // in the future we'll implement a proper compilation pricing mechanism.
-        if *gas < 11_000_000 {
-            *gas = 0;
-            bail!("out of gas");
-        }
-        *gas -= 11_000_000;
+        // pay for funcs
+        let funcs = bin.functions.len() as u64;
+        pay!(funcs.saturating_mul(17_263) / 100_000);
+
+        // pay for data
+        let data = bin.datas.iter().map(|x| x.data.len()).saturating_sum() as u64;
+        pay!(data.saturating_mul(17_376) / 100_000);
+
+        // pay for memory
+        let mem = bin.memories.first().map(|x| x.initial).unwrap_or_default();
+        pay!(mem.saturating_mul(2217));
+
+        // pay for code
+        let code = bin.codes.iter().map(|x| x.expr.len()).saturating_sum() as u64;
+        pay!(code.saturating_mul(535) / 1_000);
 
         let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
             .wrap_err("failed to build user module")?;
