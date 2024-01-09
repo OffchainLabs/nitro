@@ -42,6 +42,21 @@ var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, 
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
+// A helper struct that implements String() by marshalling to JSON.
+// This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
+// it doesn't waste compute marshalling the transaction when the result wouldn't be used.
+type printTxAsJson struct {
+	tx *types.Transaction
+}
+
+func (p printTxAsJson) String() string {
+	json, err := p.tx.MarshalJSON()
+	if err != nil {
+		return fmt.Sprintf("[error marshalling tx: %v]", err)
+	}
+	return string(json)
+}
+
 type L1Info struct {
 	poster        common.Address
 	l1BlockNumber uint64
@@ -365,7 +380,11 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
-			log.Debug("error applying transaction", "tx", tx, "err", err)
+			logLevel := log.Debug
+			if chainConfig.DebugMode() {
+				logLevel = log.Warn
+			}
+			logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)

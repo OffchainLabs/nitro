@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -37,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -57,23 +59,22 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader            *headerreader.HeaderReader
-	inbox               *InboxTracker
-	streamer            *TransactionStreamer
-	config              BatchPosterConfigFetcher
-	seqInbox            *bridgegen.SequencerInbox
-	bridge              *bridgegen.Bridge
-	syncMonitor         *SyncMonitor
-	seqInboxABI         *abi.ABI
-	seqInboxAddr        common.Address
-	bridgeAddr          common.Address
-	gasRefunderAddr     common.Address
-	building            *buildingBatch
-	daWriter            das.DataAvailabilityServiceWriter
-	dataPoster          *dataposter.DataPoster
-	redisLock           *redislock.Simple
-	firstEphemeralError time.Time // first time a continuous error suspected to be ephemeral occurred
-	messagesPerBatch    *arbmath.MovingAverage[uint64]
+	l1Reader         *headerreader.HeaderReader
+	inbox            *InboxTracker
+	streamer         *TransactionStreamer
+	config           BatchPosterConfigFetcher
+	seqInbox         *bridgegen.SequencerInbox
+	bridge           *bridgegen.Bridge
+	syncMonitor      *SyncMonitor
+	seqInboxABI      *abi.ABI
+	seqInboxAddr     common.Address
+	bridgeAddr       common.Address
+	gasRefunderAddr  common.Address
+	building         *buildingBatch
+	daWriter         das.DataAvailabilityServiceWriter
+	dataPoster       *dataposter.DataPoster
+	redisLock        *redislock.Simple
+	messagesPerBatch *arbmath.MovingAverage[uint64]
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -286,7 +287,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			HeaderReader:      opts.L1Reader,
 			Auth:              opts.TransactOpts,
 			RedisClient:       redisClient,
-			RedisLock:         redisLock,
 			Config:            dataPosterConfigFetcher,
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
@@ -770,6 +770,8 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
+var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
+
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
@@ -790,7 +792,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 			AccessList: realAccessList,
 		})
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
 		}
 		return gas + config.ExtraBatchGas, nil
 	}
@@ -829,6 +831,8 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 }
 
 const ethPosBlockTime = 12 * time.Second
+
+var errAttemptLockFailed = errors.New("failed to acquire lock; either another batch poster posted a batch or this node fell behind")
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	if b.batchReverted.Load() {
@@ -1006,6 +1010,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if b.daWriter != nil {
+		if !b.redisLock.AttemptLock(ctx) {
+			return false, errAttemptLockFailed
+		}
+
+		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		if err != nil {
+			return false, err
+		}
+		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
@@ -1129,6 +1145,18 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
+	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
+	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute)
+	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
+	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
+	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)
+	resetAllEphemeralErrs := func() {
+		commonEphemeralErrorHandler.Reset()
+		exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
+		storageRaceEphemeralErrorHandler.Reset()
+		normalGasEstimationFailedEphemeralErrorHandler.Reset()
+		accumulatorNotFoundEphemeralErrorHandler.Reset()
+	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
@@ -1147,27 +1175,39 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
 			}
 		}
-		if !b.redisLock.AttemptLock(ctx) {
+		couldLock, err := b.redisLock.CouldAcquireLock(ctx)
+		if err != nil {
+			log.Warn("Error checking if we could acquire redis lock", "err", err)
+			// Might as well try, worst case we fail to lock
+			couldLock = true
+		}
+		if !couldLock {
+			log.Debug("Not posting batches right now because another batch poster has the lock or this node is behind")
 			b.building = nil
+			resetAllEphemeralErrs()
 			return b.config().PollInterval
 		}
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
-			b.firstEphemeralError = time.Time{}
+			resetAllEphemeralErrs()
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				// Shutting down. No need to print the context canceled error.
+				return 0
+			}
 			b.building = nil
 			logLevel := log.Error
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
-			if b.firstEphemeralError == (time.Time{}) {
-				b.firstEphemeralError = time.Now()
-				logLevel = log.Warn
-			} else if time.Since(b.firstEphemeralError) < time.Minute {
-				logLevel = log.Warn
-			} else if time.Since(b.firstEphemeralError) < time.Minute*5 && strings.Contains(err.Error(), "will exceed max mempool size") {
-				logLevel = log.Warn
-			}
+			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
+			// If the error matches one of these, it's only logged at debug for the first minute,
+			// then at warn for the next 4 minutes, then at error. If the error isn't one of these,
+			// it'll be logged at warn for the first minute, then at error.
+			logLevel = exceedMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = storageRaceEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = normalGasEstimationFailedEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = accumulatorNotFoundEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			return b.config().ErrorDelay
 		} else if posted {
