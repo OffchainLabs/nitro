@@ -572,7 +572,7 @@ impl<'a> WasmBinary<'a> {
         let user_main = self.check_func(STYLUS_ENTRY_POINT, ty)?;
 
         // naively assume for now an upper bound of 5Mb
-        let asm_size = 5 * 1024 * 1024;
+        let asm_estimate = 5 * 1024 * 1024;
 
         // TODO: determine safe value
         let init_gas = 2048;
@@ -584,7 +584,7 @@ impl<'a> WasmBinary<'a> {
             ink_status: ink_status.as_u32(),
             depth_left: depth_left.as_u32(),
             init_gas,
-            asm_size,
+            asm_estimate,
             footprint,
             user_main,
         })

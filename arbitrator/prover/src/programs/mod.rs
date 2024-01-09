@@ -363,15 +363,23 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 }
 
+/// Information about an activated program.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct StylusData {
-    pub ink_left: u32,   // global index
-    pub ink_status: u32, // global index
-    pub depth_left: u32, // global index
+    /// Global index for the amount of ink left.
+    pub ink_left: u32,
+    /// Global index for whether the program is out of ink.
+    pub ink_status: u32,
+    /// Global index for the amount of stack space remaining.
+    pub depth_left: u32,
+    /// Gas needed to invoke the program.
     pub init_gas: u32,
-    pub asm_size: u32,
+    /// Canonical estimate of the asm length in bytes.
+    pub asm_estimate: u32,
+    /// Initial memory size in pages.
     pub footprint: u16,
+    /// Entrypoint offset.
     pub user_main: u32,
 }
 

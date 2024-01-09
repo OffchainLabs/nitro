@@ -64,7 +64,7 @@ pub fn stylus_activate(mut env: WasmEnvMut, sp: u32) {
     };
     sp.write_u64_raw(gas, *gas_left);
     sp.write_slice(module_hash, &module.hash().0);
-    sp.write_u32(info.init_gas).write_u32(info.asm_size);
+    sp.write_u32(info.init_gas).write_u32(info.asm_estimate);
     sp.write_u16(info.footprint).skip_space();
     sp.write_nullptr();
 }

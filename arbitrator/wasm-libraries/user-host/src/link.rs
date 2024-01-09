@@ -86,7 +86,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activa
     };
     wavm::caller_store64(gas, *gas_left);
     wavm::write_bytes32(module_hash, module.hash());
-    sp.write_u32(info.init_gas).write_u32(info.asm_size);
+    sp.write_u32(info.init_gas).write_u32(info.asm_estimate);
     sp.write_u16(info.footprint).skip_space();
     sp.write_nullptr();
 }
