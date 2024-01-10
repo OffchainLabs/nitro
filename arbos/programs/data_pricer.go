@@ -10,7 +10,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-type dataPricer struct {
+type DataPricer struct {
 	backingStorage *storage.Storage
 	demand         storage.StorageBackedUint32
 	bytesPerSecond storage.StorageBackedUint32
@@ -28,8 +28,8 @@ const (
 )
 
 const initialDemand = 0                                      // no demand
-const initialHourlyBytes = 4 * (1 << 40) / (365 * 24)        // 4Tb total footprint
-const initialBytesPerSecond = initialHourlyBytes / (60 * 60) // refill each hour
+const InitialHourlyBytes = 4 * (1 << 40) / (365 * 24)        // 4Tb total footprint
+const initialBytesPerSecond = InitialHourlyBytes / (60 * 60) // refill each second
 const initialLastUpdateTime = 1421388000                     // the day it all began
 const initialMinPrice = 82928201                             // 5Mb = $1
 const initialInertia = 70177364                              // expensive at 4Tb
@@ -47,8 +47,8 @@ func initDataPricer(sto *storage.Storage) {
 	_ = inertia.Set(initialInertia)
 }
 
-func openDataPricer(sto *storage.Storage) *dataPricer {
-	return &dataPricer{
+func openDataPricer(sto *storage.Storage) *DataPricer {
+	return &DataPricer{
 		backingStorage: sto,
 		demand:         sto.OpenStorageBackedUint32(demandOffset),
 		bytesPerSecond: sto.OpenStorageBackedUint32(bytesPerSecondOffset),
@@ -58,7 +58,7 @@ func openDataPricer(sto *storage.Storage) *dataPricer {
 	}
 }
 
-func (p *dataPricer) updateModel(tempBytes uint32, time uint64) (*big.Int, error) {
+func (p *DataPricer) UpdateModel(tempBytes uint32, time uint64) (*big.Int, error) {
 	demand, _ := p.demand.Get()
 	bytesPerSecond, _ := p.bytesPerSecond.Get()
 	lastUpdateTime, _ := p.lastUpdateTime.Get()
@@ -76,10 +76,13 @@ func (p *dataPricer) updateModel(tempBytes uint32, time uint64) (*big.Int, error
 	if err := p.demand.Set(demand); err != nil {
 		return nil, err
 	}
+	if err := p.lastUpdateTime.Set(time); err != nil {
+		return nil, err
+	}
 
 	exponent := arbmath.OneInBips * arbmath.Bips(demand) / arbmath.Bips(inertia)
 	multiplier := arbmath.ApproxExpBasisPoints(exponent, 12).Uint64()
-	costPerByte := arbmath.SaturatingUMul(uint64(minPrice), multiplier)
-	costInWei := arbmath.SaturatingUMul(costPerByte, uint64(tempBytes)) / 10000
+	costPerByte := arbmath.SaturatingUMul(uint64(minPrice), multiplier) / 10000
+	costInWei := arbmath.SaturatingUMul(costPerByte, uint64(tempBytes))
 	return arbmath.UintToBig(costInWei), nil
 }

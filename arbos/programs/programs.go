@@ -24,7 +24,7 @@ type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
-	dataPricer     *dataPricer
+	dataPricer     *DataPricer
 	inkPrice       storage.StorageBackedUint24
 	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
@@ -207,6 +207,10 @@ func (p Programs) SetKeepaliveDays(days uint16) error {
 	return p.keepaliveDays.Set(days)
 }
 
+func (p Programs) DataPricer() *DataPricer {
+	return p.dataPricer
+}
+
 func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
@@ -255,7 +259,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
-	dataFee, err := p.dataPricer.updateModel(info.asmEstimate, evm.Context.Time)
+	dataFee, err := p.dataPricer.UpdateModel(info.asmEstimate, evm.Context.Time)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -431,7 +435,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
-	cost, err := p.dataPricer.updateModel(program.asmEstimate.ToUint32(), time)
+	cost, err := p.dataPricer.UpdateModel(program.asmEstimate.ToUint32(), time)
 	if err != nil {
 		return nil, err
 	}
