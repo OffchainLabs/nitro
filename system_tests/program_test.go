@@ -884,7 +884,7 @@ func testMemory(t *testing.T, jit bool) {
 	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
 	expectFailure(growCallAddr, args, oneEth) // consumes 64, then tries to compile something 120
 
-	// check that arctivation then succeeds
+	// check that activation then succeeds
 	args[0] = 0x00
 	tx = l2info.PrepareTxTo("Owner", &growCallAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx)) // TODO: check receipt after compilation pricing
