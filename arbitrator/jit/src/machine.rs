@@ -2,17 +2,22 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, user, wavmio, wavmio::Bytes32,
+    arbcompress, goenv::GoRuntimeState,
+    wasip1_stub,
+    wavmio,
+    program,
+    socket,
     Opts,
+    stylus_backend::CothreadHandler
 };
-use arbutil::Color;
+// runtime, socket, syscall, user
+use arbutil::{Color, Bytes32};
 use eyre::{bail, ErrReport, Result, WrapErr};
-use go_js::JsState;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{
     imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store, TypedFunction,
+    RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -61,43 +66,71 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
     };
 
     let func_env = FunctionEnv::new(&mut store, env);
-    macro_rules! native {
-        ($func:expr) => {
-            Function::new_typed(&mut store, $func)
-        };
-    }
     macro_rules! func {
         ($func:expr) => {
             Function::new_typed_with_env(&mut store, &func_env, $func)
         };
     }
-    macro_rules! github {
-        ($name:expr) => {
-            concat!("github.com/offchainlabs/nitro/", $name)
-        };
-    }
-
     let imports = imports! {
-        "go" => {
-            "debug" => native!(runtime::go_debug),
-
-            github!("wavmio.getGlobalStateBytes32") => func!(wavmio::get_global_state_bytes32),
-            github!("wavmio.setGlobalStateBytes32") => func!(wavmio::set_global_state_bytes32),
-            github!("wavmio.getGlobalStateU64") => func!(wavmio::get_global_state_u64),
-            github!("wavmio.setGlobalStateU64") => func!(wavmio::set_global_state_u64),
-            github!("wavmio.readInboxMessage") => func!(wavmio::read_inbox_message),
-            github!("wavmio.readDelayedInboxMessage") => func!(wavmio::read_delayed_inbox_message),
-            github!("wavmio.resolvePreImage") => func!(wavmio::resolve_preimage),
-
-            github!("arbos/programs.activateProgramRustImpl") => func!(user::stylus_activate),
-            github!("arbos/programs.callProgramRustImpl") => func!(user::stylus_call),
-            github!("arbos/programs.readRustVecLenImpl") => func!(user::read_rust_vec_len),
-            github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
-            github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),
-            github!("arbos/programs.rustEvmDataImpl") => func!(user::evm_data_impl),
-
-            github!("arbcompress.brotliCompress") => func!(arbcompress::brotli_compress),
-            github!("arbcompress.brotliDecompress") => func!(arbcompress::brotli_decompress),
+        "arbcompress" => {
+            "brotliCompress" => func!(arbcompress::brotli_compress),
+            "brotliDecompress" => func!(arbcompress::brotli_decompress),
+        },
+        "wavmio" => {
+            "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
+            "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
+            "getGlobalStateU64" => func!(wavmio::get_global_state_u64),
+            "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
+            "readInboxMessage" => func!(wavmio::read_inbox_message),
+            "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
+            "resolvePreImage" => func!(wavmio::resolve_preimage),
+        },
+        "wasi_snapshot_preview1" => {
+            "proc_exit" => func!(wasip1_stub::proc_exit),
+            "environ_sizes_get" => func!(wasip1_stub::environ_sizes_get),
+            "fd_write" => func!(wasip1_stub::fd_write),
+            "environ_get" => func!(wasip1_stub::environ_get),
+            "fd_close" => func!(wasip1_stub::fd_close),
+            "fd_read" => func!(wasip1_stub::fd_read),
+            "fd_readdir" => func!(wasip1_stub::fd_readdir),
+            "fd_sync" => func!(wasip1_stub::fd_sync),
+            "fd_seek" => func!(wasip1_stub::fd_seek),
+            "fd_datasync" => func!(wasip1_stub::fd_datasync),
+            "path_open" => func!(wasip1_stub::path_open),
+            "path_create_directory" => func!(wasip1_stub::path_create_directory),
+            "path_remove_directory" => func!(wasip1_stub::path_remove_directory),
+            "path_readlink" => func!(wasip1_stub::path_readlink),
+            "path_rename" => func!(wasip1_stub::path_rename),
+            "path_filestat_get" => func!(wasip1_stub::path_filestat_get),
+            "path_unlink_file" => func!(wasip1_stub::path_unlink_file),
+            "fd_prestat_get" => func!(wasip1_stub::fd_prestat_get),
+            "fd_prestat_dir_name" => func!(wasip1_stub::fd_prestat_dir_name),
+            "fd_filestat_get" => func!(wasip1_stub::fd_filestat_get),
+            "fd_filestat_set_size" => func!(wasip1_stub::fd_filestat_set_size),
+            "fd_pread" => func!(wasip1_stub::fd_pread),
+            "fd_pwrite" => func!(wasip1_stub::fd_pwrite),
+            "sock_accept" => func!(wasip1_stub::sock_accept),
+            "sock_shutdown" => func!(wasip1_stub::sock_shutdown),
+            "sched_yield" => func!(wasip1_stub::sched_yield),
+            "clock_time_get" => func!(wasip1_stub::clock_time_get),
+            "random_get" => func!(wasip1_stub::random_get),
+            "args_sizes_get" => func!(wasip1_stub::args_sizes_get),
+            "args_get" => func!(wasip1_stub::args_get),
+            "poll_oneoff" => func!(wasip1_stub::poll_oneoff),
+            "fd_fdstat_get" => func!(wasip1_stub::fd_fdstat_get),
+            "fd_fdstat_set_flags" => func!(wasip1_stub::fd_fdstat_set_flags),
+        },
+        "programs" => {
+            "new_program" => func!(program::new_program),
+            "pop" => func!(program::pop),
+            "set_response" => func!(program::set_response),
+            "get_request" => func!(program::get_request),
+            "get_request_data" => func!(program::get_request_data),
+            "start_program" => func!(program::start_program),
+            "send_response" => func!(program::send_response),
+            "create_stylus_config" => func!(program::create_stylus_config),
+            "create_evm_data" => func!(program::create_evm_data),
+            "activate" => func!(program::activate),
         },
     };
 
@@ -105,23 +138,13 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         Ok(instance) => instance,
         Err(err) => panic!("Failed to create instance: {}", err.red()),
     };
-    let memory = match instance.exports.get_memory("mem") {
+    let memory = match instance.exports.get_memory("memory") {
         Ok(memory) => memory.clone(),
         Err(err) => panic!("Failed to get memory: {}", err.red()),
-    };
-    let resume = match instance.exports.get_typed_function(&store, "resume") {
-        Ok(resume) => resume,
-        Err(err) => panic!("Failed to get the {} func: {}", "resume".red(), err.red()),
-    };
-    let getsp = match instance.exports.get_typed_function(&store, "getsp") {
-        Ok(getsp) => getsp,
-        Err(err) => panic!("Failed to get the {} func: {}", "getsp".red(), err.red()),
     };
 
     let env = func_env.as_mut(&mut store);
     env.memory = Some(memory);
-    env.exports.resume = Some(resume);
-    env.exports.get_stack_pointer = Some(getsp);
     (instance, func_env, store)
 }
 
@@ -146,7 +169,7 @@ impl Escape {
         Err(Self::Exit(code))
     }
 
-    pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+    pub fn hostio<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::HostIO(message.as_ref().to_string()))
     }
 
@@ -175,8 +198,6 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
-    /// The state of Go's js runtime
-    pub js_state: JsState,
     /// An ordered list of the 8-byte globals
     pub small_globals: [u64; 2],
     /// An ordered list of the 32-byte globals
@@ -191,8 +212,8 @@ pub struct WasmEnv {
     pub delayed_messages: Inbox,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
-    /// The exported funcs callable in hostio
-    pub exports: WasmEnvFuncs,
+    // threads
+    pub threads: Vec<CothreadHandler>,
 }
 
 impl WasmEnv {
@@ -248,10 +269,10 @@ impl WasmEnv {
                     if arg.starts_with("0x") {
                         arg = &arg[2..];
                     }
-                    let mut bytes32 = Bytes32::default();
+                    let mut bytes32 = [0u8; 32];
                     hex::decode_to_slice(arg, &mut bytes32)
                         .wrap_err_with(|| format!("failed to parse {} contents", name))?;
-                    Ok(bytes32)
+                    Ok(bytes32.into())
                 }
                 None => Ok(Bytes32::default()),
             }
@@ -303,7 +324,7 @@ pub struct ProcessEnv {
     /// Mechanism for asking for preimages and returning results
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
     /// The last preimage received over the socket
-    pub last_preimage: Option<([u8; 32], Vec<u8>)>,
+    pub last_preimage: Option<(Bytes32, Vec<u8>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
     /// How long to wait on any child threads to compute a result
@@ -324,12 +345,4 @@ impl Default for ProcessEnv {
             reached_wavmio: false,
         }
     }
-}
-
-#[derive(Default)]
-pub struct WasmEnvFuncs {
-    /// Calls `resume` from the go runtime
-    pub resume: Option<TypedFunction<(), ()>>,
-    /// Calls `getsp` from the go runtime
-    pub get_stack_pointer: Option<TypedFunction<(), i32>>,
 }

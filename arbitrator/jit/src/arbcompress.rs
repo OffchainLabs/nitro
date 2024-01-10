@@ -1,7 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{gostack::GoStack, machine::WasmEnvMut};
+use crate::{goenv::GoEnv, machine::WasmEnvMut};
+use crate::machine::Escape;
 
 extern "C" {
     pub fn BrotliDecoderDecompress(
@@ -31,65 +32,60 @@ pub enum BrotliStatus {
     Success,
 }
 
-/// go side: λ(inBuf []byte, outBuf []byte, level, windowSize uint64) (outLen uint64, status BrotliStatus)
-pub fn brotli_compress(mut env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &mut env);
-    let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
-    let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
-    let level = sp.read_u32();
-    let windowsize = sp.read_u32();
+type Uptr = u32;
 
-    let in_slice = sp.read_slice(in_buf_ptr, in_buf_len);
-    let mut output = vec![0u8; out_buf_len as usize];
-    let mut output_len = out_buf_len as usize;
-
-    let res = unsafe {
-        BrotliEncoderCompress(
-            level,
-            windowsize,
-            BROTLI_MODE_GENERIC,
-            in_buf_len as usize,
-            in_slice.as_ptr(),
-            &mut output_len,
-            output.as_mut_ptr(),
-        )
-    };
-
-    if (res != BrotliStatus::Success) || (output_len as u64 > out_buf_len) {
-        sp.skip_u64();
-        sp.write_u32(BrotliStatus::Failure as _);
-        return;
+/// Brotli decompresses a go slice
+///
+/// # Safety
+///
+/// The output buffer must be sufficiently large enough.
+pub fn brotli_decompress(mut env: WasmEnvMut, in_buf_ptr: Uptr, in_buf_len: u32, out_buf_ptr: Uptr, out_len_ptr: Uptr) -> Result<u32, Escape> {
+    let mut genv = GoEnv::new(&mut env);
+    let in_slice = genv.caller_read_slice(in_buf_ptr, in_buf_len);
+    let orig_output_len =genv.caller_read_u32(out_len_ptr) as usize;
+    let mut output = vec![0u8; orig_output_len as usize];
+    let mut output_len = orig_output_len;
+    unsafe {
+    let res = BrotliDecoderDecompress(
+        in_buf_len as usize,
+        in_slice.as_ptr(),
+        &mut output_len,
+        output.as_mut_ptr(),
+    );
+    if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
+        return Ok(0);
     }
-    sp.write_slice(out_buf_ptr, &output[..output_len]);
-    sp.write_u64(output_len as u64);
-    sp.write_u32(BrotliStatus::Success as _);
+    }
+    genv.caller_write_slice(out_buf_ptr, &output[..output_len]);
+    genv.caller_write_u32(out_len_ptr, output_len as u32);
+    Ok(1)
 }
 
-/// go side: λ(inBuf []byte, outBuf []byte) (outLen uint64, status BrotliStatus)
-pub fn brotli_decompress(mut env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &mut env);
-    let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
-    let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
+/// Brotli compresses a go slice
+///
+/// The output buffer must be sufficiently large enough.
+pub fn brotli_compress(mut env: WasmEnvMut, in_buf_ptr: Uptr, in_buf_len: u32, out_buf_ptr: Uptr, out_len_ptr: Uptr, level: u32, window_size: u32) -> Result<u32, Escape> {
+    let mut genv = GoEnv::new(&mut env);
+    let in_slice = genv.caller_read_slice(in_buf_ptr, in_buf_len);
+    let orig_output_len =genv.caller_read_u32(out_len_ptr) as usize;
+    let mut output = vec![0u8; orig_output_len];
+    let mut output_len = orig_output_len;
 
-    let in_slice = sp.read_slice(in_buf_ptr, in_buf_len);
-    let mut output = vec![0u8; out_buf_len as usize];
-    let mut output_len = out_buf_len as usize;
-
-    let res = unsafe {
-        BrotliDecoderDecompress(
-            in_buf_len as usize,
-            in_slice.as_ptr(),
-            &mut output_len,
-            output.as_mut_ptr(),
-        )
-    };
-
-    if (res != BrotliStatus::Success) || (output_len as u64 > out_buf_len) {
-        sp.skip_u64();
-        sp.write_u32(BrotliStatus::Failure as _);
-        return;
+    unsafe {
+    let res = BrotliEncoderCompress(
+        level,
+        window_size,
+        BROTLI_MODE_GENERIC,
+        in_buf_len as usize,
+        in_slice.as_ptr(),
+        &mut output_len,
+        output.as_mut_ptr(),
+    );
+    if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
+        return Ok(0);
     }
-    sp.write_slice(out_buf_ptr, &output[..output_len]);
-    sp.write_u64(output_len as u64);
-    sp.write_u32(BrotliStatus::Success as _);
+    }
+    genv.caller_write_slice(out_buf_ptr, &output[..output_len]);
+    genv.caller_write_u32(out_len_ptr, output_len as u32);
+    Ok(1)
 }

@@ -9,7 +9,7 @@ use std::{
 };
 
 /// cbindgen:field-names=[bytes]
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
@@ -116,7 +116,7 @@ impl From<GenericBytes32> for Bytes32 {
 }
 
 /// cbindgen:field-names=[bytes]
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Bytes20(pub [u8; 20]);
 
