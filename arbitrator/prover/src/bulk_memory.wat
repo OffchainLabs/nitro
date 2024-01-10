@@ -1,4 +1,4 @@
-;; Copyright 2023, Offchain Labs, Inc.
+;; Copyright 2024, Offchain Labs, Inc.
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 ;;
 ;; This file implements the bulk memory instructions as per the specification below
