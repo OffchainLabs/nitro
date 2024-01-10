@@ -348,6 +348,7 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	parentChainID *big.Int,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -561,11 +562,6 @@ func createNodeImpl(
 	var stakerObj *staker.Staker
 	var messagePruner *MessagePruner
 
-	parentChainID, err := l1client.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting parent chain id: %w", err)
-	}
-
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
 			ctx,
@@ -709,8 +705,9 @@ func CreateNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	parentChainID *big.Int,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID)
 	if err != nil {
 		return nil, err
 	}
