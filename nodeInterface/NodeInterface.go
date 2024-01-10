@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"sort"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -24,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
@@ -94,13 +97,36 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 			return 0, err
 		}
 	}
-	latestL1Block, latestBatchCount := node.InboxReader.GetLastReadBlockAndBatchCount()
-	if latestBatchCount <= batch {
-		return 0, nil // batch was reorg'd out?
-	}
 	meta, err := node.InboxTracker.GetBatchMetadata(batch)
 	if err != nil {
 		return 0, err
+	}
+	if node.L1Reader.IsParentChainArbitrum() {
+		parentChainClient := node.L1Reader.Client()
+		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
+		if err != nil {
+			return 0, err
+		}
+		parentChainBlock, err := parentChainClient.BlockByNumber(n.context, new(big.Int).SetUint64(meta.ParentChainBlock))
+		if err != nil {
+			// Hide the parent chain RPC error from the client in case it contains sensitive information.
+			// Likely though, this error is just "not found" because the block got reorg'd.
+			return 0, fmt.Errorf("failed to get parent chain block %v containing batch", meta.ParentChainBlock)
+		}
+		confs, err := parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: n.context}, parentChainBlock.Hash())
+		if err != nil {
+			log.Warn(
+				"Failed to get L1 confirmations from parent chain",
+				"blockNumber", meta.ParentChainBlock,
+				"blockHash", parentChainBlock.Hash(), "err", err,
+			)
+			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
+		}
+		return confs, nil
+	}
+	latestL1Block, latestBatchCount := node.InboxReader.GetLastReadBlockAndBatchCount()
+	if latestBatchCount <= batch {
+		return 0, nil // batch was reorg'd out?
 	}
 	if latestL1Block < meta.ParentChainBlock || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
 		return 0, nil
