@@ -28,11 +28,11 @@ const (
 )
 
 const initialDemand = 0                                      // no demand
-const InitialHourlyBytes = 4 * (1 << 40) / (365 * 24)        // 4Tb total footprint
+const InitialHourlyBytes = 1 * (1 << 40) / (365 * 24)        // 1Tb total footprint
 const initialBytesPerSecond = InitialHourlyBytes / (60 * 60) // refill each second
 const initialLastUpdateTime = 1421388000                     // the day it all began
 const initialMinPrice = 82928201                             // 5Mb = $1
-const initialInertia = 70177364                              // expensive at 4Tb
+const initialInertia = 21360419                              // expensive at 1Tb
 
 func initDataPricer(sto *storage.Storage) {
 	demand := sto.OpenStorageBackedUint32(demandOffset)

@@ -62,7 +62,7 @@ func TestActivationDataFee(t *testing.T) {
 
 	// ensure the chain made enough money
 	minimumTotal := arbmath.UintToBig(uint64(capacity))
-	minimumTotal = arbmath.BigMulByUint(minimumTotal, 140/10*1e9)
+	minimumTotal = arbmath.BigMulByUint(minimumTotal, 59/10*1e9)
 	colors.PrintBlue("total ", totalFees.String(), " ", minimumTotal.String())
 	assert(arbmath.BigGreaterThan(totalFees, minimumTotal))
 
@@ -101,6 +101,6 @@ func TestActivationDataFee(t *testing.T) {
 	}
 
 	// check random programs
-	colors.PrintBlue("random ", totalFees.String(), " ", minimumTotal.String())
+	colors.PrintBlue("rands ", totalFees.String(), " ", minimumTotal.String())
 	assert(arbmath.BigGreaterThan(totalFees, minimumTotal))
 }
