@@ -140,6 +140,9 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 				msgs = msgs[requestedIdx:]
 			}
 		}
+		if len(msgs) == 0 {
+			break
+		}
 		isFirstSegment = false
 		bm := &m.BroadcastMessage{
 			Version:  m.V1,
