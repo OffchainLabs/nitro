@@ -42,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -188,7 +189,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
-	config.BlockValidator.ValidationServer.URL = ""
+	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 
 	return &config
 }
@@ -203,7 +204,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
-	config.BlockValidator.ValidationServer.URL = ""
+	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -520,7 +521,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.ValidationServer.URL != "" {
+	if config.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,

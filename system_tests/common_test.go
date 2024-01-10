@@ -537,15 +537,15 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
+	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
 func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.ValidationServer.URL != "" {
+	if nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig
@@ -921,6 +921,7 @@ func Create2ndNodeWithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	Require(t, execConfig.Validate())
+	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
