@@ -30,13 +30,13 @@ type InboxTracker struct {
 	mutex      sync.Mutex
 	validator  *staker.BlockValidator
 	das        arbstate.DataAvailabilityReader
-	blobClient *arbstate.BlobClient
+	blobClient *BlobClient
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobClient *arbstate.BlobClient) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobClient *BlobClient) (*InboxTracker, error) {
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")

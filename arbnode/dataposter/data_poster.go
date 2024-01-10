@@ -324,7 +324,10 @@ func (p *DataPoster) prepareTxTypeToPost(
 	feeCap, tipCap *big.Int, data *DataToPost, nonce uint64, to common.Address, gasLimit uint64,
 ) (*types.Transaction, *types.BlobTxWithBlobs, error) {
 	if p.isEip4844 {
-		dataBlobs := blobs.EncodeBlobs(data.L2MessageData)
+		dataBlobs, err := blobs.EncodeBlobs(data.L2MessageData)
+		if err != nil {
+			return nil, nil, err
+		}
 		commitments, proofs, versionedHashes, err := blobs.ComputeCommitmentsProofsAndHashes(dataBlobs)
 		if err != nil {
 			return nil, nil, err

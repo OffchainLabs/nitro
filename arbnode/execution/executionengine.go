@@ -27,7 +27,7 @@ import (
 type TransactionStreamerInterface interface {
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
 	ExpectChosenSequencer() error
-	FetchBatch(batchNum uint64) ([]byte, error)
+	FetchBatch(batchNum uint64) ([]byte, common.Hash, error)
 }
 
 type ExecutionEngine struct {
@@ -457,7 +457,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		s.streamer.FetchBatch,
+		func(batchNum uint64) ([]byte, error) {
+			data, _, err := s.streamer.FetchBatch(batchNum)
+			return data, err
+		},
 	)
 
 	return block, statedb, receipts, err
