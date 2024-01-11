@@ -60,7 +60,7 @@ func (b *backlog) backlogSizeInBytes() (uint64, error) {
 	headSeg := b.head.Load()
 	tailSeg := b.tail.Load()
 	if headSeg == nil || tailSeg == nil {
-		if headSeg == tailSeg {
+		if headSeg == nil && tailSeg == nil {
 			return 0, nil
 		}
 		return 0, errors.New("the head or tail segment of feed backlog is nil")
