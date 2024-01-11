@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,7 +63,19 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 6)
 )
 
-func TestBoldProtocol(t *testing.T) {
+func TestBoldProtocolOneChallenge(t *testing.T) {
+	testBoldProtocol(t, 1, false)
+}
+
+func TestBoldProtocolTwoSequentialChallenge(t *testing.T) {
+	testBoldProtocol(t, 2, false)
+}
+
+func TestBoldProtocolTwoParallelChallenge(t *testing.T) {
+	testBoldProtocol(t, 2, true)
+}
+
+func testBoldProtocol(t *testing.T, numberOfChallenges int, parallelChallenges bool) {
 	t.Cleanup(func() {
 		Require(t, os.RemoveAll("/tmp/good"))
 		Require(t, os.RemoveAll("/tmp/evil"))
@@ -370,18 +384,116 @@ func TestBoldProtocol(t *testing.T) {
 
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
 	Require(t, err)
-	for {
-		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().Id().Hash)
-		if err != nil {
-			t.Logf("Error getting assertion: %v", err)
-			continue
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		for {
+			expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().Id().Hash)
+			if err != nil {
+				t.Logf("Error getting assertion: %v", err)
+				continue
+			}
+			// Wait until the assertion is confirmed.
+			if expected.Status == uint8(2) {
+				t.Log("Expected assertion was confirmed")
+				t.Log("Challenge 0 complete")
+				break
+			}
+			time.Sleep(time.Second * 5)
 		}
-		// Wait until the assertion is confirmed.
-		if expected.Status == uint8(2) {
-			t.Log("Expected assertion was confirmed")
-			return
+	}()
+	if !parallelChallenges {
+		waitGroup.Wait()
+	}
+
+	for i := 1; i < numberOfChallenges; i++ {
+		l2info.Accounts["Owner"].Nonce = uint64(totalMessagesPosted)
+		makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
+		l2info.Accounts["Owner"].Nonce = uint64(totalMessagesPosted)
+		makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
+		totalMessagesPosted += numMessagesPerBatch
+
+		bcA, err := l2nodeA.InboxTracker.GetBatchCount()
+		Require(t, err)
+		bcB, err := l2nodeB.InboxTracker.GetBatchCount()
+		Require(t, err)
+		msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
+		Require(t, err)
+		msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
+		Require(t, err)
+
+		t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
+		t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
+
+		for {
+			nodeALatest := nodeAExec.Backend.APIBackend().CurrentHeader()
+			nodeBLatest := nodeBExec.Backend.APIBackend().CurrentHeader()
+			isCaughtUp := nodeALatest.Number.Uint64() == uint64(totalMessagesPosted)
+			areEqual := nodeALatest.Number.Uint64() == nodeBLatest.Number.Uint64()
+			if isCaughtUp && areEqual {
+				if nodeALatest.Hash() == nodeBLatest.Hash() {
+					Fatal(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
+				}
+				break
+			}
 		}
-		time.Sleep(time.Second * 5)
+
+		// Wait for the validator to validate the batches.
+		totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
+		Require(t, err)
+		totalBatches := totalBatchesBig.Uint64()
+		totalMessageCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(totalBatches - 1)
+		Require(t, err)
+
+		// Wait until the validator has validated the batches.
+		for {
+			_, err1 := l2nodeA.TxStreamer.ResultAtCount(totalMessageCount)
+			nodeAHasValidated := err1 == nil
+
+			_, err2 := l2nodeB.TxStreamer.ResultAtCount(totalMessageCount)
+			nodeBHasValidated := err2 == nil
+
+			if nodeAHasValidated && nodeBHasValidated {
+				break
+			}
+		}
+
+		t.Log(fmt.Sprintf("Honest party posting assertion at batch %d, pos 0", 2+i))
+		expectedWinnerAssertion, err := poster.PostAssertion(ctx)
+		Require(t, err)
+		if expectedWinnerAssertion.IsNone() {
+			Fatal(t, "expected winner assertion is none")
+		}
+
+		t.Log(fmt.Sprintf("Evil party posting assertion at batch %d, pos 0", 2+i))
+		_, err = posterB.PostAssertion(ctx)
+		Require(t, err)
+
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			for {
+				expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().Id().Hash)
+				if err != nil {
+					t.Logf("Error getting assertion: %v", err)
+					continue
+				}
+				// Wait until the assertion is confirmed.
+				if expected.Status == uint8(2) {
+					t.Log("Expected assertion was confirmed")
+					t.Log(fmt.Sprintf("Challenge %d complete", i))
+					break
+				}
+				time.Sleep(time.Second * 5)
+			}
+		}()
+		if !parallelChallenges {
+			waitGroup.Wait()
+		}
+	}
+	if parallelChallenges {
+		waitGroup.Wait()
 	}
 }
 
