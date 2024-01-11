@@ -217,16 +217,17 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(address)
 	burner := p.programs.Burner()
+	time := evm.Context.Time
 
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
-	currentVersion, err := p.programExists(codeHash)
+	currentVersion, expired, err := p.programExists(codeHash, time)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
-	if currentVersion == stylusVersion {
+	if currentVersion == stylusVersion && !expired {
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
@@ -259,7 +260,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
-	dataFee, err := p.dataPricer.UpdateModel(info.asmEstimate, evm.Context.Time)
+	dataFee, err := p.dataPricer.UpdateModel(info.asmEstimate, time)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -269,7 +270,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		initGas:     initGas24,
 		asmEstimate: estimateKb,
 		footprint:   info.footprint,
-		activatedAt: evm.Context.Time,
+		activatedAt: time,
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
@@ -409,9 +410,20 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	return p.programs.Set(codehash, data)
 }
 
-func (p Programs) programExists(codeHash common.Hash) (uint16, error) {
+func (p Programs) programExists(codeHash common.Hash, time uint64) (uint16, bool, error) {
 	data, err := p.programs.Get(codeHash)
-	return arbmath.BytesToUint16(data[:2]), err
+	if err != nil {
+		return 0, false, err
+	}
+	expiryDays, err := p.ExpiryDays()
+	if err != nil {
+		return 0, false, err
+	}
+
+	version := arbmath.BytesToUint16(data[:2])
+	activatedAt := arbmath.BytesToUint(data[10:18])
+	expired := time-activatedAt > arbmath.DaysToSeconds(expiryDays)
+	return version, expired, err
 }
 
 func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int, error) {
