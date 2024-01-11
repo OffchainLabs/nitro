@@ -208,6 +208,7 @@ COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/dbconv /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
