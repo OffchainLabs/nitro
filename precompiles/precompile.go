@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package precompiles
@@ -558,10 +558,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
-	ArbWasm.arbosVersion = 10
+	ArbWasm.arbosVersion = 11
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
-	programs.ProgramOutOfDateError = ArbWasmImpl.ProgramOutOfDateError
+	programs.ProgramNeedsUpgradeError = ArbWasmImpl.ProgramNeedsUpgradeError
+	programs.ProgramExpiredError = ArbWasmImpl.ProgramExpiredError
 	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
+	programs.ProgramKeepaliveTooSoon = ArbWasmImpl.ProgramKeepaliveTooSoonError
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))

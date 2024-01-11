@@ -425,7 +425,7 @@ impl Module {
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
         );
-        if let Some(limits) = bin.memories.get(0) {
+        if let Some(limits) = bin.memories.first() {
             let page_size = Memory::PAGE_SIZE;
             let initial = limits.initial; // validate() checks this is less than max::u32
             let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1; // we require the size remain *below* 2^32
