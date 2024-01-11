@@ -39,8 +39,12 @@ type BroadcastFeedMessage struct {
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
 
+func (m *BroadcastFeedMessage) Size() uint64 {
+	return uint64(len(m.Signature) + len(m.Message.Message.L2msg) + 160)
+}
+
 func (m *BroadcastFeedMessage) UpdateCumulativeSumMsgSize(val uint64) {
-	m.CumulativeSumMsgSize += val + uint64(len(m.Signature)+len(m.Message.Message.L2msg)+160)
+	m.CumulativeSumMsgSize += val + m.Size()
 }
 
 func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {

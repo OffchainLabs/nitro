@@ -56,24 +56,30 @@ func (b *backlog) Head() BacklogSegment {
 	return b.head.Load()
 }
 
-func (b *backlog) backlogSizeInBytes() uint64 {
+func (b *backlog) backlogSizeInBytes() (uint64, error) {
 	if b.head.Load() == nil || b.tail.Load() == nil {
-		return 0
+		return 0, errors.New("the head or tail segment of feed backlog is nil")
 	}
 	headSeg := b.head.Load()
 	headSeg.messagesLock.RLock()
+	if len(headSeg.messages) == 0 {
+		return 0, errors.New("head segment of the feed backlog is empty")
+	}
 	headMsg := headSeg.messages[0]
 	headSeg.messagesLock.RUnlock()
 
 	tailSeg := b.tail.Load()
 	tailSeg.messagesLock.RLock()
+	if len(tailSeg.messages) == 0 {
+		return 0, errors.New("tail segment of the feed backlog is empty")
+	}
 	tailMsg := tailSeg.messages[len(tailSeg.messages)-1]
 	size := tailMsg.CumulativeSumMsgSize
 	tailSeg.messagesLock.RUnlock()
 
 	size -= headMsg.CumulativeSumMsgSize
-	size += uint64(len(headMsg.Signature) + len(headMsg.Message.Message.L2msg) + 160)
-	return size
+	size += headMsg.Size()
+	return size, nil
 }
 
 // Append will add the given messages to the backlogSegment at head until
@@ -83,6 +89,12 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 	if bm.ConfirmedSequenceNumberMessage != nil {
 		b.delete(uint64(bm.ConfirmedSequenceNumberMessage.SequenceNumber))
+		size, err := b.backlogSizeInBytes()
+		if err != nil {
+			log.Warn("error calculating backlogSizeInBytes", "err", err)
+		} else {
+			backlogSizeInBytesGauge.Update(int64(size))
+		}
 	}
 
 	lookupByIndex := b.lookupByIndex.Load()
@@ -98,7 +110,9 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		prevMsgIdx := segment.End()
 		if segment.count() >= b.config().SegmentLimit {
 			segment.messagesLock.RLock()
-			msg.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
+			if len(segment.messages) > 0 {
+				msg.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
+			}
 			segment.messagesLock.RUnlock()
 
 			nextSegment := newBacklogSegment()
@@ -115,6 +129,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.head.Store(segment)
 			b.tail.Store(segment)
 			b.messageCount.Store(0)
+			backlogSizeInBytesGauge.Update(0)
 			log.Warn(err.Error())
 		} else if errors.Is(err, errSequenceNumberSeen) {
 			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
@@ -124,9 +139,9 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 		lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
 		b.messageCount.Add(1)
+		backlogSizeInBytesGauge.Inc(int64(msg.Size()))
 	}
 
-	backlogSizeInBytesGauge.Update(int64(b.backlogSizeInBytes()))
 	backlogSizeGauge.Update(int64(b.Count()))
 	return nil
 }
