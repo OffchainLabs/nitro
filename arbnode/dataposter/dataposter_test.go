@@ -2,27 +2,18 @@ package dataposter
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/Knetic/govaluate"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/google/go-cmp/cmp"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 )
 
 func TestParseReplacementTimes(t *testing.T) {
@@ -60,9 +51,24 @@ func TestParseReplacementTimes(t *testing.T) {
 	}
 }
 
+func signerTestCfg(addr common.Address) (*ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              externalsignertest.SignerURL,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
 func TestExternalSigner(t *testing.T) {
 	ctx := context.Background()
-	httpSrv, srv := newServer(ctx, t)
+	httpSrv, srv := externalsignertest.NewServer(ctx, t)
 	t.Cleanup(func() {
 		if err := httpSrv.Shutdown(ctx); err != nil {
 			t.Fatalf("Error shutting down http server: %v", err)
@@ -76,172 +82,39 @@ func TestExternalSigner(t *testing.T) {
 			return
 		}
 	}()
-	signer, addr, err := externalSigner(ctx,
-		&ExternalSignerCfg{
-			Address:          srv.address.Hex(),
-			URL:              "https://localhost:1234",
-			Method:           "test_signTransaction",
-			RootCA:           cert,
-			ClientCert:       "./testdata/client.crt",
-			ClientPrivateKey: "./testdata/client.key",
-		})
+	signerCfg, err := signerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting signer test config: %v", err)
+	}
+	signer, addr, err := externalSigner(ctx, signerCfg)
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
 	}
-	tx := types.NewTransaction(13, common.HexToAddress("0x01"), big.NewInt(1), 2, big.NewInt(3), []byte{0x01, 0x02, 0x03})
+	tx := types.NewTx(
+		&types.DynamicFeeTx{
+			Nonce:     13,
+			GasTipCap: big.NewInt(1),
+			GasFeeCap: big.NewInt(1),
+			Gas:       3,
+			To:        nil,
+			Value:     big.NewInt(1),
+			Data:      []byte{0x01, 0x02, 0x03},
+		},
+	)
 	got, err := signer(ctx, addr, tx)
 	if err != nil {
 		t.Fatalf("Error signing transaction with external signer: %v", err)
 	}
-	want, err := srv.signerFn(addr, tx)
+	args, err := txToSendTxArgs(addr, tx)
+	if err != nil {
+		t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
+	}
+	want, err := srv.SignerFn(addr, args.ToTransaction())
 	if err != nil {
 		t.Fatalf("Error signing transaction: %v", err)
 	}
 	if diff := cmp.Diff(want.Hash(), got.Hash()); diff != "" {
 		t.Errorf("Signing transaction: unexpected diff: %v\n", diff)
-	}
-}
-
-type server struct {
-	handlers map[string]func(*json.RawMessage) (string, error)
-	signerFn bind.SignerFn
-	address  common.Address
-}
-
-type request struct {
-	ID     *json.RawMessage `json:"id"`
-	Method string           `json:"method"`
-	Params *json.RawMessage `json:"params"`
-}
-
-type response struct {
-	ID     *json.RawMessage `json:"id"`
-	Result string           `json:"result,omitempty"`
-}
-
-// newServer returns http server and server struct that implements RPC methods.
-// It sets up an account in temporary directory and cleans up after test is
-// done.
-func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
-	t.Helper()
-	signer, address, err := setupAccount("/tmp/keystore")
-	if err != nil {
-		t.Fatalf("Error setting up account: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll("/tmp/keystore") })
-
-	s := &server{signerFn: signer, address: address}
-	s.handlers = map[string]func(*json.RawMessage) (string, error){
-		"test_signTransaction": s.signTransaction,
-	}
-	m := http.NewServeMux()
-
-	clientCert, err := os.ReadFile("./testdata/client.crt")
-	if err != nil {
-		t.Fatalf("Error reading client certificate: %v", err)
-	}
-	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(clientCert)
-
-	httpSrv := &http.Server{
-		Addr:        ":1234",
-		Handler:     m,
-		ReadTimeout: 5 * time.Second,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			ClientAuth: tls.RequireAndVerifyClientCert,
-			ClientCAs:  pool,
-		},
-	}
-	m.HandleFunc("/", s.mux)
-	return httpSrv, s
-}
-
-// setupAccount creates a new account in a given directory, unlocks it, creates
-// signer with that account and returns it along with account address.
-func setupAccount(dir string) (bind.SignerFn, common.Address, error) {
-	ks := keystore.NewKeyStore(
-		dir,
-		keystore.StandardScryptN,
-		keystore.StandardScryptP,
-	)
-	a, err := ks.NewAccount("password")
-	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("creating account account: %w", err)
-	}
-	if err := ks.Unlock(a, "password"); err != nil {
-		return nil, common.Address{}, fmt.Errorf("unlocking account: %w", err)
-	}
-	txOpts, err := bind.NewKeyStoreTransactorWithChainID(ks, a, big.NewInt(1))
-	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("creating transactor: %w", err)
-	}
-	return txOpts.Signer, a.Address, nil
-}
-
-// UnmarshallFirst unmarshalls slice of params and returns the first one.
-// Parameters in Go ethereum RPC calls are marashalled as slices. E.g.
-// eth_sendRawTransaction or eth_signTransaction, marshall transaction as a
-// slice of transactions in a message:
-// https://github.com/ethereum/go-ethereum/blob/0004c6b229b787281760b14fb9460ffd9c2496f1/rpc/client.go#L548
-func unmarshallFirst(params []byte) (*types.Transaction, error) {
-	var arr []apitypes.SendTxArgs
-	if err := json.Unmarshal(params, &arr); err != nil {
-		return nil, fmt.Errorf("unmarshaling first param: %w", err)
-	}
-	if len(arr) != 1 {
-		return nil, fmt.Errorf("argument should be a single transaction, but got: %d", len(arr))
-	}
-	return arr[0].ToTransaction(), nil
-}
-
-func (s *server) signTransaction(params *json.RawMessage) (string, error) {
-	tx, err := unmarshallFirst(*params)
-	if err != nil {
-		return "", err
-	}
-	signedTx, err := s.signerFn(s.address, tx)
-	if err != nil {
-		return "", fmt.Errorf("signing transaction: %w", err)
-	}
-	data, err := rlp.EncodeToBytes(signedTx)
-	if err != nil {
-		return "", fmt.Errorf("rlp encoding transaction: %w", err)
-	}
-	return hexutil.Encode(data), nil
-}
-
-func (s *server) mux(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
-	}
-	var req request
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "can't unmarshal JSON request", http.StatusBadRequest)
-		return
-	}
-	method, ok := s.handlers[req.Method]
-	if !ok {
-		http.Error(w, "method not found", http.StatusNotFound)
-		return
-	}
-	result, err := method(req.Params)
-	if err != nil {
-		fmt.Printf("error calling method: %v\n", err)
-		http.Error(w, "error calling method", http.StatusInternalServerError)
-		return
-	}
-	resp := response{ID: req.ID, Result: result}
-	respBytes, err := json.Marshal(resp)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error encoding response: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(respBytes); err != nil {
-		fmt.Printf("error writing response: %v\n", err)
 	}
 }
 
