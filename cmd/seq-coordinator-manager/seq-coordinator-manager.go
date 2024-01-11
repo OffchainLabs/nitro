@@ -164,6 +164,7 @@ func main() {
 	flex.SetDirection(tview.FlexRow).
 		AddItem(priorityHeading, 0, 1, false).
 		AddItem(tview.NewFlex().
+			// fixedSize is maxURLSize plus 20 characters to accomodate ellipsis, statuses and emojis
 			AddItem(prioritySeqList, seqManager.maxURLSize+20, 0, true).
 			AddItem(priorityForm, 0, 3, true), 0, 12, true).
 		AddItem(nonPriorityHeading, 0, 1, false).
