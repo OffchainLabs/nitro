@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -33,7 +33,8 @@ mod evm_api;
 ///     λ(wasm []byte, pageLimit, version u16, debug u32, modHash *hash, gas *u64) (footprint u16, err *Vec<u8>)
 ///
 /// These values are placed on the stack as follows
-///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || footprint | 6 pad || err ptr ||
+///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || initGas | asmSize ||
+///     || footprint | 6 pad || err ptr ||
 ///
 pub fn stylus_activate(mut env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &mut env);
@@ -50,19 +51,21 @@ pub fn stylus_activate(mut env: WasmEnvMut, sp: u32) {
             sp.write_u64_raw(gas, 0);
             sp.write_slice(module_hash, &Bytes32::default());
             sp.skip_space();
+            sp.skip_space();
             sp.write_ptr(heapify(error));
             return;
         }};
     }
 
     let gas_left = &mut sp.read_u64_raw(gas);
-    let (module, pages) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+    let (module, info) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
         Ok(result) => result,
         Err(error) => error!(error),
     };
     sp.write_u64_raw(gas, *gas_left);
     sp.write_slice(module_hash, &module.hash().0);
-    sp.write_u16(pages).skip_space();
+    sp.write_u32(info.init_gas).write_u32(info.asm_estimate);
+    sp.write_u16(info.footprint).skip_space();
     sp.write_nullptr();
 }
 

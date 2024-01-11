@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
@@ -418,7 +418,7 @@ func ProduceBlockAdvanced(
 
 		// Add gas used since startup to prometheus metric.
 		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
-		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
+		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast[int64](gasUsed))
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)

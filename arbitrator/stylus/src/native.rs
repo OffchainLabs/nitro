@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -20,6 +20,7 @@ use prover::{
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
         start::STYLUS_START,
+        StylusData,
     },
 };
 use std::{
@@ -385,10 +386,10 @@ pub fn activate(
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
-) -> Result<(Vec<u8>, ProverModule, u16)> {
+) -> Result<(Vec<u8>, ProverModule, StylusData)> {
     let compile = CompileConfig::version(version, debug);
-    let (module, footprint) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
+    let (module, stylus_data) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
 
     let asm = self::module(wasm, compile).expect("failed to generate stylus module");
-    Ok((asm, module, footprint))
+    Ok((asm, module, stylus_data))
 }

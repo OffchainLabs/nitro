@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
@@ -192,9 +192,19 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return c.State.Programs().SetPageLimit(limit)
 }
 
-// SetWasmCallScalar sets the added wasm call cost based on binary size
-func (con ArbOwner) SetWasmCallScalar(c ctx, _ mech, gas uint16) error {
-	return c.State.Programs().SetCallScalar(gas)
+// Sets the minimum cost to invoke a program
+func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas uint16) error {
+	return c.State.Programs().SetMinInitGas(gas)
+}
+
+// Sets the number of days after which programs deactivate
+func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
+	return c.State.Programs().SetExpiryDays(days)
+}
+
+// Sets the age a program must be to perform a keepalive
+func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
+	return c.State.Programs().SetExpiryDays(days)
 }
 
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {

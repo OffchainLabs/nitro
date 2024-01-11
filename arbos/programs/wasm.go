@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 //go:build js
@@ -33,7 +33,7 @@ type rustEvmData byte
 
 func activateProgramRustImpl(
 	wasm []byte, pageLimit, version u16, debugMode u32, moduleHash *hash, gas *u64,
-) (footprint u16, err *rustVec)
+) (initGas, asmEstimate u32, footprint u16, err *rustVec)
 
 func callProgramRustImpl(
 	moduleHash *hash, calldata []byte, params *rustConfig, evmApi uint32, evmData *rustEvmData, gas *u64,
@@ -66,17 +66,19 @@ func activateProgram(
 	version u16,
 	debug bool,
 	burner burn.Burner,
-) (common.Hash, u16, error) {
+) (*activationInfo, error) {
 	debugMode := arbmath.BoolToUint32(debug)
 	moduleHash := common.Hash{}
 	gasPtr := burner.GasLeft()
 
-	footprint, err := activateProgramRustImpl(wasm, pageLimit, version, debugMode, &moduleHash, gasPtr)
+	initGas, asmEstimate, footprint, err := activateProgramRustImpl(
+		wasm, pageLimit, version, debugMode, &moduleHash, gasPtr,
+	)
 	if err != nil {
 		_, _, err := userFailure.toResult(err.intoSlice(), debug)
-		return moduleHash, footprint, err
+		return nil, err
 	}
-	return moduleHash, footprint, nil
+	return &activationInfo{moduleHash, initGas, asmEstimate, footprint}, nil
 }
 
 func callProgram(
