@@ -342,6 +342,9 @@ func TestBoldProtocol(t *testing.T) {
 	t.Log("Honest party posting assertion at batch 2, pos 0")
 	expectedWinnerAssertion, err := poster.PostAssertion(ctx)
 	Require(t, err)
+	if expectedWinnerAssertion.IsNone() {
+		Fatal(t, "expected winner assertion is none")
+	}
 
 	managerB, err := challengemanager.New(
 		ctx,
@@ -368,7 +371,7 @@ func TestBoldProtocol(t *testing.T) {
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
 	Require(t, err)
 	for {
-		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Id().Hash)
+		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().Id().Hash)
 		if err != nil {
 			t.Logf("Error getting assertion: %v", err)
 			continue
