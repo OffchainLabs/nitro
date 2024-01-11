@@ -532,6 +532,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
 	var comm espressoTypes.Commitment
+	var height uint64
 	if v.config().Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
@@ -559,7 +560,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 			}
 		}
 
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
+		height = jst.Header.Height
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {
 			return false, err
 		}
@@ -568,7 +570,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		}
 		comm = *fetchedCommitment
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, &comm)
+	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, height, &comm)
 	if err != nil {
 		return false, err
 	}

@@ -155,6 +155,8 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
+    /// Reads the HotShot commitment on the stack at an offset
+    ReadHotShotCommitment,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
 }
@@ -267,6 +269,7 @@ impl Opcode {
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
             Opcode::HaltAndSetFinished => 0x8022,
+            Opcode::ReadHotShotCommitment => 0x9001,
         }
     }
 
@@ -279,6 +282,7 @@ impl Opcode {
                 | Opcode::SetGlobalStateU64
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
+                | Opcode::ReadHotShotCommitment
         )
     }
 }

@@ -19,5 +19,6 @@ type ValidationInput struct {
 	BatchInfo         []BatchInfo
 	DelayedMsg        []byte
 	StartState        GoGlobalState
+	HotShotHeight     uint64
 	HotShotCommitment espressoTypes.Commitment
 }

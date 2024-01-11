@@ -5,6 +5,7 @@ extern "C" {
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_hotshot_commitment(ptr: *mut u8, height: u64);
     pub fn wavm_halt_and_set_finished();
 }
 

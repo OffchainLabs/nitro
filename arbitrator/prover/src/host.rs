@@ -77,7 +77,7 @@ impl FromStr for Hostio {
             ("env", "wavm_read_sha2_256_preimage") => WavmReadSha256Preimage,
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
-            ("env", "wavm_read_hotshot_header") => WavmReadHotShotCommitment,
+            ("env", "wavm_read_hotshot_commitment") => WavmReadHotShotCommitment,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
             _ => bail!("no such hostio {} in {}", name.red(), module.red()),
         })
@@ -111,7 +111,7 @@ impl Hostio {
             WavmSetGlobalStateBytes32   => func!([I32, I32]),
             WavmGetGlobalStateU64       => func!([I32], [I64]),
             WavmSetGlobalStateU64       => func!([I32, I64]),
-            WavmReadHotShotCommitment => func!([I32, I32]),
+            WavmReadHotShotCommitment => func!([I32, I64]),
             WavmReadKeccakPreimage      => func!([I32, I32], [I32]),
             WavmReadSha256Preimage      => func!([I32, I32], [I32]),
             WavmReadInboxMessage        => func!([I64, I32, I32], [I32]),
@@ -184,9 +184,9 @@ impl Hostio {
                 opcode!(ReadPreImage, PreimageType::Sha2_256);
             }
             WavmReadHotShotCommitment => {
-                // TODO implement for fault proofs
-                // https://github.com/EspressoSystems/espresso-sequencer/issues/670
-                unimplemented!()
+                opcode!(LocalGet, 0);
+                opcode!(LocalGet, 1);
+                opcode!(ReadHotShotCommitment);
             }
             WavmReadInboxMessage => {
                 opcode!(LocalGet, 0);

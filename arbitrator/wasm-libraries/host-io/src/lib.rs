@@ -10,6 +10,7 @@ extern "C" {
     pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_hotshot_commitment(ptr: *mut u8, height: u64);
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
 }
 
@@ -75,12 +76,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotCommitment(
     sp: GoStack,
 ) {
-    // TODO implement for fault proofs
-    // https://github.com/EspressoSystems/espresso-sequencer/issues/671
-    let _msg_num = sp.read_u64(0);
-    let _pos_num = sp.read_u64(1);
-    let out_ptr = sp.read_u64(2);
-    let out_len = sp.read_u64(3);
+    let h = sp.read_u64(0);
+    let out_ptr = sp.read_u64(1);
+    let out_len = sp.read_u64(2);
     if out_len != 32 {
         eprintln!(
             "Go attempting to read hotshot commitment without len {}",
@@ -89,9 +87,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readHotShotCom
         sp.write_u64(5, 0);
         return;
     }
-    let out_buf = [0u8; 32];
-    write_slice(&out_buf, out_ptr);
-    sp.write_u64(5, 32);
+    let mut our_buf = MemoryLeaf([0u8; 32]);
+    let our_ptr = our_buf.0.as_mut_ptr();
+    wavm_read_hotshot_commitment(our_ptr, h);
+    write_slice(&our_buf.0[..32], out_ptr);
 }
 
 #[no_mangle]

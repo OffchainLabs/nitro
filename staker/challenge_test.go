@@ -298,3 +298,17 @@ func TestChallengeToFailedTooFar(t *testing.T) {
 	Require(t, machine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
 	runChallengeTest(t, machine, incorrectMachine, true, false, 11)
 }
+
+func TestReadHotShotOp(t *testing.T) {
+	machine := createBaseMachine(t, "read-hotshot-10.wasm", []string{"global-state-wrapper.wasm"})
+	commitment := []byte{}
+	for i := 0; i < 32; i++ {
+		commitment = append(commitment, byte(i))
+	}
+	Require(t, machine.AddHotShotCommitment(10, commitment))
+	err := machine.Step(context.Background(), 100)
+	Require(t, err)
+	if machine.IsErrored() || machine.IsRunning() {
+		t.Fatal("fail to run the read_hotshot_op")
+	}
+}

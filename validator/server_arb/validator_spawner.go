@@ -100,6 +100,11 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 		log.Error("error while setting global state for proving", "err", err, "gsStart", entry.StartState)
 		return fmt.Errorf("error while setting global state for proving: %w", err)
 	}
+	err = mach.SetHotShotHeight(entry.HotShotHeight)
+	if err != nil {
+		log.Error("error while setting hotshot height")
+		return fmt.Errorf("error while setting hotshot height")
+	}
 	for _, batch := range entry.BatchInfo {
 		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {
@@ -119,6 +124,11 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			)
 			return fmt.Errorf("error while trying to add delayed msg for proving: %w", err)
 		}
+	}
+	err = mach.AddHotShotCommitment(entry.HotShotHeight, entry.HotShotCommitment[:])
+	if err != nil {
+		log.Error("error while setting hotshot commitment: %w", err)
+		return fmt.Errorf("error while setting hotshot commitment: %w", err)
 	}
 	return nil
 }

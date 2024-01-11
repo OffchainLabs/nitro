@@ -185,7 +185,7 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type HotShotCommitmentMap = BTreeMap<(u64, u64), [u8; 32]>;
+pub type HotShotCommitmentMap = BTreeMap<u64, [u8; 32]>;
 pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
 
 #[derive(Default)]
@@ -197,7 +197,7 @@ pub struct WasmEnv {
     /// The state of Go's js runtime
     pub js_state: JsRuntimeState,
     /// An ordered list of the 8-byte globals
-    pub small_globals: [u64; 2],
+    pub small_globals: [u64; 3],
     /// An ordered list of the 32-byte globals
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
@@ -279,7 +279,7 @@ impl WasmEnv {
 
         let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
         let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
-        env.small_globals = [opts.inbox_position, opts.position_within_message];
+        env.small_globals = [opts.inbox_position, opts.position_within_message, 0];
         env.large_globals = [last_block_hash, last_send_root];
         Ok(env)
     }
