@@ -189,7 +189,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
-
+	config.BlockValidator.ExecutionServerUrlList = []string{}
 	return &config
 }
 
@@ -204,6 +204,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServer.URL = ""
+	config.BlockValidator.ExecutionServerUrlList = []string{}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config

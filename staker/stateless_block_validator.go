@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"sync"
 	"testing"
@@ -29,8 +30,9 @@ import (
 type StatelessBlockValidator struct {
 	config *BlockValidatorConfig
 
-	execSpawner        validator.ExecutionSpawner
-	validationSpawners []validator.ValidationSpawner
+	execSpawner              validator.ExecutionSpawner
+	execSpawnersForChallenge []validator.ExecutionSpawner
+	validationSpawners       []validator.ValidationSpawner
 
 	recorder execution.ExecutionRecorder
 
@@ -225,16 +227,26 @@ func NewStatelessBlockValidator(
 	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
 	valClient := server_api.NewValidationClient(valConfFetcher, stack)
 	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
+	execClientsForChallenge := []validator.ExecutionSpawner{execClient}
+
+	for i := range config().ExecutionServerUrlList {
+		clientConfig := config().ValidationServer
+		clientConfig.URL = config().ExecutionServerUrlList[i]
+		clientConfig.JWTSecret = config().ExecutionServerJWTSecretList[i]
+
+		execClientsForChallenge = append(execClientsForChallenge, server_api.NewExecutionClient(func() *rpcclient.ClientConfig { return &clientConfig }, stack))
+	}
 	validator := &StatelessBlockValidator{
-		config:             config(),
-		execSpawner:        execClient,
-		recorder:           recorder,
-		validationSpawners: []validator.ValidationSpawner{valClient},
-		inboxReader:        inboxReader,
-		inboxTracker:       inbox,
-		streamer:           streamer,
-		db:                 arbdb,
-		daService:          das,
+		config:                   config(),
+		execSpawner:              execClient,
+		execSpawnersForChallenge: execClientsForChallenge,
+		recorder:                 recorder,
+		validationSpawners:       []validator.ValidationSpawner{valClient},
+		inboxReader:              inboxReader,
+		inboxTracker:             inbox,
+		streamer:                 streamer,
+		db:                       arbdb,
+		daService:                das,
 	}
 	return validator, nil
 }
@@ -248,6 +260,12 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
 	}
 	return validatingModuleRoots
+}
+
+// ExecSpawnersForChallenge Picks a spawner randomly from the list of spawners, to keep the load balanced.
+// TODO: Move to a more sophisticated load balancing model.
+func (v *StatelessBlockValidator) ExecSpawnersForChallenge() validator.ExecutionSpawner {
+	return v.execSpawnersForChallenge[rand.Intn(len(v.execSpawnersForChallenge))]
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
@@ -389,6 +407,9 @@ func (v *StatelessBlockValidator) ValidateResult(
 	var spawners []validator.ValidationSpawner
 	if useExec {
 		spawners = append(spawners, v.execSpawner)
+		for _, spawner := range v.execSpawnersForChallenge {
+			spawners = append(spawners, spawner)
+		}
 	} else {
 		spawners = v.validationSpawners
 	}
@@ -428,6 +449,11 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			return err
 		}
 	}
+	for _, spawner := range v.execSpawnersForChallenge {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
 			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
@@ -449,6 +475,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 func (v *StatelessBlockValidator) Stop() {
 	v.execSpawner.Stop()
 	for _, spawner := range v.validationSpawners {
+		spawner.Stop()
+	}
+	for _, spawner := range v.execSpawnersForChallenge {
 		spawner.Stop()
 	}
 }

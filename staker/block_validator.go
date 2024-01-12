@@ -81,16 +81,18 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                   bool                          `koanf:"enable"`
-	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
-	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
-	MemoryFreeLimit          string                        `koanf:"memory-free-limit" reload:"hot"`
+	Enable                       bool                          `koanf:"enable"`
+	ValidationServer             rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	ExecutionServerUrlList       []string                      `koanf:"execution-server-url-list"`
+	ExecutionServerJWTSecretList []string                      `koanf:"execution-server-jwtsecret-list"`
+	ValidationPoll               time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks            uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks                uint64                        `koanf:"forward-blocks" reload:"hot"`
+	CurrentModuleRoot            string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot     string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal               bool                          `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                    BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit              string                        `koanf:"memory-free-limit" reload:"hot"`
 
 	memoryFreeLimit int
 }
@@ -117,6 +119,8 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
+	f.StringSlice(prefix+".execution-server-url-list", DefaultBlockValidatorConfig.ExecutionServerUrlList, "comma separated list of urls for execution server used for fetching leaves during challenge")
+	f.StringSlice(prefix+".execution-server-jwtsecret-list", DefaultBlockValidatorConfig.ExecutionServerJWTSecretList, "comma separated list of jwtsecrets for execution server used for fetching leaves during challenge")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
