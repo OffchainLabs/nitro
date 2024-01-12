@@ -480,7 +480,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
