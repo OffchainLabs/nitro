@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "db",
@@ -8,4 +8,29 @@ go_library(
     ],
     importpath = "github.com/OffchainLabs/bold/api/db",
     visibility = ["//visibility:public"],
+    deps = [
+        "//api",
+        "//chain-abstraction:protocol",
+        "//containers/option",
+        "//state-commitments/history",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_jmoiron_sqlx//:sqlx",
+        "@com_github_mattn_go_sqlite3//:go-sqlite3",
+        "@com_github_pkg_errors//:errors",
+    ],
+)
+
+go_test(
+    name = "db_test",
+    srcs = ["db_test.go"],
+    embed = [":db"],
+    deps = [
+        "//api",
+        "//chain-abstraction:protocol",
+        "//state-commitments/history",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_jmoiron_sqlx//:sqlx",
+        "@com_github_mattn_go_sqlite3//:go-sqlite3",
+        "@com_github_stretchr_testify//require",
+    ],
 )

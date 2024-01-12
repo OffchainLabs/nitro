@@ -81,7 +81,8 @@
     },
     "nilness": {
         "exclude_files": {
-            "external/.*": "Third party code"
+            "external/.*": "Third party code",
+            "cgo/.*": "Third party code"
         }
     },
     "pkgfact": {

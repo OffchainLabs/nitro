@@ -12,6 +12,7 @@ go_library(
         "method_edges.go",
         "method_healthz.go",
         "server.go",
+        "types.go",
     ],
     importpath = "github.com/OffchainLabs/bold/api",
     visibility = ["//visibility:public"],
