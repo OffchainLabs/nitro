@@ -197,7 +197,7 @@ func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.Va
 	}
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
-		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", expOut.Batch, expOut.PosInBatch, expOut.BlockHash) +
+		fmt.Sprintf("# expected output: batch %d, position %d, hash %s\n", expOut.Batch, expOut.PosInBatch, expOut.BlockHash) +
 		"MACHPATH=\"" + v.locator.GetMachinePath(moduleRoot) + "\"\n" +
 		rootPathAssign +
 		"if (( $# > 1 )); then\n" +
