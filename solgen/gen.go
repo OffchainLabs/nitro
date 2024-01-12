@@ -96,7 +96,7 @@ func main() {
 		modInfo.addArtifact(artifact)
 	}
 
-	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' depedencies
+	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' dependencies
 	upgExecutorPath := filepath.Join(parent, "contracts", "node_modules", "@offchainlabs", "upgrade-executor", "build", "contracts", "src", "UpgradeExecutor.sol", "UpgradeExecutor.json")
 	_, err = os.Stat(upgExecutorPath)
 	if !os.IsNotExist(err) {
