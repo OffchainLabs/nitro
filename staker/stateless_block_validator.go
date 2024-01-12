@@ -265,9 +265,12 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 // ExecSpawnersForChallenge Picks a spawner randomly from the list of spawners, to keep the load balanced.
 // TODO: Move to a more sophisticated load balancing model.
 func (v *StatelessBlockValidator) ExecSpawnersForChallenge() validator.ExecutionSpawner {
-	spawners := v.execSpawnersForChallenge
-	spawners = append(spawners, v.execSpawner)
-	return spawners[rand.Intn(len(spawners))]
+	index := rand.Intn(len(v.execSpawnersForChallenge) + 1)
+
+	if index == 0 {
+		return v.execSpawner
+	}
+	return v.execSpawnersForChallenge[index-1]
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
