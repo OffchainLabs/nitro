@@ -136,16 +136,18 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                   false,
-	ValidationServer:         rpcclient.DefaultClientConfig,
-	ValidationPoll:           time.Second,
-	ForwardBlocks:            1024,
-	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
-	CurrentModuleRoot:        "current",
-	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           true,
-	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	MemoryFreeLimit:          "default",
+	Enable:                       false,
+	ValidationServer:             rpcclient.DefaultClientConfig,
+	ExecutionServerUrlList:       []string{},
+	ExecutionServerJWTSecretList: []string{},
+	ValidationPoll:               time.Second,
+	ForwardBlocks:                1024,
+	PrerecordedBlocks:            uint64(2 * runtime.NumCPU()),
+	CurrentModuleRoot:            "current",
+	PendingUpgradeModuleRoot:     "latest",
+	FailureIsFatal:               true,
+	Dangerous:                    DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:              "default",
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
