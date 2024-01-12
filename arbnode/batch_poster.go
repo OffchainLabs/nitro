@@ -122,6 +122,7 @@ type BatchPosterConfig struct {
 	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
 	L1BlockBoundBypass time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists     bool                        `koanf:"use-access-lists" reload:"hot"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -168,6 +169,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
+	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -190,6 +192,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
+	UseAccessLists:     true,
 	RedisLock:          redislock.DefaultCfg,
 }
 
@@ -216,6 +219,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
 	L1BlockBoundBypass: time.Hour,
+	UseAccessLists:     true,
 }
 
 type BatchPosterOpts struct {
@@ -298,7 +302,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	// Dataposter sender may be external signer address, so we should initialize
 	// access list after initializing dataposter.
 	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
-		if opts.L1Reader.IsParentChainArbitrum() {
+		if !b.config().UseAccessLists || opts.L1Reader.IsParentChainArbitrum() {
 			// Access lists cost gas instead of saving gas when posting to L2s,
 			// because data is expensive in comparison to computation.
 			return nil
