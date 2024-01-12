@@ -253,7 +253,7 @@ func TestOutboxProofs(t *testing.T) {
 
 			if !balanced {
 				// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
-				// To do this, we'll walk the boundry of what's known, computing hashes along the way
+				// To do this, we'll walk the boundary of what's known, computing hashes along the way
 
 				zero := common.Hash{}
 
