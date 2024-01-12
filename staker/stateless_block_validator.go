@@ -227,7 +227,7 @@ func NewStatelessBlockValidator(
 	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
 	valClient := server_api.NewValidationClient(valConfFetcher, stack)
 	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
-	execClientsForChallenge := []validator.ExecutionSpawner{execClient}
+	var execClientsForChallenge []validator.ExecutionSpawner
 
 	for i := range config().ExecutionServerUrlList {
 		clientConfig := config().ValidationServer
@@ -265,7 +265,8 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 // ExecSpawnersForChallenge Picks a spawner randomly from the list of spawners, to keep the load balanced.
 // TODO: Move to a more sophisticated load balancing model.
 func (v *StatelessBlockValidator) ExecSpawnersForChallenge() validator.ExecutionSpawner {
-	return v.execSpawnersForChallenge[rand.Intn(len(v.execSpawnersForChallenge))]
+	spawners := append(v.execSpawnersForChallenge, v.execSpawner)
+	return spawners[rand.Intn(len(spawners))]
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
