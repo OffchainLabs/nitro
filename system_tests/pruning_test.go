@@ -3,6 +3,7 @@ package arbtest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -114,6 +115,7 @@ func TestPruning(t *testing.T) {
 	for currentBlock < lastBlock {
 		currentBlock, err = testClient.Client.BlockNumber(ctx)
 		Require(t, err)
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	currentBlock, err = testClient.Client.BlockNumber(ctx)
