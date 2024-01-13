@@ -629,9 +629,6 @@ impl<'a> WasmBinary<'a> {
             limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
-        let locals = bin.codes.iter().map(|x| x.locals.len()).max();
-        println!("locals: {:?}", locals);
-
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
         limit!(8192, table_entries, "table entries");
 
