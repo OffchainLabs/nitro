@@ -22,9 +22,9 @@ use arbutil::{math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
-use itertools::izip;
+use itertools::{Itertools, izip};
 use lazy_static::lazy_static;
-use num::{traits::PrimInt, Zero};
+use num::{traits::PrimInt, FromPrimitive, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -309,6 +309,16 @@ lazy_static! {
 
 impl Module {
     const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
+
+    pub fn from_user_path(path: &Path) -> Result<Self> {
+        let data = std::fs::read(path)?;
+        let wasm = wasmer::wat2wasm(&data)?;
+        let bin = binary::parse(&wasm, Path::new("user"))?;
+
+        let available_imports = HashMap::default();
+        let floating_point_impls = HashMap::default();
+        Self::from_binary(&bin, &available_imports, &floating_point_impls, true, true, None)
+    }
 
     fn from_binary(
         bin: &WasmBinary,
@@ -632,6 +642,141 @@ impl Module {
 
     pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
         bincode::deserialize(bytes).unwrap()
+    }
+
+    pub fn print_wat(&self) {
+        let mut level = 0;
+        let module_name = self.name();
+        println!("{:indent$}({} {}", "", "module".grey(), module_name.mint(), indent=level);
+        level += 2;
+
+        let func_name = |i| -> Option<String> {
+            if i < self.internals_offset {
+                self.names.functions.get(&i).cloned()
+            } else{
+                host::InternalFunc::from_u32(i - self.internals_offset).map_or(None, |f| Some(format!("{:?}", f)))
+            }
+        };
+
+        self.print_globals(level);
+        self.print_imports(level);
+
+        self.print_memory(level);
+
+        for (i, func) in self.funcs.iter().enumerate() {
+            self.print_func(level, func, i as u32, &func_name)
+        }
+
+        if let Some(start) = self.start_function {
+            println!("{:indent$}{} {}", "", "start".grey(), func_name(start).unwrap_or(format!("{}", start)).pink(), indent=level);
+        }
+
+        level -= 2;
+        println!("{:indent$})", "", indent=level);
+    }
+
+    fn print_globals(&self, level: usize) {
+        // TOOD: What about `mut`
+        for (i, g) in self.globals.iter().enumerate() {
+            let global_label = format!("$global_{}", i).pink();
+            let global_str = format!("{:?}", g).mint();
+            println!("{:indent$}{} {} {}", "", "global".grey(), global_label, global_str, indent=level);
+        }
+    }
+
+    fn print_tables(&self, _level: usize) {
+        // TODO
+    }
+
+    fn print_imports(&self, _level: usize) {
+        // TODO
+    }
+
+    fn print_memory(&self, level: usize) {
+        let mut level = level;
+        let args = format!("{} {}", (self.memory.size() + 65535) / 65536, self.memory.max_size);
+
+        println!("{:indent$}{} {}", "", "memory".grey(), args.mint(), indent=level);
+        let mut byte_index = 0;
+        let mut nonzero_bytes = Vec::new();
+        let mut first_nonzero_index = 0;
+        level += 2;
+        while byte_index < self.memory.max_size {
+            let current_byte = match self.memory.get_u8(byte_index) {
+                Some(byte) => byte,
+                None => {break;}
+            };
+            if current_byte != 0 {
+                if nonzero_bytes.is_empty() {
+                    first_nonzero_index = byte_index
+                }
+                nonzero_bytes.push(current_byte);
+            }
+
+            byte_index += 1;
+            if (current_byte == 0 || byte_index == self.memory.max_size) && !nonzero_bytes.is_empty() {
+                let range = format!("[{:#06x}-{:#06x}]", first_nonzero_index, byte_index - 2);
+                println!("{:indent$}{}: {}", "", range.grey(), hex::encode(&nonzero_bytes).mint(), indent=level);
+                nonzero_bytes.clear();
+            }
+        }
+    }
+
+    fn print_func(&self, level: usize, func: &Function, i: u32, func_name: &dyn Fn(u32) -> Option<String>) {
+        let mut level = level;
+        let export_str = if let Some(n) = func_name(i) {
+            format!(" ({} \"{}\")", "export".grey(), n.pink())
+        } else {
+            String::new()
+        };
+        let param_str = if func.ty.inputs.len() > 0 {
+            let tmp_str = func.ty.inputs.iter().
+                enumerate().
+                fold(String::new(), |acc, (j, ty)| format!("{} {} {}", acc, format!("$arg{}", j).pink(), ty.mint()));
+            format!(" ({}{})", "param".grey(), tmp_str)
+        } else {
+            String::new()
+        };
+        let result_str = if func.ty.outputs.len() > 0 {
+            format!(" ({} {})", "result".grey(), func.ty.outputs.iter().map(|t| t.to_string()).join(" ").mint())
+        } else {
+            String::new()
+        };
+        println!("{:indent$}({}{}{}{}", "", "func".grey(), export_str, param_str, result_str, indent=level);
+        level += 2;
+        let mut labels = HashMap::default();
+        use Opcode::*;
+        for op in func.code.iter() {
+            if op.opcode == ArbitraryJump || op.opcode == ArbitraryJumpIf {
+                labels.insert(op.argument_data as usize, format!("label_{}", op.argument_data as usize));
+            }
+        }
+        for (i, ty) in func.local_types.iter().enumerate() {
+            let local_str = format!("$local_{}", i);
+            println!("{:indent$}{:<10}{} {} {}", "", "", "local".grey(), local_str.pink(), ty.mint(), indent=level);
+        }
+        for (j, op) in func.code.iter().enumerate() {
+            let op_str = format!("{:?}", op.opcode);
+            let op_arg = match op.opcode {
+                ArbitraryJump | ArbitraryJumpIf =>
+                    format!(" {}", labels.get(&(op.argument_data as usize)).cloned().map_or(" MISSING_LABEL".to_string(), |s| format!("${s}"))).pink(),
+                Call | CallerModuleInternalCall | CallIndirect | CrossModuleCall | CrossModuleForward | CrossModuleInternalCall =>
+                    format!(" {}", func_name(op.argument_data as u32).map_or(" MISSING_FUNC_NAME".to_string(), |s| s).pink()),
+                F32Const | F64Const | I32Const | I64Const => format!(" {}", op.argument_data.mint()),
+                GlobalGet | GlobalSet => format!(" $global_{}", op.argument_data).pink(),
+                LocalGet | LocalSet => format!(" $local_{}", op.argument_data).pink(),
+                MemoryLoad{..} | MemoryStore{..} | ReadInboxMessage =>
+                    format!(" {}", op.argument_data.mint()),
+                _ => if op.argument_data == 0 {"".to_string()} else {format!(" UNEXPECTED_ARGUMENT:{}", op.argument_data).mint()}
+            };
+            if labels.contains_key(&j) {
+                println!("");
+            }
+            let label_str = format!("{:10}", labels.get(&j).cloned().unwrap_or("".to_string()));
+            println!("{:indent$}{}{}{}", "", label_str.pink(), op_str.grey(), op_arg, indent=level);
+        }
+        level -= 2;
+        println!("{:indent$})", "", indent=level);
     }
 }
 
@@ -2881,6 +3026,18 @@ impl Machine {
         }
         if self.frame_stack.len() > 25 {
             print(format!("  ... and {} more", self.frame_stack.len() - 25).grey());
+        }
+    }
+
+    pub fn print_wat(&self) {
+        if let Some(module) = self.modules.last() {
+            module.print_wat();
+        }
+    }
+
+    pub fn print_instrumented_wat(&self) {
+        if let Some(module) = self.modules.last() {
+            module.print_wat();
         }
     }
 }

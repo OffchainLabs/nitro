@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
 /// Represents the internal hostio functions a module may have.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, FromPrimitive)]
 #[repr(u64)]
 pub enum InternalFunc {
     WavmCallerLoad8,
