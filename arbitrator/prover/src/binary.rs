@@ -619,20 +619,20 @@ impl<'a> WasmBinary<'a> {
             };
         }
         limit!(1, bin.memories.len(), "memories");
-        limit!(100, bin.datas.len(), "datas");
-        limit!(100, bin.elements.len(), "elements");
-        limit!(1_000, bin.exports.len(), "exports");
-        limit!(1_000, bin.tables.len(), "tables");
-        limit!(10_000, bin.codes.len(), "functions");
-        limit!(50_000, bin.globals.len(), "globals");
-        for function in &bin.codes {
-            limit!(4096, function.locals.len(), "locals")
+        limit!(128, bin.datas.len(), "datas");
+        limit!(128, bin.elements.len(), "elements");
+        limit!(1024, bin.exports.len(), "exports");
+        limit!(4096, bin.codes.len(), "functions");
+        limit!(32768, bin.globals.len(), "globals");
+        for code in &bin.codes {
+            limit!(348, code.locals.len(), "locals");
+            limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
-        limit!(10_000, table_entries, "table entries");
+        limit!(8192, table_entries, "table entries");
 
-        let max_len = 500;
+        let max_len = 512;
         macro_rules! too_long {
             ($name:expr, $len:expr) => {
                 bail!(
