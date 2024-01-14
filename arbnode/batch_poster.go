@@ -223,15 +223,16 @@ var TestBatchPosterConfig = BatchPosterConfig{
 }
 
 type BatchPosterOpts struct {
-	DataPosterDB ethdb.Database
-	L1Reader     *headerreader.HeaderReader
-	Inbox        *InboxTracker
-	Streamer     *TransactionStreamer
-	SyncMonitor  *SyncMonitor
-	Config       BatchPosterConfigFetcher
-	DeployInfo   *chaininfo.RollupAddresses
-	TransactOpts *bind.TransactOpts
-	DAWriter     das.DataAvailabilityServiceWriter
+	DataPosterDB  ethdb.Database
+	L1Reader      *headerreader.HeaderReader
+	Inbox         *InboxTracker
+	Streamer      *TransactionStreamer
+	SyncMonitor   *SyncMonitor
+	Config        BatchPosterConfigFetcher
+	DeployInfo    *chaininfo.RollupAddresses
+	TransactOpts  *bind.TransactOpts
+	DAWriter      das.DataAvailabilityServiceWriter
+	ParentChainID *big.Int
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -295,6 +296,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
 			RedisKey:          "data-poster.queue",
+			ParentChainID:     opts.ParentChainID,
 		})
 	if err != nil {
 		return nil, err
