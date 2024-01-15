@@ -22,7 +22,7 @@ use arbutil::{math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
-use itertools::{Itertools, izip};
+use itertools::izip;
 use lazy_static::lazy_static;
 use num::{traits::PrimInt, FromPrimitive, Zero};
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use wasmer;
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
 
@@ -644,43 +645,45 @@ impl Module {
         bincode::deserialize(bytes).unwrap()
     }
 
+    fn func_name(&self, i: u32) -> Option<String> {
+        if i < self.internals_offset {
+            // imported function or user function
+            self.names.functions.get(&i).cloned()
+        } else{
+            // internal function
+            host::InternalFunc::from_u32(i - self.internals_offset).
+                map_or(None, |f| Some(format!("{:?}", f)))
+        }
+    }
+
     pub fn print_wat(&self) {
         let mut level = 0;
-        let module_name = self.name();
-        println!("{:indent$}({} {}", "", "module".grey(), module_name.mint(), indent=level);
+        println!("{:level$}({} {}", "", "module".grey(), self.name().mint());
         level += 2;
 
-        let func_name = |i| -> Option<String> {
-            if i < self.internals_offset {
-                self.names.functions.get(&i).cloned()
-            } else{
-                host::InternalFunc::from_u32(i - self.internals_offset).map_or(None, |f| Some(format!("{:?}", f)))
-            }
-        };
-
         self.print_globals(level);
+        self.print_tables(level);
         self.print_imports(level);
-
         self.print_memory(level);
 
         for (i, func) in self.funcs.iter().enumerate() {
-            self.print_func(level, func, i as u32, &func_name)
+            self.print_func(level, func, i as u32)
         }
 
         if let Some(start) = self.start_function {
-            println!("{:indent$}{} {}", "", "start".grey(), func_name(start).unwrap_or(format!("{}", start)).pink(), indent=level);
+            let name = self.func_name(start).unwrap_or(start.to_string());
+            println!("{:level$}{} {}", "", "start".grey(), name.pink());
         }
 
         level -= 2;
-        println!("{:indent$})", "", indent=level);
+        println!("{:level$})", "");
     }
 
     fn print_globals(&self, level: usize) {
-        // TOOD: What about `mut`
         for (i, g) in self.globals.iter().enumerate() {
             let global_label = format!("$global_{}", i).pink();
             let global_str = format!("{:?}", g).mint();
-            println!("{:indent$}{} {} {}", "", "global".grey(), global_label, global_str, indent=level);
+            println!("{:level$}{} {} {}", "", "global".grey(), global_label, global_str);
         }
     }
 
@@ -688,15 +691,26 @@ impl Module {
         // TODO
     }
 
-    fn print_imports(&self, _level: usize) {
-        // TODO
+    fn print_imports(&self, level: usize) {
+        for (i, hook) in self.host_call_hooks.iter().enumerate() {
+            if let Some(hook) = hook {
+                let func_name = match self.func_name(i as u32) {
+                    Some(name) => format!("${name}"),
+                    None => "UNKNOWN".to_string()
+                };
+                println!(r#"{:level$}({} "{}" "{}", ({} {}{}{}))"#, "", "import".grey(),
+                         hook.0.pink(), hook.1.pink(), "func".grey(),
+                         func_name.pink(), self.funcs[i].ty.param_str(),
+                         self.funcs[i].ty.result_str());
+            }
+        }
     }
 
     fn print_memory(&self, level: usize) {
         let mut level = level;
         let args = format!("{} {}", (self.memory.size() + 65535) / 65536, self.memory.max_size);
 
-        println!("{:indent$}{} {}", "", "memory".grey(), args.mint(), indent=level);
+        println!("{:level$}({} {}", "", "memory".grey(), args.mint());
         let mut byte_index = 0;
         let mut nonzero_bytes = Vec::new();
         let mut first_nonzero_index = 0;
@@ -716,34 +730,27 @@ impl Module {
             byte_index += 1;
             if (current_byte == 0 || byte_index == self.memory.max_size) && !nonzero_bytes.is_empty() {
                 let range = format!("[{:#06x}-{:#06x}]", first_nonzero_index, byte_index - 2);
-                println!("{:indent$}{}: {}", "", range.grey(), hex::encode(&nonzero_bytes).mint(), indent=level);
+                println!("{:level$}{}: {}", "", range.grey(), hex::encode(&nonzero_bytes).mint());
                 nonzero_bytes.clear();
             }
         }
+        level -= 2;
+        println!("{:level$})", "");
     }
 
-    fn print_func(&self, level: usize, func: &Function, i: u32, func_name: &dyn Fn(u32) -> Option<String>) {
+    fn print_func(&self, level: usize, func: &Function, i: u32) {
         let mut level = level;
-        let export_str = if let Some(n) = func_name(i) {
-            format!(" ({} \"{}\")", "export".grey(), n.pink())
-        } else {
-            String::new()
-        };
-        let param_str = if func.ty.inputs.len() > 0 {
-            let tmp_str = func.ty.inputs.iter().
-                enumerate().
-                fold(String::new(), |acc, (j, ty)| format!("{} {} {}", acc, format!("$arg{}", j).pink(), ty.mint()));
-            format!(" ({}{})", "param".grey(), tmp_str)
-        } else {
-            String::new()
-        };
-        let result_str = if func.ty.outputs.len() > 0 {
-            format!(" ({} {})", "result".grey(), func.ty.outputs.iter().map(|t| t.to_string()).join(" ").mint())
-        } else {
-            String::new()
-        };
-        println!("{:indent$}({}{}{}{}", "", "func".grey(), export_str, param_str, result_str, indent=level);
+        let padding = 11;
+
+        let export_str = self.func_name(i).map_or(String::new(), |s| format!(r#" ({} "{}")"#, "export".grey(), s.pink()));
+        println!("{:level$}({}{}{}{}", "", "func".grey(), export_str, func.ty.param_str(), func.ty.result_str());
+
         level += 2;
+        for (i, ty) in func.local_types.iter().enumerate() {
+            let local_str = format!("$local_{}", i);
+            println!("{:level$}{:padding$}{} {} {}", "", "", "local".grey(), local_str.pink(), ty.mint());
+        }
+
         let mut labels = HashMap::default();
         use Opcode::*;
         for op in func.code.iter() {
@@ -751,32 +758,55 @@ impl Module {
                 labels.insert(op.argument_data as usize, format!("label_{}", op.argument_data as usize));
             }
         }
-        for (i, ty) in func.local_types.iter().enumerate() {
-            let local_str = format!("$local_{}", i);
-            println!("{:indent$}{:<10}{} {} {}", "", "", "local".grey(), local_str.pink(), ty.mint(), indent=level);
-        }
         for (j, op) in func.code.iter().enumerate() {
-            let op_str = format!("{:?}", op.opcode);
-            let op_arg = match op.opcode {
-                ArbitraryJump | ArbitraryJumpIf =>
-                    format!(" {}", labels.get(&(op.argument_data as usize)).cloned().map_or(" MISSING_LABEL".to_string(), |s| format!("${s}"))).pink(),
-                Call | CallerModuleInternalCall | CallIndirect | CrossModuleCall | CrossModuleForward | CrossModuleInternalCall =>
-                    format!(" {}", func_name(op.argument_data as u32).map_or(" MISSING_FUNC_NAME".to_string(), |s| s).pink()),
-                F32Const | F64Const | I32Const | I64Const => format!(" {}", op.argument_data.mint()),
+            let op_str = format!("{:?}", op.opcode).grey();
+            let arg_str = match op.opcode {
+                ArbitraryJump | ArbitraryJumpIf => {
+                    match labels.get(&(op.argument_data as usize)) {
+                        Some(label) => format!(" ${label}"),
+                        None => " UNKNOWN".to_string()
+                    }.pink()
+                }
+                Call | CallerModuleInternalCall | CallIndirect | CrossModuleCall | CrossModuleForward | CrossModuleInternalCall => {
+                    match self.func_name(op.argument_data as u32) {
+                        Some(func) => format!(" ${func}"),
+                        None => " UNKNOWN".to_string()
+                    }.pink()
+                }
+                F32Const | F64Const | I32Const | I64Const => format!(" {:#x}", op.argument_data).mint(),
                 GlobalGet | GlobalSet => format!(" $global_{}", op.argument_data).pink(),
                 LocalGet | LocalSet => format!(" $local_{}", op.argument_data).pink(),
                 MemoryLoad{..} | MemoryStore{..} | ReadInboxMessage =>
-                    format!(" {}", op.argument_data.mint()),
-                _ => if op.argument_data == 0 {"".to_string()} else {format!(" UNEXPECTED_ARGUMENT:{}", op.argument_data).mint()}
+                    format!(" {:#x}", op.argument_data).mint(),
+                _ => {
+                    if op.argument_data == 0 {
+                        String::new()
+                    } else {
+                        format!(" UNEXPECTED_ARGUMENT:{}", op.argument_data).mint()
+                    }
+                }
             };
-            if labels.contains_key(&j) {
+            let proving_str = if let Some(data) = op.proving_argument_data {
+                hex::encode(&data)
+            } else {
+                String::new()
+            }.orange();
+            let label = labels.get(&j).cloned().unwrap_or(String::new());
+            let (colon, padding) = if label.len() == 0 {
+                ("", padding)
+            } else {
                 println!("");
-            }
-            let label_str = format!("{:10}", labels.get(&j).cloned().unwrap_or("".to_string()));
-            println!("{:indent$}{}{}{}", "", label_str.pink(), op_str.grey(), op_arg, indent=level);
+                if label.len() >= padding - 1 {
+                    (":", 1)
+                } else {
+                    (":", padding - 1 - label.len())
+                }
+            };
+            let label = format!("{}{colon}{:padding$}", label.pink(), "");
+            println!("{:level$}{label}{op_str}{arg_str} {proving_str}", "");
         }
         level -= 2;
-        println!("{:indent$})", "", indent=level);
+        println!("{:level$})", "");
     }
 }
 

@@ -428,6 +428,26 @@ impl FunctionType {
         }
         h.finalize().into()
     }
+
+    pub fn param_str(&self) -> String {
+        if self.inputs.len() > 0 {
+            let param_str = self.inputs.iter().
+                enumerate().
+                fold(String::new(), |acc, (j, ty)| format!("{} {} {}", acc, format!("$arg{}", j).pink(), ty.mint()));
+            format!(" ({}{})", "param".grey(), param_str)
+        } else {
+            String::new()
+        }
+    }
+
+    pub fn result_str(&self) -> String {
+        if self.outputs.len() > 0 {
+            let result_str = self.outputs.iter().fold(String::new(), |acc, t| format!("{acc} {t}"));
+            format!(" ({}{})", "result".grey(), result_str.mint())
+        } else {
+            String::new()
+        }
+    }
 }
 
 impl TryFrom<FuncType> for FunctionType {

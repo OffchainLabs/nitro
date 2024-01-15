@@ -3,9 +3,6 @@
 
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
-#[macro_use]
-extern crate num_derive;
-
 pub mod binary;
 mod error_guard;
 mod host;

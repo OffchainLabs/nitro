@@ -14,6 +14,7 @@ pub const RED: &str = "\x1b[31;1m";
 pub const CLEAR: &str = "\x1b[0;0m";
 pub const WHITE: &str = "\x1b[0;1m";
 pub const YELLOW: &str = "\x1b[33;1m";
+pub const ORANGE: &str = "\x1b[0;33m";
 
 pub trait Color {
     fn color(&self, color: &str) -> String;
@@ -27,6 +28,7 @@ pub trait Color {
     fn red(&self) -> String;
     fn white(&self) -> String;
     fn yellow(&self) -> String;
+    fn orange(&self) -> String;
 }
 
 #[rustfmt::skip]
@@ -45,6 +47,7 @@ impl<T> Color for T where T: Display {
     fn red(&self)    -> String { self.color(RED)    }
     fn white(&self)  -> String { self.color(WHITE)  }
     fn yellow(&self) -> String { self.color(YELLOW) }
+    fn orange(&self) -> String { self.color(ORANGE) }
 }
 
 pub fn when<T: Display>(cond: bool, text: T, when_color: &str) -> String {
@@ -66,6 +69,7 @@ pub trait DebugColor {
     fn debug_red(&self) -> String;
     fn debug_white(&self) -> String;
     fn debug_yellow(&self) -> String;
+    fn debug_orange(&self) -> String;
 }
 
 #[rustfmt::skip]
@@ -84,4 +88,5 @@ impl<T> DebugColor for T where T: Debug {
     fn debug_red(&self)    -> String { self.debug_color(RED)    }
     fn debug_white(&self)  -> String { self.debug_color(WHITE)  }
     fn debug_yellow(&self) -> String { self.debug_color(YELLOW) }
+    fn debug_orange(&self) -> String { self.debug_color(ORANGE) }
 }
