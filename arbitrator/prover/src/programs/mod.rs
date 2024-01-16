@@ -437,6 +437,10 @@ impl Module {
         let data = bin.datas.iter().map(|x| x.data.len()).saturating_sum() as u64;
         pay!(data.saturating_mul(17_376) / 100_000);
 
+        // pay for elements
+        let elems = bin.elements.iter().map(|x| x.range.len()).saturating_sum() as u64;
+        pay!(elems.saturating_mul(17_376) / 100_000);
+
         // pay for memory
         let mem = bin.memories.first().map(|x| x.initial).unwrap_or_default();
         pay!(mem.saturating_mul(2217));
