@@ -46,6 +46,7 @@ use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+use crate::wavm::unpack_call_indirect;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -662,6 +663,7 @@ impl Module {
         level += 2;
 
         self.print_globals(level);
+        self.print_types(level);
         self.print_tables(level);
         self.print_imports(level);
         self.print_memory(level);
@@ -687,8 +689,38 @@ impl Module {
         }
     }
 
-    fn print_tables(&self, _level: usize) {
-        // TODO
+    fn print_tables(&self, level: usize) {
+        for (i, table) in self.tables.iter().enumerate() {
+            let initial_str = format!("{}", table.ty.initial);
+            let max_str = match table.ty.maximum {
+                Some(max) => format!(" {max}"),
+                None => String::new()
+            };
+            let type_str = format!("{:?}", table.ty.element_type);
+            println!("{:level$}{} {} {} {} {}", "", "table".grey(), format!("$table_{i}").pink(),
+                     initial_str.mint(), max_str.mint(), type_str.mint());
+            for j in 1..table.elems.len() {
+                let val = table.elems[j].val;
+                let elem = match table.elems[j].val {
+                    Value::FuncRef(id) => {
+                        match self.func_name(id) {
+                            Some(name) => format!("${name}").pink(),
+                            None => format!("$func_{id}").pink()
+                        }
+                    },
+                    Value::RefNull => {continue;},
+                    _ => format!("{val}")
+                };
+                println!("{:level$}{} ({} {}) {}", "", "elem".grey(), "I32Const".mint(),
+                         format!("{j:#x}").mint(), elem);
+            }
+        }
+    }
+
+    fn print_types(&self, level: usize) {
+        for ty in self.types.iter() {
+            println!("{:level$}{} ({} {}{})", "", "type".grey(), "func".grey(), ty.param_str(), ty.result_str());
+        }
     }
 
     fn print_imports(&self, level: usize) {
@@ -710,11 +742,12 @@ impl Module {
         let mut level = level;
         let args = format!("{} {}", (self.memory.size() + 65535) / 65536, self.memory.max_size);
 
-        println!("{:level$}({} {}", "", "memory".grey(), args.mint());
+        print!("{:level$}({} {}", "", "memory".grey(), args.mint());
         let mut byte_index = 0;
         let mut nonzero_bytes = Vec::new();
         let mut first_nonzero_index = 0;
         level += 2;
+        let mut empty = true;
         while byte_index < self.memory.max_size {
             let current_byte = match self.memory.get_u8(byte_index) {
                 Some(byte) => byte,
@@ -729,20 +762,28 @@ impl Module {
 
             byte_index += 1;
             if (current_byte == 0 || byte_index == self.memory.max_size) && !nonzero_bytes.is_empty() {
+                empty = false;
                 let range = format!("[{:#06x}-{:#06x}]", first_nonzero_index, byte_index - 2);
-                println!("{:level$}{}: {}", "", range.grey(), hex::encode(&nonzero_bytes).mint());
+                print!("\n{:level$}{}: {}", "", range.grey(), hex::encode(&nonzero_bytes).mint());
                 nonzero_bytes.clear();
             }
         }
         level -= 2;
-        println!("{:level$})", "");
+        if empty {
+            println!(")");
+        } else {
+            println!("\n{:level$})", "");
+        }
     }
 
     fn print_func(&self, level: usize, func: &Function, i: u32) {
         let mut level = level;
         let padding = 11;
 
-        let export_str = self.func_name(i).map_or(String::new(), |s| format!(r#" ({} "{}")"#, "export".grey(), s.pink()));
+        let export_str = match self.func_name(i) {
+            Some(name) => format!(r#" ({} "{}")"#, "export".grey(), name.pink()),
+            None => format!(" $func_{i}").pink()
+        };
         println!("{:level$}({}{}{}{}", "", "func".grey(), export_str, func.ty.param_str(), func.ty.result_str());
 
         level += 2;
@@ -755,7 +796,7 @@ impl Module {
         use Opcode::*;
         for op in func.code.iter() {
             if op.opcode == ArbitraryJump || op.opcode == ArbitraryJumpIf {
-                labels.insert(op.argument_data as usize, format!("label_{}", op.argument_data as usize));
+                labels.insert(op.argument_data as usize, format!("label_{}", op.argument_data));
             }
         }
         for (j, op) in func.code.iter().enumerate() {
@@ -766,13 +807,19 @@ impl Module {
                         Some(label) => format!(" ${label}"),
                         None => " UNKNOWN".to_string()
                     }.pink()
-                }
-                Call | CallerModuleInternalCall | CallIndirect | CrossModuleCall | CrossModuleForward | CrossModuleInternalCall => {
+                },
+                Call | CallerModuleInternalCall | CrossModuleCall | CrossModuleForward | CrossModuleInternalCall => {
                     match self.func_name(op.argument_data as u32) {
                         Some(func) => format!(" ${func}"),
                         None => " UNKNOWN".to_string()
                     }.pink()
-                }
+                },
+                CallIndirect => {
+                    let (table_index, type_index) = unpack_call_indirect(op.argument_data);
+                    let param_str = self.types[type_index as usize].param_str();
+                    let result_str = self.types[type_index as usize].result_str();
+                    format!("{}{} {}", param_str, result_str, format!("{table_index}").mint())
+                },
                 F32Const | F64Const | I32Const | I64Const => format!(" {:#x}", op.argument_data).mint(),
                 GlobalGet | GlobalSet => format!(" $global_{}", op.argument_data).pink(),
                 LocalGet | LocalSet => format!(" $local_{}", op.argument_data).pink(),

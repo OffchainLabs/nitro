@@ -7,7 +7,7 @@ use std::{path::Path};
 use wasmer::Pages;
 
 fn main() {
-    let module = Module::from_user_path(Path::new("../../prover/test-cases/link.wat")).unwrap();
+    let module = Module::from_user_path(Path::new("../../prover/test-cases/call-indirect.wat")).unwrap();
     module.print_wat();
 }
 
