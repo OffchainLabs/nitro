@@ -311,16 +311,6 @@ lazy_static! {
 impl Module {
     const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
 
-    pub fn from_user_path(path: &Path) -> Result<Self> {
-        let data = std::fs::read(path)?;
-        let wasm = wasmer::wat2wasm(&data)?;
-        let bin = binary::parse(&wasm, Path::new("user"))?;
-
-        let available_imports = HashMap::default();
-        let floating_point_impls = HashMap::default();
-        Self::from_binary(&bin, &available_imports, &floating_point_impls, true, true, None)
-    }
-
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
