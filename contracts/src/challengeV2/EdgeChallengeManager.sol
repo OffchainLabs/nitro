@@ -553,7 +553,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             execCtx,
             beforeHistoryInclusionProof,
             afterHistoryInclusionProof,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            LAYERZERO_BIGSTEPEDGE_HEIGHT,
+            LAYERZERO_SMALLSTEPEDGE_HEIGHT
         );
 
         emit EdgeConfirmedByOneStepProof(edgeId, store.edges[edgeId].mutualId());

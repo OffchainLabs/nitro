@@ -788,11 +788,14 @@ library EdgeChallengeManagerLib {
     /// @dev    One step proofs can only be executed against edges that have length one and of type SmallStep
     /// @param store                        The edge store containing all edges and rival data
     /// @param edgeId                       The id of the edge to confirm
-    /// @param oneStepProofEntry            The one step proof contract
-    /// @param oneStepData                  Input data to the one step proof
-    /// @param beforeHistoryInclusionProof  Proof that the state which is the start of the edge is committed to by the startHistoryRoot
-    /// @param afterHistoryInclusionProof   Proof that the state which is the end of the edge is committed to by the endHistoryRoot
-    /// @param numBigStepLevel              The number of big step levels in this challenge
+    /// @param oneStepProofEntry            The one step proof contract 
+    /// @param oneStepData                  Input data to the one step proof 
+    /// @param execCtx                      The execution context to be supplied to the one step proof entry 
+    /// @param beforeHistoryInclusionProof  Proof that the state which is the start of the edge is committed to by the startHistoryRoot 
+    /// @param afterHistoryInclusionProof   Proof that the state which is the end of the edge is committed to by the endHistoryRoot 
+    /// @param numBigStepLevel              The number of big step levels in this challenge 
+    /// @param bigStepHeight                The height of the zero layer levels of big step type 
+    /// @param smallStepHeight              The height of the zero layer levels of big step type 
     function confirmEdgeByOneStepProof(
         EdgeStore storage store,
         bytes32 edgeId,
@@ -801,17 +804,41 @@ library EdgeChallengeManagerLib {
         ExecutionContext memory execCtx,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof,
-        uint8 numBigStepLevel
+        uint8 numBigStepLevel,
+        uint256 bigStepHeight,
+        uint256 smallStepHeight
     ) internal {
-        // get checks existence
-        uint256 machineStep = get(store, edgeId).startHeight;
+        if (!store.edges[edgeId].exists()) {
+            revert EdgeNotExists(edgeId);
+        }
 
-        // edge must be length one and be of type SmallStep
+        // edge must of type SmallStep
         if (ChallengeEdgeLib.levelToType(store.edges[edgeId].level, numBigStepLevel) != EdgeType.SmallStep) {
             revert EdgeTypeNotSmallStep(store.edges[edgeId].level);
         }
+  
+        // edge must be length one to execute one step proofs against
         if (store.edges[edgeId].length() != 1) {
             revert EdgeNotLengthOne(store.edges[edgeId].length());
+        }
+
+        // Get the machine step that corresponds to the start height of this edge
+        // To do this we sum the machine steps of the edges in each of the preceeding levels. 
+        // We do not include the block height, since each step at the block level is a new block
+        // and new blocks reset the machine step to 0.
+        uint256 machineStep = store.edges[edgeId].startHeight;
+        {
+            bytes32 cursor = edgeId;
+            uint256 stepSize = smallStepHeight;
+            while(store.edges[cursor].level > 1) {
+                bytes32 nextEdgeId = store.edges[cursor].originId;
+                // We can traverse to previous levels using the origin id
+                cursor = store.firstRivals[nextEdgeId];
+                // sum the stepSize * offset from 0 at this level
+                machineStep += stepSize * store.edges[cursor].startHeight;
+                // the step size at each level is the product of the heights at all succeeding levels
+                stepSize *= bigStepHeight;
+            }
         }
 
         // the state in the onestep data must be committed to by the startHistoryRoot

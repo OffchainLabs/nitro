@@ -29,6 +29,11 @@ contract Random {
         seed = keccak256(abi.encodePacked(seed));
         return address(bytes20(seed));
     }
+
+    function unsignedInt(uint256 max) public returns(uint256) {
+        bytes32 h = hash();
+        return uint256(h) % max;
+    }
 }
 
 library Logger {

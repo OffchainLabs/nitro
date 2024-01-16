@@ -12,11 +12,18 @@ import "./Utils.sol";
 contract MockOneStepProofEntry is IOneStepProofEntry {
     using GlobalStateLib for GlobalState;
 
-    function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
+    constructor(uint256 _testMachineStep) {
+        testMachineStep = _testMachineStep;
+    }
+
+    uint256 public testMachineStep;
+
+    function proveOneStep(ExecutionContext calldata, uint256 machineStep, bytes32, bytes calldata proof)
         external
-        pure
+        view
         returns (bytes32 afterHash)
     {
+        if(testMachineStep != 0) require(testMachineStep == machineStep, "Invalid machine step");
         return bytes32(proof);
     }
 
@@ -156,16 +163,20 @@ contract EdgeChallengeManagerLibAccess {
         ExecutionContext memory execCtx,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof,
-        uint8 numBigStepLevel
+        uint8 numBigStepLevel,
+        uint256 bigStepHeight,
+        uint256 smallStepHeight
     ) public {
-        return store.confirmEdgeByOneStepProof(
+        store.confirmEdgeByOneStepProof(
             edgeId,
             oneStepProofEntry,
             oneStepData,
             execCtx,
             beforeHistoryInclusionProof,
             afterHistoryInclusionProof,
-            numBigStepLevel
+            numBigStepLevel,
+            bigStepHeight,
+            smallStepHeight
         );
     }
 }
@@ -173,7 +184,7 @@ contract EdgeChallengeManagerLibAccess {
 contract EdgeChallengeManagerLibTest is Test {
     using ChallengeEdgeLib for ChallengeEdge;
 
-    MockOneStepProofEntry mockOsp = new MockOneStepProofEntry();
+    MockOneStepProofEntry mockOsp = new MockOneStepProofEntry(0);
 
     uint64 challengePeriodBlocks = 7;
     uint256 stakeAmount = 13;
@@ -1500,24 +1511,82 @@ contract EdgeChallengeManagerLibTest is Test {
     struct ConfirmByOneStepData {
         ChallengeEdge e1;
         ChallengeEdge e2;
+        bytes32[] beforeProof;
+        bytes32[] afterProof;
         bytes revertArg;
     }
 
+    uint256 BIGSTEPHEIGHT = 1 << 4;
+    uint256 SMALLSTEPHEIGHT = 1 << 6;
+
+    function addUpLastLevel() internal returns(bytes32 originId, uint256[] memory startHeights) {
+        originId = rand.hash();
+
+        startHeights = new uint256[](NUM_BIGSTEP_LEVEL + 1);
+        for (uint i = 0; i < NUM_BIGSTEP_LEVEL + 1; i++) {
+            uint256 startHeight = rand.unsignedInt(BIGSTEPHEIGHT);
+            ChallengeEdge memory e1 = ChallengeEdgeLib.newChildEdge(
+                originId,
+                rand.hash(),
+                startHeight,
+                rand.hash(),
+                startHeight + 1,
+                uint8(i)
+            );
+            store.add(e1);
+            ChallengeEdge memory e2 = ChallengeEdgeLib.newChildEdge(
+                originId,
+                e1.startHistoryRoot,
+                startHeight,
+                rand.hash(),
+                startHeight + 1,
+                uint8(i)
+            );
+            store.add(e2);
+
+            originId = e1.mutualIdMem();
+            startHeights[i] = startHeight;
+        }
+    }
+
+    function getLayerZeroStepSize(
+        uint256 numBigStepLevel,
+        uint256 bigStepHeight,
+        uint256 smallStepHeight, 
+        uint256 level)
+        internal
+        returns (uint256)
+    {
+        uint stepSize = 1;
+        uint maxLevelIndex = numBigStepLevel + 1;
+        for(uint256 i = level; i < maxLevelIndex; i++) {
+            if(i == maxLevelIndex - 1) {
+                stepSize *= smallStepHeight;
+            } else {
+                stepSize *= bigStepHeight;
+            }
+        }
+        return stepSize;
+    }
+
+
     function confirmByOneStep(uint256 flag) internal {
-        uint256 startHeight = 5;
+        uint256 startHeight = rand.unsignedInt(SMALLSTEPHEIGHT);
         (bytes32[] memory states1, bytes32[] memory states2) = rivalStates(startHeight, startHeight, startHeight + 1);
 
+        (bytes32 originId, uint256[] memory startHeights) = addUpLastLevel();
         ConfirmByOneStepData memory data;
         data.e1 = ChallengeEdgeLib.newChildEdge(
-            rand.hash(),
+            originId,
             MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states1, 0, startHeight + 1)),
             startHeight,
             MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states1, 0, startHeight + 2)),
             startHeight + 1,
             NUM_BIGSTEP_LEVEL + 1
         );
+        
         data.e2 = ChallengeEdgeLib.newChildEdge(
-            data.e1.originId,
+            originId,
             MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states2, 0, startHeight + 1)),
             startHeight,
             MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states2, 0, startHeight + 2)),
@@ -1538,7 +1607,18 @@ contract EdgeChallengeManagerLibTest is Test {
             data.revertArg = abi.encodeWithSelector(EdgeNotPending.selector, eid, data.e1.status);
         }
 
-        MockOneStepProofEntry entry = new MockOneStepProofEntry();
+        uint256 expectedStartMachineStep = startHeight;
+        {
+            for (uint i = 1; i < startHeights.length; i++) {
+                expectedStartMachineStep += getLayerZeroStepSize(
+                    NUM_BIGSTEP_LEVEL,
+                    BIGSTEPHEIGHT,
+                    SMALLSTEPHEIGHT, 
+                    i
+                ) * startHeights[i];
+            }
+        }
+        MockOneStepProofEntry entry = new MockOneStepProofEntry(expectedStartMachineStep);
 
         if (flag != 1) {
             store.add(data.e1);
@@ -1552,16 +1632,16 @@ contract EdgeChallengeManagerLibTest is Test {
             OneStepData({beforeHash: states1[startHeight], proof: abi.encodePacked(states1[startHeight + 1])});
         ExecutionContext memory e =
             ExecutionContext({maxInboxMessagesRead: 0, bridge: IBridge(address(0)), initialWasmModuleRoot: bytes32(0)});
-        bytes32[] memory beforeProof = ProofUtils.generateInclusionProof(
+        data.beforeProof = ProofUtils.generateInclusionProof(
             ProofUtils.rehashed(ArrayUtilsLib.slice(states1, 0, startHeight + 1)), startHeight
         );
         if (flag == 6) {
-            beforeProof[0] = rand.hash();
+            data.beforeProof[0] = rand.hash();
             data.revertArg = "Invalid inclusion proof";
         }
-        bytes32[] memory afterProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), startHeight + 1);
+        data.afterProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), startHeight + 1);
         if (flag == 7) {
-            afterProof[0] = rand.hash();
+            data.afterProof[0] = rand.hash();
             data.revertArg = "Invalid inclusion proof";
         }
         if (flag == 8) {
@@ -1577,7 +1657,7 @@ contract EdgeChallengeManagerLibTest is Test {
         if (data.revertArg.length != 0) {
             vm.expectRevert(data.revertArg);
         }
-        store.confirmEdgeByOneStepProof(eid, entry, d, e, beforeProof, afterProof, NUM_BIGSTEP_LEVEL);
+        store.confirmEdgeByOneStepProof(eid, entry, d, e, data.beforeProof, data.afterProof, NUM_BIGSTEP_LEVEL, 1 << 4, 1 << 6);
 
         if (bytes(data.revertArg).length != 0) {
             // for flag one the edge does not exist
@@ -1590,6 +1670,8 @@ contract EdgeChallengeManagerLibTest is Test {
             assertEq(store.getConfirmedRival(ChallengeEdgeLib.mutualIdMem(data.e1)), eid, "Confirmed rival");
         }
     }
+
+    error MachineStep(uint256 actual, uint256 expected, uint256[] startHeights, uint256 smallStartHeight);
 
     function testConfirmByOneStep() public {
         confirmByOneStep(0);
@@ -1702,7 +1784,7 @@ contract EdgeChallengeManagerLibTest is Test {
 
     function createZeroBlockEdge(uint256 mode) internal {
         bytes memory revertArg;
-        MockOneStepProofEntry entry = new MockOneStepProofEntry();
+        MockOneStepProofEntry entry = new MockOneStepProofEntry(0);
         uint256 expectedEndHeight = 2 ** 2;
         if (mode == 139) {
             expectedEndHeight = 2 ** 5 - 1;
@@ -1942,7 +2024,7 @@ contract EdgeChallengeManagerLibTest is Test {
             vars.revertArg = abi.encodeWithSelector(ClaimEdgeNotPending.selector);
         }
 
-        vars.a = new MockOneStepProofEntry();
+        vars.a = new MockOneStepProofEntry(0);
         vars.emptyArd;
 
         if (mode == 163) {
@@ -2282,8 +2364,6 @@ contract EdgeChallengeManagerLibTest is Test {
 
         return BisectionData(states1, states2, edges1, edges2);
     }
-
-    function getPrevAssertionHash(uint8 flag) internal {}
 
     function testGetPrevAssertionHashCorrectly() public {
         bytes32 a1 = rand.hash();
