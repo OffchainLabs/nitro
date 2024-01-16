@@ -630,10 +630,10 @@ impl<'a> WasmBinary<'a> {
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
-        limit!(1024, table_entries, "table entries");
+        limit!(4096, table_entries, "table entries");
 
         let elem_entries = bin.elements.iter().map(|x| x.range.len()).saturating_sum();
-        limit!(1024, elem_entries, "element entries");
+        limit!(4096, elem_entries, "element entries");
 
         let max_len = 512;
         macro_rules! too_long {
