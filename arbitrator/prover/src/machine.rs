@@ -40,13 +40,12 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmer;
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
 
+use crate::wavm::unpack_call_indirect;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use crate::wavm::unpack_call_indirect;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -650,99 +649,122 @@ impl Module {
         if i < self.internals_offset {
             // imported function or user function
             self.names.functions.get(&i).cloned()
-        } else{
+        } else {
             // internal function
-            host::InternalFunc::from_u32(i - self.internals_offset).
-                map_or(None, |f| Some(format!("{:?}", f)))
+            host::InternalFunc::from_u32(i - self.internals_offset)
+                .map_or(None, |f| Some(format!("{:?}", f)))
         }
     }
 
-    pub fn print_wat(&self) {
-        let mut level = 0;
-        println!("{:level$}({} {}", "", "module".grey(), self.name().mint());
-        level += 2;
-
-        self.print_globals(level);
-        self.print_types(level);
-        self.print_tables(level);
-        self.print_imports(level);
-        self.print_memory(level);
-
-        for (i, func) in self.funcs.iter().enumerate() {
-            self.print_func(level, func, i as u32)
-        }
-
-        if let Some(start) = self.start_function {
-            let name = self.func_name(start).unwrap_or(start.to_string());
-            println!("{:level$}{} {}", "", "start".grey(), name.pink());
-        }
-
-        level -= 2;
-        println!("{:level$})", "");
-    }
-
-    fn print_globals(&self, level: usize) {
+    fn print_globals(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         for (i, g) in self.globals.iter().enumerate() {
             let global_label = format!("$global_{}", i).pink();
             let global_str = format!("{:?}", g).mint();
-            println!("{:level$}{} {} {}", "", "global".grey(), global_label, global_str);
+            write!(
+                f,
+                "{:level$}({} {} {})\n",
+                "",
+                "global".grey(),
+                global_label,
+                global_str
+            )?;
         }
+        Ok(())
     }
 
-    fn print_tables(&self, level: usize) {
+    fn print_tables(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         for (i, table) in self.tables.iter().enumerate() {
             let initial_str = format!("{}", table.ty.initial);
             let max_str = match table.ty.maximum {
                 Some(max) => format!(" {max}"),
-                None => String::new()
+                None => String::new(),
             };
             let type_str = format!("{:?}", table.ty.element_type);
-            println!("{:level$}{} {} {} {} {}", "", "table".grey(), format!("$table_{i}").pink(),
-                     initial_str.mint(), max_str.mint(), type_str.mint());
+            write!(
+                f,
+                "{:level$}({} {} {} {} {})\n",
+                "",
+                "table".grey(),
+                format!("$table_{i}").pink(),
+                initial_str.mint(),
+                max_str.mint(),
+                type_str.mint()
+            )?;
             for j in 1..table.elems.len() {
                 let val = table.elems[j].val;
                 let elem = match table.elems[j].val {
-                    Value::FuncRef(id) => {
-                        match self.func_name(id) {
-                            Some(name) => format!("${name}").pink(),
-                            None => format!("$func_{id}").pink()
-                        }
+                    Value::FuncRef(id) => match self.func_name(id) {
+                        Some(name) => format!("${name}").pink(),
+                        None => format!("$func_{id}").pink(),
                     },
-                    Value::RefNull => {continue;},
-                    _ => format!("{val}")
+                    Value::RefNull => {
+                        continue;
+                    }
+                    _ => format!("{val}"),
                 };
-                println!("{:level$}{} ({} {}) {}", "", "elem".grey(), "I32Const".mint(),
-                         format!("{j:#x}").mint(), elem);
+                write!(
+                    f,
+                    "{:level$}({} ({} {}) {})\n",
+                    "",
+                    "elem".grey(),
+                    "I32Const".mint(),
+                    format!("{j:#x}").mint(),
+                    elem
+                )?;
             }
         }
+
+        Ok(())
     }
 
-    fn print_types(&self, level: usize) {
+    fn print_types(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         for ty in self.types.iter() {
-            println!("{:level$}{} ({} {}{})", "", "type".grey(), "func".grey(), ty.param_str(), ty.result_str());
+            write!(
+                f,
+                "{:level$}({} ({}{}{}))\n",
+                "",
+                "type".grey(),
+                "func".grey(),
+                ty.param_str(),
+                ty.result_str()
+            )?;
         }
+        Ok(())
     }
 
-    fn print_imports(&self, level: usize) {
+    fn print_imports(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         for (i, hook) in self.host_call_hooks.iter().enumerate() {
             if let Some(hook) = hook {
                 let func_name = match self.func_name(i as u32) {
                     Some(name) => format!("${name}"),
-                    None => "UNKNOWN".to_string()
+                    None => "UNKNOWN".to_string(),
                 };
-                println!(r#"{:level$}({} "{}" "{}", ({} {}{}{}))"#, "", "import".grey(),
-                         hook.0.pink(), hook.1.pink(), "func".grey(),
-                         func_name.pink(), self.funcs[i].ty.param_str(),
-                         self.funcs[i].ty.result_str());
+                write!(
+                    f,
+                    r#"{:level$}({} "{}" "{}\n", ({} {}{}{}))\n"#,
+                    "",
+                    "import".grey(),
+                    hook.0.pink(),
+                    hook.1.pink(),
+                    "func".grey(),
+                    func_name.pink(),
+                    self.funcs[i].ty.param_str(),
+                    self.funcs[i].ty.result_str()
+                )?;
             }
         }
+        Ok(())
     }
 
-    fn print_memory(&self, level: usize) {
+    fn print_memory(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         let mut level = level;
-        let args = format!("{} {}", (self.memory.size() + 65535) / 65536, self.memory.max_size);
+        let args = format!(
+            "{} {}",
+            (self.memory.size() + 65535) / 65536,
+            self.memory.max_size
+        );
 
-        print!("{:level$}({} {}", "", "memory".grey(), args.mint());
+        write!(f, "{:level$}({} {}", "", "memory".grey(), args.mint())?;
         let mut byte_index = 0;
         let mut nonzero_bytes = Vec::new();
         let mut first_nonzero_index = 0;
@@ -751,7 +773,9 @@ impl Module {
         while byte_index < self.memory.max_size {
             let current_byte = match self.memory.get_u8(byte_index) {
                 Some(byte) => byte,
-                None => {break;}
+                None => {
+                    break;
+                }
             };
             if current_byte != 0 {
                 if nonzero_bytes.is_empty() {
@@ -761,70 +785,121 @@ impl Module {
             }
 
             byte_index += 1;
-            if (current_byte == 0 || byte_index == self.memory.max_size) && !nonzero_bytes.is_empty() {
+            if (current_byte == 0 || byte_index == self.memory.max_size)
+                && !nonzero_bytes.is_empty()
+            {
                 empty = false;
                 let range = format!("[{:#06x}-{:#06x}]", first_nonzero_index, byte_index - 2);
-                print!("\n{:level$}{}: {}", "", range.grey(), hex::encode(&nonzero_bytes).mint());
+                write!(
+                    f,
+                    "\n{:level$}{}: {}",
+                    "",
+                    range.grey(),
+                    hex::encode(&nonzero_bytes).mint()
+                )?;
                 nonzero_bytes.clear();
             }
         }
         level -= 2;
         if empty {
-            println!(")");
+            write!(f, ")\n")?;
         } else {
-            println!("\n{:level$})", "");
+            write!(f, "\n{:level$})\n", "")?;
         }
+        Ok(())
     }
 
-    fn print_func(&self, level: usize, func: &Function, i: u32) {
+    fn print_func(
+        &self,
+        f: &mut fmt::Formatter,
+        level: usize,
+        func: &Function,
+        i: u32,
+    ) -> fmt::Result {
         let mut level = level;
         let padding = 11;
 
         let export_str = match self.func_name(i) {
-            Some(name) => format!(r#" ({} "{}")"#, "export".grey(), name.pink()),
-            None => format!(" $func_{i}").pink()
+            Some(name) => {
+                let description = if (i as usize) < self.host_call_hooks.len() {
+                    "import"
+                } else {
+                    "export"
+                };
+                format!(r#" ({} "{}")"#, description.grey(), name.pink())
+            },
+            None => format!(" $func_{i}").pink(),
         };
-        println!("{:level$}({}{}{}{}", "", "func".grey(), export_str, func.ty.param_str(), func.ty.result_str());
+        write!(
+            f,
+            "{:level$}({}{}{}{}\n",
+            "",
+            "func".grey(),
+            export_str,
+            func.ty.param_str(),
+            func.ty.result_str()
+        )?;
 
         level += 2;
         for (i, ty) in func.local_types.iter().enumerate() {
             let local_str = format!("$local_{}", i);
-            println!("{:level$}{:padding$}{} {} {}", "", "", "local".grey(), local_str.pink(), ty.mint());
+            write!(
+                f,
+                "{:level$}{:padding$}{} {} {}\n",
+                "",
+                "",
+                "local".grey(),
+                local_str.pink(),
+                ty.mint()
+            )?;
         }
 
         let mut labels = HashMap::default();
         use Opcode::*;
         for op in func.code.iter() {
             if op.opcode == ArbitraryJump || op.opcode == ArbitraryJumpIf {
-                labels.insert(op.argument_data as usize, format!("label_{}", op.argument_data));
+                labels.insert(
+                    op.argument_data as usize,
+                    format!("label_{}", op.argument_data),
+                );
             }
         }
         for (j, op) in func.code.iter().enumerate() {
             let op_str = format!("{:?}", op.opcode).grey();
             let arg_str = match op.opcode {
-                ArbitraryJump | ArbitraryJumpIf => {
-                    match labels.get(&(op.argument_data as usize)) {
-                        Some(label) => format!(" ${label}"),
-                        None => " UNKNOWN".to_string()
-                    }.pink()
-                },
-                Call | CallerModuleInternalCall | CrossModuleCall | CrossModuleForward | CrossModuleInternalCall => {
-                    match self.func_name(op.argument_data as u32) {
-                        Some(func) => format!(" ${func}"),
-                        None => " UNKNOWN".to_string()
-                    }.pink()
-                },
+                ArbitraryJump | ArbitraryJumpIf => match labels.get(&(op.argument_data as usize)) {
+                    Some(label) => format!(" ${label}"),
+                    None => " UNKNOWN".to_string(),
+                }
+                .pink(),
+                Call
+                | CallerModuleInternalCall
+                | CrossModuleCall
+                | CrossModuleForward
+                | CrossModuleInternalCall => match self.func_name(op.argument_data as u32) {
+                    Some(func) => format!(" ${func}"),
+                    None => " UNKNOWN".to_string(),
+                }
+                .pink(),
                 CallIndirect => {
                     let (table_index, type_index) = unpack_call_indirect(op.argument_data);
                     let param_str = self.types[type_index as usize].param_str();
                     let result_str = self.types[type_index as usize].result_str();
-                    format!("{}{} {}", param_str, result_str, format!("{table_index}").mint())
-                },
-                F32Const | F64Const | I32Const | I64Const => format!(" {:#x}", op.argument_data).mint(),
+                    format!(
+                        "{}{} {}",
+                        param_str,
+                        result_str,
+                        format!("{table_index}").mint()
+                    )
+                }
+                F32Const | F64Const | I32Const | I64Const => {
+                    format!(" {:#x}", op.argument_data).mint()
+                }
                 GlobalGet | GlobalSet => format!(" $global_{}", op.argument_data).pink(),
                 LocalGet | LocalSet => format!(" $local_{}", op.argument_data).pink(),
-                MemoryLoad{..} | MemoryStore{..} | ReadInboxMessage =>
-                    format!(" {:#x}", op.argument_data).mint(),
+                MemoryLoad { .. } | MemoryStore { .. } | ReadInboxMessage => {
+                    format!(" {:#x}", op.argument_data).mint()
+                }
                 _ => {
                     if op.argument_data == 0 {
                         String::new()
@@ -837,12 +912,13 @@ impl Module {
                 hex::encode(&data)
             } else {
                 String::new()
-            }.orange();
+            }
+            .orange();
             let label = labels.get(&j).cloned().unwrap_or(String::new());
             let (colon, padding) = if label.len() == 0 {
                 ("", padding)
             } else {
-                println!("");
+                write!(f, "\n")?;
                 if label.len() >= padding - 1 {
                     (":", 1)
                 } else {
@@ -850,10 +926,45 @@ impl Module {
                 }
             };
             let label = format!("{}{colon}{:padding$}", label.pink(), "");
-            println!("{:level$}{label}{op_str}{arg_str} {proving_str}", "");
+            write!(f, "{:level$}{label}{op_str}{arg_str} {proving_str}\n", "")?;
         }
         level -= 2;
-        println!("{:level$})", "");
+        write!(f, "{:level$})\n", "")?;
+        Ok(())
+    }
+}
+
+impl Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut level = 0;
+        write!(
+            f,
+            "{:level$}({} {}\n",
+            "",
+            "module".grey(),
+            self.name().mint()
+        )?;
+        level += 2;
+
+        self.print_globals(f, level)?;
+        self.print_types(f, level)?;
+        self.print_tables(f, level)?;
+        self.print_imports(f, level)?;
+        self.print_memory(f, level)?;
+
+        for (i, func) in self.funcs.iter().enumerate() {
+            self.print_func(f, level, func, i as u32)?
+        }
+
+        if let Some(start) = self.start_function {
+            let name = self.func_name(start).unwrap_or(start.to_string());
+            write!(f, "{:level$}{} {}\n", "", "start".grey(), name.pink())?;
+        }
+
+        level -= 2;
+        write!(f, "{:level$})\n", "")?;
+
+        Ok(())
     }
 }
 
@@ -3108,13 +3219,7 @@ impl Machine {
 
     pub fn print_wat(&self) {
         if let Some(module) = self.modules.last() {
-            module.print_wat();
-        }
-    }
-
-    pub fn print_instrumented_wat(&self) {
-        if let Some(module) = self.modules.last() {
-            module.print_wat();
+            print!("{module}");
         }
     }
 }
