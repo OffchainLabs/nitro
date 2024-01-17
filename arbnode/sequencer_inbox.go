@@ -255,7 +255,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 				AfterDelayedMessagesRead: parsedLog_.AfterDelayedMessagesRead,
 				TimeBounds:               parsedLog_.TimeBounds,
 				DataLocation:             parsedLog_.DataLocation,
-				SequencerInbox:           [20]byte{}, // Legacy event lacks this field
+				SequencerInbox:           i.legacySequencerInboxAddress,
 				//Raw:                      parsedLog_.Raw, // unused, linter complains
 			}
 
