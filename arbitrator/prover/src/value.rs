@@ -430,29 +430,6 @@ impl FunctionType {
     }
 }
 
-impl Display for FunctionType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.inputs.len() > 0 {
-            let param_str = self
-                .inputs
-                .iter()
-                .enumerate()
-                .fold(String::new(), |acc, (j, ty)| {
-                    format!("{} {} {}", acc, format!("$arg{}", j).pink(), ty.mint())
-                });
-            write!(f, " ({}{})", "param".grey(), param_str)
-        };
-
-        if self.outputs.len() > 0 {
-            let result_str = self
-                .outputs
-                .iter()
-                .fold(String::new(), |acc, t| format!("{acc} {t}"));
-            write!(f, " i{}{})", "result".grey(), result_str.mint())
-        };
-    }
-}
-
 impl TryFrom<FuncType> for FunctionType {
     type Error = eyre::Error;
 
@@ -498,6 +475,39 @@ impl Display for FunctionType {
             }
         }
         write!(f, "{}", signature)
+    }
+}
+
+pub(crate) trait WatFormat {
+    fn wat_string(&self) -> String;
+}
+
+impl WatFormat for FunctionType {
+    fn wat_string(&self) -> String {
+        let param_str = if self.inputs.len() > 0 {
+            let param_str = self
+                .inputs
+                .iter()
+                .enumerate()
+                .fold(String::new(), |acc, (j, ty)| {
+                    format!("{} {} {}", acc, format!("$arg{}", j).pink(), ty.mint())
+                });
+            format!(" ({}{})", "param".grey(), param_str)
+        } else {
+            String::new()
+        };
+
+        let result_str = if self.outputs.len() > 0 {
+            let result_str = self
+                .outputs
+                .iter()
+                .fold(String::new(), |acc, t| format!("{acc} {t}"));
+            format!(" {}{})", "result".grey(), result_str.mint())
+        } else {
+            String::new()
+        };
+
+        format!(" {param_str}{result_str}")
     }
 }
 

@@ -12,7 +12,7 @@ use crate::{
     programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
-    value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
+    value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value, WatFormat},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
@@ -636,6 +636,31 @@ impl Module {
     }
 }
 
+trait FuncName {
+    fn func_name(&self, i: u32) -> String;
+    fn maybe_func_name(&self, i: u32) -> Option<String>;
+}
+
+impl FuncName for Module {
+    fn func_name(&self, i: u32) -> String {
+        match self.maybe_func_name(i) {
+            Some(func) => format!(" ${func}"),
+            None => format!(" $func_{i}"),
+        }
+    }
+
+    fn maybe_func_name(&self, i: u32) -> Option<String> {
+        if i < self.internals_offset {
+            // imported function or user function
+            self.names.functions.get(&i).cloned()
+        } else {
+            // internal function
+            host::InternalFunc::from_u32(i - self.internals_offset)
+                .map_or(None, |f| Some(format!("{:?}", f)))
+        }
+    }
+}
+
 impl Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut level = 0;
@@ -668,7 +693,7 @@ impl Display for Module {
                 "",
                 "type".grey(),
                 "func".grey(),
-                ty.to_string()
+                ty.wat_string()
             )?;
         }
 
@@ -721,7 +746,7 @@ impl Display for Module {
                     hook.1.pink(),
                     "func".grey(),
                     self.func_name(i as u32).pink(),
-                    self.funcs[i].ty.to_string()
+                    self.funcs[i].ty.wat_string()
                 )?;
             }
         }
@@ -788,7 +813,7 @@ impl Display for Module {
                     };
                     format!(r#" ({} "{}")"#, description.grey(), name.pink())
                 }
-                None1 => format!(" $func_{i}").pink(),
+                None => format!(" $func_{i}").pink(),
             };
             writeln!(
                 f,
@@ -796,7 +821,7 @@ impl Display for Module {
                 "",
                 "func".grey(),
                 export_str,
-                func.ty.to_string()
+                func.ty.wat_string()
             )?;
 
             level += 2;
@@ -909,24 +934,6 @@ impl Display for Module {
         writeln!(f, "{:level$})", "")?;
 
         Ok(())
-    }
-
-    fn func_name(&self, i: u32) -> String {
-        match self.maybe_func_name(i) {
-            Some(func) => format!(" ${func}"),
-            None => format!(" $func_{i}"),
-        }
-    }
-
-    fn maybe_func_name(&self, i: u32) -> Option<String> {
-        if i < self.internals_offset {
-            // imported function or user function
-            self.names.functions.get(&i).cloned()
-        } else {
-            // internal function
-            host::InternalFunc::from_u32(i - self.internals_offset)
-                .map_or(None, |f| Some(format!("{:?}", f)))
-        }
     }
 }
 
