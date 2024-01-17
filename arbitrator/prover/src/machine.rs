@@ -634,24 +634,6 @@ impl Module {
     pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
         bincode::deserialize(bytes).unwrap()
     }
-
-    fn func_name(&self, i: u32) -> String {
-        match self.maybe_func_name(i) {
-            Some(func) => format!(" ${func}"),
-            None => format!(" $func_{i}"),
-        }
-    }
-
-    fn maybe_func_name(&self, i: u32) -> Option<String> {
-        if i < self.internals_offset {
-            // imported function or user function
-            self.names.functions.get(&i).cloned()
-        } else {
-            // internal function
-            host::InternalFunc::from_u32(i - self.internals_offset)
-                .map_or(None, |f| Some(format!("{:?}", f)))
-        }
-    }
 }
 
 impl Display for Module {
@@ -682,12 +664,11 @@ impl Display for Module {
         for ty in self.types.iter() {
             writeln!(
                 f,
-                "{:level$}({} ({}{}{}))",
+                "{:level$}({} ({}{}))",
                 "",
                 "type".grey(),
                 "func".grey(),
-                ty.param_str(),
-                ty.result_str()
+                ty.to_string()
             )?;
         }
 
@@ -733,15 +714,14 @@ impl Display for Module {
             if let Some(hook) = hook {
                 writeln!(
                     f,
-                    r#"{:level$}({} "{}" "{}", ({} {}{}{}))"#,
+                    r#"{:level$}({} "{}" "{}", ({} {}{}))"#,
                     "",
                     "import".grey(),
                     hook.0.pink(),
                     hook.1.pink(),
                     "func".grey(),
                     self.func_name(i as u32).pink(),
-                    self.funcs[i].ty.param_str(),
-                    self.funcs[i].ty.result_str()
+                    self.funcs[i].ty.to_string()
                 )?;
             }
         }
@@ -812,12 +792,11 @@ impl Display for Module {
             };
             writeln!(
                 f,
-                "{:level$}({}{}{}{}",
+                "{:level$}({}{}{}",
                 "",
                 "func".grey(),
                 export_str,
-                func.ty.param_str(),
-                func.ty.result_str()
+                func.ty.to_string()
             )?;
 
             level += 2;
@@ -869,12 +848,9 @@ impl Display for Module {
                     }
                     CallIndirect => {
                         let (table_index, type_index) = unpack_call_indirect(op.argument_data);
-                        let param_str = self.types[type_index as usize].param_str();
-                        let result_str = self.types[type_index as usize].result_str();
                         format!(
-                            "{}{} {}",
-                            param_str,
-                            result_str,
+                            "{} {}",
+                            self.types[type_index as usize].to_string(),
                             format!("{table_index}").mint()
                         )
                     }
@@ -933,6 +909,24 @@ impl Display for Module {
         writeln!(f, "{:level$})", "")?;
 
         Ok(())
+    }
+
+    fn func_name(&self, i: u32) -> String {
+        match self.maybe_func_name(i) {
+            Some(func) => format!(" ${func}"),
+            None => format!(" $func_{i}"),
+        }
+    }
+
+    fn maybe_func_name(&self, i: u32) -> Option<String> {
+        if i < self.internals_offset {
+            // imported function or user function
+            self.names.functions.get(&i).cloned()
+        } else {
+            // internal function
+            host::InternalFunc::from_u32(i - self.internals_offset)
+                .map_or(None, |f| Some(format!("{:?}", f)))
+        }
     }
 }
 
@@ -3182,12 +3176,6 @@ impl Machine {
         }
         if self.frame_stack.len() > 25 {
             print(format!("  ... and {} more", self.frame_stack.len() - 25).grey());
-        }
-    }
-
-    pub fn print_wat(&self) {
-        if let Some(module) = self.modules.last() {
-            print!("{module}");
         }
     }
 }
