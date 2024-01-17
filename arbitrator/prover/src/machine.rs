@@ -635,7 +635,14 @@ impl Module {
         bincode::deserialize(bytes).unwrap()
     }
 
-    fn func_name(&self, i: u32) -> Option<String> {
+    fn func_name(&self, i: u32) -> String {
+        match self.maybe_func_name(i) {
+            Some(func) => format!(" ${func}"),
+            None => format!(" $func_{i}")
+        }
+    }
+
+    fn maybe_func_name(&self, i: u32) -> Option<String> {
         if i < self.internals_offset {
             // imported function or user function
             self.names.functions.get(&i).cloned()
@@ -650,9 +657,9 @@ impl Module {
         for (i, g) in self.globals.iter().enumerate() {
             let global_label = format!("$global_{}", i).pink();
             let global_str = format!("{:?}", g).mint();
-            write!(
+            writeln!(
                 f,
-                "{:level$}({} {} {})\n",
+                "{:level$}({} {} {})",
                 "",
                 "global".grey(),
                 global_label,
@@ -670,9 +677,9 @@ impl Module {
                 None => String::new(),
             };
             let type_str = format!("{:?}", table.ty.element_type);
-            write!(
+            writeln!(
                 f,
-                "{:level$}({} {} {} {} {})\n",
+                "{:level$}({} {} {} {} {})",
                 "",
                 "table".grey(),
                 format!("$table_{i}").pink(),
@@ -683,18 +690,15 @@ impl Module {
             for j in 1..table.elems.len() {
                 let val = table.elems[j].val;
                 let elem = match table.elems[j].val {
-                    Value::FuncRef(id) => match self.func_name(id) {
-                        Some(name) => format!("${name}").pink(),
-                        None => format!("$func_{id}").pink(),
-                    },
+                    Value::FuncRef(id) => self.func_name(id).pink(),
                     Value::RefNull => {
                         continue;
                     }
                     _ => format!("{val}"),
                 };
-                write!(
+                writeln!(
                     f,
-                    "{:level$}({} ({} {}) {})\n",
+                    "{:level$}({} ({} {}) {})",
                     "",
                     "elem".grey(),
                     "I32Const".mint(),
@@ -709,9 +713,9 @@ impl Module {
 
     fn print_types(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         for ty in self.types.iter() {
-            write!(
+            writeln!(
                 f,
-                "{:level$}({} ({}{}{}))\n",
+                "{:level$}({} ({}{}{}))",
                 "",
                 "type".grey(),
                 "func".grey(),
@@ -725,19 +729,15 @@ impl Module {
     fn print_imports(&self, f: &mut fmt::Formatter, level: usize) -> fmt::Result {
         for (i, hook) in self.host_call_hooks.iter().enumerate() {
             if let Some(hook) = hook {
-                let func_name = match self.func_name(i as u32) {
-                    Some(name) => format!("${name}"),
-                    None => "UNKNOWN".to_string(),
-                };
-                write!(
+                writeln!(
                     f,
-                    r#"{:level$}({} "{}" "{}\n", ({} {}{}{}))\n"#,
+                    r#"{:level$}({} "{}" "{}", ({} {}{}{}))"#,
                     "",
                     "import".grey(),
                     hook.0.pink(),
                     hook.1.pink(),
                     "func".grey(),
-                    func_name.pink(),
+                    self.func_name(i as u32).pink(),
                     self.funcs[i].ty.param_str(),
                     self.funcs[i].ty.result_str()
                 )?;
@@ -792,9 +792,9 @@ impl Module {
         }
         level -= 2;
         if empty {
-            write!(f, ")\n")?;
+            writeln!(f, ")")?;
         } else {
-            write!(f, "\n{:level$})\n", "")?;
+            writeln!(f, "\n{:level$})", "")?;
         }
         Ok(())
     }
@@ -809,7 +809,7 @@ impl Module {
         let mut level = level;
         let padding = 11;
 
-        let export_str = match self.func_name(i) {
+        let export_str = match self.maybe_func_name(i) {
             Some(name) => {
                 let description = if (i as usize) < self.host_call_hooks.len() {
                     "import"
@@ -820,9 +820,9 @@ impl Module {
             },
             None => format!(" $func_{i}").pink(),
         };
-        write!(
+        writeln!(
             f,
-            "{:level$}({}{}{}{}\n",
+            "{:level$}({}{}{}{}",
             "",
             "func".grey(),
             export_str,
@@ -833,9 +833,9 @@ impl Module {
         level += 2;
         for (i, ty) in func.local_types.iter().enumerate() {
             let local_str = format!("$local_{}", i);
-            write!(
+            writeln!(
                 f,
-                "{:level$}{:padding$}{} {} {}\n",
+                "{:level$}{:padding$}{} {} {}",
                 "",
                 "",
                 "local".grey(),
@@ -864,13 +864,16 @@ impl Module {
                 .pink(),
                 Call
                 | CallerModuleInternalCall
-                | CrossModuleCall
                 | CrossModuleForward
-                | CrossModuleInternalCall => match self.func_name(op.argument_data as u32) {
-                    Some(func) => format!(" ${func}"),
-                    None => " UNKNOWN".to_string(),
-                }
-                .pink(),
+                | CrossModuleInternalCall => self.func_name(op.argument_data as u32).pink(),
+                CrossModuleCall => {
+                    let (module, func) = unpack_cross_module_call(op.argument_data);
+                    format!(
+                        " {} {}",
+                        format!("{module}").mint(),
+                        format!("{func}").mint()
+                    )
+                },
                 CallIndirect => {
                     let (table_index, type_index) = unpack_call_indirect(op.argument_data);
                     let param_str = self.types[type_index as usize].param_str();
@@ -908,7 +911,7 @@ impl Module {
             let (colon, padding) = if label.len() == 0 {
                 ("", padding)
             } else {
-                write!(f, "\n")?;
+                writeln!(f, "")?;
                 if label.len() >= padding - 1 {
                     (":", 1)
                 } else {
@@ -916,10 +919,10 @@ impl Module {
                 }
             };
             let label = format!("{}{colon}{:padding$}", label.pink(), "");
-            write!(f, "{:level$}{label}{op_str}{arg_str} {proving_str}\n", "")?;
+            writeln!(f, "{:level$}{label}{op_str}{arg_str} {proving_str}", "")?;
         }
         level -= 2;
-        write!(f, "{:level$})\n", "")?;
+        writeln!(f, "{:level$})", "")?;
         Ok(())
     }
 }
@@ -927,9 +930,9 @@ impl Module {
 impl Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut level = 0;
-        write!(
+        writeln!(
             f,
-            "{:level$}({} {}\n",
+            "{:level$}({} {}",
             "",
             "module".grey(),
             self.name().mint()
@@ -947,12 +950,11 @@ impl Display for Module {
         }
 
         if let Some(start) = self.start_function {
-            let name = self.func_name(start).unwrap_or(start.to_string());
-            write!(f, "{:level$}{} {}\n", "", "start".grey(), name.pink())?;
+            writeln!(f, "{:level$}{} {}", "", "start".grey(), self.func_name(start).pink())?;
         }
 
         level -= 2;
-        write!(f, "{:level$})\n", "")?;
+        writeln!(f, "{:level$})", "")?;
 
         Ok(())
     }
