@@ -796,12 +796,6 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else {
-		if n.DelayedSequencer != nil {
-			err := n.DelayedSequencer.ForceSequenceDelayed(ctx)
-			if err != nil {
-				return fmt.Errorf("error initially sequencing delayed instructions: %w", err)
-			}
-		}
 		n.Execution.Activate()
 	}
 	if n.MaintenanceRunner != nil {
