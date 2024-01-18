@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -2433,6 +2433,15 @@ impl Machine {
 
     pub fn say<D: Display>(text: D) {
         println!("{} {text}", "WASM says:".yellow());
+    }
+
+    pub fn print_modules(&self) {
+        for module in &self.modules {
+            println!("{module}\n");
+        }
+        for (_, module) in &self.stylus_modules {
+            println!("{module}\n");
+        }
     }
 
     pub fn is_halted(&self) -> bool {
