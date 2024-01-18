@@ -21,7 +21,7 @@ on:
 
 env:
   RUST_BACKTRACE: 1
-  RUSTFLAGS: -Dwarnings
+# RUSTFLAGS: -Dwarnings            # TODO: re-enable after wasmer upgrade
   WABT_VERSION: 1.0.32
 
 jobs:
@@ -65,7 +65,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "1.70"
+          toolchain: "1.75"
           override: true
           components: 'llvm-tools-preview, rustfmt'
 
