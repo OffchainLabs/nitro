@@ -2439,7 +2439,7 @@ impl Machine {
         for module in &self.modules {
             println!("{module}\n");
         }
-        for (_, module) in &self.stylus_modules {
+        for module in self.stylus_modules.values() {
             println!("{module}\n");
         }
     }

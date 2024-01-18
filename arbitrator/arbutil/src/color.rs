@@ -14,7 +14,7 @@ pub const RED: &str = "\x1b[31;1m";
 pub const CLEAR: &str = "\x1b[0;0m";
 pub const WHITE: &str = "\x1b[0;1m";
 pub const YELLOW: &str = "\x1b[33;1m";
-pub const ORANGE: &str = "\x1b[0;33m";
+pub const ORANGE: &str = "\x1b[38;5;202;1m";
 
 pub trait Color {
     fn color(&self, color: &str) -> String;
