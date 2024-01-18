@@ -121,7 +121,6 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 			base.AfterStateBatch = 6
 			base.AfterStatePosInBatch = 2
 			base.IsFirstChild = true
-			base.ConfigHash = common.BytesToHash([]byte("config"))
 		}
 		base.CreationBlock = uint64(i)
 		assertionsToCreate[i] = base
@@ -225,10 +224,6 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 		assertions, err = db.GetAssertions(WithAssertionStatus(protocol.AssertionConfirmed))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(assertions))
-
-		assertions, err = db.GetAssertions(WithConfigHash(common.BytesToHash([]byte("config"))))
-		require.NoError(t, err)
-		require.Equal(t, 1, len(assertions))
 	})
 	t.Run("orderings limits and offsets", func(t *testing.T) {
 		gotIds := make([]protocol.AssertionHash, 0)
@@ -450,7 +445,6 @@ func baseAssertion() *api.JsonAssertion {
 		SecondChildBlock:         nil,
 		IsFirstChild:             false,
 		Status:                   protocol.AssertionPending.String(),
-		ConfigHash:               common.Hash{},
 	}
 }
 

@@ -32,7 +32,6 @@ type ReadOnlyDatabase interface {
 	GetAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error)
 	GetChallengedAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error)
 	GetEdges(opts ...EdgeOption) ([]*api.JsonEdge, error)
-	GetEdgeDescendants(edgeId common.Hash) ([]*api.JsonEdge, error)
 }
 
 type SqliteDatabase struct {
@@ -52,6 +51,9 @@ func NewDatabase(path string) (*SqliteDatabase, error) {
 	if err != nil {
 		return nil, err
 	}
+	//nolint:errcheck
+	//#nosec G104
+	db.Exec(schema)
 	return &SqliteDatabase{
 		sqlDB:               db,
 		currentTableVersion: -1,
@@ -190,12 +192,6 @@ func WithAssertionStatus(status protocol.AssertionStatus) AssertionOption {
 	return func(q *AssertionQuery) {
 		q.filters = append(q.filters, "Status = ?")
 		q.args = append(q.args, status.String())
-	}
-}
-func WithConfigHash(hash common.Hash) AssertionOption {
-	return func(q *AssertionQuery) {
-		q.filters = append(q.filters, "ConfigHash = ?")
-		q.args = append(q.args, hash)
 	}
 }
 func FromAssertionCreationBlock(n uint64) AssertionOption {
@@ -450,13 +446,13 @@ func (d *SqliteDatabase) InsertAssertion(a *api.JsonAssertion) error {
         AfterInboxBatchAcc, WasmModuleRoot, ChallengeManager, CreationBlock, TransactionHash,
         BeforeStateBlockHash, BeforeStateSendRoot, BeforeStateBatch, BeforeStatePosInBatch, BeforeStateMachineStatus, AfterStateBlockHash,
         AfterStateSendRoot, AfterStateBatch, AfterStatePosInBatch, AfterStateMachineStatus, FirstChildBlock, SecondChildBlock,
-        IsFirstChild, Status, ConfigHash
+        IsFirstChild, Status
     ) VALUES (
         :Hash, :ConfirmPeriodBlocks, :RequiredStake, :ParentAssertionHash, :InboxMaxCount,
         :AfterInboxBatchAcc, :WasmModuleRoot, :ChallengeManager, :CreationBlock, :TransactionHash,
         :BeforeStateBlockHash, :BeforeStateSendRoot, :BeforeStateBatch, :BeforeStatePosInBatch, :BeforeStateMachineStatus, :AfterStateBlockHash,
         :AfterStateSendRoot,:AfterStateBatch,:AfterStatePosInBatch, :AfterStateMachineStatus, :FirstChildBlock, :SecondChildBlock,
-        :IsFirstChild, :Status, :ConfigHash
+        :IsFirstChild, :Status
     )`
 	_, err := d.sqlDB.NamedExec(query, a)
 	if err != nil {
@@ -518,12 +514,12 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 	   Id, ChallengeLevel, OriginId, StartHistoryRoot, StartHeight,
 	   EndHistoryRoot, EndHeight, CreatedAtBlock, MutualId, ClaimId,
 	   HasChildren, LowerChildId, UpperChildId, MiniStaker, AssertionHash,
-	   HasRival, Status, HasLengthOneRival
+	   HasRival, Status, HasLengthOneRival, IsHonest, IsRelevant, CumulativePathTimer
    ) VALUES (
 	   :Id, :ChallengeLevel, :OriginId, :StartHistoryRoot, :StartHeight,
 	   :EndHistoryRoot, :EndHeight, :CreatedAtBlock, :MutualId, :ClaimId,
 	   :HasChildren, :LowerChildId, :UpperChildId, :MiniStaker, :AssertionHash,
-	   :HasRival, :Status, :HasLengthOneRival
+	   :HasRival, :Status, :HasLengthOneRival, :IsHonest, :IsRelevant, :CumulativePathTimer
    )`
 
 	if _, err = tx.NamedExec(insertEdgeQuery, edge); err != nil {
@@ -553,7 +549,10 @@ func (d *SqliteDatabase) UpdateEdge(edge *api.JsonEdge) error {
 	 UpperChildId = :UpperChildId,
 	 HasRival = :HasRival,
 	 Status = :Status,
-	 HasLengthOneRival = :HasLengthOneRival
+	 HasLengthOneRival = :HasLengthOneRival,
+	 IsHonest = :IsHonest,
+	 IsRelevant = :IsRelevant,
+	 CumulativePathTimer = :CumulativePathTimer
 	 WHERE Id = :Id`
 	_, err := d.sqlDB.NamedExec(query, edge)
 	if err != nil {
@@ -587,8 +586,7 @@ func (d *SqliteDatabase) UpdateAssertion(assertion *api.JsonAssertion) error {
    FirstChildBlock = :FirstChildBlock,
    SecondChildBlock = :SecondChildBlock,
    IsFirstChild = :IsFirstChild,
-   Status = :Status,
-   ConfigHash = :ConfigHash
+   Status = :Status
    WHERE Hash = :Hash`
 
 	// Execute the query with the assertion data

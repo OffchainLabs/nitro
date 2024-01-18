@@ -132,8 +132,9 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protoco
 		)
 	}
 	return &Assertion{
-		id:    assertionHash,
-		chain: a,
+		id:        assertionHash,
+		chain:     a,
+		createdAt: res.CreatedAtBlock,
 	}, nil
 }
 
@@ -436,8 +437,9 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		return 0, nil
 	}
 	assertion := &Assertion{
-		id:    assertionHash,
-		chain: a,
+		id:        assertionHash,
+		chain:     a,
+		createdAt: wantNode.CreatedAtBlock,
 	}
 	prevId, err := assertion.PrevId(ctx)
 	if err != nil {
@@ -529,10 +531,7 @@ func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.A
 	if err != nil {
 		return nil, err
 	}
-	createdAtBlock, err := latestConfirmed.CreatedAtBlock()
-	if err != nil {
-		return nil, err
-	}
+	createdAtBlock := latestConfirmed.CreatedAtBlock()
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
 		ToBlock:   nil, // Latest block.
@@ -581,10 +580,7 @@ func (a *AssertionChain) LatestCreatedAssertionHashes(ctx context.Context) ([]pr
 	if err != nil {
 		return nil, err
 	}
-	createdAtBlock, err := latestConfirmed.CreatedAtBlock()
-	if err != nil {
-		return nil, err
-	}
+	createdAtBlock := latestConfirmed.CreatedAtBlock()
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
 		ToBlock:   nil, // Latest block.

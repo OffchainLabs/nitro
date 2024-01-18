@@ -53,8 +53,21 @@ func (m *MockAssertion) HasSecondChild() (bool, error) {
 func (m *MockAssertion) InboxMsgCountSeen() (uint64, error) {
 	return m.MockInboxMsgCountSeen, nil
 }
-func (m *MockAssertion) CreatedAtBlock() (uint64, error) {
-	return m.CreatedAt, nil
+func (m *MockAssertion) CreatedAtBlock() uint64 {
+	return m.CreatedAt
+}
+
+func (m *MockAssertion) FirstChildCreationBlock() (uint64, error) {
+	return 0, nil
+}
+func (m *MockAssertion) SecondChildCreationBlock() (uint64, error) {
+	return 0, nil
+}
+func (m *MockAssertion) IsFirstChild() (bool, error) {
+	return false, nil
+}
+func (m *MockAssertion) Status(ctx context.Context) (protocol.AssertionStatus, error) {
+	return protocol.AssertionPending, nil
 }
 
 type MockStateManager struct {

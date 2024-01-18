@@ -78,7 +78,11 @@ type Assertion interface {
 	Id() AssertionHash
 	PrevId(ctx context.Context) (AssertionHash, error)
 	HasSecondChild() (bool, error)
-	CreatedAtBlock() (uint64, error)
+	FirstChildCreationBlock() (uint64, error)
+	SecondChildCreationBlock() (uint64, error)
+	IsFirstChild() (bool, error)
+	CreatedAtBlock() uint64
+	Status(ctx context.Context) (AssertionStatus, error)
 }
 
 // AssertionCreatedInfo from an event creation.

@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/OffchainLabs/bold/api"
+	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
@@ -106,6 +108,7 @@ type Watcher struct {
 	validatorName        string
 	numBigStepLevels     uint8
 	initialSyncCompleted atomic.Bool
+	apiDB                db.Database
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -118,6 +121,7 @@ func New(
 	interval time.Duration,
 	numBigStepLevels uint8,
 	validatorName string,
+	apiDB db.Database,
 ) (*Watcher, error) {
 	if interval == 0 {
 		return nil, errors.New("chain watcher polling interval must be greater than 0")
@@ -131,6 +135,7 @@ func New(
 		histChecker:        histChecker,
 		numBigStepLevels:   numBigStepLevels,
 		validatorName:      validatorName,
+		apiDB:              apiDB,
 	}, nil
 }
 
@@ -623,7 +628,9 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 	if err := chal.honestEdgeTree.AddHonestEdge(edge); err != nil {
 		return errors.Wrap(err, "could not add honest edge to challenge tree")
 	}
-	return nil
+
+	// If a DB is enabled, save the edge to the database.
+	return w.saveEdgeToDB(ctx, edge, &protocol.Agreement{IsHonestEdge: true, AgreesWithStartCommit: true})
 }
 
 // Filters for all edge added events within a range and processes them.
@@ -706,7 +713,7 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) error {
 	if agreement.IsHonestEdge {
 		return w.edgeManager.TrackEdge(ctx, edge)
 	}
-	return nil
+	return w.saveEdgeToDB(ctx, edge, &agreement)
 }
 
 // Processes an edge added event by adding it to the honest challenge tree if it is honest.
@@ -931,7 +938,11 @@ func (w *Watcher) processEdgeConfirmation(
 	// Check if we should confirm the assertion by challenge winner.
 	challengeLevel := edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
-		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash{Hash: common.Hash(claimId)}, edgeId); confirmAssertionErr != nil {
+		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(
+			ctx,
+			protocol.AssertionHash{Hash: common.Hash(claimId)},
+			edgeId,
+		); confirmAssertionErr != nil {
 			return confirmAssertionErr
 		}
 		srvlog.Info("Assertion confirmed by challenge win", log.Ctx{
@@ -956,10 +967,7 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 	if err != nil {
 		return filterRange{}, err
 	}
-	firstBlock, err := latestConfirmed.CreatedAtBlock()
-	if err != nil {
-		return filterRange{}, err
-	}
+	firstBlock := latestConfirmed.CreatedAtBlock()
 	startBlock := firstBlock
 	header, err := w.backend.HeaderByNumber(ctx, nil)
 	if err != nil {
@@ -972,4 +980,98 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 		startBlockNum: startBlock,
 		endBlockNum:   header.Number.Uint64(),
 	}, nil
+}
+
+func (w *Watcher) saveEdgeToDB(
+	ctx context.Context,
+	edge protocol.SpecEdge,
+	agreement *protocol.Agreement,
+) error {
+	if api.IsNil(w.apiDB) {
+		return nil
+	}
+	start, startCommit := edge.StartCommitment()
+	end, endCommit := edge.EndCommitment()
+	creation, err := edge.CreatedAtBlock()
+	if err != nil {
+		return err
+	}
+	var miniStaker common.Address
+	if edge.MiniStaker().IsSome() {
+		miniStaker = edge.MiniStaker().Unwrap()
+	}
+	assertionHash, err := edge.AssertionHash(ctx)
+	if err != nil {
+		return err
+	}
+	var claimId common.Hash
+	if edge.ClaimId().IsSome() {
+		claimId = common.Hash(edge.ClaimId().Unwrap())
+	}
+	var pathTimer uint64
+	if agreement.IsHonestEdge {
+		timer, _, _, err2 := w.ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+		if err2 != nil {
+			return err2
+		}
+		pathTimer = uint64(timer)
+	}
+	lowerChild, err := edge.LowerChild(ctx)
+	if err != nil {
+		return err
+	}
+	upperChild, err := edge.UpperChild(ctx)
+	if err != nil {
+		return err
+	}
+	var lowerChildId, upperChildId common.Hash
+	var hasChildren bool
+	if lowerChild.IsSome() {
+		hasChildren = true
+		lowerChildId = lowerChild.Unwrap().Hash
+	}
+	if upperChild.IsSome() {
+		hasChildren = true
+		upperChildId = upperChild.Unwrap().Hash
+	}
+	status, err := edge.Status(ctx)
+	if err != nil {
+		return err
+	}
+	timeUnrivaled, err := edge.TimeUnrivaled(ctx)
+	if err != nil {
+		return err
+	}
+	hasRival, err := edge.HasRival(ctx)
+	if err != nil {
+		return err
+	}
+	hasLengthOneRival, err := edge.HasLengthOneRival(ctx)
+	if err != nil {
+		return err
+	}
+	return w.apiDB.InsertEdge(&api.JsonEdge{
+		Id:                  edge.Id().Hash,
+		ChallengeLevel:      uint8(edge.GetChallengeLevel()),
+		StartHistoryRoot:    startCommit,
+		StartHeight:         uint64(start),
+		EndHistoryRoot:      endCommit,
+		EndHeight:           uint64(end),
+		CreatedAtBlock:      creation,
+		MutualId:            common.Hash(edge.MutualId()),
+		OriginId:            common.Hash(edge.OriginId()),
+		ClaimId:             claimId,
+		MiniStaker:          miniStaker,
+		AssertionHash:       assertionHash.Hash,
+		Status:              status.String(),
+		LowerChildId:        lowerChildId,
+		UpperChildId:        upperChildId,
+		HasChildren:         hasChildren,
+		IsHonest:            agreement.IsHonestEdge,
+		IsRelevant:          agreement.AgreesWithStartCommit,
+		CumulativePathTimer: pathTimer,
+		TimeUnrivaled:       timeUnrivaled,
+		HasRival:            hasRival,
+		HasLengthOneRival:   hasLengthOneRival,
+	})
 }

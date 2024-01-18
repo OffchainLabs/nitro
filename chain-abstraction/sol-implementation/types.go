@@ -22,8 +22,9 @@ import (
 // to have a smaller API surface area and attach useful
 // methods that callers can use directly.
 type Assertion struct {
-	chain *AssertionChain
-	id    protocol.AssertionHash
+	chain     *AssertionChain
+	id        protocol.AssertionHash
+	createdAt uint64
 }
 
 func (a *Assertion) Id() protocol.AssertionHash {
@@ -31,10 +32,7 @@ func (a *Assertion) Id() protocol.AssertionHash {
 }
 
 func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) {
-	createdAtBlock, err := a.CreatedAtBlock()
-	if err != nil {
-		return protocol.AssertionHash{}, err
-	}
+	createdAtBlock := a.createdAt
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
 		ToBlock:   nil, // Latest block.
@@ -79,13 +77,36 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	}
 	return &assertionNode, nil
 }
-
-func (a *Assertion) CreatedAtBlock() (uint64, error) {
+func (a *Assertion) FirstChildCreationBlock() (uint64, error) {
 	inner, err := a.inner()
 	if err != nil {
 		return 0, err
 	}
-	return inner.CreatedAtBlock, nil
+	return inner.FirstChildBlock, nil
+}
+func (a *Assertion) SecondChildCreationBlock() (uint64, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return 0, err
+	}
+	return inner.SecondChildBlock, nil
+}
+func (a *Assertion) IsFirstChild() (bool, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return false, err
+	}
+	return inner.IsFirstChild, nil
+}
+func (a *Assertion) CreatedAtBlock() uint64 {
+	return a.createdAt
+}
+func (a *Assertion) Status(ctx context.Context) (protocol.AssertionStatus, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return 0, err
+	}
+	return protocol.AssertionStatus(inner.Status), nil
 }
 
 type honestEdge struct {

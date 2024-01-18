@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/bold/api"
+	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers"
@@ -61,6 +63,7 @@ type Manager struct {
 	stateManager                l2stateprovider.ExecutionProvider
 	postInterval                time.Duration
 	submittedAssertions         *threadsafe.Set[common.Hash]
+	apiDB                       db.Database
 }
 
 // NewManager creates a manager from the required dependencies.
@@ -76,6 +79,7 @@ func NewManager(
 	stateManager l2stateprovider.ExecutionProvider,
 	postInterval time.Duration,
 	averageTimeForBlockCreation time.Duration,
+	apiDB db.Database,
 ) (*Manager, error) {
 	if pollInterval == 0 {
 		return nil, errors.New("assertion scanning interval must be greater than 0")
@@ -85,6 +89,7 @@ func NewManager(
 	}
 	return &Manager{
 		chain:                       chain,
+		apiDB:                       apiDB,
 		backend:                     backend,
 		stateProvider:               stateProvider,
 		challengeCreator:            challengeManager,
@@ -114,11 +119,7 @@ func (m *Manager) Start(ctx context.Context) {
 		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
 		return
 	}
-	fromBlock, err := latestConfirmed.CreatedAtBlock()
-	if err != nil {
-		srvlog.Error("Could not get creation block", log.Ctx{"err": err})
-		return
-	}
+	fromBlock := latestConfirmed.CreatedAtBlock()
 
 	filterer, err := retry.UntilSucceeds(ctx, func() (*rollupgen.RollupUserLogicFilterer, error) {
 		return rollupgen.NewRollupUserLogicFilterer(m.rollupAddr, m.backend)
@@ -261,10 +262,13 @@ func (m *Manager) ProcessAssertionCreationEvent(
 	if err != nil {
 		return errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
 	}
+	// Save the assertion creation event to the DB if possible.
+	if err2 := m.saveAssertionToDB(ctx, assertionHash); err2 != nil {
+		return err2
+	}
 	if creationInfo.ParentAssertionHash == (common.Hash{}) {
 		return nil // Skip processing genesis, as it has a parent assertion hash of 0x0.
 	}
-
 	// Check if we agree with the assertion's claimed state.
 	claimedState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
 	err = m.stateProvider.AgreesWithExecutionState(ctx, claimedState)
@@ -429,8 +433,69 @@ func (m *Manager) maybePostRivalAssertion(
 	}
 	if assertionOpt.IsSome() {
 		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id().Hash)
+		if err2 := m.saveAssertionToDB(ctx, assertionOpt.Unwrap().Id()); err2 != nil {
+			return option.None[protocol.Assertion](), err2
+		}
 	}
 	return assertionOpt, nil
+}
+
+func (m *Manager) saveAssertionToDB(ctx context.Context, assertionHash protocol.AssertionHash) error {
+	if api.IsNil(m.apiDB) {
+		return nil
+	}
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+	if err != nil {
+		return err
+	}
+	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
+	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
+	status, err := m.chain.AssertionStatus(ctx, assertionHash)
+	if err != nil {
+		return err
+	}
+	assertion, err := m.chain.GetAssertion(ctx, assertionHash)
+	if err != nil {
+		return err
+	}
+	isFirstChild, err := assertion.IsFirstChild()
+	if err != nil {
+		return err
+	}
+	firstChildBlock, err := assertion.SecondChildCreationBlock()
+	if err != nil {
+		return err
+	}
+	secondChildBlock, err := assertion.SecondChildCreationBlock()
+	if err != nil {
+		return err
+	}
+	return m.apiDB.InsertAssertion(&api.JsonAssertion{
+		Hash:                     assertionHash.Hash,
+		ConfirmPeriodBlocks:      creationInfo.ConfirmPeriodBlocks,
+		RequiredStake:            creationInfo.RequiredStake.String(),
+		ParentAssertionHash:      creationInfo.ParentAssertionHash,
+		InboxMaxCount:            creationInfo.InboxMaxCount.String(),
+		AfterInboxBatchAcc:       creationInfo.AfterInboxBatchAcc,
+		WasmModuleRoot:           creationInfo.WasmModuleRoot,
+		ChallengeManager:         creationInfo.ChallengeManager,
+		CreationBlock:            creationInfo.CreationBlock,
+		TransactionHash:          creationInfo.TransactionHash,
+		BeforeStateBlockHash:     beforeState.GlobalState.BlockHash,
+		BeforeStateSendRoot:      beforeState.GlobalState.SendRoot,
+		BeforeStateBatch:         beforeState.GlobalState.Batch,
+		BeforeStatePosInBatch:    beforeState.GlobalState.PosInBatch,
+		BeforeStateMachineStatus: beforeState.MachineStatus,
+		AfterStateBlockHash:      afterState.GlobalState.BlockHash,
+		AfterStateSendRoot:       afterState.GlobalState.SendRoot,
+		AfterStateBatch:          afterState.GlobalState.Batch,
+		AfterStatePosInBatch:     afterState.GlobalState.PosInBatch,
+		AfterStateMachineStatus:  afterState.MachineStatus,
+		FirstChildBlock:          &firstChildBlock,
+		SecondChildBlock:         &secondChildBlock,
+		IsFirstChild:             isFirstChild,
+		Status:                   status.String(),
+	})
 }
 
 // Look back until we find the ancestor we agree with for the given assertion.

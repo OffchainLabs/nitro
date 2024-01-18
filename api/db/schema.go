@@ -27,6 +27,9 @@ CREATE TABLE Edges (
     HasRival BOOLEAN NOT NULL,
     Status TEXT NOT NULL,
     HasLengthOneRival BOOLEAN NOT NULL,
+    IsHonest BOOLEAN NOT NULL,
+    IsRelevant BOOLEAN NOT NULL,
+    CumulativePathTimer INTEGER NOT NULL,
     LastUpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(LowerChildID) REFERENCES Edges(Id),
     FOREIGN KEY(UpperChildID) REFERENCES Edges(Id),
@@ -58,7 +61,6 @@ CREATE TABLE Assertions (
     SecondChildBlock INTEGER,
     IsFirstChild BOOLEAN NOT NULL,
     Status TEXT NOT NULL,
-    ConfigHash TEXT NOT NULL,
     LastUpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(Hash) REFERENCES Challenges(Hash),
     FOREIGN KEY(ParentAssertionHash) REFERENCES Assertions(Hash)
