@@ -95,7 +95,7 @@ impl<E: EvmApi> NativeInstance<E> {
     ) -> Result<Self> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let store = env.compile.store();
-        let module = Module::deserialize(&store, module)?;
+        let module = unsafe { Module::deserialize_unchecked(&store, module)? };
         Self::from_module(module, store, env)
     }
 

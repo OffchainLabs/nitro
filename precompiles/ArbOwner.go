@@ -204,7 +204,7 @@ func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
 
 // Sets the age a program must be to perform a keepalive
 func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
-	return c.State.Programs().SetExpiryDays(days)
+	return c.State.Programs().SetKeepaliveDays(days)
 }
 
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
