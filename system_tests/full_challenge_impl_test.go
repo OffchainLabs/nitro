@@ -200,10 +200,10 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(10000),
-		FutureBlocks:  big.NewInt(10000),
-		DelaySeconds:  big.NewInt(10000),
-		FutureSeconds: big.NewInt(10000),
+		DelayBlocks:   10000,
+		FutureBlocks:  10000,
+		DelaySeconds:  10000,
+		FutureSeconds: 10000,
 	}
 	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
