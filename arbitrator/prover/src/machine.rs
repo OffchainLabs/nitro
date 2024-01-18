@@ -1706,7 +1706,10 @@ impl Machine {
         }
         let (mut value_stack, mut frame_stack) = match self.cothread {
             false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
-            true => (self.value_stacks.last_mut().unwrap(), self.frame_stacks.last_mut().unwrap()),
+            true => (
+                self.value_stacks.last_mut().unwrap(),
+                self.frame_stacks.last_mut().unwrap(),
+            ),
         };
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
@@ -1715,7 +1718,10 @@ impl Machine {
             () => {
                 (value_stack, frame_stack) = match self.cothread {
                     false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
-                    true => (self.value_stacks.last_mut().unwrap(), self.frame_stacks.last_mut().unwrap()),
+                    true => (
+                        self.value_stacks.last_mut().unwrap(),
+                        self.frame_stacks.last_mut().unwrap(),
+                    ),
                 };
             };
         }
@@ -1783,7 +1789,7 @@ impl Machine {
             let inst = func.code[self.pc.inst()];
             self.pc.inst += 1;
             match inst.opcode {
-                Opcode::Unreachable => error!(),
+                Opcode::Unreachable => error!("unreachable"),
                 Opcode::Nop => {}
                 Opcode::InitFrame => {
                     let caller_module_internals = value_stack.pop().unwrap().assume_u32();
@@ -1948,11 +1954,14 @@ impl Machine {
                 }
                 Opcode::LocalSet => {
                     let val = value_stack.pop().unwrap();
-                    frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
+                    let locals = &mut frame_stack.last_mut().unwrap().locals;
+                    if locals.len() <= inst.argument_data as usize {
+                        error!("not enough locals")
+                    }
+                    locals[inst.argument_data as usize] = val;
                 }
                 Opcode::GlobalGet => {
-                    value_stack
-                        .push(module.globals[inst.argument_data as usize]);
+                    value_stack.push(module.globals[inst.argument_data as usize]);
                 }
                 Opcode::GlobalSet => {
                     let val = value_stack.pop().unwrap();
@@ -2006,12 +2015,10 @@ impl Machine {
                     value_stack.push(Value::I64(inst.argument_data));
                 }
                 Opcode::F32Const => {
-                    value_stack
-                        .push(f32::from_bits(inst.argument_data as u32).into());
+                    value_stack.push(f32::from_bits(inst.argument_data as u32).into());
                 }
                 Opcode::F64Const => {
-                    value_stack
-                        .push(f64::from_bits(inst.argument_data).into());
+                    value_stack.push(f64::from_bits(inst.argument_data).into());
                 }
                 Opcode::I32Eqz => {
                     let val = value_stack.pop().unwrap();
@@ -2108,8 +2115,7 @@ impl Machine {
                             let Some(Value::I64(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i64unop");
                             };
-                            value_stack
-                                .push(Value::I64(exec_iun_op(value, op) as u64));
+                            value_stack.push(Value::I64(exec_iun_op(value, op) as u64));
                         }
                     }
                 }
@@ -2240,8 +2246,7 @@ impl Machine {
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
-                        value_stack
-                            .push(self.global_state.u64_vals[idx].into());
+                        value_stack.push(self.global_state.u64_vals[idx].into());
                     }
                 }
                 Opcode::SetGlobalStateU64 => {
@@ -2524,7 +2529,8 @@ impl Machine {
                 hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
             }};
         }
-        let (frame_stack, frames) = compute!(|x| x.frame_stack, self.get_frame_stack(), "Stack frame");
+        let (frame_stack, frames) =
+            compute!(|x| x.frame_stack, self.get_frame_stack(), "Stack frame");
         let (value_stack, values) = compute!(|x| x.value_stack, self.get_data_stack(), "Value");
         let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
 
@@ -2694,9 +2700,7 @@ impl Machine {
                 } else {
                     0
                 };
-                let base = match value_stack
-                    .get(value_stack.len() - 1 - stack_idx_offset)
-                {
+                let base = match value_stack.get(value_stack.len() - 1 - stack_idx_offset) {
                     Some(Value::I32(x)) => *x,
                     x => fail!("memory index type is {x:?}"),
                 };
@@ -2774,10 +2778,7 @@ impl Machine {
                 }
             }
             ReadPreImage | ReadInboxMessage => {
-                let ptr = value_stack
-                    .get(value_stack.len() - 2)
-                    .unwrap()
-                    .assume_u32();
+                let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
@@ -2793,10 +2794,7 @@ impl Machine {
                         data.push(0); // preimage proof type
                         out!(preimage);
                     } else if op == Opcode::ReadInboxMessage {
-                        let msg_idx = value_stack
-                            .get(value_stack.len() - 3)
-                            .unwrap()
-                            .assume_u64();
+                        let msg_idx = value_stack.get(value_stack.len() - 3).unwrap().assume_u64();
                         let inbox_id = argument_data_to_inbox(arg).expect("Bad inbox indentifier");
                         if let Some(msg_data) = self.inbox_contents.get(&(inbox_id, msg_idx)) {
                             data.push(0); // inbox proof type

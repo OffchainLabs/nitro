@@ -5,24 +5,20 @@
 
 use crate::machine::{Escape, MaybeEscape};
 use arbutil::evm::{
-    api::EvmApiMethod,
-    js::JsEvmApi,
-    js::RequestHandler,
-    user::UserOutcome,
-    EvmData,
+    api::EvmApiMethod, js::JsEvmApi, js::RequestHandler, user::UserOutcome, EvmData,
 };
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
+use std::thread;
+use std::time::Duration;
 use std::{
     sync::{
-        Arc, 
-        mpsc::{self, SyncSender, Receiver}
+        mpsc::{self, Receiver, SyncSender},
+        Arc,
     },
     thread::JoinHandle,
 };
 use stylus::{native::NativeInstance, run::RunProgram};
-use std::time::Duration;
-use std::thread;
 
 struct MessageToCothread {
     response: Vec<u8>,
@@ -42,10 +38,14 @@ struct CothreadRequestor {
 
 impl RequestHandler for CothreadRequestor {
     fn handle_request(&mut self, req_type: EvmApiMethod, req_data: &[u8]) -> (Vec<u8>, u64) {
-        if self.tx.send(MessageFromCothread {
-            req_type: req_type as u32 + 0x10000000,
-            req_data: req_data.to_vec(),
-        }).is_err() {
+        if self
+            .tx
+            .send(MessageFromCothread {
+                req_type: req_type as u32 + 0x10000000,
+                req_data: req_data.to_vec(),
+            })
+            .is_err()
+        {
             panic!("failed sending request from cothread");
         }
         match self.rx.recv_timeout(Duration::from_secs(5)) {
@@ -73,31 +73,39 @@ impl CothreadHandler {
     }
 
     pub fn wait_done(&mut self) -> MaybeEscape {
-        let status = self.thread.take()
+        let status = self
+            .thread
+            .take()
             .ok_or(Escape::Child(eyre!("no child")))?
             .join();
         match status {
             Ok(res) => res,
-            Err(_) => Err(Escape::HostIO("failed joining child process".to_string()))
+            Err(_) => Err(Escape::HostIO("failed joining child process".to_string())),
         }
     }
 
     pub fn last_message(&self) -> Result<(MessageFromCothread, u32), Escape> {
-        self.last_request.clone().ok_or(Escape::HostIO("no message waiting".to_string()))
+        self.last_request
+            .clone()
+            .ok_or(Escape::HostIO("no message waiting".to_string()))
     }
 
     pub fn set_response(&mut self, id: u32, data: &[u8], cost: u64) -> MaybeEscape {
         let Some(msg) = self.last_request.clone() else {
-            return  Escape::hostio("trying to set response but no message pending");
+            return Escape::hostio("trying to set response but no message pending");
         };
         if msg.1 != id {
-            return  Escape::hostio("trying to set response for wrong message id");
+            return Escape::hostio("trying to set response for wrong message id");
         };
-        if self.tx.send(MessageToCothread{
-            response: data.to_vec(),
-            cost,
-        }).is_err() {
-            return  Escape::hostio("failed sending response to stylus thread");
+        if self
+            .tx
+            .send(MessageToCothread {
+                response: data.to_vec(),
+                cost,
+            })
+            .is_err()
+        {
+            return Escape::hostio("failed sending response to stylus thread");
         };
         Ok(())
     }
@@ -122,9 +130,8 @@ pub fn exec_wasm(
 
     let evm_api = JsEvmApi::new(cothread);
 
-    let mut instance = unsafe {
-        NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data)
-    }?;
+    let mut instance =
+        unsafe { NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data) }?;
 
     let thread = thread::spawn(move || {
         let outcome = instance.run_main(&calldata, config, ink);
@@ -145,11 +152,16 @@ pub fn exec_wasm(
 
         let mut output = gas_left.to_be_bytes().to_vec();
         output.extend(data.iter());
-        instance.env_mut().evm_api.request_handler().tx.send( MessageFromCothread{
-            req_data: output,
-            req_type: out_kind as u32,
-        }
-        ).or(Escape::hostio("failed sending messaage to thread"))
+        instance
+            .env_mut()
+            .evm_api
+            .request_handler()
+            .tx
+            .send(MessageFromCothread {
+                req_data: output,
+                req_type: out_kind as u32,
+            })
+            .or(Escape::hostio("failed sending messaage to thread"))
     });
 
     Ok(CothreadHandler {

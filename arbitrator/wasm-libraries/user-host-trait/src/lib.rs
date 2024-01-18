@@ -72,7 +72,7 @@ pub trait UserHost: GasMeteredMachine {
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr>;
 
     // ink when call stated, only used for tracing, Err if unavailable.
-    fn start_ink(&self) -> Result<u64,Self::Err>;
+    fn start_ink(&self) -> Result<u64, Self::Err>;
     fn say<D: Display>(&self, text: D);
     fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64);
 

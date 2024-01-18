@@ -21,8 +21,8 @@ pub trait RequestHandler: Send + 'static {
 
 impl<T: RequestHandler> JsEvmApi<T> {
     pub fn new(handler: T) -> Self {
-        Self { 
-            handler, 
+        Self {
+            handler,
             last_call_result: Vec::default(),
         }
     }
@@ -43,7 +43,11 @@ impl<T: RequestHandler> JsEvmApi<T> {
         let (mut res, cost) = self.handler.handle_request(call_type, &request);
         let status: UserOutcomeKind = res[0].try_into().unwrap();
         self.last_call_result = res.drain(1..).collect();
-        (self.last_call_result.len().try_into().unwrap(), cost, status)
+        (
+            self.last_call_result.len().try_into().unwrap(),
+            cost,
+            status,
+        )
     }
 
     pub fn request_handler(&mut self) -> &mut T {
@@ -77,7 +81,11 @@ impl<T: RequestHandler> JsEvmApi<T> {
                 }
             };
             self.last_call_result = err_string.as_bytes().to_vec();
-            return (Err(eyre!(err_string)), self.last_call_result.len() as u32, cost);
+            return (
+                Err(eyre!(err_string)),
+                self.last_call_result.len() as u32,
+                cost,
+            );
         }
         let address = res.get(1..21).unwrap().try_into().unwrap();
         self.last_call_result = if res.len() > 21 {
@@ -85,13 +93,15 @@ impl<T: RequestHandler> JsEvmApi<T> {
         } else {
             vec![]
         };
-        return (Ok(address), self.last_call_result.len() as u32, cost)
+        return (Ok(address), self.last_call_result.len() as u32, cost);
     }
 }
 
 impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
-        let (res, cost) = self.handler.handle_request(EvmApiMethod::GetBytes32, key.as_slice());
+        let (res, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::GetBytes32, key.as_slice());
         (res.try_into().unwrap(), cost)
     }
 
@@ -99,14 +109,16 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
         let mut request = vec![];
         request.extend_from_slice(key.as_slice());
         request.extend_from_slice(value.as_slice());
-        let (res, cost) = self.handler.handle_request(EvmApiMethod::SetBytes32, &request);
+        let (res, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::SetBytes32, &request);
         if res.len() == 1 && res[0] == 1 {
             Ok(cost)
         } else {
             bail!("set_bytes32 failed")
         }
     }
-    
+
     fn contract_call(
         &mut self,
         contract: Bytes20,
@@ -123,7 +135,13 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
         input: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
-        self.call_request(EvmApiMethod::DelegateCall, contract, input, gas, Bytes32::default())
+        self.call_request(
+            EvmApiMethod::DelegateCall,
+            contract,
+            input,
+            gas,
+            Bytes32::default(),
+        )
     }
 
     fn static_call(
@@ -132,7 +150,13 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
         input: &[u8],
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
-        self.call_request(EvmApiMethod::StaticCall, contract, input, gas, Bytes32::default())
+        self.call_request(
+            EvmApiMethod::StaticCall,
+            contract,
+            input,
+            gas,
+            Bytes32::default(),
+        )
     }
 
     fn create1(
@@ -175,26 +199,41 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
         if res.is_empty() {
             Ok(())
         } else {
-            Err(eyre!(String::from_utf8(res).unwrap_or(String::from("malformed emit-log response"))))
+            Err(eyre!(
+                String::from_utf8(res).unwrap_or(String::from("malformed emit-log response"))
+            ))
         }
     }
 
     fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let (res, cost) = self.handler.handle_request(EvmApiMethod::AccountBalance, address.as_slice());
+        let (res, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::AccountBalance, address.as_slice());
         (res.try_into().unwrap(), cost)
     }
 
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let (res, cost) = self.handler.handle_request(EvmApiMethod::AccountCodeHash, address.as_slice());
+        let (res, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::AccountCodeHash, address.as_slice());
         (res.try_into().unwrap(), cost)
     }
 
     fn add_pages(&mut self, pages: u16) -> u64 {
-        let (_, cost) = self.handler.handle_request(EvmApiMethod::AddPages, &pages.to_be_bytes());
+        let (_, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::AddPages, &pages.to_be_bytes());
         cost
     }
 
-    fn capture_hostio(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
+    fn capture_hostio(
+        &mut self,
+        name: &str,
+        args: &[u8],
+        outs: &[u8],
+        start_ink: u64,
+        end_ink: u64,
+    ) {
         let mut request = vec![];
 
         request.extend_from_slice(&start_ink.to_be_bytes());
@@ -205,6 +244,7 @@ impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
         request.extend_from_slice(name.as_bytes());
         request.extend_from_slice(args);
         request.extend_from_slice(outs);
-        self.handler.handle_request(EvmApiMethod::CaptureHostIO, &request);
+        self.handler
+            .handle_request(EvmApiMethod::CaptureHostIO, &request);
     }
 }

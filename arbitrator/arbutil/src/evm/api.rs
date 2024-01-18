@@ -136,5 +136,12 @@ pub trait EvmApi: Send + 'static {
     fn add_pages(&mut self, pages: u16) -> u64;
 
     /// Captures tracing information for hostio invocations during native execution.
-    fn capture_hostio(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64);
+    fn capture_hostio(
+        &mut self,
+        name: &str,
+        args: &[u8],
+        outs: &[u8],
+        start_ink: u64,
+        end_ink: u64,
+    );
 }

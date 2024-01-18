@@ -1,9 +1,9 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use rand::RngCore;
 use crate::goenv::GoEnv;
 use crate::machine::{Escape, WasmEnvMut};
+use rand::RngCore;
 
 type Errno = u16;
 
@@ -13,11 +13,12 @@ const ERRNO_SUCCESS: Errno = 0;
 const ERRNO_BADF: Errno = 8;
 const ERRNO_INTVAL: Errno = 28;
 
-pub fn proc_exit(mut _env: WasmEnvMut,code: u32) -> Result<(), Escape> {
+pub fn proc_exit(mut _env: WasmEnvMut, code: u32) -> Result<(), Escape> {
     Err(Escape::Exit(code))
 }
 
-pub fn environ_sizes_get(mut env: WasmEnvMut,
+pub fn environ_sizes_get(
+    mut env: WasmEnvMut,
     length_ptr: Uptr,
     data_size_ptr: Uptr,
 ) -> Result<Errno, Escape> {
@@ -28,7 +29,8 @@ pub fn environ_sizes_get(mut env: WasmEnvMut,
     Ok(ERRNO_SUCCESS)
 }
 
-pub fn fd_write(mut env: WasmEnvMut,
+pub fn fd_write(
+    mut env: WasmEnvMut,
     fd: u32,
     iovecs_ptr: Uptr,
     iovecs_len: u32,
@@ -52,24 +54,20 @@ pub fn fd_write(mut env: WasmEnvMut,
     Ok(ERRNO_SUCCESS)
 }
 
-pub fn environ_get(mut _env: WasmEnvMut,_: u32, _: u32) -> Result<Errno, Escape> {
+pub fn environ_get(mut _env: WasmEnvMut, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_INTVAL)
 }
 
-pub fn fd_close(mut _env: WasmEnvMut,_: u32) -> Result<Errno, Escape> {
+pub fn fd_close(mut _env: WasmEnvMut, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_read(mut _env: WasmEnvMut,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Result<Errno, Escape> {
+pub fn fd_read(mut _env: WasmEnvMut, _: u32, _: u32, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_readdir(mut _env: WasmEnvMut,
+pub fn fd_readdir(
+    mut _env: WasmEnvMut,
     _fd: u32,
     _: u32,
     _: u32,
@@ -79,13 +77,12 @@ pub fn fd_readdir(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_sync(mut _env: WasmEnvMut,
-    _: u32,
-) -> Result<Errno, Escape> {
+pub fn fd_sync(mut _env: WasmEnvMut, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_SUCCESS)
 }
 
-pub fn fd_seek(mut _env: WasmEnvMut,
+pub fn fd_seek(
+    mut _env: WasmEnvMut,
     _fd: u32,
     _offset: u64,
     _whence: u8,
@@ -94,11 +91,12 @@ pub fn fd_seek(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_datasync(mut _env: WasmEnvMut,_fd: u32) -> Result<Errno, Escape> {
+pub fn fd_datasync(mut _env: WasmEnvMut, _fd: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn path_open(mut _env: WasmEnvMut,
+pub fn path_open(
+    mut _env: WasmEnvMut,
     _: u32,
     _: u32,
     _: u32,
@@ -112,7 +110,8 @@ pub fn path_open(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn path_create_directory(mut _env: WasmEnvMut,
+pub fn path_create_directory(
+    mut _env: WasmEnvMut,
     _: u32,
     _: u32,
     _: u32,
@@ -120,7 +119,8 @@ pub fn path_create_directory(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn path_remove_directory(mut _env: WasmEnvMut,
+pub fn path_remove_directory(
+    mut _env: WasmEnvMut,
     _: u32,
     _: u32,
     _: u32,
@@ -128,18 +128,8 @@ pub fn path_remove_directory(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn path_readlink(mut _env: WasmEnvMut,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Result<Errno, Escape> {
-    Ok(ERRNO_BADF)
-}
-
-pub fn path_rename(mut _env: WasmEnvMut,
+pub fn path_readlink(
+    mut _env: WasmEnvMut,
     _: u32,
     _: u32,
     _: u32,
@@ -150,7 +140,20 @@ pub fn path_rename(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn path_filestat_get(mut _env: WasmEnvMut,
+pub fn path_rename(
+    mut _env: WasmEnvMut,
+    _: u32,
+    _: u32,
+    _: u32,
+    _: u32,
+    _: u32,
+    _: u32,
+) -> Result<Errno, Escape> {
+    Ok(ERRNO_BADF)
+}
+
+pub fn path_filestat_get(
+    mut _env: WasmEnvMut,
     _: u32,
     _: u32,
     _: u32,
@@ -160,41 +163,28 @@ pub fn path_filestat_get(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn path_unlink_file(mut _env: WasmEnvMut,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Result<Errno, Escape> {
+pub fn path_unlink_file(mut _env: WasmEnvMut, _: u32, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_prestat_get(mut _env: WasmEnvMut,_: u32, _: u32) -> Result<Errno, Escape> {
+pub fn fd_prestat_get(mut _env: WasmEnvMut, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_prestat_dir_name(mut _env: WasmEnvMut,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Result<Errno, Escape> {
+pub fn fd_prestat_dir_name(mut _env: WasmEnvMut, _: u32, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_filestat_get(mut _env: WasmEnvMut,
-    _fd: u32,
-    _filestat: u32,
-) -> Result<Errno, Escape> {
+pub fn fd_filestat_get(mut _env: WasmEnvMut, _fd: u32, _filestat: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_filestat_set_size(mut _env: WasmEnvMut,
-    _fd: u32,
-    _: u64,
-) -> Result<Errno, Escape> {
+pub fn fd_filestat_set_size(mut _env: WasmEnvMut, _fd: u32, _: u64) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_pread(mut _env: WasmEnvMut,
+pub fn fd_pread(
+    mut _env: WasmEnvMut,
     _fd: u32,
     _: u32,
     _: u32,
@@ -204,7 +194,8 @@ pub fn fd_pread(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn fd_pwrite(mut _env: WasmEnvMut,
+pub fn fd_pwrite(
+    mut _env: WasmEnvMut,
     _fd: u32,
     _: u32,
     _: u32,
@@ -214,27 +205,20 @@ pub fn fd_pwrite(mut _env: WasmEnvMut,
     Ok(ERRNO_BADF)
 }
 
-pub fn sock_accept(mut _env: WasmEnvMut,
-    _fd: u32,
-    _: u32,
-    _: u32,
-) -> Result<Errno, Escape> {
+pub fn sock_accept(mut _env: WasmEnvMut, _fd: u32, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn sock_shutdown(mut _env: WasmEnvMut,
-    _: u32,
-    _: u32,
-) -> Result<Errno, Escape> {
+pub fn sock_shutdown(mut _env: WasmEnvMut, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_BADF)
 }
 
-pub fn sched_yield(mut _env: WasmEnvMut,) -> Result<Errno, Escape> {
+pub fn sched_yield(mut _env: WasmEnvMut) -> Result<Errno, Escape> {
     Ok(ERRNO_SUCCESS)
 }
 
-
-pub fn clock_time_get(mut env: WasmEnvMut,
+pub fn clock_time_get(
+    mut env: WasmEnvMut,
     _clock_id: u32,
     _precision: u64,
     time: Uptr,
@@ -246,7 +230,7 @@ pub fn clock_time_get(mut env: WasmEnvMut,
     Ok(ERRNO_SUCCESS)
 }
 
-pub fn random_get(mut env: WasmEnvMut,mut buf: u32, mut len: u32) -> Result<Errno, Escape> {
+pub fn random_get(mut env: WasmEnvMut, mut buf: u32, mut len: u32) -> Result<Errno, Escape> {
     let mut genv = GoEnv::new(&mut env);
 
     while len >= 4 {
@@ -266,7 +250,8 @@ pub fn random_get(mut env: WasmEnvMut,mut buf: u32, mut len: u32) -> Result<Errn
     Ok(ERRNO_SUCCESS)
 }
 
-pub fn args_sizes_get(mut env: WasmEnvMut,
+pub fn args_sizes_get(
+    mut env: WasmEnvMut,
     length_ptr: Uptr,
     data_size_ptr: Uptr,
 ) -> Result<Errno, Escape> {
@@ -276,10 +261,7 @@ pub fn args_sizes_get(mut env: WasmEnvMut,
     Ok(ERRNO_SUCCESS)
 }
 
-pub fn args_get(mut env: WasmEnvMut,
-    argv_buf: Uptr, 
-    data_buf: Uptr
-) -> Result<Errno, Escape> {
+pub fn args_get(mut env: WasmEnvMut, argv_buf: Uptr, data_buf: Uptr) -> Result<Errno, Escape> {
     let mut genv = GoEnv::new(&mut env);
 
     genv.caller_write_u32(argv_buf, data_buf as u32);
@@ -288,7 +270,13 @@ pub fn args_get(mut env: WasmEnvMut,
 }
 
 // we always simulate a timeout
-pub fn poll_oneoff(mut env: WasmEnvMut,in_subs: Uptr, out_evt: Uptr, nsubscriptions: u32, nevents_ptr: Uptr) -> Result<Errno, Escape> {
+pub fn poll_oneoff(
+    mut env: WasmEnvMut,
+    in_subs: Uptr,
+    out_evt: Uptr,
+    nsubscriptions: u32,
+    nevents_ptr: Uptr,
+) -> Result<Errno, Escape> {
     let mut genv = GoEnv::new(&mut env);
 
     const SUBSCRIPTION_SIZE: u32 = 48;
@@ -297,7 +285,7 @@ pub fn poll_oneoff(mut env: WasmEnvMut,in_subs: Uptr, out_evt: Uptr, nsubscripti
         let subs_type = genv.caller_read_u32(subs_base + 8);
         if subs_type != 0 {
             // not a clock subscription type
-            continue
+            continue;
         }
         let user_data = genv.caller_read_u32(subs_base);
         genv.caller_write_u32(out_evt, user_data);
@@ -308,10 +296,10 @@ pub fn poll_oneoff(mut env: WasmEnvMut,in_subs: Uptr, out_evt: Uptr, nsubscripti
     Ok(ERRNO_INTVAL)
 }
 
-pub fn fd_fdstat_get(mut _env: WasmEnvMut,_: u32, _: u32) -> Result<Errno, Escape> {
+pub fn fd_fdstat_get(mut _env: WasmEnvMut, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_INTVAL)
 }
 
-pub fn fd_fdstat_set_flags(mut _env: WasmEnvMut,_: u32, _: u32) -> Result<Errno, Escape> {
+pub fn fd_fdstat_set_flags(mut _env: WasmEnvMut, _: u32, _: u32) -> Result<Errno, Escape> {
     Ok(ERRNO_INTVAL)
 }

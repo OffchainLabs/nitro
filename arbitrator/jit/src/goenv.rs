@@ -4,12 +4,12 @@
 #![allow(clippy::useless_transmute)]
 
 use crate::machine::{WasmEnv, WasmEnvMut};
+use arbutil::{Bytes20, Bytes32};
 use rand_pcg::Pcg32;
 use std::{
     collections::{BTreeSet, BinaryHeap},
     fmt::Debug,
 };
-use arbutil::{Bytes20, Bytes32};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
 pub struct GoEnv<'s> {
@@ -88,7 +88,9 @@ impl<'s> GoEnv<'s> {
         u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
         let mut data = vec![0; len];
-        self.view().read(ptr.into(), &mut data).expect("failed to read");
+        self.view()
+            .read(ptr.into(), &mut data)
+            .expect("failed to read");
         data
     }
 

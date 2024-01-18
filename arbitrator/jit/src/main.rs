@@ -16,8 +16,8 @@ mod program;
 mod socket;
 mod stylus_backend;
 mod test;
-mod wavmio;
 mod wasip1_stub;
+mod wavmio;
 
 #[derive(StructOpt)]
 #[structopt(name = "jit-prover")]

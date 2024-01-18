@@ -2,16 +2,11 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, goenv::GoRuntimeState,
-    wasip1_stub,
-    wavmio,
-    program,
-    socket,
-    Opts,
-    stylus_backend::CothreadHandler
+    arbcompress, goenv::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
+    wasip1_stub, wavmio, Opts,
 };
 // runtime, socket, syscall, user
-use arbutil::{Color, Bytes32};
+use arbutil::{Bytes32, Color};
 use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use thiserror::Error;

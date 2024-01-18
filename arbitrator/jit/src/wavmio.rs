@@ -72,7 +72,12 @@ pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEsc
 }
 
 /// Reads an inbox message
-pub fn read_inbox_message(mut env: WasmEnvMut, msg_num: u64, offset: u32, out_ptr: Uptr) -> Result<u32, Escape> {
+pub fn read_inbox_message(
+    mut env: WasmEnvMut,
+    msg_num: u64,
+    offset: u32,
+    out_ptr: Uptr,
+) -> Result<u32, Escape> {
     let genv = GoEnv::new(&mut env);
     ready_hostio(genv.wenv)?;
 
@@ -88,7 +93,12 @@ pub fn read_inbox_message(mut env: WasmEnvMut, msg_num: u64, offset: u32, out_pt
 }
 
 /// Reads a delayed inbox message
-pub fn read_delayed_inbox_message(mut env: WasmEnvMut, msg_num: u64, offset: u32, out_ptr: Uptr) -> Result<u32, Escape> {
+pub fn read_delayed_inbox_message(
+    mut env: WasmEnvMut,
+    msg_num: u64,
+    offset: u32,
+    out_ptr: Uptr,
+) -> Result<u32, Escape> {
     let genv = GoEnv::new(&mut env);
     ready_hostio(genv.wenv)?;
 
@@ -104,7 +114,12 @@ pub fn read_delayed_inbox_message(mut env: WasmEnvMut, msg_num: u64, offset: u32
 }
 
 /// Retrieves the preimage of the given hash.
-pub fn resolve_preimage(mut env: WasmEnvMut, hash_ptr: Uptr, offset: u32, out_ptr: Uptr) -> Result<u32, Escape> {
+pub fn resolve_preimage(
+    mut env: WasmEnvMut,
+    hash_ptr: Uptr,
+    offset: u32,
+    out_ptr: Uptr,
+) -> Result<u32, Escape> {
     let mut genv = GoEnv::new(&mut env);
 
     let name = "wavmio.resolvePreImage";
