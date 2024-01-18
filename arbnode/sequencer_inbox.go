@@ -102,7 +102,7 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc          common.Hash
 	AfterDelayedAcc        common.Hash
 	AfterDelayedCount      uint64
-	TimeBounds             bridgegen.ISequencerInboxTimeBounds
+	TimeBounds             bridgegen.IBridgeTimeBounds
 	rawLog                 types.Log
 	dataLocation           batchDataLocation
 	bridgeAddress          common.Address
