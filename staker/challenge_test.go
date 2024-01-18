@@ -298,3 +298,12 @@ func TestChallengeToFailedTooFar(t *testing.T) {
 	Require(t, machine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
 	runChallengeTest(t, machine, incorrectMachine, true, false, 11)
 }
+
+func TestReadInboxMessage(t *testing.T) {
+	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
+	Require(t, machine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
+	machine.Step(context.Background(), 100)
+	if machine.IsErrored() {
+		t.Fatal("fail to execute the read inbox message opcode")
+	}
+}
