@@ -180,6 +180,7 @@ func (s *SyncMonitor) getLatestValidatedCount() (arbutil.MessageIndex, error) {
 		return 0, err
 	}
 	count += arbutil.MessageIndex(latestValidatedGS.PosInBatch)
+	return count, nil
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
