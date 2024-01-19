@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 use arbutil::{
     evm::{
-        js::JsEvmApi,
+        req::EvmApiRequestor,
         user::{UserOutcome, UserOutcomeKind},
         EvmData,
     },
@@ -168,7 +168,7 @@ pub unsafe extern "C" fn stylus_call(
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
     let instance = unsafe {
-        NativeInstance::deserialize(module, compile, JsEvmApi::new(req_handler), evm_data)
+        NativeInstance::deserialize(module, compile, EvmApiRequestor::new(req_handler), evm_data)
     };
     let mut instance = match instance {
         Ok(instance) => instance,

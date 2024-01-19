@@ -5,7 +5,7 @@
 
 use crate::machine::{Escape, MaybeEscape};
 use arbutil::evm::{
-    api::EvmApiMethod, js::JsEvmApi, js::RequestHandler, user::UserOutcome, EvmData,
+    api::EvmApiMethod, req::EvmApiRequestor, req::RequestHandler, user::UserOutcome, EvmData,
 };
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
@@ -128,7 +128,7 @@ pub fn exec_wasm(
         rx: tothread_rx,
     };
 
-    let evm_api = JsEvmApi::new(cothread);
+    let evm_api = EvmApiRequestor::new(cothread);
 
     let mut instance =
         unsafe { NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data) }?;

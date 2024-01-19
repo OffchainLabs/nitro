@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{RustBytes, RustSlice};
-use arbutil::evm::{api::EvmApiMethod, api::EvmApiStatus, js::RequestHandler};
+use arbutil::evm::{api::EvmApiMethod, api::EvmApiStatus, req::RequestHandler};
 
 #[repr(C)]
 pub struct NativeRequestHandler {

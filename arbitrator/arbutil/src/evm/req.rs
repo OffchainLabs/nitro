@@ -10,7 +10,7 @@ use crate::{
 };
 use eyre::{bail, eyre, Result};
 
-pub struct JsEvmApi<T: RequestHandler> {
+pub struct EvmApiRequestor<T: RequestHandler> {
     handler: T,
     last_call_result: Vec<u8>,
 }
@@ -19,7 +19,7 @@ pub trait RequestHandler: Send + 'static {
     fn handle_request(&mut self, _req_type: EvmApiMethod, _req_data: &[u8]) -> (Vec<u8>, u64);
 }
 
-impl<T: RequestHandler> JsEvmApi<T> {
+impl<T: RequestHandler> EvmApiRequestor<T> {
     pub fn new(handler: T) -> Self {
         Self {
             handler,
@@ -97,7 +97,7 @@ impl<T: RequestHandler> JsEvmApi<T> {
     }
 }
 
-impl<T: RequestHandler> EvmApi for JsEvmApi<T> {
+impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let (res, cost) = self
             .handler
