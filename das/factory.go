@@ -78,6 +78,23 @@ func CreatePersistentStorageService(
 		storageServices = append(storageServices, s)
 	}
 
+	if config.GCSStorage.Enable {
+		s, err := NewGCSStorageService(config.GCSStorage)
+		if err != nil {
+			return nil, nil, err
+		}
+		lifecycleManager.Register(s)
+		if config.GCSStorage.SyncFromStorageService {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
+			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
+			s = iterableStorageService
+		}
+		if config.GCSStorage.SyncToStorageService {
+			*syncToStorageServices = append(*syncToStorageServices, s)
+		}
+		storageServices = append(storageServices, s)
+	}
+
 	if config.IpfsStorage.Enable {
 		s, err := NewIpfsStorageService(ctx, config.IpfsStorage)
 		if err != nil {
