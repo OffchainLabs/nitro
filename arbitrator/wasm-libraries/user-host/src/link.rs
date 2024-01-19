@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -47,6 +47,8 @@ pub unsafe extern "C" fn programs__activate(
     wasm_ptr: Uptr,
     wasm_size: usize,
     pages_ptr: Uptr,
+    asm_estimate_ptr: Uptr,
+    init_gas_ptr: Uptr,
     version: u16,
     debug: u32,
     module_hash_ptr: Uptr,
@@ -60,11 +62,13 @@ pub unsafe extern "C" fn programs__activate(
     let page_limit = wavm::caller_load16(pages_ptr);
     let gas_left = &mut wavm::caller_load64(gas_ptr);
     match Module::activate(&wasm, version, page_limit, debug, gas_left) {
-        Ok((module, pages)) => {
+        Ok((module, data)) => {
             wavm::caller_store64(gas_ptr, *gas_left);
-            wavm::caller_store16(pages_ptr, pages);
+            wavm::caller_store16(pages_ptr, data.footprint);
+            wavm::caller_store32(asm_estimate_ptr, data.asm_estimate);
+            wavm::caller_store32(init_gas_ptr, data.init_gas);
             wavm::write_bytes32_usize(module_hash_ptr, module.hash());
-            0        
+            0
         },
         Err(error) => {
             let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
@@ -72,11 +76,14 @@ pub unsafe extern "C" fn programs__activate(
             wavm::write_slice_usize(&err_bytes, err_buf);
             wavm::caller_store64(gas_ptr, 0);
             wavm::caller_store16(pages_ptr, 0);
+            wavm::caller_store32(asm_estimate_ptr, 0);
+            wavm::caller_store32(init_gas_ptr, 0);
             wavm::write_bytes32_usize(module_hash_ptr, Bytes32::default());
             err_bytes.len()
         },
     }
 }
+
 
 /// Links and executes a user wasm.
 ///

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
@@ -568,7 +568,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(gasUsed)))
+		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](gasUsed)))
 		return
 	}
 
@@ -626,7 +626,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(computeGas)))
+		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](computeGas)))
 	}
 }
 

@@ -39,6 +39,9 @@ struct Opts {
     always_merkleize: bool,
     #[structopt(long)]
     debug_funcs: bool,
+    #[structopt(long)]
+    /// print modules to the console
+    print_modules: bool,
     /// profile output instead of generting proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
@@ -205,6 +208,10 @@ fn main() -> Result<()> {
         let err = || eyre!("failed to read module at {}", path.to_string_lossy().red());
         let wasm = file_bytes(path).wrap_err_with(err)?;
         mach.add_program(&wasm, 1, true).wrap_err_with(err)?;
+    }
+
+    if opts.print_modules {
+        mach.print_modules();
     }
 
     if let Some(output_path) = opts.generate_binaries {

@@ -1,4 +1,4 @@
-# Copyright 2021-2023, Offchain Labs, Inc.
+# Copyright 2021-2024, Offchain Labs, Inc.
 # For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
@@ -226,6 +226,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
+	rm -f arbitrator/wasm-libraries/forward/*.wat
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*

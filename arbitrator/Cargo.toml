@@ -7,7 +7,7 @@ members = [
 ]
 exclude = [
         "stylus/tests/",
-        "tools/wasmer/"
+        "tools/wasmer/",
 ]
 resolver = "2"
 

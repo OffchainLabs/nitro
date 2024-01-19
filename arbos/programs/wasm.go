@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 //go:build wasm
@@ -41,6 +41,8 @@ func programActivate(
 	wasm_ptr unsafe.Pointer,
 	wasm_size uint32,
 	pages_ptr unsafe.Pointer,
+	asm_estimation_ptr unsafe.Pointer,
+	init_gas_ptr unsafe.Pointer,
 	version uint32,
 	debug uint32,
 	module_hash_ptr unsafe.Pointer,
@@ -57,17 +59,21 @@ func activateProgram(
 	version u16,
 	debug bool,
 	burner burn.Burner,
-) (common.Hash, u16, error) {
+) (*activationInfo, error) {
 	errBuf := make([]byte, 1024)
 	debugMode := arbmath.BoolToUint32(debug)
 	moduleHash := common.Hash{}
 	gasPtr := burner.GasLeft()
+	asmEstimate := uint32(0)
+	initGas := uint32(0)
 
 	footprint := uint16(pageLimit)
 	errLen := programActivate(
 		arbutil.SliceToUnsafePointer(wasm),
 		uint32(len(wasm)),
 		unsafe.Pointer(&footprint),
+		unsafe.Pointer(&asmEstimate),
+		unsafe.Pointer(&initGas),
 		uint32(version),
 		debugMode,
 		arbutil.SliceToUnsafePointer(moduleHash[:]),
@@ -77,9 +83,9 @@ func activateProgram(
 	)
 	if errLen != 0 {
 		err := errors.New(string(errBuf[:errLen]))
-		return moduleHash, footprint, err
+		return nil, err
 	}
-	return moduleHash, footprint, nil
+	return &activationInfo{moduleHash, initGas, asmEstimate, footprint}, nil
 }
 
 //go:wasmimport programs new_program

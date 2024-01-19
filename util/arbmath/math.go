@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package arbmath
@@ -317,12 +317,15 @@ func SaturatingMul[T Signed](a, b T) T {
 	return product
 }
 
-// SaturatingCast cast a uint64 to an int64, clipping to [0, 2^63-1]
-func SaturatingCast(value uint64) int64 {
-	if value > math.MaxInt64 {
-		return math.MaxInt64
+// SaturatingCast cast an unsigned integer to a signed one, clipping to [0, S::MAX]
+func SaturatingCast[S Signed, T Unsigned](value T) S {
+	tBig := unsafe.Sizeof(T(0)) >= unsafe.Sizeof(S(0))
+	bits := uint64(8 * unsafe.Sizeof(S(0)))
+	sMax := T(1<<bits-1) >> 1
+	if tBig && value > sMax {
+		return S(sMax)
 	}
-	return int64(value)
+	return S(value)
 }
 
 // SaturatingUCast cast a signed integer to an unsigned one, clipping to [0, T::MAX]
@@ -337,6 +340,15 @@ func SaturatingUCast[T Unsigned, S Signed](value S) T {
 	return T(value)
 }
 
+// SaturatingUUCast cast an unsigned integer to another, clipping to [0, U::MAX]
+func SaturatingUUCast[U, T Unsigned](value T) U {
+	tBig := unsafe.Sizeof(T(0)) > unsafe.Sizeof(U(0))
+	if tBig && value > T(^U(0)) {
+		return ^U(0)
+	}
+	return U(value)
+}
+
 func SaturatingCastToUint(value *big.Int) uint64 {
 	if value.Sign() < 0 {
 		return 0
@@ -347,25 +359,34 @@ func SaturatingCastToUint(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
+// Negates an int without underflow
+func SaturatingNeg[T Signed](value T) T {
+	if value == ^T(0) {
+		return (^T(0)) >> 1
+	}
+	return -value
+}
+
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
-// This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
-func ApproxExpBasisPoints(value Bips) Bips {
+// The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
+func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
 	input := value
 	negative := value < 0
 	if negative {
 		input = -value
 	}
 	x := uint64(input)
-
 	bips := uint64(OneInBips)
-	res := bips + x/4
-	res = bips + SaturatingUMul(res, x)/(3*bips)
-	res = bips + SaturatingUMul(res, x)/(2*bips)
-	res = bips + SaturatingUMul(res, x)/(1*bips)
+
+	res := bips + x/degree
+	for i := uint64(1); i < degree; i++ {
+		res = bips + SaturatingUMul(res, x)/((degree-i)*bips)
+	}
+
 	if negative {
-		return Bips(SaturatingCast(bips * bips / res))
+		return Bips(SaturatingCast[int64](bips * bips / res))
 	} else {
-		return Bips(SaturatingCast(res))
+		return Bips(SaturatingCast[int64](res))
 	}
 }
 

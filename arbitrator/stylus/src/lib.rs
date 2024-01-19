@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 use arbutil::{
     evm::{
@@ -12,7 +12,7 @@ use arbutil::{
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
-use prover::programs::prelude::*;
+use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
 use std::{marker::PhantomData, mem};
 
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn stylus_activate(
     output: *mut RustBytes,
     asm_len: *mut usize,
     module_hash: *mut Bytes32,
-    footprint: *mut u16,
+    stylus_data: *mut StylusData,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
@@ -128,13 +128,13 @@ pub unsafe extern "C" fn stylus_activate(
     let module_hash = &mut *module_hash;
     let gas = &mut *gas;
 
-    let (asm, module, pages) = match native::activate(wasm, version, page_limit, debug, gas) {
+    let (asm, module, info) = match native::activate(wasm, version, page_limit, debug, gas) {
         Ok(val) => val,
         Err(err) => return output.write_err(err),
     };
     *asm_len = asm.len();
     *module_hash = module.hash();
-    *footprint = pages;
+    *stylus_data = info;
 
     let mut data = asm;
     data.extend(&*module.into_bytes());

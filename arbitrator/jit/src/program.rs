@@ -47,6 +47,8 @@ pub fn activate(
     wasm_ptr: Uptr,
     wasm_size: u32,
     pages_ptr: Uptr,
+    asm_estimate_ptr: Uptr,
+    init_gas_ptr: Uptr,
     version: u16,
     debug: u32,
     module_hash_ptr: Uptr,
@@ -61,9 +63,11 @@ pub fn activate(
     let page_limit = genv.caller_read_u16(pages_ptr);
     let gas_left = &mut genv.caller_read_u64(gas_ptr);
     match Module::activate(&wasm, version, page_limit, debug, gas_left) {
-        Ok((module, pages)) => {
+        Ok((module, data)) => {
             genv.caller_write_u64(gas_ptr, *gas_left);
-            genv.caller_write_u16(pages_ptr, pages);
+            genv.caller_write_u16(pages_ptr, data.footprint);
+            genv.caller_write_u32(asm_estimate_ptr, data.asm_estimate);
+            genv.caller_write_u32(init_gas_ptr, data.init_gas);
             genv.caller_write_bytes32(module_hash_ptr, module.hash());
             Ok(0)
         }
