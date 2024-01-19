@@ -177,7 +177,7 @@ impl EvmApi for TestEvmApi {
     }
 
     fn capture_hostio(
-        &self,
+        &mut self,
         _name: &str,
         _args: &[u8],
         _outs: &[u8],
