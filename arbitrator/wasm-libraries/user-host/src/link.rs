@@ -85,8 +85,10 @@ pub unsafe extern "C" fn programs__activate(
 }
 
 
-/// Links and executes a user wasm.
-///
+/// Links and creates user program
+/// consumes both evm_data_handler and config_handler
+/// returns module number
+/// see program-exec for starting the user program
 #[no_mangle]
 pub unsafe extern "C" fn programs__new_program(
     compiled_hash_ptr: Uptr,
@@ -116,12 +118,61 @@ pub unsafe extern "C" fn programs__new_program(
     module
 }
 
+// gets information about request according to id
+// request_id MUST be last request id returned from start_program or send_response
+#[no_mangle]
+pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: usize) -> u32 {
+    let (req_type, data) = Program::current().evm_api.request_handler().get_request(id);
+    if len_ptr != 0 {
+        wavm::caller_store32(len_ptr, data.len() as u32);
+    }
+    req_type
+}
+
+// gets data associated with last request.
+// request_id MUST be last request receieved
+// data_ptr MUST point to a buffer of at least the length returned by get_request
+#[no_mangle]
+pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: usize) {
+    let (_, data) = Program::current().evm_api.request_handler().get_request(id);
+    wavm::write_slice_usize(&data, data_ptr);
+}
+
+// sets response for the next request made
+// id MUST be the id of last request made
+// see program-exec send_response for sending this response to the program
+#[no_mangle]
+pub unsafe extern "C" fn programs__set_response(
+    id: u32,
+    gas: u64,
+    reponse_ptr: Uptr,
+    response_len: usize,
+) {
+    let program = Program::current();
+    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(reponse_ptr, response_len), gas);
+}
+
+// removes the last created program
 #[no_mangle]
 pub unsafe extern "C" fn programs__pop() {
     Program::pop();
     wavm_unlink_module();
 }
 
+// used by program-exec
+// returns arguments_len
+// module MUST be the last one returned from new_program
+#[no_mangle]
+pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
+    let program = Program::current();
+    if program.module != module {
+        panic!("args_len requested for wrong module");
+    }
+    program.args_len()
+}
+
+// used by program-exec
+// sets status of the last program and sends a program_done request
 #[no_mangle]
 pub unsafe extern "C" fn program_internal__set_done(mut status: u8) -> u32 {
     let program = Program::current();
@@ -147,41 +198,6 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: u8) -> u32 {
     let mut output = gas_left.to_be_bytes().to_vec();
     output.extend(outs.iter());
     program.evm_api.request_handler().set_request(status as u32, &output)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
-    let program = Program::current();
-    if program.module != module {
-        panic!("args_len requested for wrong module");
-    }
-    program.args_len()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn programs__set_response(
-    id: u32,
-    gas: u64,
-    reponse_ptr: Uptr,
-    response_len: usize,
-) {
-    let program = Program::current();
-    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(reponse_ptr, response_len), gas);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: usize) -> u32 {
-    let (req_type, data) = Program::current().evm_api.request_handler().get_request(id);
-    if len_ptr != 0 {
-        wavm::caller_store32(len_ptr, data.len() as u32);
-    }
-    req_type
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: usize) {
-    let (_, data) = Program::current().evm_api.request_handler().get_request(id);
-    wavm::write_slice_usize(&data, data_ptr);
 }
 
 /// Creates a `StylusConfig` from its component parts.
