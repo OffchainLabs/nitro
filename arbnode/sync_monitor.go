@@ -26,21 +26,27 @@ func NewSyncMonitor(config *SyncMonitorConfig) *SyncMonitor {
 }
 
 type SyncMonitorConfig struct {
-	BlockBuildLag               uint64 `koanf:"block-build-lag"`
-	BlockBuildSequencerInboxLag uint64 `koanf:"block-build-sequencer-inbox-lag"`
-	CoordinatorMsgLag           uint64 `koanf:"coordinator-msg-lag"`
+	BlockBuildLag                       uint64 `koanf:"block-build-lag"`
+	BlockBuildSequencerInboxLag         uint64 `koanf:"block-build-sequencer-inbox-lag"`
+	CoordinatorMsgLag                   uint64 `koanf:"coordinator-msg-lag"`
+	SafeBlockWaitForBlockValidator      bool   `koanf:"safe-block-wait-for-block-validator"`
+	FinalizedBlockWaitForBlockValidator bool   `koanf:"finalized-block-wait-for-block-validator"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
-	BlockBuildLag:               20,
-	BlockBuildSequencerInboxLag: 0,
-	CoordinatorMsgLag:           15,
+	BlockBuildLag:                       20,
+	BlockBuildSequencerInboxLag:         0,
+	CoordinatorMsgLag:                   15,
+	SafeBlockWaitForBlockValidator:      false,
+	FinalizedBlockWaitForBlockValidator: false,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-build-lag", DefaultSyncMonitorConfig.BlockBuildLag, "allowed lag between messages read and blocks built")
 	f.Uint64(prefix+".block-build-sequencer-inbox-lag", DefaultSyncMonitorConfig.BlockBuildSequencerInboxLag, "allowed lag between messages read from sequencer inbox and blocks built")
 	f.Uint64(prefix+".coordinator-msg-lag", DefaultSyncMonitorConfig.CoordinatorMsgLag, "allowed lag between local and remote messages")
+	f.Bool(prefix+".safe-block-wait-for-block-validator", DefaultSyncMonitorConfig.SafeBlockWaitForBlockValidator, "wait for block validator to complete before returning safe block number")
+	f.Bool(prefix+".finalized-block-wait-for-block-validator", DefaultSyncMonitorConfig.FinalizedBlockWaitForBlockValidator, "wait for block validator to complete before returning finalized block number")
 }
 
 func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, exec execution.FullExecutionClient) {
@@ -153,8 +159,27 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// If SafeBlockWaitForBlockValidator is true, we want to wait for the block validator to finish
+	if s.config.SafeBlockWaitForBlockValidator {
+		latestValidatedCount, err := s.getLatestValidatedCount()
+		if err != nil {
+			return 0, err
+		}
+		if msg > latestValidatedCount {
+			msg = latestValidatedCount
+		}
+	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
+}
+
+func (s *SyncMonitor) getLatestValidatedCount() (arbutil.MessageIndex, error) {
+	latestValidatedGS := s.txStreamer.validator.GetLastValidated()
+	count, err := s.inboxReader.tracker.GetBatchMessageCount(latestValidatedGS.Batch - 1)
+	if err != nil {
+		return 0, err
+	}
+	count += arbutil.MessageIndex(latestValidatedGS.PosInBatch)
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
@@ -164,6 +189,16 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	msg, err := s.inboxReader.GetFinalizedMsgCount(ctx)
 	if err != nil {
 		return 0, err
+	}
+	// If FinalizedBlockWaitForBlockValidator is true, we want to wait for the block validator to finish
+	if s.config.FinalizedBlockWaitForBlockValidator {
+		latestValidatedCount, err := s.getLatestValidatedCount()
+		if err != nil {
+			return 0, err
+		}
+		if msg > latestValidatedCount {
+			msg = latestValidatedCount
+		}
 	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
