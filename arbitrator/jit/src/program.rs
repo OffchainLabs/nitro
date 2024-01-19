@@ -15,33 +15,7 @@ use prover::{
 
 type Uptr = u32;
 
-pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
-    let genv = GoEnv::new(&mut env);
-
-    if genv.wenv.threads.len() as u32 != module || module == 0 {
-        return Escape::hostio(format!(
-            "got request for thread {module} but len is {}",
-            genv.wenv.threads.len()
-        ));
-    }
-    let thread = genv.wenv.threads.last_mut().unwrap();
-    thread.wait_next_message()?;
-    let msg = thread.last_message()?;
-    Ok(msg.1)
-}
-
-pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
-    let genv = GoEnv::new(&mut env);
-    let thread = genv.wenv.threads.last_mut().unwrap();
-    let msg = thread.last_message()?;
-    if msg.1 != req_id {
-        return Escape::hostio("get_request id doesn't match");
-    };
-    thread.wait_next_message()?;
-    let msg = thread.last_message()?;
-    Ok(msg.1)
-}
-
+/// activates a user program
 pub fn activate(
     mut env: WasmEnvMut,
     wasm_ptr: Uptr,
@@ -83,22 +57,23 @@ pub fn activate(
     }
 }
 
-/// Links and executes a user wasm.
-///
+/// Links and creates user program (in jit starts it as well)
+/// consumes both evm_data_handler and config_handler
+/// returns module number
 pub fn new_program(
     mut env: WasmEnvMut,
     compiled_hash_ptr: Uptr,
     calldata_ptr: Uptr,
     calldata_size: u32,
-    config_box: u64,
-    evm_data_box: u64,
+    stylus_config_handler: u64,
+    evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
     let mut genv = GoEnv::new(&mut env);
     let compiled_hash = genv.caller_read_bytes32(compiled_hash_ptr);
     let calldata = genv.caller_read_slice(calldata_ptr, calldata_size);
-    let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_box as *mut EvmData) };
-    let config: JitConfig = unsafe { *Box::from_raw(config_box as *mut JitConfig) };
+    let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
+    let config: JitConfig = unsafe { *Box::from_raw(stylus_config_handler as *mut JitConfig) };
 
     // buy ink
     let pricing = config.stylus.pricing;
@@ -127,15 +102,53 @@ pub fn new_program(
     Ok(genv.wenv.threads.len() as u32)
 }
 
-pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
+/// starts the program (in jit waits for first request)
+/// module MUST match last module number returned from new_program
+/// returns request_id for the first request from the program
+pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
     let genv = GoEnv::new(&mut env);
 
-    match genv.wenv.threads.pop() {
-        None => Err(Escape::Child(eyre!("no child"))),
-        Some(mut thread) => thread.wait_done(),
+    if genv.wenv.threads.len() as u32 != module || module == 0 {
+        return Escape::hostio(format!(
+            "got request for thread {module} but len is {}",
+            genv.wenv.threads.len()
+        ));
     }
+    let thread = genv.wenv.threads.last_mut().unwrap();
+    thread.wait_next_message()?;
+    let msg = thread.last_message()?;
+    Ok(msg.1)
 }
 
+// gets information about request according to id
+// request_id MUST be last request id returned from start_program or send_response
+pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Escape> {
+    let mut genv = GoEnv::new(&mut env);
+    let thread = genv.wenv.threads.last_mut().unwrap();
+    let msg = thread.last_message()?;
+    if msg.1 != id {
+        return Escape::hostio("get_request id doesn't match");
+    };
+    genv.caller_write_u32(len_ptr, msg.0.req_data.len() as u32);
+    Ok(msg.0.req_type)
+}
+
+// gets data associated with last request.
+// request_id MUST be last request receieved
+// data_ptr MUST point to a buffer of at least the length returned by get_request
+pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: u32) -> MaybeEscape {
+    let genv = GoEnv::new(&mut env);
+    let thread = genv.wenv.threads.last_mut().unwrap();
+    let msg = thread.last_message()?;
+    if msg.1 != id {
+        return Escape::hostio("get_request id doesn't match");
+    };
+    genv.caller_write_slice(data_ptr, &msg.0.req_data);
+    Ok(())
+}
+
+// sets response for the next request made
+// id MUST be the id of last request made
 pub fn set_response(
     mut env: WasmEnvMut,
     id: u32,
@@ -150,26 +163,29 @@ pub fn set_response(
     thread.set_response(id, &data, gas)
 }
 
-pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    let thread = genv.wenv.threads.last_mut().unwrap();
-    let msg = thread.last_message()?;
-    if msg.1 != id {
-        return Escape::hostio("get_request id doesn't match");
-    };
-    genv.caller_write_u32(len_ptr, msg.0.req_data.len() as u32);
-    Ok(msg.0.req_type)
-}
-
-pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: u32) -> MaybeEscape {
+// sends previos response
+// MUST be called right after set_response to the same id
+// returns request_id for the next request
+pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
     let genv = GoEnv::new(&mut env);
     let thread = genv.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
-    if msg.1 != id {
+    if msg.1 != req_id {
         return Escape::hostio("get_request id doesn't match");
     };
-    genv.caller_write_slice(data_ptr, &msg.0.req_data);
-    Ok(())
+    thread.wait_next_message()?;
+    let msg = thread.last_message()?;
+    Ok(msg.1)
+}
+
+// removes the last created program
+pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
+    let genv = GoEnv::new(&mut env);
+
+    match genv.wenv.threads.pop() {
+        None => Err(Escape::Child(eyre!("no child"))),
+        Some(mut thread) => thread.wait_done(),
+    }
 }
 
 pub struct JitConfig {
