@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -199,6 +200,14 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
+	dataHashesReader, tx, _, err := yulgen.DeployDataHashesReader(&txOpts, l1Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
+	blobBasefeeReader, tx, _, err := yulgen.DeployBlobBasefeeReader(&txOpts, l1Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   10000,
 		FutureBlocks:  10000,
@@ -212,8 +221,8 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 		big.NewInt(117964),
-		common.Address{1}, // TODO addresses for DataHashReader and BlobBasefeeReader
-		common.Address{1},
+		dataHashesReader,
+		blobBasefeeReader,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
