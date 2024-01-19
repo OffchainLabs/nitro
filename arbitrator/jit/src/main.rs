@@ -114,8 +114,9 @@ fn main() {
         true => None,
         false => Some(message),
     };
+    let memory_used = memory.size().0 as u64 * 65_536;
 
-    env.send_results(error);
+    env.send_results(error, memory_used);
 }
 
 // require a usize be at least 32 bits wide

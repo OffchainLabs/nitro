@@ -536,6 +536,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
+		big.NewInt(int64(nodeConfig.ParentChain.ID)),
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -677,7 +678,7 @@ type NodeConfig struct {
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf         bool                            `koanf:"pprof"`
 	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
-	Init          InitConfig                      `koanf:"init"`
+	Init          conf.InitConfig                 `koanf:"init"`
 	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
 
@@ -699,7 +700,7 @@ var NodeConfigDefault = NodeConfig{
 	GraphQL:       genericconf.GraphQLConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
-	Init:          InitConfigDefault,
+	Init:          conf.InitConfigDefault,
 	Rpc:           genericconf.DefaultRpcConfig,
 	PProf:         false,
 	PprofCfg:      genericconf.PProfDefault,
@@ -726,7 +727,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("pprof", NodeConfigDefault.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
-	InitConfigAddOptions("init", f)
+	conf.InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 }
 
