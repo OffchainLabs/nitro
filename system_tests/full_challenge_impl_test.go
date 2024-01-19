@@ -200,11 +200,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
-	dataHashesReader, tx, _, err := yulgen.DeployDataHashesReader(&txOpts, l1Client)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
-	Require(t, err)
-	blobBasefeeReader, tx, _, err := yulgen.DeployBlobBasefeeReader(&txOpts, l1Client)
+	reader4844, tx, _, err := yulgen.DeployReader4844(&txOpts, l1Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
@@ -221,8 +217,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 		big.NewInt(117964),
-		dataHashesReader,
-		blobBasefeeReader,
+		reader4844,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)

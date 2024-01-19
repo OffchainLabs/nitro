@@ -41,17 +41,12 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
 	}
 
-	dataHashesReader, tx, _, err := yulgen.DeployDataHashesReader(auth, client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("data hashes reader deploy error: %w", err)
-	}
-	blobBasefeeReader, tx, _, err := yulgen.DeployBlobBasefeeReader(auth, client)
+	reader4844, tx, _, err := yulgen.DeployReader4844(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("blob basefee reader deploy error: %w", err)
 	}
-	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, dataHashesReader, blobBasefeeReader)
+	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
