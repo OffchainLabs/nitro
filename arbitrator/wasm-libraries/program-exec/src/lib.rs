@@ -3,7 +3,7 @@
 
 #[link(wasm_import_module = "hostio")]
 extern "C" {
-    fn program_continue(response: u32, ignored: u32) -> u32;
+    fn program_continue(response: u32) -> u32;
     fn program_call_main(module: u32, args_len: usize) -> u32;
 }
 
@@ -38,5 +38,5 @@ pub unsafe extern "C" fn programs__send_response(
     req_id: u32,
 ) -> u32 {
     // call the program
-    check_program_done(program_continue(req_id, 0))
+    check_program_done(program_continue(req_id))
 }

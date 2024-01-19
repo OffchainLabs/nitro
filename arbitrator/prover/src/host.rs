@@ -190,7 +190,7 @@ impl Hostio {
             ProgramMemorySize           => func!([I32], [I32]),      // λ(module) → memory_size
             ProgramCallMain             => func!([I32, I32], [I32]), // λ(module, args_len) → status
             ProgramRequest              => func!([I32], [I32]),      // λ(status) → response
-            ProgramContinue             => func!([I32, I32], [I32]), // λ(response) → status
+            ProgramContinue             => func!([I32], [I32]), // λ(response) → status
             ConsoleLogTxt               => func!([I32, I32]),        // λ(text, len)
             ConsoleLogI32               => func!([I32]),             // λ(value)
             ConsoleLogI64               => func!([I64]),             // λ(value)
