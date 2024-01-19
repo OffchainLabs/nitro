@@ -307,6 +307,7 @@ require (
 )
 
 require (
+	github.com/Layr-Labs/eigenda/api v0.1.1
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
 	github.com/VictoriaMetrics/fastcache v1.6.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect

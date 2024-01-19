@@ -161,6 +161,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		if err != nil && err.Error() != "already known" {
 			logger = log.Info
 		}
+		logger("CallContext")
 		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal{limit, result}, "attempt", i, "args", limitedArgumentsMarshal{limit, args})
 		if err == nil {
 			return nil

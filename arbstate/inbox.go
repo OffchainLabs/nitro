@@ -6,7 +6,9 @@ package arbstate
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"math/big"
@@ -21,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/das/eigenda"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
 
@@ -50,7 +53,7 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, eigenDAReader eigenda.EigenDAReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -63,6 +66,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		segments:             [][]byte{},
 	}
 	payload := data[40:]
+	log.Info("Inbox parse sequencer message: ", "payload", hex.EncodeToString(payload))
 
 	if len(payload) > 0 && IsDASMessageHeaderByte(payload[0]) {
 		if dasReader == nil {
@@ -70,6 +74,21 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		} else {
 			var err error
 			payload, err = RecoverPayloadFromDasBatch(ctx, batchNum, data, dasReader, nil, keysetValidationMode)
+			if err != nil {
+				return nil, err
+			}
+			if payload == nil {
+				return parsedMsg, nil
+			}
+		}
+	}
+
+	if len(payload) > 0 && eigenda.IsEigenDAMessageHeaderByte(payload[0]) {
+		if eigenDAReader == nil {
+			log.Error("No EigenDA Reader configured, but sequencer message found with EigenDA header")
+		} else {
+			var err error
+			payload, err = RecoverPayloadFromEigenDABatch(ctx, batchNum, payload[1:], eigenDAReader, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -122,6 +141,43 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 	}
 
 	return parsedMsg, nil
+}
+
+func RecoverPayloadFromEigenDABatch(ctx context.Context,
+	batchNum uint64,
+	sequencerMsg []byte,
+	daReader eigenda.EigenDAReader,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+) ([]byte, error) {
+	log.Info("Start recovering payload from eigenda: ", "data", hex.EncodeToString(sequencerMsg))
+	var shaPreimages map[common.Hash][]byte
+	if preimages != nil {
+		if preimages[arbutil.Sha2_256PreimageType] == nil {
+			preimages[arbutil.Sha2_256PreimageType] = make(map[common.Hash][]byte)
+		}
+		shaPreimages = preimages[arbutil.Sha2_256PreimageType]
+	}
+	// 00000020
+	// 91c127a758d669ce7c8ed915679653e87bf1dfbcf54d028c522d129c482c897d
+	var daRef eigenda.EigenDARef
+	daRef.BlobIndex = binary.BigEndian.Uint32(sequencerMsg[:4])
+	daRef.BatchHeaderHash = sequencerMsg[4:]
+	log.Info("Data pointer: ", "info", hex.EncodeToString(daRef.BatchHeaderHash), "index", daRef.BlobIndex)
+	data, err := daReader.QueryBlob(ctx, &daRef)
+	if err != nil {
+		log.Error("Failed to query data from EigenDA", "err", err)
+		return nil, err
+	}
+	// log.Info("data: ", "info", hex.EncodeToString(data))
+	// record preimage data
+	log.Info("Recording preimage data for EigenDA")
+	shaDataHash := sha256.New()
+	shaDataHash.Write(sequencerMsg)
+	dataHash := shaDataHash.Sum([]byte{})
+	if shaPreimages != nil {
+		shaPreimages[common.BytesToHash(dataHash)] = data
+	}
+	return data, nil
 }
 
 func RecoverPayloadFromDasBatch(
@@ -242,6 +298,7 @@ type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
 	dasReader                 DataAvailabilityReader
+	eigenDAReader             eigenda.EigenDAReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -251,11 +308,12 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, eigenDAReader eigenda.EigenDAReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
 		dasReader:            dasReader,
+		eigenDAReader:        eigenDAReader,
 		keysetValidationMode: keysetValidationMode,
 	}
 }
@@ -276,7 +334,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.eigenDAReader, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}

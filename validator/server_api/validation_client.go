@@ -38,6 +38,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := ValidationInputToJson(entry)
 		var res validator.GoGlobalState
+		log.Info("validation_client", "input", input, "moduleRoot", moduleRoot)
 		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
 		atomic.AddInt32(&c.room, 1)
 		return res, err

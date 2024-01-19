@@ -213,7 +213,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Running Arbitrum nitro node with eigenda integration", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.ParentChainReader.Enable = false

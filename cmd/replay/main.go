@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/das/eigenda"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -117,6 +119,19 @@ func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbst
 	return arbstate.DiscardImmediately, nil
 }
 
+type PreimageEigenDAReader struct{}
+
+func (dasReader *PreimageEigenDAReader) QueryBlob(ctx context.Context, ref *eigenda.EigenDARef) ([]byte, error) {
+	dataPointer, err := ref.Serialize()
+	if err != nil {
+		return nil, err
+	}
+	shaDataHash := sha256.New()
+	shaDataHash.Write(dataPointer)
+	dataHash := shaDataHash.Sum([]byte{})
+	return wavmio.ResolveTypedPreimage(arbutil.Sha2_256PreimageType, common.BytesToHash(dataHash))
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -171,16 +186,21 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader arbstate.DataAvailabilityReader
+		// var dasReader arbstate.DataAvailabilityReader
+		// if dasEnabled {
+		// 	dasReader = &PreimageDASReader{}
+		// }
+		var dasReader eigenda.EigenDAReader
 		if dasEnabled {
-			dasReader = &PreimageDASReader{}
+			dasReader = &PreimageEigenDAReader{}
 		}
 		backend := WavmInbox{}
-		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
-		if backend.GetPositionWithinMessage() > 0 {
-			keysetValidationMode = arbstate.KeysetDontValidate
-		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, keysetValidationMode)
+		// var keysetValidationMode = arbstate.KeysetPanicIfInvalid
+		// if backend.GetPositionWithinMessage() > 0 {
+		// 	keysetValidationMode = arbstate.KeysetDontValidate
+		// }
+		// todo
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, nil, dasReader, arbstate.KeysetDontValidate)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -232,7 +252,8 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		// message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		message := readMessage(true)
 
 		chainContext := WavmChainContext{}
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
