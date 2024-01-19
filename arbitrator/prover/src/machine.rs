@@ -1217,61 +1217,6 @@ impl Machine {
             entry!(HaltAndSetFinished);
         }
 
-        // Go/js support
-        if let Some(&f) = main_exports.get("run").filter(|_| runtime_support) {
-            let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(I32); // argc
-            expected_type.inputs.push(I32); // argv
-            ensure!(
-                main_module.func_types[f as usize] == expected_type,
-                "Run function doesn't match expected signature of [argc, argv]",
-            );
-            // Go's flags library panics if the argument list is empty.
-            // To pass in the program name argument, we need to put it in memory.
-            // The Go linker guarantees a section of memory starting at byte 4096 is available for this purpose.
-            // https://github.com/golang/go/blob/252324e879e32f948d885f787decf8af06f82be9/misc/wasm/wasm_exec.js#L520
-            // These memory stores also assume that the Go module's memory is large enough to begin with.
-            // That's also handled by the Go compiler. Go 1.17.5 in the compilation of the arbitrator go test case
-            // initializes its memory to 272 pages long (about 18MB), much larger than the required space.
-            let free_memory_base = 4096;
-            let name_str_ptr = free_memory_base;
-            let argv_ptr = name_str_ptr + 8;
-            ensure!(
-                main_module.internals_offset != 0,
-                "Main module doesn't have internals"
-            );
-            let main_module_idx = u32::try_from(main_module_idx).unwrap();
-            let main_module_store32 = main_module.internals_offset + 3;
-
-            // Write "js\0" to name_str_ptr, to match what the actual JS environment does
-            entry!(I32Const, name_str_ptr);
-            entry!(I32Const, 0x736a); // b"js\0"
-            entry!(@cross, main_module_idx, main_module_store32);
-            entry!(I32Const, name_str_ptr + 4);
-            entry!(I32Const, 0);
-            entry!(@cross, main_module_idx, main_module_store32);
-
-            // Write name_str_ptr to argv_ptr
-            entry!(I32Const, argv_ptr);
-            entry!(I32Const, name_str_ptr);
-            entry!(@cross, main_module_idx, main_module_store32);
-            entry!(I32Const, argv_ptr + 4);
-            entry!(I32Const, 0);
-            entry!(@cross, main_module_idx, main_module_store32);
-
-            // Launch main with an argument count of 1 and argv_ptr
-            entry!(I32Const, 1);
-            entry!(I32Const, argv_ptr);
-            entry!(@cross, main_module_idx, f);
-            if let Some(i) = available_imports.get("wavm__go_after_run") {
-                ensure!(
-                    i.ty == FunctionType::default(),
-                    "Resume function has non-empty function signature",
-                );
-                entry!(@cross, i.module, i.func);
-            }
-        }
-
         let entrypoint_types = vec![FunctionType::default()];
         let mut entrypoint_names = NameCustomSection {
             module: "entry".into(),
