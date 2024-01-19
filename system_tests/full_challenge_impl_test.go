@@ -199,10 +199,18 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
+	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
+		DelayBlocks:   10000,
+		FutureBlocks:  10000,
+		DelaySeconds:  10000,
+		FutureSeconds: 10000,
+	}
 	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
 		l1Client,
+		bridgeAddr,
 		l1Info.GetAddress("sequencer"),
+		timeBounds,
 		big.NewInt(117964),
 		common.Address{1}, // TODO addresses for DataHashReader and BlobBasefeeReader
 		common.Address{1},
