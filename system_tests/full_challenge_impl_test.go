@@ -204,8 +204,8 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		l1Client,
 		l1Info.GetAddress("sequencer"),
 		big.NewInt(117964),
-		common.Address{}, // TODO addresses for DataHashReader and BlobBasefeeReader
-		common.Address{},
+		common.Address{1}, // TODO addresses for DataHashReader and BlobBasefeeReader
+		common.Address{1},
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
