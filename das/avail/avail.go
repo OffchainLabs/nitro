@@ -137,37 +137,37 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		case status := <-sub.Chan():
 			if status.IsFinalized {
 				blobPointer = BlobPointer{BlockHash: string(status.AsFinalized.Hex()), Sender: keyringPair.Address, Nonce: o.Nonce.Int64()}
-				break
+				log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+				blobPointerData, err := blobPointer.MarshalToBinary()
+				if err != nil {
+					log.Warn("BlobPointer MashalBinary error", "err", err)
+					return nil, err
+				}
+
+				buf := new(bytes.Buffer)
+				err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
+				if err != nil {
+					log.Warn("batch type byte serialization failed", "err", err)
+					return nil, err
+				}
+
+				err = binary.Write(buf, binary.BigEndian, blobPointerData)
+				if err != nil {
+					log.Warn("blob pointer data serialization failed", "err", err)
+					return nil, err
+				}
+
+				serializedBlobPointerData := buf.Bytes()
+
+				return serializedBlobPointerData, nil
 			}
 		case <-timeout:
 			return nil, errors.New("Timitout before getting finalized status")
 		}
 	}
 
-	log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+	//log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 
-	blobPointerData, err := blobPointer.MarshalToBinary()
-	if err != nil {
-		log.Warn("BlobPointer MashalBinary error", "err", err)
-		return nil, err
-	}
-
-	buf := new(bytes.Buffer)
-	err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
-	if err != nil {
-		log.Warn("batch type byte serialization failed", "err", err)
-		return nil, err
-	}
-
-	err = binary.Write(buf, binary.BigEndian, blobPointerData)
-	if err != nil {
-		log.Warn("blob pointer data serialization failed", "err", err)
-		return nil, err
-	}
-
-	serializedBlobPointerData := buf.Bytes()
-
-	return serializedBlobPointerData, nil
 }
 
 func (a *AvailDA) Read(blobPointer BlobPointer) ([]byte, error) {

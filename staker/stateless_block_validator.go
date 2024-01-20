@@ -306,7 +306,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
-		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
 			if v.daService == nil {
 				log.Warn("No DAS configured, but sequencer message found with DAS header")
 			} else {

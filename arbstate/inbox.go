@@ -142,7 +142,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 }
 
 func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequencerMsg []byte, availDAReader avail.DataAvailabilityReader, preimages map[arbutil.PreimageType]map[common.Hash][]byte) ([]byte, error) {
-	var shaPreimages map[common.Hash][]byte
+	var shaPreimages map[common.Hash][]byte = make(map[common.Hash][]byte)
 	if preimages != nil {
 		if preimages[arbutil.Sha2_256PreimageType] == nil {
 			preimages[arbutil.Sha2_256PreimageType] = make(map[common.Hash][]byte)
