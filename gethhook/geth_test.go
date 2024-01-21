@@ -118,12 +118,13 @@ func TestEthDepositMessage(t *testing.T) {
 
 func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
 	chainId := big.NewInt(6456554)
+	arbOSVersion := arbosState.ArbOSVersion(statedb)
 	for _, data := range msgs {
 		msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data), nil)
 		if err != nil {
 			t.Error(err)
 		}
-		txes, err := arbos.ParseL2Transactions(msg, chainId, nil)
+		txes, err := arbos.ParseL2Transactions(msg, chainId, &arbOSVersion, nil)
 		if err != nil {
 			t.Error(err)
 		}

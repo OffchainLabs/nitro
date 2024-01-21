@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -224,13 +226,21 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			continue
 		}
 		// We don't need a batch fetcher as this is an L2 message
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, nil)
+		// We can't check if ArbOS version supports the message, it will be checked later in hooks.PreTxFilter
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, nil, nil)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
 		hooks := arbos.NoopSequencingHooks()
 		hooks.DiscardInvalidTxsEarly = true
+		// We need to check if the tx is supported in PreTxFilter hook as we don't have the ArbOS version available here and it could have changed during the reorg
+		hooks.PreTxFilter = func(_ *params.ChainConfig, _ *types.Header, _ *state.StateDB, arbState *arbosState.ArbosState, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions, _ common.Address, _ *arbos.L1Info) error {
+			if !arbos.TxSupportedByArbosVersion(tx, arbState.ArbOSVersion()) {
+				return types.ErrTxTypeNotSupported
+			}
+			return nil
+		}
 		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
@@ -295,6 +305,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
+		nil,
 		s.bc,
 		s.bc.Config(),
 		hooks,

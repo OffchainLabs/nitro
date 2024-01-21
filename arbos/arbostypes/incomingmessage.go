@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -35,6 +37,17 @@ const (
 const MaxL2MessageSize = 256 * 1024
 
 const ArbosVersion_FixRedeemGas = uint64(11)
+const ArbosVersion_ArbitrumTippingTx = 20
+
+func RequiredArbosVersionForTxSubtype(txSubtype uint8) uint64 {
+	switch txSubtype {
+	case types.ArbitrumTippingTxSubtype:
+		return ArbosVersion_ArbitrumTippingTx
+	default:
+		// shouldn't be ever possible as tx with unsupported subtype is dropped earlier
+		return math.MaxUint64
+	}
+}
 
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`

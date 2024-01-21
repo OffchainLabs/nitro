@@ -689,8 +689,8 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 }
 
 func (p *TxProcessor) DropTip() bool {
-	version := p.state.ArbOSVersion()
-	return version != 9 || p.delayedInbox
+	return p.msg.Tx == nil || p.msg.Tx.Type() != types.ArbitrumSubtypedTxType ||
+		types.GetArbitrumTxSubtype(p.msg.Tx) != types.ArbitrumTippingTxSubtype
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
