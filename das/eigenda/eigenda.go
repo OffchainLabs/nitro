@@ -126,7 +126,7 @@ func (e *EigenDA) Store(ctx context.Context, data []byte) (*EigenDARef, error) {
 	for range ticker.C {
 		statusReply, err := e.GetBlobStatus(ctx, res.GetRequestId())
 		if err != nil {
-			log.Error("[eigenda]: GetBlobStatus error: ", err.Error())
+			log.Error("[eigenda]: GetBlobStatus: ", "error", err.Error())
 			continue
 		}
 		switch statusReply.GetStatus() {
