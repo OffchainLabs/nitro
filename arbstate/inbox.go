@@ -6,7 +6,6 @@ package arbstate
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -88,7 +87,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			log.Error("No EigenDA Reader configured, but sequencer message found with EigenDA header")
 		} else {
 			var err error
-			payload, err = RecoverPayloadFromEigenDABatch(ctx, batchNum, payload[1:], eigenDAReader, nil)
+			payload, err = eigenda.RecoverPayloadFromEigenDABatch(ctx, batchNum, payload[1:], eigenDAReader, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -141,43 +140,6 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 	}
 
 	return parsedMsg, nil
-}
-
-func RecoverPayloadFromEigenDABatch(ctx context.Context,
-	batchNum uint64,
-	sequencerMsg []byte,
-	daReader eigenda.EigenDAReader,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
-) ([]byte, error) {
-	log.Info("Start recovering payload from eigenda: ", "data", hex.EncodeToString(sequencerMsg))
-	var shaPreimages map[common.Hash][]byte
-	if preimages != nil {
-		if preimages[arbutil.Sha2_256PreimageType] == nil {
-			preimages[arbutil.Sha2_256PreimageType] = make(map[common.Hash][]byte)
-		}
-		shaPreimages = preimages[arbutil.Sha2_256PreimageType]
-	}
-	// 00000020
-	// 91c127a758d669ce7c8ed915679653e87bf1dfbcf54d028c522d129c482c897d
-	var daRef eigenda.EigenDARef
-	daRef.BlobIndex = binary.BigEndian.Uint32(sequencerMsg[:4])
-	daRef.BatchHeaderHash = sequencerMsg[4:]
-	log.Info("Data pointer: ", "info", hex.EncodeToString(daRef.BatchHeaderHash), "index", daRef.BlobIndex)
-	data, err := daReader.QueryBlob(ctx, &daRef)
-	if err != nil {
-		log.Error("Failed to query data from EigenDA", "err", err)
-		return nil, err
-	}
-	// log.Info("data: ", "info", hex.EncodeToString(data))
-	// record preimage data
-	log.Info("Recording preimage data for EigenDA")
-	shaDataHash := sha256.New()
-	shaDataHash.Write(sequencerMsg)
-	dataHash := shaDataHash.Sum([]byte{})
-	if shaPreimages != nil {
-		shaPreimages[common.BytesToHash(dataHash)] = data
-	}
-	return data, nil
 }
 
 func RecoverPayloadFromDasBatch(

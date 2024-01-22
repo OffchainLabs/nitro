@@ -304,7 +304,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			if v.eigenDAService == nil {
 				log.Warn("EigenDA not configured, but sequencer message found with EigenDA header")
 			} else {
-				_, err := arbstate.RecoverPayloadFromEigenDABatch(ctx, batch.Number, batch.Data[41:], v.eigenDAService, e.Preimages)
+				_, err := eigenda.RecoverPayloadFromEigenDABatch(ctx, batch.Number, batch.Data[41:], v.eigenDAService, e.Preimages)
 				if err != nil {
 					return err
 				}
@@ -410,7 +410,6 @@ func (v *StatelessBlockValidator) ValidateResult(
 	}
 	var runs []validator.ValidationRun
 	for _, spawner := range spawners {
-		log.Info("ValidateResult: ", "input", input, "moduleRoot", moduleRoot)
 		run := spawner.Launch(input, moduleRoot)
 		runs = append(runs, run)
 	}

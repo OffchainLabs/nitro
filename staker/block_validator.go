@@ -714,7 +714,6 @@ validationsLoop:
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
 				for i, spawner := range v.validationSpawners {
-					log.Info("block_validator", "function name", "advanceValidations")
 					run := spawner.Launch(input, moduleRoot)
 					log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot, "spawner", i)
 					runs = append(runs, run)
