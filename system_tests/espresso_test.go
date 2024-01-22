@@ -11,6 +11,7 @@ import (
 	"time"
 
 	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -80,7 +81,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 
 	httpmock.RegisterResponder(
 		"GET",
-		`=~http://127.0.0.1:50000/status/latest_block_height`,
+		`=~http://127.0.0.1:50000/status/block-height`,
 		func(r *http.Request) (*http.Response, error) {
 			return httpmock.NewStringResponse(200, strconv.Itoa(startHotShotBlock)), nil
 		},
@@ -96,13 +97,16 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			if block < uint64(staleBlocks) {
 				timestamp = 0
 			}
+			pc, _ := tagged_base64.New("header", []byte{byte(block)})
 			header := espressoTypes.Header{
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
-				Height:           block,
-				TransactionsRoot: espressoTypes.NmtRoot{Root: []byte{}},
-				L1Head:           0, // Currently not used
-				Timestamp:        timestamp,
+				Height:              block,
+				TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{}},
+				L1Head:              0, // Currently not used
+				Timestamp:           timestamp,
+				PayloadCommitment:   pc,
+				BlockMerkleTreeRoot: pc,
 			}
 			return httpmock.NewJsonResponse(200, header)
 		})
