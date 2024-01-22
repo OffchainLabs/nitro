@@ -11,8 +11,8 @@ import (
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramActivated              func(ctx, mech, hash, hash, addr, uint16) error
-	ProgramActivatedGasCost       func(hash, hash, addr, uint16) (uint64, error)
+	ProgramActivated              func(ctx, mech, hash, hash, addr, huge, uint16) error
+	ProgramActivatedGasCost       func(hash, hash, addr, huge, uint16) (uint64, error)
 	ProgramNotActivatedError      func() error
 	ProgramNeedsUpgradeError      func(version, stylusVersion uint16) error
 	ProgramExpiredError           func(age uint64) error
@@ -22,24 +22,24 @@ type ArbWasm struct {
 }
 
 // Compile a wasm program with the latest instrumentation
-func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, error) {
+func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, huge, error) {
 	debug := evm.ChainConfig().DebugMode()
 
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(1659168); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	version, codeHash, moduleHash, dataFee, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
 	if err != nil {
-		return version, err
+		return version, dataFee, err
 	}
 	if err := con.payActivationDataFee(c, evm, value, dataFee); err != nil {
-		return version, err
+		return version, dataFee, err
 	}
-	return version, con.ProgramActivated(c, evm, codeHash, moduleHash, program, version)
+	return version, dataFee, con.ProgramActivated(c, evm, codeHash, moduleHash, program, dataFee, version)
 }
 
 // Pays the data component of activation costs

@@ -367,6 +367,14 @@ func SaturatingNeg[T Signed](value T) T {
 	return -value
 }
 
+// Integer division but rounding up
+func DivCeil[T Unsigned](value, divisor T) T {
+	if value%divisor == 0 {
+		return value / divisor
+	}
+	return value/divisor + 1
+}
+
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
 func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
