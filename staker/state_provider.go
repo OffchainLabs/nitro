@@ -47,6 +47,10 @@ type BoldConfig struct {
 	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
 	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
 	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
+	API                                bool   `koanf:"api"`
+	APIHost                            string `koanf:"api-host"`
+	APIPort                            uint16 `koanf:"api-port"`
+	APIDBPath                          string `koanf:"api-db-path"`
 }
 
 var DefaultBoldConfig = BoldConfig{

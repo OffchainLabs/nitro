@@ -592,12 +592,7 @@ func createNodeImpl(
 		scanningInteval := time.Second * time.Duration(config.Bold.AssertionScanningIntervalSeconds)
 		confirmingInterval := time.Second * time.Duration(config.Bold.AssertionConfirmingIntervalSeconds)
 		edgeWakeInterval := time.Second * time.Duration(config.Bold.EdgeTrackerWakeIntervalSeconds)
-		manager, err := challengemanager.New(
-			ctx,
-			assertionChain,
-			l1client,
-			provider,
-			assertionChain.RollupAddress(),
+		opts := []challengemanager.Opt{
 			challengemanager.WithName(config.Bold.ValidatorName),
 			challengemanager.WithMode(modes.MakeMode), // TODO: Customize.
 			challengemanager.WithAssertionPostingInterval(postingInterval),
@@ -605,6 +600,17 @@ func createNodeImpl(
 			challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
 			challengemanager.WithEdgeTrackerWakeInterval(edgeWakeInterval),
 			challengemanager.WithAddress(txOptsValidator.From),
+		}
+		if config.Bold.API {
+			opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.Bold.APIHost, config.Bold.APIPort), config.Bold.APIDBPath))
+		}
+		manager, err := challengemanager.New(
+			ctx,
+			assertionChain,
+			l1client,
+			provider,
+			assertionChain.RollupAddress(),
+			opts...,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("could not create challenge manager: %w", err)
