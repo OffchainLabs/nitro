@@ -3,9 +3,9 @@
 package db
 
 import (
-	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/OffchainLabs/bold/api"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -43,6 +43,7 @@ type ReadOnlyDatabase interface {
 
 type SqliteDatabase struct {
 	sqlDB               *sqlx.DB
+	lock                sync.Mutex
 	currentTableVersion int
 }
 
@@ -272,6 +273,8 @@ func (d *SqliteDatabase) GetAssertions(opts ...AssertionOption) ([]*api.JsonAsse
 	query := NewAssertionQuery(opts...)
 	sql, args := query.ToSQL()
 	assertions := make([]*api.JsonAssertion, 0)
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	err := d.sqlDB.Select(&assertions, sql, args...)
 	if err != nil {
 		return nil, err
@@ -511,7 +514,6 @@ func (q *EdgeQuery) ToSQL() (string, []interface{}) {
 		baseQuery += " OFFSET ?"
 		q.args = append(q.args, q.offset)
 	}
-	fmt.Println(baseQuery, q.args)
 	return baseQuery, q.args
 }
 
@@ -519,6 +521,8 @@ func (d *SqliteDatabase) GetEdges(opts ...EdgeOption) ([]*api.JsonEdge, error) {
 	query := NewEdgeQuery(opts...)
 	sql, args := query.ToSQL()
 	edges := make([]*api.JsonEdge, 0)
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	err := d.sqlDB.Select(&edges, sql, args...)
 	if err != nil {
 		return nil, err
@@ -536,6 +540,8 @@ func (d *SqliteDatabase) InsertAssertions(assertions []*api.JsonAssertion) error
 }
 
 func (d *SqliteDatabase) InsertAssertion(a *api.JsonAssertion) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	var assertionExists int
 	err := d.sqlDB.Get(&assertionExists, "SELECT COUNT(*) FROM Assertions WHERE Hash = ?", a.Hash)
 	if err != nil {
@@ -678,6 +684,8 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 }
 
 func (d *SqliteDatabase) UpdateEdges(edges []*api.JsonEdge) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	query := `UPDATE Edges SET 
 	 ChallengeLevel = :ChallengeLevel,
 	 OriginId = :OriginId,
@@ -720,6 +728,8 @@ func (d *SqliteDatabase) UpdateEdges(edges []*api.JsonEdge) error {
 }
 
 func (d *SqliteDatabase) UpdateAssertions(assertions []*api.JsonAssertion) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	// Construct the query
 	query := `UPDATE Assertions SET 
    ConfirmPeriodBlocks = :ConfirmPeriodBlocks,

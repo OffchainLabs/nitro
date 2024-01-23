@@ -196,11 +196,6 @@ func ChallengeLevelFromString(s string) (ChallengeLevel, error) {
 	}
 }
 
-type Agreement struct {
-	AgreesWithStartCommit bool
-	IsHonestEdge          bool
-}
-
 // OriginId is the id of the item that originated a challenge an edge
 // is a part of. In a block challenge, the origin id is the id of the assertion
 // being challenged. In a big step challenge, it is the mutual id of the edge at the block challenge
@@ -264,7 +259,7 @@ type SpecChallengeManager interface {
 		startCommit,
 		endCommit commitments.History,
 		startEndPrefixProof []byte,
-	) (VerifiedHonestEdge, error)
+	) (VerifiedRoyalEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
 	AddSubChallengeLevelZeroEdge(
 		ctx context.Context,
@@ -274,7 +269,7 @@ type SpecChallengeManager interface {
 		startParentInclusionProof []common.Hash,
 		endParentInclusionProof []common.Hash,
 		startEndPrefixProof []byte,
-	) (VerifiedHonestEdge, error)
+	) (VerifiedRoyalEdge, error)
 	ConfirmEdgeByOneStepProof(
 		ctx context.Context,
 		tentativeWinnerId EdgeId,
@@ -363,11 +358,11 @@ type ReadOnlyEdge interface {
 	TopLevelClaimHeight(ctx context.Context) (OriginHeights, error)
 }
 
-// VerifiedHonestEdge marks edges that are known to be honest. For example,
-// when a local validator creates an edge, it is known to be honest and several types
+// VerifiedRoyalEdge marks edges that are known to be royal. For example,
+// when a local validator creates an edge, it is known to be royal and several types
 // expensive or duplicate computation can be avoided in methods that take in this type.
 // A sentinel method `Honest()` is used to mark an edge as satisfying this interface.
-type VerifiedHonestEdge interface {
+type VerifiedRoyalEdge interface {
 	SpecEdge
 	Honest()
 }
@@ -381,7 +376,7 @@ type SpecEdge interface {
 		ctx context.Context,
 		prefixHistoryRoot common.Hash,
 		prefixProof []byte,
-	) (VerifiedHonestEdge, VerifiedHonestEdge, error)
+	) (VerifiedRoyalEdge, VerifiedRoyalEdge, error)
 	// Confirms an edge for having a presumptive timer >= one challenge period.
 	ConfirmByTimer(ctx context.Context, ancestorIds []EdgeId) error
 	// Confirms an edge with the specified claim id.

@@ -89,7 +89,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 func (m *Manager) addBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-) (protocol.VerifiedHonestEdge, *edgetracker.AssociatedAssertionMetadata, bool, error) {
+) (protocol.VerifiedRoyalEdge, *edgetracker.AssociatedAssertionMetadata, bool, error) {
 	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
 		return nil, nil, false, errors.Wrap(err, "could not get assertion creation info")

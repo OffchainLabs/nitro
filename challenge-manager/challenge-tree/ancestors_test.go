@@ -63,7 +63,7 @@ func buildEdges(allEdges ...*mock.Edge) map[mock.EdgeId]*mock.Edge {
 //	      \--5'--6'----8'----------16' = Bob
 //
 // and then inserts the respective edges into a challenge tree.
-func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
+func setupBlockChallengeTreeSnapshot(t *testing.T, tree *RoyalChallengeTree, claimId string) {
 	t.Helper()
 	aliceEdges := buildEdges(
 		// Alice.
@@ -117,8 +117,9 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 
 	// Set up rivaled edges.
 	mutual := aliceEdges["blk-0.a-16.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals := tree.mutualIds.Get(mutual)
+	key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals := tree.edgeCreationTimes.Get(key)
 	a := aliceEdges["blk-0.a-16.a"]
 	b := bobEdges["blk-0.a-16.b"]
 	aCreation, err := a.CreatedAtBlock()
@@ -129,8 +130,9 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["blk-0.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["blk-0.a-8.a"]
 	b = bobEdges["blk-0.a-8.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -141,8 +143,9 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["blk-4.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["blk-4.a-8.a"]
 	b = bobEdges["blk-4.a-8.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -153,8 +156,9 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["blk-4.a-6.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	aCreation, err = a.CreatedAtBlock()
 	require.NoError(t, err)
 	bCreation, err = b.CreatedAtBlock()
@@ -163,8 +167,9 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["blk-4.a-5.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["blk-4.a-5.a"]
 	b = bobEdges["blk-4.a-5.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -186,11 +191,12 @@ func id(eId mock.EdgeId) protocol.EdgeId {
 //	      \--5'--6'----8'----------16' = Bob
 //
 // and then inserts the respective edges into a challenge tree.
-func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
+func setupBigStepChallengeSnapshot(t *testing.T, tree *RoyalChallengeTree, claimId string) {
 	t.Helper()
 	originEdge, ok := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
 	require.Equal(t, true, ok)
 	origin := mock.OriginId(originEdge.ComputeMutualId())
+	originId := protocol.OriginId(common.BytesToHash([]byte(originEdge.ComputeMutualId())))
 	aliceEdges := buildEdges(
 		// Alice.
 		newEdge(&newCfg{t: t, edgeId: "big-0.a-16.a", originId: origin, claimId: claimId, createdAt: 11}),
@@ -240,8 +246,9 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 
 	// Set up rivaled edges.
 	mutual := aliceEdges["big-0.a-16.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals := tree.mutualIds.Get(mutual)
+	key := buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals := tree.edgeCreationTimes.Get(key)
 	a := aliceEdges["big-0.a-16.a"]
 	b := bobEdges["big-0.a-16.b"]
 	aCreation, err := a.CreatedAtBlock()
@@ -252,8 +259,9 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["big-0.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["big-0.a-8.a"]
 	b = bobEdges["big-0.a-8.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -264,8 +272,9 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["big-4.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["big-4.a-8.a"]
 	b = bobEdges["big-4.a-8.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -276,8 +285,9 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["big-4.a-6.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["big-4.a-6.a"]
 	b = bobEdges["big-4.a-6.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -288,8 +298,9 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["big-4.a-5.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["big-4.a-5.a"]
 	b = bobEdges["big-4.a-5.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -309,11 +320,12 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 // and then inserts the respective edges into a challenge tree.
 //
 // and then inserts the respective edges into a challenge tree.
-func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, claimId string) {
+func setupSmallStepChallengeSnapshot(t *testing.T, tree *RoyalChallengeTree, claimId string) {
 	t.Helper()
 	originEdge, ok := tree.edges.Get(id(mock.EdgeId(claimId))).(*mock.Edge)
 	require.Equal(t, true, ok)
 	origin := mock.OriginId(originEdge.ComputeMutualId())
+	originId := protocol.OriginId(common.BytesToHash([]byte(originEdge.ComputeMutualId())))
 	aliceEdges := buildEdges(
 		// Alice.
 		newEdge(&newCfg{t: t, edgeId: "smol-0.a-16.a", originId: origin, claimId: claimId, createdAt: 21}),
@@ -363,8 +375,9 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 
 	// Set up rivaled edges.
 	mutual := aliceEdges["smol-0.a-16.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals := tree.mutualIds.Get(mutual)
+	key := buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals := tree.edgeCreationTimes.Get(key)
 	a := aliceEdges["smol-0.a-16.a"]
 	b := bobEdges["smol-0.a-16.b"]
 	aCreation, err := a.CreatedAtBlock()
@@ -375,8 +388,9 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["smol-0.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["smol-0.a-8.a"]
 	b = bobEdges["smol-0.a-8.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -387,8 +401,9 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["smol-4.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["smol-4.a-8.a"]
 	b = bobEdges["smol-4.a-8.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -399,8 +414,9 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["smol-4.a-6.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["smol-4.a-6.a"]
 	b = bobEdges["smol-4.a-6.b"]
 	aCreation, err = a.CreatedAtBlock()
@@ -411,8 +427,9 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	mutuals.Put(b.Id(), creationTime(bCreation))
 
 	mutual = aliceEdges["smol-4.a-5.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-	mutuals = tree.mutualIds.Get(mutual)
+	key = buildEdgeCreationTimeKey(originId, mutual)
+	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+	mutuals = tree.edgeCreationTimes.Get(key)
 	a = aliceEdges["smol-4.a-5.a"]
 	b = bobEdges["smol-4.a-5.b"]
 	aCreation, err = a.CreatedAtBlock()

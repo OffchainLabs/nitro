@@ -228,6 +228,7 @@ func Test_getEdgeTrackers(t *testing.T) {
 	edge.On("Id").Return(protocol.EdgeId{Hash: common.BytesToHash([]byte("foo"))})
 	edge.On("GetReversedChallengeLevel").Return(protocol.ChallengeLevel(2))
 	edge.On("MutualId").Return(protocol.MutualId{})
+	edge.On("OriginId").Return(protocol.OriginId{})
 	edge.On("CreatedAtBlock").Return(uint64(1), nil)
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("bar"))}
 	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))

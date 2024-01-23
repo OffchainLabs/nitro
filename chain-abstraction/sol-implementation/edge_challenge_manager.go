@@ -185,7 +185,7 @@ func (e *specEdge) Bisect(
 	ctx context.Context,
 	prefixHistoryRoot common.Hash,
 	prefixProof []byte,
-) (protocol.VerifiedHonestEdge, protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, protocol.VerifiedRoyalEdge, error) {
 	upperId, err := e.UpperChild(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -751,7 +751,7 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 	startCommit,
 	endCommit commitments.History,
 	startEndPrefixProof []byte,
-) (protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, error) {
 	assertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
 		return nil, fmt.Errorf("could not read assertion %#x creation info: %w", assertion.Id(), err)
@@ -885,7 +885,7 @@ func (cm *specChallengeManager) AddSubChallengeLevelZeroEdge(
 	startParentInclusionProof,
 	endParentInclusionProof []common.Hash,
 	startEndPrefixProof []byte,
-) (protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, error) {
 	chalLevel := challengedEdge.GetChallengeLevel()
 	subChalTyp := chalLevel.Next()
 

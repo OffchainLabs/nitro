@@ -153,7 +153,7 @@ func (*Edge) Bisect(
 	_ context.Context,
 	_ common.Hash,
 	_ []byte,
-) (protocol.VerifiedHonestEdge, protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, protocol.VerifiedRoyalEdge, error) {
 	return nil, nil, errors.New("unimplemented")
 }
 

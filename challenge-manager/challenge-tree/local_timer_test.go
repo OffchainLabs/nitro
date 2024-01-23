@@ -14,9 +14,9 @@ import (
 )
 
 func Test_localTimer(t *testing.T) {
-	ct := &HonestChallengeTree{
-		edges:     threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds: threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+	ct := &RoyalChallengeTree{
+		edges:             threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		edgeCreationTimes: threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 	}
 	edgeA := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.a", createdAt: 3})
 	ct.edges.Put(edgeA.Id(), edgeA)
@@ -44,8 +44,9 @@ func Test_localTimer(t *testing.T) {
 		ct.edges.Put(edgeC.Id(), edgeC)
 		mutual := edgeA.MutualId()
 
-		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-		mutuals := ct.mutualIds.Get(mutual)
+		key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+		ct.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+		mutuals := ct.edgeCreationTimes.Get(key)
 		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
 		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
 		mutuals.Put(edgeC.Id(), creationTime(edgeC.CreationBlock))
@@ -79,9 +80,9 @@ func Test_localTimer(t *testing.T) {
 }
 
 func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
-	ct := &HonestChallengeTree{
-		edges:     threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds: threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+	ct := &RoyalChallengeTree{
+		edges:             threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		edgeCreationTimes: threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 	}
 	edgeA := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.a", createdAt: 3})
 	edgeB := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.b", createdAt: 5})
@@ -94,8 +95,9 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 	})
 	t.Run("one rival", func(t *testing.T) {
 		mutual := edgeA.MutualId()
-		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-		mutuals := ct.mutualIds.Get(mutual)
+		key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+		ct.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+		mutuals := ct.edgeCreationTimes.Get(key)
 		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
 		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
 		ct.edges.Put(edgeB.Id(), edgeB)
@@ -108,7 +110,8 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 		ct.edges.Put(edgeC.Id(), edgeC)
 		mutual := edgeC.MutualId()
 
-		mutuals := ct.mutualIds.Get(mutual)
+		key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+		mutuals := ct.edgeCreationTimes.Get(key)
 		mutuals.Put(edgeC.Id(), creationTime(edgeC.CreationBlock))
 
 		res := ct.earliestCreatedRivalBlockNumber(edgeA)
@@ -118,9 +121,9 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 }
 
 func Test_unrivaledAtBlockNum(t *testing.T) {
-	ct := &HonestChallengeTree{
-		edges:     threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds: threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+	ct := &RoyalChallengeTree{
+		edges:             threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		edgeCreationTimes: threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 	}
 	edgeA := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.a", createdAt: 3})
 	edgeB := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.b", createdAt: 5})
@@ -139,8 +142,9 @@ func Test_unrivaledAtBlockNum(t *testing.T) {
 	})
 	t.Run("with rivals but unrivaled at creation time", func(t *testing.T) {
 		mutual := edgeA.MutualId()
-		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-		mutuals := ct.mutualIds.Get(mutual)
+		key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+		ct.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+		mutuals := ct.edgeCreationTimes.Get(key)
 		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
 		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
 		ct.edges.Put(edgeB.Id(), edgeB)
@@ -160,9 +164,9 @@ func Test_unrivaledAtBlockNum(t *testing.T) {
 }
 
 func Test_rivalsWithCreationTimes(t *testing.T) {
-	ct := &HonestChallengeTree{
-		edges:     threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		mutualIds: threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+	ct := &RoyalChallengeTree{
+		edges:             threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		edgeCreationTimes: threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 	}
 	edgeA := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.a", createdAt: 5})
 	edgeB := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.b", createdAt: 5})
@@ -175,8 +179,9 @@ func Test_rivalsWithCreationTimes(t *testing.T) {
 	})
 	t.Run("single rival", func(t *testing.T) {
 		mutual := edgeA.MutualId()
-		ct.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
-		mutuals := ct.mutualIds.Get(mutual)
+		key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+		ct.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+		mutuals := ct.edgeCreationTimes.Get(key)
 		mutuals.Put(edgeB.Id(), creationTime(edgeB.CreationBlock))
 		mutuals.Put(edgeA.Id(), creationTime(edgeA.CreationBlock))
 		ct.edges.Put(edgeB.Id(), edgeB)
@@ -196,7 +201,8 @@ func Test_rivalsWithCreationTimes(t *testing.T) {
 	t.Run("multiple rivals", func(t *testing.T) {
 		ct.edges.Put(edgeC.Id(), edgeC)
 		mutual := edgeC.MutualId()
-		mutuals := ct.mutualIds.Get(mutual)
+		key := buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
+		mutuals := ct.edgeCreationTimes.Get(key)
 		mutuals.Put(edgeC.Id(), creationTime(edgeC.CreationBlock))
 		want := []mock.EdgeId{edgeA.ID, edgeB.ID}
 		rivals := ct.rivalsWithCreationTimes(edgeC)

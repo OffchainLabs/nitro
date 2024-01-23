@@ -209,9 +209,9 @@ func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	startCommit,
 	endCommit commitments.History,
 	startEndPrefixProof []byte,
-) (protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, error) {
 	args := m.Called(ctx, assertion, startCommit, endCommit, startEndPrefixProof)
-	return args.Get(0).(protocol.VerifiedHonestEdge), args.Error(1)
+	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Error(1)
 }
 
 func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
@@ -222,9 +222,9 @@ func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	startParentInclusionProof []common.Hash,
 	endParentInclusionProof []common.Hash,
 	startEndPrefixProof []byte,
-) (protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, error) {
 	args := m.Called(ctx, challengedEdge, startCommit, endCommit, startParentInclusionProof, endParentInclusionProof, startEndPrefixProof)
-	return args.Get(0).(protocol.VerifiedHonestEdge), args.Error(1)
+	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Error(1)
 }
 func (m *MockSpecChallengeManager) ConfirmEdgeByOneStepProof(
 	ctx context.Context,
@@ -329,9 +329,9 @@ func (m *MockSpecEdge) Bisect(
 	ctx context.Context,
 	prefixHistoryRoot common.Hash,
 	prefixProof []byte,
-) (protocol.VerifiedHonestEdge, protocol.VerifiedHonestEdge, error) {
+) (protocol.VerifiedRoyalEdge, protocol.VerifiedRoyalEdge, error) {
 	args := m.Called(ctx, prefixHistoryRoot, prefixProof)
-	return args.Get(0).(protocol.VerifiedHonestEdge), args.Get(1).(protocol.VerifiedHonestEdge), args.Error(2)
+	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Get(1).(protocol.VerifiedRoyalEdge), args.Error(2)
 }
 func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
 	args := m.Called(ctx, ancestorIds)

@@ -157,13 +157,40 @@ func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
 	})
 }
 
-func TestEndToEnd_MultipleEvilValidators(t *testing.T) {
+func TestEndToEnd_TwoEvilValidators(t *testing.T) {
+	protocolCfg := defaultProtocolParams()
+	timeCfg := defaultTimeParams()
+	timeCfg.blockTime = time.Millisecond * 500
+	timeCfg.challengeMoveInterval = time.Millisecond * 500
+	timeCfg.assertionPostingInterval = time.Hour
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
-		protocol: defaultProtocolParams(),
+		protocol: protocolCfg,
 		inbox:    defaultInboxParams(),
 		actors: actorParams{
 			numEvilValidators: 2,
+		},
+		timings: defaultTimeParams(),
+		expectations: []expect{
+			// Expect one assertion is confirmed by challenge win.
+			expectAssertionConfirmedByChallengeWin,
+		},
+	})
+}
+
+func TestEndToEnd_ManyEvilValidators(t *testing.T) {
+	protocolCfg := defaultProtocolParams()
+	protocolCfg.challengePeriodBlocks = 2000
+	timeCfg := defaultTimeParams()
+	timeCfg.blockTime = time.Millisecond * 500
+	timeCfg.challengeMoveInterval = time.Millisecond * 500
+	timeCfg.assertionPostingInterval = time.Hour
+	runEndToEndTest(t, &e2eConfig{
+		backend:  simulated,
+		protocol: protocolCfg,
+		inbox:    defaultInboxParams(),
+		actors: actorParams{
+			numEvilValidators: 5,
 		},
 		timings: defaultTimeParams(),
 		expectations: []expect{

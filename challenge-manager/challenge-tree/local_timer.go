@@ -13,7 +13,7 @@ import (
 
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,
 // this function will return 0.
-func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint64) (uint64, error) {
+func (ht *RoyalChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint64) (uint64, error) {
 	createdAtBlock, err := e.CreatedAtBlock()
 	if err != nil {
 		return 0, err
@@ -42,7 +42,7 @@ func (ht *HonestChallengeTree) localTimer(e protocol.ReadOnlyEdge, blockNum uint
 
 // Gets the minimum creation block number across all of an edge's rivals. If an edge
 // has no rivals, this minimum is undefined.
-func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) option.Option[uint64] {
+func (ht *RoyalChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) option.Option[uint64] {
 	rivals := ht.rivalsWithCreationTimes(e)
 	creationBlocks := make([]uint64, len(rivals))
 	earliestCreatedRivalBlock := option.None[uint64]()
@@ -59,7 +59,7 @@ func (ht *HonestChallengeTree) earliestCreatedRivalBlockNumber(e protocol.ReadOn
 
 // Determines if an edge was unrivaled at a block num T. If any rival existed
 // for the edge at T, this function will return false.
-func (ht *HonestChallengeTree) unrivaledAtBlockNum(e protocol.ReadOnlyEdge, blockNum uint64) (bool, error) {
+func (ht *RoyalChallengeTree) unrivaledAtBlockNum(e protocol.ReadOnlyEdge, blockNum uint64) (bool, error) {
 	createdAtBlock, err := e.CreatedAtBlock()
 	if err != nil {
 		return false, err
@@ -95,12 +95,12 @@ type rival struct {
 // by the challenge tree. We do this by computing the mutual id of the edge and fetching
 // all edge ids that share the same one from a set the challenge tree keeps track of.
 // We exclude the specified edge from the returned list of rivals.
-func (ht *HonestChallengeTree) rivalsWithCreationTimes(eg protocol.ReadOnlyEdge) []*rival {
+func (ht *RoyalChallengeTree) rivalsWithCreationTimes(eg protocol.ReadOnlyEdge) []*rival {
 	rivals := make([]*rival, 0)
-	mutualId := eg.MutualId()
-	mutuals := ht.mutualIds.Get(mutualId)
+	key := buildEdgeCreationTimeKey(eg.OriginId(), eg.MutualId())
+	mutuals := ht.edgeCreationTimes.Get(key)
 	if mutuals == nil {
-		ht.mutualIds.Put(mutualId, threadsafe.NewMap[protocol.EdgeId, creationTime]())
+		ht.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 		return rivals
 	}
 	_ = mutuals.ForEach(func(rivalId protocol.EdgeId, t creationTime) error {

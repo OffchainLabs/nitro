@@ -62,7 +62,7 @@ type ConfirmationMetadataChecker interface {
 		challengePeriodBlocks uint64,
 	) (bool, error)
 	AddVerifiedHonestEdge(
-		ctx context.Context, verifiedHonest protocol.VerifiedHonestEdge,
+		ctx context.Context, verifiedHonest protocol.VerifiedRoyalEdge,
 	) error
 }
 
@@ -656,15 +656,7 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 			containers.Trunc(endCommit.Bytes()),
 		)
 	}
-	challengeLevel := et.edge.GetChallengeLevel()
-	srvlog.Info("Successfully bisected edge", log.Ctx{
-		"name":               et.validatorName,
-		"challengeType":      challengeLevel,
-		"bisectedFrom":       endHeight,
-		"bisectedFromMerkle": containers.Trunc(endCommit.Bytes()),
-		"bisectedTo":         bisectTo,
-		"bisectedToMerkle":   containers.Trunc(historyCommit.Merkle.Bytes()),
-	})
+	srvlog.Info("Bisected royal edge", et.uniqueTrackerLogFields())
 	if addVerifiedErr := et.chainWatcher.AddVerifiedHonestEdge(ctx, firstChild); addVerifiedErr != nil {
 		// We simply log an error, as if this errored, it will be added later on by the chain watcher
 		// scraping events from the chain, but this is a helpful optimization.
