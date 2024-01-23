@@ -100,7 +100,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	}
 
 	var finalized uint64
-	if config.UseMergeFinality && lastBlockHeader.Difficulty.Sign() == 0 {
+	if config.UseMergeFinality && headerreader.HeaderIndicatesFinalitySupport(lastBlockHeader) {
 		var err error
 		if config.RequireFullFinality {
 			finalized, err = d.l1Reader.LatestFinalizedBlockNr(ctx)

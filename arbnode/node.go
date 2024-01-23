@@ -300,6 +300,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
+	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	if transactOpts == nil && cfg.Staker.DataPoster.ExternalSigner.URL == "" {
@@ -330,6 +331,7 @@ func StakerDataposter(
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
 			RedisKey:          sender + ".staker-data-poster.queue",
+			ParentChainID:     parentChainID,
 		})
 }
 
@@ -346,6 +348,7 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	parentChainID *big.Int,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -567,6 +570,7 @@ func createNodeImpl(
 			txOptsValidator,
 			configFetcher,
 			syncMonitor,
+			parentChainID,
 		)
 		if err != nil {
 			return nil, err
@@ -634,15 +638,16 @@ func createNodeImpl(
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB: rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
-			L1Reader:     l1Reader,
-			Inbox:        inboxTracker,
-			Streamer:     txStreamer,
-			SyncMonitor:  syncMonitor,
-			Config:       func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:   deployInfo,
-			TransactOpts: txOptsBatchPoster,
-			DAWriter:     daWriter,
+			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			L1Reader:      l1Reader,
+			Inbox:         inboxTracker,
+			Streamer:      txStreamer,
+			SyncMonitor:   syncMonitor,
+			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:    deployInfo,
+			TransactOpts:  txOptsBatchPoster,
+			DAWriter:      daWriter,
+			ParentChainID: parentChainID,
 		})
 		if err != nil {
 			return nil, err
@@ -700,8 +705,9 @@ func CreateNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	parentChainID *big.Int,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID)
 	if err != nil {
 		return nil, err
 	}

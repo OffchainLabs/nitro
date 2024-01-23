@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
@@ -163,6 +164,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
+				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+					return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
+				}
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 				if err != nil {
 					return chainDb, nil, err
