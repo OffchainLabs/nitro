@@ -114,7 +114,7 @@ func main() {
 			panic(err)
 		}
 	}
-	l1TransactionOpts.GasTipCap = big.NewInt(params.Ether * 2)
+	l1TransactionOpts.GasTipCap = big.NewInt(2)
 
 	l1client, err := ethclient.Dial(*l1conn)
 	if err != nil {
