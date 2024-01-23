@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
@@ -17,13 +18,19 @@ func TestEspressoParsing(t *testing.T) {
 		Kind:        arbostypes.L1MessageType_L2Message,
 		BlockNumber: 1,
 	}
+	payloadCommitment, err := tagged_base64.New("payloadCommitment", []byte{1, 2, 3})
+	Require(t, err)
+	root, err := tagged_base64.New("root", []byte{4, 5, 6})
+	Require(t, err)
 	expectJst := &arbostypes.EspressoBlockJustification{
 		Header: espressoTypes.Header{
-			TransactionsRoot: espressoTypes.NmtRoot{Root: []byte{7, 8, 9}},
-			L1Head:           1,
-			Timestamp:        2,
-			Height:           3,
-			L1Finalized:      &espressoTypes.L1BlockInfo{},
+			TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{7, 8, 9}},
+			L1Head:              1,
+			Timestamp:           2,
+			Height:              3,
+			L1Finalized:         &espressoTypes.L1BlockInfo{},
+			PayloadCommitment:   payloadCommitment,
+			BlockMerkleTreeRoot: root,
 		},
 		Proof: []byte{9},
 	}
@@ -40,8 +47,7 @@ func TestEspressoParsing(t *testing.T) {
 	if !reflect.DeepEqual(actualJst.Proof, expectJst.Proof) {
 		Fail(t)
 	}
-	if !reflect.DeepEqual(actualJst.Header.TransactionsRoot, expectJst.Header.TransactionsRoot) {
+	if !reflect.DeepEqual(actualJst.Header, expectJst.Header) {
 		Fail(t)
 	}
-
 }
