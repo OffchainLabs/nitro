@@ -932,7 +932,7 @@ where
     // Hash stacks in between.
     for st in &items[1..items.len() - 1] {
         let hash = stack_hasher(st);
-        data.extend(hash.as_ref()); // Assuming Bytes32 can be converted to a slice of u8
+        data.extend(hash.as_ref());
     }
     data
 }
