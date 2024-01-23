@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -62,11 +63,12 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 
 type WavmInbox struct{}
 
-func (i WavmInbox) PeekSequencerInbox() ([]byte, error) {
+func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	pos := wavmio.GetInboxPosition()
 	res := wavmio.ReadInboxMessage(pos)
 	log.Info("PeekSequencerInbox", "pos", pos, "res[:8]", res[:8])
-	return res, nil
+	// Our BlobPreimageReader doesn't need the block hash
+	return res, common.Hash{}, nil
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
@@ -115,6 +117,30 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 
 func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	return arbstate.DiscardImmediately, nil
+}
+
+type BlobPreimageReader struct {
+}
+
+func (r *BlobPreimageReader) GetBlobs(
+	ctx context.Context,
+	batchBlockHash common.Hash,
+	versionedHashes []common.Hash,
+) ([]kzg4844.Blob, error) {
+	var blobs []kzg4844.Blob
+	for _, h := range versionedHashes {
+		var blob kzg4844.Blob
+		var preimage []byte
+		if true {
+			panic("TODO: fill in preimage with wavmio.ResolvePreimage(h, wavmio.PreimageTypeEthVersionedHash) once KZG proof support is merged into this branch")
+		}
+		if len(preimage) != len(blob) {
+			return nil, fmt.Errorf("for blob %v got back preimage of length %v but expected blob length %v", h, len(preimage), len(blob))
+		}
+		copy(blob[:], preimage)
+		blobs = append(blobs, blob)
+	}
+	return blobs, nil
 }
 
 // To generate:
@@ -180,7 +206,7 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, &BlobPreimageReader{}, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

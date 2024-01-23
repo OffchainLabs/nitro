@@ -284,6 +284,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
+		if arbstate.IsBlobHashesHeaderByte(batch.Data[40]) {
+			// TODO: fetch blob preimages
+			panic("TODO: fetch blob preimages")
+		}
 		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
 			continue
 		}

@@ -96,6 +96,9 @@ jobs:
           make -j
           make install
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Cache cbrotli
         uses: actions/cache@v3
         id: cache-cbrotli
