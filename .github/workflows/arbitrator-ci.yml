@@ -96,10 +96,8 @@ jobs:
           make -j
           make install
 
-      - name: Install foundry
-        run: |
-          curl -L https://foundry.paradigm.xyz | bash
-          foundryup
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
 
       - name: Cache cbrotli
         uses: actions/cache@v3

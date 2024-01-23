@@ -26,13 +26,14 @@ COPY --from=brotli-library-builder /workspace/install/ /
 
 FROM node:16-bullseye-slim as contracts-builder
 RUN apt-get update && \
-    apt-get install -y git python3 make g++
+    apt-get install -y git python3 make g++ curl
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
 COPY contracts contracts/
 COPY Makefile .
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
 FROM debian:bullseye-20211220 as wasm-base
 WORKDIR /workspace
