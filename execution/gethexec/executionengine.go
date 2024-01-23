@@ -502,6 +502,11 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.Mess
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
+// DigestMessage is used to create a block by executing msg against the latest state and storing it.
+// Also, while creating a block by executing msg against the latest state,
+// in parallel, creates a block by executing msgForPrefetch (msg+1) against the latest state
+// but does not store the block.
+// This helps in filling the cache, so that the next block creation is faster.
 func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error {
 	if !s.createBlocksMutex.TryLock() {
 		return errors.New("createBlock mutex held")
