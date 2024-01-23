@@ -7,7 +7,7 @@
 (import "env" "wavm_read_hotshot_commitment" (func $readhotshot (param i32) (param i64)))
 (import "env" "wavm_halt_and_set_finished" (func $halt))
 
-(memory 1)
+;;(memory 1)
 
 (export "env__wavm_set_globalstate_u64" (func $set))
 (export "env__wavm_get_globalstate_u64" (func $get))
