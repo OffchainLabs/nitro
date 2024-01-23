@@ -65,14 +65,21 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 
 func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		// if stepSize <= 8192 {
-		// 	log.Info(fmt.Sprintf("Step size %d is enough to trigger Merkleized machines, re-caching", stepSize))
-		// 	e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
-		// }
+		var alwaysMerkleize bool
+		if stepSize <= 32768 {
+			alwaysMerkleize = true
+			log.Info(fmt.Sprintf("Step size %d is enough to trigger Merkleized machines, re-caching", stepSize))
+			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
+		}
+		log.Info(fmt.Sprintf("Starting BOLD machine computation at index %d", machineStartIndex))
+		if alwaysMerkleize {
+			log.Info("Enabling Merkleization of machines for faster hashing. However, advancing to start index might take a while...")
+		}
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err
 		}
+		log.Info(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
