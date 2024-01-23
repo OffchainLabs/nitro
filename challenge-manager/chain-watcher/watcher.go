@@ -185,6 +185,14 @@ func (w *Watcher) ComputeHonestPathTimer(
 	return w.ComputeHonestPathTimerByBlockNumber(ctx, topLevelAssertionHash, edgeId, blockNumber)
 }
 
+func (w *Watcher) IsRoyal(assertionHash protocol.AssertionHash, edgeId protocol.EdgeId) bool {
+	chal, ok := w.challenges.TryGet(assertionHash)
+	if !ok {
+		return false
+	}
+	return chal.honestEdgeTree.HasRoyalEdge(edgeId)
+}
+
 func (w *Watcher) ComputeHonestPathTimerByBlockNumber(
 	ctx context.Context,
 	topLevelAssertionHash protocol.AssertionHash,
@@ -1067,8 +1075,7 @@ func (w *Watcher) saveEdgeToDB(
 		LowerChildId:        lowerChildId,
 		UpperChildId:        upperChildId,
 		HasChildren:         hasChildren,
-		IsHonest:            agreement.IsHonestEdge,
-		IsRelevant:          agreement.AgreesWithStartCommit,
+		IsRoyal:             agreement.IsHonestEdge,
 		CumulativePathTimer: pathTimer,
 		TimeUnrivaled:       timeUnrivaled,
 		HasRival:            hasRival,

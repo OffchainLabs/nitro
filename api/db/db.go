@@ -28,6 +28,12 @@ type Database interface {
 	InsertAssertion(assertion *api.JsonAssertion) error
 }
 
+type ReadUpdateDatabase interface {
+	ReadOnlyDatabase
+	UpdateAssertions(assertion []*api.JsonAssertion) error
+	UpdateEdges(edge []*api.JsonEdge) error
+}
+
 type ReadOnlyDatabase interface {
 	GetAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error)
 	GetChallengedAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error)
@@ -81,6 +87,10 @@ func NewAssertionQuery(opts ...AssertionOption) *AssertionQuery {
 		opt(query)
 	}
 	return query
+}
+
+func (q *AssertionQuery) ShouldForceUpdate() bool {
+	return q.forceUpdate
 }
 
 type AssertionOption func(*AssertionQuery)
@@ -277,11 +287,19 @@ func (d *SqliteDatabase) GetChallengedAssertions(opts ...AssertionOption) ([]*ap
 }
 
 type EdgeQuery struct {
-	filters []string
-	args    []interface{}
-	limit   int
-	offset  int
-	orderBy string
+	filters           []string
+	args              []interface{}
+	limit             int
+	offset            int
+	orderBy           string
+	fromCreationBlock option.Option[uint64]
+	toCreationBlock   option.Option[uint64]
+	forceUpdate       bool
+	withSubchallenge  bool
+}
+
+func (q *EdgeQuery) ShouldForceUpdate() bool {
+	return q.forceUpdate
 }
 
 func NewEdgeQuery(opts ...EdgeOption) *EdgeQuery {
@@ -363,6 +381,12 @@ func WithMiniStaker(staker common.Address) EdgeOption {
 		q.args = append(q.args, staker)
 	}
 }
+func WithMiniStakerDefined() EdgeOption {
+	return func(q *EdgeQuery) {
+		q.filters = append(q.filters, "MiniStaker != ?")
+		q.args = append(q.args, common.Address{})
+	}
+}
 func WithEdgeAssertionHash(hash protocol.AssertionHash) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "AssertionHash = ?")
@@ -376,6 +400,7 @@ func WithRival() EdgeOption {
 }
 func WithSubchallenge() EdgeOption {
 	return func(q *EdgeQuery) {
+		q.withSubchallenge = true
 	}
 }
 func WithEdgeStatus(st protocol.EdgeStatus) EdgeOption {
@@ -384,24 +409,36 @@ func WithEdgeStatus(st protocol.EdgeStatus) EdgeOption {
 		q.args = append(q.args, st.String())
 	}
 }
-func WithHonestEdges() EdgeOption {
+func WithRoyal() EdgeOption {
 	return func(q *EdgeQuery) {
+		q.filters = append(q.filters, "IsRoyal = true")
 	}
 }
 func WithEdgeForceUpdate() EdgeOption {
 	return func(q *EdgeQuery) {
+		q.forceUpdate = true
 	}
 }
 func WithRootEdges() EdgeOption {
 	return func(q *EdgeQuery) {
+		q.filters = append(q.filters, "ClaimId != ?")
+		q.args = append(q.args, common.Hash{})
+	}
+}
+func WithPathTimerGreaterOrEq(n uint64) EdgeOption {
+	return func(q *EdgeQuery) {
+		q.filters = append(q.filters, "CumulativePathTimer >= ?")
+		q.args = append(q.args, n)
 	}
 }
 func FromEdgeCreationBlock(n uint64) EdgeOption {
 	return func(q *EdgeQuery) {
+		q.fromCreationBlock = option.Some(n)
 	}
 }
 func ToEdgeCreationBlock(n uint64) EdgeOption {
-	return func(e *EdgeQuery) {
+	return func(q *EdgeQuery) {
+		q.toCreationBlock = option.Some(n)
 	}
 }
 func WithLengthOneRival() EdgeOption {
@@ -426,9 +463,24 @@ func WithOrderBy(orderBy string) EdgeOption {
 }
 
 func (q *EdgeQuery) ToSQL() (string, []interface{}) {
-	baseQuery := "SELECT * FROM Edges"
+	baseQuery := "SELECT * FROM Edges e"
+	if q.withSubchallenge {
+		baseQuery += ` INNER JOIN EdgeClaims ec ON e.Id = ec.ClaimId
+		WHERE ec.RefersTo = 'edge'`
+	}
+	if q.fromCreationBlock.IsSome() {
+		q.filters = append(q.filters, "e.CreatedAtBlock >= ?")
+		q.args = append(q.args, q.fromCreationBlock.Unwrap())
+	}
+	if q.toCreationBlock.IsSome() {
+		q.filters = append(q.filters, "e.CreatedAtBlock < ?")
+		q.args = append(q.args, q.toCreationBlock.Unwrap())
+	}
 	if len(q.filters) > 0 {
-		baseQuery += " WHERE " + strings.Join(q.filters, " AND ")
+		if !q.withSubchallenge {
+			baseQuery += " WHERE "
+		}
+		baseQuery += strings.Join(q.filters, " AND ")
 	}
 	if q.orderBy != "" {
 		baseQuery += " ORDER BY " + q.orderBy
@@ -538,12 +590,12 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 	   Id, ChallengeLevel, OriginId, StartHistoryRoot, StartHeight,
 	   EndHistoryRoot, EndHeight, CreatedAtBlock, MutualId, ClaimId,
 	   HasChildren, LowerChildId, UpperChildId, MiniStaker, AssertionHash,
-	   HasRival, Status, HasLengthOneRival, IsHonest, IsRelevant, CumulativePathTimer
+	   HasRival, Status, HasLengthOneRival, IsRoyal, CumulativePathTimer
    ) VALUES (
 	   :Id, :ChallengeLevel, :OriginId, :StartHistoryRoot, :StartHeight,
 	   :EndHistoryRoot, :EndHeight, :CreatedAtBlock, :MutualId, :ClaimId,
 	   :HasChildren, :LowerChildId, :UpperChildId, :MiniStaker, :AssertionHash,
-	   :HasRival, :Status, :HasLengthOneRival, :IsHonest, :IsRelevant, :CumulativePathTimer
+	   :HasRival, :Status, :HasLengthOneRival, :IsRoyal, :CumulativePathTimer
    )`
 
 	if _, err = tx.NamedExec(insertEdgeQuery, edge); err != nil {
@@ -552,10 +604,38 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 		}
 		return err
 	}
+	// Create an edge claim or an assertion claim.
+	if edge.ClaimId != (common.Hash{}) {
+		var claimExistsInDb int
+		err = tx.Get(&claimExistsInDb, "SELECT COUNT(*) FROM EdgeClaims WHERE ClaimId = ?", edge.ClaimId)
+		if err != nil {
+			if err2 := tx.Rollback(); err2 != nil {
+				return err2
+			}
+			return err
+		}
+		if claimExistsInDb == 0 {
+			var refersTo string
+			if edge.ChallengeLevel == 0 {
+				refersTo = "assertion"
+			} else {
+				refersTo = "edge"
+			}
+			insertClaimQuery := `INSERT INTO EdgeClaims
+		(ClaimId, RefersTo) VALUES (?, ?)`
+			_, err = tx.Exec(insertClaimQuery, edge.ClaimId, refersTo)
+			if err != nil {
+				if err2 := tx.Rollback(); err2 != nil {
+					return err2
+				}
+				return err
+			}
+		}
+	}
 	return tx.Commit()
 }
 
-func (d *SqliteDatabase) UpdateEdge(edge *api.JsonEdge) error {
+func (d *SqliteDatabase) UpdateEdges(edges []*api.JsonEdge) error {
 	query := `UPDATE Edges SET 
 	 ChallengeLevel = :ChallengeLevel,
 	 OriginId = :OriginId,
@@ -574,18 +654,29 @@ func (d *SqliteDatabase) UpdateEdge(edge *api.JsonEdge) error {
 	 HasRival = :HasRival,
 	 Status = :Status,
 	 HasLengthOneRival = :HasLengthOneRival,
-	 IsHonest = :IsHonest,
-	 IsRelevant = :IsRelevant,
+	 IsRoyal = :IsRoyal,
 	 CumulativePathTimer = :CumulativePathTimer
 	 WHERE Id = :Id`
-	_, err := d.sqlDB.NamedExec(query, edge)
+	tx, err := d.sqlDB.Beginx()
 	if err != nil {
+		if err2 := tx.Rollback(); err2 != nil {
+			return err2
+		}
 		return err
 	}
-	return nil
+	for _, e := range edges {
+		_, err := tx.NamedExec(query, e)
+		if err != nil {
+			if err2 := tx.Rollback(); err2 != nil {
+				return err2
+			}
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
-func (d *SqliteDatabase) UpdateAssertion(assertion *api.JsonAssertion) error {
+func (d *SqliteDatabase) UpdateAssertions(assertions []*api.JsonAssertion) error {
 	// Construct the query
 	query := `UPDATE Assertions SET 
    ConfirmPeriodBlocks = :ConfirmPeriodBlocks,
@@ -612,12 +703,21 @@ func (d *SqliteDatabase) UpdateAssertion(assertion *api.JsonAssertion) error {
    IsFirstChild = :IsFirstChild,
    Status = :Status
    WHERE Hash = :Hash`
-
-	// Execute the query with the assertion data
-	_, err := d.sqlDB.NamedExec(query, assertion)
+	tx, err := d.sqlDB.Beginx()
 	if err != nil {
+		if err2 := tx.Rollback(); err2 != nil {
+			return err2
+		}
 		return err
 	}
-
-	return nil
+	for _, a := range assertions {
+		_, err := tx.NamedExec(query, a)
+		if err != nil {
+			if err2 := tx.Rollback(); err2 != nil {
+				return err2
+			}
+			return err
+		}
+	}
+	return tx.Commit()
 }

@@ -255,6 +255,10 @@ func (ht *HonestChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge
 	}, nil
 }
 
+func (ht *HonestChallengeTree) HasRoyalEdge(edgeId protocol.EdgeId) bool {
+	return ht.edges.Has(edgeId)
+}
+
 // AddHonestEdge known to be honest, such as those created by the local validator.
 func (ht *HonestChallengeTree) AddHonestEdge(eg protocol.VerifiedHonestEdge) error {
 	id := eg.Id()

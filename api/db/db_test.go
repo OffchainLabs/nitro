@@ -43,7 +43,7 @@ func TestSqliteDatabase_Updates(t *testing.T) {
 	lastAssertion := assertions[len(assertions)-1]
 	lastUpdated := lastAssertion.LastUpdatedAt
 	lastAssertion.Status = "confirmed"
-	require.NoError(t, db.UpdateAssertion(lastAssertion))
+	require.NoError(t, db.UpdateAssertions([]*api.JsonAssertion{lastAssertion}))
 
 	// Check the last updated timestamp gets increased.
 	updatedAssertions, err := db.GetAssertions(WithAssertionHash(protocol.AssertionHash{Hash: lastAssertion.Hash}), WithAssertionLimit(1))
@@ -65,7 +65,7 @@ func TestSqliteDatabase_Updates(t *testing.T) {
 	time.Sleep(time.Second)
 
 	edge.Status = "confirmed"
-	require.NoError(t, db.UpdateEdge(edge))
+	require.NoError(t, db.UpdateEdges([]*api.JsonEdge{edge}))
 
 	// Check the last updated timestamp gets increased.
 	updatedEdges, err := db.GetEdges(WithEdgeAssertionHash(protocol.AssertionHash{Hash: lastAssertion.Hash}), WithLimit(1))
@@ -288,6 +288,8 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 			base.HasRival = true
 			base.HasLengthOneRival = true
 			base.ClaimId = common.BytesToHash([]byte("1"))
+			base.IsRoyal = true
+			base.CumulativePathTimer = 10
 		}
 		edgesToCreate[i] = base
 		endHeight = endHeight / 2
@@ -392,6 +394,22 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		edges, err = db.GetEdges(WithClaimId(protocol.ClaimId(common.BytesToHash([]byte("1")))))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
+
+		edges, err = db.GetEdges(WithRoyal())
+		require.NoError(t, err)
+		require.Equal(t, 2, len(edges))
+
+		edges, err = db.GetEdges(WithPathTimerGreaterOrEq(1))
+		require.NoError(t, err)
+		require.Equal(t, 2, len(edges))
+
+		edges, err = db.GetEdges(WithPathTimerGreaterOrEq(10))
+		require.NoError(t, err)
+		require.Equal(t, 2, len(edges))
+
+		edges, err = db.GetEdges(WithPathTimerGreaterOrEq(11))
+		require.NoError(t, err)
+		require.Equal(t, 0, len(edges))
 	})
 	t.Run("orderings limits and offsets", func(t *testing.T) {
 		gotIds := make([]protocol.EdgeId, 0)
@@ -409,6 +427,54 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		}
 		require.Equal(t, wantIds, gotIds)
 	})
+}
+
+func TestEdgeClaims(t *testing.T) {
+	sqlDB, err := sqlx.Connect("sqlite3", ":memory:")
+	require.NoError(t, err)
+	defer sqlDB.Close()
+
+	_, err = sqlDB.Exec(schema)
+	require.NoError(t, err)
+	db := &SqliteDatabase{sqlDB: sqlDB}
+
+	base := baseAssertion()
+	base.Hash = common.BytesToHash([]byte("challenged_assertion"))
+	claimedAssertion := baseAssertion()
+	claimedAssertion.Hash = common.BytesToHash([]byte("claimed_assertion"))
+	require.NoError(t, db.InsertAssertions([]*api.JsonAssertion{base, claimedAssertion}))
+
+	// Insert a top level edge
+	edge := baseEdge()
+	edge.AssertionHash = base.Hash
+	edge.ClaimId = claimedAssertion.Hash
+	edge.Id = common.BytesToHash([]byte("top_level_edge"))
+	edge.StartHeight = 0
+	edge.EndHeight = 32
+	edge.ChallengeLevel = 0
+
+	// Insert a lower level edge that claims the higher level one.
+	lowerEdge := baseEdge()
+	lowerEdge.AssertionHash = base.Hash
+	lowerEdge.ClaimId = edge.Id
+	lowerEdge.Id = common.BytesToHash([]byte("lower_level_edge"))
+	lowerEdge.StartHeight = 0
+	lowerEdge.EndHeight = 32
+	lowerEdge.ChallengeLevel = 1
+	require.NoError(t, db.InsertEdges([]*api.JsonEdge{edge, lowerEdge}))
+
+	// Get all edges and check their ids.
+	edges, err := db.GetEdges()
+	require.NoError(t, err)
+	require.Equal(t, 2, len(edges))
+	require.Equal(t, edge.Id, edges[0].Id)
+	require.Equal(t, lowerEdge.Id, edges[1].Id)
+
+	// Get only edges with a subchallenge and expect it is the top-level edge.
+	edges, err = db.GetEdges(WithSubchallenge())
+	require.NoError(t, err)
+	require.Equal(t, 1, len(edges))
+	require.Equal(t, edge.Id, edges[0].Id)
 }
 
 func baseAssertion() *api.JsonAssertion {

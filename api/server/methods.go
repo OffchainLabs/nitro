@@ -164,11 +164,13 @@ func (s *Server) AssertionByIdentifier(r *http.Request, w http.ResponseWriter) {
 // - offset: the offset index in the DB
 // - status: filter edges that have status "confirmed", "confirmable", or "pending"
 // - royal: boolean true or false to get royal edges. If not set, fetches all edges in the challenge.
-// - root_edges: boolean true or false to filter out only root edges (those that have a claim id)
+// - root_edges: boolean true or false to filter out only root edges (those that have a claim_id)
 // - rivaled: boolean true or false to get only rivaled edges
 // - has_length_one_rival: boolean true or false to get only edges that have a length one rival
 // - has_subchallenge: boolean true or false to get only edges that have a subchallenge claiming them
 // - from_block_number: items that were created since a specific block number.
+// - to_block_number: caps the response to edges up to a block number
+// - path_timer_geq: edges with a path timer greater than some N number of blocks
 // - to_block_number: caps the response to edges up to a block number
 // - origin_id: edges that have a 0x-prefixed origin id
 // - mutual_id: edges that have a 0x-prefixed mutual id
@@ -201,7 +203,7 @@ func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
 		opts = append(opts, db.WithEdgeStatus(status))
 	}
 	if _, ok := query["royal"]; ok {
-		opts = append(opts, db.WithHonestEdges())
+		opts = append(opts, db.WithRoyal())
 	}
 	if _, ok := query["has_length_one_rival"]; ok {
 		opts = append(opts, db.WithLengthOneRival())
@@ -226,6 +228,11 @@ func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
 	if val, ok := query["to_block_number"]; ok && len(val) > 0 {
 		if v, err := strconv.ParseUint(val[0], 10, 64); err == nil {
 			opts = append(opts, db.ToEdgeCreationBlock(v))
+		}
+	}
+	if val, ok := query["path_timer_geq"]; ok && len(val) > 0 {
+		if v, err := strconv.ParseUint(val[0], 10, 64); err == nil {
+			opts = append(opts, db.WithPathTimerGreaterOrEq(v))
 		}
 	}
 	if val, ok := query["origin_id"]; ok && len(val) > 0 {

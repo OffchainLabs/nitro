@@ -10,5 +10,6 @@ go_library(
         "//api/db",
         "//chain-abstraction:protocol",
         "//challenge-manager/chain-watcher",
+        "@com_github_ethereum_go_ethereum//common",
     ],
 )

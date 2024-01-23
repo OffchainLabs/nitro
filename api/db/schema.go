@@ -8,6 +8,13 @@ CREATE TABLE Challenges (
     UNIQUE(Hash)
 );
 
+CREATE TABLE EdgeClaims (
+    ClaimId TEXT NOT NULL PRIMARY KEY,
+    RefersTo TEXT NOT NULL, -- 'edge' or 'assertion'
+    FOREIGN KEY(ClaimId) REFERENCES Edges(Id),
+    FOREIGN KEY(ClaimId) REFERENCES Assertions(Hash)
+);
+
 CREATE TABLE Edges (
     Id TEXT NOT NULL PRIMARY KEY,
     ChallengeLevel INTEGER NOT NULL,
@@ -18,8 +25,8 @@ CREATE TABLE Edges (
     EndHeight INTEGER NOT NULL,
     CreatedAtBlock INTEGER NOT NULL,
     MutualId TEXT NOT NULL,
-    ClaimId TEXT,
-    MiniStaker TEXT,
+    ClaimId TEXT NOT NULL,
+    MiniStaker TEXT NOT NULL,
     AssertionHash TEXT NOT NULL,
     HasChildren BOOLEAN NOT NULL,
     LowerChildId TEXT NOT NULL,
@@ -27,11 +34,11 @@ CREATE TABLE Edges (
     HasRival BOOLEAN NOT NULL,
     Status TEXT NOT NULL,
     HasLengthOneRival BOOLEAN NOT NULL,
-    IsHonest BOOLEAN NOT NULL,
-    IsRelevant BOOLEAN NOT NULL,
+    IsRoyal BOOLEAN NOT NULL,
     CumulativePathTimer INTEGER NOT NULL,
     LastUpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(LowerChildID) REFERENCES Edges(Id),
+    FOREIGN KEY(ClaimId) REFERENCES EdgeClaims(ClaimId),
     FOREIGN KEY(UpperChildID) REFERENCES Edges(Id),
     FOREIGN KEY(AssertionHash) REFERENCES Challenges(Hash)
 );
