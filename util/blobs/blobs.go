@@ -5,6 +5,7 @@ package blobs
 
 import (
 	"crypto/sha256"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -52,20 +53,15 @@ func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
 }
 
 // Return KZG commitments, proofs, and versioned hashes that corresponds to these blobs
-func ComputeCommitmentsProofsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []kzg4844.Proof, []common.Hash, error) {
+func ComputeCommitmentsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []common.Hash, error) {
 	commitments := make([]kzg4844.Commitment, len(blobs))
-	proofs := make([]kzg4844.Proof, len(blobs))
 	versionedHashes := make([]common.Hash, len(blobs))
 
 	for i := range blobs {
 		var err error
 		commitments[i], err = kzg4844.BlobToCommitment(blobs[i])
 		if err != nil {
-			return nil, nil, nil, err
-		}
-		proofs[i], err = kzg4844.ComputeBlobProof(blobs[i], commitments[i])
-		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		// As per the EIP-4844 spec, the versioned hash is the SHA-256 hash of the commitment with the first byte set to 1.
 		hash := sha256.Sum256(commitments[i][:])
@@ -73,5 +69,21 @@ func ComputeCommitmentsProofsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitme
 		versionedHashes[i] = hash
 	}
 
-	return commitments, proofs, versionedHashes, nil
+	return commitments, versionedHashes, nil
+}
+
+func ComputeBlobProofs(blobs []kzg4844.Blob, commitments []kzg4844.Commitment) ([]kzg4844.Proof, error) {
+	if len(blobs) != len(commitments) {
+		return nil, fmt.Errorf("ComputeBlobProofs got %v blobs but %v commitments", len(blobs), len(commitments))
+	}
+	proofs := make([]kzg4844.Proof, len(blobs))
+	for i := range blobs {
+		var err error
+		proofs[i], err = kzg4844.ComputeBlobProof(blobs[i], commitments[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return proofs, nil
 }

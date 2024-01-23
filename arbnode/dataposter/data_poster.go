@@ -464,7 +464,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 	newBlobFeeCap := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil {
-		newBlobFeeCap = eip4844.CalcBlobFee(*latestHeader.ExcessBlobGas)
+		newBlobFeeCap = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
 		newBlobFeeCap.Mul(newBlobFeeCap, common.Big2)
 	} else if numBlobs > 0 {
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing ExcessBlobGas but blobs were specified in data poster transaction (either the parent chain node is not synced or EIP-4844 was improperly activated)", latestHeader.Number)
@@ -612,9 +612,13 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		// Intentionally break out of date data poster redis clients,
 		// so they don't try to replace by fee a tx they don't understand
 		deprecatedData.Nonce = ^uint64(0)
-		commitments, proofs, blobHashes, err := blobs.ComputeCommitmentsProofsAndHashes(kzgBlobs)
+		commitments, blobHashes, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
 		if err != nil {
-			return nil, fmt.Errorf("failed to compute KZG metadata: %w", err)
+			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
+		}
+		proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
 		inner = &types.BlobTx{
 			Nonce: nonce,
