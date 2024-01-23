@@ -832,9 +832,9 @@ type estimateGasParams struct {
 }
 
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
-	var gas uint64
+	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
-	return gas, err
+	return uint64(gas), err
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realBlobs []kzg4844.Blob, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
