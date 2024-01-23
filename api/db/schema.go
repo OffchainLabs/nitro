@@ -1,7 +1,6 @@
 package db
 
 var (
-	//nolint:unused
 	schema = `
 CREATE TABLE Challenges (
     Hash TEXT NOT NULL PRIMARY KEY,
@@ -36,6 +35,7 @@ CREATE TABLE Edges (
     HasLengthOneRival BOOLEAN NOT NULL,
     IsRoyal BOOLEAN NOT NULL,
     CumulativePathTimer INTEGER NOT NULL,
+    RawAncestors TEXT NOT NULL,
     LastUpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(LowerChildID) REFERENCES Edges(Id),
     FOREIGN KEY(ClaimId) REFERENCES EdgeClaims(ClaimId),

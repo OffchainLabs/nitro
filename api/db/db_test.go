@@ -355,7 +355,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
-		edges, err = db.GetEdges(HasChildren())
+		edges, err = db.GetEdges(HasChildren(true))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
@@ -379,7 +379,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, len(edges))
 
-		edges, err = db.GetEdges(WithRival())
+		edges, err = db.GetEdges(WithRival(true))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
@@ -395,7 +395,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
-		edges, err = db.GetEdges(WithRoyal())
+		edges, err = db.GetEdges(WithRoyal(true))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 

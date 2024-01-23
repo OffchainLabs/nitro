@@ -25,7 +25,7 @@ var contentType = "application/json"
 // method:
 // - GET
 // - /api/v1/db/healthz
-func (s *Server) Healthz(r *http.Request, w http.ResponseWriter) {
+func (s *Server) Healthz(w http.ResponseWriter, r *http.Request) {
 	// TODO: Respond with a 503 if the client the BOLD validator is
 	// connected to is syncing.
 	w.WriteHeader(http.StatusOK)
@@ -48,7 +48,7 @@ func (s *Server) Healthz(r *http.Request, w http.ResponseWriter) {
 //
 // response:
 // - []*JsonAssertion
-func (s *Server) ListAssertions(r *http.Request, w http.ResponseWriter) {
+func (s *Server) ListAssertions(w http.ResponseWriter, r *http.Request) {
 	opts := make([]db.AssertionOption, 0)
 	query := r.URL.Query()
 	if val, ok := query["limit"]; ok && len(val) > 0 {
@@ -92,7 +92,7 @@ func (s *Server) ListAssertions(r *http.Request, w http.ResponseWriter) {
 //
 // method:
 // - GET
-// - /api/v1/assertion/<identifier>
+// - /api/v1/assertions/<identifier>
 //
 // identifier options:
 // - an assertion hash (0x-prefixed): gets the assertion by hash
@@ -103,7 +103,7 @@ func (s *Server) ListAssertions(r *http.Request, w http.ResponseWriter) {
 //
 // response:
 // - *JsonAssertion
-func (s *Server) AssertionByIdentifier(r *http.Request, w http.ResponseWriter) {
+func (s *Server) AssertionByIdentifier(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	identifier := vars["identifier"]
 
@@ -167,7 +167,7 @@ func (s *Server) AssertionByIdentifier(r *http.Request, w http.ResponseWriter) {
 // - root_edges: boolean true or false to filter out only root edges (those that have a claim_id)
 // - rivaled: boolean true or false to get only rivaled edges
 // - has_length_one_rival: boolean true or false to get only edges that have a length one rival
-// - has_subchallenge: boolean true or false to get only edges that have a subchallenge claiming them
+// - only_subchallenged_edges: boolean true or false to get only edges that have a subchallenge claiming them
 // - from_block_number: items that were created since a specific block number.
 // - to_block_number: caps the response to edges up to a block number
 // - path_timer_geq: edges with a path timer greater than some N number of blocks
@@ -175,43 +175,65 @@ func (s *Server) AssertionByIdentifier(r *http.Request, w http.ResponseWriter) {
 // - origin_id: edges that have a 0x-prefixed origin id
 // - mutual_id: edges that have a 0x-prefixed mutual id
 // - claim_id: edges that have a 0x-prefixed claim id
+// - start_height: edges with a start height
+// - end_height: edges with an end height
 // - start_commitment: edges with a start history commitment of format "height:hash", such as 32:0xdeadbeef
 // - end_commitment: edges with an end history commitment of format "height:hash", such as 32:0xdeadbeef
 // - challenge_level: edges in a specific challenge level. level 0 is the block challenge level
 // - force_update: refetch the updatable fields of each item in the response
 // response:
 // - []*JsonEdge
-func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
-	opts := make([]db.EdgeOption, 0)
+func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	assertionHashStr := vars["assertion-hash"]
+	hash, err := hexutil.Decode(assertionHashStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
+		return
+	}
+	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
+	opts := []db.EdgeOption{
+		db.WithEdgeAssertionHash(assertionHash),
+	}
 	query := r.URL.Query()
 	if val, ok := query["limit"]; ok && len(val) > 0 {
-		if v, err := strconv.Atoi(val[0]); err == nil {
+		if v, err2 := strconv.Atoi(val[0]); err2 == nil {
 			opts = append(opts, db.WithLimit(v))
 		}
 	}
 	if val, ok := query["offset"]; ok && len(val) > 0 {
-		if v, err := strconv.Atoi(val[0]); err == nil {
+		if v, err2 := strconv.Atoi(val[0]); err2 == nil {
 			opts = append(opts, db.WithOffset(v))
 		}
 	}
 	if val, ok := query["status"]; ok && len(val) > 0 {
-		status, err := parseEdgeStatus(strings.Join(val, ""))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse status: %v", err), http.StatusBadRequest)
+		status, err2 := parseEdgeStatus(strings.Join(val, ""))
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse status: %v", err2), http.StatusBadRequest)
 			return
 		}
 		opts = append(opts, db.WithEdgeStatus(status))
 	}
-	if _, ok := query["royal"]; ok {
-		opts = append(opts, db.WithRoyal())
+	if val, ok := query["royal"]; ok {
+		v := strings.Join(val, "")
+		if v == "false" {
+			opts = append(opts, db.WithRoyal(false))
+		} else if v == "true" {
+			opts = append(opts, db.WithRoyal(true))
+		}
 	}
 	if _, ok := query["has_length_one_rival"]; ok {
 		opts = append(opts, db.WithLengthOneRival())
 	}
-	if _, ok := query["rivaled"]; ok {
-		opts = append(opts, db.WithRival())
+	if val, ok := query["rivaled"]; ok {
+		v := strings.Join(val, "")
+		if v == "false" {
+			opts = append(opts, db.WithRival(false))
+		} else if v == "true" {
+			opts = append(opts, db.WithRival(true))
+		}
 	}
-	if _, ok := query["has_subchallenge"]; ok {
+	if _, ok := query["only_subchallenged_edges"]; ok {
 		opts = append(opts, db.WithSubchallenge())
 	}
 	if _, ok := query["root_edges"]; ok {
@@ -221,40 +243,50 @@ func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
 		opts = append(opts, db.WithEdgeForceUpdate())
 	}
 	if val, ok := query["from_block_number"]; ok && len(val) > 0 {
-		if v, err := strconv.ParseUint(val[0], 10, 64); err == nil {
+		if v, err2 := strconv.ParseUint(val[0], 10, 64); err2 == nil {
 			opts = append(opts, db.FromEdgeCreationBlock(v))
 		}
 	}
 	if val, ok := query["to_block_number"]; ok && len(val) > 0 {
-		if v, err := strconv.ParseUint(val[0], 10, 64); err == nil {
+		if v, err2 := strconv.ParseUint(val[0], 10, 64); err2 == nil {
 			opts = append(opts, db.ToEdgeCreationBlock(v))
 		}
 	}
+	if val, ok := query["start_height"]; ok && len(val) > 0 {
+		if v, err2 := strconv.ParseUint(val[0], 10, 64); err2 == nil {
+			opts = append(opts, db.WithStartHeight(v))
+		}
+	}
+	if val, ok := query["end_height"]; ok && len(val) > 0 {
+		if v, err2 := strconv.ParseUint(val[0], 10, 64); err2 == nil {
+			opts = append(opts, db.WithEndHeight(v))
+		}
+	}
 	if val, ok := query["path_timer_geq"]; ok && len(val) > 0 {
-		if v, err := strconv.ParseUint(val[0], 10, 64); err == nil {
+		if v, err2 := strconv.ParseUint(val[0], 10, 64); err2 == nil {
 			opts = append(opts, db.WithPathTimerGreaterOrEq(v))
 		}
 	}
 	if val, ok := query["origin_id"]; ok && len(val) > 0 {
-		hash, err := hexutil.Decode(strings.Join(val, ""))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse origin_id: %v", err), http.StatusBadRequest)
+		hash, err2 := hexutil.Decode(strings.Join(val, ""))
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse origin_id: %v", err2), http.StatusBadRequest)
 			return
 		}
 		opts = append(opts, db.WithOriginId(protocol.OriginId(common.BytesToHash(hash))))
 	}
 	if val, ok := query["mutual_id"]; ok && len(val) > 0 {
-		hash, err := hexutil.Decode(strings.Join(val, ""))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse mutual_id: %v", err), http.StatusBadRequest)
+		hash, err2 := hexutil.Decode(strings.Join(val, ""))
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse mutual_id: %v", err2), http.StatusBadRequest)
 			return
 		}
 		opts = append(opts, db.WithMutualId(protocol.MutualId(common.BytesToHash(hash))))
 	}
 	if val, ok := query["claim_id"]; ok && len(val) > 0 {
-		hash, err := hexutil.Decode(strings.Join(val, ""))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse claim_id: %v", err), http.StatusBadRequest)
+		hash, err2 := hexutil.Decode(strings.Join(val, ""))
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse claim_id: %v", err2), http.StatusBadRequest)
 			return
 		}
 		opts = append(opts, db.WithClaimId(protocol.ClaimId(common.BytesToHash(hash))))
@@ -266,14 +298,14 @@ func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
 			http.Error(w, "Wrong start history commitment format, wanted height:hash", http.StatusBadRequest)
 			return
 		}
-		startHeight, err := strconv.ParseUint(commitParts[0], 10, 64)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse start commit height: %v", err), http.StatusBadRequest)
+		startHeight, err2 := strconv.ParseUint(commitParts[0], 10, 64)
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse start commit height: %v", err2), http.StatusBadRequest)
 			return
 		}
-		startHash, err := hexutil.Decode(commitParts[1])
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse start commit hash: %v", err), http.StatusBadRequest)
+		startHash, err2 := hexutil.Decode(commitParts[1])
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse start commit hash: %v", err2), http.StatusBadRequest)
 			return
 		}
 		opts = append(opts, db.WithStartHistoryCommitment(history.History{
@@ -288,14 +320,14 @@ func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
 			http.Error(w, "Wrong start history commitment format, wanted height:hash", http.StatusBadRequest)
 			return
 		}
-		endHeight, err := strconv.ParseUint(commitParts[0], 10, 64)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse end commit height: %v", err), http.StatusBadRequest)
+		endHeight, err2 := strconv.ParseUint(commitParts[0], 10, 64)
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse end commit height: %v", err2), http.StatusBadRequest)
 			return
 		}
-		endHash, err := hexutil.Decode(commitParts[1])
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse end commit hash: %v", err), http.StatusBadRequest)
+		endHash, err2 := hexutil.Decode(commitParts[1])
+		if err2 != nil {
+			http.Error(w, fmt.Sprintf("Could not parse end commit hash: %v", err2), http.StatusBadRequest)
 			return
 		}
 		opts = append(opts, db.WithEndHistoryCommitment(history.History{
@@ -304,7 +336,7 @@ func (s *Server) AllChallengeEdges(r *http.Request, w http.ResponseWriter) {
 		}))
 	}
 	if val, ok := query["challenge_level"]; ok && len(val) > 0 {
-		if v, err := strconv.ParseUint(val[0], 10, 8); err == nil {
+		if v, err2 := strconv.ParseUint(val[0], 10, 8); err2 == nil {
 			opts = append(opts, db.WithChallengeLevel(uint8(v)))
 		}
 	}
@@ -330,7 +362,7 @@ func parseEdgeStatus(str string) (protocol.EdgeStatus, error) {
 //
 // method:
 // - GET
-// - /api/v1/challenge/<assertion-hash>/edges/<edge-id>
+// - /api/v1/challenge/<assertion-hash>/edges/id/<edge-id>
 //
 // identifier options:
 // - 0x-prefixed assertion hash
@@ -341,7 +373,7 @@ func parseEdgeStatus(str string) (protocol.EdgeStatus, error) {
 //
 // response:
 // - *JsonEdge
-func (s *Server) EdgeByIdentifier(r *http.Request, w http.ResponseWriter) {
+func (s *Server) EdgeByIdentifier(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	assertionHashStr := vars["assertion-hash"]
 	edgeIdStr := vars["edge-id"]
@@ -357,6 +389,7 @@ func (s *Server) EdgeByIdentifier(r *http.Request, w http.ResponseWriter) {
 	}
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
 	edgeId := protocol.EdgeId{Hash: common.BytesToHash(id)}
+	fmt.Println(edgeId.String())
 	opts := []db.EdgeOption{
 		db.WithLimit(1),
 		db.WithEdgeAssertionHash(assertionHash),
@@ -385,7 +418,7 @@ func (s *Server) EdgeByIdentifier(r *http.Request, w http.ResponseWriter) {
 //
 // method:
 // - GET
-// - /api/v1/challenge/<assertion-hash>/edges/<history-commitment>
+// - /api/v1/challenge/<assertion-hash>/edges/history/<history-commitment>
 //
 // identifier options:
 //   - 0x-prefixed assertion hash
@@ -397,7 +430,7 @@ func (s *Server) EdgeByIdentifier(r *http.Request, w http.ResponseWriter) {
 //
 // response:
 // - *JsonEdge
-func (s *Server) EdgeByHistoryCommitment(r *http.Request, w http.ResponseWriter) {
+func (s *Server) EdgeByHistoryCommitment(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	assertionHashStr := vars["assertion-hash"]
 	hash, err := hexutil.Decode(assertionHashStr)
@@ -479,7 +512,7 @@ func (s *Server) EdgeByHistoryCommitment(r *http.Request, w http.ResponseWriter)
 // - challenge_level: items in a specific challenge level. level 0 is the block challenge level
 // response:
 // - []*MiniStake
-func (s *Server) MiniStakes(r *http.Request, w http.ResponseWriter) {
+func (s *Server) MiniStakes(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	assertionHashStr := vars["assertion-hash"]
 	hash, err := hexutil.Decode(assertionHashStr)

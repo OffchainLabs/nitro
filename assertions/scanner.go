@@ -230,7 +230,11 @@ func (m *Manager) checkForAssertionAdded(
 		// to not block the processing of other incoming events.
 		go func() {
 			_, processErr := retry.UntilSucceeds(ctx, func() (bool, error) {
-				return true, m.ProcessAssertionCreationEvent(ctx, assertionHash)
+				assertionCreationErr := m.ProcessAssertionCreationEvent(ctx, assertionHash)
+				if assertionCreationErr != nil {
+					log.Error(fmt.Sprintf("Could not process assertion creation event: %v", assertionCreationErr))
+				}
+				return true, assertionCreationErr
 			}, retry.WithInterval(time.Minute))
 			if processErr != nil {
 				srvlog.Error(

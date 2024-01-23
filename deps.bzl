@@ -335,12 +335,7 @@ def go_dependencies():
         sum = "h1:uDmaGzcdjhF4i/plgjmEsriH11Y0o7RKapEf/LDaM3w=",
         version = "v1.1.9",
     )
-    go_repository(
-        name = "com_github_d4l3k_messagediff",
-        importpath = "github.com/d4l3k/messagediff",
-        sum = "h1:ZcAIMYsUg0EAp9X+tt8/enBE/Q8Yd5kzPynLyKptt9U=",
-        version = "v1.2.1",
-    )
+
     go_repository(
         name = "com_github_datadog_zstd",
         build_file_generation = "off",
@@ -1721,12 +1716,7 @@ def go_dependencies():
         sum = "h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=",
         version = "v1.0.0-20201130134442-10cb98267c6c",
     )
-    go_repository(
-        name = "in_gopkg_d4l3k_messagediff_v1",
-        importpath = "gopkg.in/d4l3k/messagediff.v1",
-        sum = "h1:70AthpjunwzUiarMHyED52mj9UwtAnE89l1Gmrt3EU0=",
-        version = "v1.2.1",
-    )
+
     go_repository(
         name = "in_gopkg_errgo_v2",
         importpath = "gopkg.in/errgo.v2",

@@ -1,51 +1,12 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "api",
-    srcs = [
-        "assertions.go",
-        "data.go",
-        "edges.go",
-        "log.go",
-        "method_assertions.go",
-        "method_database.go",
-        "method_edges.go",
-        "method_healthz.go",
-        "server.go",
-        "types.go",
-    ],
+    srcs = ["types.go"],
     importpath = "github.com/OffchainLabs/bold/api",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
-        "//challenge-manager/challenge-tree",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//log",
-        "@com_github_gorilla_mux//:mux",
-        "@com_github_jmoiron_sqlx//:sqlx",
-        "@org_golang_x_sync//errgroup",
-    ],
-)
-
-go_test(
-    name = "api_test",
-    srcs = [
-        "data_test.go",
-        "edges_test.go",
-        "method_assertions_test.go",
-        "method_edges_test.go",
-        "method_healthz_test.go",
-        "server_helper_test.go",
-        "server_test.go",
-    ],
-    embed = [":api"],
-    deps = [
-        "//chain-abstraction:protocol",
-        "//challenge-manager/chain-watcher",
-        "//challenge-manager/challenge-tree",
-        "//challenge-manager/challenge-tree/mock",
-        "@com_github_ethereum_go_ethereum//common",
-        "@com_github_gorilla_mux//:mux",
-        "@in_gopkg_d4l3k_messagediff_v1//:messagediff_v1",
     ],
 )

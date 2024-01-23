@@ -11,5 +11,7 @@ go_library(
         "//chain-abstraction:protocol",
         "//challenge-manager/chain-watcher",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//common/hexutil",
+        "@com_github_pkg_errors//:errors",
     ],
 )

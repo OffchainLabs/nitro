@@ -9,8 +9,9 @@ go_library(
     importpath = "github.com/OffchainLabs/bold/challenge-manager",
     visibility = ["//visibility:public"],
     deps = [
-        "//api",
+        "//api/backend",
         "//api/db",
+        "//api/server",
         "//assertions",
         "//chain-abstraction:protocol",
         "//challenge-manager/chain-watcher",
@@ -50,7 +51,6 @@ go_test(
         "//time",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//rpc",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -1017,12 +1017,19 @@ func (w *Watcher) saveEdgeToDB(
 		claimId = common.Hash(edge.ClaimId().Unwrap())
 	}
 	var pathTimer uint64
+	var rawAncestors string
 	if agreement.IsHonestEdge {
-		timer, _, _, err2 := w.ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+		timer, ancestors, _, err2 := w.ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
 		if err2 != nil {
 			return err2
 		}
 		pathTimer = uint64(timer)
+		for i, an := range ancestors {
+			rawAncestors += an.Hex()
+			if i != len(ancestors)-1 {
+				rawAncestors += ","
+			}
+		}
 	}
 	lowerChild, err := edge.LowerChild(ctx)
 	if err != nil {
@@ -1080,5 +1087,6 @@ func (w *Watcher) saveEdgeToDB(
 		TimeUnrivaled:       timeUnrivaled,
 		HasRival:            hasRival,
 		HasLengthOneRival:   hasLengthOneRival,
+		RawAncestors:        rawAncestors,
 	})
 }

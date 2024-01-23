@@ -8,14 +8,14 @@ package challengemanager
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"time"
 
-	"github.com/OffchainLabs/bold/api"
+	apibackend "github.com/OffchainLabs/bold/api/backend"
 	"github.com/OffchainLabs/bold/api/db"
+	"github.com/OffchainLabs/bold/api/server"
 	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
@@ -73,10 +73,10 @@ type Manager struct {
 
 	challengedAssertions *threadsafe.Set[protocol.AssertionHash]
 	// API
-	apiAddr     string
-	api         *api.Server
-	apiDBConfig *api.DBConfig
-	apiDB       db.Database
+	apiAddr   string
+	apiDBPath string
+	api       *server.Server
+	apiDB     db.Database
 }
 
 // WithName is a human-readable identifier for this challenge manager for logging purposes.
@@ -127,16 +127,10 @@ func WithMode(m types.Mode) Opt {
 }
 
 // WithAPIEnabled specifies whether or not to enable the API and the address to listen on.
-func WithAPIEnabled(addr string) Opt {
+func WithAPIEnabled(addr string, dbPath string) Opt {
 	return func(val *Manager) {
 		val.apiAddr = addr
-	}
-}
-
-// WithAPIDB specifies whether to enable the APIDB and adds DB-specific parameters.
-func WithAPIDB(config *api.DBConfig) Opt {
-	return func(val *Manager) {
-		val.apiDBConfig = config
+		val.apiDBPath = dbPath
 	}
 }
 
@@ -212,28 +206,13 @@ func New(
 	m.rollupFilterer = rollupFilterer
 	m.chalManagerAddr = chalManagerAddr
 	m.chalManager = chalManagerFilterer
-	if m.apiAddr != "" && m.client == nil {
-		return nil, errors.New("go-ethereum RPC client required to enable API service")
-	}
 
-	if m.apiAddr != "" {
-		a, err2 := api.NewServer(&api.Config{
-			Address:            m.apiAddr,
-			EdgesProvider:      m.watcher,
-			AssertionsProvider: m.chain,
-			DBConfig:           m.apiDBConfig,
-		})
+	if m.apiDBPath != "" {
+		apiDB, err2 := db.NewDatabase(m.apiDBPath)
 		if err2 != nil {
 			return nil, err2
 		}
-		m.api = a
-		if m.apiDBConfig != nil {
-			apiDB, err2 := db.NewDatabase(m.apiDBConfig.DBPath)
-			if err2 != nil {
-				return nil, err2
-			}
-			m.apiDB = apiDB
-		}
+		m.apiDB = apiDB
 	}
 
 	watcher, err := watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB)
@@ -241,6 +220,15 @@ func New(
 		return nil, err
 	}
 	m.watcher = watcher
+
+	if m.apiAddr != "" {
+		bknd := apibackend.NewBackend(m.apiDB, m.chain, m.watcher)
+		srv, err2 := server.New(m.apiAddr, bknd)
+		if err2 != nil {
+			return nil, err2
+		}
+		m.api = srv
+	}
 
 	assertionManager, err := assertions.NewManager(
 		m.chain,

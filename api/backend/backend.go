@@ -6,6 +6,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/OffchainLabs/bold/api"
@@ -13,12 +14,14 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/pkg/errors"
 )
 
 type BusinessLogicProvider interface {
 	GetAssertions(ctx context.Context, opts ...db.AssertionOption) ([]*api.JsonAssertion, error)
 	GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.JsonEdge, error)
-	GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) ([]*api.JsonEdge, error)
+	GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error)
 	LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error)
 }
 
@@ -153,16 +156,38 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 			e.TimeUnrivaled = timeUnrivaled
 			isRoyal := b.chainWatcher.IsRoyal(assertionHash, edge.Id())
 			if isRoyal {
-				pathTimer, _, _, err := b.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+				pathTimer, ancestors, _, err := b.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
 				if err != nil {
 					return nil, err
 				}
+				rawAncestors := ""
+				for i, an := range ancestors {
+					rawAncestors += an.Hex()
+					if i != len(ancestors)-1 {
+						rawAncestors += ","
+					}
+				}
+				e.RawAncestors = rawAncestors
 				e.CumulativePathTimer = uint64(pathTimer)
 			}
 			e.IsRoyal = isRoyal
 		}
 		if err := b.db.UpdateEdges(edges); err != nil {
 			return nil, err
+		}
+	}
+	for _, e := range edges {
+		if e.RawAncestors != "" {
+			ancestorsStr := strings.Split(e.RawAncestors, ",")
+			ancestors := make([]common.Hash, len(ancestorsStr))
+			for i, an := range ancestorsStr {
+				edgeId, err := hexutil.Decode(an)
+				if err != nil {
+					return nil, errors.Wrap(err, "fails here")
+				}
+				ancestors[i] = common.BytesToHash(edgeId)
+			}
+			e.Ancestors = ancestors
 		}
 	}
 	return edges, nil
@@ -182,26 +207,27 @@ func (b *Backend) GetMiniStakes(ctx context.Context, assertionHash protocol.Asse
 	}
 	stakeInfo := &api.JsonMiniStakes{
 		ChallengedAssertionHash: assertionHash.Hash,
+		StakesByLvlAndOrigin:    make(map[protocol.ChallengeLevel][]*api.JsonMiniStakeInfo),
 	}
+	edgesByOriginId := make(map[common.Hash][]*api.JsonEdge)
 	for _, e := range edges {
-		lvl := protocol.ChallengeLevel(e.ChallengeLevel)
-		origin := e.OriginId
+		edgesByOriginId[e.OriginId] = append(edgesByOriginId[e.OriginId], e)
+	}
+	for originId, originDefinedEdges := range edgesByOriginId {
+		lvl := protocol.ChallengeLevel(originDefinedEdges[0].ChallengeLevel)
 		if stakeInfo.StakesByLvlAndOrigin[lvl] == nil {
-			stakeInfo.StakesByLvlAndOrigin[lvl] = make(map[common.Hash]*api.JsonMiniStakeInfo)
+			stakeInfo.StakesByLvlAndOrigin[lvl] = make([]*api.JsonMiniStakeInfo, 0)
 		}
-		if stakeInfo.StakesByLvlAndOrigin[lvl][origin] == nil {
-			stakeInfo.StakesByLvlAndOrigin[lvl][origin] = &api.JsonMiniStakeInfo{
-				StakerAddresses:       []common.Address{},
-				NumberOfMiniStakes:    0,
-				StartCommitmentHeight: e.StartHeight,
-				EndCommitmentHeight:   e.EndHeight,
-			}
+		info := &api.JsonMiniStakeInfo{
+			ChallengeOriginId:  originId,
+			StakerAddresses:    []common.Address{},
+			NumberOfMiniStakes: 0,
 		}
-		stakeInfo.StakesByLvlAndOrigin[lvl][origin].StakerAddresses = append(
-			stakeInfo.StakesByLvlAndOrigin[lvl][origin].StakerAddresses,
-			e.MiniStaker,
-		)
-		stakeInfo.StakesByLvlAndOrigin[lvl][origin].NumberOfMiniStakes += 1
+		for _, e := range originDefinedEdges {
+			info.StakerAddresses = append(info.StakerAddresses, e.MiniStaker)
+			info.NumberOfMiniStakes += 1
+		}
+		stakeInfo.StakesByLvlAndOrigin[lvl] = append(stakeInfo.StakesByLvlAndOrigin[lvl], info)
 	}
 	return stakeInfo, nil
 }
