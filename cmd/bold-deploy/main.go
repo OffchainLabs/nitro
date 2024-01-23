@@ -62,13 +62,13 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 
 	// Bold specific flags.
-	numBigSteps := flag.Uint("numBigSteps", 4, "Number of big steps in the rollup")
+	numBigSteps := flag.Uint("numBigSteps", 2, "Number of big steps in the rollup")
 	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<5, "block challenge edge leaf height")
-	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<9, "big step edge leaf height")
-	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<6, "small step edge leaf height")
+	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<14, "big step edge leaf height")
+	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<15, "small step edge leaf height")
 	minimumAssertionPeriodBlocks := flag.Uint64("minimumAssertionPeriodBlocks", 1, "minimum number of blocks between assertions")
-	// Default of 400 blocks, or 1.3 hours
-	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 400, "challenge period")
+	// Default of 1200 blocks, or 4 hours.
+	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 1200, "challenge period")
 	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 3, "challenge grace period in which security council can take action")
 	miniStake := flag.Uint64("miniStake", 1, "mini-stake size")
 	baseStake := flag.Uint64("baseStake", 1, "base-stake size")
