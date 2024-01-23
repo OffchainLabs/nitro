@@ -970,14 +970,14 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 	}
 	var msgForPrefetch *arbostypes.MessageWithMetadata
 	if pos+1 < msgCount {
-		msgForPrefetch, err = s.GetMessage(pos + 1)
+		msg, err := s.GetMessage(pos + 1)
 		if err != nil {
 			log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos+1)
 			return false
 		}
+		msgForPrefetch = msg
 	}
-	err = s.exec.DigestMessage(pos, msg, msgForPrefetch)
-	if err != nil {
+	if err = s.exec.DigestMessage(pos, msg, msgForPrefetch); err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
 			logger = log.Debug
