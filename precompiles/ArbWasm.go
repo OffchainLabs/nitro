@@ -11,10 +11,10 @@ import (
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramActivated             func(ctx, mech, hash, hash, addr, huge, uint16) error
-	ProgramActivatedGasCost      func(hash, hash, addr, huge, uint16) (uint64, error)
-	ProgramLifetimeExtended      func(ctx, mech, hash, huge) error
-	ProgramLifetimeExtendedError func(hash, huge) (uint64, error)
+	ProgramActivated               func(ctx, mech, hash, hash, addr, huge, uint16) error
+	ProgramActivatedGasCost        func(hash, hash, addr, huge, uint16) (uint64, error)
+	ProgramLifetimeExtended        func(ctx, mech, hash, huge) error
+	ProgramLifetimeExtendedGasCost func(hash, huge) (uint64, error)
 
 	ProgramNotActivatedError      func() error
 	ProgramNeedsUpgradeError      func(version, stylusVersion uint16) error
