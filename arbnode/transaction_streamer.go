@@ -807,7 +807,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	return nil
 }
 
-func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
+func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, common.Hash, error) {
 	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
 

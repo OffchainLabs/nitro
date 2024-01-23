@@ -5,8 +5,9 @@ import (
 )
 
 type BatchInfo struct {
-	Number uint64
-	Data   []byte
+	Number    uint64
+	Data      []byte
+	BlockHash common.Hash
 }
 
 type ValidationInput struct {

@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 /*
@@ -388,7 +389,11 @@ func ToGethWrapData(b *BlobTxWrapData) types.TxWrapData {
 
 // EncodeBlobs takes in raw bytes data to convert into blobs used for KZG commitment EIP-4844
 // transactions on Ethereum.
-func EncodeBlobs(data []byte) []kzg4844.Blob {
+func EncodeBlobs(data []byte) ([]kzg4844.Blob, error) {
+	data, err := rlp.EncodeToBytes(data)
+	if err != nil {
+		return nil, err
+	}
 	blobs := []kzg4844.Blob{{}}
 	blobIndex := 0
 	fieldIndex := -1
@@ -405,7 +410,19 @@ func EncodeBlobs(data []byte) []kzg4844.Blob {
 		}
 		copy(blobs[blobIndex][fieldIndex*32+1:], data[i:max])
 	}
-	return blobs
+	return blobs, nil
+}
+
+func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
+	var rlpData []byte
+	for _, blob := range blobs {
+		for fieldIndex := 0; fieldIndex < params.BlobTxFieldElementsPerBlob; fieldIndex++ {
+			rlpData = append(rlpData, blob[fieldIndex*32+1:(fieldIndex+1)*32]...)
+		}
+	}
+	var outputData []byte
+	err := rlp.DecodeBytes(rlpData, &outputData)
+	return outputData, err
 }
 
 /*
