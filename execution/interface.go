@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
@@ -80,4 +81,10 @@ type TransactionStreamer interface {
 	BatchFetcher
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
 	ExpectChosenSequencer() error
+}
+
+// BoostPolicyScorer assigns a custom "score" to a transaction, which can be used for
+// advanced tx ordering policies in the sequencer.
+type BoostPolicyScorer interface {
+	ScoreTx(tx *types.Transaction) uint64
 }
