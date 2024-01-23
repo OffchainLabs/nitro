@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -257,21 +256,6 @@ func (s *StateManager) StatesInBatchRange(
 	}
 	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
 		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
-	}
-	if totalDesiredHashes >= 32 || totalDesiredHashes == 1 || totalDesiredHashes == 2 {
-		log.Info(
-			fmt.Sprintf(
-				"!!! States for %d total desired hashes, from height %d, to height %d, from batch %d, to batch %d",
-				totalDesiredHashes,
-				fromHeight,
-				toHeight,
-				fromBatch,
-				toBatch,
-			),
-		)
-		for i, st := range states {
-			log.Info(fmt.Sprintf("i=%d, %+v", i, st))
-		}
 	}
 	return machineHashes[fromHeight : toHeight+1], nil
 }
