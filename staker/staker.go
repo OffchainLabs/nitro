@@ -21,10 +21,10 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -87,7 +87,6 @@ type L1ValidatorConfig struct {
 	GasRefunderAddress        string                      `koanf:"gas-refunder-address"`
 	DataPoster                dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                  string                      `koanf:"redis-url"`
-	RedisLock                 redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
 	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
@@ -154,7 +153,6 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	GasRefunderAddress:        "",
 	DataPoster:                dataposter.DefaultDataPosterConfigForValidator,
 	RedisUrl:                  "",
-	RedisLock:                 redislock.DefaultCfg,
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
@@ -175,7 +173,6 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	GasRefunderAddress:        "",
 	DataPoster:                dataposter.TestDataPosterConfigForValidator,
 	RedisUrl:                  "",
-	RedisLock:                 redislock.DefaultCfg,
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
@@ -205,7 +202,6 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
-	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 }
@@ -406,6 +402,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
+	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
@@ -438,6 +435,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			}
 		}
 		if err == nil {
+			ephemeralErrorHandler.Reset()
 			backoff = time.Second
 			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 			stakerActionSuccessCounter.Inc(1)
@@ -449,12 +447,14 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		stakerActionFailureCounter.Inc(1)
 		backoff *= 2
+		logLevel := log.Error
 		if backoff > time.Minute {
 			backoff = time.Minute
-			log.Error("error acting as staker", "err", err)
 		} else {
-			log.Warn("error acting as staker", "err", err)
+			logLevel = log.Warn
 		}
+		logLevel = ephemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel("error acting as staker", "err", err)
 		return backoff
 	})
 	s.CallIteratively(func(ctx context.Context) time.Duration {

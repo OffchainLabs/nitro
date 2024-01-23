@@ -11,6 +11,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -31,22 +33,26 @@ func TestTippingTxBinaryMarshalling(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 	dynamicBytes, err := dynamicTx.MarshalBinary()
 	testhelpers.RequireImpl(t, err)
-	tippingBytes, err := tippingTx.MarshalBinary()
+	subtypedBytes, err := tippingTx.MarshalBinary()
 	testhelpers.RequireImpl(t, err)
-	if len(tippingBytes) < 2 {
+	if len(subtypedBytes) < 3 {
 		testhelpers.FailImpl(t, "got too short binary for tipping tx")
 	}
-	if tippingBytes[0] != types.ArbitrumSubtypedTxType {
-		testhelpers.FailImpl(t, "got wrong first byte (tx type), want:", types.ArbitrumSubtypedTxType, "got:", tippingBytes[0])
+	if subtypedBytes[0] != types.ArbitrumSubtypedTxType {
+		testhelpers.FailImpl(t, "got wrong first byte (tx type), want:", types.ArbitrumSubtypedTxType, "got:", subtypedBytes[0])
 	}
-	if tippingBytes[1] != types.ArbitrumTippingTxSubtype {
+	s := rlp.NewStream(bytes.NewReader(subtypedBytes[1:]), 0)
+	tippingBytes, err := s.Bytes()
+	testhelpers.RequireImpl(t, err)
+
+	if tippingBytes[0] != types.ArbitrumTippingTxSubtype {
 		testhelpers.FailImpl(t, "got wrong second byte (tx subtype), want:", types.ArbitrumTippingTxSubtype, "got:", tippingBytes[0])
 	}
-	if !bytes.Equal(tippingBytes[2:], dynamicBytes[1:]) {
+	if !bytes.Equal(tippingBytes[1:], dynamicBytes[1:]) {
 		testhelpers.FailImpl(t, "unexpected tipping tx binary")
 	}
 	unmarshalledTx := new(types.Transaction)
-	err = unmarshalledTx.UnmarshalBinary(tippingBytes)
+	err = unmarshalledTx.UnmarshalBinary(subtypedBytes)
 	testhelpers.RequireImpl(t, err)
 	if unmarshalledTx.Type() != types.ArbitrumSubtypedTxType {
 		testhelpers.FailImpl(t, "unmarshalled unexpected tx type, want:", types.ArbitrumSubtypedTxType, "got:", unmarshalledTx.Type())
@@ -70,7 +76,7 @@ func TestTippingTxBinaryMarshalling(t *testing.T) {
 }
 
 func TestTippingTxJsonMarshalling(t *testing.T) {
-	info := NewL1TestInfo(t)
+	info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 	info.GenerateAccount("tester")
 	address := common.HexToAddress("0xdeadbeef")
 	accesses := types.AccessList{types.AccessTuple{
@@ -80,7 +86,7 @@ func TestTippingTxJsonMarshalling(t *testing.T) {
 		},
 	}}
 	dynamic := types.DynamicFeeTx{
-		ChainID:    big.NewInt(1337),
+		ChainID:    params.ArbitrumDevTestChainConfig().ChainID,
 		To:         &address,
 		Gas:        210000,
 		GasFeeCap:  big.NewInt(13),
@@ -94,7 +100,7 @@ func TestTippingTxJsonMarshalling(t *testing.T) {
 	tippingTx := info.SignTxAs("tester", tipping)
 	tippingJson, err := tippingTx.MarshalJSON()
 	testhelpers.RequireImpl(t, err)
-	expectedJson := []byte(`{"type":"0x63","chainId":"0x539","nonce":"0x2c","to":"0x00000000000000000000000000000000deadbeef","gas":"0x33450","gasPrice":"0x0","maxPriorityFeePerGas":"0x7","maxFeePerGas":"0xd","value":"0x8","input":"0xdeadbeef","accessList":[{"address":"0x00000000000000000000000000000000deadbeef","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"v":"0x0","r":"0xa1601a4ded28737bc73dd6c9fc65e27926c5ba50fbae447f4b8bf2c8319ad084","s":"0x2c2fe6def81bad41bdf4163fef307d98466dadb2c83531dfd6330aaa42fb86a1","subtype":"0x1","hash":"0x9fb176470d1bd930e9b612a7e890eb006fe92b600f9b3abe52c3fa6225f89ba4"}`)
+	expectedJson := []byte(`{"type":"0x63","chainId":"0x64aba","nonce":"0x2c","to":"0x00000000000000000000000000000000deadbeef","gas":"0x33450","gasPrice":"0x0","maxPriorityFeePerGas":"0x7","maxFeePerGas":"0xd","value":"0x8","input":"0xdeadbeef","accessList":[{"address":"0x00000000000000000000000000000000deadbeef","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"v":"0x0","r":"0x857dc536b1092ad101cb8a5db2f7aa55b991b52dd52d389de00d75693e27290e","s":"0x164286ff2e9b41974219566bc3002dd11beea5cdd591792cc92e911db328c302","yParity":"0x0","subtype":"0x1","hash":"0x44146e1bc7203e54879069732270a10b0a6e58cbf93e5031e36ac3c104975f73"}`)
 	if !bytes.Equal(tippingJson, expectedJson) {
 		testhelpers.FailImpl(t, "Unexpected json result, want:\n\t", string(expectedJson), "\ngot:\n\t", string(tippingJson))
 	}
@@ -132,7 +138,7 @@ func TestTippingTxJsonRPC(t *testing.T) {
 }
 
 func TestTippingTxSigning(t *testing.T) {
-	info := NewL1TestInfo(t)
+	info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 	info.GenerateAccount("tester")
 	address := common.HexToAddress("0xdeadbeef")
 	dynamic := &types.DynamicFeeTx{

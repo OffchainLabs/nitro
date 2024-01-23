@@ -698,7 +698,7 @@ func createL2BlockChainWithStackConfig(
 
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
-	arbDb, err := stack.OpenDatabase("arbdb", 0, 0, "", false)
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
@@ -903,7 +903,7 @@ func Create2ndNodeWithConfig(
 
 	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
-	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
+	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 

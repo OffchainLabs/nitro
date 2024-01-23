@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -690,14 +689,8 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 }
 
 func (p *TxProcessor) DropTip() bool {
-	version := p.state.ArbOSVersion()
-	transaction := p.msg.Tx
-	tippingTx := false
-	if version >= arbostypes.ArbosVersion_ArbitrumTippingTx && transaction != nil && transaction.Type() == types.ArbitrumSubtypedTxType {
-		subtype := types.GetArbitrumTxSubtype(transaction)
-		tippingTx = subtype == types.ArbitrumTippingTxSubtype
-	}
-	return (version != 9 || p.delayedInbox) && !tippingTx
+	return p.msg.Tx == nil || p.msg.Tx.Type() != types.ArbitrumSubtypedTxType ||
+		types.GetArbitrumTxSubtype(p.msg.Tx) != types.ArbitrumTippingTxSubtype
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
