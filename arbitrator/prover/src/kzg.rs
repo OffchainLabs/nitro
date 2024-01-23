@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::utils::Bytes32;
-use c_kzg::{KzgSettings, BYTES_PER_G1_POINT, BYTES_PER_G2_POINT};
+use c_kzg::{KzgSettings, BYTES_PER_G1_POINT, BYTES_PER_G2_POINT, FIELD_ELEMENTS_PER_BLOB, BYTES_PER_BLOB};
 use eyre::{ensure, Result, WrapErr};
 use num::BigUint;
 use serde::{de::Error as _, Deserialize};
@@ -37,8 +37,6 @@ struct TrustedSetup {
     g2_monomial: Vec<[u8; BYTES_PER_G2_POINT]>,
 }
 
-const FIELD_ELEMENTS_PER_BLOB: usize = 4096;
-
 lazy_static::lazy_static! {
     pub static ref ETHEREUM_KZG_SETTINGS: KzgSettings = {
         let trusted_setup = serde_json::from_str::<TrustedSetup>(include_str!("kzg-trusted-setup.json"))
@@ -63,6 +61,11 @@ pub fn prove_kzg_preimage(
     offset: u32,
     out: &mut impl Write,
 ) -> Result<()> {
+    ensure!(
+        preimage.len() == BYTES_PER_BLOB,
+        "Trying to KZG prove preimage of unexpected length {}",
+        preimage.len(),
+    );
     let blob =
         c_kzg::Blob::from_bytes(preimage).wrap_err("Failed to generate KZG blob from preimage")?;
     let commitment = c_kzg::KzgCommitment::blob_to_kzg_commitment(&blob, &ETHEREUM_KZG_SETTINGS)
@@ -116,5 +119,5 @@ pub fn prove_kzg_preimage(
 #[cfg(test)]
 #[test]
 fn load_trusted_setup() {
-    let _: &KzgSettings = &*ETHEREUM_KZG_SETTINGS;
+    let _: &KzgSettings = &ETHEREUM_KZG_SETTINGS;
 }

@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use arbutil::{Color, PreimageType};
-use c_kzg::FIELD_ELEMENTS_PER_BLOB;
+use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -1876,12 +1876,12 @@ impl Machine {
                             self.preimage_resolver.get(self.context, preimage_ty, hash)
                         {
                             if preimage_ty == PreimageType::EthVersionedHash
-                                && preimage.len() != 32 * FIELD_ELEMENTS_PER_BLOB
+                                && preimage.len() != BYTES_PER_BLOB
                             {
                                 bail!(
                                     "kzg hash {} preimage should be {} bytes long but is instead {}",
                                     hash,
-                                    32 * FIELD_ELEMENTS_PER_BLOB,
+                                    BYTES_PER_BLOB,
                                     preimage.len(),
                                 );
                             }
