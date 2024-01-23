@@ -68,8 +68,8 @@ func (p *DataPricer) UpdateModel(tempBytes uint32, time uint64) (*big.Int, error
 		return nil, err
 	}
 
-	timeDelta := arbmath.SaturatingUUCast[uint32](time - lastUpdateTime)
-	credit := arbmath.SaturatingUMul(bytesPerSecond, timeDelta)
+	passed := arbmath.SaturatingUUCast[uint32](time - lastUpdateTime)
+	credit := arbmath.SaturatingUMul(bytesPerSecond, passed)
 	demand = arbmath.SaturatingUSub(demand, credit)
 	demand = arbmath.SaturatingUAdd(demand, tempBytes)
 
