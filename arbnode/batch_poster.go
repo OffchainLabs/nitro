@@ -828,7 +828,7 @@ type estimateGasParams struct {
 	To         *common.Address  `json:"to"`
 	Data       hexutil.Bytes    `json:"data"`
 	AccessList types.AccessList `json:"accessList"`
-	BlobHashes []common.Hash    `json:"blobVersionedHashes"`
+	BlobHashes []common.Hash    `json:"blobVersionedHashes,omitempty"`
 }
 
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
@@ -1164,12 +1164,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 	log.Info(
 		"BatchPoster: batch sent",
-		"sequence nr.", batchPosition.NextSeqNum,
+		"sequenceNumber", batchPosition.NextSeqNum,
 		"from", batchPosition.MessageCount,
 		"to", b.building.msgCount,
-		"prev delayed", batchPosition.DelayedMessageCount,
-		"current delayed", b.building.segments.delayedMsg,
-		"total segments", len(b.building.segments.rawSegments),
+		"prevDelayed", batchPosition.DelayedMessageCount,
+		"currentDelayed", b.building.segments.delayedMsg,
+		"totalSegments", len(b.building.segments.rawSegments),
+		"numBlobs", len(kzgBlobs),
 	)
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
