@@ -904,6 +904,40 @@ where
     data
 }
 
+// Prove stacks encodes proof for stack of stacks.
+// Layout of the proof is:
+// - size of a stack of stacks
+// - proof of first stack
+// - proof of last stack
+// - hash of everything in between
+// Accepts prover function so that it can work both for proving stack and window.
+#[must_use]
+fn prove_stacks<T, F>(
+    items: Vec<&[T]>,
+    stack_hasher: F,
+    prover: fn(&[T])-> Vec<u8>,
+) -> Vec<u8>
+where
+    F: Fn(&[T]) -> Bytes32,
+{
+    let mut data = Vec::with_capacity(33);
+    // Add Stack size.
+    data.extend(Bytes32::from(items.len()));
+    // Hash go thread (first stack).
+    data.extend(prover(items.first().unwrap()));
+    if items.len() > 1 {
+        // Hash last co thread (currently executing).
+        data.extend(prover(items.last().unwrap()));
+    }
+    // Hash stacks in between.
+    for st in &items[1..items.len() - 1] {
+        let hash = stack_hasher(st);
+        data.extend(hash.as_ref()); // Assuming Bytes32 can be converted to a slice of u8
+    }
+    data
+}
+
+
 #[must_use]
 fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> Option<T>
 where
@@ -2552,12 +2586,15 @@ impl Machine {
                 panic!("WASM validation failed: {text}");
             }};
         }
-
-        out!(prove_stack(
-            self.get_data_stack(),
-            STACK_PROVING_DEPTH,
+        out!(prove_stacks(
+            self.get_data_stacks(),
             hash_value_stack,
-            |v| v.serialize_for_proof(),
+            |stack| prove_stack(
+                stack, 
+                STACK_PROVING_DEPTH, 
+                hash_value_stack, 
+                |v| v.serialize_for_proof()
+            ),
         ));
 
         out!(prove_stack(
@@ -2567,10 +2604,14 @@ impl Machine {
             |v| v.serialize_for_proof(),
         ));
 
-        out!(prove_window(
-            self.get_frame_stack(),
+        out!(prove_stacks(
+            self.get_frame_stacks(),
             hash_stack_frame_stack,
-            StackFrame::serialize_for_proof,
+            |stack| prove_window(
+                stack, 
+                hash_stack_frame_stack, 
+                StackFrame::serialize_for_proof
+            ),
         ));
 
         out!(self.prove_guards());
@@ -2812,11 +2853,19 @@ impl Machine {
         }
     }
 
+    pub fn get_data_stacks(&self) -> Vec<&[Value]> {
+        self.value_stacks.iter().map(|v| v.as_slice()).collect()
+    }
+
     fn get_frame_stack(&self) -> &[StackFrame] {
         match self.cothread {
             false => &self.frame_stacks[0],
             true => self.frame_stacks.last().unwrap(),
         }
+    }
+
+    fn get_frame_stacks(&self) -> Vec<&[StackFrame]> {
+        self.frame_stacks.iter().map(|v: &Vec<StackFrame>| v.as_slice()).collect()
     }
 
     pub fn get_internals_stack(&self) -> &[Value] {
