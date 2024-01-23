@@ -2,7 +2,9 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::utils::Bytes32;
-use c_kzg::{KzgSettings, BYTES_PER_G1_POINT, BYTES_PER_G2_POINT, FIELD_ELEMENTS_PER_BLOB, BYTES_PER_BLOB};
+use c_kzg::{
+    KzgSettings, BYTES_PER_BLOB, BYTES_PER_G1_POINT, BYTES_PER_G2_POINT, FIELD_ELEMENTS_PER_BLOB,
+};
 use eyre::{ensure, Result, WrapErr};
 use num::BigUint;
 use serde::{de::Error as _, Deserialize};
