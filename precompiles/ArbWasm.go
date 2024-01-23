@@ -11,8 +11,11 @@ import (
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramActivated              func(ctx, mech, hash, hash, addr, huge, uint16) error
-	ProgramActivatedGasCost       func(hash, hash, addr, huge, uint16) (uint64, error)
+	ProgramActivated             func(ctx, mech, hash, hash, addr, huge, uint16) error
+	ProgramActivatedGasCost      func(hash, hash, addr, huge, uint16) (uint64, error)
+	ProgramLifetimeExtended      func(ctx, mech, hash, huge) error
+	ProgramLifetimeExtendedError func(hash, huge) (uint64, error)
+
 	ProgramNotActivatedError      func() error
 	ProgramNeedsUpgradeError      func(version, stylusVersion uint16) error
 	ProgramExpiredError           func(age uint64) error
@@ -40,6 +43,18 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 		return version, dataFee, err
 	}
 	return version, dataFee, con.ProgramActivated(c, evm, codeHash, moduleHash, program, dataFee, version)
+}
+
+// Extends a program's expiration date (reverts if too soon)
+func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, value huge, codehash bytes32) error {
+	dataFee, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
+	if err != nil {
+		return err
+	}
+	if err := con.payActivationDataFee(c, evm, value, dataFee); err != nil {
+		return err
+	}
+	return con.ProgramLifetimeExtended(c, evm, codehash, dataFee)
 }
 
 // Pays the data component of activation costs
@@ -101,15 +116,6 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 // Gets the stylus version that program with codehash was most recently compiled with
 func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, error) {
 	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time)
-}
-
-// Extends a program's expiration date (reverts if too soon)
-func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, value huge, codehash bytes32) error {
-	dataFee, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
-	if err != nil {
-		return err
-	}
-	return con.payActivationDataFee(c, evm, value, dataFee)
 }
 
 // Gets the stylus version that program at addr was most recently compiled with

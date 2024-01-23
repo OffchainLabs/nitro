@@ -446,24 +446,14 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 	if program.version != stylusVersion {
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
-	expiryDays, err := p.ExpiryDays()
-	if err != nil {
-		return nil, err
-	}
 
-	// determine the cost as if the program was brand new
 	bytes := arbmath.SaturatingUMul(program.asmEstimateKb.ToUint32(), 1024)
-	fullCost, err := p.dataPricer.UpdateModel(bytes, time)
+	dataFee, err := p.dataPricer.UpdateModel(bytes, time)
 	if err != nil {
 		return nil, err
 	}
-
-	// discount by the amount of time left
-	ageDays := arbmath.DivCeil(time-program.activatedAt, 24*60*60)
-	trueCost := arbmath.BigMulByFrac(fullCost, int64(ageDays), int64(expiryDays))
-
 	program.activatedAt = time
-	return trueCost, p.setProgram(codeHash, program)
+	return dataFee, p.setProgram(codeHash, program)
 
 }
 
