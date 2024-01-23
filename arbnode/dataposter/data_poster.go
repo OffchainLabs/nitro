@@ -463,11 +463,15 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	newBlobFeeCap := big.NewInt(0)
-	if latestHeader.ExcessBlobGas != nil {
+	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 		newBlobFeeCap = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
 		newBlobFeeCap.Mul(newBlobFeeCap, common.Big2)
 	} else if numBlobs > 0 {
-		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing ExcessBlobGas but blobs were specified in data poster transaction (either the parent chain node is not synced or EIP-4844 was improperly activated)", latestHeader.Number)
+		return nil, nil, nil, fmt.Errorf(
+			"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
+				"(either the parent chain node is not synced or the EIP-4844 was improperly activated)",
+			latestHeader.Number,
+		)
 	}
 	softConfBlock := arbmath.BigSubByUint(latestHeader.Number, config.NonceRbfSoftConfs)
 	softConfNonce, err := p.client.NonceAt(ctx, p.Sender(), softConfBlock)
