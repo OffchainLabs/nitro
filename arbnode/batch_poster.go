@@ -1071,6 +1071,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		data,
 		gasLimit,
 		new(big.Int),
+		nil, // TODO: use blobs
 		accessList,
 	)
 	if err != nil {

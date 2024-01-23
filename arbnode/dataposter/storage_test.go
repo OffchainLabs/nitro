@@ -84,7 +84,7 @@ func valueOf(t *testing.T, i int) *storage.QueuedTransaction {
 			big.NewInt(int64(i)),
 			[]byte{byte(i)}),
 		Meta: meta,
-		Data: types.DynamicFeeTx{
+		DeprecatedData: types.DynamicFeeTx{
 			ChainID:    big.NewInt(int64(i)),
 			Nonce:      uint64(i),
 			GasTipCap:  big.NewInt(int64(i)),
