@@ -46,20 +46,24 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
+func hasBits(checking byte, bits byte) bool {
+	return (checking & bits) == bits
+}
+
 func IsDASMessageHeaderByte(header byte) bool {
-	return (DASMessageHeaderFlag & header) > 0
+	return hasBits(header, DASMessageHeaderFlag)
 }
 
 func IsTreeDASMessageHeaderByte(header byte) bool {
-	return (TreeDASMessageHeaderFlag & header) > 0
+	return hasBits(header, TreeDASMessageHeaderFlag)
 }
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
-	return (ZeroheavyMessageHeaderFlag & header) > 0
+	return hasBits(header, ZeroheavyMessageHeaderFlag)
 }
 
 func IsBlobHashesHeaderByte(header byte) bool {
-	return (BlobHashesHeaderFlag & header) > 0
+	return hasBits(header, BlobHashesHeaderFlag)
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {
