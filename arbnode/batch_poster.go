@@ -61,7 +61,7 @@ const (
 	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 
 	sequencerBatchPostMethodName          = "addSequencerL2BatchFromOrigin0"
-	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchFromBlob" // TODO: this will probably get updated to have a plural name
+	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchFromBlobs"
 )
 
 type batchPosterPosition struct {
