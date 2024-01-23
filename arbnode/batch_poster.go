@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -825,7 +826,7 @@ var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
 type estimateGasParams struct {
 	From       common.Address   `json:"from"`
 	To         *common.Address  `json:"to"`
-	Data       []byte           `json:"data"`
+	Data       hexutil.Bytes    `json:"data"`
 	AccessList types.AccessList `json:"accessList"`
 	BlobHashes []common.Hash    `json:"blobVersionedHashes"`
 }
