@@ -9,9 +9,9 @@ use serde::{de::Error as _, Deserialize};
 use sha2::{Digest, Sha256};
 use std::{convert::TryFrom, io::Write};
 
-struct HexBytes;
+struct HexBytesParser;
 
-impl<'de, const N: usize> serde_with::DeserializeAs<'de, [u8; N]> for HexBytes {
+impl<'de, const N: usize> serde_with::DeserializeAs<'de, [u8; N]> for HexBytesParser {
     fn deserialize_as<D>(deserializer: D) -> Result<[u8; N], D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -31,9 +31,9 @@ impl<'de, const N: usize> serde_with::DeserializeAs<'de, [u8; N]> for HexBytes {
 
 #[derive(Deserialize)]
 struct TrustedSetup {
-    #[serde(with = "serde_with::As::<Vec<HexBytes>>")]
+    #[serde(with = "serde_with::As::<Vec<HexBytesParser>>")]
     g1_lagrange: Vec<[u8; BYTES_PER_G1_POINT]>,
-    #[serde(with = "serde_with::As::<Vec<HexBytes>>")]
+    #[serde(with = "serde_with::As::<Vec<HexBytesParser>>")]
     g2_monomial: Vec<[u8; BYTES_PER_G2_POINT]>,
 }
 
