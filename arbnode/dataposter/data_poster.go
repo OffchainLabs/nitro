@@ -636,7 +636,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 			ChainID:    p.parentChainID256,
 		}
 		// reuse the code to convert gas fee and tip caps to uint256s
-		inner, err = updateTxDataGasCaps(inner, feeCap, tipCap, blobFeeCap)
+		err = updateTxDataGasCaps(inner, feeCap, tipCap, blobFeeCap)
 		if err != nil {
 			return nil, err
 		}
@@ -714,34 +714,35 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	return p.saveTx(ctx, newTx, &newerTx)
 }
 
-func updateTxDataGasCaps(data types.TxData, newFeeCap, newTipCap, newBlobFeeCap *big.Int) (types.TxData, error) {
+func updateTxDataGasCaps(data types.TxData, newFeeCap, newTipCap, newBlobFeeCap *big.Int) error {
 	switch data := data.(type) {
 	case *types.DynamicFeeTx:
 		data.GasFeeCap = newFeeCap
 		data.GasTipCap = newTipCap
-		return data, nil
+		return nil
 	case *types.BlobTx:
 		var overflow bool
 		data.GasFeeCap, overflow = uint256.FromBig(newFeeCap)
 		if overflow {
-			return nil, fmt.Errorf("blob tx fee cap %v exceeds uint256", newFeeCap)
+			return fmt.Errorf("blob tx fee cap %v exceeds uint256", newFeeCap)
 		}
 		data.GasTipCap, overflow = uint256.FromBig(newTipCap)
 		if overflow {
-			return nil, fmt.Errorf("blob tx tip cap %v exceeds uint256", newTipCap)
+			return fmt.Errorf("blob tx tip cap %v exceeds uint256", newTipCap)
 		}
 		data.BlobFeeCap, overflow = uint256.FromBig(newBlobFeeCap)
 		if overflow {
-			return nil, fmt.Errorf("blob tx blob fee cap %v exceeds uint256", newBlobFeeCap)
+			return fmt.Errorf("blob tx blob fee cap %v exceeds uint256", newBlobFeeCap)
 		}
-		return data, nil
+		return nil
 	default:
-		return nil, fmt.Errorf("unexpected transaction data type %T", data)
+		return fmt.Errorf("unexpected transaction data type %T", data)
 	}
 }
 
 func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *big.Int) (*types.Transaction, error) {
-	data, err := updateTxDataGasCaps(tx.GetInner(), newFeeCap, newTipCap, newBlobFeeCap)
+	data := tx.GetInner()
+	err := updateTxDataGasCaps(data, newFeeCap, newTipCap, newBlobFeeCap)
 	if err != nil {
 		return nil, err
 	}
