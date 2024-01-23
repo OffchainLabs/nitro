@@ -349,14 +349,6 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
-		edges, err = db.GetEdges(WithCreatedAtBlock(1))
-		require.NoError(t, err)
-		require.Equal(t, 1, len(edges))
-
-		edges, err = db.GetEdges(WithCreatedAtBlock(112931923123))
-		require.NoError(t, err)
-		require.Equal(t, 0, len(edges))
-
 		edges, err = db.GetEdges(WithMutualId(protocol.MutualId(common.BytesToHash([]byte("bar")))))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))

@@ -5,4 +5,10 @@ go_library(
     srcs = ["backend.go"],
     importpath = "github.com/OffchainLabs/bold/api/backend",
     visibility = ["//visibility:public"],
+    deps = [
+        "//api",
+        "//api/db",
+        "//chain-abstraction:protocol",
+        "//challenge-manager/chain-watcher",
+    ],
 )

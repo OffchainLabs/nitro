@@ -69,6 +69,7 @@ type AssertionQuery struct {
 	withChallenge     bool
 	fromCreationBlock option.Option[uint64]
 	toCreationBlock   option.Option[uint64]
+	forceUpdate       bool
 }
 
 func NewAssertionQuery(opts ...AssertionOption) *AssertionQuery {
@@ -84,6 +85,11 @@ func NewAssertionQuery(opts ...AssertionOption) *AssertionQuery {
 
 type AssertionOption func(*AssertionQuery)
 
+func WithAssertionForceUpdate() AssertionOption {
+	return func(q *AssertionQuery) {
+		q.forceUpdate = true
+	}
+}
 func WithChallenge() AssertionOption {
 	return func(q *AssertionQuery) {
 		q.withChallenge = true
@@ -322,12 +328,6 @@ func WithEndHistoryCommitment(endHistory history.History) EdgeOption {
 		q.args = append(q.args, endHistory.Height)
 	}
 }
-func WithCreatedAtBlock(blockNum uint64) EdgeOption {
-	return func(q *EdgeQuery) {
-		q.filters = append(q.filters, "CreatedAtBlock = ?")
-		q.args = append(q.args, blockNum)
-	}
-}
 func WithMutualId(mutualId protocol.MutualId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "MutualId = ?")
@@ -374,10 +374,34 @@ func WithRival() EdgeOption {
 		q.filters = append(q.filters, "HasRival = true")
 	}
 }
+func WithSubchallenge() EdgeOption {
+	return func(q *EdgeQuery) {
+	}
+}
 func WithEdgeStatus(st protocol.EdgeStatus) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "Status = ?")
 		q.args = append(q.args, st.String())
+	}
+}
+func WithHonestEdges() EdgeOption {
+	return func(q *EdgeQuery) {
+	}
+}
+func WithEdgeForceUpdate() EdgeOption {
+	return func(q *EdgeQuery) {
+	}
+}
+func WithRootEdges() EdgeOption {
+	return func(q *EdgeQuery) {
+	}
+}
+func FromEdgeCreationBlock(n uint64) EdgeOption {
+	return func(q *EdgeQuery) {
+	}
+}
+func ToEdgeCreationBlock(n uint64) EdgeOption {
+	return func(e *EdgeQuery) {
 	}
 }
 func WithLengthOneRival() EdgeOption {

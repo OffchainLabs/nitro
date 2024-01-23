@@ -2,4 +2,8 @@
 // related to BOLD challenges. It handles HTTP methods with their requests and responses.
 package server
 
-type Server struct{}
+import "github.com/OffchainLabs/bold/api/backend"
+
+type Server struct {
+	backend backend.BusinessLogicProvider
+}
