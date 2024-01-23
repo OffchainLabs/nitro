@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim as brotli-wasm-builder
+FROM debian:bookworm-slim as brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
@@ -13,7 +13,7 @@ RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /wo
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
 
-FROM debian:bullseye-slim as brotli-library-builder
+FROM debian:bookworm-slim as brotli-library-builder
 WORKDIR /workspace
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -24,7 +24,7 @@ RUN apt-get update && \
 FROM scratch as brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:16-bullseye-slim as contracts-builder
+FROM node:16-bookworm-slim as contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
@@ -35,15 +35,15 @@ COPY contracts contracts/
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
-FROM debian:bullseye-20211220 as wasm-base
+FROM debian:bookworm-20231218 as wasm-base
 WORKDIR /workspace
 RUN apt-get update && apt-get install -y curl build-essential=12.9
 
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
-RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
-    # pinned rust 1.65.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.68.2 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+RUN apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1
+    # pinned rust 1.70.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.70.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
@@ -82,11 +82,11 @@ COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upg
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.68-slim-bullseye as prover-header-builder
+FROM rust:1.70-slim-bookworm as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make && \
+    apt-get install -y make clang && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
 COPY ./Makefile ./
@@ -98,15 +98,12 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.68-slim-bullseye as prover-builder
+FROM rust:1.75-slim-bookworm as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev wabt
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-12 main' && \
-    apt-get update && \
-    apt-get install -y llvm-12-dev libclang-common-12-dev
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev \
+        libstdc++-11-dev wabt clang llvm-dev libclang-common-14-dev libpolly-14-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
@@ -128,7 +125,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
 
-FROM debian:bullseye-slim as module-root-calc
+FROM debian:bookworm-slim as module-root-calc
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -145,7 +142,7 @@ COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
-FROM debian:bullseye-slim as machine-versions
+FROM debian:bookworm-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 # Download WAVM machines
@@ -166,8 +163,9 @@ RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe
 RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
 RUN ./download-machine.sh consensus-v10.3 0xf559b6d4fa869472dabce70fe1c15221bdda837533dfd891916836975b434dec
 RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
+RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 
-FROM golang:1.20-bullseye as node-builder
+FROM golang:1.20-bookworm as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -198,13 +196,13 @@ FROM node-builder as fuzz-builder
 RUN mkdir fuzzers/
 RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
 
-FROM debian:bullseye-slim as nitro-fuzzer
+FROM debian:bookworm-slim as nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
 COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
 ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
-FROM debian:bullseye-slim as nitro-node-slim
+FROM debian:bookworm-slim as nitro-node-slim
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/

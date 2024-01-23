@@ -436,7 +436,7 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func headerIndicatesFinalitySupport(header *types.Header) bool {
+func HeaderIndicatesFinalitySupport(header *types.Header) bool {
 	if header.Difficulty.Sign() == 0 {
 		// This is an Ethereum PoS chain
 		return true
@@ -466,7 +466,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	if HeadersEqual(currentHead, c.headWhenCached) {
 		return c.header, nil
 	}
-	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
+	if !s.config().UseFinalityData || !HeaderIndicatesFinalitySupport(currentHead) {
 		return nil, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)

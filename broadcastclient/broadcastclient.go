@@ -191,7 +191,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				errors.Is(err, ErrIncorrectChainId) ||
 				errors.Is(err, ErrMissingFeedServerVersion) ||
 				errors.Is(err, ErrIncorrectFeedServerVersion) {
-				bc.fatalErrChan <- err
+				bc.fatalErrChan <- fmt.Errorf("failed connecting to server feed due to %w", err)
 				return
 			}
 			if err == nil {
