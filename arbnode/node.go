@@ -517,7 +517,10 @@ func createNodeImpl(
 
 	var blobReader arbstate.BlobReader
 	if config.BlobClient.BeaconChainUrl != "" {
-		blobReader = NewBlobClient(config.BlobClient, l1client)
+		blobReader, err = NewBlobClient(config.BlobClient, l1client)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)

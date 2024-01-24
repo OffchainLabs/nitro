@@ -4,6 +4,7 @@
 package blobs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 
@@ -48,7 +49,7 @@ func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
 		}
 	}
 	var outputData []byte
-	err := rlp.DecodeBytes(rlpData, &outputData)
+	err := rlp.Decode(bytes.NewReader(rlpData), &outputData)
 	return outputData, err
 }
 
