@@ -40,7 +40,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
-	"github.com/offchainlabs/nitro/util/beaconclient"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -518,12 +517,7 @@ func createNodeImpl(
 
 	var blobReader arbstate.BlobReader
 	if config.BlobClient.BeaconChainUrl != "" {
-		bc, err := beaconclient.NewClient(config.BlobClient.BeaconChainUrl)
-		if err != nil {
-			return nil, err
-		}
-
-		blobReader = NewBlobClient(bc, l1client)
+		blobReader = NewBlobClient(config.BlobClient, l1client)
 	}
 
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)

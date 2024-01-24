@@ -51,6 +51,13 @@ func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
 	return outputData, err
 }
 
+func CommitmentToVersionedHash(commitment kzg4844.Commitment) common.Hash {
+	// As per the EIP-4844 spec, the versioned hash is the SHA-256 hash of the commitment with the first byte set to 1.
+	hash := sha256.Sum256(commitment[:])
+	hash[0] = 1
+	return hash
+}
+
 // Return KZG commitments, proofs, and versioned hashes that corresponds to these blobs
 func ComputeCommitmentsProofsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []kzg4844.Proof, []common.Hash, error) {
 	commitments := make([]kzg4844.Commitment, len(blobs))
@@ -67,10 +74,7 @@ func ComputeCommitmentsProofsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitme
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		// As per the EIP-4844 spec, the versioned hash is the SHA-256 hash of the commitment with the first byte set to 1.
-		hash := sha256.Sum256(commitments[i][:])
-		hash[0] = 1
-		versionedHashes[i] = hash
+		versionedHashes[i] = CommitmentToVersionedHash(commitments[i])
 	}
 
 	return commitments, proofs, versionedHashes, nil
