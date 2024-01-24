@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/spf13/pflag"
@@ -112,14 +113,14 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 }
 
 type blobResponseItem struct {
-	BlockRoot       string        `json:"block_root"`
-	Index           int           `json:"index"`
-	Slot            uint64        `json:"slot"`
-	BlockParentRoot string        `json:"block_parent_root"`
-	ProposerIndex   uint64        `json:"proposer_index"`
-	Blob            hexutil.Bytes `json:"blob"`
-	KzgCommitment   hexutil.Bytes `json:"kzg_commitment"`
-	KzgProof        hexutil.Bytes `json:"kzg_proof"`
+	BlockRoot       string               `json:"block_root"`
+	Index           jsonapi.Uint64String `json:"index"`
+	Slot            jsonapi.Uint64String `json:"slot"`
+	BlockParentRoot string               `json:"block_parent_root"`
+	ProposerIndex   jsonapi.Uint64String `json:"proposer_index"`
+	Blob            hexutil.Bytes        `json:"blob"`
+	KzgCommitment   hexutil.Bytes        `json:"kzg_commitment"`
+	KzgProof        hexutil.Bytes        `json:"kzg_proof"`
 }
 
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
@@ -181,7 +182,7 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 }
 
 type genesisResponse struct {
-	GenesisTime uint64 `json:"genesis_time"`
+	GenesisTime jsonapi.Uint64String `json:"genesis_time"`
 	// don't currently care about other fields, add if needed
 }
 
@@ -193,12 +194,12 @@ func (b *BlobClient) genesisTime(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error calling beacon client in genesisTime: %w", err)
 	}
-	b.cachedGenesisTime = gr.GenesisTime
+	b.cachedGenesisTime = uint64(gr.GenesisTime)
 	return b.cachedGenesisTime, nil
 }
 
 type getSpecResponse struct {
-	SecondsPerSlot uint64 `json:"SECONDS_PER_SLOT"`
+	SecondsPerSlot jsonapi.Uint64String `json:"SECONDS_PER_SLOT"`
 }
 
 func (b *BlobClient) secondsPerSlot(ctx context.Context) (uint64, error) {
@@ -209,7 +210,7 @@ func (b *BlobClient) secondsPerSlot(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error calling beacon client in secondsPerSlot: %w", err)
 	}
-	b.cachedSecondsPerSlot = gr.SecondsPerSlot
+	b.cachedSecondsPerSlot = uint64(gr.SecondsPerSlot)
 	return b.cachedSecondsPerSlot, nil
 
 }
