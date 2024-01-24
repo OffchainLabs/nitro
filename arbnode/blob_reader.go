@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -22,8 +23,8 @@ import (
 )
 
 type BlobClient struct {
-	config     BlobClientConfig
 	ec         arbutil.L1Interface
+	beaconUrl  *url.URL
 	httpClient *http.Client
 
 	// The genesis time time and seconds per slot won't change so only request them once.
@@ -43,12 +44,16 @@ func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-chain-url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs")
 }
 
-func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) *BlobClient {
-	return &BlobClient{
-		config:     config,
-		ec:         ec,
-		httpClient: &http.Client{},
+func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
+	beaconUrl, err := url.Parse(config.BeaconChainUrl)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
 	}
+	return &BlobClient{
+		ec:         ec,
+		beaconUrl:  beaconUrl,
+		httpClient: &http.Client{},
+	}, nil
 }
 
 type fullResult[T any] struct {
@@ -60,7 +65,11 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 
 	var empty T
 
-	req, err := http.NewRequestWithContext(ctx, "GET", path.Join(b.config.BeaconChainUrl, beaconPath), http.NoBody)
+	// not really a deep copy, but copies the Path part we care about
+	url := *b.beaconUrl
+	url.Path = path.Join(url.Path, beaconPath)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
 	if err != nil {
 		return empty, err
 	}
