@@ -5,24 +5,26 @@ package arbnode
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"path"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/beaconclient"
+	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/pretty"
-	"github.com/pkg/errors"
 
 	"github.com/spf13/pflag"
 )
 
 type BlobClient struct {
-	bc *beaconclient.Client
-	ec arbutil.L1Interface
+	config     BlobClientConfig
+	ec         arbutil.L1Interface
+	httpClient *http.Client
 
 	// The genesis time time won't change so only request it once.
 	cachedGenesisTime uint64
@@ -40,8 +42,45 @@ func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-chain-url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs")
 }
 
-func NewBlobClient(bc *beaconclient.Client, ec arbutil.L1Interface) *BlobClient {
-	return &BlobClient{bc: bc, ec: ec}
+func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) *BlobClient {
+	return &BlobClient{
+		config:     config,
+		ec:         ec,
+		httpClient: &http.Client{},
+	}
+}
+
+type fullResult[T any] struct {
+	Data T `json:"data"`
+}
+
+func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath string) (T, error) {
+	// Unfortunately, methods on a struct can't be generic.
+
+	var empty T
+
+	req, err := http.NewRequestWithContext(ctx, "GET", path.Join(b.config.BeaconChainUrl, beaconPath), http.NoBody)
+	if err != nil {
+		return empty, err
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return empty, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return empty, err
+	}
+
+	var full fullResult[T]
+	if err := json.Unmarshal(body, &full); err != nil {
+		return empty, err
+	}
+
+	return full.Data, nil
 }
 
 // Get all the blobs associated with a particular block.
@@ -62,58 +101,48 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 	return b.blobSidecars(ctx, slot, versionedHashes)
 }
 
-type blobResponse struct {
-	Data []blobResponseItem `json:"data"`
-}
 type blobResponseItem struct {
-	BlockRoot       string `json:"block_root"`
-	Index           int    `json:"index"`
-	Slot            uint64 `json:"slot"`
-	BlockParentRoot string `json:"block_parent_root"`
-	ProposerIndex   uint64 `json:"proposer_index"`
-	Blob            string `json:"blob"`
-	KzgCommitment   string `json:"kzg_commitment"`
-	KzgProof        string `json:"kzg_proof"`
+	BlockRoot       string        `json:"block_root"`
+	Index           int           `json:"index"`
+	Slot            uint64        `json:"slot"`
+	BlockParentRoot string        `json:"block_parent_root"`
+	ProposerIndex   uint64        `json:"proposer_index"`
+	Blob            hexutil.Bytes `json:"blob"`
+	KzgCommitment   hexutil.Bytes `json:"kzg_commitment"`
+	KzgProof        hexutil.Bytes `json:"kzg_proof"`
 }
 
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
-	body, err := b.bc.Get(ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
+	response, err := beaconRequest[[]blobResponseItem](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
 	if err != nil {
-		return nil, errors.Wrap(err, "error calling beacon client in blobSidecars")
+		return nil, fmt.Errorf("error calling beacon client in blobSidecars: %w", err)
 	}
 
-	br := &blobResponse{}
-	err = json.Unmarshal(body, br)
-	if err != nil {
-		return nil, errors.Wrap(err, "error decoding json response in blobSidecars")
+	if len(response) < len(versionedHashes) {
+		return nil, fmt.Errorf("expected at least %d blobs for slot %d but only got %d", len(versionedHashes), slot, len(response))
 	}
 
-	if len(br.Data) == 0 {
-		return nil, fmt.Errorf("no blobs found for slot %d", slot)
-	}
+	output := make([]kzg4844.Blob, len(versionedHashes))
+	outputsFound := make([]bool, len(versionedHashes))
 
-	blobs := make([]kzg4844.Blob, len(versionedHashes))
-	var totalFound int
-
-	for i := range blobs {
-		commitmentBytes, err := hexutil.Decode(br.Data[i].KzgCommitment)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't decode commitment for slot(%d) at index(%d), commitment(%s)", slot, br.Data[i].Index, pretty.FirstFewChars(br.Data[i].KzgCommitment))
-		}
+	for _, blobItem := range response {
 		var commitment kzg4844.Commitment
-		copy(commitment[:], commitmentBytes)
-		versionedHash := kZGToVersionedHash(commitment)
+		copy(commitment[:], blobItem.KzgCommitment)
+		versionedHash := blobs.CommitmentToVersionedHash(commitment)
 
 		// The versioned hashes of the blob commitments are produced in the by HASH_OPCODE_BYTE,
 		// presumably in the order they were added to the tx. The spec is unclear if the blobs
 		// need to be returned in any particular order from the beacon API, so we put them back in
 		// the order from the tx.
-		var j int
+		var outputIdx int
 		var found bool
-		for j = range versionedHashes {
-			if versionedHashes[j] == versionedHash {
+		for outputIdx = range versionedHashes {
+			if versionedHashes[outputIdx] == versionedHash {
 				found = true
-				totalFound++
+				if outputsFound[outputIdx] {
+					return nil, fmt.Errorf("found blob with versioned hash %v twice", versionedHash)
+				}
+				outputsFound[outputIdx] = true
 				break
 			}
 		}
@@ -121,30 +150,24 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 			continue
 		}
 
-		blob, err := hexutil.Decode(br.Data[i].Blob)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't decode blob for slot(%d) at index(%d), blob(%s)", slot, br.Data[i].Index, pretty.FirstFewChars(br.Data[i].Blob))
-		}
-		copy(blobs[j][:], blob)
+		copy(output[outputIdx][:], blobItem.Blob)
 
-		proofBytes, err := hexutil.Decode(br.Data[i].KzgProof)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't decode proof for slot(%d) at index(%d), proof(%s)", slot, br.Data[i].Index, pretty.FirstFewChars(br.Data[i].KzgProof))
-		}
 		var proof kzg4844.Proof
-		copy(proof[:], proofBytes)
+		copy(proof[:], blobItem.KzgProof)
 
-		err = kzg4844.VerifyBlobProof(blobs[j], commitment, proof)
+		err = kzg4844.VerifyBlobProof(output[outputIdx], commitment, proof)
 		if err != nil {
-			return nil, fmt.Errorf("failed to verify blob proof for blob at slot(%d) at index(%d), blob(%s)", slot, br.Data[i].Index, pretty.FirstFewChars(br.Data[i].Blob))
+			return nil, fmt.Errorf("failed to verify blob proof for blob at slot(%d) at index(%d), blob(%s)", slot, blobItem.Index, pretty.FirstFewChars(blobItem.Blob.String()))
 		}
 	}
 
-	if totalFound < len(versionedHashes) {
-		return nil, fmt.Errorf("not all of the requested blobs (%d/%d) were found at slot (%d), can't reconstruct batch payload", totalFound, len(versionedHashes), slot)
+	for i, found := range outputsFound {
+		if !found {
+			return nil, fmt.Errorf("missing blob %v in slot %v, can't reconstruct batch payload", versionedHashes[i], slot)
+		}
 	}
 
-	return blobs, nil
+	return output, nil
 }
 
 type genesisResponse struct {
@@ -157,29 +180,10 @@ func (b *BlobClient) genesisTime(ctx context.Context) (uint64, error) {
 		return b.cachedGenesisTime, nil
 	}
 
-	body, err := b.bc.Get(ctx, "/eth/v1/beacon/genesis")
+	gr, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis")
 	if err != nil {
-		return 0, errors.Wrap(err, "error calling beacon client in genesisTime")
-	}
-
-	gr := &genesisResponse{}
-	dataWrapper := &struct{ Data *genesisResponse }{Data: gr}
-	err = json.Unmarshal(body, dataWrapper)
-	if err != nil {
-		return 0, errors.Wrap(err, "error decoding json response in genesisTime")
+		return 0, fmt.Errorf("error calling beacon client in genesisTime: %w", err)
 	}
 
 	return gr.GenesisTime, nil
-}
-
-// The following code is taken from core/vm/contracts.go
-const (
-	blobCommitmentVersionKZG uint8 = 0x01 // Version byte for the point evaluation precompile.
-)
-
-func kZGToVersionedHash(kzg kzg4844.Commitment) common.Hash {
-	h := sha256.Sum256(kzg[:])
-	h[0] = blobCommitmentVersionKZG
-
-	return h
 }
