@@ -29,24 +29,29 @@ fn main() {
         let mut bytebuffer = Bytes32([0x0; 32]);
         // in delayed inbox - we're skipping the "kind" byte
         println!("delayed inbox message 0");
+        let mut expected_buffer = bytebuffer.0;
         let len = wavm_read_delayed_inbox_message(0, bytebuffer.0.as_mut_ptr(), DELAYED_HEADER_LEN);
-        assert_eq!(len, 2);
-        assert_eq!(bytebuffer.0[1], 0xaa);
+        assert_eq!(len, 3);
+        expected_buffer[2] = 0xaa;
+        assert_eq!(bytebuffer.0, expected_buffer);
         println!("delayed inbox message 1");
         let len = wavm_read_delayed_inbox_message(1, bytebuffer.0.as_mut_ptr(), DELAYED_HEADER_LEN);
         assert_eq!(len, 32);
-        for j in 1..31 {
-            assert_eq!(bytebuffer.0[j], (j as u8));
+        for j in 1..32 {
+            assert_eq!(bytebuffer.0[j], (j as u8) - 1);
         }
         println!("inbox message 0");
+        expected_buffer = bytebuffer.0;
         let len = wavm_read_inbox_message(0, bytebuffer.0.as_mut_ptr(), INBOX_HEADER_LEN);
-        assert_eq!(len, 1);
-        assert_eq!(bytebuffer.0[0], 0xaa);
+        expected_buffer[0] = 0;
+        expected_buffer[1] = 0xaa;
+        assert_eq!(len, 2);
+        assert_eq!(bytebuffer.0, expected_buffer);
         println!("inbox message 1");
         let len = wavm_read_inbox_message(1, bytebuffer.0.as_mut_ptr(), INBOX_HEADER_LEN);
         assert_eq!(len, 32);
         for j in 0..32 {
-            assert_eq!(bytebuffer.0[j], (j as u8) + 1);
+            assert_eq!(bytebuffer.0[j], (j as u8));
         }
 
         let keccak_hash = hex!("47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad");
