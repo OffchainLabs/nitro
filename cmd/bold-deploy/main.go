@@ -113,7 +113,6 @@ func main() {
 			panic(err)
 		}
 	}
-	l1TransactionOpts.GasFeeCap = big.NewInt(4)
 
 	l1client, err := ethclient.Dial(*l1conn)
 	if err != nil {
