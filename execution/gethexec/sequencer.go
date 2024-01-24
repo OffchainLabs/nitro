@@ -499,14 +499,14 @@ func (s *Sequencer) ForwardTarget() string {
 	if s.forwarder == nil {
 		return ""
 	}
-	return s.forwarder.targets[0]
+	return s.forwarder.PrimaryTarget()
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
-		if s.forwarder.targets[0] == url {
+		if s.forwarder.PrimaryTarget() == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
 			return nil
 		}

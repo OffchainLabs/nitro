@@ -119,6 +119,7 @@ func (cc *ClientConnection) Remove() {
 
 func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.BacklogSegment) error {
 	var prevSegment backlog.BacklogSegment
+	isFirstSegment := true
 	for !backlog.IsBacklogSegmentNil(segment) {
 		// must get the next segment before the messages to be sent are
 		// retrieved ensures another segment is not added in between calls.
@@ -132,10 +133,17 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 		}
 
 		msgs := prevSegment.Messages()
-		if prevSegment.Contains(uint64(cc.requestedSeqNum)) {
+		if isFirstSegment && prevSegment.Contains(uint64(cc.requestedSeqNum)) {
 			requestedIdx := int(cc.requestedSeqNum) - int(prevSegment.Start())
-			msgs = msgs[requestedIdx:]
+			// This might be false if messages were added after we fetched the segment's messages
+			if len(msgs) >= requestedIdx {
+				msgs = msgs[requestedIdx:]
+			}
 		}
+		if len(msgs) == 0 {
+			break
+		}
+		isFirstSegment = false
 		bm := &m.BroadcastMessage{
 			Version:  m.V1,
 			Messages: msgs,

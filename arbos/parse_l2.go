@@ -3,6 +3,7 @@ package arbos
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -237,7 +238,11 @@ func parseEspressoMsg(rd io.Reader) ([]espressoTypes.Bytes, *arbostypes.Espresso
 			}
 			if jst == nil {
 				j := new(arbostypes.EspressoBlockJustification)
-				if err := rlp.DecodeBytes(nextMsg, &j); err != nil {
+				s := []byte{}
+				if err := rlp.DecodeBytes(nextMsg, &s); err != nil {
+					return nil, nil, err
+				}
+				if err := json.Unmarshal(s, j); err != nil {
 					return nil, nil, err
 				}
 				jst = j
@@ -469,7 +474,11 @@ func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espr
 	var l2Message []byte
 
 	l2Message = append(l2Message, L2MessageKind_EspressoTx)
-	jstBin, err := rlp.EncodeToBytes(jst)
+	jstJson, err := json.Marshal(jst)
+	if err != nil {
+		return arbostypes.L1IncomingMessage{}, err
+	}
+	jstBin, err := rlp.EncodeToBytes(jstJson)
 	if err != nil {
 		return arbostypes.L1IncomingMessage{}, err
 	}

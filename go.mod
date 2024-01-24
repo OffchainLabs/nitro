@@ -7,7 +7,7 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
-	github.com/EspressoSystems/espresso-sequencer-go v0.0.3
+	github.com/EspressoSystems/espresso-sequencer-go v0.0.4
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.21.0
@@ -39,7 +39,6 @@ require (
 	github.com/miguelmota/go-ethereum-hdwallet v0.1.2
 	github.com/multiformats/go-multiaddr v0.9.0
 	github.com/multiformats/go-multihash v0.2.1
-	github.com/prysmaticlabs/prysm/v4 v4.1.1
 	github.com/r3labs/diff/v3 v3.0.1
 	github.com/rivo/tview v0.0.0-20230814110005-ccc2c8119703
 	github.com/spf13/pflag v1.0.5
@@ -84,6 +83,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/ceramicnetwork/go-dag-jose v0.1.0 // indirect
+	github.com/cespare/cp v1.1.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cockroachdb/errors v1.9.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
@@ -116,6 +116,7 @@ require (
 	github.com/getsentry/sentry-go v0.18.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-playground/validator/v10 v10.13.0 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
@@ -129,7 +130,6 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20230405160723-4a4c7d95572b // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/gostaticanalysis/comment v1.4.2 // indirect
 	github.com/graph-gophers/graphql-go v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/h2non/filetype v1.0.6 // indirect
@@ -255,10 +255,10 @@ require (
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/samber/lo v1.36.0 // indirect
+	github.com/sigurn/crc8 v0.0.0-20220107193325-2243fe600f9f // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
 	github.com/urfave/cli/v2 v2.25.7 // indirect
-	github.com/uudashr/gocognit v1.0.5 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc // indirect

@@ -19,6 +19,8 @@ var (
 	errOutOfBounds        = errors.New("message not found in backlog")
 
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
+	backlogSizeInBytesGauge      = metrics.NewRegisteredGauge("arb/feed/backlog/bytes", nil)
+	backlogSizeGauge             = metrics.NewRegisteredGauge("arb/feed/backlog/messages", nil)
 )
 
 // Backlog defines the interface for backlog.
@@ -35,23 +37,53 @@ type Backlog interface {
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
-	lookupByIndex *containers.SyncMap[uint64, *backlogSegment]
+	lookupByIndex atomic.Pointer[containers.SyncMap[uint64, *backlogSegment]]
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
 
 // NewBacklog creates a backlog.
 func NewBacklog(c ConfigFetcher) Backlog {
-	lookup := &containers.SyncMap[uint64, *backlogSegment]{}
-	return &backlog{
-		lookupByIndex: lookup,
-		config:        c,
+	b := &backlog{
+		config: c,
 	}
+	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
+	return b
 }
 
 // Head return the head backlogSegment within the backlog.
 func (b *backlog) Head() BacklogSegment {
 	return b.head.Load()
+}
+
+func (b *backlog) backlogSizeInBytes() (uint64, error) {
+	headSeg := b.head.Load()
+	tailSeg := b.tail.Load()
+	if headSeg == nil || tailSeg == nil {
+		if headSeg == nil && tailSeg == nil {
+			return 0, nil
+		}
+		return 0, errors.New("the head or tail segment of feed backlog is nil")
+	}
+
+	headSeg.messagesLock.RLock()
+	if len(headSeg.messages) == 0 {
+		return 0, errors.New("head segment of the feed backlog is empty")
+	}
+	headMsg := headSeg.messages[0]
+	headSeg.messagesLock.RUnlock()
+
+	tailSeg.messagesLock.RLock()
+	if len(tailSeg.messages) == 0 {
+		return 0, errors.New("tail segment of the feed backlog is empty")
+	}
+	tailMsg := tailSeg.messages[len(tailSeg.messages)-1]
+	size := tailMsg.CumulativeSumMsgSize
+	tailSeg.messagesLock.RUnlock()
+
+	size -= headMsg.CumulativeSumMsgSize
+	size += headMsg.Size()
+	return size, nil
 }
 
 // Append will add the given messages to the backlogSegment at head until
@@ -61,8 +93,15 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 	if bm.ConfirmedSequenceNumberMessage != nil {
 		b.delete(uint64(bm.ConfirmedSequenceNumberMessage.SequenceNumber))
+		size, err := b.backlogSizeInBytes()
+		if err != nil {
+			log.Warn("error calculating backlogSizeInBytes", "err", err)
+		} else {
+			backlogSizeInBytesGauge.Update(int64(size))
+		}
 	}
 
+	lookupByIndex := b.lookupByIndex.Load()
 	for _, msg := range bm.Messages {
 		segment := b.tail.Load()
 		if segment == nil {
@@ -74,10 +113,15 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 
 		prevMsgIdx := segment.End()
 		if segment.count() >= b.config().SegmentLimit {
+			segment.messagesLock.RLock()
+			if len(segment.messages) > 0 {
+				msg.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
+			}
+			segment.messagesLock.RUnlock()
+
 			nextSegment := newBacklogSegment()
 			segment.nextSegment.Store(nextSegment)
 			prevMsgIdx = segment.End()
-			nextSegment.previousSegment.Store(segment)
 			segment = nextSegment
 			b.tail.Store(segment)
 		}
@@ -89,6 +133,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.head.Store(segment)
 			b.tail.Store(segment)
 			b.messageCount.Store(0)
+			backlogSizeInBytesGauge.Update(0)
 			log.Warn(err.Error())
 		} else if errors.Is(err, errSequenceNumberSeen) {
 			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
@@ -96,10 +141,12 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		} else if err != nil {
 			return err
 		}
-		b.lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
+		lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
 		b.messageCount.Add(1)
+		backlogSizeInBytesGauge.Inc(int64(msg.Size()))
 	}
 
+	backlogSizeGauge.Update(int64(b.Count()))
 	return nil
 }
 
@@ -161,7 +208,7 @@ func (b *backlog) delete(confirmed uint64) {
 	}
 
 	if confirmed > tail.End() {
-		log.Error("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.End())
+		log.Warn("confirmed sequence number is past the end of stored messages", "confirmed sequence number", confirmed, "last stored sequence number", tail.End())
 		b.reset()
 		return
 	}
@@ -212,14 +259,15 @@ func (b *backlog) delete(confirmed uint64) {
 // removeFromLookup removes all entries from the head segment's start index to
 // the given confirmed index.
 func (b *backlog) removeFromLookup(start, end uint64) {
+	lookupByIndex := b.lookupByIndex.Load()
 	for i := start; i <= end; i++ {
-		b.lookupByIndex.Delete(i)
+		lookupByIndex.Delete(i)
 	}
 }
 
 // Lookup attempts to find the backlogSegment storing the given message index.
 func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
-	segment, ok := b.lookupByIndex.Load(i)
+	segment, ok := b.lookupByIndex.Load().Load(i)
 	if !ok {
 		return nil, fmt.Errorf("error finding backlog segment containing message with SequenceNumber %d", i)
 	}
@@ -234,10 +282,12 @@ func (s *backlog) Count() uint64 {
 
 // reset removes all segments from the backlog.
 func (b *backlog) reset() {
-	b.head = atomic.Pointer[backlogSegment]{}
-	b.tail = atomic.Pointer[backlogSegment]{}
-	b.lookupByIndex = &containers.SyncMap[uint64, *backlogSegment]{}
+	b.head.Store(nil)
+	b.tail.Store(nil)
+	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
 	b.messageCount.Store(0)
+	backlogSizeInBytesGauge.Update(0)
+	backlogSizeGauge.Update(0)
 }
 
 // BacklogSegment defines the interface for backlogSegment.
@@ -253,10 +303,9 @@ type BacklogSegment interface {
 // backlogSegment stores messages up to a limit defined by the backlog. It also
 // points to the next backlogSegment in the list.
 type backlogSegment struct {
-	messagesLock    sync.RWMutex
-	messages        []*m.BroadcastFeedMessage
-	nextSegment     atomic.Pointer[backlogSegment]
-	previousSegment atomic.Pointer[backlogSegment]
+	messagesLock sync.RWMutex
+	messages     []*m.BroadcastFeedMessage
+	nextSegment  atomic.Pointer[backlogSegment]
 }
 
 // newBacklogSegment creates a backlogSegment object with an empty slice of
@@ -361,9 +410,15 @@ func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) 
 	s.messagesLock.Lock()
 	defer s.messagesLock.Unlock()
 
+	prevCumulativeSum := uint64(0)
+	if len(s.messages) > 0 {
+		prevCumulativeSum = s.messages[len(s.messages)-1].CumulativeSumMsgSize
+	}
 	if expSeqNum := prevMsgIdx + 1; prevMsgIdx == 0 || uint64(msg.SequenceNumber) == expSeqNum {
+		msg.UpdateCumulativeSumMsgSize(prevCumulativeSum)
 		s.messages = append(s.messages, msg)
 	} else if uint64(msg.SequenceNumber) > expSeqNum {
+		msg.UpdateCumulativeSumMsgSize(prevCumulativeSum)
 		s.messages = nil
 		s.messages = append(s.messages, msg)
 		return fmt.Errorf("new message sequence number (%d) is greater than the expected sequence number (%d): %w", msg.SequenceNumber, expSeqNum, errDropSegments)
@@ -379,7 +434,7 @@ func (s *backlogSegment) Contains(i uint64) bool {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
 	start := s.start()
-	if i < start || i > s.end() {
+	if i < start || i > s.end() || len(s.messages) == 0 {
 		return false
 	}
 
