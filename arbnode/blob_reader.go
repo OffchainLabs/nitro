@@ -26,8 +26,9 @@ type BlobClient struct {
 	ec         arbutil.L1Interface
 	httpClient *http.Client
 
-	// The genesis time time won't change so only request it once.
-	cachedGenesisTime uint64
+	// The genesis time time and seconds per slot won't change so only request them once.
+	cachedGenesisTime    uint64
+	cachedSecondsPerSlot uint64
 }
 
 type BlobClientConfig struct {
@@ -89,15 +90,15 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 	if err != nil {
 		return nil, err
 	}
-
 	genesisTime, err := b.genesisTime(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO make denominator configurable for devnets with faster block time
-	slot := (header.Time - genesisTime) / 12
-
+	secondsPerSlot, err := b.secondsPerSlot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	slot := (header.Time - genesisTime) / secondsPerSlot
 	return b.blobSidecars(ctx, slot, versionedHashes)
 }
 
@@ -179,11 +180,27 @@ func (b *BlobClient) genesisTime(ctx context.Context) (uint64, error) {
 	if b.cachedGenesisTime > 0 {
 		return b.cachedGenesisTime, nil
 	}
-
 	gr, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis")
 	if err != nil {
 		return 0, fmt.Errorf("error calling beacon client in genesisTime: %w", err)
 	}
+	b.cachedGenesisTime = gr.GenesisTime
+	return b.cachedGenesisTime, nil
+}
 
-	return gr.GenesisTime, nil
+type getSpecResponse struct {
+	SecondsPerSlot uint64 `json:"SECONDS_PER_SLOT"`
+}
+
+func (b *BlobClient) secondsPerSlot(ctx context.Context) (uint64, error) {
+	if b.cachedSecondsPerSlot > 0 {
+		return b.cachedSecondsPerSlot, nil
+	}
+	gr, err := beaconRequest[getSpecResponse](b, ctx, "/eth/v1/config/spec")
+	if err != nil {
+		return 0, fmt.Errorf("error calling beacon client in secondsPerSlot: %w", err)
+	}
+	b.cachedSecondsPerSlot = gr.SecondsPerSlot
+	return b.cachedSecondsPerSlot, nil
+
 }
