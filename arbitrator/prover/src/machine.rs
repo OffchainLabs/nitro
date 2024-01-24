@@ -2526,7 +2526,17 @@ impl Machine {
                 let heights: Vec<_> = self.guards.iter().map($field).collect();
                 
                 // Map each &[Value] slice to its hash using `hash_stack` and collect these hashes into a vector
-                let slice_hashes: Vec<_> = $stacks.iter()
+                // Reorder stacks for hashing to follow same order as in proof:
+                // [0, n-1, 1, 2, ..., n - 2].
+                let ordered_stacks: Vec<_> = match $stacks.len() {
+                    0 => Vec::new(),
+                    1 => vec![*$stacks.first().unwrap()],
+                    _ => std::iter::once(*$stacks.first().unwrap())
+                        .chain(std::iter::once(*$stacks.last().unwrap()))
+                        .chain($stacks.iter().skip(1).take($stacks.len() - 2).cloned())
+                        .collect()
+                };
+                let slice_hashes: Vec<_> = ordered_stacks.iter()
                     .map(|slice| hash_stack(slice.iter().map(|v| v.hash()), concat!($prefix, " stack:")))
                     .collect();
                 hash_stack_with_heights(slice_hashes, &heights, concat!($prefix, " stack:"))
