@@ -10,4 +10,5 @@ type PreimageType uint8
 const (
 	Keccak256PreimageType PreimageType = iota
 	Sha2_256PreimageType
+	EthVersionedHashPreimageType
 )
