@@ -14,6 +14,44 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+func fillBlobBytes(blob []byte, data []byte) []byte {
+	for fieldElement := 0; fieldElement < params.BlobTxFieldElementsPerBlob; fieldElement++ {
+		startIdx := fieldElement*32 + 1
+		copy(blob[startIdx:startIdx+31], data)
+		if len(data) <= 31 {
+			return nil
+		}
+		data = data[31:]
+	}
+	return data
+}
+
+// The number of bits in a BLS scalar that aren't part of a whole byte.
+const spareBlobBits = 6 // = math.floor(math.log2(BLS_MODULUS)) % 8
+
+func fillBlobBits(blob []byte, data []byte) ([]byte, error) {
+	var acc uint16
+	accBits := 0
+	for fieldElement := 0; fieldElement < params.BlobTxFieldElementsPerBlob; fieldElement++ {
+		if accBits < spareBlobBits && len(data) > 0 {
+			acc |= uint16(data[0]) << accBits
+			accBits += 8
+			data = data[1:]
+		}
+		blob[fieldElement*32] = uint8(acc & ((1 << spareBlobBits) - 1))
+		accBits -= spareBlobBits
+		if accBits < 0 {
+			// We're out of data
+			break
+		}
+		acc >>= spareBlobBits
+	}
+	if accBits > 0 {
+		return nil, fmt.Errorf("somehow ended up with %v spare accBits", accBits)
+	}
+	return data, nil
+}
+
 // EncodeBlobs takes in raw bytes data to convert into blobs used for KZG commitment EIP-4844
 // transactions on Ethereum.
 func EncodeBlobs(data []byte) ([]kzg4844.Blob, error) {
@@ -21,21 +59,15 @@ func EncodeBlobs(data []byte) ([]kzg4844.Blob, error) {
 	if err != nil {
 		return nil, err
 	}
-	blobs := []kzg4844.Blob{{}}
-	blobIndex := 0
-	fieldIndex := -1
-	for i := 0; i < len(data); i += 31 {
-		fieldIndex++
-		if fieldIndex == params.BlobTxFieldElementsPerBlob {
-			blobs = append(blobs, kzg4844.Blob{})
-			blobIndex++
-			fieldIndex = 0
+	var blobs []kzg4844.Blob
+	for len(data) > 0 {
+		var b kzg4844.Blob
+		data = fillBlobBytes(b[:], data)
+		data, err = fillBlobBits(b[:], data)
+		if err != nil {
+			return nil, err
 		}
-		max := i + 31
-		if max > len(data) {
-			max = len(data)
-		}
-		copy(blobs[blobIndex][fieldIndex*32+1:], data[i:max])
+		blobs = append(blobs, b)
 	}
 	return blobs, nil
 }
@@ -46,6 +78,20 @@ func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
 	for _, blob := range blobs {
 		for fieldIndex := 0; fieldIndex < params.BlobTxFieldElementsPerBlob; fieldIndex++ {
 			rlpData = append(rlpData, blob[fieldIndex*32+1:(fieldIndex+1)*32]...)
+		}
+		var acc uint16
+		accBits := 0
+		for fieldIndex := 0; fieldIndex < params.BlobTxFieldElementsPerBlob; fieldIndex++ {
+			acc |= uint16(blob[fieldIndex*32]) << accBits
+			accBits += spareBlobBits
+			if accBits >= 8 {
+				rlpData = append(rlpData, uint8(acc))
+				acc >>= 8
+				accBits -= 8
+			}
+		}
+		if accBits != 0 {
+			return nil, fmt.Errorf("somehow ended up with %v spare accBits", accBits)
 		}
 	}
 	var outputData []byte
