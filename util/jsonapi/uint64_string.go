@@ -4,6 +4,7 @@
 package jsonapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 )
@@ -12,13 +13,18 @@ import (
 type Uint64String uint64
 
 func (u *Uint64String) UnmarshalJSON(b []byte) error {
-	s := string(b)
-	if s == "null" {
+	jsonString := string(b)
+	if jsonString == "null" {
 		return nil
 	}
 
-	// Parse string as uint64, removing quotes
-	value, err := strconv.ParseUint(s[1:len(s)-1], 10, 64)
+	var s string
+	err := json.Unmarshal(b, &s)
+	if err != nil {
+		return err
+	}
+
+	value, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return err
 	}
