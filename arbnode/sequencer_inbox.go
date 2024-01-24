@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -33,6 +34,7 @@ const (
 	batchDataTxInput batchDataLocation = iota
 	batchDataSeparateEvent
 	batchDataNone
+	batchDataBlobHashes
 )
 
 func init() {
@@ -149,6 +151,19 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 	case batchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
+	case batchDataBlobHashes:
+		tx, err := arbutil.GetLogTransaction(ctx, client, m.rawLog)
+		if err != nil {
+			return nil, err
+		}
+		if len(tx.BlobHashes()) == 0 {
+			return nil, fmt.Errorf("blob batch transaction %v has no blobs", tx.Hash())
+		}
+		data := []byte{arbstate.BlobHashesHeaderFlag}
+		for _, h := range tx.BlobHashes() {
+			data = append(data, h[:]...)
+		}
+		return data, nil
 	default:
 		return nil, fmt.Errorf("batch has invalid data location %v", m.dataLocation)
 	}
