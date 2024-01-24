@@ -2517,9 +2517,24 @@ impl Machine {
                 hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
             }};
         }
+
+        // compute_slices works similarly as compute, except for vector of slices.
+        // Instead of constructing vector of each Value's hash, it constructs
+        // hash of each slice (&[Value]). Rest is the same.
+        macro_rules! compute_vec {
+            ($field:expr, $stacks:expr, $prefix:expr) => {{
+                let heights: Vec<_> = self.guards.iter().map($field).collect();
+                
+                // Map each &[Value] slice to its hash using `hash_stack` and collect these hashes into a vector
+                let slice_hashes: Vec<_> = $stacks.iter()
+                    .map(|slice| hash_stack(slice.iter().map(|v| v.hash()), concat!($prefix, " stack:")))
+                    .collect();
+                hash_stack_with_heights(slice_hashes, &heights, concat!($prefix, " stack:"))
+            }};
+        }
         let (frame_stack, frames) =
-            compute!(|x| x.frame_stack, self.get_frame_stack(), "Stack frame");
-        let (value_stack, values) = compute!(|x| x.value_stack, self.get_data_stack(), "Value");
+            compute_vec!(|x| x.frame_stack, self.get_frame_stacks(), "Stack frame");
+        let (value_stack, values) = compute_vec!(|x| x.value_stack, self.get_data_stacks(), "Value");
         let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
 
         let pcs = self.guards.iter().map(|x| x.on_error);
