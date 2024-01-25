@@ -18,9 +18,9 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1
 
-    - name: Check PR Title For Release Candidate Tag ([Release])
+    - name: Check PR Label For Release label
       run: |
-        if [[ ${{ github.event.pull_request.title }} == "[Release]" ]]; then
+        if contains(github.event.pull_request.labels.*.name, 'release') 
           echo "Release candidate."
         else
           echo "Not a release candidate. Skipping workflow."
@@ -28,10 +28,7 @@ jobs:
         fi
 
     - name: Build nitro-fuzzer Docker Image
-      run: docker build --target nitro-fuzzer -t nitro-fuzzer-image .
+      run: docker build --target nitro-fuzzer -t nitro-fuzzer .
 
     - name: Run Docker Container
-      run: docker run --name nitro-fuzzer-container nitro-fuzzer-image &
-    
-    - name: Stop Docker Container
-      run: docker stop nitro-fuzzer-container
+      run: docker run nitro-fuzzer
