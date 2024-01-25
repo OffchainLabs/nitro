@@ -50,7 +50,7 @@ func (s GoGlobalState) Hash() common.Hash {
 func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 	return challengegen.GlobalState{
 		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
-		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
+		U64Vals:     [3]uint64{s.Batch, s.PosInBatch},
 	}
 }
 
