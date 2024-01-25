@@ -2,11 +2,13 @@ name: Release CI
 run-name: Release CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
+  workflow_dispatch:
+  merge_group:
   pull_request:
-    types:
+  push:
+    branches:
       - master
       - develop
-
 jobs:
   build_and_run:
     runs-on: ubuntu-8
