@@ -1,0 +1,37 @@
+name: Release CI
+run-name: Release CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+on:
+  pull_request:
+    types:
+      - master
+      - develop
+
+jobs:
+  build_and_run:
+    runs-on: ubuntu-8
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Check PR Title For Release Candidate Tag ([Release])
+      run: |
+        if [[ ${{ github.event.pull_request.title }} == "[Release]" ]]; then
+          echo "Release candidate."
+        else
+          echo "Not a release candidate. Skipping workflow."
+          exit 0
+        fi
+
+    - name: Build nitro-fuzzer Docker Image
+      run: docker build --target nitro-fuzzer -t nitro-fuzzer-image .
+
+    - name: Run Docker Container
+      run: docker run --name nitro-fuzzer-container nitro-fuzzer-image &
+    
+    - name: Stop Docker Container
+      run: docker stop nitro-fuzzer-container
