@@ -76,6 +76,8 @@ struct Opts {
     skip_until_host_io: bool,
     #[structopt(long)]
     max_steps: Option<u64>,
+    #[structopt(long, default_value = "0")]
+    hotshot_height: u64,
 }
 
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
@@ -174,7 +176,11 @@ fn main() -> Result<()> {
     let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
 
     let global_state = GlobalState {
-        u64_vals: [opts.inbox_position, opts.position_within_message],
+        u64_vals: [
+            opts.inbox_position,
+            opts.position_within_message,
+            opts.hotshot_height,
+        ],
         bytes32_vals: [last_block_hash, last_send_root],
     };
 

@@ -233,10 +233,6 @@ func main() {
 				panic(err)
 			}
 		}
-		// Fetch these before the message, because readMessage will increment the
-		// inbox position
-		inboxPos := wavmio.GetInboxPosition()
-		posInInbox := wavmio.GetPositionWithinMessage()
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
@@ -244,11 +240,10 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		// Espresso-specific validation
-		// TODO test: https://github.com/EspressoSystems/espresso-sequencer/issues/772
+
 		isL2Message := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message
-		commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(inboxPos, posInInbox))
-		validatingAgainstEspresso := commitment != [32]byte{}
+		currHeight := wavmio.GetEspressoHeight()
+		validatingAgainstEspresso := currHeight > 0
 		if isL2Message && validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
@@ -258,8 +253,14 @@ func main() {
 				panic("batch missing espresso justification")
 			}
 			hotshotHeader := jst.Header
+			if currHeight+1 == hotshotHeader.Height {
+				wavmio.SetEspressoHeight(hotshotHeader.Height)
+			} else {
+				panic(fmt.Sprintf("invalid hotshot block height: %v, got: %v", hotshotHeader.Height, currHeight+1))
+			}
+			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(currHeight))
 			if !commitment.Equals(hotshotHeader.Commit()) {
-				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v. seqNum %v posInInbox %v", hotshotHeader.Commit(), commitment, inboxPos, posInInbox))
+				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v.", hotshotHeader.Commit(), commitment))
 			}
 			var roots = []*espressoTypes.NmtRoot{&hotshotHeader.TransactionsRoot}
 			var proofs = []*espressoTypes.NmtProof{&jst.Proof}

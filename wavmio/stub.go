@@ -39,9 +39,10 @@ var (
 	delayedMsgs        [][]byte
 	delayedMsgFirstPos uint64
 	lastBlockHash      common.Hash
-	hotShotHeader      [32]byte
+	hotShotCommitment  [32]byte
 	preimages          map[common.Hash][]byte
 	seqAdvanced        uint64
+	espressoHeight     uint64
 )
 
 func parsePreimageBytes(path string) {
@@ -118,9 +119,17 @@ func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
 }
 
-func ReadHotShotCommitment(inboxPos uint64, posInInbox uint64) [32]byte {
-	return hotShotHeader
+func ReadHotShotCommitment(h uint64) [32]byte {
+	return hotShotCommitment
 
+}
+
+func GetEspressoHeight() uint64 {
+	return espressoHeight
+}
+
+func SetEspressoHeight(h uint64) {
+	espressoHeight = h
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {

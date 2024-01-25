@@ -21,6 +21,7 @@ use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageR
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
+    convert::TryInto,
     ffi::CStr,
     os::raw::{c_char, c_int},
     path::Path,
@@ -178,6 +179,26 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_add_hotshot_commitment(
+    mach: *mut Machine,
+    height: u64,
+    data: CByteArray,
+) -> c_int {
+    let mach = &mut *mach;
+    let slice = std::slice::from_raw_parts(data.ptr, data.len);
+    if slice.len() != 32 {
+        return 3;
+    }
+    let data: Result<[u8; 32], _> = slice.try_into();
+    if let Ok(comm) = data {
+        mach.add_hotshot_commitment(height, comm);
+        0
+    } else {
+        1
+    }
+}
+
 /// Like arbitrator_step, but stops early if it hits a host io operation.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
@@ -282,6 +303,11 @@ pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalSt
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
     (*mach).set_global_state(gs);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_set_hotshot_height(mach: *mut Machine, height: u64) {
+    (*mach).set_hotshot_height(height);
 }
 
 #[repr(C)]

@@ -95,7 +95,7 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 
 test-go-deps: \
 	build-replay-env \
-	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
+	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const read-hotshot-10)
 
 build-prover-header: $(arbitrator_generated_header)
 

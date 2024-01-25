@@ -144,6 +144,9 @@ func (machine *JitMachine) prove(
 	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
+	if err := writeUint64(entry.HotShotHeight); err != nil {
+		return state, err
+	}
 	if err := writeExact(entry.HotShotCommitment[:]); err != nil {
 		return state, err
 	}

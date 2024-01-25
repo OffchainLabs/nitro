@@ -558,8 +558,9 @@ impl Module {
 // bytes32 - send_root
 // uint64 - inbox_position
 // uint64 - position_within_message
+// uint64 - espresso hotshot height
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
-pub const GLOBAL_STATE_U64_NUM: usize = 2;
+pub const GLOBAL_STATE_U64_NUM: usize = 3;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]
@@ -575,8 +576,9 @@ impl GlobalState {
         for item in self.bytes32_vals {
             h.update(item)
         }
-        for item in self.u64_vals {
-            h.update(item.to_be_bytes())
+        // Exclude the hotshot height
+        for i in 0..(GLOBAL_STATE_U64_NUM - 1) {
+            h.update(self.u64_vals[i].to_be_bytes())
         }
         h.finalize().into()
     }
@@ -713,6 +715,7 @@ pub struct Machine {
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+    hotshot_commitments: HashMap<u64, [u8; 32]>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
     initial_hash: Bytes32,
@@ -1160,6 +1163,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
             context: 0,
+            hotshot_commitments: Default::default(),
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1208,6 +1212,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
             context: 0,
+            hotshot_commitments: Default::default(),
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1888,6 +1893,20 @@ impl Machine {
                         error!();
                     }
                 }
+                Opcode::ReadHotShotCommitment => {
+                    let height = self.value_stack.pop().unwrap().assume_u64();
+                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    if let Some(commitment) = self.hotshot_commitments.get(&height) {
+                        if ptr as u64 + 32 > module.memory.size() {
+                            error!();
+                        } else {
+                            let success = module.memory.store_slice_aligned(ptr.into(), commitment);
+                            assert!(success, "Failed to write to previously read memory");
+                        }
+                    } else {
+                        error!()
+                    }
+                }
                 Opcode::ReadInboxMessage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
@@ -2315,6 +2334,21 @@ impl Machine {
                         panic!("Should never ever get here");
                     }
                 }
+            } else if matches!(next_inst.opcode, Opcode::ReadHotShotCommitment) {
+                let ptr = self.value_stack.get(0).unwrap().assume_u32();
+                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                    idx /= Memory::LEAF_SIZE;
+                    let prev_data = module.memory.get_leaf_data(idx);
+                    data.extend(prev_data);
+                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+
+                    let h = self.value_stack.get(1).unwrap().assume_u64();
+                    if let Some(commitment) = self.hotshot_commitments.get(&h) {
+                        data.extend(commitment);
+                    }
+                } else {
+                    panic!("Should never ever get here")
+                }
             }
         }
 
@@ -2346,6 +2380,14 @@ impl Machine {
         if index >= self.first_too_far && identifier == InboxIdentifier::Sequencer {
             self.first_too_far = index + 1
         }
+    }
+
+    pub fn add_hotshot_commitment(&mut self, height: u64, commitment: [u8; 32]) {
+        self.hotshot_commitments.insert(height, commitment);
+    }
+
+    pub fn set_hotshot_height(&mut self, height: u64) {
+        self.global_state.u64_vals[2] = height
     }
 
     pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {

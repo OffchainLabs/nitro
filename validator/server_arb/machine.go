@@ -123,6 +123,17 @@ func (m *ArbitratorMachine) SetGlobalState(globalState validator.GoGlobalState) 
 	return nil
 }
 
+func (m *ArbitratorMachine) SetHotShotHeight(h uint64) error {
+	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	C.arbitrator_set_hotshot_height(m.ptr, C.uint64_t(h))
+	return nil
+}
+
 func (m *ArbitratorMachine) GetGlobalState() validator.GoGlobalState {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
@@ -297,6 +308,28 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 		return errors.New("failed to deserialize machine state")
 	} else {
 		return nil
+	}
+}
+
+func (m *ArbitratorMachine) AddHotShotCommitment(height uint64, commitment []byte) error {
+	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+
+	cbyte := CreateCByteArray(commitment)
+	status := C.arbitrator_add_hotshot_commitment(m.ptr, C.uint64_t(height), cbyte)
+	DestroyCByteArray(cbyte)
+	if status == 0 {
+		return nil
+	} else if status == 1 {
+		return errors.New("failed to add hotshot commitment: try into failed")
+	} else if status == 3 {
+		return errors.New("failed to add hotshot commitment: len != 32")
+	} else {
+		return errors.New("failed to add hotshot commitment: unreachable")
 	}
 }
 
