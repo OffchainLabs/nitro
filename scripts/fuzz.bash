@@ -83,6 +83,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$run_build" == "false" && -z "$test_group" ]]; then
+    echo you must specify either --build flag or fuzzer-name
+    printusage
+fi
+
 if $run_build; then
     for build_group in system_tests arbstate; do
         go test -c ${nitropath}/${build_group} -fuzz Fuzz -o "$binpath"/${build_group}.fuzz
