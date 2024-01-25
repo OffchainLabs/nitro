@@ -118,6 +118,8 @@ type BatchPosterConfig struct {
 	DisableDasFallbackStoreDataOnChain bool `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
+	// Maximum 4844 blob enabled batch size.
+	Max4844BatchSize int `koanf:"max-4844-batch-size" reload:"hot"`
 	// Max batch post delay.
 	MaxDelay time.Duration `koanf:"max-delay" reload:"hot"`
 	// Wait for max BatchPost delay.
@@ -174,6 +176,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
+	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
@@ -197,7 +200,9 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDasFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize:            100000,
+	MaxSize: 100000,
+	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
+	Max4844BatchSize:   (254 * params.BlobTxFieldElementsPerBlob / 8 * (params.MaxBlobGasPerBlock / params.BlobTxBlobGasPerBlob)) - 1000,
 	PollInterval:       time.Second * 10,
 	ErrorDelay:         time.Second * 10,
 	MaxDelay:           time.Hour,
@@ -227,6 +232,7 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:             true,
 	MaxSize:            100000,
+	Max4844BatchSize:   DefaultBatchPosterConfig.Max4844BatchSize,
 	PollInterval:       time.Millisecond * 10,
 	ErrorDelay:         time.Millisecond * 10,
 	MaxDelay:           0,
@@ -552,13 +558,20 @@ type buildingBatch struct {
 	startMsgCount     arbutil.MessageIndex
 	msgCount          arbutil.MessageIndex
 	haveUsefulMessage bool
+	use4844           bool
 }
 
-func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64) *batchSegments {
-	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxSize*2))
-	if config.MaxSize <= 40 {
-		panic("MaxBatchSize too small")
+func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64, use4844 bool) *batchSegments {
+	maxSize := config.MaxSize
+	if use4844 {
+		maxSize = config.Max4844BatchSize
+	} else {
+		if maxSize <= 40 {
+			panic("Maximum batch size too small")
+		}
+		maxSize -= 40
 	}
+	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
 	compressionLevel := config.CompressionLevel
 	recompressionLevel := config.CompressionLevel
 	if backlog > 20 {
@@ -582,7 +595,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 	return &batchSegments{
 		compressedBuffer:   compressedBuffer,
 		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          config.MaxSize - 40, // TODO
+		sizeLimit:          maxSize,
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
@@ -936,10 +949,29 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
+		latestHeader, err := b.l1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		var use4844 bool
+		config := b.config()
+		if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+			if config.ForcePost4844Blobs {
+				use4844 = true
+			} else {
+				blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+				blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+				blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+
+				calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+				use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+			}
+		}
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate()),
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate(), use4844),
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
+			use4844:       use4844,
 		}
 	}
 	msgCount, err := b.streamer.GetMessageCount()
@@ -1115,26 +1147,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
-	latestHeader, err := b.l1Reader.LastHeader(ctx)
+	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, b.building.use4844)
 	if err != nil {
 		return false, err
 	}
-	var use4844 bool
-	if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		if config.ForcePost4844Blobs {
-			use4844 = true
-		} else {
-			blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
-			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
-			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
-
-			calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
-			use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
-		}
-	}
-	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, use4844)
-	if err != nil {
-		return false, err
+	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > params.MaxBlobGasPerBlock {
+		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
 	}
 	accessList := b.accessList(int(batchPosition.NextSeqNum), int(b.building.segments.delayedMsg))
 	// On restart, we may be trying to estimate gas for a batch whose successor has
