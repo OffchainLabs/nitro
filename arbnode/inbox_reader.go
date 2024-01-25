@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
@@ -299,7 +300,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			}
 			if checkingDelayedCount > 0 {
 				checkingDelayedSeqNum := checkingDelayedCount - 1
-				l1DelayedAcc, err := r.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
+				l1DelayedAcc, err := r.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight, common.Hash{})
 				if err != nil {
 					return err
 				}
