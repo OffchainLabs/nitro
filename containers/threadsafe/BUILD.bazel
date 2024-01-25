@@ -9,7 +9,10 @@ go_library(
     ],
     importpath = "github.com/OffchainLabs/bold/containers/threadsafe",
     visibility = ["//visibility:public"],
-    deps = ["//containers/option"],
+    deps = [
+        "//containers/option",
+        "@com_github_ethereum_go_ethereum//metrics",
+    ],
 )
 
 go_test(

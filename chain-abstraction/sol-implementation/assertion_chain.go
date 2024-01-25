@@ -91,7 +91,7 @@ func NewAssertionChain(
 		backend:                                  backend,
 		txOpts:                                   copiedOpts,
 		rollupAddr:                               rollupAddr,
-		confirmedChallengesByParentAssertionHash: threadsafe.NewSet[protocol.AssertionHash](),
+		confirmedChallengesByParentAssertionHash: threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
 	}
 	for _, opt := range opts {
 		opt(chain)

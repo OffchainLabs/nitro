@@ -15,7 +15,14 @@ import (
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
+)
+
+var (
+	assertionPostedCounter       = metrics.NewRegisteredCounter("arb/validator/poster/assertion_posted", nil)
+	errorPostingAssertionCounter = metrics.NewRegisteredCounter("arb/validator/poster/error_posting_assertion", nil)
+	chainCatchingUpCounter       = metrics.NewRegisteredCounter("arb/validator/poster/chain_catching_up", nil)
 )
 
 func (m *Manager) postAssertionRoutine(ctx context.Context) {
@@ -26,6 +33,7 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	if _, err := m.PostAssertion(ctx); err != nil {
 		if !errors.Is(err, solimpl.ErrAlreadyExists) {
 			srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+			errorPostingAssertionCounter.Inc(1)
 		}
 	}
 	ticker := time.NewTicker(m.postInterval)
@@ -36,6 +44,7 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 			if _, err := m.PostAssertion(ctx); err != nil {
 				if !errors.Is(err, solimpl.ErrAlreadyExists) {
 					srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+					errorPostingAssertionCounter.Inc(1)
 				}
 			}
 		case <-ctx.Done():
@@ -88,10 +97,10 @@ func (m *Manager) PostAssertionBasedOnParent(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 	submitFn func(
-		ctx context.Context,
-		parentCreationInfo *protocol.AssertionCreatedInfo,
-		newState *protocol.ExecutionState,
-	) (protocol.Assertion, error),
+	ctx context.Context,
+	parentCreationInfo *protocol.AssertionCreatedInfo,
+	newState *protocol.ExecutionState,
+) (protocol.Assertion, error),
 ) (option.Option[protocol.Assertion], error) {
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return option.None[protocol.Assertion](), errors.New("inbox max count not a uint64")
@@ -102,6 +111,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	newState, err := m.stateManager.ExecutionStateAfterBatchCount(ctx, batchCount)
 	if err != nil {
 		if errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+			chainCatchingUpCounter.Inc(1)
 			srvlog.Info(
 				"No available batch to post as assertion, waiting for more batches", log.Ctx{
 					"batchCount": batchCount,
@@ -134,6 +144,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 		"requiredInboxMaxCount": batchCount,
 		"postedExecutionState":  fmt.Sprintf("%+v", newState),
 	})
+	assertionPostedCounter.Inc(1)
 
 	return option.Some(assertion), nil
 }

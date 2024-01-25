@@ -6,23 +6,44 @@
 // bare minimum methods needed in this repository.
 package threadsafe
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/ethereum/go-ethereum/metrics"
+)
 
 type Set[T comparable] struct {
 	sync.RWMutex
 	items map[T]bool
+	gauge *metrics.Gauge
 }
 
-func NewSet[T comparable]() *Set[T] {
-	return &Set[T]{
+type SetOpt[T comparable] func(*Set[T])
+
+func SetWithMetric[T comparable](name string) SetOpt[T] {
+	return func(s *Set[T]) {
+		gauge := metrics.NewRegisteredGauge("arb/validator/threadsafe_set/"+name, nil)
+		s.gauge = &gauge
+	}
+}
+
+func NewSet[T comparable](opts ...SetOpt[T]) *Set[T] {
+	s := &Set[T]{
 		items: make(map[T]bool),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *Set[T]) Insert(t T) {
 	s.Lock()
 	defer s.Unlock()
 	s.items[t] = true
+	if s.gauge != nil {
+		(*s.gauge).Inc(1)
+	}
 }
 
 func (s *Set[T]) NumItems() uint64 {
@@ -41,6 +62,9 @@ func (s *Set[T]) Delete(t T) {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.items, t)
+	if s.gauge != nil {
+		(*s.gauge).Dec(1)
+	}
 }
 
 func (s *Set[T]) ForEach(fn func(elem T)) {

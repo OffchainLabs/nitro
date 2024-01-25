@@ -3,15 +3,33 @@
 
 package threadsafe
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/ethereum/go-ethereum/metrics"
+)
 
 type Map[K comparable, V any] struct {
 	sync.RWMutex
 	items map[K]V
+	gauge *metrics.Gauge
 }
 
-func NewMap[K comparable, V any]() *Map[K, V] {
-	return &Map[K, V]{items: make(map[K]V)}
+type MapOpt[K comparable, V any] func(*Map[K, V])
+
+func MapWithMetric[K comparable, V any](name string) MapOpt[K, V] {
+	return func(m *Map[K, V]) {
+		gauge := metrics.NewRegisteredGauge("arb/validator/threadsafe_map/"+name, nil)
+		m.gauge = &gauge
+	}
+}
+
+func NewMap[K comparable, V any](opts ...MapOpt[K, V]) *Map[K, V] {
+	m := &Map[K, V]{items: make(map[K]V)}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 func NewMapFromItems[K comparable, V any](m map[K]V) *Map[K, V] {
@@ -28,6 +46,9 @@ func (s *Map[K, V]) Put(k K, v V) {
 	s.Lock()
 	defer s.Unlock()
 	s.items[k] = v
+	if s.gauge != nil {
+		(*s.gauge).Inc(1)
+	}
 }
 
 func (s *Map[K, V]) Has(k K) bool {
@@ -60,6 +81,9 @@ func (s *Map[K, V]) Delete(k K) {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.items, k)
+	if s.gauge != nil {
+		(*s.gauge).Dec(1)
+	}
 }
 
 func (s *Map[K, V]) ForEach(fn func(k K, v V) error) error {

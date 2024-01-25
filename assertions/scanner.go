@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
 	"os"
 	"strings"
@@ -33,7 +34,12 @@ import (
 )
 
 var (
-	srvlog = log.New("service", "assertions")
+	srvlog                                = log.New("service", "assertions")
+	evilAssertionCounter                  = metrics.NewRegisteredCounter("arb/validator/scanner/evil_assertion", nil)
+	challengeSubmittedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/challenge_submitted", nil)
+	assertionConfirmedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/assertion_confirmed", nil)
+	assertionConfirmedByTimeCounter       = metrics.NewRegisteredCounter("arb/validator/scanner/assertion_confirmed_time", nil)
+	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
 )
 
 func init() {
@@ -103,7 +109,7 @@ func NewManager(
 		assertionsProcessedCount:    0,
 		stateManager:                stateManager,
 		postInterval:                postInterval,
-		submittedAssertions:         threadsafe.NewSet[common.Hash](),
+		submittedAssertions:         threadsafe.NewSet[common.Hash](threadsafe.SetWithMetric[common.Hash]("submittedAssertions")),
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
 	}, nil
 }
@@ -283,12 +289,14 @@ func (m *Manager) ProcessAssertionCreationEvent(
 		if postRivalErr := m.postRivalAssertionAndChallenge(ctx, creationInfo); postRivalErr != nil {
 			return postRivalErr
 		}
+		evilAssertionCounter.Inc(1)
 		m.assertionsProcessedCount++
 		return nil
 	case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
 		// Otherwise, we return the error that we are still catching up to the
 		// execution state claimed by the assertion, and this function will be retried
 		// by the caller if wrapped in a retryable call.
+		chainCatchingUpCounter.Inc(1)
 		return fmt.Errorf(
 			"chain still catching up to processed execution state - "+
 				"will reattempt assertion processing when caught up: %w",
@@ -366,6 +374,7 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	if err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash); err != nil {
 		return err
 	}
+	challengeSubmittedCounter.Inc(1)
 
 	if err := m.logChallengeConfigs(ctx); err != nil {
 		srvlog.Error("Could not log challenge configs", log.Ctx{"err": err})
@@ -570,6 +579,7 @@ func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol
 		return false
 	}
 	if status == protocol.AssertionConfirmed {
+		assertionConfirmedCounter.Inc(1)
 		srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
 		return true
 	}
@@ -616,8 +626,10 @@ func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol
 			return false
 		}
 		srvlog.Error("Could not confirm assertion by time", log.Ctx{"blockNumber": latestHeader.Number.String()})
+		errorConfirmingAssertionByTimeCounter.Inc(1)
 		return false
 	}
+	assertionConfirmedByTimeCounter.Inc(1)
 	srvlog.Info("Assertion confirmed", log.Ctx{"assertionHash": assertionHash.Hash})
 	return true
 }

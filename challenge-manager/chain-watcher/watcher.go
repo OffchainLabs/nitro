@@ -130,7 +130,7 @@ func New(
 		chain:              chain,
 		edgeManager:        edgeManager,
 		pollEventsInterval: interval,
-		challenges:         threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
+		challenges:         threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](threadsafe.MapWithMetric[protocol.AssertionHash, *trackedChallenge]("challenges")),
 		backend:            backend,
 		histChecker:        histChecker,
 		numBigStepLevels:   numBigStepLevels,
@@ -627,7 +627,7 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 		)
 		chal = &trackedChallenge{
 			honestEdgeTree:                 tree,
-			confirmedLevelZeroEdgeClaimIds: threadsafe.NewMap[protocol.ClaimId, protocol.EdgeId](),
+			confirmedLevelZeroEdgeClaimIds: threadsafe.NewMap[protocol.ClaimId, protocol.EdgeId](threadsafe.MapWithMetric[protocol.ClaimId, protocol.EdgeId]("confirmedLevelZeroEdgeClaimIds")),
 		}
 		w.challenges.Put(assertionHash, chal)
 	}
@@ -702,7 +702,7 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) error {
 		)
 		chal = &trackedChallenge{
 			honestEdgeTree:                 tree,
-			confirmedLevelZeroEdgeClaimIds: threadsafe.NewMap[protocol.ClaimId, protocol.EdgeId](),
+			confirmedLevelZeroEdgeClaimIds: threadsafe.NewMap[protocol.ClaimId, protocol.EdgeId](threadsafe.MapWithMetric[protocol.ClaimId, protocol.EdgeId]("confirmedLevelZeroEdgeClaimIds")),
 		}
 		w.challenges.Put(challengeParentAssertionHash, chal)
 	}

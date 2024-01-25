@@ -158,13 +158,13 @@ func New(
 		timeRef:                     utilTime.NewRealTimeReference(),
 		rollupAddr:                  rollupAddr,
 		chainWatcherInterval:        time.Millisecond * 500,
-		trackedEdgeIds:              threadsafe.NewSet[protocol.EdgeId](),
-		batchIndexForAssertionCache: threadsafe.NewMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](),
+		trackedEdgeIds:              threadsafe.NewSet[protocol.EdgeId](threadsafe.SetWithMetric[protocol.EdgeId]("trackedEdgeIds")),
+		batchIndexForAssertionCache: threadsafe.NewMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](threadsafe.MapWithMetric[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
 		assertionPostingInterval:    time.Hour,
 		assertionScanningInterval:   time.Minute,
 		assertionConfirmingInterval: time.Second * 10,
 		averageTimeForBlockCreation: time.Second * 12,
-		challengedAssertions:        threadsafe.NewSet[protocol.AssertionHash](),
+		challengedAssertions:        threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("challengedAssertions")),
 	}
 	for _, o := range opts {
 		o(m)
