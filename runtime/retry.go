@@ -66,7 +66,7 @@ func UntilSucceeds[T any](ctx context.Context, fn func() (T, error), opts ...Opt
 	result, _, err := UntilSucceedsMultipleReturnValue(ctx, func() (T, struct{}, error) {
 		got, err := fn()
 		return got, struct{}{}, err
-	})
+	}, opts...)
 	return result, err
 }
 
