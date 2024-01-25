@@ -7,12 +7,14 @@ cd "$mydir"
 
 function printusage {
     echo Usage: $0 --build \[--binary-path PATH\]
-    echo "      "  $0 \<fuzzer-name\> \[--binary-path PATH\] \[--fuzzcache-path PATH\]  \[--nitro-path PATH\]
+    echo "      "  $0 \<fuzzer-name\> \[--binary-path PATH\] \[--fuzzcache-path PATH\]  \[--nitro-path PATH\] \[--duration DURATION\]
     echo
     echo fuzzer names:
     echo "   " FuzzPrecompiles
     echo "   " FuzzInboxMultiplexer
     echo "   " FuzzStateTransition
+    echo
+    echo "   " duration in minutes
 }
 
 if [[ $# -eq 0 ]]; then
@@ -26,6 +28,7 @@ fuzzcachepath=../target/var/fuzz-cache
 nitropath=../
 run_build=false
 test_group=""
+duration=60
 while [[ $# -gt 0 ]]; do
     case $1 in
         --nitro-path)
@@ -50,6 +53,15 @@ while [[ $# -gt 0 ]]; do
             fuzzcachepath="$2"
             if [[ ! -d "$binpath" ]]; then
                 echo must supply valid path for fuzzcache-path
+                exit 1
+            fi
+            shift
+            shift
+            ;;
+        --duration)
+            duration="$2"
+            if ! [[ "$duration" =~ ^[0-9]+$ ]]; then
+                echo "Invalid timeout duration. Please specify positive integer (in minutes)"
                 exit 1
             fi
             shift
@@ -95,5 +107,5 @@ if $run_build; then
 fi
 
 if [[ ! -z $test_group ]]; then
-    "$binpath"/${test_group}.fuzz -test.run "^$" -test.fuzzcachedir "$fuzzcachepath" -test.fuzz $test_name
+    timeout "$((60 * duration))" "$binpath"/${test_group}.fuzz -test.run "^$" -test.fuzzcachedir "$fuzzcachepath" -test.fuzz $test_name
 fi
