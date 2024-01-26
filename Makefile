@@ -291,11 +291,15 @@ contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbi
 contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
-contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
+target/testdata/preimages.bin:
+	mkdir -p `dirname $@`
+	python3 scripts/create-test-preimages.py $@
 
-contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success --preimages $(arbitrator_cases)/rust/data/preimages.bin
+contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo) target/testdata/preimages.bin
+	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages target/testdata/preimages.bin
+
+contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs) target/testdata/preimages.bin
+	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success --preimages target/testdata/preimages.bin
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
@@ -307,38 +311,6 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 # strategic rules to minimize dependency building
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
-	go run ./linter/recursivelock ./...
-	go run ./linter/comparesame ./...
-
-	# Disabled since we have a lot of use of math/rand package.
-	# We should probably move to crypto/rand at some point even though most of
-	# our uses doesn't seem to be security sensitive.
-	# TODO fix this and enable.
-	# go run ./linter/cryptorand ./... 
-
-	# This yields lot of legitimate warnings, most of which in practice would
-	# probably never happen.
-	# # TODO fix this and enable.
-	# go run ./linter/errcheck ./...
-
-	go run ./linter/featureconfig ./...
-
-	# Disabled since we have high cognitive complexity several places.
-	# TODO fix this and enable.
-	# go run ./linter/gocognit ./...
-	
-	go run ./linter/ineffassign ./...
-	go run ./linter/interfacechecker ./...
-	go run ./linter/logruswitherror ./...
-
-	go run ./linter/shadowpredecl ./...
-	go run ./linter/slicedirect ./...
-
-	# Disabled since it fails many places, although ones I looked into seem
-	# to be false positives logically.
-	# TODO fix this and enable and mark false positives with lint ignore.
-	# go run ./linter/uintcast ./...
-
 	go run ./linter/koanf ./...
 	go run ./linter/pointercheck ./...
 	golangci-lint run --fix

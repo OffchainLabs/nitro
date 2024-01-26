@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
@@ -57,12 +58,12 @@ type DataPoster struct {
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
 	signer            signerFn
-	redisLock         AttemptLocker
 	config            ConfigFetcher
 	usingNoOpStorage  bool
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	extraBacklog      func() uint64
+	parentChainID     *big.Int
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -83,10 +84,6 @@ type DataPoster struct {
 // sign the transaction before submission.
 // This can be local or external, hence the context parameter.
 type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
-
-type AttemptLocker interface {
-	AttemptLock(context.Context) bool
-}
 
 func parseReplacementTimes(val string) ([]time.Duration, error) {
 	var res []time.Duration
@@ -114,11 +111,11 @@ type DataPosterOpts struct {
 	HeaderReader      *headerreader.HeaderReader
 	Auth              *bind.TransactOpts
 	RedisClient       redis.UniversalClient
-	RedisLock         AttemptLocker
 	Config            ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
+	ParentChainID     *big.Int
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
@@ -175,10 +172,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		replacementTimes:    replacementTimes,
 		metadataRetriever:   opts.MetadataRetriever,
 		queue:               queue,
-		redisLock:           opts.RedisLock,
 		errorCount:          make(map[uint64]int),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
+		parentChainID:       opts.ParentChainID,
 	}
 	if dp.extraBacklog == nil {
 		dp.extraBacklog = func() uint64 { return 0 }
@@ -196,6 +193,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 			},
 		}
 	}
+
 	return dp, nil
 }
 
@@ -236,6 +234,35 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
+// txToSendTxArgs converts transaction to SendTxArgs. This is needed for
+// external signer to specify From field.
+func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
+	var to *common.MixedcaseAddress
+	if tx.To() != nil {
+		to = new(common.MixedcaseAddress)
+		*to = common.NewMixedcaseAddress(*tx.To())
+	}
+	data := (hexutil.Bytes)(tx.Data())
+	val := (*hexutil.Big)(tx.Value())
+	if val == nil {
+		val = (*hexutil.Big)(big.NewInt(0))
+	}
+	al := tx.AccessList()
+	return &apitypes.SendTxArgs{
+		From:                 common.NewMixedcaseAddress(addr),
+		To:                   to,
+		Gas:                  hexutil.Uint64(tx.Gas()),
+		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
+		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
+		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
+		Value:                *val,
+		Nonce:                hexutil.Uint64(tx.Nonce()),
+		Data:                 &data,
+		AccessList:           &al,
+		ChainID:              (*hexutil.Big)(tx.ChainId()),
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -249,27 +276,27 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
 	sender := common.HexToAddress(opts.Address)
-
-	var hasher types.Signer
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 		// According to the "eth_signTransaction" API definition, this should be
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		if err := client.CallContext(ctx, &data, opts.Method, tx); err != nil {
-			return nil, fmt.Errorf("signing transaction: %w", err)
+		args, err := txToSendTxArgs(addr, tx)
+		if err != nil {
+			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
-		var signedTx types.Transaction
-		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
-			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
+		if err := client.CallContext(ctx, &data, opts.Method, args); err != nil {
+			return nil, fmt.Errorf("making signing request to external signer: %w", err)
 		}
-		if hasher == nil {
-			hasher = types.LatestSignerForChainID(tx.ChainId())
+		signedTx := &types.Transaction{}
+		if err := signedTx.UnmarshalBinary(data); err != nil {
+			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
-		if hasher.Hash(tx) != hasher.Hash(&signedTx) {
-			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), hasher.Hash(tx))
+		hasher := types.LatestSignerForChainID(tx.ChainId())
+		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
-		return &signedTx, nil
+		return signedTx, nil
 	}, sender, nil
 }
 
@@ -287,6 +314,8 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	}
 	return p.config().MaxMempoolTransactions
 }
+
+var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
 
 // Does basic check whether posting transaction with specified nonce would
 // result in exceeding maximum queue length or maximum transactions in mempool.
@@ -310,7 +339,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
-			return fmt.Errorf("posting a transaction with nonce: %d will exceed max mempool size: %d, unconfirmed nonce: %d", nextNonce, cfg.MaxMempoolTransactions, unconfirmedNonce)
+			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
 		}
 	}
 	return nil
@@ -533,7 +562,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, err
 	}
 	if nonce != expectedNonce {
-		return nil, fmt.Errorf("data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", expectedNonce, nonce)
+		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce, nonce)
 	}
 
 	err = p.updateBalance(ctx)
@@ -554,6 +583,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Value:      value,
 		Data:       calldata,
 		AccessList: accessList,
+		ChainID:    p.parentChainID,
 	}
 	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(&inner))
 	if err != nil {
@@ -745,9 +775,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
-		if !p.redisLock.AttemptLock(ctx) {
-			return minWait
-		}
 		err := p.updateBalance(ctx)
 		if err != nil {
 			log.Warn("failed to update tx poster balance", "err", err)
