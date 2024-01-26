@@ -123,17 +123,6 @@ func (m *ArbitratorMachine) SetGlobalState(globalState validator.GoGlobalState) 
 	return nil
 }
 
-func (m *ArbitratorMachine) SetHotShotHeight(h uint64) error {
-	defer runtime.KeepAlive(m)
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	if m.frozen {
-		return errors.New("machine frozen")
-	}
-	C.arbitrator_set_hotshot_height(m.ptr, C.uint64_t(h))
-	return nil
-}
-
 func (m *ArbitratorMachine) GetGlobalState() validator.GoGlobalState {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()

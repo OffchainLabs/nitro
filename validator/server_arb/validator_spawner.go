@@ -100,11 +100,6 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 		log.Error("error while setting global state for proving", "err", err, "gsStart", entry.StartState)
 		return fmt.Errorf("error while setting global state for proving: %w", err)
 	}
-	err = mach.SetHotShotHeight(entry.HotShotHeight)
-	if err != nil {
-		log.Error("error while setting hotshot height")
-		return fmt.Errorf("error while setting hotshot height")
-	}
 	for _, batch := range entry.BatchInfo {
 		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {

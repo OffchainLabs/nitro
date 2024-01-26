@@ -305,11 +305,6 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
     (*mach).set_global_state(gs);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_set_hotshot_height(mach: *mut Machine, height: u64) {
-    (*mach).set_hotshot_height(height);
-}
-
 #[repr(C)]
 pub struct ResolvedPreimage {
     pub ptr: *mut u8,

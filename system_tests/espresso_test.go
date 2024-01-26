@@ -30,6 +30,8 @@ var (
 	malformedBlockNum  = 5
 	firstGoodBlockNum  = 15
 	secondGoodBlockNum = 25
+
+	hotShotReader = NewTestHotShotReader()
 )
 
 func espresso_block_txs_generators(t *testing.T, l2Info *BlockchainTestInfo) map[int][][]byte {
@@ -108,6 +110,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 				PayloadCommitment:   pc,
 				BlockMerkleTreeRoot: pc,
 			}
+			hotShotReader.AddHotShotCommitment(block, header.Commit())
 			return httpmock.NewJsonResponse(200, header)
 		})
 
@@ -175,8 +178,11 @@ func createValidatorAndPosterNode(ctx context.Context, t *testing.T) (*TestClien
 	builder.nodeConfig.Feed.Input.URL = []string{fmt.Sprintf("ws://127.0.0.1:%d", broadcastPort)}
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.BlockValidator.Enable = true
+	builder.nodeConfig.BlockValidator.Espresso = true
+	builder.nodeConfig.BlockValidator.HotShotAddress = "0x123"
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", validationPort)
 	cleanup := builder.Build(t)
+	builder.L2.ConsensusNode.StatelessBlockValidator.SetHotShotReader(&hotShotReader)
 	return builder.L2, cleanup
 }
 
@@ -296,4 +302,24 @@ func TestEspresso(t *testing.T) {
 	if len(block3.Body().Transactions) != 3 {
 		Fatal(t, "block", secondGoodBlockNum, " should contain 2 valid transactions")
 	}
+}
+
+type TestHotShotReader struct {
+	commitments map[uint64]espressoTypes.Commitment
+}
+
+func NewTestHotShotReader() TestHotShotReader {
+	return TestHotShotReader{commitments: make(map[uint64]espressoTypes.Commitment)}
+}
+
+func (s *TestHotShotReader) AddHotShotCommitment(height uint64, commitment espressoTypes.Commitment) {
+	s.commitments[height] = commitment
+}
+
+func (s *TestHotShotReader) L1HotShotCommitmentFromHeight(blockHeight uint64) (*espressoTypes.Commitment, error) {
+	c, ok := s.commitments[blockHeight]
+	if !ok {
+		return nil, fmt.Errorf("not found commitment")
+	}
+	return &c, nil
 }

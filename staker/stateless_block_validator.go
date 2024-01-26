@@ -49,6 +49,11 @@ type StatelessBlockValidator struct {
 	pendingWasmModuleRoot common.Hash
 }
 
+// This should be only used in tests
+func (s *StatelessBlockValidator) SetHotShotReader(reader HotShotReaderInterface) {
+	s.hotShotReader = reader
+}
+
 type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
 }
@@ -171,7 +176,6 @@ type validationEntry struct {
 	// Valid since Ready
 	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
 	DelayedMsg        []byte
-	HotShotHeight     uint64
 	HotShotCommitment espressoTypes.Commitment
 }
 
@@ -186,7 +190,7 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		Preimages:         e.Preimages,
 		BatchInfo:         e.BatchInfo,
 		DelayedMsg:        e.DelayedMsg,
-		HotShotHeight:     e.HotShotHeight,
+		HotShotHeight:     e.End.HotShotHeight,
 		HotShotCommitment: e.HotShotCommitment,
 		StartState:        e.Start,
 	}, nil
@@ -199,7 +203,6 @@ func newValidationEntry(
 	msg *arbostypes.MessageWithMetadata,
 	batch []byte,
 	prevDelayed uint64,
-	hotShotHeight uint64,
 	hotShotCommitment *espressoTypes.Commitment,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
@@ -222,7 +225,6 @@ func newValidationEntry(
 		HasDelayedMsg:     hasDelayed,
 		DelayedMsgNr:      delayedNum,
 		msg:               msg,
-		HotShotHeight:     hotShotHeight,
 		HotShotCommitment: *hotShotCommitment,
 		BatchInfo:         []validator.BatchInfo{batchInfo},
 	}, nil
@@ -386,7 +388,6 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	var height uint64
 	var comm espressoTypes.Commitment
 	// Note: this code path is not used in the staker validation pipeline, return to this
 	// when we look into fraud proofs
@@ -395,17 +396,23 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		if err != nil {
 			return nil, err
 		}
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(jst.Header.Height)
+		height := jst.Header.Height
+		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {
 			return nil, err
 		}
 		if fetchedCommitment == nil {
 			return nil, fmt.Errorf("commitment not ready yet")
 		}
-		height = jst.Header.Height
 		comm = *fetchedCommitment
+		var startHeight uint64
+		if pos > 0 {
+			startHeight = height - 1
+		}
+		start.HotShotHeight = startHeight
+		end.HotShotHeight = height
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed, height, &comm)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed, &comm)
 	if err != nil {
 		return nil, err
 	}
