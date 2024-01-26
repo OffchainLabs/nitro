@@ -161,4 +161,5 @@ jobs:
           cd contracts
           yarn install
           yarn build
+          yarn build:forge:yul
           yarn hardhat --network localhost test test/prover/*.ts

@@ -130,9 +130,9 @@ func (r *BlobPreimageReader) GetBlobs(
 	var blobs []kzg4844.Blob
 	for _, h := range versionedHashes {
 		var blob kzg4844.Blob
-		var preimage []byte
-		if true {
-			panic("TODO: fill in preimage with wavmio.ResolvePreimage(h, wavmio.PreimageTypeEthVersionedHash) once KZG proof support is merged into this branch")
+		preimage, err := wavmio.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
+		if err != nil {
+			return nil, err
 		}
 		if len(preimage) != len(blob) {
 			return nil, fmt.Errorf("for blob %v got back preimage of length %v but expected blob length %v", h, len(preimage), len(blob))
