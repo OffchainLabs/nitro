@@ -57,7 +57,7 @@ func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.Trans
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client, common.Address{})
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -112,11 +112,11 @@ func CreateChallenge(
 		[2]mocksgen.GlobalState{
 			{
 				Bytes32Vals: [2][32]byte{startGlobalState.BlockHash, startGlobalState.SendRoot},
-				U64Vals:     [2]uint64{startGlobalState.Batch, startGlobalState.PosInBatch},
+				U64Vals:     [3]uint64{startGlobalState.Batch, startGlobalState.PosInBatch},
 			},
 			{
 				Bytes32Vals: [2][32]byte{endGlobalState.BlockHash, endGlobalState.SendRoot},
-				U64Vals:     [2]uint64{endGlobalState.Batch, endGlobalState.PosInBatch},
+				U64Vals:     [3]uint64{endGlobalState.Batch, endGlobalState.PosInBatch},
 			},
 		},
 		numBlocks,
