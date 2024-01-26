@@ -107,5 +107,12 @@ if $run_build; then
 fi
 
 if [[ ! -z $test_group ]]; then
-    timeout "$((60 * duration))" "$binpath"/${test_group}.fuzz -test.run "^$" -test.fuzzcachedir "$fuzzcachepath" -test.fuzz $test_name
+    timeout "$((60 * duration))" "$binpath"/${test_group}.fuzz -test.run "^$" -test.fuzzcachedir "$fuzzcachepath" -test.fuzz $test_name || exit_status=$?
 fi
+
+if  [ -n "$exit_status" ] && [ $exit_status -ne 0 ] && [ $exit_status -ne 124 ]; then
+    echo "Fuzzing failed."
+    exit $exit_status
+fi
+
+echo "Fuzzing succeeded."
