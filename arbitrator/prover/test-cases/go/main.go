@@ -5,13 +5,16 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"os"
 	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	merkletree "github.com/wealdtech/go-merkletree"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -58,6 +61,11 @@ func testCompression(data []byte) {
 		panic("data differs after compression / decompression")
 	}
 }
+
+const FIELD_ELEMENTS_PER_BLOB = 4096
+const BYTES_PER_FIELD_ELEMENT = 32
+
+var BLS_MODULUS, _ = new(big.Int).SetString("52435875175126190479447740508185965837690552500527637822603658699938581184513", 10)
 
 func main() {
 	fmt.Printf("starting executable with %v arg(s): %v\n", len(os.Args), os.Args)
@@ -112,6 +120,25 @@ func main() {
 
 	checkPreimage(arbutil.Keccak256PreimageType, common.HexToHash("47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad"))
 	checkPreimage(arbutil.Sha2_256PreimageType, common.HexToHash("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"))
+
+	kzgPreimage, err := wavmio.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, common.HexToHash("01c277af4074155da57fd0f1065fc8b2e1d475e6639371b7300a2f1fb46296fa"))
+	if err != nil {
+		panic(fmt.Sprintf("failed to resolve eth versioned hash preimage: %v", err))
+	}
+	blobLength := FIELD_ELEMENTS_PER_BLOB * BYTES_PER_FIELD_ELEMENT
+	if len(kzgPreimage) != blobLength {
+		panic(fmt.Sprintf("expected blob length to be %v but got %v", blobLength, len(kzgPreimage)))
+	}
+	for i := 0; i < FIELD_ELEMENTS_PER_BLOB; i++ {
+		hash := sha512.Sum512([]byte(fmt.Sprintf("%v", i)))
+		scalar := new(big.Int).SetBytes(hash[:])
+		scalar.Mod(scalar, BLS_MODULUS)
+		expectedElement := math.U256Bytes(scalar)
+		gotElement := kzgPreimage[i*BYTES_PER_FIELD_ELEMENT : (i+1)*BYTES_PER_FIELD_ELEMENT]
+		if !bytes.Equal(gotElement, expectedElement) {
+			panic(fmt.Sprintf("expected blob element %v to be %v but got %v", i, hex.EncodeToString(expectedElement), hex.EncodeToString(gotElement)))
+		}
+	}
 
 	println("verified preimage resolution!\n")
 }

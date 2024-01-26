@@ -5,6 +5,7 @@
 
 pub mod binary;
 mod host;
+mod kzg;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
