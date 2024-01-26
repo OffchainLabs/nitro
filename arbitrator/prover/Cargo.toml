@@ -34,6 +34,8 @@ wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 wasmer-types = { path = "../tools/wasmer/lib/types" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", optional = true, default-features = false, features = ["std", "unwind", "avx"] }
 wasmparser.workspace = true
+num-derive = "0.4.1"
+num-traits = "0.2.17"
 
 [lib]
 name = "prover"

@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
-        pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
+        self, pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
@@ -70,11 +70,11 @@ pub fn argument_data_to_inbox(argument_data: u64) -> Option<InboxIdentifier> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Function {
-    code: Vec<Instruction>,
-    ty: FunctionType,
+    pub code: Vec<Instruction>,
+    pub ty: FunctionType,
     #[serde(skip)]
     code_merkle: Merkle,
-    local_types: Vec<ArbValueType>,
+    pub local_types: Vec<ArbValueType>,
 }
 
 impl Function {
@@ -114,7 +114,7 @@ impl Function {
         // Insert missing proving argument data
         for inst in insts.iter_mut() {
             if inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
+                let (table, ty) = wavm::unpack_call_indirect(inst.argument_data);
                 let ty = &module_types[usize::try_from(ty).unwrap()];
                 inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
             }
@@ -197,9 +197,9 @@ impl StackFrame {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct TableElement {
+pub(crate) struct TableElement {
     func_ty: FunctionType,
-    val: Value,
+    pub val: Value,
 }
 
 impl Default for TableElement {
@@ -223,10 +223,10 @@ impl TableElement {
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Table {
+pub(crate) struct Table {
     #[serde(with = "RemoteTableType")]
-    ty: TableType,
-    elems: Vec<TableElement>,
+    pub ty: TableType,
+    pub elems: Vec<TableElement>,
     #[serde(skip)]
     elems_merkle: Merkle,
 }
@@ -264,26 +264,26 @@ impl AvailableImport {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Module {
-    globals: Vec<Value>,
-    memory: Memory,
-    tables: Vec<Table>,
+    pub(crate) globals: Vec<Value>,
+    pub(crate) memory: Memory,
+    pub(crate) tables: Vec<Table>,
     #[serde(skip)]
-    tables_merkle: Merkle,
-    funcs: Arc<Vec<Function>>,
+    pub(crate) tables_merkle: Merkle,
+    pub(crate) funcs: Arc<Vec<Function>>,
     #[serde(skip)]
-    funcs_merkle: Arc<Merkle>,
-    types: Arc<Vec<FunctionType>>,
-    internals_offset: u32,
-    names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
-    start_function: Option<u32>,
-    func_types: Arc<Vec<FunctionType>>,
+    pub(crate) funcs_merkle: Arc<Merkle>,
+    pub(crate) types: Arc<Vec<FunctionType>>,
+    pub(crate) internals_offset: u32,
+    pub(crate) names: Arc<NameCustomSection>,
+    pub(crate) host_call_hooks: Arc<Vec<Option<(String, String)>>>,
+    pub(crate) start_function: Option<u32>,
+    pub(crate) func_types: Arc<Vec<FunctionType>>,
     /// Old modules use this format.
     /// TODO: remove this after the jump to stylus.
     #[serde(alias = "exports")]
-    func_exports: Arc<HashMap<String, u32>>,
+    pub(crate) func_exports: Arc<HashMap<String, u32>>,
     #[serde(default)]
-    all_exports: Arc<ExportMap>,
+    pub(crate) all_exports: Arc<ExportMap>,
 }
 
 lazy_static! {
@@ -425,7 +425,7 @@ impl Module {
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
         );
-        if let Some(limits) = bin.memories.get(0) {
+        if let Some(limits) = bin.memories.first() {
             let page_size = Memory::PAGE_SIZE;
             let initial = limits.initial; // validate() checks this is less than max::u32
             let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1; // we require the size remain *below* 2^32
@@ -575,7 +575,7 @@ impl Module {
         )
     }
 
-    fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.names.module
     }
 
@@ -2433,6 +2433,15 @@ impl Machine {
 
     pub fn say<D: Display>(text: D) {
         println!("{} {text}", "WASM says:".yellow());
+    }
+
+    pub fn print_modules(&self) {
+        for module in &self.modules {
+            println!("{module}\n");
+        }
+        for module in self.stylus_modules.values() {
+            println!("{module}\n");
+        }
     }
 
     pub fn is_halted(&self) -> bool {

@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use eyre::Result;
@@ -53,7 +53,12 @@ struct Opts {
 
 fn main() -> Result<()> {
     let opts = Opts::from_args();
-    let file = &mut File::options().create(true).write(true).open(opts.path)?;
+    let file = &mut File::options()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(opts.path)?;
+
     match opts.stub {
         true => forward_stub(file),
         false => forward(file),

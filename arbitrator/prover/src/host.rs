@@ -14,10 +14,11 @@ use crate::{
 use arbutil::{evm::user::UserOutcomeKind, Color};
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
+use num_derive::FromPrimitive;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
 /// Represents the internal hostio functions a module may have.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, FromPrimitive)]
 #[repr(u64)]
 pub enum InternalFunc {
     WavmCallerLoad8,

@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -571,12 +571,20 @@ impl<'a> WasmBinary<'a> {
         let ty = FunctionType::new([ArbValueType::I32], [ArbValueType::I32]);
         let user_main = self.check_func(STYLUS_ENTRY_POINT, ty)?;
 
+        // naively assume for now an upper bound of 5Mb
+        let asm_estimate = 5 * 1024 * 1024;
+
+        // TODO: determine safe value
+        let init_gas = 2048;
+
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
         Ok(StylusData {
-            ink_left,
-            ink_status,
-            depth_left,
+            ink_left: ink_left.as_u32(),
+            ink_status: ink_status.as_u32(),
+            depth_left: depth_left.as_u32(),
+            init_gas,
+            asm_estimate,
             footprint,
             user_main,
         })
@@ -587,7 +595,7 @@ impl<'a> WasmBinary<'a> {
         wasm: &'a [u8],
         page_limit: u16,
         compile: &CompileConfig,
-    ) -> Result<(WasmBinary<'a>, StylusData, u16)> {
+    ) -> Result<(WasmBinary<'a>, StylusData)> {
         let mut bin = parse(wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
 
@@ -611,20 +619,23 @@ impl<'a> WasmBinary<'a> {
             };
         }
         limit!(1, bin.memories.len(), "memories");
-        limit!(100, bin.datas.len(), "datas");
-        limit!(100, bin.elements.len(), "elements");
-        limit!(1_000, bin.exports.len(), "exports");
-        limit!(1_000, bin.tables.len(), "tables");
-        limit!(10_000, bin.codes.len(), "functions");
-        limit!(50_000, bin.globals.len(), "globals");
-        for function in &bin.codes {
-            limit!(4096, function.locals.len(), "locals")
+        limit!(128, bin.datas.len(), "datas");
+        limit!(128, bin.elements.len(), "elements");
+        limit!(1024, bin.exports.len(), "exports");
+        limit!(4096, bin.codes.len(), "functions");
+        limit!(32768, bin.globals.len(), "globals");
+        for code in &bin.codes {
+            limit!(348, code.locals.len(), "locals");
+            limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
-        limit!(10_000, table_entries, "table entries");
+        limit!(4096, table_entries, "table entries");
 
-        let max_len = 500;
+        let elem_entries = bin.elements.iter().map(|x| x.range.len()).saturating_sum();
+        limit!(4096, elem_entries, "element entries");
+
+        let max_len = 512;
         macro_rules! too_long {
             ($name:expr, $len:expr) => {
                 bail!(
@@ -644,7 +655,7 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
-        Ok((bin, stylus_data, pages as u16))
+        Ok((bin, stylus_data))
     }
 
     /// Ensures a func exists and has the right type.
