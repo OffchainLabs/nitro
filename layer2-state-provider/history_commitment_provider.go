@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	inprogresscache "github.com/OffchainLabs/bold/containers/in-progress-cache"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 
@@ -57,6 +58,26 @@ type HashCollectorConfig struct {
 	StepSize StepSize
 }
 
+func (h *HashCollectorConfig) String() string {
+	str := ""
+	str += h.WasmModuleRoot.String()
+	str += "/"
+	str += fmt.Sprintf("%d", h.FromBatch)
+	str += "/"
+	str += fmt.Sprintf("%d", h.BlockChallengeHeight)
+	str += "/"
+	for _, height := range h.StepHeights {
+		str += fmt.Sprintf("%d", height)
+		str += "/"
+	}
+	str += fmt.Sprintf("%d", h.NumDesiredHashes)
+	str += "/"
+	str += fmt.Sprintf("%d", h.MachineStartIndex)
+	str += "/"
+	str += fmt.Sprintf("%d", h.StepSize)
+	return str
+}
+
 // L2MessageStateCollector defines an interface which can obtain the machine hashes at each L2 message
 // in a specified message range for a given batch index on Arbitrum.
 type L2MessageStateCollector interface {
@@ -77,6 +98,7 @@ type HistoryCommitmentProvider struct {
 	machineHashCollector    MachineHashCollector
 	proofCollector          ProofCollector
 	challengeLeafHeights    []Height
+	inFlightRequestCache    *inprogresscache.Cache[string, []common.Hash]
 	ExecutionProvider
 }
 
@@ -95,6 +117,7 @@ func NewHistoryCommitmentProvider(
 		proofCollector:          proofCollector,
 		challengeLeafHeights:    challengeLeafHeights,
 		ExecutionProvider:       executionProvider,
+		inFlightRequestCache:    inprogresscache.New[string, []common.Hash](),
 	}
 }
 
@@ -167,21 +190,24 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 	}
 
 	// Collect the machine hashes at the specified challenge level based on the values we computed.
-	return p.machineHashCollector.CollectMachineHashes(
-		ctx,
-		&HashCollectorConfig{
-			WasmModuleRoot:       req.WasmModuleRoot,
-			FromBatch:            req.FromBatch,
-			BlockChallengeHeight: fromBlockChallengeHeight,
-			// We drop the first index of the validated heights, because the first index is for the block challenge level,
-			// which is over blocks and not over individual machine WASM opcodes. Starting from the second index, we are now
-			// dealing with challenges over ranges of opcodes which are what we care about for our implementation of machine hash collection.
-			StepHeights:       validatedHeights[1:],
-			NumDesiredHashes:  numHashes,
-			MachineStartIndex: machineStartIndex,
-			StepSize:          stepSize,
-		},
-	)
+	cfg := &HashCollectorConfig{
+		WasmModuleRoot:       req.WasmModuleRoot,
+		FromBatch:            req.FromBatch,
+		BlockChallengeHeight: fromBlockChallengeHeight,
+		// We drop the first index of the validated heights, because the first index is for the block challenge level,
+		// which is over blocks and not over individual machine WASM opcodes. Starting from the second index, we are now
+		// dealing with challenges over ranges of opcodes which are what we care about for our implementation of machine hash collection.
+		StepHeights:       validatedHeights[1:],
+		NumDesiredHashes:  numHashes,
+		MachineStartIndex: machineStartIndex,
+		StepSize:          stepSize,
+	}
+	// Requests collecting machine hashes for the specified config, and uses an in-flight
+	// request cache to make sure the same request is not spawned twice, but rather
+	// the second request would wait for the in-flight request to complete and use its result.
+	return p.inFlightRequestCache.Compute(cfg.String(), func() ([]common.Hash, error) {
+		return p.machineHashCollector.CollectMachineHashes(ctx, cfg)
+	})
 }
 
 // AgreesWithHistoryCommitment checks if the l2 state provider agrees with a specified start and end
