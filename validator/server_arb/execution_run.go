@@ -125,6 +125,15 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
+				log.Info(
+					"Machine finished execution, gathered all the necessary hashes",
+					log.Ctx{
+						"stepSize":          stepSize,
+						"startHash":         startHash,
+						"machineStartIndex": machineStartIndex,
+						"numDesiredLeaves":  numDesiredLeaves,
+					},
+				)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.

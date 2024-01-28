@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -354,6 +355,7 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	log.Info(fmt.Sprintf("Finished gathering machine hashes for request %+v", cfg))
 	// Do not save a history commitment of length 1 to the cache.
 	if len(result) > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
