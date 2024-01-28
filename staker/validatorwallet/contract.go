@@ -419,7 +419,7 @@ func GetValidatorWalletContract(
 		FromBlock: big.NewInt(fromBlock),
 		ToBlock:   nil,
 		Addresses: []common.Address{validatorWalletFactoryAddr},
-		Topics:    [][]common.Hash{{walletCreatedID}, nil, {transactAuth.From.Hash()}},
+		Topics:    [][]common.Hash{{walletCreatedID}, nil, {common.BytesToHash(transactAuth.From.Bytes())}},
 	}
 	logs, err := client.FilterLogs(ctx, query)
 	if err != nil {
