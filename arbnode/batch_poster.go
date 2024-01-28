@@ -211,7 +211,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod: time.Hour * 24 * 15,
 	GasRefunderAddress: "",
 	ExtraBatchGas:      50_000,
-	Post4844Blobs:      true,
+	Post4844Blobs:      false,
 	ForcePost4844Blobs: false,
 	DataPoster:         dataposter.DefaultDataPosterConfig,
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
