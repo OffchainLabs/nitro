@@ -36,7 +36,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	if err != nil {
 		return fmt.Errorf("genesis state is missing: %w", err)
 	}
-	database.TrieDB().Reference(previousBlock.Root(), common.Hash{})
+	_ = database.TrieDB().Reference(previousBlock.Root(), common.Hash{})
 	logged := time.Now()
 	recreated := 0
 	for current <= last {
@@ -52,11 +52,11 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		if err != nil {
 			_, _, _, err := bc.Processor().Process(currentBlock, previousState, vm.Config{})
 			if err != nil {
-				return fmt.Errorf("processing block %d failed: %v", current, err)
+				return fmt.Errorf("processing block %d failed: %w", current, err)
 			}
 			root, err := previousState.Commit(current, bc.Config().IsEIP158(currentBlock.Number()))
 			if err != nil {
-				return fmt.Errorf("StateDB commit failed, number %d root %v: %w", current, currentBlock.Root().Hex(), err)
+				return fmt.Errorf("StateDB commit failed, number %d root %v: %w", current, currentBlock.Root(), err)
 			}
 			if root.Cmp(currentBlock.Root()) != 0 {
 				return fmt.Errorf("reached different state root after processing block %d, want %v, have %v", current, currentBlock.Root(), root)
@@ -68,16 +68,17 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			}
 			currentState, err = state.New(currentBlock.Root(), database, nil)
 			if err != nil {
-				return fmt.Errorf("state reset after block %d failed: %v", current, err)
+				return fmt.Errorf("state reset after block %d failed: %w", current, err)
 			}
-			database.TrieDB().Reference(currentBlock.Root(), common.Hash{})
-			database.TrieDB().Dereference(previousBlock.Root())
 			recreated++
 		}
+		_ = database.TrieDB().Reference(currentBlock.Root(), common.Hash{})
+		_ = database.TrieDB().Dereference(previousBlock.Root())
 		current++
-		previousState = currentState
 		previousBlock = currentBlock
+		previousState = currentState
 	}
+	_ = database.TrieDB().Dereference(previousBlock.Root())
 	log.Info("Finished recreating missing states", "elapsed", time.Since(start), "recreated", recreated)
 	return nil
 }
