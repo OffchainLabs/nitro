@@ -159,8 +159,8 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	// TODO: Once we have an ArbOS 30, test a real upgrade with it
 	// We can't test 11 -> 20 because 11 doesn't have the GetScheduledUpgrade method we want to test
 	var testVersion uint64 = 100
-	var testTimestamp uint64 = 1 >> 62
-	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, 100, 1>>62)
+	var testTimestamp uint64 = 1 << 62
+	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, 100, 1<<62)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
