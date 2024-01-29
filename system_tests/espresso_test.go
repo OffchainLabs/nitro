@@ -99,7 +99,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			if block < uint64(staleBlocks) {
 				timestamp = 0
 			}
-			pc, _ := tagged_base64.New("header", []byte{byte(block)})
+			pc, _ := tagged_base64.Parse("MERKLE_COMM~VJ9z239aP9GZDrHp3VxwPd_0l28Hc5KEAB1pFeCIxhYgAAAAAAAAAAIAAAAAAAAAdA")
 			header := espressoTypes.Header{
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
@@ -109,6 +109,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 				Timestamp:           timestamp,
 				PayloadCommitment:   pc,
 				BlockMerkleTreeRoot: pc,
+				FeeMerkleTreeRoot:   pc,
 			}
 			hotShotReader.AddHotShotCommitment(block, header.Commit())
 			return httpmock.NewJsonResponse(200, header)

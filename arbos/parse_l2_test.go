@@ -31,6 +31,7 @@ func TestEspressoParsing(t *testing.T) {
 			L1Finalized:         &espressoTypes.L1BlockInfo{},
 			PayloadCommitment:   payloadCommitment,
 			BlockMerkleTreeRoot: root,
+			FeeMerkleTreeRoot:   root,
 		},
 		Proof: []byte{9},
 	}

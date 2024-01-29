@@ -132,7 +132,6 @@ fn read_hotshot_commitment_impl(
         ));
     }
     let comm = comm.unwrap();
-    let comm = comm_map.get(&h).unwrap_or(&[0; 32]);
 
     if out_ptr + 32 > sp.memory_size() {
         let text = format!("memory bounds exceeded in {}", commitment);
