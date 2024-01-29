@@ -7,37 +7,39 @@ import (
 )
 
 type InitConfig struct {
-	Force           bool          `koanf:"force"`
-	Url             string        `koanf:"url"`
-	DownloadPath    string        `koanf:"download-path"`
-	DownloadPoll    time.Duration `koanf:"download-poll"`
-	DevInit         bool          `koanf:"dev-init"`
-	DevInitAddress  string        `koanf:"dev-init-address"`
-	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
-	Empty           bool          `koanf:"empty"`
-	AccountsPerSync uint          `koanf:"accounts-per-sync"`
-	ImportFile      string        `koanf:"import-file"`
-	ThenQuit        bool          `koanf:"then-quit"`
-	Prune           string        `koanf:"prune"`
-	PruneBloomSize  uint64        `koanf:"prune-bloom-size"`
-	ResetToMessage  int64         `koanf:"reset-to-message"`
+	Force                bool          `koanf:"force"`
+	Url                  string        `koanf:"url"`
+	DownloadPath         string        `koanf:"download-path"`
+	DownloadPoll         time.Duration `koanf:"download-poll"`
+	DevInit              bool          `koanf:"dev-init"`
+	DevInitAddress       string        `koanf:"dev-init-address"`
+	DevInitBlockNum      uint64        `koanf:"dev-init-blocknum"`
+	Empty                bool          `koanf:"empty"`
+	AccountsPerSync      uint          `koanf:"accounts-per-sync"`
+	ImportFile           string        `koanf:"import-file"`
+	ThenQuit             bool          `koanf:"then-quit"`
+	Prune                string        `koanf:"prune"`
+	PruneBloomSize       uint64        `koanf:"prune-bloom-size"`
+	ResetToMessage       int64         `koanf:"reset-to-message"`
+	RecreateMissingState bool          `koanf:"recreate-missing-state"`
 }
 
 var InitConfigDefault = InitConfig{
-	Force:           false,
-	Url:             "",
-	DownloadPath:    "/tmp/",
-	DownloadPoll:    time.Minute,
-	DevInit:         false,
-	DevInitAddress:  "",
-	DevInitBlockNum: 0,
-	Empty:           false,
-	ImportFile:      "",
-	AccountsPerSync: 100000,
-	ThenQuit:        false,
-	Prune:           "",
-	PruneBloomSize:  2048,
-	ResetToMessage:  -1,
+	Force:                false,
+	Url:                  "",
+	DownloadPath:         "/tmp/",
+	DownloadPoll:         time.Minute,
+	DevInit:              false,
+	DevInitAddress:       "",
+	DevInitBlockNum:      0,
+	Empty:                false,
+	ImportFile:           "",
+	AccountsPerSync:      100000,
+	ThenQuit:             false,
+	Prune:                "",
+	PruneBloomSize:       2048,
+	ResetToMessage:       -1,
+	RecreateMissingState: false,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -55,4 +57,5 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
 	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
+	f.Bool(prefix+".recreate-missing-state", InitConfigDefault.RecreateMissingState, "if true: in case database exists and force=false, missing state will be recreated and committed to disk")
 }
