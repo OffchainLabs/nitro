@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type L1Interface interface {
@@ -25,6 +26,7 @@ type L1Interface interface {
 	BlockNumber(ctx context.Context) (uint64, error)
 	PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error)
 	ChainID(ctx context.Context) (*big.Int, error)
+	Client() rpc.ClientInterface
 }
 
 func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {

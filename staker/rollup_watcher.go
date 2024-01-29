@@ -176,15 +176,17 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 	if node.NodeHash != nodeHash {
 		return nil, fmt.Errorf("got unexpected node hash %v looking for node number %v with expected hash %v (reorg?)", node.NodeHash, nodeNum, nodeHash)
 	}
-	latestChild, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), node.LatestChildNumber)
+	var query = ethereum.FilterQuery{
+		Addresses: []common.Address{r.address},
+		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {nodeHash}},
+	}
+	query.FromBlock, err = r.getNodeCreationBlock(ctx, nodeNum)
 	if err != nil {
 		return nil, err
 	}
-	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
-		ToBlock:   new(big.Int).SetUint64(latestChild.CreatedAtBlock),
-		Addresses: []common.Address{r.address},
-		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {nodeHash}},
+	query.ToBlock, err = r.getNodeCreationBlock(ctx, node.LatestChildNumber)
+	if err != nil {
+		return nil, err
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
