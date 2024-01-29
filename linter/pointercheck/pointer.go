@@ -11,10 +11,6 @@ import (
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
-func New(conf any) ([]*analysis.Analyzer, error) {
-	return []*analysis.Analyzer{Analyzer}, nil
-}
-
 var Analyzer = &analysis.Analyzer{
 	Name:       "pointercheck",
 	Doc:        "check for pointer comparison",

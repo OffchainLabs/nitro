@@ -16,10 +16,6 @@ import (
 // Note: comment should be directly line above the struct definition.
 const linterTip = "// lint:require-exhaustive-initialization"
 
-func New(conf any) ([]*analysis.Analyzer, error) {
-	return []*analysis.Analyzer{Analyzer}, nil
-}
-
 // Analyzer implements struct analyzer for structs that are annotated with
 // `linterTip`, it checks that every instantiation initializes all the fields.
 var Analyzer = &analysis.Analyzer{
