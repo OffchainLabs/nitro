@@ -93,6 +93,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 					contractCode = append(contractCode, byte(vm.PUSH0))
 					contractCode = append(contractCode, byte(vm.CODECOPY))
 					contractCode = append(contractCode, byte(vm.PUSH0))
+					contractCode = append(contractCode, byte(vm.BLOBHASH))
 					contractCode = append(contractCode, byte(vm.RETURN))
 					basefee := builder.L2.GetBaseFee(t)
 					var err error

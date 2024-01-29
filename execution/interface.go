@@ -73,7 +73,7 @@ type FullExecutionClient interface {
 
 // not implemented in execution, used as input
 type BatchFetcher interface {
-	FetchBatch(batchNum uint64) ([]byte, error)
+	FetchBatch(batchNum uint64) ([]byte, common.Hash, error)
 }
 
 type TransactionStreamer interface {

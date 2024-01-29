@@ -96,6 +96,9 @@ jobs:
           make -j
           make install
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Cache cbrotli
         uses: actions/cache@v3
         id: cache-cbrotli
@@ -158,4 +161,5 @@ jobs:
           cd contracts
           yarn install
           yarn build
+          yarn build:forge:yul
           yarn hardhat --network localhost test test/prover/*.ts
