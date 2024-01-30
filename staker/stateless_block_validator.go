@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -355,10 +354,11 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 
 func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
-		BlockHash:  res.BlockHash,
-		SendRoot:   res.SendRoot,
-		Batch:      pos.BatchNumber,
-		PosInBatch: pos.PosInBatch,
+		BlockHash:     res.BlockHash,
+		SendRoot:      res.SendRoot,
+		Batch:         pos.BatchNumber,
+		PosInBatch:    pos.PosInBatch,
+		HotShotHeight: res.HotShotHeight,
 	}
 }
 
@@ -413,14 +413,8 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, err
 	}
 	var comm espressoTypes.Commitment
-	// Note: this code path is not used in the staker validation pipeline, return to this
-	// when we look into fraud proofs
 	if v.config.Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
-		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
-		if err != nil {
-			return nil, err
-		}
-		height := jst.Header.Height
+		height := end.HotShotHeight
 		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {
 			return nil, err
@@ -429,12 +423,6 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 			return nil, fmt.Errorf("commitment not ready yet")
 		}
 		comm = *fetchedCommitment
-		var startHeight uint64
-		if pos > 0 {
-			startHeight = height - 1
-		}
-		start.HotShotHeight = startHeight
-		end.HotShotHeight = height
 	}
 	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, &comm)
 	if err != nil {

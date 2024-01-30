@@ -167,6 +167,8 @@ func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestC
 	builder.execConfig.Sequencer.EspressoNamespace = 100
 	builder.execConfig.Sequencer.HotShotUrl = hotshot_url
 
+	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
+
 	builder.nodeConfig.Feed.Output.Enable = true
 	builder.nodeConfig.Feed.Output.Port = fmt.Sprintf("%d", broadcastPort)
 
@@ -182,6 +184,9 @@ func createValidatorAndPosterNode(ctx context.Context, t *testing.T) (*TestClien
 	builder.nodeConfig.BlockValidator.Espresso = true
 	builder.nodeConfig.BlockValidator.HotShotAddress = "0x123"
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", validationPort)
+
+	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
+
 	cleanup := builder.Build(t)
 	builder.L2.ConsensusNode.StatelessBlockValidator.SetHotShotReader(&hotShotReader)
 	return builder.L2, cleanup

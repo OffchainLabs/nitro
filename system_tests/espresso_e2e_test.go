@@ -56,6 +56,8 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*TestClient
 	builder.l1StackConfig.DataDir = t.TempDir()
 	builder.l1StackConfig.WSModules = append(builder.l1StackConfig.WSModules, "eth")
 
+	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
+
 	builder.nodeConfig.Feed.Input.URL = []string{fmt.Sprintf("ws://127.0.0.1:%d", broadcastPort)}
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.BlockValidator.Enable = true

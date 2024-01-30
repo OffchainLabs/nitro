@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -521,8 +520,9 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		v.nextCreateBatchReread = false
 	}
 	endGS := validator.GoGlobalState{
-		BlockHash: endRes.BlockHash,
-		SendRoot:  endRes.SendRoot,
+		BlockHash:     endRes.BlockHash,
+		SendRoot:      endRes.SendRoot,
+		HotShotHeight: endRes.HotShotHeight,
 	}
 	if pos+1 < v.nextCreateBatchMsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch
@@ -535,12 +535,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	var comm espressoTypes.Commitment
 	if v.config().Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
-		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
-		if err != nil {
-			return false, err
-		}
-
-		height := jst.Header.Height
+		height := endGS.HotShotHeight
 		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {
 			return false, err
@@ -549,12 +544,6 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 			return false, fmt.Errorf("commitment not ready yet")
 		}
 		comm = *fetchedCommitment
-		var startHeight uint64
-		if pos > 0 {
-			startHeight = height - 1
-		}
-		v.nextCreateStartGS.HotShotHeight = startHeight
-		endGS.HotShotHeight = height
 	}
 	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, &comm)
 	if err != nil {
