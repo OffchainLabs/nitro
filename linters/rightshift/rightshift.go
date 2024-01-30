@@ -1,4 +1,4 @@
-package main
+package rightshift
 
 import (
 	"go/ast"
@@ -6,7 +6,6 @@ import (
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -69,8 +68,4 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 func isOne(expr ast.Expr) bool {
 	bl, ok := expr.(*ast.BasicLit)
 	return ok && bl.Kind == token.INT && bl.Value == "1"
-}
-
-func main() {
-	singlechecker.Main(Analyzer)
 }
