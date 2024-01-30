@@ -255,7 +255,7 @@ func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
 //export accountCodeImpl
 func accountCodeImpl(api usize, output *rustBytes, address bytes20, offset u32, size u32, cost *u64) {
 	closures := getApi(api)
-	code, gas := closures.accountCode(address.toAddress())
+	code, gas := closures.accountCode(address.toAddress(), uint64(*cost))
 	if int(offset) < len(code) {
 		end := int(offset + size)
 		if len(code) < end {
@@ -266,20 +266,20 @@ func accountCodeImpl(api usize, output *rustBytes, address bytes20, offset u32, 
 	*cost = u64(gas)
 }
 
+//export accountCodeSizeImpl
+func accountCodeSizeImpl(api usize, address bytes20, cost *u64) u32 {
+	closures := getApi(api)
+	size, gas := closures.accountCodeSize(address.toAddress(), uint64(*cost))
+	*cost = u64(gas)
+	return u32(size)
+}
+
 //export accountCodeHashImpl
 func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	closures := getApi(api)
 	codehash, gas := closures.accountCodeHash(address.toAddress())
 	*cost = u64(gas)
 	return hashToBytes32(codehash)
-}
-
-//export accountCodeSizeImpl
-func accountCodeSizeImpl(api usize, address bytes20, cost *u64) u32 {
-	closures := getApi(api)
-	size, gas := closures.accountCodeSize(address.toAddress())
-	*cost = u64(gas)
-	return u32(size)
 }
 
 //export addPagesImpl

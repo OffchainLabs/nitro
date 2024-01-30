@@ -43,8 +43,8 @@ pub enum EvmApiMethod {
     EmitLog,
     AccountBalance,
     AccountCode,
-    AccountCodeHash,
     AccountCodeSize,
+    AccountCodeHash,
     AddPages,
 }
 
@@ -128,15 +128,23 @@ pub trait EvmApi: Send + 'static {
     fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
 
     /// Returns the code and the access cost in gas.
-    fn account_code(&mut self, address: Bytes20, offset: u32, size: u32) -> (Vec<u8>, u64);
+    /// Analogous to `vm.EXTCODECOPY`.
+    fn account_code(
+        &mut self,
+        address: Bytes20,
+        offset: u32,
+        size: u32,
+        gas_left: u64,
+    ) -> (Vec<u8>, u64);
+
+    /// Returns the code size and the access cost in gas.
+    /// Analogous to `vm.EXTCODESIZE`.
+    fn account_code_size(&mut self, address: Bytes20, gas_left: u64) -> (u32, u64);
 
     /// Gets the hash of the given address's code.
     /// Returns the hash and the access cost in gas.
-    /// Analogous to `vm.CODEHASH`.
+    /// Analogous to `vm.EXTCODEHASH`.
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
-
-    /// Returns the code size and the access cost in gas.
-    fn account_code_size(&mut self, address: Bytes20) -> (u32, u64);
 
     /// Determines the cost in gas of allocating additional wasm pages.
     /// Note: has the side effect of updating Geth's memory usage tracker.

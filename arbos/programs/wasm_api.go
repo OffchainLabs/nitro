@@ -188,17 +188,19 @@ func newApi(
 	})
 	addressCode := js.FuncOf(func(this js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
-		value, cost := closures.accountCode(address)
+		gasLeft := jsU64(args[1])
+		value, cost := closures.accountCode(address, gasLeft)
+		return write(value, cost)
+	})
+	addressCodeSize := js.FuncOf(func(this js.Value, args []js.Value) any {
+		address := jsAddress(args[0])
+		gasLeft := jsU64(args[1])
+		value, cost := closures.accountCodeSize(address, gasLeft)
 		return write(value, cost)
 	})
 	addressCodeHash := js.FuncOf(func(this js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
 		value, cost := closures.accountCodeHash(address)
-		return write(value, cost)
-	})
-	addressCodeSize := js.FuncOf(func(this js.Value, args []js.Value) any {
-		address := jsAddress(args[0])
-		value, cost := closures.accountCodeSize(address)
 		return write(value, cost)
 	})
 	addPages := js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -210,7 +212,7 @@ func newApi(
 	funcs := []js.Func{
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
-		addressBalance, addressCode, addressCodeHash, addressCodeSize,
+		addressBalance, addressCode, addressCodeSize, addressCodeHash,
 		addPages,
 	}
 	anys := make([]any, len(funcs)) // js.ValueOf() only works on []any

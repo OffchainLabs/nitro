@@ -575,7 +575,7 @@ impl<'a> WasmBinary<'a> {
         let asm_estimate = 5 * 1024 * 1024;
 
         // TODO: determine safe value
-        let init_gas = 2048;
+        let init_gas = 4096;
 
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();

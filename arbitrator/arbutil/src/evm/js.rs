@@ -296,19 +296,25 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         (value.assert_bytes32(), cost.assert_u64())
     }
 
-    fn account_code(&mut self, address: Bytes20, offset: u32, size: u32) -> (Vec<u8>, u64) {
-        let [value, cost] = call!(self, 2, AccountCode, address, offset, size);
+    fn account_code(
+        &mut self,
+        address: Bytes20,
+        offset: u32,
+        size: u32,
+        gas_left: u64,
+    ) -> (Vec<u8>, u64) {
+        let [value, cost] = call!(self, 2, AccountCode, address, offset, size, gas_left);
         (value.assert_bytes(), cost.assert_u64())
+    }
+
+    fn account_code_size(&mut self, address: Bytes20, gas_left: u64) -> (u32, u64) {
+        let [value, cost] = call!(self, 2, AccountCodeSize, address, gas_left);
+        (value.assert_u32(), cost.assert_u64())
     }
 
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let [value, cost] = call!(self, 2, AccountCodeHash, address);
         (value.assert_bytes32(), cost.assert_u64())
-    }
-
-    fn account_code_size(&mut self, address: Bytes20) -> (u32, u64) {
-        let [value, cost] = call!(self, 2, AccountCodeSize, address);
-        (value.assert_u32(), cost.assert_u64())
     }
 
     fn add_pages(&mut self, pages: u16) -> u64 {

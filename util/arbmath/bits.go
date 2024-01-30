@@ -79,3 +79,11 @@ func BoolToUint32(value bool) uint32 {
 func UintToBool[T Unsigned](value T) bool {
 	return value != 0
 }
+
+// Ensures a slice is non-nil
+func NonNilSlice[T any](slice []T) []T {
+	if slice == nil {
+		return []T{}
+	}
+	return slice
+}

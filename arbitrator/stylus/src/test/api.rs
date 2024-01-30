@@ -162,7 +162,13 @@ impl EvmApi for TestEvmApi {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _address: Bytes20, _offset: u32, _size: u32) -> (Vec<u8>, u64) {
+    fn account_code(
+        &mut self,
+        _address: Bytes20,
+        _offset: u32,
+        _size: u32,
+        _gas_left: u64,
+    ) -> (Vec<u8>, u64) {
         unimplemented!()
     }
 
@@ -170,7 +176,7 @@ impl EvmApi for TestEvmApi {
         unimplemented!()
     }
 
-    fn account_code_size(&mut self, _address: Bytes20) -> (u32, u64) {
+    fn account_code_size(&mut self, _address: Bytes20, _gas_left: u64) -> (u32, u64) {
         unimplemented!()
     }
 
