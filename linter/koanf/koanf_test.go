@@ -20,7 +20,7 @@ func testData(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("Failed to get wd: %s", err)
+		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	return filepath.Join(filepath.Dir(wd), "testdata")
 }
