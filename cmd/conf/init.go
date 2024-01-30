@@ -3,6 +3,7 @@ package conf
 import (
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
 )
 
@@ -58,4 +59,11 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
 	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 	f.Bool(prefix+".recreate-missing-state", InitConfigDefault.RecreateMissingState, "if true: in case database exists and force=false, missing state will be recreated and committed to disk")
+}
+
+func (c *InitConfig) Validate() error {
+	if c.Force && c.RecreateMissingState {
+		log.Warn("--init.force enabled, --init.recreate-missing-state will have no effect")
+	}
+	return nil
 }

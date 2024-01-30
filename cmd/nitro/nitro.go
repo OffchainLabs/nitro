@@ -781,6 +781,12 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 }
 
 func (c *NodeConfig) Validate() error {
+	if c.Init.RecreateMissingState && !c.Execution.Caching.Archive {
+		return errors.New("--init.recreate-missing-state enabled for a non-archive node")
+	}
+	if err := c.Init.Validate(); err != nil {
+		return err
+	}
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
