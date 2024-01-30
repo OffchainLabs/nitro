@@ -14,6 +14,7 @@ import (
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/vedhavyas/go-subkey"
 )
 
@@ -136,7 +137,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		select {
 		case status := <-sub.Chan():
 			if status.IsFinalized {
-				blobPointer = BlobPointer{BlockHash: string(status.AsFinalized.Hex()), Sender: keyringPair.Address, Nonce: o.Nonce.Int64()}
+				blobPointer = BlobPointer{BlockHash: string(status.AsFinalized.Hex()), Sender: keyringPair.Address, Nonce: o.Nonce.Int64(), DasTreeRootHash: dastree.Hash(message)}
 				log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 				blobPointerData, err := blobPointer.MarshalToBinary()
 				if err != nil {
@@ -170,7 +171,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 
 }
 
-func (a *AvailDA) Read(blobPointer BlobPointer) ([]byte, error) {
+func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, error) {
 	log.Info("Requesting data from Avail", "BlobPointer", blobPointer)
 
 	//Intitializing variables

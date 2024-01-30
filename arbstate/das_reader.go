@@ -16,12 +16,17 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
+}
+
+type AvailDataAvailibilityReader interface {
+	avail.DataAvailabilityReader
 }
 
 var ErrHashMismatch = errors.New("result does not match expected hash")

@@ -6,7 +6,6 @@ package arbstate
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -142,12 +141,12 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 }
 
 func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequencerMsg []byte, availDAReader avail.DataAvailabilityReader, preimages map[arbutil.PreimageType]map[common.Hash][]byte) ([]byte, error) {
-	var shaPreimages map[common.Hash][]byte = make(map[common.Hash][]byte)
+	var keccakPreimages map[common.Hash][]byte
 	if preimages != nil {
-		if preimages[arbutil.Sha2_256PreimageType] == nil {
-			preimages[arbutil.Sha2_256PreimageType] = make(map[common.Hash][]byte)
+		if preimages[arbutil.Keccak256PreimageType] == nil {
+			preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
 		}
-		shaPreimages = preimages[arbutil.Sha2_256PreimageType]
+		keccakPreimages = preimages[arbutil.Keccak256PreimageType]
 	}
 
 	buf := bytes.NewBuffer(sequencerMsg[40:])
@@ -161,6 +160,10 @@ func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequence
 		return nil, errors.New("tried to deserialize a message that doesn't have the Avail header")
 	}
 
+	recordPreimage := func(key common.Hash, value []byte) {
+		keccakPreimages[key] = value
+	}
+
 	blobPointer := avail.BlobPointer{}
 	blobPointer.UnmarshalFromBinary(buf.Bytes())
 	if err != nil {
@@ -169,7 +172,7 @@ func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequence
 	}
 
 	log.Info("Attempting to fetch data for", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
-	payload, err := availDAReader.Read(blobPointer)
+	payload, err := availDAReader.Read(ctx, blobPointer)
 	if err != nil {
 		log.Error("Failed to resolve blob pointer from avail", "err", err)
 		return nil, err
@@ -179,11 +182,9 @@ func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequence
 
 	log.Info("Recording Sha256 preimage for Avail data")
 
-	shaDataHash := sha256.New()
-	shaDataHash.Write(payload)
-	dataHash := shaDataHash.Sum([]byte{})
-	shaPreimages[common.BytesToHash(dataHash)] = payload
-
+	if keccakPreimages != nil {
+		dastree.RecordHash(recordPreimage, payload)
+	}
 	return payload, nil
 }
 
