@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -100,7 +101,7 @@ func TestSlices(t *testing.T) {
 	assert_eq := func(left, right []uint8) {
 		t.Helper()
 		if !bytes.Equal(left, right) {
-			Fail(t)
+			Fail(t, common.Bytes2Hex(left), " ", common.Bytes2Hex(right))
 		}
 	}
 

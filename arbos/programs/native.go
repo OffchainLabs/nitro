@@ -256,13 +256,7 @@ func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
 func accountCodeImpl(api usize, output *rustBytes, address bytes20, offset u32, size u32, cost *u64) {
 	closures := getApi(api)
 	code, gas := closures.accountCode(address.toAddress(), uint32(offset), uint32(size), uint64(*cost))
-	if int(offset) < len(code) {
-		end := int(offset + size)
-		if len(code) < end {
-			end = len(code)
-		}
-		output.setBytes(code[offset:end])
-	}
+	output.setBytes(code)
 	*cost = u64(gas)
 }
 
