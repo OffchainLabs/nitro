@@ -1,6 +1,7 @@
 package staterecovery
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,15 +15,18 @@ import (
 )
 
 func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig) error {
-	log.Info("Recreating missing states...")
 	start := time.Now()
 	current := bc.Genesis().NumberU64() + 1
-	last := bc.CurrentBlock().Number.Uint64()
-
 	genesisBlock := bc.GetBlockByNumber(current - 1)
 	if genesisBlock == nil {
-		return fmt.Errorf("genesis block is missing")
+		return errors.New("genesis block is missing")
 	}
+	// find last available block - we cannot rely on bc.CurrentBlock()
+	last := current
+	for bc.GetBlockByNumber(last) != nil {
+		last++
+	}
+	last--
 	hashConfig := *hashdb.Defaults
 	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit
 	trieConfig := &trie.Config{
@@ -38,7 +42,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	// we don't need to reference states with `trie.Database.Reference` here, because:
 	// * either the state nodes will be read from disk and then cached in cleans cache
 	// * or they will be recreated, saved to disk and then also cached in cleans cache
-	logged := time.Now()
+	logged := time.Unix(0, 0)
 	recreated := 0
 	for current <= last {
 		if time.Since(logged) > 1*time.Minute {
