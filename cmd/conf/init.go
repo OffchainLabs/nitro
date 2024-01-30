@@ -63,7 +63,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func (c *InitConfig) Validate() error {
 	if c.Force && c.RecreateMissingState {
-		log.Warn("--init.force enabled, --init.recreate-missing-state will have no effect")
+		log.Warn("force init enabled, recreate-missing-state will have no effect")
 	}
 	return nil
 }
