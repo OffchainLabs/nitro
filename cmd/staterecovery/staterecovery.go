@@ -37,6 +37,9 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		return fmt.Errorf("genesis state is missing: %w", err)
 	}
 	_ = database.TrieDB().Reference(previousBlock.Root(), common.Hash{})
+	defer func() {
+		_ = database.TrieDB().Dereference(previousBlock.Root())
+	}()
 	logged := time.Now()
 	recreated := 0
 	for current <= last {
@@ -78,7 +81,6 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		previousBlock = currentBlock
 		previousState = currentState
 	}
-	_ = database.TrieDB().Dereference(previousBlock.Root())
 	log.Info("Finished recreating missing states", "elapsed", time.Since(start), "recreated", recreated)
 	return nil
 }
