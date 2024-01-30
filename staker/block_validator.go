@@ -532,35 +532,13 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
 	var comm espressoTypes.Commitment
-	var height uint64
 	if v.config().Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return false, err
 		}
-		// Check that Espresso block numbers increase consecutively. This ensures that the sequenced L2 chain does not skip an Espresso block.
-		var prevEspressoMsg *arbostypes.L1IncomingMessage
-		for i := pos - 1; i != 0; i-- {
-			msg, err := v.streamer.GetMessage(i)
-			if err != nil {
-				return false, err
-			}
-			if msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
-				prevEspressoMsg = msg.Message
-				break
-			}
-		}
-		if prevEspressoMsg != nil {
-			_, prevJst, err := arbos.ParseEspressoMsg(prevEspressoMsg)
-			if err != nil {
-				return false, err
-			}
-			if prevJst.Header.Height+1 != jst.Header.Height {
-				return false, fmt.Errorf("l2 chain appears to have skipped an espresso block, last espresso block number: %d, current: %d", prevJst.Header.Height, jst.Header.Height)
-			}
-		}
 
-		height = jst.Header.Height
+		height := jst.Header.Height
 		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {
 			return false, err
@@ -569,8 +547,14 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 			return false, fmt.Errorf("commitment not ready yet")
 		}
 		comm = *fetchedCommitment
+		var startHeight uint64
+		if pos > 0 {
+			startHeight = height - 1
+		}
+		v.nextCreateStartGS.HotShotHeight = startHeight
+		endGS.HotShotHeight = height
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, height, &comm)
+	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed, &comm)
 	if err != nil {
 		return false, err
 	}
@@ -748,6 +732,9 @@ validationsLoop:
 			return &pos, nil
 		}
 		if currentStatus == ValidationSent && pos == v.validated() {
+			if validationStatus.Entry.Start.HotShotHeight != 0 && v.lastValidGS.HotShotHeight == 0 {
+				v.lastValidGS.HotShotHeight = validationStatus.Entry.Start.HotShotHeight
+			}
 			if validationStatus.Entry.Start != v.lastValidGS {
 				log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.Entry.Start, "expected", v.lastValidGS)
 				validationStatus.Cancel()

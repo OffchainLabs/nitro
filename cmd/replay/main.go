@@ -242,10 +242,9 @@ func main() {
 		}
 
 		isL2Message := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message
-		currHeight := wavmio.GetEspressoHeight()
-		validatingAgainstEspresso := currHeight > 0
+		txs, jst, err := arbos.ParseEspressoMsg(message.Message)
+		validatingAgainstEspresso := err == nil && jst.Header.Height > 0
 		if isL2Message && validatingAgainstEspresso {
-			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
@@ -253,14 +252,22 @@ func main() {
 				panic("batch missing espresso justification")
 			}
 			hotshotHeader := jst.Header
-			if currHeight+1 == hotshotHeader.Height {
-				wavmio.SetEspressoHeight(hotshotHeader.Height)
+			height := hotshotHeader.Height
+			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(height))
+			// Update the test and remove this condition
+			// if commitment != [32]byte{} {
+			validatedHeight := wavmio.GetEspressoHeight()
+			if validatedHeight == 0 {
+				// Validators can choose their own trusted starting point to start their validation.
+				// TODO: Check the starting point is greater than the first valid hotshot block number.
+				wavmio.SetEspressoHeight(height)
+			} else if validatedHeight+1 == height {
+				wavmio.SetEspressoHeight(height)
 			} else {
-				panic(fmt.Sprintf("invalid hotshot block height: %v, got: %v", hotshotHeader.Height, currHeight+1))
+				panic(fmt.Sprintf("invalid hotshot block height: %v, got: %v", height, validatedHeight+1))
 			}
-			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(currHeight))
 			if !commitment.Equals(hotshotHeader.Commit()) {
-				panic(fmt.Sprintf("invalid hotshot header jst header: %v, provided %v.", hotshotHeader.Commit(), commitment))
+				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
 			}
 			var roots = []*espressoTypes.NmtRoot{&hotshotHeader.TransactionsRoot}
 			var proofs = []*espressoTypes.NmtProof{&jst.Proof}
@@ -269,6 +276,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
+			// }
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

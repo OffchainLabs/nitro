@@ -309,6 +309,7 @@ impl WasmEnv {
         check!(socket::write_u8(writer, socket::SUCCESS));
         check!(socket::write_u64(writer, self.small_globals[0]));
         check!(socket::write_u64(writer, self.small_globals[1]));
+        check!(socket::write_u64(writer, self.small_globals[2]));
         check!(socket::write_bytes32(writer, &self.large_globals[0]));
         check!(socket::write_bytes32(writer, &self.large_globals[1]));
         check!(socket::write_u64(writer, memory_used));

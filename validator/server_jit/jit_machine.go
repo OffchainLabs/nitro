@@ -144,6 +144,9 @@ func (machine *JitMachine) prove(
 	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
+	if err := writeUint64(entry.StartState.HotShotHeight); err != nil {
+		return state, err
+	}
 	if err := writeUint64(entry.HotShotHeight); err != nil {
 		return state, err
 	}
@@ -264,6 +267,9 @@ func (machine *JitMachine) prove(
 				return state, err
 			}
 			if state.PosInBatch, err = readUint64(); err != nil {
+				return state, err
+			}
+			if state.HotShotHeight, err = readUint64(); err != nil {
 				return state, err
 			}
 			if state.BlockHash, err = readHash(); err != nil {

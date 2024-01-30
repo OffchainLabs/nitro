@@ -115,7 +115,7 @@ fn read_hotshot_commitment_impl(
     comm_map: &HotShotCommitmentMap,
     commitment: &str,
 ) -> MaybeEscape {
-    let pos = sp.read_u64(0);
+    let h = sp.read_u64(0);
     let out_ptr = sp.read_u64(1);
     let out_len = sp.read_u64(2);
     if out_len != 32 {
@@ -124,13 +124,20 @@ fn read_hotshot_commitment_impl(
         return Ok(());
     }
 
-    let message = comm_map.get(&pos).unwrap_or(&[0; 32]);
+    let comm = comm_map.get(&h);
+    if comm.is_none() {
+        return Escape::hostio(format!(
+            "jit machine failed to read the hotshot commitment at {}",
+            h
+        ));
+    }
+    let comm = comm.unwrap();
 
     if out_ptr + 32 > sp.memory_size() {
         let text = format!("memory bounds exceeded in {}", commitment);
         return Escape::hostio(&text);
     }
-    sp.write_slice(out_ptr, message);
+    sp.write_slice(out_ptr, comm);
     Ok(())
 }
 
@@ -299,12 +306,14 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let position_within_message = socket::read_u64(stream)?;
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
-    let hotshot_height = socket::read_u64(stream)?;
+    let last_hotshot_height = socket::read_u64(stream)?;
+    let validating_hotshot_height = socket::read_u64(stream)?;
     let hotshot_comm = socket::read_bytes32(stream)?;
 
-    env.small_globals = [inbox_position, position_within_message, hotshot_height];
+    env.small_globals = [inbox_position, position_within_message, last_hotshot_height];
     env.large_globals = [last_block_hash, last_send_root];
-    env.hotshot_comm_map.insert(hotshot_height, hotshot_comm);
+    env.hotshot_comm_map
+        .insert(validating_hotshot_height, hotshot_comm);
 
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

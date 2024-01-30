@@ -576,9 +576,8 @@ impl GlobalState {
         for item in self.bytes32_vals {
             h.update(item)
         }
-        // Exclude the hotshot height
-        for i in 0..(GLOBAL_STATE_U64_NUM - 1) {
-            h.update(self.u64_vals[i].to_be_bytes())
+        for item in self.u64_vals {
+            h.update(item.to_be_bytes())
         }
         h.finalize().into()
     }
@@ -2384,10 +2383,6 @@ impl Machine {
 
     pub fn add_hotshot_commitment(&mut self, height: u64, commitment: [u8; 32]) {
         self.hotshot_commitments.insert(height, commitment);
-    }
-
-    pub fn set_hotshot_height(&mut self, height: u64) {
-        self.global_state.u64_vals[2] = height
     }
 
     pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {

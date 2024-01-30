@@ -45,6 +45,7 @@ func GlobalStateToC(gsIn validator.GoGlobalState) C.GlobalState {
 	gs := C.GlobalState{}
 	gs.u64_vals[0] = C.uint64_t(gsIn.Batch)
 	gs.u64_vals[1] = C.uint64_t(gsIn.PosInBatch)
+	gs.u64_vals[2] = C.uint64_t(gsIn.HotShotHeight)
 	for i, b := range gsIn.BlockHash {
 		gs.bytes32_vals[0].bytes[i] = C.uint8_t(b)
 	}
@@ -64,10 +65,11 @@ func GlobalStateFromC(gs C.GlobalState) validator.GoGlobalState {
 		sendRoot[i] = byte(gs.bytes32_vals[1].bytes[i])
 	}
 	return validator.GoGlobalState{
-		Batch:      uint64(gs.u64_vals[0]),
-		PosInBatch: uint64(gs.u64_vals[1]),
-		BlockHash:  blockHash,
-		SendRoot:   sendRoot,
+		Batch:         uint64(gs.u64_vals[0]),
+		PosInBatch:    uint64(gs.u64_vals[1]),
+		BlockHash:     blockHash,
+		SendRoot:      sendRoot,
+		HotShotHeight: uint64(gs.u64_vals[2]),
 	}
 }
 

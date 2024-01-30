@@ -24,6 +24,7 @@ type ValidationInputJson struct {
 	DelayedMsgNr      uint64
 	PreimagesB64      map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
 	BatchInfo         []BatchInfoJson
+	HotShotHeight     uint64
 	HotShotCommitment espressoTypes.Commitment
 	DelayedMsgB64     string
 	StartState        validator.GoGlobalState
@@ -40,6 +41,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		DelayedMsgNr:      entry.DelayedMsgNr,
 		DelayedMsgB64:     base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:        entry.StartState,
+		HotShotHeight:     entry.HotShotHeight,
 		HotShotCommitment: entry.HotShotCommitment,
 		PreimagesB64:      jsonPreimagesMap,
 	}
@@ -60,6 +62,7 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		HasDelayedMsg:     entry.HasDelayedMsg,
 		DelayedMsgNr:      entry.DelayedMsgNr,
 		StartState:        entry.StartState,
+		HotShotHeight:     entry.HotShotHeight,
 		HotShotCommitment: entry.HotShotCommitment,
 		Preimages:         preimages,
 	}

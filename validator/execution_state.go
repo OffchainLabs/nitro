@@ -12,10 +12,11 @@ import (
 )
 
 type GoGlobalState struct {
-	BlockHash  common.Hash
-	SendRoot   common.Hash
-	Batch      uint64
-	PosInBatch uint64
+	BlockHash     common.Hash
+	SendRoot      common.Hash
+	Batch         uint64
+	PosInBatch    uint64
+	HotShotHeight uint64
 }
 
 type MachineStatus uint8
@@ -44,13 +45,14 @@ func (s GoGlobalState) Hash() common.Hash {
 	data = append(data, s.SendRoot.Bytes()...)
 	data = append(data, u64ToBe(s.Batch)...)
 	data = append(data, u64ToBe(s.PosInBatch)...)
+	data = append(data, u64ToBe(s.HotShotHeight)...)
 	return crypto.Keccak256Hash(data)
 }
 
 func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 	return challengegen.GlobalState{
 		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
-		U64Vals:     [3]uint64{s.Batch, s.PosInBatch},
+		U64Vals:     [3]uint64{s.Batch, s.PosInBatch, s.HotShotHeight},
 	}
 }
 
@@ -63,10 +65,11 @@ func NewExecutionStateFromSolidity(eth rollupgen.ExecutionState) *ExecutionState
 
 func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
 	return GoGlobalState{
-		BlockHash:  gs.Bytes32Vals[0],
-		SendRoot:   gs.Bytes32Vals[1],
-		Batch:      gs.U64Vals[0],
-		PosInBatch: gs.U64Vals[1],
+		BlockHash:     gs.Bytes32Vals[0],
+		SendRoot:      gs.Bytes32Vals[1],
+		Batch:         gs.U64Vals[0],
+		PosInBatch:    gs.U64Vals[1],
+		HotShotHeight: gs.U64Vals[2],
 	}
 }
 
