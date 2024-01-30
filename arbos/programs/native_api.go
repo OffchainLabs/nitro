@@ -66,6 +66,16 @@ Bytes32 accountBalanceWrap(usize api, Bytes20 address, u64 * cost) {
     return accountBalanceImpl(api, address, cost);
 }
 
+void accountCodeImpl(usize api, RustBytes * data, Bytes20 address, u32 offset, u32 size, u64 * cost);
+void accountCodeWrap(usize api, RustBytes * data, Bytes20 address, u32 offset, u32 size, u64 * cost) {
+	return accountCodeImpl(api, data, address, offset, size, cost);
+}
+
+void accountCodeSizeImpl(usize api, Bytes20 address, u64 * cost);
+void accountCodeSizeWrap(usize api, Bytes20 address, u64 * cost) {
+	return accountCodeSizeImpl(api, address, cost);
+}
+
 Bytes32 accountCodeHashImpl(usize api, Bytes20 address, u64 * cost);
 Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
     return accountCodeHashImpl(api, address, cost);
@@ -105,20 +115,22 @@ func newApi(
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
 	return C.GoEvmApi{
-		get_bytes32:      (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:      (*[0]byte)(C.setBytes32Wrap),
-		contract_call:    (*[0]byte)(C.contractCallWrap),
-		delegate_call:    (*[0]byte)(C.delegateCallWrap),
-		static_call:      (*[0]byte)(C.staticCallWrap),
-		create1:          (*[0]byte)(C.create1Wrap),
-		create2:          (*[0]byte)(C.create2Wrap),
-		get_return_data:  (*[0]byte)(C.getReturnDataWrap),
-		emit_log:         (*[0]byte)(C.emitLogWrap),
-		account_balance:  (*[0]byte)(C.accountBalanceWrap),
-		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
-		add_pages:        (*[0]byte)(C.addPagesWrap),
-		capture_hostio:   (*[0]byte)(C.captureHostioWrap),
-		id:               id,
+		get_bytes32:       (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:       (*[0]byte)(C.setBytes32Wrap),
+		contract_call:     (*[0]byte)(C.contractCallWrap),
+		delegate_call:     (*[0]byte)(C.delegateCallWrap),
+		static_call:       (*[0]byte)(C.staticCallWrap),
+		create1:           (*[0]byte)(C.create1Wrap),
+		create2:           (*[0]byte)(C.create2Wrap),
+		get_return_data:   (*[0]byte)(C.getReturnDataWrap),
+		emit_log:          (*[0]byte)(C.emitLogWrap),
+		account_balance:   (*[0]byte)(C.accountBalanceWrap),
+		account_code:      (*[0]byte)(C.accountCodeWrap),
+		account_code_size: (*[0]byte)(C.accountCodeSizeWrap),
+		account_codehash:  (*[0]byte)(C.accountCodeHashWrap),
+		add_pages:         (*[0]byte)(C.addPagesWrap),
+		capture_hostio:    (*[0]byte)(C.captureHostioWrap),
+		id:                id,
 	}, id
 }
 

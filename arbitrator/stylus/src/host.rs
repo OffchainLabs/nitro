@@ -219,6 +219,23 @@ pub(crate) fn account_balance<E: EvmApi>(
     hostio!(env, account_balance(address, ptr))
 }
 
+pub(crate) fn account_code<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    address: u32,
+    offset: u32,
+    size: u32,
+    code: u32,
+) -> Result<u32, Escape> {
+    hostio!(env, account_code(address, offset, size, code))
+}
+
+pub(crate) fn account_code_size<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    address: u32,
+) -> Result<u32, Escape> {
+    hostio!(env, account_code_size(address))
+}
+
 pub(crate) fn account_codehash<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     address: u32,

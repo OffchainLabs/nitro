@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package programs
@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
@@ -42,6 +42,8 @@ type create2Type func(
 type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
+type accountCodeType func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64)
+type accountCodeSizeType func(address common.Address, gas uint64) (uint32, uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type addPagesType func(pages uint16) (cost uint64)
 type captureHostioType func(name string, args, outs []byte, startInk, endInk uint64)
@@ -57,6 +59,8 @@ type goClosures struct {
 	getReturnData   getReturnDataType
 	emitLog         emitLogType
 	accountBalance  accountBalanceType
+	accountCode     accountCodeType
+	accountCodeSize accountCodeSizeType
 	accountCodeHash accountCodehashType
 	addPages        addPagesType
 	captureHostio   captureHostioType
@@ -131,7 +135,7 @@ func newApiClosures(
 
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
-			gas = arbmath.SaturatingUAdd(gas, params.CallStipend)
+			gas = am.SaturatingUAdd(gas, params.CallStipend)
 		}
 
 		var ret []byte
@@ -149,7 +153,7 @@ func newApiClosures(
 		}
 
 		interpreter.SetReturnData(ret)
-		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return uint32(len(ret)), cost, err
 	}
 	contractCall := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
@@ -185,9 +189,9 @@ func newApiClosures(
 		// pay for static and dynamic costs (gasCreate and gasCreate2)
 		baseCost := params.CreateGas
 		if opcode == vm.CREATE2 {
-			keccakWords := arbmath.WordsForBytes(uint64(len(code)))
-			keccakCost := arbmath.SaturatingUMul(params.Keccak256WordGas, keccakWords)
-			baseCost = arbmath.SaturatingUAdd(baseCost, keccakCost)
+			keccakWords := am.WordsForBytes(uint64(len(code)))
+			keccakCost := am.SaturatingUMul(params.Keccak256WordGas, keccakWords)
+			baseCost = am.SaturatingUAdd(baseCost, keccakCost)
 		}
 		if gas < baseCost {
 			return zeroAddr, 0, gas, vm.ErrOutOfGas
@@ -221,7 +225,7 @@ func newApiClosures(
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		interpreter.SetReturnData(res)
-		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return addr, uint32(len(res)), cost, nil
 	}
 	create1 := func(code []byte, endowment *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
@@ -230,12 +234,9 @@ func newApiClosures(
 	create2 := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
 		return create(code, endowment, salt, gas)
 	}
-	getReturnData := func(offset uint32, size uint32) []byte {
-		data := interpreter.GetReturnData(int(offset), int(size))
-		if data == nil {
-			return []byte{}
-		}
-		return data
+	getReturnData := func(start uint32, size uint32) []byte {
+		end := am.SaturatingUAdd(start, size)
+		return am.SliceWithRunoff(interpreter.GetReturnData(), start, end)
 	}
 	emitLog := func(data []byte, topics uint32) error {
 		if readOnly {
@@ -256,16 +257,33 @@ func newApiClosures(
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	accountCodehash := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
-		if !evm.StateDB.Empty(address) {
-			return evm.StateDB.GetCodeHash(address), cost
+	accountCode := func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64) {
+		// In the future it'll be possible to know the size of a contract before loading it.
+		// For now, require the worst case before doing the load.
+
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		if gas < cost {
+			return []byte{}, cost
 		}
-		return common.Hash{}, cost
+		end := am.SaturatingUAdd(offset, size)
+		code := am.SliceWithRunoff(evm.StateDB.GetCode(address), offset, end)
+		return code, cost
+	}
+	accountCodeSize := func(address common.Address, gas uint64) (uint32, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		if gas < cost {
+			return 0, cost
+		}
+		size := evm.StateDB.GetCodeSize(address)
+		return uint32(size), cost
+	}
+	accountCodehash := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
+		return evm.StateDB.GetCodeHash(address), cost
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
@@ -286,6 +304,8 @@ func newApiClosures(
 		getReturnData:   getReturnData,
 		emitLog:         emitLog,
 		accountBalance:  accountBalance,
+		accountCode:     accountCode,
+		accountCodeSize: accountCodeSize,
 		accountCodeHash: accountCodehash,
 		addPages:        addPages,
 		captureHostio:   captureHostio,

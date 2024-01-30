@@ -186,6 +186,20 @@ func newApi(
 		value, cost := closures.accountBalance(address)
 		return write(value, cost)
 	})
+	addressCode := js.FuncOf(func(this js.Value, args []js.Value) any {
+		address := jsAddress(args[0])
+		offset := jsU32(args[1])
+		size := jsU32(args[2])
+		gasLeft := jsU64(args[3])
+		value, cost := closures.accountCode(address, offset, size, gasLeft)
+		return write(value, cost)
+	})
+	addressCodeSize := js.FuncOf(func(this js.Value, args []js.Value) any {
+		address := jsAddress(args[0])
+		gasLeft := jsU64(args[1])
+		value, cost := closures.accountCodeSize(address, gasLeft)
+		return write(value, cost)
+	})
 	addressCodeHash := js.FuncOf(func(this js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
 		value, cost := closures.accountCodeHash(address)
@@ -200,7 +214,8 @@ func newApi(
 	funcs := []js.Func{
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
-		addressBalance, addressCodeHash, addPages,
+		addressBalance, addressCode, addressCodeSize, addressCodeHash,
+		addPages,
 	}
 	anys := make([]any, len(funcs)) // js.ValueOf() only works on []any
 	for i, fn := range funcs {

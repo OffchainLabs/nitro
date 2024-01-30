@@ -252,6 +252,22 @@ func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
 	return hashToBytes32(balance)
 }
 
+//export accountCodeImpl
+func accountCodeImpl(api usize, output *rustBytes, address bytes20, offset u32, size u32, cost *u64) {
+	closures := getApi(api)
+	code, gas := closures.accountCode(address.toAddress(), uint32(offset), uint32(size), uint64(*cost))
+	output.setBytes(code)
+	*cost = u64(gas)
+}
+
+//export accountCodeSizeImpl
+func accountCodeSizeImpl(api usize, address bytes20, cost *u64) u32 {
+	closures := getApi(api)
+	size, gas := closures.accountCodeSize(address.toAddress(), uint64(*cost))
+	*cost = u64(gas)
+	return u32(size)
+}
+
 //export accountCodeHashImpl
 func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	closures := getApi(api)
