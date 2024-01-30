@@ -1,4 +1,4 @@
-package main
+package structinit
 
 import (
 	"fmt"
@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 // Tip for linter that struct that has this comment should be included in the
@@ -111,8 +110,4 @@ func markedStructs(pass *analysis.Pass) map[string]int {
 type position struct {
 	fileName string
 	line     int
-}
-
-func main() {
-	singlechecker.Main(Analyzer)
 }

@@ -1,4 +1,4 @@
-package main
+package pointercheck
 
 import (
 	"fmt"
@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -89,8 +88,4 @@ func ptrIdent(pass *analysis.Pass, e ast.Expr) bool {
 		return isPtr
 	}
 	return false
-}
-
-func main() {
-	singlechecker.Main(Analyzer)
 }
