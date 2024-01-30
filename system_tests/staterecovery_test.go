@@ -72,13 +72,7 @@ func TestRectreateMissingStates(t *testing.T) {
 	Require(t, err)
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
-	var start uint64
-	if currentBlock+1 >= builder.execConfig.Caching.BlockCount {
-		start = currentBlock + 1 - builder.execConfig.Caching.BlockCount
-	} else {
-		start = 0
-	}
-	for i := start; i <= currentBlock; i++ {
+	for i := uint64(0); i <= currentBlock; i++ {
 		header := bc.GetHeaderByNumber(i)
 		_, err := bc.StateAt(header.Root)
 		Require(t, err)
