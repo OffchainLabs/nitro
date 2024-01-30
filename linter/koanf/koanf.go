@@ -18,10 +18,6 @@ var (
 	errIncorrectFlag = errors.New("mismatching flag initialization")
 )
 
-func New(conf any) ([]*analysis.Analyzer, error) {
-	return []*analysis.Analyzer{Analyzer}, nil
-}
-
 var Analyzer = &analysis.Analyzer{
 	Name:       "koanfcheck",
 	Doc:        "check for koanf misconfigurations",
