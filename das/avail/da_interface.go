@@ -9,5 +9,5 @@ type DataAvailabilityWriter interface {
 }
 
 type DataAvailabilityReader interface {
-	Read(BlobPointer) ([]byte, error)
+	Read(context.Context, BlobPointer) ([]byte, error)
 }

@@ -3,13 +3,16 @@ package avail
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // BlobPointer contains the reference to the data blob on Avail
 type BlobPointer struct {
-	BlockHash string // Hash for block on avail chain
-	Sender    string // sender address to filter extrinsic out sepecifically for this address
-	Nonce     int64  // nonce to filter specific extrinsic
+	BlockHash       string // Hash for block on avail chain
+	Sender          string // sender address to filter extrinsic out sepecifically for this address
+	Nonce           int64  // nonce to filter specific extrinsic
+	DasTreeRootHash common.Hash
 }
 
 // MarshalBinary encodes the BlobPointer to binary
