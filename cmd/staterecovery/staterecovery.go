@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -36,10 +35,9 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	if err != nil {
 		return fmt.Errorf("genesis state is missing: %w", err)
 	}
-	_ = database.TrieDB().Reference(previousBlock.Root(), common.Hash{})
-	defer func() {
-		_ = database.TrieDB().Dereference(previousBlock.Root())
-	}()
+	// we don't need to reference states with `trie.Database.Reference` here, because:
+	// * either the state nodes will be read from disk and then cached in cleans cache
+	// * or they will be recreated, saved to disk and then also cached in cleans cache
 	logged := time.Now()
 	recreated := 0
 	for current <= last {
@@ -75,8 +73,6 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			}
 			recreated++
 		}
-		_ = database.TrieDB().Reference(currentBlock.Root(), common.Hash{})
-		_ = database.TrieDB().Dereference(previousBlock.Root())
 		current++
 		previousBlock = currentBlock
 		previousState = currentState
