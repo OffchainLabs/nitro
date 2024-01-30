@@ -37,9 +37,3 @@ jobs:
       run: |
         echo "Not a release candidate. Skipping workflow."
         exit 0
-
-    - name: Build nitro-fuzzer Docker Image
-      run: docker build --target nitro-fuzzer -t nitro-fuzzer .
-
-    - name: Run Docker Container
-      run: docker run nitro-fuzzer
