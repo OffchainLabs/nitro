@@ -485,6 +485,7 @@ pub trait UserHost: GasMeteredMachine {
         dest: u32,
     ) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
@@ -504,6 +505,7 @@ pub trait UserHost: GasMeteredMachine {
     /// [`EXT_CODESIZE`]: https://www.evm.codes/#3B
     fn account_code_size(&mut self, address: u32) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 

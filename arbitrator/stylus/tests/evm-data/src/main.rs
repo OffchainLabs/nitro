@@ -27,7 +27,14 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let eth_precompile_codehash = eth_precompile_addr.codehash();
     let arb_precompile_codehash = arb_test_addr.codehash();
     let contract_codehash = contract_addr.codehash();
+
     let code = contract_addr.code();
+    assert_eq!(code.len(), contract_addr.code_size());
+    assert_eq!(arb_test_addr.code_size(), 1);
+    assert_eq!(arb_test_addr.code(), [0xfe]);
+    assert_eq!(eth_precompile_addr.code_size(), 0);
+    assert_eq!(eth_precompile_addr.code(), []);
+
     let basefee = block::basefee();
     let chainid = block::chainid();
     let coinbase = block::coinbase();
