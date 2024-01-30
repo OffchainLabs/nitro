@@ -19,8 +19,8 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	current := bc.Genesis().NumberU64() + 1
 	last := bc.CurrentBlock().Number.Uint64()
 
-	previousBlock := bc.GetBlockByNumber(current - 1)
-	if previousBlock == nil {
+	genesisBlock := bc.GetBlockByNumber(current - 1)
+	if genesisBlock == nil {
 		return fmt.Errorf("genesis block is missing")
 	}
 	hashConfig := *hashdb.Defaults
@@ -31,7 +31,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	}
 	database := state.NewDatabaseWithConfig(chainDb, trieConfig)
 	defer database.TrieDB().Close()
-	previousState, err := state.New(previousBlock.Root(), database, nil)
+	previousState, err := state.New(genesisBlock.Root(), database, nil)
 	if err != nil {
 		return fmt.Errorf("genesis state is missing: %w", err)
 	}
@@ -60,7 +60,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 				return fmt.Errorf("StateDB commit failed, number %d root %v: %w", current, currentBlock.Root(), err)
 			}
 			if root.Cmp(currentBlock.Root()) != 0 {
-				return fmt.Errorf("reached different state root after processing block %d, want %v, have %v", current, currentBlock.Root(), root)
+				return fmt.Errorf("reached different state root after processing block %d, have %v, want %v", current, root, currentBlock.Root())
 			}
 			// commit to disk
 			err = database.TrieDB().Commit(root, false) // TODO report = true, do we want this many logs?
@@ -74,7 +74,6 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			recreated++
 		}
 		current++
-		previousBlock = currentBlock
 		previousState = currentState
 	}
 	log.Info("Finished recreating missing states", "elapsed", time.Since(start), "recreated", recreated)
