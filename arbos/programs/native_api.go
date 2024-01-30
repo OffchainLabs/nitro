@@ -66,11 +66,6 @@ Bytes32 accountBalanceWrap(usize api, Bytes20 address, u64 * cost) {
     return accountBalanceImpl(api, address, cost);
 }
 
-Bytes32 accountCodeHashImpl(usize api, Bytes20 address, u64 * cost);
-Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
-    return accountCodeHashImpl(api, address, cost);
-}
-
 void accountCodeImpl(usize api, RustBytes * data, Bytes20 address, u32 offset, u32 size, u64 * cost);
 void accountCodeWrap(usize api, RustBytes * data, Bytes20 address, u32 offset, u32 size, u64 * cost) {
 	return accountCodeImpl(api, data, address, offset, size, cost);
@@ -79,6 +74,11 @@ void accountCodeWrap(usize api, RustBytes * data, Bytes20 address, u32 offset, u
 void accountCodeSizeImpl(usize api, Bytes20 address, u64 * cost);
 void accountCodeSizeWrap(usize api, Bytes20 address, u64 * cost) {
 	return accountCodeSizeImpl(api, address, cost);
+}
+
+Bytes32 accountCodeHashImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
+    return accountCodeHashImpl(api, address, cost);
 }
 
 u64 addPagesImpl(usize api, u16 pages);

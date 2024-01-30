@@ -42,9 +42,9 @@ type create2Type func(
 type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
-type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodeType func(address common.Address, gas uint64) ([]byte, uint64)
 type accountCodeSizeType func(address common.Address, gas uint64) (uint32, uint64)
+type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type addPagesType func(pages uint16) (cost uint64)
 type captureHostioType func(name string, args, outs []byte, startInk, endInk uint64)
 
@@ -60,8 +60,8 @@ type goClosures struct {
 	emitLog         emitLogType
 	accountBalance  accountBalanceType
 	accountCode     accountCodeType
-	accountCodeHash accountCodehashType
 	accountCodeSize accountCodeSizeType
+	accountCodeHash accountCodehashType
 	addPages        addPagesType
 	captureHostio   captureHostioType
 }
@@ -264,7 +264,7 @@ func newApiClosures(
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
-		metaCost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		metaCost := vm.WasmAccountTouchCost(evm.StateDB, address) + params.ExtcodeCopyBaseEIP150
 		loadCost := 3 * am.WordsForBytes(params.MaxCodeSize)
 		sentry := am.SaturatingUAdd(metaCost, loadCost)
 
@@ -304,8 +304,8 @@ func newApiClosures(
 		emitLog:         emitLog,
 		accountBalance:  accountBalance,
 		accountCode:     accountCode,
-		accountCodeHash: accountCodehash,
 		accountCodeSize: accountCodeSize,
+		accountCodeHash: accountCodehash,
 		addPages:        addPages,
 		captureHostio:   captureHostio,
 	}

@@ -130,13 +130,13 @@ pub unsafe extern "C" fn user_host__account_code(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_codehash(address: u32, ptr: u32) {
-    hostio!(account_codehash(address, ptr))
+pub unsafe extern "C" fn user_host__account_code_size(address: u32) -> u32 {
+    hostio!(account_code_size(address))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__account_code_size(address: u32) -> u32 {
-    hostio!(account_code_size(address))
+pub unsafe extern "C" fn user_host__account_codehash(address: u32, ptr: u32) {
+    hostio!(account_codehash(address, ptr))
 }
 
 #[no_mangle]

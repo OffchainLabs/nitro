@@ -468,12 +468,12 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
 	go run linter/pointercheck/pointer.go ./...
-	#golangci-lint run --fix
+	golangci-lint run --fix
 	yarn --cwd contracts solhint
 	@touch $@
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
-	#golangci-lint run --disable-all -E gofmt --fix
+	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check

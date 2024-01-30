@@ -229,19 +229,19 @@ pub(crate) fn account_code<E: EvmApi>(
     hostio!(env, account_code(address, offset, size, code))
 }
 
+pub(crate) fn account_code_size<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    address: u32,
+) -> Result<u32, Escape> {
+    hostio!(env, account_code_size(address))
+}
+
 pub(crate) fn account_codehash<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     address: u32,
     ptr: u32,
 ) -> MaybeEscape {
     hostio!(env, account_codehash(address, ptr))
-}
-
-pub(crate) fn account_code_size<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
-    address: u32,
-) -> Result<u32, Escape> {
-    hostio!(env, account_code_size(address))
 }
 
 pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
